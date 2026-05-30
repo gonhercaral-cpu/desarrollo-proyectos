@@ -1,7 +1,46 @@
+import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import CreateProject from "./CreateProject";
+import MyProjects from "./MyProjects";
+import AllProjects from "./AllProjects";
+import ProjectDetail from "./ProjectDetail";
 
 export default function Dashboard() {
-  const { profile, firebaseUser, logout, isAdmin } = useAuth();
+  const { profile, logout, isAdmin } = useAuth();
+
+  const [page, setPage] = useState("my-projects");
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+
+  function openProject(projectId) {
+    setSelectedProjectId(projectId);
+    setPage("project-detail");
+  }
+
+  function backToProjects() {
+    setSelectedProjectId(null);
+    setPage(isAdmin ? "all-projects" : "my-projects");
+  }
+
+  function renderPage() {
+    if (page === "create-project") {
+      return <CreateProject />;
+    }
+
+    if (page === "all-projects") {
+      return <AllProjects onOpenProject={openProject} />;
+    }
+
+    if (page === "project-detail") {
+      return (
+        <ProjectDetail
+          projectId={selectedProjectId}
+          onBack={backToProjects}
+        />
+      );
+    }
+
+    return <MyProjects onOpenProject={openProject} />;
+  }
 
   return (
     <div className="app-shell">
@@ -13,18 +52,25 @@ export default function Dashboard() {
 
         <div className="user-box">
           <strong>{profile?.name || "Usuario sin perfil"}</strong>
-          <span>{profile?.role || "Sin rol"} · {profile?.area || "Sin área"}</span>
+          <span>
+            {profile?.role || "Sin rol"} · {profile?.area || "Sin área"}
+          </span>
         </div>
 
         <nav>
-          <button>Mis proyectos</button>
+          <button onClick={() => setPage("my-projects")}>
+            Mis proyectos
+          </button>
 
           {isAdmin && (
             <>
-              <button>Dashboard general</button>
-              <button>Alta de proyecto</button>
-              <button>Todos los proyectos</button>
-              <button>Usuarios</button>
+              <button onClick={() => setPage("all-projects")}>
+                Todos los proyectos
+              </button>
+
+              <button onClick={() => setPage("create-project")}>
+                Alta de proyecto
+              </button>
             </>
           )}
         </nav>
@@ -34,28 +80,7 @@ export default function Dashboard() {
         </button>
       </aside>
 
-      <main className="main-content">
-        <h2>Bienvenido, {profile?.name}</h2>
-
-        <div className="card">
-          <h3>Conexión funcionando</h3>
-          <p>
-            Tu usuario inició sesión correctamente con Firebase Authentication.
-          </p>
-
-          <p>
-            <strong>Correo:</strong> {firebaseUser?.email}
-          </p>
-
-          <p>
-            <strong>Rol:</strong> {profile?.role}
-          </p>
-
-          <p>
-            <strong>Área:</strong> {profile?.area}
-          </p>
-        </div>
-      </main>
+      <main className="main-content">{renderPage()}</main>
     </div>
   );
 }
