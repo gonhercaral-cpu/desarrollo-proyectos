@@ -1,18 +1,70 @@
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { storage } from "./firebase";
 
+const MAX_FILE_SIZE_MB = 25;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+const ALLOWED_FILE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+
+function getCurrentUserUid(currentUser) {
+  return currentUser?.uid || currentUser?.id || "";
+}
+
+function cleanFileName(fileName) {
+  return fileName
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+}
+
+function validateEvidenceFile(file) {
+  if (!file) {
+    throw new Error("No se seleccionó ningún archivo.");
+  }
+
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error(`El archivo no puede pesar más de ${MAX_FILE_SIZE_MB} MB.`);
+  }
+
+  if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+    throw new Error(
+      "Tipo de archivo no permitido. Solo se permiten imágenes, PDF, Word, PowerPoint o Excel."
+    );
+  }
+}
+
 export async function uploadEvidenceFile(projectId, file, currentUser) {
   if (!projectId) {
     throw new Error("Falta el ID del proyecto.");
   }
 
-  if (!file) {
-    throw new Error("No se seleccionó ningún archivo.");
+  const currentUserUid = getCurrentUserUid(currentUser);
+
+  if (!currentUserUid) {
+    throw new Error("No se encontró el UID del usuario actual.");
   }
 
+  if (!currentUser?.email) {
+    throw new Error("No se encontró el correo del usuario actual.");
+  }
+
+  validateEvidenceFile(file);
+
   const timestamp = Date.now();
-  const safeFileName = file.name.replaceAll(" ", "_");
-  const filePath = `evidence/${projectId}/${timestamp}_${safeFileName}`;
+  const safeFileName = cleanFileName(file.name);
+
+  // Nueva ruta usando UID:
+  // evidence / projectId / userUid / archivo
+  // Esto ayuda a crear reglas de Storage más seguras.
+  const filePath = `evidence/${projectId}/${currentUserUid}/${timestamp}_${safeFileName}`;
 
   const fileRef = ref(storage, filePath);
 
@@ -20,8 +72,10 @@ export async function uploadEvidenceFile(projectId, file, currentUser) {
     contentType: file.type,
     customMetadata: {
       projectId,
-      uploadedByEmail: currentUser.email,
-      uploadedByName: currentUser.name,
+      uploadedByUid: currentUserUid,
+      uploadedByEmail: currentUser.email || "",
+      uploadedByName: currentUser.name || "",
+      originalFileName: file.name,
     },
   });
 
@@ -33,5 +87,9 @@ export async function uploadEvidenceFile(projectId, file, currentUser) {
     fileType: file.type,
     fileSize: file.size,
     downloadUrl,
+
+    uploadedByUid: currentUserUid,
+    uploadedByEmail: currentUser.email || "",
+    uploadedByName: currentUser.name || "",
   };
 }

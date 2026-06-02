@@ -68,7 +68,7 @@ export default function ProjectDetail({ projectId, onBack }) {
   }, [projectId]);
 
   function canUpdateProject() {
-    return isAdmin || project?.assignedToEmail === profile.email;
+    return isAdmin || project?.assignedToUid === profile.uid;
   }
 
   function formatDateTime(timestamp) {

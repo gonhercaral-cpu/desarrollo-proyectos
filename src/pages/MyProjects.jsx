@@ -11,7 +11,7 @@ export default function MyProjects({ onOpenProject }) {
     setLoading(true);
 
     try {
-      const data = await getProjectsAssignedTo(profile.email);
+      const data = await getProjectsAssignedTo(profile.uid);
       setProjects(data);
     } catch (error) {
       console.error(error);

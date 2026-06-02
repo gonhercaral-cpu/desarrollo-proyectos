@@ -5,10 +5,8 @@ import {
   signOut,
 } from "firebase/auth";
 import {
-  collection,
-  getDocs,
-  query,
-  where,
+  doc,
+  getDoc,
 } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
 
@@ -19,38 +17,33 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-async function loadUserProfile(user) {
-  console.log("Proyecto conectado:", db.app.options.projectId);
-  console.log("Email autenticado:", user.email);
+  async function loadUserProfile(user) {
+    console.log("Proyecto conectado:", db.app.options.projectId);
+    console.log("Email autenticado:", user.email);
+    console.log("UID autenticado:", user.uid);
 
-  const usersRef = collection(db, "users");
-  const allUsersSnapshot = await getDocs(usersRef);
+    // Ahora buscamos el documento directamente por UID:
+    // users / UID_DEL_USUARIO
+    const userRef = doc(db, "users", user.uid);
+    const userSnapshot = await getDoc(userRef);
 
-  console.log("Cantidad total de documentos en users:", allUsersSnapshot.size);
+    console.log("Buscando perfil con UID:", user.uid);
+    console.log("¿Existe perfil?:", userSnapshot.exists());
 
-  allUsersSnapshot.forEach((doc) => {
-    console.log("Usuario en Firestore:", doc.id, doc.data());
-  });
+    if (!userSnapshot.exists()) {
+      console.warn(
+        "No existe un documento en Firestore para este UID:",
+        user.uid
+      );
+      return null;
+    }
 
-  const cleanEmail = user.email.trim().toLowerCase();
-
-  const q = query(usersRef, where("email", "==", cleanEmail));
-  const snapshot = await getDocs(q);
-
-  console.log("Buscando email:", cleanEmail);
-  console.log("Perfiles encontrados:", snapshot.size);
-
-  if (snapshot.empty) {
-    return null;
+    return {
+      id: userSnapshot.id,
+      uid: user.uid,
+      ...userSnapshot.data(),
+    };
   }
-
-  const userDoc = snapshot.docs[0];
-
-  return {
-    id: userDoc.id,
-    ...userDoc.data(),
-  };
-}
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -92,9 +85,18 @@ async function loadUserProfile(user) {
         loading,
         login,
         logout,
+
+        // Datos útiles del usuario
+        uid: firebaseUser?.uid || null,
+        userEmail: firebaseUser?.email || null,
+
+        // Roles
         isAdmin: profile?.role === "admin",
         isCollaborator: profile?.role === "collaborator",
         isRequester: profile?.role === "requester",
+
+        // Estado del usuario
+        isActive: profile?.active === true,
       }}
     >
       {children}

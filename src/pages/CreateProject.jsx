@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { createProject } from "../services/projectsService";
 import { getCollaborators } from "../services/usersService";
-import { AREAS, PRIORITIES, PROJECT_STATUSES, REQUESTER_AREAS } from "../data/catalogs";
+import {
+  AREAS,
+  PRIORITIES,
+  PROJECT_STATUSES,
+  REQUESTER_AREAS,
+} from "../data/catalogs";
 
 export default function CreateProject() {
   const { profile } = useAuth();
@@ -12,12 +17,13 @@ export default function CreateProject() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
-  const [form, setForm] = useState({
+  const initialForm = {
     title: "",
     description: "",
     requesterName: "",
     requesterArea: "",
     responsibleArea: "",
+    assignedToUid: "",
     assignedToEmail: "",
     assignedToName: "",
     status: "Asignado",
@@ -26,7 +32,9 @@ export default function CreateProject() {
     deadline: "",
     acceptanceCriteria: "",
     references: "",
-  });
+  };
+
+  const [form, setForm] = useState(initialForm);
 
   useEffect(() => {
     async function loadCollaborators() {
@@ -47,12 +55,28 @@ export default function CreateProject() {
   function handleChange(event) {
     const { name, value } = event.target;
 
-    if (name === "assignedToEmail") {
-      const selectedUser = collaborators.find((user) => user.email === value);
+    if (name === "responsibleArea") {
+      setForm((current) => ({
+        ...current,
+        responsibleArea: value,
+
+        // Si cambia el área, limpiamos el responsable seleccionado
+        // para evitar que quede asignado alguien de otra área.
+        assignedToUid: "",
+        assignedToEmail: "",
+        assignedToName: "",
+      }));
+
+      return;
+    }
+
+    if (name === "assignedToUid") {
+      const selectedUser = collaborators.find((user) => user.id === value);
 
       setForm((current) => ({
         ...current,
-        assignedToEmail: value,
+        assignedToUid: selectedUser?.id || "",
+        assignedToEmail: selectedUser?.email || "",
         assignedToName: selectedUser?.name || "",
         responsibleArea: selectedUser?.area || current.responsibleArea,
       }));
@@ -72,28 +96,28 @@ export default function CreateProject() {
     setMessage("");
 
     try {
-      await createProject(form, profile);
+      if (!profile?.uid && !profile?.id) {
+        throw new Error("No se encontró el perfil del usuario actual.");
+      }
 
-      setForm({
-        title: "",
-        description: "",
-        requesterName: "",
-        requesterArea: "",
-        responsibleArea: "",
-        assignedToEmail: "",
-        assignedToName: "",
-        status: "Asignado",
-        priority: "Media",
-        progress: 0,
-        deadline: "",
-        acceptanceCriteria: "",
-        references: "",
+      if (!form.assignedToUid) {
+        throw new Error("Debes seleccionar un responsable asignado.");
+      }
+
+      await createProject(form, {
+        ...profile,
+
+        // Aseguramos que currentUser.uid exista.
+        // En tu AuthContext ya agregamos uid, pero dejamos este respaldo por seguridad.
+        uid: profile.uid || profile.id,
       });
+
+      setForm(initialForm);
 
       setMessage("Proyecto creado y asignado correctamente.");
     } catch (error) {
       console.error(error);
-      setMessage("No se pudo crear el proyecto. Revisa la consola.");
+      setMessage(error.message || "No se pudo crear el proyecto. Revisa la consola.");
     } finally {
       setSaving(false);
     }
@@ -106,6 +130,7 @@ export default function CreateProject() {
   return (
     <div>
       <h2>Alta, aprobación y asignación de proyecto</h2>
+
       <p className="page-description">
         Llena este formulario durante la reunión con el solicitante. Al guardar,
         el proyecto quedará aprobado y asignado al responsable seleccionado.
@@ -158,7 +183,9 @@ export default function CreateProject() {
             >
               <option value="">Seleccionar...</option>
               {REQUESTER_AREAS.map((area) => (
-                <option key={area}>{area}</option>
+                <option key={area} value={area}>
+                  {area}
+                </option>
               ))}
             </select>
           </div>
@@ -173,7 +200,9 @@ export default function CreateProject() {
             >
               <option value="">Seleccionar...</option>
               {AREAS.map((area) => (
-                <option key={area}>{area}</option>
+                <option key={area} value={area}>
+                  {area}
+                </option>
               ))}
             </select>
           </div>
@@ -181,8 +210,8 @@ export default function CreateProject() {
           <div className="form-group">
             <label>Responsable asignado</label>
             <select
-              name="assignedToEmail"
-              value={form.assignedToEmail}
+              name="assignedToUid"
+              value={form.assignedToUid}
               onChange={handleChange}
               disabled={loadingUsers}
               required
@@ -190,8 +219,9 @@ export default function CreateProject() {
               <option value="">
                 {loadingUsers ? "Cargando usuarios..." : "Seleccionar..."}
               </option>
+
               {filteredCollaborators.map((user) => (
-                <option key={user.id} value={user.email}>
+                <option key={user.id} value={user.id}>
                   {user.name} — {user.area}
                 </option>
               ))}
@@ -200,18 +230,30 @@ export default function CreateProject() {
 
           <div className="form-group">
             <label>Prioridad aprobada</label>
-            <select name="priority" value={form.priority} onChange={handleChange}>
+            <select
+              name="priority"
+              value={form.priority}
+              onChange={handleChange}
+            >
               {PRIORITIES.map((priority) => (
-                <option key={priority}>{priority}</option>
+                <option key={priority} value={priority}>
+                  {priority}
+                </option>
               ))}
             </select>
           </div>
 
           <div className="form-group">
             <label>Estado inicial</label>
-            <select name="status" value={form.status} onChange={handleChange}>
+            <select
+              name="status"
+              value={form.status}
+              onChange={handleChange}
+            >
               {PROJECT_STATUSES.slice(0, 4).map((status) => (
-                <option key={status}>{status}</option>
+                <option key={status} value={status}>
+                  {status}
+                </option>
               ))}
             </select>
           </div>
