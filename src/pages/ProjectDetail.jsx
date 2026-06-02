@@ -7,6 +7,7 @@ import {
   getProjectUpdates,
   updateProjectStatus,
 } from "../services/projectsService";
+import { uploadEvidenceFile } from "../services/storageService";
 import { PROJECT_STATUSES } from "../data/catalogs";
 
 export default function ProjectDetail({ projectId, onBack }) {
@@ -19,6 +20,7 @@ export default function ProjectDetail({ projectId, onBack }) {
   const [savingUpdate, setSavingUpdate] = useState(false);
   const [savingEvidence, setSavingEvidence] = useState(false);
   const [message, setMessage] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
 
   const [updateForm, setUpdateForm] = useState({
     status: "",
@@ -69,6 +71,36 @@ export default function ProjectDetail({ projectId, onBack }) {
     return isAdmin || project?.assignedToEmail === profile.email;
   }
 
+  function formatDateTime(timestamp) {
+    if (!timestamp) {
+      return "Fecha no disponible";
+    }
+
+    let date;
+
+    if (timestamp.toDate) {
+      date = timestamp.toDate();
+    } else {
+      date = new Date(timestamp);
+    }
+
+    return date.toLocaleString("es-MX", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function formatFileSize(size) {
+    if (!size || size <= 0) {
+      return "";
+    }
+
+    return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  }
+
   function handleUpdateChange(event) {
     const { name, value } = event.target;
 
@@ -87,6 +119,46 @@ export default function ProjectDetail({ projectId, onBack }) {
     }));
   }
 
+  function handleFileChange(event) {
+    const file = event.target.files[0];
+
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+
+    const maxSizeInMB = 20;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (file.size > maxSizeInBytes) {
+      setMessage(`El archivo no debe pesar más de ${maxSizeInMB} MB.`);
+      event.target.value = "";
+      setSelectedFile(null);
+      return;
+    }
+
+    setMessage("");
+    setSelectedFile(file);
+  }
+
+  function resetEvidenceForm() {
+    setEvidenceForm({
+      title: "",
+      link: "",
+      comment: "",
+    });
+
+    setSelectedFile(null);
+  }
+
+  async function uploadSelectedFileIfNeeded() {
+    if (!selectedFile) {
+      return null;
+    }
+
+    return uploadEvidenceFile(projectId, selectedFile, profile);
+  }
+
   async function handleUpdateSubmit(event) {
     event.preventDefault();
     setMessage("");
@@ -97,8 +169,15 @@ export default function ProjectDetail({ projectId, onBack }) {
       "Finalizado",
     ].includes(updateForm.status);
 
-    if (requiresEvidence && evidence.length === 0 && !evidenceForm.link) {
-      setMessage("Para marcar este estado, primero agrega una evidencia o pega un link de evidencia.");
+    if (
+      requiresEvidence &&
+      evidence.length === 0 &&
+      !evidenceForm.link &&
+      !selectedFile
+    ) {
+      setMessage(
+        "Para marcar este estado, agrega un link o selecciona un archivo de evidencia."
+      );
       return;
     }
 
@@ -107,22 +186,28 @@ export default function ProjectDetail({ projectId, onBack }) {
     try {
       await updateProjectStatus(projectId, updateForm, profile);
 
-      if (evidenceForm.link) {
+      const uploadedFileData = await uploadSelectedFileIfNeeded();
+
+      if (evidenceForm.link || uploadedFileData) {
         await addProjectEvidence(
           {
             projectId,
-            title: evidenceForm.title || "Evidencia",
-            link: evidenceForm.link,
+            title:
+              evidenceForm.title ||
+              selectedFile?.name ||
+              "Evidencia del proyecto",
+            link: evidenceForm.link || uploadedFileData?.downloadUrl || "",
             comment: evidenceForm.comment,
+            fileName: uploadedFileData?.fileName || "",
+            filePath: uploadedFileData?.filePath || "",
+            fileType: uploadedFileData?.fileType || "",
+            fileSize: uploadedFileData?.fileSize || 0,
+            downloadUrl: uploadedFileData?.downloadUrl || "",
           },
           profile
         );
 
-        setEvidenceForm({
-          title: "",
-          link: "",
-          comment: "",
-        });
+        resetEvidenceForm();
       }
 
       setMessage("Proyecto actualizado correctamente.");
@@ -138,24 +223,36 @@ export default function ProjectDetail({ projectId, onBack }) {
   async function handleEvidenceSubmit(event) {
     event.preventDefault();
     setMessage("");
+
+    if (!evidenceForm.link && !selectedFile) {
+      setMessage("Agrega un link o selecciona un archivo como evidencia.");
+      return;
+    }
+
     setSavingEvidence(true);
 
     try {
+      const uploadedFileData = await uploadSelectedFileIfNeeded();
+
       await addProjectEvidence(
         {
           projectId,
-          title: evidenceForm.title,
-          link: evidenceForm.link,
+          title:
+            evidenceForm.title ||
+            selectedFile?.name ||
+            "Evidencia del proyecto",
+          link: evidenceForm.link || uploadedFileData?.downloadUrl || "",
           comment: evidenceForm.comment,
+          fileName: uploadedFileData?.fileName || "",
+          filePath: uploadedFileData?.filePath || "",
+          fileType: uploadedFileData?.fileType || "",
+          fileSize: uploadedFileData?.fileSize || 0,
+          downloadUrl: uploadedFileData?.downloadUrl || "",
         },
         profile
       );
 
-      setEvidenceForm({
-        title: "",
-        link: "",
-        comment: "",
-      });
+      resetEvidenceForm();
 
       setMessage("Evidencia agregada correctamente.");
       await loadProjectData();
@@ -194,22 +291,51 @@ export default function ProjectDetail({ projectId, onBack }) {
       <div className="details-grid">
         <div className="card">
           <h3>Información general</h3>
-          <p><strong>Solicitante:</strong> {project.requesterName}</p>
-          <p><strong>Área solicitante:</strong> {project.requesterArea}</p>
-          <p><strong>Responsable:</strong> {project.assignedToName}</p>
-          <p><strong>Área responsable:</strong> {project.responsibleArea}</p>
-          <p><strong>Estado:</strong> {project.status}</p>
-          <p><strong>Prioridad:</strong> {project.priority}</p>
-          <p><strong>Avance:</strong> {project.progress}%</p>
-          <p><strong>Fecha compromiso:</strong> {project.deadline}</p>
+
+          <p>
+            <strong>Solicitante:</strong> {project.requesterName}
+          </p>
+
+          <p>
+            <strong>Área solicitante:</strong> {project.requesterArea}
+          </p>
+
+          <p>
+            <strong>Responsable:</strong> {project.assignedToName}
+          </p>
+
+          <p>
+            <strong>Área responsable:</strong> {project.responsibleArea}
+          </p>
+
+          <p>
+            <strong>Estado:</strong> {project.status}
+          </p>
+
+          <p>
+            <strong>Prioridad:</strong> {project.priority}
+          </p>
+
+          <p>
+            <strong>Avance:</strong> {project.progress}%
+          </p>
+
+          <p>
+            <strong>Fecha compromiso:</strong> {project.deadline}
+          </p>
         </div>
 
         <div className="card">
           <h3>Criterios y referencias</h3>
-          <p><strong>Criterios de aceptación:</strong></p>
+
+          <p>
+            <strong>Criterios de aceptación:</strong>
+          </p>
           <p>{project.acceptanceCriteria || "No especificados."}</p>
 
-          <p><strong>Referencias:</strong></p>
+          <p>
+            <strong>Referencias:</strong>
+          </p>
           <p>{project.references || "Sin referencias."}</p>
         </div>
       </div>
@@ -280,6 +406,21 @@ export default function ProjectDetail({ projectId, onBack }) {
             </div>
 
             <div className="form-group full">
+              <label>Archivo de evidencia</label>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp4"
+              />
+
+              {selectedFile && (
+                <small className="file-preview">
+                  Archivo seleccionado: {selectedFile.name}
+                </small>
+              )}
+            </div>
+
+            <div className="form-group full">
               <label>Comentario de evidencia</label>
               <textarea
                 name="comment"
@@ -309,11 +450,33 @@ export default function ProjectDetail({ projectId, onBack }) {
               {evidence.map((item) => (
                 <div className="list-item" key={item.id}>
                   <strong>{item.title}</strong>
-                  <a href={item.link} target="_blank" rel="noreferrer">
-                    {item.link}
-                  </a>
-                  <span>{item.comment}</span>
-                  <small>{item.userName}</small>
+
+                  {item.downloadUrl ? (
+                    <a
+                      href={item.downloadUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir archivo: {item.fileName || "Evidencia"}
+                    </a>
+                  ) : item.link ? (
+                    <a href={item.link} target="_blank" rel="noreferrer">
+                      {item.link}
+                    </a>
+                  ) : (
+                    <span>Sin link disponible</span>
+                  )}
+
+                  {item.fileSize > 0 && (
+                    <span>Tamaño: {formatFileSize(item.fileSize)}</span>
+                  )}
+
+                  {item.comment && <span>{item.comment}</span>}
+
+                  <small>
+                    Subido por {item.userName || "Usuario no identificado"} ·{" "}
+                    {formatDateTime(item.createdAt)}
+                  </small>
                 </div>
               ))}
             </div>
@@ -328,7 +491,7 @@ export default function ProjectDetail({ projectId, onBack }) {
                 name="title"
                 value={evidenceForm.title}
                 onChange={handleEvidenceChange}
-                required
+                placeholder="Ej. Archivo final, captura, evidencia de avance"
               />
 
               <label>Link</label>
@@ -336,14 +499,28 @@ export default function ProjectDetail({ projectId, onBack }) {
                 name="link"
                 value={evidenceForm.link}
                 onChange={handleEvidenceChange}
-                required
+                placeholder="https://drive.google.com/..."
               />
+
+              <label>Archivo</label>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp4"
+              />
+
+              {selectedFile && (
+                <small className="file-preview">
+                  Archivo seleccionado: {selectedFile.name}
+                </small>
+              )}
 
               <label>Comentario</label>
               <textarea
                 name="comment"
                 value={evidenceForm.comment}
                 onChange={handleEvidenceChange}
+                placeholder="Describe brevemente qué contiene esta evidencia."
               />
 
               <button disabled={savingEvidence}>
@@ -365,9 +542,13 @@ export default function ProjectDetail({ projectId, onBack }) {
                   <strong>
                     {update.oldStatus || "Nuevo"} → {update.newStatus}
                   </strong>
+
                   <span>{update.comment}</span>
+
                   <small>
-                    {update.userName} · {update.progress}% de avance
+                    {update.userName || "Usuario no identificado"} ·{" "}
+                    {update.progress}% de avance ·{" "}
+                    {formatDateTime(update.createdAt)}
                   </small>
                 </div>
               ))}

@@ -434,3 +434,14 @@ select:focus {
     white-space: nowrap;
   }
 }
+
+.file-preview {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
