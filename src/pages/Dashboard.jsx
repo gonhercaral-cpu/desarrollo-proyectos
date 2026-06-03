@@ -4,6 +4,7 @@ import CreateProject from "./CreateProject";
 import MyProjects from "./MyProjects";
 import AllProjects from "./AllProjects";
 import ProjectDetail from "./ProjectDetail";
+import EditProject from "./EditProject";
 
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
@@ -14,6 +15,11 @@ export default function Dashboard() {
   function openProject(projectId) {
     setSelectedProjectId(projectId);
     setPage("project-detail");
+  }
+
+  function editProject(projectId) {
+    setSelectedProjectId(projectId);
+    setPage("edit-project");
   }
 
   function backToProjects() {
@@ -30,11 +36,26 @@ export default function Dashboard() {
       return <AllProjects onOpenProject={openProject} />;
     }
 
+    if (page === "edit-project") {
+      return (
+        <EditProject
+          projectId={selectedProjectId}
+          onBack={() => {
+            setPage("project-detail");
+          }}
+          onSaved={() => {
+            setPage("project-detail");
+          }}
+        />
+      );
+    }
+
     if (page === "project-detail") {
       return (
         <ProjectDetail
           projectId={selectedProjectId}
           onBack={backToProjects}
+          onEditProject={editProject}
         />
       );
     }

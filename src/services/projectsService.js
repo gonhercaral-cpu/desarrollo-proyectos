@@ -365,3 +365,45 @@ export async function getProjectEvidence(projectId) {
     ...document.data(),
   }));
 }
+
+export async function updateProjectAdmin(projectId, projectData, currentUser) {
+  const project = await getProjectById(projectId);
+
+  if (!project) {
+    throw new Error("Proyecto no encontrado");
+  }
+
+  const projectRef = doc(db, PROJECTS_COLLECTION, projectId);
+
+  await updateDoc(projectRef, {
+    title: projectData.title,
+    description: projectData.description,
+    requesterName: projectData.requesterName,
+    requesterArea: projectData.requesterArea,
+    responsibleArea: projectData.responsibleArea,
+    assignedToUid: projectData.assignedToUid,
+    assignedToEmail: projectData.assignedToEmail,
+    assignedToName: projectData.assignedToName,
+    status: projectData.status,
+    priority: projectData.priority,
+    progress: Number(projectData.progress || 0),
+    deadline: projectData.deadline,
+    acceptanceCriteria: projectData.acceptanceCriteria,
+    references: projectData.references,
+    updatedAt: serverTimestamp(),
+    ...(projectData.status === "Finalizado"
+      ? { closedAt: serverTimestamp() }
+      : {}),
+  });
+
+  await addProjectUpdate({
+    projectId,
+    userUid: currentUser.uid,
+    userEmail: currentUser.email,
+    userName: currentUser.name,
+    oldStatus: project.status,
+    newStatus: projectData.status,
+    progress: Number(projectData.progress || 0),
+    comment: "El administrador editó la información general del proyecto.",
+  });
+}

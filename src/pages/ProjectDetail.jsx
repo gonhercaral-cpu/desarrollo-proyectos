@@ -10,7 +10,7 @@ import {
 import { uploadEvidenceFile } from "../services/storageService";
 import { PROJECT_STATUSES } from "../data/catalogs";
 
-export default function ProjectDetail({ projectId, onBack }) {
+export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const { profile, isAdmin } = useAuth();
 
   const [project, setProject] = useState(null);
@@ -36,6 +36,7 @@ export default function ProjectDetail({ projectId, onBack }) {
 
   async function loadProjectData() {
     setLoading(true);
+    setMessage("");
 
     try {
       const [projectData, updatesData, evidenceData] = await Promise.all([
@@ -50,7 +51,7 @@ export default function ProjectDetail({ projectId, onBack }) {
 
       if (projectData) {
         setUpdateForm({
-          status: projectData.status,
+          status: projectData.status || "",
           progress: projectData.progress || 0,
           comment: "",
         });
@@ -64,11 +65,25 @@ export default function ProjectDetail({ projectId, onBack }) {
   }
 
   useEffect(() => {
-    loadProjectData();
+    if (projectId) {
+      loadProjectData();
+    }
   }, [projectId]);
 
   function canUpdateProject() {
-    return isAdmin || project?.assignedToUid === profile.uid;
+    return isAdmin || project?.assignedToUid === profile?.uid;
+  }
+
+  function handleEditProjectClick() {
+    if (typeof onEditProject === "function") {
+      onEditProject(projectId);
+      return;
+    }
+
+    console.error("Falta enviar onEditProject desde el componente padre.");
+    setMessage(
+      "No se pudo abrir la edición del proyecto. Falta configurar la función de edición."
+    );
   }
 
   function formatDateTime(timestamp) {
@@ -271,7 +286,10 @@ export default function ProjectDetail({ projectId, onBack }) {
   if (!project) {
     return (
       <div>
-        <button onClick={onBack}>Volver</button>
+        <button className="secondary-button" onClick={onBack}>
+          ← Volver
+        </button>
+
         <p>Proyecto no encontrado.</p>
       </div>
     );
@@ -282,6 +300,16 @@ export default function ProjectDetail({ projectId, onBack }) {
       <button className="secondary-button" onClick={onBack}>
         ← Volver
       </button>
+
+      {isAdmin && (
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={handleEditProjectClick}
+        >
+          Editar proyecto
+        </button>
+      )}
 
       <h2>{project.title}</h2>
       <p className="page-description">{project.description}</p>
@@ -353,7 +381,9 @@ export default function ProjectDetail({ projectId, onBack }) {
                 onChange={handleUpdateChange}
               >
                 {PROJECT_STATUSES.map((status) => (
-                  <option key={status}>{status}</option>
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
                 ))}
               </select>
             </div>
@@ -431,7 +461,7 @@ export default function ProjectDetail({ projectId, onBack }) {
             </div>
 
             <div className="form-group full">
-              <button disabled={savingUpdate}>
+              <button type="submit" disabled={savingUpdate}>
                 {savingUpdate ? "Guardando..." : "Guardar actualización"}
               </button>
             </div>
@@ -523,7 +553,7 @@ export default function ProjectDetail({ projectId, onBack }) {
                 placeholder="Describe brevemente qué contiene esta evidencia."
               />
 
-              <button disabled={savingEvidence}>
+              <button type="submit" disabled={savingEvidence}>
                 {savingEvidence ? "Agregando..." : "Agregar evidencia"}
               </button>
             </form>
