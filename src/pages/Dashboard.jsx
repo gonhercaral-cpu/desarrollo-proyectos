@@ -5,12 +5,20 @@ import MyProjects from "./MyProjects";
 import AllProjects from "./AllProjects";
 import ProjectDetail from "./ProjectDetail";
 import EditProject from "./EditProject";
+import ExecutiveDashboard from "./ExecutiveDashboard";
 
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
 
-  const [page, setPage] = useState("my-projects");
+  const [page, setPage] = useState(
+    isAdmin ? "executive-dashboard" : "my-projects"
+  );
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+
+  function goToPage(nextPage) {
+    setSelectedProjectId(null);
+    setPage(nextPage);
+  }
 
   function openProject(projectId) {
     setSelectedProjectId(projectId);
@@ -28,15 +36,32 @@ export default function Dashboard() {
   }
 
   function renderPage() {
-    if (page === "create-project") {
+    if (page === "executive-dashboard" && isAdmin) {
+      return <ExecutiveDashboard onOpenProject={openProject} />;
+    }
+
+    if (page === "create-project" && isAdmin) {
       return <CreateProject />;
     }
 
-    if (page === "all-projects") {
+    if (page === "all-projects" && isAdmin) {
       return <AllProjects onOpenProject={openProject} />;
     }
 
     if (page === "edit-project") {
+      if (!selectedProjectId) {
+        return (
+          <div className="card">
+            <h2>No se seleccionó ningún proyecto</h2>
+            <p>Regresa al listado de proyectos y selecciona uno para editarlo.</p>
+
+            <button onClick={backToProjects}>
+              Volver a proyectos
+            </button>
+          </div>
+        );
+      }
+
       return (
         <EditProject
           projectId={selectedProjectId}
@@ -51,6 +76,19 @@ export default function Dashboard() {
     }
 
     if (page === "project-detail") {
+      if (!selectedProjectId) {
+        return (
+          <div className="card">
+            <h2>No se seleccionó ningún proyecto</h2>
+            <p>Regresa al listado de proyectos y selecciona uno para verlo.</p>
+
+            <button onClick={backToProjects}>
+              Volver a proyectos
+            </button>
+          </div>
+        );
+      }
+
       return (
         <ProjectDetail
           projectId={selectedProjectId}
@@ -79,17 +117,35 @@ export default function Dashboard() {
         </div>
 
         <nav>
-          <button onClick={() => setPage("my-projects")}>
+          {isAdmin && (
+            <button
+              className={page === "executive-dashboard" ? "active" : ""}
+              onClick={() => goToPage("executive-dashboard")}
+            >
+              Dashboard ejecutivo
+            </button>
+          )}
+
+          <button
+            className={page === "my-projects" ? "active" : ""}
+            onClick={() => goToPage("my-projects")}
+          >
             Mis proyectos
           </button>
 
           {isAdmin && (
             <>
-              <button onClick={() => setPage("all-projects")}>
+              <button
+                className={page === "all-projects" ? "active" : ""}
+                onClick={() => goToPage("all-projects")}
+              >
                 Todos los proyectos
               </button>
 
-              <button onClick={() => setPage("create-project")}>
+              <button
+                className={page === "create-project" ? "active" : ""}
+                onClick={() => goToPage("create-project")}
+              >
                 Alta de proyecto
               </button>
             </>

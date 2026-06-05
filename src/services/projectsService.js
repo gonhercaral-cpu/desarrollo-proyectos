@@ -407,3 +407,15 @@ export async function updateProjectAdmin(projectId, projectData, currentUser) {
     comment: "El administrador editó la información general del proyecto.",
   });
 }
+
+export async function getDashboardProjects() {
+  const projectsRef = collection(db, PROJECTS_COLLECTION);
+  const q = query(projectsRef, orderBy("deadline", "asc"));
+
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  }));
+}

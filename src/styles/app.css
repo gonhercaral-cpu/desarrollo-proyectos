@@ -165,8 +165,10 @@ input:focus {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .sidebar {
@@ -222,8 +224,9 @@ input:focus {
   text-align: left;
 }
 
-.sidebar button:hover {
-  background: rgba(255, 255, 255, 0.18);
+.sidebar button:hover,
+.sidebar button.active {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .logout-button {
@@ -236,6 +239,10 @@ input:focus {
 
 .main-content {
   padding: 32px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .main-content h2 {
@@ -250,6 +257,9 @@ input:focus {
   box-shadow: var(--shadow);
   padding: 24px;
   margin-top: 20px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .card h3 {
@@ -260,17 +270,6 @@ input:focus {
   color: var(--muted);
 }
 
-@media (max-width: 800px) {
-  .login-card,
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .login-info,
-  .login-form {
-    padding: 30px;
-  }
-}
 .page-description {
   color: var(--muted);
   max-width: 850px;
@@ -338,10 +337,16 @@ select:focus {
   margin-bottom: 18px;
 }
 
+.table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .data-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
-  overflow: hidden;
 }
 
 .data-table th {
@@ -353,6 +358,7 @@ select:focus {
   background: #f8fafc;
   padding: 13px 12px;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .data-table td {
@@ -360,12 +366,14 @@ select:focus {
   border-bottom: 1px solid var(--border);
   vertical-align: top;
   font-size: 14px;
+  color: var(--text);
 }
 
 .data-table td strong {
   display: block;
   color: var(--primary);
   margin-bottom: 5px;
+  line-height: 1.35;
 }
 
 .data-table td span {
@@ -373,6 +381,10 @@ select:focus {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.35;
+}
+
+.data-table button {
+  white-space: nowrap;
 }
 
 .details-grid {
@@ -422,19 +434,6 @@ select:focus {
   padding-top: 18px;
 }
 
-@media (max-width: 900px) {
-  .form-grid,
-  .details-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .data-table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-}
-
 .file-preview {
   display: block;
   margin-top: 8px;
@@ -461,4 +460,140 @@ select:focus {
 .danger-button {
   background: #fee2e2 !important;
   color: #991b1b !important;
+}
+
+.executive-dashboard {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.dashboard-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.metric-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  min-width: 0;
+}
+
+.metric-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.metric-card strong {
+  display: block;
+  color: var(--primary);
+  font-size: 30px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.metric-card small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metric-danger {
+  border-left: 5px solid #b42318;
+}
+
+.metric-danger strong {
+  color: #b42318;
+}
+
+.metric-warning {
+  border-left: 5px solid #b7791f;
+}
+
+.metric-warning strong {
+  color: #b7791f;
+}
+
+.metric-success {
+  border-left: 5px solid #2f855a;
+}
+
+.metric-success strong {
+  color: #2f855a;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .form-grid,
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .login-card,
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .login-info,
+  .login-form {
+    padding: 30px;
+  }
+
+  .sidebar {
+    padding: 22px;
+  }
+
+  .main-content {
+    padding: 22px;
+  }
+}
+
+@media (max-width: 700px) {
+  .dashboard-header {
+    flex-direction: column;
+  }
+
+  .dashboard-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-table {
+    min-width: 680px;
+  }
 }
