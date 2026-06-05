@@ -31,4 +31,19 @@ export const PROJECT_STATUSES = [
   "Cancelado",
 ];
 
+export const COLLABORATOR_STATUSES = [
+  "Asignado",
+  "En planeación",
+  "En proceso",
+  "En espera de información",
+  "Listo para revisión",
+  "Pausado",
+];
+
+export const ADMIN_REVIEW_STATUSES = [
+  "Correcciones solicitadas",
+  "Finalizado",
+  "Cancelado",
+];
+
 export const PRIORITIES = ["Alta", "Media", "Baja"];

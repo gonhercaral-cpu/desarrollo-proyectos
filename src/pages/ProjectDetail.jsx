@@ -8,7 +8,24 @@ import {
   updateProjectStatus,
 } from "../services/projectsService";
 import { uploadEvidenceFile } from "../services/storageService";
-import { PROJECT_STATUSES } from "../data/catalogs";
+import {
+  COLLABORATOR_STATUSES,
+  PROJECT_STATUSES,
+} from "../data/catalogs";
+
+const CLOSED_STATUSES = ["Finalizado", "Cancelado"];
+
+const EVIDENCE_REQUIRED_STATUSES = [
+  "Listo para revisión",
+  "Aprobado para entrega",
+  "Finalizado",
+];
+
+const ADMIN_ONLY_STATUSES = [
+  "Aprobado para entrega",
+  "Finalizado",
+  "Cancelado",
+];
 
 export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const { profile, isAdmin } = useAuth();
@@ -70,11 +87,91 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     }
   }, [projectId]);
 
+  function isProjectClosed() {
+    return CLOSED_STATUSES.includes(project?.status);
+  }
+
   function canUpdateProject() {
+    if (isProjectClosed()) {
+      return false;
+    }
+
     return isAdmin || project?.assignedToUid === profile?.uid;
   }
 
+  function canAddEvidence() {
+    if (isProjectClosed()) {
+      return false;
+    }
+
+    return isAdmin || project?.assignedToUid === profile?.uid;
+  }
+
+  function shouldShowAdministrativeReview() {
+    return isAdmin && project?.status?.trim() === "Listo para revisión";
+  }
+
+  function getAvailableStatuses() {
+    if (isAdmin) {
+      return PROJECT_STATUSES;
+    }
+
+    if (
+      Array.isArray(COLLABORATOR_STATUSES) &&
+      COLLABORATOR_STATUSES.length > 0
+    ) {
+      return COLLABORATOR_STATUSES;
+    }
+
+    return PROJECT_STATUSES.filter(
+      (status) => !ADMIN_ONLY_STATUSES.includes(status)
+    );
+  }
+
+  function hasEvidenceForStatusChange() {
+    return (
+      evidence.length > 0 ||
+      Boolean(evidenceForm.link) ||
+      Boolean(selectedFile)
+    );
+  }
+
+  function validateStatusRules() {
+    const selectedStatus = updateForm.status;
+    const progressNumber = Number(updateForm.progress);
+
+    if (isProjectClosed()) {
+      return "Este proyecto ya está cerrado y no se puede actualizar.";
+    }
+
+    if (!isAdmin && ADMIN_ONLY_STATUSES.includes(selectedStatus)) {
+      return "Solo un administrador puede aprobar, finalizar o cancelar un proyecto.";
+    }
+
+    if (
+      EVIDENCE_REQUIRED_STATUSES.includes(selectedStatus) &&
+      !hasEvidenceForStatusChange()
+    ) {
+      return "Para marcar este estado, agrega un link o selecciona un archivo de evidencia.";
+    }
+
+    if (selectedStatus === "Finalizado" && progressNumber < 100) {
+      return "Para finalizar el proyecto, el avance debe estar en 100%.";
+    }
+
+    if (progressNumber < 0 || progressNumber > 100) {
+      return "El avance debe estar entre 0% y 100%.";
+    }
+
+    return "";
+  }
+
   function handleEditProjectClick() {
+    if (isProjectClosed()) {
+      setMessage("Este proyecto ya está cerrado y no se puede editar.");
+      return;
+    }
+
     if (typeof onEditProject === "function") {
       onEditProject(projectId);
       return;
@@ -174,33 +271,67 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     return uploadEvidenceFile(projectId, selectedFile, profile);
   }
 
-  async function handleUpdateSubmit(event) {
-    event.preventDefault();
+  async function handleAdministrativeReview(newStatus) {
     setMessage("");
 
-    const requiresEvidence = [
-      "Listo para revisión",
-      "Aprobado para entrega",
-      "Finalizado",
-    ].includes(updateForm.status);
+    if (!isAdmin) {
+      setMessage("Solo un administrador puede hacer la revisión administrativa.");
+      return;
+    }
 
-    if (
-      requiresEvidence &&
-      evidence.length === 0 &&
-      !evidenceForm.link &&
-      !selectedFile
-    ) {
-      setMessage(
-        "Para marcar este estado, agrega un link o selecciona un archivo de evidencia."
-      );
+    if (isProjectClosed()) {
+      setMessage("Este proyecto ya está cerrado y no se puede revisar.");
+      return;
+    }
+
+    if (project.status?.trim() !== "Listo para revisión") {
+      setMessage("Este proyecto todavía no está listo para revisión.");
       return;
     }
 
     setSavingUpdate(true);
 
     try {
-      await updateProjectStatus(projectId, updateForm, profile);
+      await updateProjectStatus(
+        projectId,
+        {
+          status: newStatus,
+          progress:
+            newStatus === "Aprobado para entrega"
+              ? 100
+              : Number(project.progress || 0),
+          comment:
+            newStatus === "Aprobado para entrega"
+              ? "El proyecto fue aprobado administrativamente."
+              : "Se solicitaron correcciones al responsable del proyecto.",
+        },
+        profile
+      );
 
+      setMessage("Revisión administrativa guardada correctamente.");
+      await loadProjectData();
+    } catch (error) {
+      console.error(error);
+      setMessage("No se pudo guardar la revisión administrativa.");
+    } finally {
+      setSavingUpdate(false);
+    }
+  }
+
+  async function handleUpdateSubmit(event) {
+    event.preventDefault();
+    setMessage("");
+
+    const validationMessage = validateStatusRules();
+
+    if (validationMessage) {
+      setMessage(validationMessage);
+      return;
+    }
+
+    setSavingUpdate(true);
+
+    try {
       const uploadedFileData = await uploadSelectedFileIfNeeded();
 
       if (evidenceForm.link || uploadedFileData) {
@@ -225,6 +356,15 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         resetEvidenceForm();
       }
 
+      await updateProjectStatus(
+        projectId,
+        {
+          ...updateForm,
+          progress: Number(updateForm.progress),
+        },
+        profile
+      );
+
       setMessage("Proyecto actualizado correctamente.");
       await loadProjectData();
     } catch (error) {
@@ -238,6 +378,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   async function handleEvidenceSubmit(event) {
     event.preventDefault();
     setMessage("");
+
+    if (isProjectClosed()) {
+      setMessage("Este proyecto ya está cerrado y no se puede agregar evidencia.");
+      return;
+    }
 
     if (!evidenceForm.link && !selectedFile) {
       setMessage("Agrega un link o selecciona un archivo como evidencia.");
@@ -301,7 +446,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         ← Volver
       </button>
 
-      {isAdmin && (
+      {isAdmin && !isProjectClosed() && (
         <button
           type="button"
           className="secondary-button"
@@ -315,6 +460,61 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       <p className="page-description">{project.description}</p>
 
       {message && <div className="message-box">{message}</div>}
+
+      {isProjectClosed() && (
+        <div className="message-box">
+          Este proyecto está cerrado con el estado:{" "}
+          <strong>{project.status}</strong>. Ya no se pueden registrar
+          actualizaciones ni evidencias.
+        </div>
+      )}
+
+      {shouldShowAdministrativeReview() && (
+        <div className="card">
+          <h3>Revisión administrativa</h3>
+
+          <p>
+            Este proyecto fue marcado como{" "}
+            <strong>Listo para revisión</strong>. Revisa la evidencia subida
+            por el responsable antes de aprobarlo o solicitar correcciones.
+          </p>
+
+          {evidence.length === 0 ? (
+            <div className="message-box">
+              Este proyecto todavía no tiene evidencia registrada. Antes de
+              aprobarlo, revisa que el responsable haya subido archivos o links
+              de evidencia.
+            </div>
+          ) : (
+            <p>
+              Evidencias registradas: <strong>{evidence.length}</strong>
+            </p>
+          )}
+
+          <div className="button-row">
+            <button
+              type="button"
+              onClick={() =>
+                handleAdministrativeReview("Aprobado para entrega")
+              }
+              disabled={savingUpdate || evidence.length === 0}
+            >
+              {savingUpdate ? "Guardando..." : "Aprobar para entrega"}
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                handleAdministrativeReview("Correcciones solicitadas")
+              }
+              disabled={savingUpdate}
+            >
+              {savingUpdate ? "Guardando..." : "Solicitar correcciones"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="details-grid">
         <div className="card">
@@ -380,7 +580,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 value={updateForm.status}
                 onChange={handleUpdateChange}
               >
-                {PROJECT_STATUSES.map((status) => (
+                {getAvailableStatuses().map((status) => (
                   <option key={status} value={status}>
                     {status}
                   </option>
@@ -413,6 +613,10 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
             <div className="form-group full">
               <h4>Evidencia opcional en esta actualización</h4>
+              <small>
+                Será obligatoria si marcas el proyecto como Listo para revisión,
+                Aprobado para entrega o Finalizado.
+              </small>
             </div>
 
             <div className="form-group">
@@ -512,7 +716,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             </div>
           )}
 
-          {canUpdateProject() && (
+          {canAddEvidence() && (
             <form onSubmit={handleEvidenceSubmit} className="evidence-form">
               <h4>Agregar evidencia</h4>
 
