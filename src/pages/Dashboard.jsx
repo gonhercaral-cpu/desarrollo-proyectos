@@ -14,28 +14,58 @@ export default function Dashboard() {
     isAdmin ? "executive-dashboard" : "my-projects"
   );
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
 
   function goToPage(nextPage) {
     setSelectedProjectId(null);
     setPage(nextPage);
+    setProfileMenuOpen(false);
+    setProfilePanelOpen(false);
   }
 
   function openProject(projectId) {
     setSelectedProjectId(projectId);
     setPage("project-detail");
+    setProfileMenuOpen(false);
+    setProfilePanelOpen(false);
   }
 
   function editProject(projectId) {
     setSelectedProjectId(projectId);
     setPage("edit-project");
+    setProfileMenuOpen(false);
+    setProfilePanelOpen(false);
   }
 
   function backToProjects() {
     setSelectedProjectId(null);
     setPage(isAdmin ? "all-projects" : "my-projects");
+    setProfileMenuOpen(false);
+    setProfilePanelOpen(false);
+  }
+
+  function handleViewProfile() {
+    setProfilePanelOpen(true);
+    setProfileMenuOpen(false);
+  }
+
+  function handleLogout() {
+    setProfileMenuOpen(false);
+    logout();
   }
 
   function renderPage() {
+    if (profilePanelOpen) {
+      return (
+        <ProfilePage
+          profile={profile}
+          isAdmin={isAdmin}
+          onClose={() => setProfilePanelOpen(false)}
+        />
+      );
+    }
+
     if (page === "executive-dashboard" && isAdmin) {
       return <ExecutiveDashboard onOpenProject={openProject} />;
     }
@@ -45,7 +75,12 @@ export default function Dashboard() {
     }
 
     if (page === "all-projects" && isAdmin) {
-      return <AllProjects onOpenProject={openProject} />;
+      return (
+        <AllProjects
+          onOpenProject={openProject}
+          onEditProject={editProject}
+        />
+      );
     }
 
     if (page === "edit-project") {
@@ -53,11 +88,11 @@ export default function Dashboard() {
         return (
           <div className="card">
             <h2>No se seleccionó ningún proyecto</h2>
-            <p>Regresa al listado de proyectos y selecciona uno para editarlo.</p>
+            <p>
+              Regresa al listado de proyectos y selecciona uno para editarlo.
+            </p>
 
-            <button onClick={backToProjects}>
-              Volver a proyectos
-            </button>
+            <button onClick={backToProjects}>Volver a proyectos</button>
           </div>
         );
       }
@@ -65,12 +100,8 @@ export default function Dashboard() {
       return (
         <EditProject
           projectId={selectedProjectId}
-          onBack={() => {
-            setPage("project-detail");
-          }}
-          onSaved={() => {
-            setPage("project-detail");
-          }}
+          onBack={() => setPage("project-detail")}
+          onSaved={() => setPage("project-detail")}
         />
       );
     }
@@ -82,9 +113,7 @@ export default function Dashboard() {
             <h2>No se seleccionó ningún proyecto</h2>
             <p>Regresa al listado de proyectos y selecciona uno para verlo.</p>
 
-            <button onClick={backToProjects}>
-              Volver a proyectos
-            </button>
+            <button onClick={backToProjects}>Volver a proyectos</button>
           </div>
         );
       }
@@ -101,63 +130,228 @@ export default function Dashboard() {
     return <MyProjects onOpenProject={openProject} />;
   }
 
+  function isNavActive(navPage) {
+    if (navPage === "all-projects") {
+      return (
+        page === "all-projects" ||
+        page === "project-detail" ||
+        page === "edit-project"
+      );
+    }
+
+    return page === navPage;
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
-          <small>Active English School</small>
-          <h1>Desarrollo de Proyectos</h1>
+        <div className="sidebar-brand-panel">
+          <img
+            src="/active-logo.png"
+            alt="Active English School"
+            className="sidebar-logo"
+          />
+
+          <h1>Active English School</h1>
+
+          <div className="sidebar-divider" />
+
+          <h2>
+            Desarrollo de
+            <br />
+            Proyectos
+          </h2>
         </div>
 
-        <div className="user-box">
-          <strong>{profile?.name || "Usuario sin perfil"}</strong>
-          <span>
-            {profile?.role || "Sin rol"} · {profile?.area || "Sin área"}
-          </span>
-        </div>
-
-        <nav>
+        <nav className="sidebar-nav">
           {isAdmin && (
             <button
-              className={page === "executive-dashboard" ? "active" : ""}
+              className={isNavActive("executive-dashboard") ? "active" : ""}
               onClick={() => goToPage("executive-dashboard")}
             >
+              <span className="nav-icon">▦</span>
               Dashboard ejecutivo
             </button>
           )}
 
           <button
-            className={page === "my-projects" ? "active" : ""}
+            className={isNavActive("my-projects") ? "active" : ""}
             onClick={() => goToPage("my-projects")}
           >
+            <span className="nav-icon">▱</span>
             Mis proyectos
           </button>
 
           {isAdmin && (
             <>
               <button
-                className={page === "all-projects" ? "active" : ""}
+                className={isNavActive("all-projects") ? "active" : ""}
                 onClick={() => goToPage("all-projects")}
               >
+                <span className="nav-icon">☰</span>
                 Todos los proyectos
               </button>
 
               <button
-                className={page === "create-project" ? "active" : ""}
+                className={isNavActive("create-project") ? "active" : ""}
                 onClick={() => goToPage("create-project")}
               >
+                <span className="nav-icon">＋</span>
                 Alta de proyecto
               </button>
             </>
           )}
         </nav>
 
-        <button className="logout-button" onClick={logout}>
-          Cerrar sesión
-        </button>
+        <div className="sidebar-footer">
+          <div className="sidebar-footer-icon">▥</div>
+
+          <div>
+            <strong>Desarrollo de Proyectos</strong>
+            <span>Área administrativa</span>
+          </div>
+        </div>
       </aside>
 
-      <main className="main-content">{renderPage()}</main>
+      <main className="main-content">
+        <TopProfileBar
+          profile={profile}
+          isAdmin={isAdmin}
+          profileMenuOpen={profileMenuOpen}
+          setProfileMenuOpen={setProfileMenuOpen}
+          onViewProfile={handleViewProfile}
+          onLogout={handleLogout}
+        />
+
+        {renderPage()}
+      </main>
     </div>
   );
+}
+
+function TopProfileBar({
+  profile,
+  isAdmin,
+  profileMenuOpen,
+  setProfileMenuOpen,
+  onViewProfile,
+  onLogout,
+}) {
+  return (
+    <div className="top-profile-bar">
+      <div className="top-profile-spacer" />
+
+      <div className="profile-menu-wrapper">
+        <button
+          type="button"
+          className="profile-circle-button"
+          onClick={() => setProfileMenuOpen((current) => !current)}
+        >
+          <span>{getInitials(profile?.name)}</span>
+        </button>
+
+        {profileMenuOpen && (
+          <div className="profile-dropdown">
+            <div className="profile-dropdown-header">
+              <div className="profile-dropdown-avatar">
+                {getInitials(profile?.name)}
+              </div>
+
+              <div>
+                <strong>{profile?.name || "Usuario sin perfil"}</strong>
+                <span>{profile?.email || "Sin correo registrado"}</span>
+              </div>
+            </div>
+
+            <div className="profile-dropdown-info">
+              <span>{isAdmin ? "Administrador" : profile?.role || "Usuario"}</span>
+              <span>{profile?.area || "Sin área"}</span>
+            </div>
+
+            <button type="button" onClick={onViewProfile}>
+              Ver mi perfil
+            </button>
+
+            <button type="button" className="profile-logout" onClick={onLogout}>
+              Cerrar sesión
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProfilePage({ profile, isAdmin, onClose }) {
+  return (
+    <div className="visual-page">
+      <div className="visual-page-header">
+        <div>
+          <h2>Mi perfil</h2>
+          <p>Consulta la información de tu usuario dentro del sistema.</p>
+        </div>
+
+        <div className="visual-page-actions">
+          <button className="visual-outline-button" onClick={onClose}>
+            ← Volver
+          </button>
+        </div>
+      </div>
+
+      <section className="profile-page-card">
+        <div className="profile-page-hero">
+          <div className="profile-page-avatar">
+            {getInitials(profile?.name)}
+          </div>
+
+          <div>
+            <h3>{profile?.name || "Usuario sin perfil"}</h3>
+            <p>{profile?.email || "Sin correo registrado"}</p>
+
+            <div className="profile-page-badges">
+              <span>{isAdmin ? "Administrador" : profile?.role || "Sin rol"}</span>
+              <span>{profile?.area || "Sin área"}</span>
+              <span>{profile?.active === false ? "Inactivo" : "Activo"}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="profile-info-grid">
+          <ProfileInfoItem label="Nombre" value={profile?.name} />
+          <ProfileInfoItem label="Correo" value={profile?.email} />
+          <ProfileInfoItem
+            label="Rol"
+            value={isAdmin ? "Administrador" : profile?.role}
+          />
+          <ProfileInfoItem label="Área" value={profile?.area} />
+          <ProfileInfoItem
+            label="Estado"
+            value={profile?.active === false ? "Inactivo" : "Activo"}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProfileInfoItem({ label, value }) {
+  return (
+    <div className="profile-info-item">
+      <span>{label}</span>
+      <strong>{value || "Sin información"}</strong>
+    </div>
+  );
+}
+
+function getInitials(name = "") {
+  const initials = String(name)
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return initials || "U";
 }

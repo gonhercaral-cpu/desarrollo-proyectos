@@ -21,15 +21,19 @@ export default function App() {
   if (!profile) {
     return (
       <div className="loading-screen">
-        <h2>Usuario sin perfil</h2>
-        <p>
-          Tu cuenta existe en Firebase Authentication, pero todavía no tiene
-          perfil en Firestore.
-        </p>
-        <p>
-          Revisa que exista un documento en la colección <strong>users</strong>{" "}
-          con este correo.
-        </p>
+        <div className="card">
+          <h2>Usuario sin perfil</h2>
+
+          <p>
+            Tu cuenta existe en Firebase Authentication, pero todavía no tiene
+            perfil en Firestore.
+          </p>
+
+          <p>
+            Revisa que exista un documento en la colección{" "}
+            <strong>users</strong> con este correo.
+          </p>
+        </div>
       </div>
     );
   }
