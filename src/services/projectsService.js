@@ -33,6 +33,7 @@ export const PROJECT_LOG_TYPES = {
   STATUS_CHANGED: "STATUS_CHANGED",
   PROGRESS_CHANGED: "PROGRESS_CHANGED",
   EVIDENCE_UPLOADED: "EVIDENCE_UPLOADED",
+  EVIDENCE_REVIEWED: "EVIDENCE_REVIEWED",
   COMMENT_ADDED: "COMMENT_ADDED",
   REVIEW_REQUESTED: "REVIEW_REQUESTED",
   CORRECTIONS_REQUESTED: "CORRECTIONS_REQUESTED",
@@ -223,9 +224,7 @@ function getStatusLogType(newStatus) {
 }
 
 function parseProjectDate(value) {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
 
   if (typeof value === "string") {
     const date = new Date(`${value}T00:00:00`);
@@ -244,9 +243,7 @@ function parseProjectDate(value) {
 function isSameMonthAndYear(value, referenceDate = new Date()) {
   const date = parseProjectDate(value);
 
-  if (!date) {
-    return false;
-  }
+  if (!date) return false;
 
   return (
     date.getFullYear() === referenceDate.getFullYear() &&
@@ -257,9 +254,7 @@ function isSameMonthAndYear(value, referenceDate = new Date()) {
 function getDaysDifference(deadline) {
   const date = parseProjectDate(deadline);
 
-  if (!date) {
-    return null;
-  }
+  if (!date) return null;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -298,15 +293,11 @@ function getProjectClosedDate(project) {
 }
 
 function isProjectStale(project, staleDays = 7) {
-  if (isHistoricalProject(project)) {
-    return false;
-  }
+  if (isHistoricalProject(project)) return false;
 
   const updatedDate = parseProjectDate(project?.updatedAt || project?.createdAt);
 
-  if (!updatedDate) {
-    return false;
-  }
+  if (!updatedDate) return false;
 
   const now = new Date();
   const diff = now.getTime() - updatedDate.getTime();
@@ -338,17 +329,9 @@ function buildWorkloadByResponsible(projects) {
     item.active += 1;
     item.progressTotal += Number(project.progress || 0);
 
-    if (isProjectReadyForReview(project)) {
-      item.review += 1;
-    }
-
-    if (isProjectOverdue(project)) {
-      item.overdue += 1;
-    }
-
-    if (isProjectHighPriority(project)) {
-      item.highPriority += 1;
-    }
+    if (isProjectReadyForReview(project)) item.review += 1;
+    if (isProjectOverdue(project)) item.overdue += 1;
+    if (isProjectHighPriority(project)) item.highPriority += 1;
 
     item.averageProgress =
       item.active === 0 ? 0 : Math.round(item.progressTotal / item.active);
@@ -389,17 +372,9 @@ function buildWorkloadByArea(projects) {
     item.active += 1;
     item.progressTotal += Number(project.progress || 0);
 
-    if (isProjectReadyForReview(project)) {
-      item.review += 1;
-    }
-
-    if (isProjectOverdue(project)) {
-      item.overdue += 1;
-    }
-
-    if (isProjectHighPriority(project)) {
-      item.highPriority += 1;
-    }
+    if (isProjectReadyForReview(project)) item.review += 1;
+    if (isProjectOverdue(project)) item.overdue += 1;
+    if (isProjectHighPriority(project)) item.highPriority += 1;
 
     item.averageProgress =
       item.active === 0 ? 0 : Math.round(item.progressTotal / item.active);
@@ -474,6 +449,151 @@ function buildExecutiveAlerts(projects) {
 
 function countLogsByType(logs, type) {
   return logs.filter((log) => log.type === type).length;
+}
+
+function getEvidenceIdentity(evidence) {
+  if (!evidence) return "";
+
+  return (
+    evidence.id ||
+    evidence.evidenceId ||
+    evidence.filePath ||
+    evidence.downloadUrl ||
+    evidence.fileName ||
+    evidence.name ||
+    ""
+  );
+}
+
+function normalizeEvidenceTarget(targetEvidence) {
+  if (typeof targetEvidence === "number") {
+    return {
+      index: targetEvidence,
+      identity: "",
+    };
+  }
+
+  if (typeof targetEvidence === "string") {
+    return {
+      index: null,
+      identity: targetEvidence,
+    };
+  }
+
+  return {
+    index:
+      typeof targetEvidence?.index === "number"
+        ? targetEvidence.index
+        : typeof targetEvidence?.evidenceIndex === "number"
+        ? targetEvidence.evidenceIndex
+        : null,
+    identity: getEvidenceIdentity(targetEvidence),
+  };
+}
+
+function updateEvidenceListReviewStatus(list, targetEvidence, reviewData) {
+  if (!Array.isArray(list)) {
+    return list;
+  }
+
+  const target = normalizeEvidenceTarget(targetEvidence);
+
+  return list.map((item, index) => {
+    const itemIdentity = getEvidenceIdentity(item);
+
+    const matchesByIndex = target.index !== null && index === target.index;
+    const matchesByIdentity =
+      target.identity && itemIdentity && target.identity === itemIdentity;
+
+    if (!matchesByIndex && !matchesByIdentity) {
+      return item;
+    }
+
+    return {
+      ...item,
+      ...reviewData,
+    };
+  });
+}
+
+function findEvidenceInProject(project, targetEvidence) {
+  const target = normalizeEvidenceTarget(targetEvidence);
+
+  const evidenceCollections = [
+    project?.evidenceFiles,
+    project?.evidences,
+    project?.evidence,
+    project?.files,
+    project?.attachments,
+  ];
+
+  for (const list of evidenceCollections) {
+    if (!Array.isArray(list)) continue;
+
+    if (target.index !== null && list[target.index]) {
+      return list[target.index];
+    }
+
+    const found = list.find((item) => {
+      const itemIdentity = getEvidenceIdentity(item);
+      return target.identity && itemIdentity && target.identity === itemIdentity;
+    });
+
+    if (found) return found;
+  }
+
+  if (Array.isArray(project?.advances)) {
+    for (const advance of project.advances) {
+      const files = Array.isArray(advance.files) ? advance.files : [];
+
+      if (target.index !== null && files[target.index]) {
+        return files[target.index];
+      }
+
+      const found = files.find((item) => {
+        const itemIdentity = getEvidenceIdentity(item);
+        return target.identity && itemIdentity && target.identity === itemIdentity;
+      });
+
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function updateEvidenceReviewInAdvances(advances, targetEvidence, reviewData) {
+  if (!Array.isArray(advances)) {
+    return advances;
+  }
+
+  const target = normalizeEvidenceTarget(targetEvidence);
+
+  return advances.map((advance) => {
+    if (!Array.isArray(advance.files)) {
+      return advance;
+    }
+
+    return {
+      ...advance,
+      files: advance.files.map((file, index) => {
+        const fileIdentity = getEvidenceIdentity(file);
+
+        const matchesByIndex = target.index !== null && index === target.index;
+        const matchesByIdentity =
+          target.identity && fileIdentity && target.identity === fileIdentity;
+
+        if (!matchesByIndex && !matchesByIdentity) {
+          return file;
+        }
+
+        return {
+          ...file,
+          ...reviewData,
+        };
+      }),
+    };
+  });
 }
 
 export async function addProjectLog({
@@ -814,11 +934,9 @@ export async function updateProjectStatus(projectId, updateData, currentUser) {
 
   await addProjectUpdate({
     projectId,
-
     userUid: currentUserUid,
     userEmail: currentUser.email || "",
     userName: currentUser.name || "",
-
     oldStatus: project.status,
     newStatus,
     progress: shouldCloseProject ? 100 : newProgress,
@@ -1103,14 +1221,44 @@ export async function addProjectEvidence(evidenceData, currentUser) {
   const currentUserUid = getCurrentUserUid(currentUser);
   const evidenceRef = collection(db, EVIDENCE_COLLECTION);
 
-  await addDoc(evidenceRef, {
+  const normalizedEvidenceData = {
     ...evidenceData,
+    reviewStatus: evidenceData.reviewStatus || "pending",
+    reviewedAt: evidenceData.reviewedAt || null,
+    reviewedByUid: evidenceData.reviewedByUid || "",
+    reviewedByEmail: evidenceData.reviewedByEmail || "",
+    reviewedByName: evidenceData.reviewedByName || "",
+    reviewComment: evidenceData.reviewComment || "",
+  };
+
+  await addDoc(evidenceRef, {
+    ...normalizedEvidenceData,
 
     userUid: currentUserUid,
     userEmail: currentUser.email || "",
     userName: currentUser.name || "",
 
     createdAt: serverTimestamp(),
+  });
+
+  const existingEvidenceFiles = Array.isArray(project.evidenceFiles)
+    ? project.evidenceFiles
+    : [];
+
+  const projectRef = doc(db, PROJECTS_COLLECTION, evidenceData.projectId);
+
+  await updateDoc(projectRef, {
+    evidenceFiles: [
+      ...existingEvidenceFiles,
+      {
+        ...normalizedEvidenceData,
+        uploadedAt: serverTimestamp(),
+        userUid: currentUserUid,
+        userEmail: currentUser.email || "",
+        userName: currentUser.name || "",
+      },
+    ],
+    updatedAt: serverTimestamp(),
   });
 
   await addProjectLog({
@@ -1125,8 +1273,178 @@ export async function addProjectEvidence(evidenceData, currentUser) {
       fileName: evidenceData.fileName || "",
       fileType: evidenceData.fileType || "",
       filePath: evidenceData.filePath || "",
+      reviewStatus: normalizedEvidenceData.reviewStatus,
     },
   });
+}
+
+export async function updateEvidenceReviewStatus(
+  projectId,
+  targetEvidence,
+  reviewStatus,
+  currentUser,
+  reviewComment = ""
+) {
+  requireAdmin(currentUser);
+
+  if (!projectId) {
+    throw new Error("Falta el ID del proyecto.");
+  }
+
+  if (!["pending", "approved", "rejected"].includes(reviewStatus)) {
+    throw new Error("Estado de revisión no válido.");
+  }
+
+  const project = await getProjectById(projectId);
+
+  if (!project) {
+    throw new Error("Proyecto no encontrado.");
+  }
+
+  const targetFound = findEvidenceInProject(project, targetEvidence);
+
+  if (!targetFound) {
+    throw new Error("No se encontró la evidencia dentro del proyecto.");
+  }
+
+  const userAuditData = getUserAuditData(currentUser);
+  const reviewedAt = new Date();
+
+  const reviewData = {
+    reviewStatus,
+    reviewedAt,
+    reviewedByUid: userAuditData.uid,
+    reviewedByEmail: userAuditData.email,
+    reviewedByName: userAuditData.name || userAuditData.email,
+    reviewComment: reviewComment || "",
+  };
+
+  const updatedEvidenceFiles = updateEvidenceListReviewStatus(
+    project.evidenceFiles,
+    targetEvidence,
+    reviewData
+  );
+
+  const updatedEvidences = updateEvidenceListReviewStatus(
+    project.evidences,
+    targetEvidence,
+    reviewData
+  );
+
+  const updatedEvidence = updateEvidenceListReviewStatus(
+    project.evidence,
+    targetEvidence,
+    reviewData
+  );
+
+  const updatedFiles = updateEvidenceListReviewStatus(
+    project.files,
+    targetEvidence,
+    reviewData
+  );
+
+  const updatedAttachments = updateEvidenceListReviewStatus(
+    project.attachments,
+    targetEvidence,
+    reviewData
+  );
+
+  const updatedAdvances = updateEvidenceReviewInAdvances(
+    project.advances,
+    targetEvidence,
+    reviewData
+  );
+
+  const reviewLabel =
+    reviewStatus === "approved"
+      ? "aprobó"
+      : reviewStatus === "rejected"
+      ? "rechazó"
+      : "marcó como pendiente";
+
+  const fileName =
+    targetFound.fileName ||
+    targetFound.name ||
+    targetFound.originalFileName ||
+    "una evidencia";
+
+  const historyItem = {
+    type: "Evidencia",
+    title: "Revisión de evidencia",
+    description: `${
+      userAuditData.name || userAuditData.email || "Un administrador"
+    } ${reviewLabel} la evidencia ${fileName}.`,
+    createdAt: reviewedAt,
+    createdByName: userAuditData.name || userAuditData.email || "Administrador",
+    createdByEmail: userAuditData.email || "",
+  };
+
+  const projectRef = doc(db, PROJECTS_COLLECTION, projectId);
+
+  const updateData = {
+    updatedAt: serverTimestamp(),
+    history: Array.isArray(project.history)
+      ? [...project.history, historyItem]
+      : [historyItem],
+  };
+
+  if (Array.isArray(project.evidenceFiles)) {
+    updateData.evidenceFiles = updatedEvidenceFiles;
+  }
+
+  if (Array.isArray(project.evidences)) {
+    updateData.evidences = updatedEvidences;
+  }
+
+  if (Array.isArray(project.evidence)) {
+    updateData.evidence = updatedEvidence;
+  }
+
+  if (Array.isArray(project.files)) {
+    updateData.files = updatedFiles;
+  }
+
+  if (Array.isArray(project.attachments)) {
+    updateData.attachments = updatedAttachments;
+  }
+
+  if (Array.isArray(project.advances)) {
+    updateData.advances = updatedAdvances;
+  }
+
+  await updateDoc(projectRef, updateData);
+
+  await addProjectLog({
+    projectId,
+    type: PROJECT_LOG_TYPES.EVIDENCE_REVIEWED,
+    title: "Evidencia revisada",
+    description: `${
+      userAuditData.name || userAuditData.email || "Un administrador"
+    } ${reviewLabel} la evidencia ${fileName}.`,
+    currentUser,
+    metadata: {
+      fileName,
+      reviewStatus,
+      reviewComment: reviewComment || "",
+    },
+  });
+
+  return {
+    ...project,
+    ...updateData,
+    evidenceFiles: Array.isArray(project.evidenceFiles)
+      ? updatedEvidenceFiles
+      : project.evidenceFiles,
+    evidences: Array.isArray(project.evidences)
+      ? updatedEvidences
+      : project.evidences,
+    evidence: Array.isArray(project.evidence) ? updatedEvidence : project.evidence,
+    files: Array.isArray(project.files) ? updatedFiles : project.files,
+    attachments: Array.isArray(project.attachments)
+      ? updatedAttachments
+      : project.attachments,
+    advances: Array.isArray(project.advances) ? updatedAdvances : project.advances,
+  };
 }
 
 export async function getProjectEvidence(projectId) {
@@ -1237,9 +1555,9 @@ export async function getDashboardProjects() {
 
   const snapshot = await getDocs(q);
 
-  const projects = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
+  const projects = snapshot.docs.map((document) => ({
+    id: document.id,
+    ...document.data(),
   }));
 
   return sortByDeadlineAsc(
@@ -1256,6 +1574,7 @@ export async function getExecutiveDashboardData() {
   const activeProjects = projects.filter(
     (project) => !isHistoricalProject(project)
   );
+
   const historicalProjects = projects.filter((project) =>
     isHistoricalProject(project)
   );
@@ -1263,12 +1582,15 @@ export async function getExecutiveDashboardData() {
   const finishedProjects = historicalProjects.filter((project) =>
     isProjectFinished(project)
   );
+
   const cancelledProjects = historicalProjects.filter((project) =>
     isProjectCancelled(project)
   );
+
   const deletedProjects = historicalProjects.filter((project) =>
     isProjectDeleted(project)
   );
+
   const archivedProjects = historicalProjects.filter(
     (project) => project.archived === true || project.status === "Archivado"
   );

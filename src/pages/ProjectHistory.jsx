@@ -4,6 +4,10 @@ import {
   getProjectHistory,
   restoreProject,
 } from "../services/projectsService";
+import {
+  calculateAutomaticProgress,
+  getProgressLabel,
+} from "../utils/progressUtils";
 
 export default function ProjectHistory({ onOpenProject }) {
   const { profile, isAdmin } = useAuth();
@@ -106,6 +110,35 @@ export default function ProjectHistory({ onOpenProject }) {
     return "No registrado";
   }
 
+  function getProjectProgressForHistory(project) {
+    const historyType = getHistoryType(project);
+
+    if (historyType === "Finalizado") {
+      return 100;
+    }
+
+    if (historyType === "Cancelado") {
+      return calculateAutomaticProgress({
+        ...project,
+        status: project.previousStatus || project.originalStatus || project.status,
+      });
+    }
+
+    if (historyType === "Eliminado") {
+      return calculateAutomaticProgress({
+        ...project,
+        status:
+          project.previousStatus ||
+          project.originalStatus ||
+          project.statusBeforeDelete ||
+          project.lastStatus ||
+          project.status,
+      });
+    }
+
+    return calculateAutomaticProgress(project);
+  }
+
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const search = searchText.trim().toLowerCase();
@@ -129,8 +162,9 @@ export default function ProjectHistory({ onOpenProject }) {
   const metrics = useMemo(() => {
     return {
       total: projects.length,
-      deleted: projects.filter((project) => getHistoryType(project) === "Eliminado")
-        .length,
+      deleted: projects.filter(
+        (project) => getHistoryType(project) === "Eliminado"
+      ).length,
       finished: projects.filter(
         (project) => getHistoryType(project) === "Finalizado"
       ).length,
@@ -266,6 +300,8 @@ export default function ProjectHistory({ onOpenProject }) {
             <tbody>
               {filteredProjects.map((project) => {
                 const historyType = getHistoryType(project);
+                const automaticProgress = getProjectProgressForHistory(project);
+                const progressLabel = getProgressLabel(automaticProgress);
 
                 return (
                   <tr key={project.id}>
@@ -310,13 +346,16 @@ export default function ProjectHistory({ onOpenProject }) {
 
                     <td>
                       <div className="table-progress">
-                        <strong>{Number(project.progress || 0)}%</strong>
+                        <div className="table-progress-top">
+                          <strong>{automaticProgress}%</strong>
+                          <small>{progressLabel}</small>
+                        </div>
 
                         <div className="area-progress-track">
                           <div
                             className="area-progress-fill"
                             style={{
-                              width: `${Number(project.progress || 0)}%`,
+                              width: `${automaticProgress}%`,
                             }}
                           />
                         </div>

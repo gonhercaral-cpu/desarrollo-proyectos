@@ -4,6 +4,7 @@ import {
   getActiveProjects,
   softDeleteProject,
 } from "../services/projectsService";
+import { calculateAutomaticProgress } from "../utils/progressUtils";
 
 export default function AllProjects({ onOpenProject, onEditProject }) {
   const { profile, isAdmin } = useAuth();
@@ -209,7 +210,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
       const item = map.get(area);
 
       item.total += 1;
-      item.progressTotal += Number(project.progress || 0);
+      item.progressTotal += calculateAutomaticProgress(project);
     });
 
     return Array.from(map.values())
@@ -542,13 +543,13 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
 
                       <td>
                         <div className="table-progress">
-                          <strong>{Number(project.progress || 0)}%</strong>
+                          <strong>{calculateAutomaticProgress(project)}%</strong>
 
                           <div className="area-progress-track">
                             <div
                               className="area-progress-fill"
                               style={{
-                                width: `${Number(project.progress || 0)}%`,
+                                width: `${calculateAutomaticProgress(project)}%`,
                               }}
                             />
                           </div>

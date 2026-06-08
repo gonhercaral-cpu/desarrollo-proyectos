@@ -1,5 +1,5 @@
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { storage } from "./firebase";
+import { auth, storage } from "./firebase";
 
 const MAX_FILE_SIZE_MB = 25;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -14,8 +14,22 @@ const ALLOWED_FILE_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ];
 
-function getCurrentUserUid(currentUser) {
-  return currentUser?.uid || currentUser?.id || "";
+function getAuthenticatedUser() {
+  const firebaseUser = auth.currentUser;
+
+  if (!firebaseUser) {
+    throw new Error("No hay un usuario autenticado en Firebase Auth.");
+  }
+
+  if (!firebaseUser.uid) {
+    throw new Error("No se encontró el UID del usuario autenticado.");
+  }
+
+  if (!firebaseUser.email) {
+    throw new Error("No se encontró el correo del usuario autenticado.");
+  }
+
+  return firebaseUser;
 }
 
 function cleanFileName(fileName) {
@@ -41,29 +55,26 @@ function validateEvidenceFile(file) {
   }
 }
 
-export async function uploadEvidenceFile(projectId, file, currentUser) {
+export async function uploadEvidenceFile(projectId, file, currentUser = {}) {
   if (!projectId) {
     throw new Error("Falta el ID del proyecto.");
   }
 
-  const currentUserUid = getCurrentUserUid(currentUser);
-
-  if (!currentUserUid) {
-    throw new Error("No se encontró el UID del usuario actual.");
-  }
-
-  if (!currentUser?.email) {
-    throw new Error("No se encontró el correo del usuario actual.");
-  }
-
   validateEvidenceFile(file);
+
+  const firebaseUser = getAuthenticatedUser();
+
+  const currentUserUid = firebaseUser.uid;
+  const currentUserEmail = firebaseUser.email || currentUser.email || "";
+  const currentUserName =
+    currentUser.name ||
+    currentUser.displayName ||
+    firebaseUser.displayName ||
+    currentUserEmail;
 
   const timestamp = Date.now();
   const safeFileName = cleanFileName(file.name);
 
-  // Nueva ruta usando UID:
-  // evidence / projectId / userUid / archivo
-  // Esto ayuda a crear reglas de Storage más seguras.
   const filePath = `evidence/${projectId}/${currentUserUid}/${timestamp}_${safeFileName}`;
 
   const fileRef = ref(storage, filePath);
@@ -73,8 +84,8 @@ export async function uploadEvidenceFile(projectId, file, currentUser) {
     customMetadata: {
       projectId,
       uploadedByUid: currentUserUid,
-      uploadedByEmail: currentUser.email || "",
-      uploadedByName: currentUser.name || "",
+      uploadedByEmail: currentUserEmail,
+      uploadedByName: currentUserName,
       originalFileName: file.name,
     },
   });
@@ -89,7 +100,14 @@ export async function uploadEvidenceFile(projectId, file, currentUser) {
     downloadUrl,
 
     uploadedByUid: currentUserUid,
-    uploadedByEmail: currentUser.email || "",
-    uploadedByName: currentUser.name || "",
+    uploadedByEmail: currentUserEmail,
+    uploadedByName: currentUserName,
+
+    reviewStatus: "pending",
+    reviewedAt: null,
+    reviewedByUid: "",
+    reviewedByName: "",
+    reviewedByEmail: "",
+    reviewComment: "",
   };
 }

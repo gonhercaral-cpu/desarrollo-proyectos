@@ -1,8 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { getExecutiveDashboardData } from "../services/projectsService";
+import {
+  calculateAutomaticProgress,
+  getProgressLabel,
+} from "../utils/progressUtils";
+
+const EMPTY_DASHBOARD_DATA = {
+  metrics: {
+    active: 0,
+    overdue: 0,
+    review: 0,
+    finishedThisMonth: 0,
+    deleted: 0,
+    historical: 0,
+  },
+  projects: {
+    active: [],
+    overdue: [],
+    review: [],
+    recentlyClosed: [],
+  },
+  workloadByResponsible: [],
+  workloadByArea: [],
+  recentLogs: [],
+  alerts: [],
+};
 
 export default function ExecutiveDashboard({ onOpenProject }) {
-  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardData, setDashboardData] = useState(EMPTY_DASHBOARD_DATA);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -13,11 +38,15 @@ export default function ExecutiveDashboard({ onOpenProject }) {
 
     try {
       const data = await getExecutiveDashboardData();
-      setDashboardData(data);
+      setDashboardData(normalizeDashboardData(data));
       setLastUpdated(new Date());
     } catch (error) {
-      console.error(error);
-      setMessage("No se pudo cargar el dashboard ejecutivo.");
+      console.warn("No se pudo cargar el dashboard ejecutivo:", error);
+      setDashboardData(EMPTY_DASHBOARD_DATA);
+      setMessage(
+        "No se pudo cargar el dashboard ejecutivo. Revisa que tu usuario tenga rol de administrador y que las reglas de Firestore permitan leer proyectos, bitácora, avances y evidencias."
+      );
+      setLastUpdated(new Date());
     } finally {
       setLoading(false);
     }
@@ -27,8 +56,8 @@ export default function ExecutiveDashboard({ onOpenProject }) {
     loadDashboard();
   }, []);
 
-  const metrics = dashboardData?.metrics || {};
-  const projects = dashboardData?.projects || {};
+  const metrics = dashboardData?.metrics || EMPTY_DASHBOARD_DATA.metrics;
+  const projects = dashboardData?.projects || EMPTY_DASHBOARD_DATA.projects;
   const workloadByResponsible = dashboardData?.workloadByResponsible || [];
   const workloadByArea = dashboardData?.workloadByArea || [];
   const recentLogs = dashboardData?.recentLogs || [];
@@ -41,13 +70,41 @@ export default function ExecutiveDashboard({ onOpenProject }) {
       return 0;
     }
 
-    return Math.round(
-      activeProjects.reduce(
-        (total, project) => total + Number(project.progress || 0),
-        0
-      ) / activeProjects.length
-    );
+    return getAverageAutomaticProgress(activeProjects);
   }, [projects.active]);
+
+  const enhancedWorkloadByResponsible = useMemo(() => {
+    return workloadByResponsible.map((item) => {
+      const responsibleProjects = (projects.active || []).filter(
+        (project) =>
+          (project.assignedToName || "Sin responsable") === item.responsible
+      );
+
+      return {
+        ...item,
+        averageProgress:
+          responsibleProjects.length > 0
+            ? getAverageAutomaticProgress(responsibleProjects)
+            : Number(item.averageProgress || 0),
+      };
+    });
+  }, [workloadByResponsible, projects.active]);
+
+  const enhancedWorkloadByArea = useMemo(() => {
+    return workloadByArea.map((item) => {
+      const areaProjects = (projects.active || []).filter(
+        (project) => (project.responsibleArea || "Sin área") === item.area
+      );
+
+      return {
+        ...item,
+        averageProgress:
+          areaProjects.length > 0
+            ? getAverageAutomaticProgress(areaProjects)
+            : Number(item.averageProgress || 0),
+      };
+    });
+  }, [workloadByArea, projects.active]);
 
   const dueSoonProjects = useMemo(() => {
     const activeProjects = projects.active || [];
@@ -182,8 +239,8 @@ export default function ExecutiveDashboard({ onOpenProject }) {
             </div>
 
             <p>
-              El área tiene {metrics.active || 0} proyectos activos,{" "}
-              {metrics.historical || 0} proyectos en historial y{" "}
+              El área tiene {metrics.active || 0} proyectos activos, {" "}
+              {metrics.historical || 0} proyectos en historial y {" "}
               {metrics.review || 0} proyectos listos para revisión
               administrativa.
             </p>
@@ -198,18 +255,22 @@ export default function ExecutiveDashboard({ onOpenProject }) {
             <span>ⓘ</span>
           </div>
 
-          <div className="alerts-grid">
-            {alerts.slice(0, 3).map((alert) => (
-              <AlertCard
-                key={alert.type}
-                color={getAlertColor(alert)}
-                icon={getAlertIcon(alert)}
-                value={getAlertNumber(alert.title)}
-                title={alert.title}
-                detail={alert.detail}
-              />
-            ))}
-          </div>
+          {alerts.length === 0 ? (
+            <EmptyState text="No hay alertas ejecutivas por mostrar." />
+          ) : (
+            <div className="alerts-grid">
+              {alerts.slice(0, 3).map((alert, index) => (
+                <AlertCard
+                  key={alert.type || `${alert.title}-${index}`}
+                  color={getAlertColor(alert)}
+                  icon={getAlertIcon(alert)}
+                  value={getAlertNumber(alert.title)}
+                  title={alert.title || "Alerta"}
+                  detail={alert.detail || "Sin detalle registrado."}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </div>
 
@@ -332,7 +393,7 @@ export default function ExecutiveDashboard({ onOpenProject }) {
         <section className="visual-card">
           <SectionTitle color="blue" icon="👥" title="Carga por colaborador" />
 
-          {workloadByResponsible.length === 0 ? (
+          {enhancedWorkloadByResponsible.length === 0 ? (
             <EmptyState text="No hay proyectos activos asignados." />
           ) : (
             <div className="visual-table-wrap">
@@ -349,7 +410,7 @@ export default function ExecutiveDashboard({ onOpenProject }) {
                 </thead>
 
                 <tbody>
-                  {workloadByResponsible.map((item) => (
+                  {enhancedWorkloadByResponsible.map((item) => (
                     <tr key={item.responsible}>
                       <td>
                         <div className="collaborator-cell">
@@ -420,8 +481,7 @@ export default function ExecutiveDashboard({ onOpenProject }) {
                       </Badge>
 
                       <small>
-                        {log.userName || "Usuario"} ·{" "}
-                        {formatDate(log.createdAt)}
+                        {log.userName || "Usuario"} · {formatDate(log.createdAt)}
                       </small>
                     </div>
                   </div>
@@ -435,7 +495,7 @@ export default function ExecutiveDashboard({ onOpenProject }) {
       <section className="visual-card">
         <SectionTitle color="blue" icon="▦" title="Carga por área" />
 
-        {workloadByArea.length === 0 ? (
+        {enhancedWorkloadByArea.length === 0 ? (
           <EmptyState text="No hay proyectos activos por área." />
         ) : (
           <div className="visual-table-wrap">
@@ -452,7 +512,7 @@ export default function ExecutiveDashboard({ onOpenProject }) {
               </thead>
 
               <tbody>
-                {workloadByArea.map((item) => (
+                {enhancedWorkloadByArea.map((item) => (
                   <tr key={item.area}>
                     <td>{item.area}</td>
 
@@ -497,6 +557,39 @@ export default function ExecutiveDashboard({ onOpenProject }) {
   );
 }
 
+function normalizeDashboardData(data) {
+  return {
+    ...EMPTY_DASHBOARD_DATA,
+    ...(data || {}),
+    metrics: {
+      ...EMPTY_DASHBOARD_DATA.metrics,
+      ...(data?.metrics || {}),
+    },
+    projects: {
+      ...EMPTY_DASHBOARD_DATA.projects,
+      ...(data?.projects || {}),
+    },
+    workloadByResponsible: data?.workloadByResponsible || [],
+    workloadByArea: data?.workloadByArea || [],
+    recentLogs: data?.recentLogs || [],
+    alerts: data?.alerts || [],
+  };
+}
+
+
+function getAverageAutomaticProgress(projects = []) {
+  if (!Array.isArray(projects) || projects.length === 0) {
+    return 0;
+  }
+
+  const total = projects.reduce(
+    (sum, project) => sum + calculateAutomaticProgress(project),
+    0
+  );
+
+  return Math.round(total / projects.length);
+}
+
 function MetricCard({ icon, title, value, color }) {
   return (
     <div className={`metric-card visual-metric metric-${color}`}>
@@ -539,6 +632,9 @@ function SectionTitle({ color, icon, title, count }) {
 }
 
 function ProjectMiniCard({ project, icon, color, badge, badgeColor, onClick }) {
+  const automaticProgress = calculateAutomaticProgress(project);
+  const progressLabel = getProgressLabel(automaticProgress);
+
   return (
     <button className="project-mini-card" onClick={onClick}>
       <span className={`project-mini-icon project-mini-${color}`}>{icon}</span>
@@ -566,6 +662,20 @@ function ProjectMiniCard({ project, icon, color, badge, badgeColor, onClick }) {
             <small>Fecha límite</small>
             {project.deadline || "Sin fecha"}
           </span>
+        </div>
+
+        <div className="area-progress project-mini-progress">
+          <div className="project-mini-progress-top">
+            <strong>{automaticProgress}%</strong>
+            <small>{progressLabel}</small>
+          </div>
+
+          <div className="area-progress-track">
+            <div
+              className="area-progress-fill"
+              style={{ width: `${automaticProgress}%` }}
+            />
+          </div>
         </div>
       </div>
 
@@ -705,6 +815,8 @@ function getLogIcon(type) {
   if (type === "PROGRESS_CHANGED") return "◔";
   if (type === "EVIDENCE_UPLOADED") return "⇧";
   if (type === "COMMENT_ADDED") return "☰";
+  if (type === "ADVANCE_ADDED") return "▣";
+  if (type === "ADVANCE_COMMENT_ADDED") return "☰";
   if (type === "REVIEW_REQUESTED") return "⌕";
   if (type === "CORRECTIONS_REQUESTED") return "✎";
   if (type === "PROJECT_APPROVED") return "✓";
@@ -713,6 +825,7 @@ function getLogIcon(type) {
   if (type === "PROJECT_DELETED") return "🗑";
   if (type === "PROJECT_RESTORED") return "↺";
   if (type === "INTERNAL_NOTE_UPDATED") return "▤";
+  if (type === "INTERNAL_NOTE_ADDED") return "▤";
 
   return "•";
 }
@@ -725,7 +838,10 @@ function getLogBadgeColor(type) {
   if (type === "REVIEW_REQUESTED") return "gold";
   if (type === "CORRECTIONS_REQUESTED") return "purple";
   if (type === "EVIDENCE_UPLOADED") return "blue";
+  if (type === "ADVANCE_ADDED") return "blue";
+  if (type === "ADVANCE_COMMENT_ADDED") return "purple";
   if (type === "PROJECT_RESTORED") return "green";
+  if (type === "INTERNAL_NOTE_ADDED") return "gold";
 
   return "blue";
 }
@@ -738,6 +854,8 @@ function formatLogType(type = "") {
     PROGRESS_CHANGED: "Avance",
     EVIDENCE_UPLOADED: "Evidencia",
     COMMENT_ADDED: "Comentario",
+    ADVANCE_ADDED: "Avance",
+    ADVANCE_COMMENT_ADDED: "Comentario",
     REVIEW_REQUESTED: "Revisión",
     CORRECTIONS_REQUESTED: "Correcciones",
     PROJECT_APPROVED: "Aprobado",
@@ -746,6 +864,7 @@ function formatLogType(type = "") {
     PROJECT_DELETED: "Eliminado",
     PROJECT_RESTORED: "Restaurado",
     INTERNAL_NOTE_UPDATED: "Nota interna",
+    INTERNAL_NOTE_ADDED: "Nota interna",
   };
 
   return labels[type] || "Movimiento";

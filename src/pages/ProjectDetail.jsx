@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   arrayUnion,
+  collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   Timestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { uploadEvidenceFile } from "../services/storageService";
@@ -12,8 +17,10 @@ import { useAuth } from "../context/AuthContext";
 import {
   addProjectLog,
   getProjectLogs,
+  updateEvidenceReviewStatus,
   PROJECT_LOG_TYPES,
 } from "../services/projectsService";
+import { calculateAutomaticProgress } from "../utils/progressUtils";
 
 const PROJECT_STATUSES = [
   "Por iniciar",
@@ -62,6 +69,16 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const [savingInternalNotes, setSavingInternalNotes] = useState(false);
   const [message, setMessage] = useState("");
   const [projectLogs, setProjectLogs] = useState([]);
+  const [internalNotesHistory, setInternalNotesHistory] = useState([]);
+  const [loadingInternalNotes, setLoadingInternalNotes] = useState(false);
+  const [reviewingEvidenceKey, setReviewingEvidenceKey] = useState("");
+
+  const [newAdvance, setNewAdvance] = useState("");
+  const [advanceFiles, setAdvanceFiles] = useState([]);
+  const [publishingAdvance, setPublishingAdvance] = useState(false);
+  const [activeCommentTarget, setActiveCommentTarget] = useState(null);
+  const [advanceCommentDraft, setAdvanceCommentDraft] = useState("");
+  const [addingAdvanceComment, setAddingAdvanceComment] = useState(false);
 
   async function loadProject() {
     if (!projectId) return;
@@ -92,6 +109,12 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         console.warn("No se pudo cargar la bitácora formal:", logError);
         setProjectLogs([]);
       }
+
+      if (isAdmin) {
+        await loadInternalNotes(projectId);
+      } else {
+        setInternalNotesHistory([]);
+      }
     } catch (error) {
       console.error(error);
       setMessage("No se pudo cargar el detalle del proyecto.");
@@ -102,7 +125,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
   useEffect(() => {
     loadProject();
-  }, [projectId]);
+  }, [projectId, isAdmin]);
 
   function getCurrentUserForLog() {
     return {
@@ -127,6 +150,44 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       setProjectLogs(logs);
     } catch (error) {
       console.warn("No se pudo actualizar la bitácora formal:", error);
+    }
+  }
+
+  async function loadInternalNotes(targetProjectId = projectId) {
+    if (!targetProjectId || !isAdmin) {
+      setInternalNotesHistory([]);
+      return;
+    }
+
+    setLoadingInternalNotes(true);
+
+    try {
+      const notesRef = collection(db, "projectInternalNotes");
+      const notesQuery = query(notesRef, where("projectId", "==", targetProjectId));
+      const snapshot = await getDocs(notesQuery);
+
+      const notes = snapshot.docs
+        .map((document) => ({
+          id: document.id,
+          ...document.data(),
+        }))
+        .sort((a, b) => {
+          const dateA = getDateObject(a.createdAt);
+          const dateB = getDateObject(b.createdAt);
+
+          if (!dateA && !dateB) return 0;
+          if (!dateA) return 1;
+          if (!dateB) return -1;
+
+          return dateB.getTime() - dateA.getTime();
+        });
+
+      setInternalNotesHistory(notes);
+    } catch (error) {
+      console.warn("No se pudieron cargar las notas internas:", error);
+      setInternalNotesHistory([]);
+    } finally {
+      setLoadingInternalNotes(false);
     }
   }
 
@@ -270,6 +331,14 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           uploadedByUid: firebaseUser.uid,
           uploadedByName: profile?.name || firebaseUser?.email || "Usuario",
           uploadedByEmail: firebaseUser?.email || "",
+
+          // Toda evidencia nueva inicia pendiente de revisión administrativa.
+          reviewStatus: uploadedFile.reviewStatus || "pending",
+          reviewedAt: uploadedFile.reviewedAt || null,
+          reviewedByUid: uploadedFile.reviewedByUid || "",
+          reviewedByName: uploadedFile.reviewedByName || "",
+          reviewedByEmail: uploadedFile.reviewedByEmail || "",
+          reviewComment: uploadedFile.reviewComment || "",
         };
 
         uploadedItems.push(evidenceItem);
@@ -401,11 +470,274 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     }
   }
 
+
+  function handleAdvanceFilesChange(event) {
+    setAdvanceFiles(Array.from(event.target.files || []));
+  }
+
+  function removeAdvanceFile(fileIndex) {
+    setAdvanceFiles((current) =>
+      current.filter((_, index) => index !== fileIndex)
+    );
+  }
+
+  async function handlePublishAdvance(event) {
+    event.preventDefault();
+
+    const cleanAdvance = newAdvance.trim();
+
+    if (!project || (!cleanAdvance && advanceFiles.length === 0)) return;
+
+    if (isHistoricalProject(project)) {
+      setMessage("No se pueden publicar avances en un proyecto que está en historial.");
+      return;
+    }
+
+    setPublishingAdvance(true);
+    setMessage("");
+
+    try {
+      if (!firebaseUser?.uid) {
+        throw new Error("No se encontró el UID del usuario actual.");
+      }
+
+      const now = Timestamp.now();
+      const projectRef = doc(db, "projects", project.id);
+
+      const currentUserForUpload = {
+        ...firebaseUser,
+        uid: firebaseUser.uid,
+        email: firebaseUser.email || profile?.email || "",
+        name:
+          profile?.name ||
+          firebaseUser.displayName ||
+          firebaseUser.email ||
+          "Usuario",
+      };
+
+      const uploadedItems = [];
+
+      for (const file of advanceFiles) {
+        const uploadedFile = await uploadEvidenceFile(
+          project.id,
+          file,
+          currentUserForUpload,
+          profile
+        );
+
+        uploadedItems.push({
+          ...uploadedFile,
+          fileName: uploadedFile.fileName || file.name,
+          uploadedAt: now,
+          uploadedByUid: firebaseUser.uid,
+          uploadedByName: profile?.name || firebaseUser?.email || "Usuario",
+          uploadedByEmail: firebaseUser?.email || "",
+
+          // Toda evidencia nueva inicia pendiente de revisión administrativa.
+          reviewStatus: uploadedFile.reviewStatus || "pending",
+          reviewedAt: uploadedFile.reviewedAt || null,
+          reviewedByUid: uploadedFile.reviewedByUid || "",
+          reviewedByName: uploadedFile.reviewedByName || "",
+          reviewedByEmail: uploadedFile.reviewedByEmail || "",
+          reviewComment: uploadedFile.reviewComment || "",
+        });
+      }
+
+      const advanceItem = {
+        id: `advance-${Date.now()}`,
+        type: "advance",
+        text:
+          cleanAdvance ||
+          (uploadedItems.length === 1
+            ? `Se adjuntó la evidencia ${uploadedItems[0].fileName}.`
+            : `Se adjuntaron ${uploadedItems.length} evidencias.`),
+        files: uploadedItems,
+        authorUid: firebaseUser.uid,
+        authorName: profile?.name || firebaseUser?.email || "Usuario",
+        authorEmail: firebaseUser?.email || "",
+        createdAt: now,
+      };
+
+      const historyItem = {
+        type: "Avance",
+        title: "Avance publicado",
+        description: advanceItem.text,
+        createdAt: now,
+        createdByName: profile?.name || firebaseUser?.email || "Usuario",
+        createdByEmail: firebaseUser?.email || "",
+      };
+
+      const updateData = {
+        advances: arrayUnion(advanceItem),
+        updatedAt: now,
+        history: arrayUnion(historyItem),
+      };
+
+      if (uploadedItems.length > 0) {
+        updateData.evidenceFiles = arrayUnion(...uploadedItems);
+      }
+
+      await updateDoc(projectRef, updateData);
+
+      setProject((current) => ({
+        ...current,
+        advances: [...normalizeArray(current?.advances), advanceItem],
+        evidenceFiles:
+          uploadedItems.length > 0
+            ? [...normalizeArray(current?.evidenceFiles), ...uploadedItems]
+            : normalizeArray(current?.evidenceFiles),
+        updatedAt: now,
+        history: [...normalizeArray(current?.history), historyItem],
+      }));
+
+      await registerProjectLog({
+        type: PROJECT_LOG_TYPES.PROGRESS_CHANGED || PROJECT_LOG_TYPES.PROJECT_UPDATED,
+        title: "Avance publicado",
+        description: `${profile?.name || firebaseUser?.email || "Un usuario"} publicó un avance en el proyecto.`,
+        metadata: {
+          advance: advanceItem.text,
+          files: uploadedItems.map((item) => ({
+            fileName: item.fileName || "",
+            fileType: item.fileType || "",
+            filePath: item.filePath || "",
+          })),
+        },
+      });
+
+      setNewAdvance("");
+      setAdvanceFiles([]);
+      setMessage("Avance publicado correctamente.");
+    } catch (error) {
+      console.error(error);
+      setMessage(
+        error.message ||
+          "No se pudo publicar el avance. Revisa permisos de Firestore y Storage."
+      );
+    } finally {
+      setPublishingAdvance(false);
+    }
+  }
+
+  async function handleAddAdvanceComment(event, targetId) {
+    event.preventDefault();
+
+    const cleanComment = advanceCommentDraft.trim();
+
+    if (!cleanComment || !project || !targetId) return;
+
+    if (isHistoricalProject(project)) {
+      setMessage("No se pueden agregar comentarios a un proyecto que está en historial.");
+      return;
+    }
+
+    setAddingAdvanceComment(true);
+    setMessage("");
+
+    try {
+      const now = Timestamp.now();
+      const projectRef = doc(db, "projects", project.id);
+
+      const commentItem = {
+        text: cleanComment,
+        authorName: profile?.name || firebaseUser?.email || "Usuario",
+        authorEmail: firebaseUser?.email || "",
+        createdAt: now,
+        advanceId: targetId,
+        context: "advance",
+      };
+
+      const historyItem = {
+        type: "Comentario",
+        title: "Comentario en avance",
+        description: cleanComment,
+        createdAt: now,
+        createdByName: profile?.name || firebaseUser?.email || "Usuario",
+        createdByEmail: firebaseUser?.email || "",
+      };
+
+      await updateDoc(projectRef, {
+        comments: arrayUnion(commentItem),
+        history: arrayUnion(historyItem),
+        updatedAt: now,
+      });
+
+      setProject((current) => ({
+        ...current,
+        comments: [...normalizeArray(current?.comments), commentItem],
+        history: [...normalizeArray(current?.history), historyItem],
+        updatedAt: now,
+      }));
+
+      await registerProjectLog({
+        type: PROJECT_LOG_TYPES.COMMENT_ADDED,
+        title: "Comentario agregado",
+        description: `${profile?.name || firebaseUser?.email || "Un usuario"} comentó un avance del proyecto.`,
+        metadata: {
+          comment: cleanComment,
+          advanceId: targetId,
+        },
+      });
+
+      setAdvanceCommentDraft("");
+      setActiveCommentTarget(null);
+      setMessage("Comentario publicado correctamente.");
+    } catch (error) {
+      console.error(error);
+      setMessage("No se pudo publicar el comentario.");
+    } finally {
+      setAddingAdvanceComment(false);
+    }
+  }
+
+  async function handleReviewEvidence(file, reviewStatus) {
+    if (!project || !file || !isAdmin) return;
+
+    if (projectIsHistorical) {
+      setMessage("No se puede revisar evidencia de un proyecto que está en historial.");
+      return;
+    }
+
+    const evidenceKey = getEvidenceKey(file);
+    setReviewingEvidenceKey(`${evidenceKey}-${reviewStatus}`);
+    setMessage("");
+
+    try {
+      await updateEvidenceReviewStatus(
+        project.id,
+        file,
+        reviewStatus,
+        getCurrentUserForLog()
+      );
+
+      await loadProject();
+
+      if (reviewStatus === "approved") {
+        setMessage("Evidencia aprobada correctamente.");
+      } else if (reviewStatus === "rejected") {
+        setMessage("Evidencia rechazada correctamente.");
+      } else {
+        setMessage("La evidencia quedó pendiente de revisión.");
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage(error.message || "No se pudo actualizar la revisión de la evidencia.");
+    } finally {
+      setReviewingEvidenceKey("");
+    }
+  }
+
   async function handleSaveInternalNotes() {
     if (!project || !isAdmin) return;
 
     if (isHistoricalProject(project)) {
-      setMessage("No se pueden modificar notas internas de un proyecto que está en historial.");
+      setMessage("No se pueden agregar notas internas a un proyecto que está en historial.");
+      return;
+    }
+
+    const cleanNotes = internalNotesDraft.trim();
+
+    if (!cleanNotes) {
+      setMessage("Escribe una nota interna antes de guardarla.");
       return;
     }
 
@@ -414,47 +746,33 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     try {
       const now = Timestamp.now();
-      const projectRef = doc(db, "projects", project.id);
+      const currentUser = getCurrentUserForLog();
 
-      const cleanNotes = internalNotesDraft.trim();
-
-      const historyItem = {
-        type: "Nota interna",
-        title: "Notas internas actualizadas",
-        description:
-          "El administrador actualizó las notas internas del proyecto.",
+      const noteItem = {
+        projectId: project.id,
+        text: cleanNotes,
         createdAt: now,
-        createdByName: profile?.name || firebaseUser?.email || "Administrador",
-        createdByEmail: firebaseUser?.email || "",
+        createdByUid: currentUser.uid,
+        createdByName: currentUser.name || "Administrador",
+        createdByEmail: currentUser.email || "",
       };
 
-      await updateDoc(projectRef, {
-        internalNotes: cleanNotes,
-        updatedAt: now,
-        history: arrayUnion(historyItem),
-      });
+      const noteRef = await addDoc(collection(db, "projectInternalNotes"), noteItem);
 
-      setProject((current) => ({
-        ...current,
-        internalNotes: cleanNotes,
-        updatedAt: now,
-        history: [...normalizeArray(current?.history), historyItem],
-      }));
-
-      await registerProjectLog({
-        type: PROJECT_LOG_TYPES.INTERNAL_NOTE_UPDATED,
-        title: "Notas internas actualizadas",
-        description: `${profile?.name || firebaseUser?.email || "Un administrador"} actualizó las notas internas del proyecto.`,
-        metadata: {
-          hasInternalNotes: Boolean(cleanNotes),
+      setInternalNotesHistory((current) => [
+        {
+          id: noteRef.id,
+          ...noteItem,
         },
-      });
+        ...current,
+      ]);
 
+      setInternalNotesDraft("");
       setEditingInternalNotes(false);
-      setMessage("Notas internas actualizadas correctamente.");
+      setMessage("Nota interna agregada correctamente.");
     } catch (error) {
       console.error(error);
-      setMessage("No se pudieron guardar las notas internas.");
+      setMessage("No se pudo guardar la nota interna.");
     } finally {
       setSavingInternalNotes(false);
     }
@@ -489,8 +807,8 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       {
         type: "Actualización",
         createdByName: project?.assignedToName || "Sistema",
-        description: `Actualizó el avance del proyecto al ${Number(
-          project?.progress || 0
+        description: `Avance automático actual: ${calculateAutomaticProgress(
+          project
         )}%.`,
         createdAt: project?.updatedAt || project?.createdAt,
       },
@@ -525,29 +843,102 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     return normalizeArray(project?.comments).slice().reverse();
   }, [project]);
 
-  const internalNotes = useMemo(() => {
+  const advanceComments = useMemo(() => {
+    return comments.filter((comment) => comment.advanceId);
+  }, [comments]);
+
+  const generalComments = useMemo(() => {
+    return comments.filter((comment) => !comment.advanceId);
+  }, [comments]);
+
+  const advancesFeed = useMemo(() => {
+    const registeredAdvances = normalizeArray(project?.advances).map((advance, index) => ({
+      id: advance.id || `advance-${index}`,
+      type: "advance",
+      text: advance.text || advance.description || "Avance registrado.",
+      files: removeDuplicateFiles(normalizeArray(advance.files).map(normalizeFileItem)),
+      authorName:
+        advance.authorName ||
+        advance.createdByName ||
+        advance.uploadedByName ||
+        "Usuario",
+      authorEmail: advance.authorEmail || advance.createdByEmail || "",
+      createdAt: advance.createdAt || advance.uploadedAt || project?.updatedAt,
+    }));
+
+    const legacyEvidenceEntries = evidenceFiles.map((file, index) => ({
+      id: `evidence-${getFileName(file)}-${index}`,
+      type: "evidence",
+      text: `Se adjuntó la evidencia ${getFileName(file)}.`,
+      files: [file],
+      authorName:
+        file.uploadedByName ||
+        file.authorName ||
+        project?.assignedToName ||
+        "Usuario",
+      authorEmail: file.uploadedByEmail || "",
+      createdAt:
+        file.uploadedAt ||
+        file.createdAt ||
+        file.date ||
+        file.uploadDate ||
+        project?.updatedAt,
+      legacy: true,
+    }));
+
+    const legacyCommentEntries = generalComments.map((comment, index) => ({
+      id: `comment-${index}`,
+      type: "comment",
+      text: comment.text || comment.comment || "Comentario registrado.",
+      files: [],
+      authorName: comment.authorName || "Usuario",
+      authorEmail: comment.authorEmail || "",
+      createdAt: comment.createdAt,
+      legacy: true,
+    }));
+
+    const baseItems =
+      registeredAdvances.length > 0
+        ? registeredAdvances
+        : [...legacyEvidenceEntries, ...legacyCommentEntries];
+
+    return baseItems
+      .slice()
+      .sort((a, b) => {
+        const dateA = getDateObject(a.createdAt);
+        const dateB = getDateObject(b.createdAt);
+
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+
+        return dateB.getTime() - dateA.getTime();
+      });
+  }, [project, evidenceFiles, generalComments]);
+
+  const legacyInternalNotes = useMemo(() => {
     return (
       project?.internalNotes ||
       project?.adminNotes ||
       project?.notesInternal ||
       project?.privateNotes ||
-      project?.notes ||
       ""
     );
   }, [project]);
 
   useEffect(() => {
-    setInternalNotesDraft(internalNotes || "");
-  }, [internalNotes]);
+    setInternalNotesDraft("");
+  }, [project?.id]);
 
   const daysDifference = getDaysDifference(project?.deadline);
   const projectIsHistorical = isHistoricalProject(project);
   const isClosed = CLOSED_STATUSES.includes(project?.status) || projectIsHistorical;
   const isOverdue = daysDifference !== null && daysDifference < 0 && !isClosed;
+  const automaticProgress = calculateAutomaticProgress(project);
 
   const metrics = {
     daysLate: isOverdue ? Math.abs(daysDifference) : 0,
-    progress: Number(project?.progress || 0),
+    progress: automaticProgress,
     comments: comments.length,
     evidence: evidenceFiles.length,
     logs: formalLogItems.length,
@@ -579,25 +970,23 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   }
 
   return (
-    <div className="visual-page project-detail-page">
-      <div className="visual-page-header">
+    <div className="visual-page project-detail-page project-detail-redesign">
+      <div className="project-detail-topline">
         <div>
+          <span className="breadcrumb-line">
+            Inicio / Proyectos / {getProjectCode(project)} / Detalle
+          </span>
+
           <h2>Detalle de proyecto</h2>
-          <p>Todos los proyectos / Detalle de proyecto</p>
+          <p>
+            Consulta la información general, avances, evidencias y seguimiento
+            del proyecto.
+          </p>
         </div>
 
         <div className="visual-page-actions">
-          {isAdmin && !projectIsHistorical && (
-            <button
-              className="visual-outline-button"
-              onClick={() => onEditProject(project.id)}
-            >
-              ✎ Editar proyecto
-            </button>
-          )}
-
           <select
-            className="status-change-select"
+            className="status-change-select status-pill-select"
             value={project.status || ""}
             disabled={changingStatus || projectIsHistorical}
             onChange={(event) => handleStatusChange(event.target.value)}
@@ -612,6 +1001,15 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               </option>
             ))}
           </select>
+
+          {isAdmin && !projectIsHistorical && (
+            <button
+              className="visual-outline-button"
+              onClick={() => onEditProject(project.id)}
+            >
+              ✎ Editar proyecto
+            </button>
+          )}
 
           <button className="visual-outline-button" onClick={onBack}>
             ← Volver
@@ -634,298 +1032,383 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         </div>
       )}
 
-      <section className="project-hero-strip">
-        <span className="project-code">{getProjectCode(project)}</span>
+      <section className="visual-card project-hero-overview">
+        <div className="project-hero-content">
+          <div className="project-title-area">
+            <span className="project-code-badge">{getProjectCode(project)}</span>
+            <div>
+              <h3>{project.title || "Proyecto sin título"}</h3>
+              <p>
+                {project.shortDescription ||
+                  "Proyecto registrado para validar y dar seguimiento al flujo de trabajo desde la solicitud hasta el cierre."}
+              </p>
+            </div>
+          </div>
 
-        <h3>{project.title || "Proyecto sin título"}</h3>
+          <div className="hero-progress-area">
+            <div className="hero-progress-label">
+              <span>Avance general</span>
+              <strong>{automaticProgress}%</strong>
+            </div>
 
-        <div className="project-hero-badges">
-          <Badge color={isOverdue ? "red" : isClosed ? "green" : "blue"}>
-            {isOverdue
-              ? "◷ Atrasado"
-              : isClosed
-              ? "✓ Cerrado"
-              : project.status || "Sin estado"}
-          </Badge>
+            <div className="area-progress-track">
+              <div
+                className="area-progress-fill"
+                style={{ width: `${automaticProgress}%` }}
+              />
+            </div>
+          </div>
 
-          <Badge color={project.priority === "Alta" ? "red" : "gold"}>
-            ⚑ {project.priority || "Sin prioridad"}
-          </Badge>
+          <div className="hero-meta-grid">
+            <HeroMeta
+              icon="●"
+              label="Estado"
+              value={
+                isOverdue
+                  ? "Atrasado"
+                  : isClosed
+                  ? project.status
+                  : project.status || "Sin estado"
+              }
+              color={isOverdue ? "red" : isClosed ? "green" : "green"}
+            />
 
-          <Badge color="blue">▣ {project.responsibleArea || "Sin área"}</Badge>
+            <HeroMeta
+              icon="◷"
+              label="Fecha límite"
+              value={formatPlainDate(project.deadline)}
+              color="blue"
+            />
+
+            <HeroMeta
+              icon="⚑"
+              label="Prioridad"
+              value={project.priority || "Sin prioridad"}
+              color={project.priority === "Alta" ? "red" : "gold"}
+            />
+
+            <HeroMeta
+              icon="▣"
+              label="Área responsable"
+              value={project.responsibleArea || "Sin área"}
+              color="blue"
+            />
+          </div>
+        </div>
+
+        <div className="project-hero-illustration" aria-hidden="true">
+          <div className="illustration-board">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="illustration-plant" />
         </div>
       </section>
 
-      <div className="project-detail-layout">
-        <main className="project-detail-main">
-          <section className="visual-card project-summary-card">
-            <ProjectSteps status={project.status} />
+      <div className="project-detail-layout redesigned-detail-layout">
+        <main className="project-detail-main redesigned-detail-main">
+          <section className="visual-card description-focus-card">
+            <div className="description-focus-icon">▧</div>
 
-            <div className="project-summary-grid">
-              <div className="project-summary-left">
-                <div className="project-document-icon">▧</div>
-
-                <div>
-                  <h3>{project.title || "Proyecto sin título"}</h3>
-                  <p>
-                    {project.shortDescription ||
-                      "Proyecto registrado para validar y dar seguimiento al flujo de trabajo desde la solicitud hasta el cierre."}
-                  </p>
-                </div>
-
-                <div className="detail-progress-row">
-                  <span>Avance general</span>
-
-                  <div className="area-progress-track">
-                    <div
-                      className="area-progress-fill"
-                      style={{ width: `${Number(project.progress || 0)}%` }}
-                    />
-                  </div>
-
-                  <strong>{Number(project.progress || 0)}%</strong>
-                </div>
-              </div>
-
-              <div className="project-summary-info">
-                <InfoItem
-                  label="Área responsable"
-                  value={project.responsibleArea}
-                />
-                <InfoItem label="Solicitante" value={project.requesterName} />
-                <InfoItem
-                  label="Responsable del proyecto"
-                  value={project.assignedToName}
-                  avatar
-                />
-              </div>
-
-              <div className="project-summary-info">
-                <InfoItem
-                  label="Fecha de creación"
-                  value={formatDate(project.createdAt)}
-                />
-                <InfoItem
-                  label="Fecha límite"
-                  value={formatPlainDate(project.deadline)}
-                />
-
-                {isClosed && (
-                  <InfoItem
-                    label="Fecha de cierre"
-                    value={formatDate(project.closedAt)}
-                  />
-                )}
-
-                <div className="info-item">
-                  <span>Estado actual</span>
-                  <Badge color={isOverdue ? "red" : isClosed ? "green" : "blue"}>
-                    {isOverdue
-                      ? "Atrasado"
-                      : isClosed
-                      ? project.status
-                      : project.status || "Sin estado"}
-                  </Badge>
-                </div>
-
-                <div className="info-item">
-                  <span>Prioridad</span>
-                  <Badge color={project.priority === "Alta" ? "red" : "gold"}>
-                    {project.priority || "Sin prioridad"}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="visual-card">
-            <SectionTitle
-              icon="▧"
-              title="Descripción del proyecto"
-              color="red"
-            />
-
-            <p className="project-description-text">
-              {project.description ||
-                "Este proyecto no tiene descripción registrada."}
-            </p>
-          </section>
-
-          <section className="visual-card">
-            <div className="section-header-with-action">
+            <div>
               <SectionTitle
-                icon="⌘"
-                title="Evidencias y archivos"
+                icon=""
+                title="Descripción del proyecto"
                 color="blue"
-                count={evidenceFiles.length}
               />
 
-              {!projectIsHistorical && (
-                <label className="upload-evidence-button">
-                  ＋ {uploading ? "Subiendo..." : "Subir archivo"}
-                  <input
-                    type="file"
-                    multiple
-                    disabled={uploading || projectIsHistorical}
-                    onChange={handleUploadEvidence}
-                  />
-                </label>
-              )}
-            </div>
-
-            <div className="visual-table-wrap">
-              <table className="visual-table detail-files-table">
-                <thead>
-                  <tr>
-                    <th>Archivo</th>
-                    <th>Tipo</th>
-                    <th>Fecha de carga</th>
-                    <th>Subido por</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {evidenceFiles.map((file, index) => (
-                    <tr key={`${getFileName(file)}-${index}`}>
-                      <td>
-                        <div className="file-name-cell">
-                          <span
-                            className={`file-type-icon file-${getFileType(
-                              file
-                            )}`}
-                          >
-                            {getFileType(file).toUpperCase()}
-                          </span>
-
-                          <strong>{getFileName(file)}</strong>
-                        </div>
-                      </td>
-
-                      <td>
-                        <Badge color={getFileBadgeColor(file)}>
-                          {getFileType(file).toUpperCase()}
-                        </Badge>
-                      </td>
-
-                      <td>
-                        {formatDate(
-                          file.uploadedAt ||
-                            file.createdAt ||
-                            file.date ||
-                            file.uploadDate
-                        )}
-                      </td>
-
-                      <td>
-                        <div className="collaborator-cell">
-                          <span className="avatar-mini">
-                            {getInitials(
-                              file.uploadedByName ||
-                                file.authorName ||
-                                project.assignedToName ||
-                                "Usuario"
-                            )}
-                          </span>
-
-                          {file.uploadedByName ||
-                            file.authorName ||
-                            "Sin usuario"}
-                        </div>
-                      </td>
-
-                      <td>
-                        <div className="table-actions">
-                          {getFileUrl(file) ? (
-                            <>
-                              <a
-                                href={getFileUrl(file)}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Ver archivo
-                              </a>
-
-                              <a
-                                href={getFileUrl(file)}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Descargar
-                              </a>
-                            </>
-                          ) : (
-                            <span>Sin enlace</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {evidenceFiles.length === 0 && (
-                <EmptyState text="Aún no se han subido evidencias o archivos adjuntos." />
-              )}
+              <p className="project-description-text prominent-description">
+                {project.description ||
+                  "Este proyecto no tiene descripción registrada."}
+              </p>
             </div>
           </section>
 
-          <section className="visual-card">
-            <SectionTitle
-              icon="☵"
-              title="Comentarios del proyecto"
-              color="purple"
-              count={comments.length}
-            />
+          <section className="visual-card advances-card">
+            <div className="advances-header">
+              <div>
+                <SectionTitle
+                  icon="↗"
+                  title="Avances"
+                  color="blue"
+                  count={advancesFeed.length}
+                />
+                <p>
+                  Comparte avances, adjunta evidencia y conversa con el equipo
+                  desde una sola sección.
+                </p>
+              </div>
+            </div>
 
-            <form className="comment-form" onSubmit={handleAddComment}>
-              <textarea
-                value={newComment}
-                disabled={addingComment || projectIsHistorical}
-                onChange={(event) => setNewComment(event.target.value)}
-                placeholder={
-                  projectIsHistorical
-                    ? "Los comentarios están deshabilitados porque el proyecto está en historial."
-                    : "Escribe un comentario sobre este proyecto..."
-                }
-                rows={4}
-              />
+            <form className="advance-composer" onSubmit={handlePublishAdvance}>
+              <span className="avatar-mini advance-avatar">
+                {getInitials(profile?.name || firebaseUser?.email || "Usuario")}
+              </span>
 
-              <div className="comment-form-actions">
-                <button
-                  type="submit"
-                  className="visual-primary-button"
-                  disabled={
-                    addingComment || projectIsHistorical || !newComment.trim()
+              <div className="advance-composer-box">
+                <textarea
+                  value={newAdvance}
+                  disabled={publishingAdvance || projectIsHistorical}
+                  onChange={(event) => setNewAdvance(event.target.value)}
+                  placeholder={
+                    projectIsHistorical
+                      ? "Los avances están deshabilitados porque el proyecto está en historial."
+                      : "Describe tu avance..."
                   }
-                >
-                  {addingComment ? "Publicando..." : "Publicar comentario"}
-                </button>
+                  rows={3}
+                />
+
+                <div className="advance-composer-footer">
+                  <label className="attach-evidence-chip">
+                    ⌘ Adjuntar evidencia
+                    <input
+                      type="file"
+                      multiple
+                      disabled={publishingAdvance || projectIsHistorical}
+                      onChange={handleAdvanceFilesChange}
+                    />
+                  </label>
+
+                  <span className="advance-help-text">
+                    PDF, DOC, XLS, PPT, imágenes (máx. 20 MB)
+                  </span>
+
+                  <button
+                    type="submit"
+                    className="visual-primary-button publish-advance-button"
+                    disabled={
+                      publishingAdvance ||
+                      projectIsHistorical ||
+                      (!newAdvance.trim() && advanceFiles.length === 0)
+                    }
+                  >
+                    {publishingAdvance ? "Publicando..." : "Publicar avance"}
+                  </button>
+                </div>
+
+                {advanceFiles.length > 0 && (
+                  <div className="selected-advance-files">
+                    {advanceFiles.map((file, index) => (
+                      <button
+                        type="button"
+                        key={`${file.name}-${index}`}
+                        onClick={() => removeAdvanceFile(index)}
+                      >
+                        <span>{getFileType({ fileName: file.name }).toUpperCase()}</span>
+                        {file.name}
+                        <b>×</b>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </form>
 
-            {comments.length === 0 ? (
-              <EmptyState text="Aún no hay comentarios publicados." small />
+            {advancesFeed.length === 0 ? (
+              <EmptyState text="Aún no hay avances, evidencias o comentarios registrados." />
             ) : (
-              <div className="comment-list full-comment-list">
-                {comments.map((comment, index) => (
-                  <div className="comment-item" key={index}>
-                    <span className="avatar-mini">
-                      {getInitials(comment.authorName || "Usuario")}
-                    </span>
+              <div className="advance-timeline">
+                {advancesFeed.map((advance) => {
+                  const commentsForAdvance = advanceComments.filter(
+                    (comment) => comment.advanceId === advance.id
+                  );
 
-                    <div>
-                      <strong>{comment.authorName || "Usuario"}</strong>
-                      <p>{comment.text || comment.comment}</p>
-                      <small>{formatDate(comment.createdAt)}</small>
-                    </div>
-                  </div>
-                ))}
+                  return (
+                    <article className="advance-item" key={advance.id}>
+                      <span className="timeline-dot" />
+
+                      <div className="advance-entry">
+                        <div className="advance-entry-header">
+                          <span className="avatar-mini">
+                            {getInitials(advance.authorName || "Usuario")}
+                          </span>
+
+                          <div>
+                            <strong>{advance.authorName || "Usuario"}</strong>
+                            <div className="advance-entry-meta">
+                              <small>{formatDate(advance.createdAt)}</small>
+                              <Badge color={advance.type === "comment" ? "gold" : "blue"}>
+                                {advance.type === "comment"
+                                  ? "Comentario"
+                                  : advance.type === "evidence"
+                                  ? "Evidencia"
+                                  : "Avance"}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="advance-comment-toggle"
+                            disabled={projectIsHistorical}
+                            onClick={() => {
+                              setActiveCommentTarget(
+                                activeCommentTarget === advance.id ? null : advance.id
+                              );
+                              setAdvanceCommentDraft("");
+                            }}
+                          >
+                            Comentar
+                          </button>
+                        </div>
+
+                        <p>{advance.text}</p>
+
+                        {advance.files.length > 0 && (
+                          <div className="advance-files-grid">
+                            {advance.files.map((file, fileIndex) => {
+                              const evidenceKey = getEvidenceKey(file);
+                              const approveKey = `${evidenceKey}-approved`;
+                              const rejectKey = `${evidenceKey}-rejected`;
+                              const pendingKey = `${evidenceKey}-pending`;
+
+                              return (
+                                <div
+                                  key={`${getFileName(file)}-${fileIndex}`}
+                                  className="advance-file-review-card"
+                                >
+                                  <a
+                                    href={getFileUrl(file)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="advance-file-chip"
+                                  >
+                                    <span
+                                      className={`file-type-icon file-${getFileType(file)}`}
+                                    >
+                                      {getFileType(file).toUpperCase()}
+                                    </span>
+
+                                    <div>
+                                      <strong>{getFileName(file)}</strong>
+                                      <small>{getFileUrl(file) ? "Abrir archivo" : "Sin enlace"}</small>
+                                    </div>
+                                  </a>
+
+                                  <div className="evidence-review-footer">
+                                    <Badge color={getEvidenceReviewBadgeColor(file.reviewStatus)}>
+                                      {getEvidenceReviewLabel(file.reviewStatus)}
+                                    </Badge>
+
+                                    {file.reviewedByName && (
+                                      <small className="evidence-review-meta">
+                                        Revisó: {file.reviewedByName}
+                                      </small>
+                                    )}
+                                  </div>
+
+                                  {isAdmin && !projectIsHistorical && (
+                                    <div className="evidence-review-actions">
+                                      <button
+                                        type="button"
+                                        className="evidence-review-button evidence-approve-button"
+                                        disabled={reviewingEvidenceKey === approveKey}
+                                        onClick={() =>
+                                          handleReviewEvidence(file, "approved")
+                                        }
+                                      >
+                                        {reviewingEvidenceKey === approveKey
+                                          ? "Aprobando..."
+                                          : "Aprobar"}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        className="evidence-review-button evidence-reject-button"
+                                        disabled={reviewingEvidenceKey === rejectKey}
+                                        onClick={() =>
+                                          handleReviewEvidence(file, "rejected")
+                                        }
+                                      >
+                                        {reviewingEvidenceKey === rejectKey
+                                          ? "Rechazando..."
+                                          : "Rechazar"}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        className="evidence-review-button evidence-pending-button"
+                                        disabled={reviewingEvidenceKey === pendingKey}
+                                        onClick={() =>
+                                          handleReviewEvidence(file, "pending")
+                                        }
+                                      >
+                                        {reviewingEvidenceKey === pendingKey
+                                          ? "Actualizando..."
+                                          : "Pendiente"}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="advance-entry-actions">
+                          <span>☵ {commentsForAdvance.length} comentario(s)</span>
+                        </div>
+
+                        {activeCommentTarget === advance.id && (
+                          <form
+                            className="advance-comment-form"
+                            onSubmit={(event) =>
+                              handleAddAdvanceComment(event, advance.id)
+                            }
+                          >
+                            <textarea
+                              rows={2}
+                              value={advanceCommentDraft}
+                              disabled={addingAdvanceComment || projectIsHistorical}
+                              onChange={(event) =>
+                                setAdvanceCommentDraft(event.target.value)
+                              }
+                              placeholder="Escribe un comentario sobre este avance..."
+                            />
+
+                            <div>
+                              <button
+                                type="submit"
+                                className="visual-primary-button"
+                                disabled={
+                                  addingAdvanceComment ||
+                                  projectIsHistorical ||
+                                  !advanceCommentDraft.trim()
+                                }
+                              >
+                                {addingAdvanceComment ? "Publicando..." : "Publicar comentario"}
+                              </button>
+                            </div>
+                          </form>
+                        )}
+
+                        {commentsForAdvance.length > 0 && (
+                          <div className="advance-comments-list">
+                            {commentsForAdvance.map((comment, index) => (
+                              <div className="advance-comment" key={index}>
+                                <span className="avatar-mini">
+                                  {getInitials(comment.authorName || "Usuario")}
+                                </span>
+
+                                <div>
+                                  <strong>{comment.authorName || "Usuario"}</strong>
+                                  <p>{comment.text || comment.comment}</p>
+                                  <small>{formatDate(comment.createdAt)}</small>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
 
-          <section className="visual-card">
+          <section className="visual-card formal-log-card">
             <SectionTitle
               icon="◷"
               title="Bitácora formal del proyecto"
@@ -936,27 +1419,25 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             {formalLogItems.length === 0 ? (
               <EmptyState text="Aún no hay registros en la bitácora." small />
             ) : (
-              <div className="project-history-list formal-log-list">
-                {formalLogItems.map((item, index) => (
-                  <div className="history-row formal-log-row" key={item.id || index}>
-                    <span className="history-dot" />
+              <div className="formal-log-table">
+                <div className="formal-log-table-head">
+                  <span>Fecha y hora</span>
+                  <span>Tipo</span>
+                  <span>Descripción</span>
+                  <span>Registrado por</span>
+                </div>
 
-                    <span className="avatar-mini">
-                      {getInitials(getLogUserName(item))}
-                    </span>
-
-                    <strong>{getLogUserName(item)}</strong>
+                {formalLogItems.slice(0, 6).map((item, index) => (
+                  <div className="formal-log-table-row" key={item.id || index}>
+                    <span>{formatDate(item.createdAt)}</span>
 
                     <Badge color={getProjectLogColor(item.type)}>
                       {getProjectLogLabel(item.type)}
                     </Badge>
 
-                    <div className="formal-log-content">
-                      <b>{item.title || "Actualización registrada"}</b>
-                      <p>{item.description || "Actualización registrada."}</p>
-                    </div>
+                    <p>{item.description || item.title || "Actualización registrada."}</p>
 
-                    <small>{formatDate(item.createdAt)}</small>
+                    <strong>{getLogUserName(item)}</strong>
                   </div>
                 ))}
               </div>
@@ -964,14 +1445,16 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           </section>
         </main>
 
-        <aside className="project-detail-side">
-          <section className="visual-card">
-            <SectionTitle icon="👥" title="Responsables" color="blue" />
+        <aside className="project-detail-side redesigned-detail-side">
+          <section className="visual-card side-compact-card">
+            <div className="side-card-title-row">
+              <SectionTitle icon="👥" title="Responsables" color="blue" />
+            </div>
 
             <div className="responsible-list">
               <ResponsibleItem
                 name={project.assignedToName || "Sin responsable"}
-                role="Responsable del proyecto"
+                role="Líder del proyecto"
                 badge="Responsable"
                 color="blue"
               />
@@ -988,21 +1471,27 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             </div>
           </section>
 
-          <section className="visual-card">
+          <section className="visual-card side-compact-card">
             <SectionTitle icon="▱" title="Indicadores" color="blue" />
 
-            <div className="indicator-grid">
+            <div className="indicator-grid redesigned-indicator-grid">
               <Indicator
-                color="red"
+                color={isOverdue ? "red" : "blue"}
                 icon="◷"
-                value={metrics.daysLate}
-                label="días atrasado"
+                value={
+                  daysDifference === null
+                    ? "—"
+                    : isOverdue
+                    ? Math.abs(daysDifference)
+                    : daysDifference
+                }
+                label={isOverdue ? "días vencido" : "días restantes"}
               />
               <Indicator
                 color="blue"
                 icon="◔"
                 value={`${metrics.progress}%`}
-                label="avance"
+                label="avance general"
               />
               <Indicator
                 color="purple"
@@ -1016,32 +1505,33 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 value={metrics.evidence}
                 label="evidencias"
               />
-              <Indicator
-                color="blue"
-                icon="◷"
-                value={metrics.logs}
-                label="bitácora"
-              />
             </div>
           </section>
 
           {isAdmin && (
-            <section className="visual-card">
-              <div className="section-header-with-action">
+            <section className="visual-card side-compact-card internal-notes-admin-card">
+              <div className="section-header-with-action compact-action-header">
                 <SectionTitle icon="✎" title="Notas internas" color="purple" />
 
                 {!editingInternalNotes && !projectIsHistorical && (
                   <button
                     type="button"
                     className="visual-outline-button"
-                    onClick={() => setEditingInternalNotes(true)}
+                    onClick={() => {
+                      setInternalNotesDraft("");
+                      setEditingInternalNotes(true);
+                    }}
                   >
-                    ✎ Editar notas
+                    Nueva nota
                   </button>
                 )}
               </div>
 
-              {editingInternalNotes ? (
+              <p className="internal-notes-admin-help">
+                Solo visible para administradores.
+              </p>
+
+              {editingInternalNotes && (
                 <div className="internal-notes-editor">
                   <textarea
                     rows={5}
@@ -1051,7 +1541,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     onChange={(event) =>
                       setInternalNotesDraft(event.target.value)
                     }
-                    placeholder="Escribe aquí tus notas internas como administrador..."
+                    placeholder="Escribe aquí una nota interna para administración..."
                   />
 
                   <small className="field-counter">
@@ -1062,10 +1552,14 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     <button
                       type="button"
                       className="visual-primary-button"
-                      disabled={savingInternalNotes || projectIsHistorical}
+                      disabled={
+                        savingInternalNotes ||
+                        projectIsHistorical ||
+                        !internalNotesDraft.trim()
+                      }
                       onClick={handleSaveInternalNotes}
                     >
-                      {savingInternalNotes ? "Guardando..." : "Guardar notas"}
+                      {savingInternalNotes ? "Guardando..." : "Guardar nota"}
                     </button>
 
                     <button
@@ -1073,7 +1567,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                       className="visual-outline-button"
                       disabled={savingInternalNotes}
                       onClick={() => {
-                        setInternalNotesDraft(internalNotes || "");
+                        setInternalNotesDraft("");
                         setEditingInternalNotes(false);
                       }}
                     >
@@ -1081,20 +1575,67 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     </button>
                   </div>
                 </div>
-              ) : internalNotes ? (
-                <p className="project-description-text">{internalNotes}</p>
-              ) : (
-                <EmptyState text="No hay notas internas registradas." small />
               )}
+
+              <div className="internal-notes-history">
+                <div className="internal-notes-history-header">
+                  <strong>Historial interno</strong>
+                  <span>{internalNotesHistory.length} nota(s)</span>
+                </div>
+
+                {loadingInternalNotes ? (
+                  <div className="internal-note-loading">
+                    Cargando notas internas...
+                  </div>
+                ) : internalNotesHistory.length > 0 ? (
+                  internalNotesHistory.map((note) => (
+                    <article className="internal-note-history-item" key={note.id}>
+                      <div className="internal-note-history-top">
+                        <span className="avatar-mini">
+                          {getInitials(
+                            note.createdByName ||
+                              note.createdByEmail ||
+                              "Administrador"
+                          )}
+                        </span>
+                        <div>
+                          <strong>
+                            {note.createdByName ||
+                              note.createdByEmail ||
+                              "Administrador"}
+                          </strong>
+                          <small>{formatDate(note.createdAt)}</small>
+                        </div>
+                      </div>
+
+                      <p>{note.text}</p>
+                    </article>
+                  ))
+                ) : legacyInternalNotes ? (
+                  <article className="internal-note-history-item legacy-internal-note">
+                    <div className="internal-note-history-top">
+                      <span className="legacy-note-icon">▤</span>
+                      <div>
+                        <strong>Nota heredada</strong>
+                        <small>Guardada antes del historial interno</small>
+                      </div>
+                    </div>
+
+                    <p>{legacyInternalNotes}</p>
+                  </article>
+                ) : (
+                  <EmptyState text="No hay notas internas registradas." small />
+                )}
+              </div>
             </section>
           )}
 
-          <section className="visual-card">
+          <section className="visual-card side-compact-card">
             <SectionTitle icon="☑" title="Próximas acciones" color="blue" />
 
             <div className="next-actions-list">
               <ActionItem
-                text="Revisar avances y evidencias del proyecto"
+                text="Revisar avances recientes del proyecto"
                 date={project.updatedAt || project.createdAt}
                 status="Seguimiento"
                 color="blue"
@@ -1108,7 +1649,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               />
 
               <ActionItem
-                text="Publicar comentarios cuando haya observaciones"
+                text="Comentar observaciones del equipo"
                 date={project.updatedAt || project.createdAt}
                 status="Disponible"
                 color="purple"
@@ -1137,7 +1678,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             </div>
           </section>
 
-          <section className="visual-card">
+          <section className="visual-card side-compact-card">
             <SectionTitle
               icon="☵"
               title="Últimos comentarios"
@@ -1226,6 +1767,20 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             </section>
           )}
         </aside>
+      </div>
+    </div>
+  );
+}
+
+
+function HeroMeta({ icon, label, value, color }) {
+  return (
+    <div className="hero-meta-item">
+      <span className={`hero-meta-icon hero-meta-${color}`}>{icon}</span>
+
+      <div>
+        <small>{label}</small>
+        <strong>{value || "Sin dato"}</strong>
       </div>
     </div>
   );
@@ -1471,6 +2026,20 @@ function getDaysDifference(deadline) {
   return Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+
+function getDateObject(value) {
+  if (!value) return null;
+
+  const date =
+    typeof value === "string"
+      ? new Date(value.includes("T") ? value : `${value}T00:00:00`)
+      : value?.toDate?.() || new Date(value);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date;
+}
+
 function formatDate(value) {
   if (!value) return "Sin fecha";
 
@@ -1514,6 +2083,60 @@ function getFileName(file) {
     getNameFromUrl(getFileUrl(file)) ||
     "Archivo"
   );
+}
+
+function normalizeText(value) {
+  if (!value) return "";
+
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function getEvidenceKey(file) {
+  if (!file) return "evidence";
+
+  return (
+    file.filePath ||
+    file.downloadUrl ||
+    file.downloadURL ||
+    file.url ||
+    file.fileUrl ||
+    file.fileURL ||
+    file.fileName ||
+    file.name ||
+    "evidence"
+  );
+}
+
+function getEvidenceReviewLabel(status) {
+  const normalizedStatus = normalizeText(status);
+
+  if (normalizedStatus === "approved" || normalizedStatus === "aprobado") {
+    return "Aprobada";
+  }
+
+  if (normalizedStatus === "rejected" || normalizedStatus === "rechazado") {
+    return "Rechazada";
+  }
+
+  return "Pendiente de revisión";
+}
+
+function getEvidenceReviewBadgeColor(status) {
+  const normalizedStatus = normalizeText(status);
+
+  if (normalizedStatus === "approved" || normalizedStatus === "aprobado") {
+    return "green";
+  }
+
+  if (normalizedStatus === "rejected" || normalizedStatus === "rechazado") {
+    return "red";
+  }
+
+  return "gold";
 }
 
 function getFileUrl(file) {

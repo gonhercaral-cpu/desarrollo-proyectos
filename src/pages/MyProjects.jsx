@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
+import { calculateAutomaticProgress } from "../utils/progressUtils";
 
 const PROJECTS_COLLECTION = "projects";
 
@@ -13,6 +14,7 @@ export default function MyProjects({ onOpenProject }) {
   const [loading, setLoading] = useState(true);
 
   const [activeFilter, setActiveFilter] = useState("Todos");
+  const [activeProjectView, setActiveProjectView] = useState("Todos");
   const [searchText, setSearchText] = useState("");
   const [message, setMessage] = useState("");
 
@@ -84,16 +86,33 @@ export default function MyProjects({ onOpenProject }) {
   ]);
 
   const allMyProjects = useMemo(() => {
-    return [...assignedProjects, ...collaboratorProjects];
+    return [
+      ...assignedProjects.map((project) => ({
+        ...project,
+        relationType: "Asignado",
+      })),
+      ...collaboratorProjects.map((project) => ({
+        ...project,
+        relationType: "Colaboración",
+      })),
+    ];
   }, [assignedProjects, collaboratorProjects]);
 
-  const filteredAssignedProjects = useMemo(() => {
-    return filterProjects(assignedProjects, activeFilter, searchText);
-  }, [assignedProjects, activeFilter, searchText]);
+  const visibleProjects = useMemo(() => {
+    let projects = allMyProjects;
 
-  const filteredCollaboratorProjects = useMemo(() => {
-    return filterProjects(collaboratorProjects, activeFilter, searchText);
-  }, [collaboratorProjects, activeFilter, searchText]);
+    if (activeProjectView === "Asignados") {
+      projects = projects.filter((project) => project.relationType === "Asignado");
+    }
+
+    if (activeProjectView === "Colaboraciones") {
+      projects = projects.filter(
+        (project) => project.relationType === "Colaboración"
+      );
+    }
+
+    return filterProjects(projects, activeFilter, searchText);
+  }, [allMyProjects, activeProjectView, activeFilter, searchText]);
 
   const metrics = useMemo(() => {
     const assigned = assignedProjects.length;
@@ -145,7 +164,7 @@ export default function MyProjects({ onOpenProject }) {
 
   const visibleAgendaProjects = showFullAgenda
     ? agendaProjects
-    : agendaProjects.slice(0, 3);
+    : agendaProjects.slice(0, 4);
 
   const recentActivity = useMemo(() => {
     return allMyProjects
@@ -164,7 +183,7 @@ export default function MyProjects({ onOpenProject }) {
 
   const visibleActivity = showFullActivity
     ? recentActivity
-    : recentActivity.slice(0, 3);
+    : recentActivity.slice(0, 4);
 
   const statusDistribution = useMemo(() => {
     const total = allMyProjects.length || 1;
@@ -243,54 +262,126 @@ export default function MyProjects({ onOpenProject }) {
       {message && <div className="message-box">{message}</div>}
 
       <div className="my-metrics-grid">
-        <SimpleMetric
-          icon="▣"
-          value={metrics.assigned}
-          title="Asignados"
-          detail="Proyectos donde eres responsable"
-          color="blue"
-        />
+        <button
+          type="button"
+          className="metric-action-button"
+          onClick={() => {
+            setActiveProjectView("Asignados");
+            setActiveFilter("Todos");
+          }}
+        >
+          <SimpleMetric
+            icon="▣"
+            value={metrics.assigned}
+            title="Asignados"
+            detail="Proyectos donde eres responsable"
+            color="blue"
+          />
+        </button>
 
-        <SimpleMetric
-          icon="👥"
-          value={metrics.collaborator}
-          title="Colaboraciones"
-          detail="Proyectos donde participas"
-          color="teal"
-        />
+        <button
+          type="button"
+          className="metric-action-button"
+          onClick={() => {
+            setActiveProjectView("Colaboraciones");
+            setActiveFilter("Todos");
+          }}
+        >
+          <SimpleMetric
+            icon="👥"
+            value={metrics.collaborator}
+            title="Colaboraciones"
+            detail="Proyectos donde participas"
+            color="teal"
+          />
+        </button>
 
-        <SimpleMetric
-          icon="◷"
-          value={metrics.inProgress}
-          title="En curso"
-          detail="Proyectos activos"
-          color="green"
-        />
+        <button
+          type="button"
+          className="metric-action-button"
+          onClick={() => {
+            setActiveProjectView("Todos");
+            setActiveFilter("En curso");
+          }}
+        >
+          <SimpleMetric
+            icon="◷"
+            value={metrics.inProgress}
+            title="En curso"
+            detail="Proyectos activos"
+            color="green"
+          />
+        </button>
 
-        <SimpleMetric
-          icon="⚑"
-          value={metrics.dueSoon}
-          title="Por vencer"
-          detail="Vencen en 3 días o menos"
-          color="orange"
-        />
+        <button
+          type="button"
+          className="metric-action-button"
+          onClick={() => {
+            setActiveProjectView("Todos");
+            setActiveFilter("Por vencer");
+          }}
+        >
+          <SimpleMetric
+            icon="⚑"
+            value={metrics.dueSoon}
+            title="Por vencer"
+            detail="Vencen en 3 días o menos"
+            color="orange"
+          />
+        </button>
 
-        <SimpleMetric
-          icon="☑"
-          value={metrics.readyForReview}
-          title="Por revisión"
-          detail="Listos para revisión"
-          color="purple"
-        />
+        <button
+          type="button"
+          className="metric-action-button"
+          onClick={() => {
+            setActiveProjectView("Todos");
+            setActiveFilter("Por revisar");
+          }}
+        >
+          <SimpleMetric
+            icon="☑"
+            value={metrics.readyForReview}
+            title="Por revisión"
+            detail="Listos para revisión"
+            color="purple"
+          />
+        </button>
       </div>
 
       <div className="my-projects-layout">
         <main className="my-projects-main">
-          <section className="visual-card filters-card">
-            <div className="filters-card-top">
+          <section className="visual-card my-projects-workspace">
+            <div className="workspace-header">
               <div className="section-title-row no-border no-margin">
-                <span className="section-title-icon section-title-blue">⌕</span>
-                <h3>Filtrar mis proyectos</h3>
+                <span className="section-title-icon section-title-blue">▦</span>
+
+                <div>
+                  <h3>Mis proyectos activos</h3>
+                  <p>
+                    Revisa tus asignaciones y colaboraciones desde una sola
+                    vista.
+                  </p>
+                </div>
+              </div>
+
+              <div className="workspace-count">
+                <strong>{visibleProjects.length}</strong>
+                <span>mostrados</span>
+              </div>
+            </div>
+
+            <div className="workspace-toolbar">
+              <div className="project-view-tabs">
+                {["Todos", "Asignados", "Colaboraciones"].map((view) => (
+                  <button
+                    type="button"
+                    key={view}
+                    className={activeProjectView === view ? "active" : ""}
+                    onClick={() => setActiveProjectView(view)}
+                  >
+                    {view}
+                  </button>
+                ))}
               </div>
 
               <div className="filter-pills compact">
@@ -313,39 +404,30 @@ export default function MyProjects({ onOpenProject }) {
                 ))}
               </div>
             </div>
+
+            <ProjectList
+              projects={visibleProjects}
+              onOpenProject={onOpenProject}
+            />
           </section>
-
-          <ProjectSection
-            title={`Proyectos asignados (${filteredAssignedProjects.length})`}
-            subtitle="Proyectos donde eres responsable principal."
-            projects={filteredAssignedProjects}
-            onOpenProject={onOpenProject}
-          />
-
-          <ProjectSection
-            title={`Colaboraciones (${filteredCollaboratorProjects.length})`}
-            subtitle="Proyectos donde participas como colaborador."
-            projects={filteredCollaboratorProjects}
-            onOpenProject={onOpenProject}
-          />
         </main>
 
         <aside className="my-projects-side">
-          <section className="visual-card">
+          <section className="visual-card compact-side-card">
             <SectionHeader
               title="Próximos vencimientos"
               action={showFullAgenda ? "Ver menos" : "Ver todos"}
               onAction={() => setShowFullAgenda((current) => !current)}
             />
 
-            <div className="agenda-list">
+            <div className="agenda-list compact-agenda-list">
               {visibleAgendaProjects.length === 0 ? (
                 <EmptyState text="No tienes vencimientos próximos." />
               ) : (
                 visibleAgendaProjects.map((project) => (
                   <button
                     type="button"
-                    className="agenda-item agenda-button"
+                    className="agenda-item agenda-button compact-agenda-item"
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                   >
@@ -363,21 +445,21 @@ export default function MyProjects({ onOpenProject }) {
             </div>
           </section>
 
-          <section className="visual-card">
+          <section className="visual-card compact-side-card">
             <SectionHeader
               title="Actividad reciente"
               action={showFullActivity ? "Ver menos" : "Ver más"}
               onAction={() => setShowFullActivity((current) => !current)}
             />
 
-            <div className="recent-project-list">
+            <div className="recent-project-list compact-recent-list">
               {visibleActivity.length === 0 ? (
                 <EmptyState text="No hay actividad reciente." />
               ) : (
                 visibleActivity.map((project) => (
                   <button
                     type="button"
-                    className="recent-project-item recent-project-button"
+                    className="recent-project-item recent-project-button compact-recent-item"
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                   >
@@ -402,12 +484,15 @@ export default function MyProjects({ onOpenProject }) {
             </div>
           </section>
 
-          <section className="visual-card">
+          <section className="visual-card compact-side-card">
             <SectionHeader title="Distribución de estados" />
 
-            <div className="status-distribution-list">
+            <div className="status-distribution-list compact-status-list">
               {statusDistribution.map((item) => (
-                <div className="status-distribution-item" key={item.label}>
+                <div
+                  className="status-distribution-item compact-status-item"
+                  key={item.label}
+                >
                   <div>
                     <span>{item.label}</span>
                     <strong>{item.value}</strong>
@@ -488,81 +573,77 @@ async function getMyAllowedProjects(userId, isAdmin) {
   return removeDuplicatedProjects(results);
 }
 
-function ProjectSection({ title, subtitle, projects, onOpenProject }) {
+function ProjectList({ projects, onOpenProject }) {
   return (
-    <section className="visual-card">
-      <div className="list-header">
-        <div className="section-title-row no-border no-margin">
-          <span className="section-title-icon section-title-blue">▦</span>
-
-          <div>
-            <h3>{title}</h3>
-            <p>{subtitle}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="my-project-card-list">
-        {projects.length === 0 ? (
-          <EmptyState text="No hay proyectos para mostrar con estos filtros." />
-        ) : (
-          projects.map((project) => (
-            <article className="my-project-card" key={project.id}>
-              <div className="my-project-card-top">
-                <div>
+    <div className="my-project-card-list compact-project-list">
+      {projects.length === 0 ? (
+        <EmptyState text="No hay proyectos para mostrar con estos filtros." />
+      ) : (
+        projects.map((project) => (
+          <article className="my-project-card compact-project-card" key={project.id}>
+            <div className="my-project-card-top">
+              <div>
+                <div className="project-title-line">
                   <h3>{project.title}</h3>
-                  <p>{project.description || "Sin descripción registrada."}</p>
+
+                  <Badge
+                    color={project.relationType === "Asignado" ? "blue" : "teal"}
+                  >
+                    {project.relationType}
+                  </Badge>
                 </div>
 
-                <Badge color={getStatusBadgeColor(project)}>
-                  {isOverdue(project)
-                    ? "Atrasado"
-                    : project.status || "Sin estado"}
-                </Badge>
+                <p>{project.description || "Sin descripción registrada."}</p>
               </div>
 
-              <div className="my-project-meta-grid">
-                <MetaItem label="Área" value={project.responsibleArea} />
-                <MetaItem label="Prioridad" value={project.priority} />
-                <MetaItem
-                  label="Fecha límite"
-                  value={formatPlainDate(project.deadline)}
+              <Badge color={getStatusBadgeColor(project)}>
+                {isOverdue(project)
+                  ? "Atrasado"
+                  : project.status || "Sin estado"}
+              </Badge>
+            </div>
+
+            <div className="my-project-meta-grid compact-meta-grid">
+              <MetaItem label="Área" value={project.responsibleArea} />
+              <MetaItem label="Prioridad" value={project.priority} />
+              <MetaItem
+                label="Fecha límite"
+                value={formatPlainDate(project.deadline)}
+              />
+              <MetaItem
+                label="Tiempo"
+                value={renderDeadlineLabel(project)}
+                danger={isOverdue(project)}
+              />
+            </div>
+
+            <div className="my-project-progress-row compact-progress-row">
+              <div>
+                <span>Avance</span>
+                <strong>{calculateAutomaticProgress(project)}%</strong>
+              </div>
+
+              <div className="area-progress-track">
+                <div
+                  className="area-progress-fill"
+                  style={{ width: `${calculateAutomaticProgress(project)}%` }}
                 />
-                <MetaItem
-                  label="Tiempo"
-                  value={renderDeadlineLabel(project)}
-                  danger={isOverdue(project)}
-                />
               </div>
+            </div>
 
-              <div className="my-project-progress-row">
-                <div>
-                  <span>Avance</span>
-                  <strong>{Number(project.progress || 0)}%</strong>
-                </div>
-
-                <div className="area-progress-track">
-                  <div
-                    className="area-progress-fill"
-                    style={{ width: `${Number(project.progress || 0)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="my-project-card-actions">
-                <button
-                  type="button"
-                  className="visual-primary-button"
-                  onClick={() => onOpenProject(project.id)}
-                >
-                  Ver detalle
-                </button>
-              </div>
-            </article>
-          ))
-        )}
-      </div>
-    </section>
+            <div className="my-project-card-actions">
+              <button
+                type="button"
+                className="visual-primary-button"
+                onClick={() => onOpenProject(project.id)}
+              >
+                Ver detalle
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
   );
 }
 
@@ -643,7 +724,8 @@ function filterProjects(projects, activeFilter, searchText) {
       project.description?.toLowerCase().includes(search) ||
       project.responsibleArea?.toLowerCase().includes(search) ||
       project.assignedToName?.toLowerCase().includes(search) ||
-      project.status?.toLowerCase().includes(search);
+      project.status?.toLowerCase().includes(search) ||
+      project.relationType?.toLowerCase().includes(search);
 
     const matchesFilter =
       activeFilter === "Todos" ||
