@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
-import { db } from "../services/firebase";
-
-const PROJECTS_COLLECTION = "projects";
+import { useAuth } from "../context/AuthContext";
+import {
+  getActiveProjects,
+  softDeleteProject,
+} from "../services/projectsService";
 
 export default function AllProjects({ onOpenProject, onEditProject }) {
+  const { profile, isAdmin } = useAuth();
+
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState("");
 
   const [searchText, setSearchText] = useState("");
   const [activeQuickFilter, setActiveQuickFilter] = useState("Todos");
@@ -25,15 +29,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     setMessage("");
 
     try {
-      const projectsRef = collection(db, PROJECTS_COLLECTION);
-      const q = query(projectsRef, orderBy("createdAt", "desc"));
-      const snapshot = await getDocs(q);
-
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
+      const data = await getActiveProjects();
       setProjects(data);
     } catch (error) {
       console.error(error);
@@ -46,6 +42,33 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
   useEffect(() => {
     loadProjects();
   }, []);
+
+  async function handleDeleteProject(project) {
+    if (!isAdmin) {
+      setMessage("No tienes permiso para eliminar proyectos.");
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `¿Seguro que deseas eliminar el proyecto "${project.title}"?\n\nNo se borrará definitivamente. Se moverá al historial y podrás restaurarlo después.`
+    );
+
+    if (!confirmDelete) return;
+
+    setDeletingProjectId(project.id);
+    setMessage("");
+
+    try {
+      await softDeleteProject(project.id, profile);
+      await loadProjects();
+      setMessage("El proyecto fue movido al historial correctamente.");
+    } catch (error) {
+      console.error(error);
+      setMessage(error.message || "No se pudo eliminar el proyecto.");
+    } finally {
+      setDeletingProjectId("");
+    }
+  }
 
   function getDaysDifference(deadline) {
     const date = parseDate(deadline);
@@ -62,15 +85,20 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }
 
+  function isClosedProject(project) {
+    return (
+      project.status === "Finalizado" ||
+      project.status === "Terminado" ||
+      project.status === "Cancelado" ||
+      project.status === "Eliminado" ||
+      project.deleted === true
+    );
+  }
+
   function isOverdue(project) {
     const days = getDaysDifference(project.deadline);
 
-    return (
-      days !== null &&
-      days < 0 &&
-      project.status !== "Finalizado" &&
-      project.status !== "Cancelado"
-    );
+    return days !== null && days < 0 && !isClosedProject(project);
   }
 
   function renderDeadlineLabel(project) {
@@ -112,9 +140,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
 
       const matchesQuick =
         activeQuickFilter === "Todos" ||
-        (activeQuickFilter === "En curso" &&
-          project.status !== "Finalizado" &&
-          project.status !== "Cancelado") ||
+        (activeQuickFilter === "En curso" && !isClosedProject(project)) ||
         (activeQuickFilter === "Por revisar" &&
           project.status === "Listo para revisión") ||
         (activeQuickFilter === "Atrasados" && isOverdue(project));
@@ -151,25 +177,19 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
   const metrics = useMemo(() => {
     const total = projects.length;
 
-    const active = projects.filter(
-      (project) =>
-        project.status !== "Finalizado" && project.status !== "Cancelado"
-    ).length;
+    const active = projects.filter((project) => !isClosedProject(project)).length;
 
     const overdue = projects.filter(isOverdue).length;
 
     const highPriority = projects.filter(
-      (project) =>
-        project.priority === "Alta" &&
-        project.status !== "Finalizado" &&
-        project.status !== "Cancelado"
+      (project) => project.priority === "Alta" && !isClosedProject(project)
     ).length;
 
-    const finished = projects.filter(
-      (project) => project.status === "Finalizado"
+    const review = projects.filter(
+      (project) => project.status === "Listo para revisión"
     ).length;
 
-    return { total, active, overdue, highPriority, finished };
+    return { total, active, overdue, highPriority, review };
   }, [projects]);
 
   const areaSummary = useMemo(() => {
@@ -228,10 +248,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     const overdueProjects = projects.filter(isOverdue);
 
     const highPriorityProjects = projects.filter(
-      (project) =>
-        project.priority === "Alta" &&
-        project.status !== "Finalizado" &&
-        project.status !== "Cancelado"
+      (project) => project.priority === "Alta" && !isClosedProject(project)
     );
 
     const reviewProjects = projects.filter(
@@ -293,7 +310,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     <div className="visual-page">
       <PageHeader
         title="Todos los proyectos"
-        subtitle="Administra, filtra y supervisa todos los proyectos del área."
+        subtitle="Administra, filtra y supervisa todos los proyectos activos del área."
       >
         <div className="visual-search wide">
           <span>⌕</span>
@@ -315,16 +332,16 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
         <SimpleMetric
           icon="▣"
           value={metrics.total}
-          title="Total proyectos"
-          detail="100% del total"
+          title="Total activos"
+          detail="Proyectos visibles"
           color="blue"
         />
 
         <SimpleMetric
           icon="✓"
           value={metrics.active}
-          title="Activos"
-          detail="En ejecución"
+          title="En operación"
+          detail="No cerrados"
           color="green"
         />
 
@@ -345,10 +362,10 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
         />
 
         <SimpleMetric
-          icon="✓"
-          value={metrics.finished}
-          title="Finalizados"
-          detail="Proyectos cerrados"
+          icon="☑"
+          value={metrics.review}
+          title="Por revisar"
+          detail="Revisión administrativa"
           color="teal"
         />
       </div>
@@ -420,8 +437,6 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                   "Listo para revisión",
                   "Correcciones solicitadas",
                   "Aprobado para entrega",
-                  "Finalizado",
-                  "Cancelado",
                   "Pausado",
                 ]}
               />
@@ -551,6 +566,18 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                               Editar
                             </button>
                           )}
+
+                          {isAdmin && (
+                            <button
+                              className="danger-table-button"
+                              disabled={deletingProjectId === project.id}
+                              onClick={() => handleDeleteProject(project)}
+                            >
+                              {deletingProjectId === project.id
+                                ? "Eliminando..."
+                                : "Eliminar"}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -559,7 +586,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
               </table>
 
               {filteredProjects.length === 0 && (
-                <EmptyState text="No hay proyectos con estos filtros." />
+                <EmptyState text="No hay proyectos activos con estos filtros." />
               )}
             </div>
           </section>

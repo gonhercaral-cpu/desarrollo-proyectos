@@ -24,7 +24,7 @@ const STATUSES = [
 ];
 
 export default function CreateProject() {
-  const { profile, currentUser } = useAuth();
+  const { profile, currentUser, firebaseUser } = useAuth();
 
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -40,6 +40,7 @@ export default function CreateProject() {
     deadline: "",
     description: "",
     assignedToId: "",
+    assignedToUid: "",
     assignedToName: "",
     assignedToEmail: "",
     status: "Por iniciar",
@@ -52,6 +53,7 @@ export default function CreateProject() {
 
   async function loadUsers() {
     setLoadingUsers(true);
+    setMessage("");
 
     try {
       const data = await getActiveUsers();
@@ -68,6 +70,26 @@ export default function CreateProject() {
     loadUsers();
   }, []);
 
+  function getCreatorUid() {
+    return currentUser?.uid || firebaseUser?.uid || profile?.uid || profile?.id || "";
+  }
+
+  function getCreatorEmail() {
+    return currentUser?.email || firebaseUser?.email || profile?.email || "";
+  }
+
+  function getCreatorName() {
+    return profile?.name || currentUser?.displayName || firebaseUser?.displayName || "";
+  }
+
+  function getUserUid(user) {
+    return user?.uid || user?.authUid || user?.userUid || user?.id || "";
+  }
+
+  function findUserByUid(uid) {
+    return users.find((user) => getUserUid(user) === uid || user.id === uid);
+  }
+
   function updateField(field, value) {
     setForm((current) => ({
       ...current,
@@ -76,7 +98,7 @@ export default function CreateProject() {
   }
 
   function handleRequesterChange(value) {
-    const selectedUser = users.find((user) => user.id === value);
+    const selectedUser = findUserByUid(value) || users.find((user) => user.id === value);
 
     setForm((current) => ({
       ...current,
@@ -86,23 +108,27 @@ export default function CreateProject() {
   }
 
   function handleAssignedChange(value) {
-    const selectedUser = users.find((user) => user.id === value);
+    const selectedUser = findUserByUid(value);
+    const selectedUserUid = getUserUid(selectedUser);
 
     setForm((current) => ({
       ...current,
-      assignedToId: selectedUser?.id || "",
+      assignedToId: selectedUserUid,
+      assignedToUid: selectedUserUid,
       assignedToName: selectedUser?.name || "",
       assignedToEmail: selectedUser?.email || "",
     }));
   }
 
-  function toggleCollaborator(userId) {
+  function toggleCollaborator(userUid) {
+    if (!userUid) return;
+
     setCollaboratorIds((current) => {
-      if (current.includes(userId)) {
-        return current.filter((id) => id !== userId);
+      if (current.includes(userUid)) {
+        return current.filter((id) => id !== userUid);
       }
 
-      return [...current, userId];
+      return [...current, userUid];
     });
   }
 
@@ -121,6 +147,7 @@ export default function CreateProject() {
       deadline: "",
       description: "",
       assignedToId: "",
+      assignedToUid: "",
       assignedToName: "",
       assignedToEmail: "",
       status: "Por iniciar",
@@ -134,7 +161,7 @@ export default function CreateProject() {
   }
 
   const selectedCollaborators = useMemo(() => {
-    return users.filter((user) => collaboratorIds.includes(user.id));
+    return users.filter((user) => collaboratorIds.includes(getUserUid(user)));
   }, [users, collaboratorIds]);
 
   const requiredFields = [
@@ -164,7 +191,7 @@ export default function CreateProject() {
     },
     {
       label: "Responsable del proyecto",
-      complete: Boolean(form.assignedToId),
+      complete: Boolean(form.assignedToUid || form.assignedToId),
     },
     {
       label: "Estado inicial",
@@ -187,31 +214,59 @@ export default function CreateProject() {
       return;
     }
 
+    const creatorUid = getCreatorUid();
+
+    if (!creatorUid) {
+      setMessage("No se pudo identificar tu usuario. Cierra sesión e inicia sesión nuevamente.");
+      return;
+    }
+
     setSaving(true);
 
     try {
       const collaboratorUsers = users.filter((user) =>
-        collaboratorIds.includes(user.id)
+        collaboratorIds.includes(getUserUid(user))
       );
+
+      const creatorUser = {
+        uid: creatorUid,
+        id: creatorUid,
+        email: getCreatorEmail(),
+        name: getCreatorName(),
+        role: profile?.role || "",
+        active: profile?.active !== false,
+      };
 
       const payload = {
         ...form,
+
         progress: Number(form.progress || 0),
+
+        assignedToUid: form.assignedToUid || form.assignedToId,
+        assignedToId: form.assignedToId || form.assignedToUid,
+        assignedToName: form.assignedToName,
+        assignedToEmail: form.assignedToEmail,
+
         collaboratorIds,
-        collaboratorNames: collaboratorUsers.map((user) => user.name),
-        collaboratorEmails: collaboratorUsers.map((user) => user.email),
-        createdBy: currentUser?.uid || "",
-        createdByEmail: currentUser?.email || "",
-        createdByName: profile?.name || "",
+        collaboratorUids: collaboratorIds,
+        collaboratorNames: collaboratorUsers.map((user) => user.name || ""),
+        collaboratorEmails: collaboratorUsers.map((user) => user.email || ""),
+
+        createdByUid: creatorUid,
+        createdBy: creatorUid,
+        createdByEmail: creatorUser.email,
+        createdByName: creatorUser.name,
+
+        attachedFileNames: files.map((file) => file.name),
       };
 
-      await createProject(payload);
+      await createProject(payload, creatorUser);
 
       setMessage("Proyecto creado correctamente.");
       resetForm();
     } catch (error) {
       console.error(error);
-      setMessage("No se pudo crear el proyecto.");
+      setMessage(error.message || "No se pudo crear el proyecto.");
     } finally {
       setSaving(false);
     }
@@ -234,6 +289,7 @@ export default function CreateProject() {
               type="button"
               className="visual-outline-button"
               onClick={resetForm}
+              disabled={saving}
             >
               × Cancelar
             </button>
@@ -262,6 +318,8 @@ export default function CreateProject() {
               <div className="visual-form-grid">
                 <Field label="Título del proyecto" required>
                   <input
+                    id="create-project-title"
+                    name="title"
                     value={form.title}
                     onChange={(event) => updateField("title", event.target.value)}
                     placeholder="Ej. Implementación de nuevo CRM"
@@ -270,6 +328,8 @@ export default function CreateProject() {
 
                 <Field label="Área responsable" required>
                   <select
+                    id="create-project-responsible-area"
+                    name="responsibleArea"
                     value={form.responsibleArea}
                     onChange={(event) =>
                       updateField("responsibleArea", event.target.value)
@@ -286,25 +346,35 @@ export default function CreateProject() {
 
                 <Field label="Solicitante" required>
                   <select
+                    id="create-project-requester"
+                    name="requester"
                     value={
-                      users.find(
-                        (user) => user.email === form.requesterEmail
-                      )?.id || ""
+                      users.find((user) => user.email === form.requesterEmail)
+                        ? getUserUid(
+                            users.find((user) => user.email === form.requesterEmail)
+                          )
+                        : ""
                     }
                     onChange={(event) => handleRequesterChange(event.target.value)}
                     disabled={loadingUsers}
                   >
                     <option value="">Selecciona el solicitante</option>
-                    {users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
+                    {users.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <option value={userUid} key={user.id}>
+                          {user.name}
+                        </option>
+                      );
+                    })}
                   </select>
                 </Field>
 
                 <Field label="Prioridad" required>
                   <select
+                    id="create-project-priority"
+                    name="priority"
                     value={form.priority}
                     onChange={(event) =>
                       updateField("priority", event.target.value)
@@ -321,6 +391,8 @@ export default function CreateProject() {
 
                 <Field label="Fecha límite" required>
                   <input
+                    id="create-project-deadline"
+                    name="deadline"
                     type="date"
                     value={form.deadline}
                     onChange={(event) =>
@@ -331,6 +403,8 @@ export default function CreateProject() {
 
                 <Field label="Descripción del proyecto" required full>
                   <textarea
+                    id="create-project-description"
+                    name="description"
                     maxLength={500}
                     value={form.description}
                     onChange={(event) =>
@@ -356,50 +430,70 @@ export default function CreateProject() {
               <div className="visual-form-grid">
                 <Field label="Responsable del proyecto" required>
                   <select
-                    value={form.assignedToId}
+                    id="create-project-assigned-to"
+                    name="assignedTo"
+                    value={form.assignedToUid || form.assignedToId}
                     onChange={(event) => handleAssignedChange(event.target.value)}
                     disabled={loadingUsers}
                   >
                     <option value="">Selecciona al responsable</option>
-                    {users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
+
+                    {users.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <option value={userUid} key={user.id}>
+                          {user.name}
+                        </option>
+                      );
+                    })}
                   </select>
                 </Field>
 
                 <Field label="Colaboradores">
                   <select
+                    id="create-project-collaborators"
+                    name="collaborators"
                     value=""
                     onChange={(event) => toggleCollaborator(event.target.value)}
                     disabled={loadingUsers}
                   >
                     <option value="">Selecciona colaboradores</option>
-                    {users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
+
+                    {users.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <option value={userUid} key={user.id}>
+                          {user.name}
+                        </option>
+                      );
+                    })}
                   </select>
 
                   <div className="selected-chips">
-                    {selectedCollaborators.map((user) => (
-                      <button
-                        type="button"
-                        key={user.id}
-                        onClick={() => toggleCollaborator(user.id)}
-                      >
-                        <span>{getInitials(user.name)}</span>
-                        {user.name}
-                        <b>×</b>
-                      </button>
-                    ))}
+                    {selectedCollaborators.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <button
+                          type="button"
+                          key={userUid}
+                          onClick={() => toggleCollaborator(userUid)}
+                        >
+                          <span>{getInitials(user.name)}</span>
+                          {user.name}
+                          <b>×</b>
+                        </button>
+                      );
+                    })}
                   </div>
                 </Field>
 
                 <Field label="Estado inicial" required>
                   <select
+                    id="create-project-status"
+                    name="status"
                     value={form.status}
                     onChange={(event) => updateField("status", event.target.value)}
                   >
@@ -426,6 +520,8 @@ export default function CreateProject() {
                     </button>
 
                     <input
+                      id="create-project-progress"
+                      name="progress"
                       type="number"
                       min="0"
                       max="100"
@@ -451,6 +547,8 @@ export default function CreateProject() {
 
                 <Field label="Notas internas" full>
                   <textarea
+                    id="create-project-notes"
+                    name="notes"
                     maxLength={300}
                     value={form.notes}
                     onChange={(event) => updateField("notes", event.target.value)}
@@ -471,7 +569,13 @@ export default function CreateProject() {
 
               <div className="attachments-grid">
                 <label className="dropzone">
-                  <input type="file" multiple onChange={handleFiles} />
+                  <input
+                    id="create-project-files"
+                    name="files"
+                    type="file"
+                    multiple
+                    onChange={handleFiles}
+                  />
                   <span>☁</span>
                   <strong>Arrastra y suelta archivos aquí</strong>
                   <p>o haz clic para seleccionar</p>
@@ -618,7 +722,6 @@ function FormSectionHeader({ number, title, subtitle }) {
       <span>{number}</span>
 
       <h3>{title}</h3>
-
       <p>{subtitle}</p>
     </div>
   );
@@ -671,8 +774,9 @@ function Badge({ color, children }) {
 }
 
 function getInitials(name = "") {
-  return name
+  return String(name)
     .split(" ")
+    .filter(Boolean)
     .map((word) => word[0])
     .join("")
     .slice(0, 2)

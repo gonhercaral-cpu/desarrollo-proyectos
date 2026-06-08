@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import CreateProject from "./CreateProject";
 import MyProjects from "./MyProjects";
 import AllProjects from "./AllProjects";
+import ProjectHistory from "./ProjectHistory";
 import ProjectDetail from "./ProjectDetail";
 import EditProject from "./EditProject";
 import ExecutiveDashboard from "./ExecutiveDashboard";
@@ -14,18 +15,33 @@ export default function Dashboard() {
     isAdmin ? "executive-dashboard" : "my-projects"
   );
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [returnPage, setReturnPage] = useState(
+    isAdmin ? "all-projects" : "my-projects"
+  );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
 
   function goToPage(nextPage) {
     setSelectedProjectId(null);
     setPage(nextPage);
+    setReturnPage(nextPage);
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
   }
 
   function openProject(projectId) {
     setSelectedProjectId(projectId);
+
+    if (page === "project-history") {
+      setReturnPage("project-history");
+    } else if (page === "my-projects") {
+      setReturnPage("my-projects");
+    } else if (page === "executive-dashboard") {
+      setReturnPage("executive-dashboard");
+    } else {
+      setReturnPage(isAdmin ? "all-projects" : "my-projects");
+    }
+
     setPage("project-detail");
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
@@ -40,7 +56,7 @@ export default function Dashboard() {
 
   function backToProjects() {
     setSelectedProjectId(null);
-    setPage(isAdmin ? "all-projects" : "my-projects");
+    setPage(returnPage || (isAdmin ? "all-projects" : "my-projects"));
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
   }
@@ -81,6 +97,10 @@ export default function Dashboard() {
           onEditProject={editProject}
         />
       );
+    }
+
+    if (page === "project-history" && isAdmin) {
+      return <ProjectHistory onOpenProject={openProject} />;
     }
 
     if (page === "edit-project") {
@@ -134,8 +154,32 @@ export default function Dashboard() {
     if (navPage === "all-projects") {
       return (
         page === "all-projects" ||
-        page === "project-detail" ||
-        page === "edit-project"
+        (returnPage === "all-projects" &&
+          (page === "project-detail" || page === "edit-project"))
+      );
+    }
+
+    if (navPage === "project-history") {
+      return (
+        page === "project-history" ||
+        (returnPage === "project-history" &&
+          (page === "project-detail" || page === "edit-project"))
+      );
+    }
+
+    if (navPage === "my-projects") {
+      return (
+        page === "my-projects" ||
+        (returnPage === "my-projects" &&
+          (page === "project-detail" || page === "edit-project"))
+      );
+    }
+
+    if (navPage === "executive-dashboard") {
+      return (
+        page === "executive-dashboard" ||
+        (returnPage === "executive-dashboard" &&
+          (page === "project-detail" || page === "edit-project"))
       );
     }
 
@@ -190,6 +234,14 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">☰</span>
                 Todos los proyectos
+              </button>
+
+              <button
+                className={isNavActive("project-history") ? "active" : ""}
+                onClick={() => goToPage("project-history")}
+              >
+                <span className="nav-icon">◴</span>
+                Historial
               </button>
 
               <button

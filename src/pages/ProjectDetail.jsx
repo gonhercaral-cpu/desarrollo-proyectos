@@ -9,6 +9,11 @@ import {
 import { db } from "../services/firebase";
 import { uploadEvidenceFile } from "../services/storageService";
 import { useAuth } from "../context/AuthContext";
+import {
+  addProjectLog,
+  getProjectLogs,
+  PROJECT_LOG_TYPES,
+} from "../services/projectsService";
 
 const PROJECT_STATUSES = [
   "Por iniciar",
@@ -19,8 +24,11 @@ const PROJECT_STATUSES = [
   "Correcciones solicitadas",
   "Aprobado para entrega",
   "Finalizado",
+  "Terminado",
   "Cancelado",
   "Pausado",
+  "Eliminado",
+  "Archivado",
 ];
 
 const COLLABORATOR_STATUSES = [
@@ -32,7 +40,13 @@ const COLLABORATOR_STATUSES = [
   "Pausado",
 ];
 
-const CLOSED_STATUSES = ["Finalizado", "Cancelado"];
+const CLOSED_STATUSES = [
+  "Finalizado",
+  "Terminado",
+  "Cancelado",
+  "Eliminado",
+  "Archivado",
+];
 
 export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const { profile, firebaseUser, isAdmin } = useAuth();
@@ -47,6 +61,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const [internalNotesDraft, setInternalNotesDraft] = useState("");
   const [savingInternalNotes, setSavingInternalNotes] = useState(false);
   const [message, setMessage] = useState("");
+  const [projectLogs, setProjectLogs] = useState([]);
 
   async function loadProject() {
     if (!projectId) return;
@@ -61,6 +76,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       if (!snapshot.exists()) {
         setMessage("No se encontró el proyecto.");
         setProject(null);
+        setProjectLogs([]);
         return;
       }
 
@@ -68,6 +84,14 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         id: snapshot.id,
         ...snapshot.data(),
       });
+
+      try {
+        const logs = await getProjectLogs(projectId);
+        setProjectLogs(logs);
+      } catch (logError) {
+        console.warn("No se pudo cargar la bitácora formal:", logError);
+        setProjectLogs([]);
+      }
     } catch (error) {
       console.error(error);
       setMessage("No se pudo cargar el detalle del proyecto.");
@@ -80,8 +104,53 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     loadProject();
   }, [projectId]);
 
+  function getCurrentUserForLog() {
+    return {
+      uid: firebaseUser?.uid || profile?.uid || profile?.id || "",
+      id: firebaseUser?.uid || profile?.uid || profile?.id || "",
+      email: firebaseUser?.email || profile?.email || "",
+      name:
+        profile?.name ||
+        firebaseUser?.displayName ||
+        firebaseUser?.email ||
+        "Usuario",
+      role: profile?.role || "",
+      active: profile?.active !== false,
+    };
+  }
+
+  async function refreshProjectLogs() {
+    if (!projectId) return;
+
+    try {
+      const logs = await getProjectLogs(projectId);
+      setProjectLogs(logs);
+    } catch (error) {
+      console.warn("No se pudo actualizar la bitácora formal:", error);
+    }
+  }
+
+  async function registerProjectLog(logData) {
+    try {
+      await addProjectLog({
+        ...logData,
+        projectId: project.id,
+        currentUser: getCurrentUserForLog(),
+      });
+
+      await refreshProjectLogs();
+    } catch (error) {
+      console.warn("No se pudo registrar la bitácora formal:", error);
+    }
+  }
+
   async function handleStatusChange(nextStatus) {
     if (!project || !nextStatus || nextStatus === project.status) return;
+
+    if (isHistoricalProject(project)) {
+      setMessage("No se puede cambiar el estado de un proyecto que está en historial.");
+      return;
+    }
 
     setChangingStatus(true);
     setMessage("");
@@ -131,6 +200,17 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         status: nextStatus,
       }));
 
+      await registerProjectLog({
+        type: getStatusProjectLogType(nextStatus),
+        title: getStatusProjectLogTitle(nextStatus),
+        description: `${profile?.name || firebaseUser?.email || "Un usuario"} cambió el estado de "${project.status || "Sin estado"}" a "${nextStatus}".`,
+        metadata: {
+          oldStatus: project.status || "",
+          newStatus: nextStatus,
+          closed: isClosingStatus,
+        },
+      });
+
       setMessage("Estado actualizado correctamente.");
     } catch (error) {
       console.error(error);
@@ -146,6 +226,12 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     const files = Array.from(event.target.files || []);
 
     if (!files.length || !project) return;
+
+    if (isHistoricalProject(project)) {
+      setMessage("No se pueden subir evidencias a un proyecto que está en historial.");
+      event.target.value = "";
+      return;
+    }
 
     setUploading(true);
     setMessage("");
@@ -219,6 +305,22 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         history: [...normalizeArray(current?.history), historyItem],
       }));
 
+      await registerProjectLog({
+        type: PROJECT_LOG_TYPES.EVIDENCE_UPLOADED,
+        title: "Evidencia subida",
+        description:
+          uploadedItems.length === 1
+            ? `${profile?.name || firebaseUser?.email || "Un usuario"} subió el archivo ${uploadedItems[0].fileName}.`
+            : `${profile?.name || firebaseUser?.email || "Un usuario"} subió ${uploadedItems.length} archivos de evidencia.`,
+        metadata: {
+          files: uploadedItems.map((item) => ({
+            fileName: item.fileName || "",
+            fileType: item.fileType || "",
+            filePath: item.filePath || "",
+          })),
+        },
+      });
+
       setMessage("Archivo(s) subido(s) correctamente.");
     } catch (error) {
       console.error(error);
@@ -238,6 +340,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     const cleanComment = newComment.trim();
 
     if (!cleanComment || !project) return;
+
+    if (isHistoricalProject(project)) {
+      setMessage("No se pueden agregar comentarios a un proyecto que está en historial.");
+      return;
+    }
 
     setAddingComment(true);
     setMessage("");
@@ -275,6 +382,15 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         updatedAt: now,
       }));
 
+      await registerProjectLog({
+        type: PROJECT_LOG_TYPES.COMMENT_ADDED,
+        title: "Comentario agregado",
+        description: `${profile?.name || firebaseUser?.email || "Un usuario"} agregó un comentario al proyecto.`,
+        metadata: {
+          comment: cleanComment,
+        },
+      });
+
       setNewComment("");
       setMessage("Comentario publicado correctamente.");
     } catch (error) {
@@ -287,6 +403,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
   async function handleSaveInternalNotes() {
     if (!project || !isAdmin) return;
+
+    if (isHistoricalProject(project)) {
+      setMessage("No se pueden modificar notas internas de un proyecto que está en historial.");
+      return;
+    }
 
     setSavingInternalNotes(true);
     setMessage("");
@@ -319,6 +440,15 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         updatedAt: now,
         history: [...normalizeArray(current?.history), historyItem],
       }));
+
+      await registerProjectLog({
+        type: PROJECT_LOG_TYPES.INTERNAL_NOTE_UPDATED,
+        title: "Notas internas actualizadas",
+        description: `${profile?.name || firebaseUser?.email || "Un administrador"} actualizó las notas internas del proyecto.`,
+        metadata: {
+          hasInternalNotes: Boolean(cleanNotes),
+        },
+      });
 
       setEditingInternalNotes(false);
       setMessage("Notas internas actualizadas correctamente.");
@@ -373,6 +503,24 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     ];
   }, [project]);
 
+  const formalLogItems = useMemo(() => {
+    if (projectLogs.length > 0) {
+      return projectLogs;
+    }
+
+    return historyItems.map((item, index) => ({
+      id: `legacy-${index}`,
+      type: normalizeLegacyLogType(item.type),
+      title: item.title || item.type || "Actualización registrada",
+      description: item.description || item.title || "Actualización registrada.",
+      userName: item.createdByName || "Sistema",
+      userEmail: item.createdByEmail || "",
+      createdAt: item.createdAt,
+      metadata: {},
+      legacy: true,
+    }));
+  }, [projectLogs, historyItems]);
+
   const comments = useMemo(() => {
     return normalizeArray(project?.comments).slice().reverse();
   }, [project]);
@@ -393,7 +541,8 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   }, [internalNotes]);
 
   const daysDifference = getDaysDifference(project?.deadline);
-  const isClosed = CLOSED_STATUSES.includes(project?.status);
+  const projectIsHistorical = isHistoricalProject(project);
+  const isClosed = CLOSED_STATUSES.includes(project?.status) || projectIsHistorical;
   const isOverdue = daysDifference !== null && daysDifference < 0 && !isClosed;
 
   const metrics = {
@@ -401,6 +550,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     progress: Number(project?.progress || 0),
     comments: comments.length,
     evidence: evidenceFiles.length,
+    logs: formalLogItems.length,
   };
 
   if (loading) {
@@ -437,7 +587,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         </div>
 
         <div className="visual-page-actions">
-          {isAdmin && (
+          {isAdmin && !projectIsHistorical && (
             <button
               className="visual-outline-button"
               onClick={() => onEditProject(project.id)}
@@ -449,10 +599,12 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           <select
             className="status-change-select"
             value={project.status || ""}
-            disabled={changingStatus}
+            disabled={changingStatus || projectIsHistorical}
             onChange={(event) => handleStatusChange(event.target.value)}
           >
-            <option value="">Cambiar estado</option>
+            <option value="">
+              {projectIsHistorical ? "Proyecto en historial" : "Cambiar estado"}
+            </option>
 
             {availableStatuses.map((status) => (
               <option value={status} key={status}>
@@ -468,6 +620,19 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       </div>
 
       {message && <div className="message-box">{message}</div>}
+
+      {projectIsHistorical && (
+        <div className="history-warning-card">
+          <div>
+            <strong>Este proyecto está en historial</strong>
+            <p>
+              Este proyecto está eliminado, finalizado, terminado, cancelado o archivado.
+              Por seguridad, ya no se pueden subir evidencias, cambiar estados,
+              publicar comentarios ni modificar información operativa.
+            </p>
+          </div>
+        </div>
+      )}
 
       <section className="project-hero-strip">
         <span className="project-code">{getProjectCode(project)}</span>
@@ -595,15 +760,17 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 count={evidenceFiles.length}
               />
 
-              <label className="upload-evidence-button">
-                ＋ {uploading ? "Subiendo..." : "Subir archivo"}
-                <input
-                  type="file"
-                  multiple
-                  disabled={uploading}
-                  onChange={handleUploadEvidence}
-                />
-              </label>
+              {!projectIsHistorical && (
+                <label className="upload-evidence-button">
+                  ＋ {uploading ? "Subiendo..." : "Subir archivo"}
+                  <input
+                    type="file"
+                    multiple
+                    disabled={uploading || projectIsHistorical}
+                    onChange={handleUploadEvidence}
+                  />
+                </label>
+              )}
             </div>
 
             <div className="visual-table-wrap">
@@ -714,9 +881,13 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             <form className="comment-form" onSubmit={handleAddComment}>
               <textarea
                 value={newComment}
-                disabled={addingComment}
+                disabled={addingComment || projectIsHistorical}
                 onChange={(event) => setNewComment(event.target.value)}
-                placeholder="Escribe un comentario sobre este proyecto..."
+                placeholder={
+                  projectIsHistorical
+                    ? "Los comentarios están deshabilitados porque el proyecto está en historial."
+                    : "Escribe un comentario sobre este proyecto..."
+                }
                 rows={4}
               />
 
@@ -724,7 +895,9 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 <button
                   type="submit"
                   className="visual-primary-button"
-                  disabled={addingComment || !newComment.trim()}
+                  disabled={
+                    addingComment || projectIsHistorical || !newComment.trim()
+                  }
                 >
                   {addingComment ? "Publicando..." : "Publicar comentario"}
                 </button>
@@ -753,31 +926,41 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           </section>
 
           <section className="visual-card">
-            <SectionTitle icon="◷" title="Historial del proyecto" color="blue" />
+            <SectionTitle
+              icon="◷"
+              title="Bitácora formal del proyecto"
+              color="blue"
+              count={formalLogItems.length}
+            />
 
-            <div className="project-history-list">
-              {historyItems.map((item, index) => (
-                <div className="history-row" key={index}>
-                  <span className="history-dot" />
+            {formalLogItems.length === 0 ? (
+              <EmptyState text="Aún no hay registros en la bitácora." small />
+            ) : (
+              <div className="project-history-list formal-log-list">
+                {formalLogItems.map((item, index) => (
+                  <div className="history-row formal-log-row" key={item.id || index}>
+                    <span className="history-dot" />
 
-                  <span className="avatar-mini">
-                    {getInitials(item.createdByName || "Sistema")}
-                  </span>
+                    <span className="avatar-mini">
+                      {getInitials(getLogUserName(item))}
+                    </span>
 
-                  <strong>{item.createdByName || "Sistema"}</strong>
+                    <strong>{getLogUserName(item)}</strong>
 
-                  <Badge color={getHistoryColor(item.type)}>{item.type}</Badge>
+                    <Badge color={getProjectLogColor(item.type)}>
+                      {getProjectLogLabel(item.type)}
+                    </Badge>
 
-                  <p>
-                    {item.description ||
-                      item.title ||
-                      "Actualización registrada."}
-                  </p>
+                    <div className="formal-log-content">
+                      <b>{item.title || "Actualización registrada"}</b>
+                      <p>{item.description || "Actualización registrada."}</p>
+                    </div>
 
-                  <small>{formatDate(item.createdAt)}</small>
-                </div>
-              ))}
-            </div>
+                    <small>{formatDate(item.createdAt)}</small>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </main>
 
@@ -833,6 +1016,12 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 value={metrics.evidence}
                 label="evidencias"
               />
+              <Indicator
+                color="blue"
+                icon="◷"
+                value={metrics.logs}
+                label="bitácora"
+              />
             </div>
           </section>
 
@@ -841,7 +1030,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               <div className="section-header-with-action">
                 <SectionTitle icon="✎" title="Notas internas" color="purple" />
 
-                {!editingInternalNotes && (
+                {!editingInternalNotes && !projectIsHistorical && (
                   <button
                     type="button"
                     className="visual-outline-button"
@@ -858,7 +1047,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     rows={5}
                     maxLength={500}
                     value={internalNotesDraft}
-                    disabled={savingInternalNotes}
+                    disabled={savingInternalNotes || projectIsHistorical}
                     onChange={(event) =>
                       setInternalNotesDraft(event.target.value)
                     }
@@ -873,7 +1062,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     <button
                       type="button"
                       className="visual-primary-button"
-                      disabled={savingInternalNotes}
+                      disabled={savingInternalNotes || projectIsHistorical}
                       onClick={handleSaveInternalNotes}
                     >
                       {savingInternalNotes ? "Guardando..." : "Guardar notas"}
@@ -977,7 +1166,9 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             )}
           </section>
 
-          {isAdmin && project.status === "Listo para revisión" && (
+          {isAdmin &&
+            !projectIsHistorical &&
+            project.status === "Listo para revisión" && (
             <section className="admin-review-visual-card">
               <div>
                 <h3>Revisión administrativa</h3>
@@ -1009,7 +1200,9 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             </section>
           )}
 
-          {isAdmin && project.status === "Aprobado para entrega" && (
+          {isAdmin &&
+            !projectIsHistorical &&
+            project.status === "Aprobado para entrega" && (
             <section className="admin-review-visual-card">
               <div>
                 <h3>Cierre del proyecto</h3>
@@ -1382,6 +1575,128 @@ function getFileBadgeColor(file) {
   if (type === "ppt") return "purple";
 
   return "blue";
+}
+
+
+function isHistoricalProject(project) {
+  return (
+    project?.deleted === true ||
+    project?.archived === true ||
+    project?.status === "Eliminado" ||
+    project?.status === "Finalizado" ||
+    project?.status === "Terminado" ||
+    project?.status === "Cancelado" ||
+    project?.status === "Archivado" ||
+    Boolean(project?.deletedAt) ||
+    Boolean(project?.finishedAt) ||
+    Boolean(project?.cancelledAt) ||
+    Boolean(project?.archivedAt)
+  );
+}
+
+function normalizeLegacyLogType(type = "") {
+  if (type === "Comentario") return PROJECT_LOG_TYPES.COMMENT_ADDED;
+  if (type === "Archivo") return PROJECT_LOG_TYPES.EVIDENCE_UPLOADED;
+  if (type === "Estado") return PROJECT_LOG_TYPES.STATUS_CHANGED;
+  if (type === "Edición") return PROJECT_LOG_TYPES.PROJECT_UPDATED;
+  if (type === "Nota interna") return PROJECT_LOG_TYPES.INTERNAL_NOTE_UPDATED;
+
+  return PROJECT_LOG_TYPES.PROJECT_UPDATED;
+}
+
+function getStatusProjectLogType(status = "") {
+  if (status === "Listo para revisión") return PROJECT_LOG_TYPES.REVIEW_REQUESTED;
+  if (status === "Correcciones solicitadas") {
+    return PROJECT_LOG_TYPES.CORRECTIONS_REQUESTED;
+  }
+  if (status === "Aprobado para entrega") return PROJECT_LOG_TYPES.PROJECT_APPROVED;
+  if (status === "Finalizado" || status === "Terminado") {
+    return PROJECT_LOG_TYPES.PROJECT_FINISHED;
+  }
+  if (status === "Cancelado") return PROJECT_LOG_TYPES.PROJECT_CANCELLED;
+  if (status === "Eliminado") return PROJECT_LOG_TYPES.PROJECT_DELETED;
+
+  return PROJECT_LOG_TYPES.STATUS_CHANGED;
+}
+
+function getStatusProjectLogTitle(status = "") {
+  if (status === "Listo para revisión") return "Proyecto enviado a revisión";
+  if (status === "Correcciones solicitadas") return "Correcciones solicitadas";
+  if (status === "Aprobado para entrega") return "Proyecto aprobado";
+  if (status === "Finalizado" || status === "Terminado") {
+    return "Proyecto finalizado";
+  }
+  if (status === "Cancelado") return "Proyecto cancelado";
+  if (status === "Eliminado") return "Proyecto eliminado";
+
+  return "Cambio de estado";
+}
+
+function getProjectLogLabel(type = "") {
+  const labels = {
+    [PROJECT_LOG_TYPES.PROJECT_CREATED]: "Creación",
+    [PROJECT_LOG_TYPES.PROJECT_UPDATED]: "Edición",
+    [PROJECT_LOG_TYPES.STATUS_CHANGED]: "Estado",
+    [PROJECT_LOG_TYPES.PROGRESS_CHANGED]: "Avance",
+    [PROJECT_LOG_TYPES.EVIDENCE_UPLOADED]: "Evidencia",
+    [PROJECT_LOG_TYPES.COMMENT_ADDED]: "Comentario",
+    [PROJECT_LOG_TYPES.REVIEW_REQUESTED]: "Revisión",
+    [PROJECT_LOG_TYPES.CORRECTIONS_REQUESTED]: "Correcciones",
+    [PROJECT_LOG_TYPES.PROJECT_APPROVED]: "Aprobación",
+    [PROJECT_LOG_TYPES.PROJECT_FINISHED]: "Finalización",
+    [PROJECT_LOG_TYPES.PROJECT_CANCELLED]: "Cancelación",
+    [PROJECT_LOG_TYPES.PROJECT_DELETED]: "Eliminación",
+    [PROJECT_LOG_TYPES.PROJECT_RESTORED]: "Restauración",
+    [PROJECT_LOG_TYPES.INTERNAL_NOTE_UPDATED]: "Nota interna",
+  };
+
+  return labels[type] || "Bitácora";
+}
+
+function getProjectLogColor(type = "") {
+  if (
+    type === PROJECT_LOG_TYPES.PROJECT_DELETED ||
+    type === PROJECT_LOG_TYPES.PROJECT_CANCELLED ||
+    type === PROJECT_LOG_TYPES.CORRECTIONS_REQUESTED
+  ) {
+    return "red";
+  }
+
+  if (
+    type === PROJECT_LOG_TYPES.PROJECT_FINISHED ||
+    type === PROJECT_LOG_TYPES.PROJECT_APPROVED ||
+    type === PROJECT_LOG_TYPES.PROJECT_RESTORED
+  ) {
+    return "green";
+  }
+
+  if (
+    type === PROJECT_LOG_TYPES.EVIDENCE_UPLOADED ||
+    type === PROJECT_LOG_TYPES.INTERNAL_NOTE_UPDATED
+  ) {
+    return "purple";
+  }
+
+  if (
+    type === PROJECT_LOG_TYPES.REVIEW_REQUESTED ||
+    type === PROJECT_LOG_TYPES.STATUS_CHANGED
+  ) {
+    return "blue";
+  }
+
+  if (type === PROJECT_LOG_TYPES.COMMENT_ADDED) return "gold";
+
+  return "blue";
+}
+
+function getLogUserName(log) {
+  return (
+    log?.userName ||
+    log?.createdByName ||
+    log?.userEmail ||
+    log?.createdByEmail ||
+    "Sistema"
+  );
 }
 
 function getHistoryColor(type = "") {

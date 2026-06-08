@@ -39,7 +39,7 @@ const STATUSES = [
 ];
 
 export default function EditProject({ projectId, onBack, onSaved }) {
-  const { profile, firebaseUser } = useAuth();
+  const { profile, firebaseUser, currentUser } = useAuth();
 
   const [project, setProject] = useState(null);
   const [users, setUsers] = useState([]);
@@ -58,6 +58,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
     deadline: "",
     description: "",
     assignedToId: "",
+    assignedToUid: "",
     assignedToName: "",
     assignedToEmail: "",
     status: "",
@@ -65,6 +66,18 @@ export default function EditProject({ projectId, onBack, onSaved }) {
   });
 
   const [collaboratorIds, setCollaboratorIds] = useState([]);
+
+  function getAuthUserUid() {
+    return currentUser?.uid || firebaseUser?.uid || profile?.uid || profile?.id || "";
+  }
+
+  function getUserUid(user) {
+    return user?.uid || user?.authUid || user?.userUid || user?.id || "";
+  }
+
+  function findUserByUid(uid) {
+    return users.find((user) => getUserUid(user) === uid || user.id === uid);
+  }
 
   async function loadData() {
     if (!projectId) return;
@@ -91,6 +104,14 @@ export default function EditProject({ projectId, onBack, onSaved }) {
         ...projectSnapshot.data(),
       };
 
+      const assignedUid =
+        projectData.assignedToUid || projectData.assignedToId || "";
+
+      const projectCollaboratorIds = [
+        ...normalizeArray(projectData.collaboratorIds),
+        ...normalizeArray(projectData.collaboratorUids),
+      ];
+
       setProject(projectData);
 
       setForm({
@@ -101,18 +122,15 @@ export default function EditProject({ projectId, onBack, onSaved }) {
         priority: projectData.priority || "",
         deadline: projectData.deadline || "",
         description: projectData.description || "",
-        assignedToId: projectData.assignedToId || "",
+        assignedToId: assignedUid,
+        assignedToUid: assignedUid,
         assignedToName: projectData.assignedToName || "",
         assignedToEmail: projectData.assignedToEmail || "",
         status: projectData.status || "En planeación",
         progress: Number(projectData.progress || 0),
       });
 
-      setCollaboratorIds(
-        Array.isArray(projectData.collaboratorIds)
-          ? projectData.collaboratorIds
-          : []
-      );
+      setCollaboratorIds(removeDuplicatedValues(projectCollaboratorIds));
     } catch (error) {
       console.error(error);
       setMessage("No se pudo cargar la información del proyecto.");
@@ -142,26 +160,28 @@ export default function EditProject({ projectId, onBack, onSaved }) {
     }));
   }
 
-  function handleAssignedChange(userId) {
-    const selectedUser = users.find((user) => user.id === userId);
+  function handleAssignedChange(userUid) {
+    const selectedUser = findUserByUid(userUid);
+    const selectedUserUid = getUserUid(selectedUser);
 
     setForm((current) => ({
       ...current,
-      assignedToId: selectedUser?.id || "",
+      assignedToId: selectedUserUid,
+      assignedToUid: selectedUserUid,
       assignedToName: selectedUser?.name || "",
       assignedToEmail: selectedUser?.email || "",
     }));
   }
 
-  function toggleCollaborator(userId) {
-    if (!userId) return;
+  function toggleCollaborator(userUid) {
+    if (!userUid) return;
 
     setCollaboratorIds((current) => {
-      if (current.includes(userId)) {
-        return current.filter((id) => id !== userId);
+      if (current.includes(userUid)) {
+        return current.filter((id) => id !== userUid);
       }
 
-      return [...current, userId];
+      return [...current, userUid];
     });
   }
 
@@ -174,7 +194,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
   }
 
   const selectedCollaborators = useMemo(() => {
-    return users.filter((user) => collaboratorIds.includes(user.id));
+    return users.filter((user) => collaboratorIds.includes(getUserUid(user)));
   }, [users, collaboratorIds]);
 
   const evidenceFiles = useMemo(() => {
@@ -218,7 +238,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
     },
     {
       label: "Responsable del proyecto",
-      complete: Boolean(form.assignedToId),
+      complete: Boolean(form.assignedToUid || form.assignedToId),
     },
     {
       label: "Estado del proyecto",
@@ -247,7 +267,9 @@ export default function EditProject({ projectId, onBack, onSaved }) {
       return;
     }
 
-    if (!firebaseUser?.uid) {
+    const authUid = getAuthUserUid();
+
+    if (!authUid) {
       setMessage("No se encontró el UID del usuario actual.");
       return;
     }
@@ -259,7 +281,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
       const now = Timestamp.now();
 
       const collaboratorUsers = users.filter((user) =>
-        collaboratorIds.includes(user.id)
+        collaboratorIds.includes(getUserUid(user))
       );
 
       const uploadedItems = [];
@@ -268,7 +290,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
         const uploadedFile = await uploadEvidenceFile(
           projectId,
           file,
-          firebaseUser,
+          firebaseUser || currentUser,
           profile
         );
 
@@ -276,9 +298,13 @@ export default function EditProject({ projectId, onBack, onSaved }) {
           ...uploadedFile,
           fileName: uploadedFile.fileName || file.name,
           uploadedAt: now,
-          uploadedByUid: firebaseUser.uid,
-          uploadedByName: profile?.name || firebaseUser?.email || "Usuario",
-          uploadedByEmail: firebaseUser?.email || "",
+          uploadedByUid: authUid,
+          uploadedByName:
+            profile?.name ||
+            firebaseUser?.email ||
+            currentUser?.email ||
+            "Usuario",
+          uploadedByEmail: firebaseUser?.email || currentUser?.email || "",
         });
       }
 
@@ -290,9 +316,12 @@ export default function EditProject({ projectId, onBack, onSaved }) {
             ? `Actualizó la información del proyecto y agregó ${uploadedItems.length} archivo(s).`
             : "Actualizó la información del proyecto.",
         createdAt: now,
-        createdByName: profile?.name || firebaseUser?.email || "Usuario",
-        createdByEmail: firebaseUser?.email || "",
+        createdByName:
+          profile?.name || firebaseUser?.email || currentUser?.email || "Usuario",
+        createdByEmail: firebaseUser?.email || currentUser?.email || "",
       };
+
+      const assignedUid = form.assignedToUid || form.assignedToId || "";
 
       const updateData = {
         title: form.title.trim(),
@@ -302,18 +331,25 @@ export default function EditProject({ projectId, onBack, onSaved }) {
         priority: form.priority,
         deadline: form.deadline,
         description: form.description.trim(),
-        assignedToId: form.assignedToId,
+
+        assignedToUid: assignedUid,
+        assignedToId: assignedUid,
         assignedToName: form.assignedToName,
         assignedToEmail: form.assignedToEmail,
+
         status: form.status,
         progress: Number(form.progress || 0),
+
         collaboratorIds,
-        collaboratorNames: collaboratorUsers.map((user) => user.name),
-        collaboratorEmails: collaboratorUsers.map((user) => user.email),
+        collaboratorUids: collaboratorIds,
+        collaboratorNames: collaboratorUsers.map((user) => user.name || ""),
+        collaboratorEmails: collaboratorUsers.map((user) => user.email || ""),
+
         updatedAt: now,
-        updatedBy: firebaseUser.uid,
-        updatedByEmail: firebaseUser.email || "",
-        updatedByName: profile?.name || firebaseUser.email || "Usuario",
+        updatedBy: authUid,
+        updatedByEmail: firebaseUser?.email || currentUser?.email || "",
+        updatedByName:
+          profile?.name || firebaseUser?.email || currentUser?.email || "Usuario",
         history: arrayUnion(historyItem),
       };
 
@@ -460,6 +496,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               <div className="edit-form-grid">
                 <Field label="Título del proyecto" required>
                   <input
+                    id="edit-project-title"
+                    name="title"
                     value={form.title}
                     onChange={(event) =>
                       updateField("title", event.target.value)
@@ -470,6 +508,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
                 <Field label="Área responsable" required>
                   <select
+                    id="edit-project-responsible-area"
+                    name="responsibleArea"
                     value={form.responsibleArea}
                     onChange={(event) =>
                       updateField("responsibleArea", event.target.value)
@@ -487,6 +527,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
                 <Field label="Solicitante" required>
                   <select
+                    id="edit-project-requester"
+                    name="requester"
                     value={
                       users.find((user) => user.email === form.requesterEmail)
                         ?.id || ""
@@ -507,6 +549,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
                 <Field label="Prioridad" required>
                   <select
+                    id="edit-project-priority"
+                    name="priority"
                     value={form.priority}
                     onChange={(event) =>
                       updateField("priority", event.target.value)
@@ -524,6 +568,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
                 <Field label="Fecha límite" required>
                   <input
+                    id="edit-project-deadline"
+                    name="deadline"
                     type="date"
                     value={form.deadline}
                     onChange={(event) =>
@@ -534,6 +580,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
                 <Field label="Descripción del proyecto" required full>
                   <textarea
+                    id="edit-project-description"
+                    name="description"
                     maxLength={500}
                     value={form.description}
                     onChange={(event) =>
@@ -559,52 +607,70 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               <div className="edit-form-grid">
                 <Field label="Responsable del proyecto" required>
                   <select
-                    value={form.assignedToId}
+                    id="edit-project-assigned-to"
+                    name="assignedTo"
+                    value={form.assignedToUid || form.assignedToId}
                     onChange={(event) =>
                       handleAssignedChange(event.target.value)
                     }
                   >
                     <option value="">Selecciona al responsable</option>
 
-                    {users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
+                    {users.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <option value={userUid} key={user.id}>
+                          {user.name}
+                        </option>
+                      );
+                    })}
                   </select>
                 </Field>
 
                 <Field label="Colaboradores">
                   <select
+                    id="edit-project-collaborators"
+                    name="collaborators"
                     value=""
                     onChange={(event) => toggleCollaborator(event.target.value)}
                   >
                     <option value="">Selecciona colaboradores</option>
 
-                    {users.map((user) => (
-                      <option value={user.id} key={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
+                    {users.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <option value={userUid} key={user.id}>
+                          {user.name}
+                        </option>
+                      );
+                    })}
                   </select>
 
                   <div className="selected-chips">
-                    {selectedCollaborators.map((user) => (
-                      <button
-                        type="button"
-                        key={user.id}
-                        onClick={() => toggleCollaborator(user.id)}
-                      >
-                        <span>{getInitials(user.name)}</span>
-                        {user.name}
-                        <b>×</b>
-                      </button>
-                    ))}
+                    {selectedCollaborators.map((user) => {
+                      const userUid = getUserUid(user);
+
+                      return (
+                        <button
+                          type="button"
+                          key={userUid}
+                          onClick={() => toggleCollaborator(userUid)}
+                        >
+                          <span>{getInitials(user.name)}</span>
+                          {user.name}
+                          <b>×</b>
+                        </button>
+                      );
+                    })}
                   </div>
                 </Field>
 
                 <Field label="Estado del proyecto" required>
                   <select
+                    id="edit-project-status"
+                    name="status"
                     value={form.status}
                     onChange={(event) =>
                       updateField("status", event.target.value)
@@ -635,6 +701,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     </button>
 
                     <input
+                      id="edit-project-progress-number"
+                      name="progress"
                       type="number"
                       min="0"
                       max="100"
@@ -657,6 +725,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     </button>
 
                     <input
+                      id="edit-project-progress-range"
+                      name="progressRange"
                       type="range"
                       min="0"
                       max="100"
@@ -683,7 +753,13 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
               <div className="attachments-grid">
                 <label className="dropzone">
-                  <input type="file" multiple onChange={handleFiles} />
+                  <input
+                    id="edit-project-files"
+                    name="files"
+                    type="file"
+                    multiple
+                    onChange={handleFiles}
+                  />
                   <span>☁</span>
                   <strong>Arrastra y suelta archivos aquí</strong>
                   <p>o haz clic para seleccionar</p>
@@ -946,6 +1022,10 @@ function normalizeArray(value) {
   }
 
   return [];
+}
+
+function removeDuplicatedValues(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function normalizeFileItem(file) {
