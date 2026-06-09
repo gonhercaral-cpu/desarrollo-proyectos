@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getActiveDepartments } from "../services/departmentsService";
 import {
   createUserByAdmin,
   deactivateUserProfile,
@@ -60,12 +61,15 @@ const EMPTY_NEW_USER = {
   area: "",
   role: "collaborator",
   notes: "",
+  departmentIds: [],
 };
 
 export default function CollaboratorsAdmin() {
   const { profile, refreshProfile } = useAuth();
 
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
+
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedUserDraft, setSelectedUserDraft] = useState(null);
 
@@ -131,18 +135,27 @@ export default function CollaboratorsAdmin() {
         return false;
       }
 
+      const userDepartmentNames = getUserDepartmentNames(user);
+      const userDepartmentIds = getUserDepartmentIds(user);
+
       const searchableText = [
         user.name,
         user.email,
         user.area,
         user.role,
         user.privilege,
+        ...userDepartmentNames,
       ]
         .join(" ")
         .toLowerCase();
 
       const matchesSearch = !term || searchableText.includes(term);
-      const matchesArea = areaFilter === "all" || user.area === areaFilter;
+
+      const matchesArea =
+        areaFilter === "all" ||
+        userDepartmentIds.includes(areaFilter) ||
+        user.area === getDepartmentNameById(areaFilter, departments);
+
       const matchesPrivilege =
         privilegeFilter === "all" || user.role === privilegeFilter;
 
@@ -158,10 +171,10 @@ export default function CollaboratorsAdmin() {
 
       return matchesSearch && matchesArea && matchesPrivilege && matchesStatus;
     });
-  }, [users, searchTerm, areaFilter, privilegeFilter, statusFilter]);
+  }, [users, departments, searchTerm, areaFilter, privilegeFilter, statusFilter]);
 
   useEffect(() => {
-    loadUsers();
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -172,6 +185,34 @@ export default function CollaboratorsAdmin() {
       selectUser(firstVisibleUser);
     }
   }, [users, selectedUser]);
+
+  async function loadData() {
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const departmentsResult = await getActiveDepartments();
+      const usersResult = await getAllUsers();
+
+      setDepartments(departmentsResult);
+      setUsers(usersResult);
+
+      if (usersResult.length > 0) {
+        const firstVisibleUser =
+          usersResult.find((user) => user.deleted !== true) || usersResult[0];
+
+        selectUser(firstVisibleUser, departmentsResult);
+      }
+    } catch (loadError) {
+      console.error("No se pudieron cargar los usuarios:", loadError);
+      setError(
+        "No se pudieron cargar los colaboradores. Revisa permisos de Firestore o conexión."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function loadUsers() {
     setLoading(true);
@@ -198,22 +239,29 @@ export default function CollaboratorsAdmin() {
     }
   }
 
-  function selectUser(user) {
+  function selectUser(user, departmentsSource = departments) {
     if (!user) {
       setSelectedUserId("");
       setSelectedUserDraft(null);
       return;
     }
 
+    const departmentIds = getDepartmentIdsForDraft(user, departmentsSource);
+    const departmentNames = getDepartmentNamesByIds(
+      departmentIds,
+      departmentsSource
+    );
+
     setSelectedUserId(user.id);
     setSelectedUserDraft({
       name: user.name || "",
       email: user.email || "",
-      area: user.area || "",
+      area: user.area || departmentNames[0] || "",
       role: user.role || "collaborator",
       privilege: user.privilege || user.role || "collaborator",
       active: user.active !== false,
       notes: user.notes || "",
+      departmentIds,
     });
     setMessage("");
     setError("");
@@ -233,6 +281,58 @@ export default function CollaboratorsAdmin() {
     }));
   }
 
+  function toggleSelectedUserDepartment(departmentId) {
+    setSelectedUserDraft((current) => {
+      if (!current) return current;
+
+      const currentIds = Array.isArray(current.departmentIds)
+        ? current.departmentIds
+        : [];
+
+      const exists = currentIds.includes(departmentId);
+
+      const nextDepartmentIds = exists
+        ? currentIds.filter((id) => id !== departmentId)
+        : [...currentIds, departmentId];
+
+      const nextDepartmentNames = getDepartmentNamesByIds(
+        nextDepartmentIds,
+        departments
+      );
+
+      return {
+        ...current,
+        departmentIds: nextDepartmentIds,
+        area: nextDepartmentNames[0] || "",
+      };
+    });
+  }
+
+  function toggleNewUserDepartment(departmentId) {
+    setNewUserDraft((current) => {
+      const currentIds = Array.isArray(current.departmentIds)
+        ? current.departmentIds
+        : [];
+
+      const exists = currentIds.includes(departmentId);
+
+      const nextDepartmentIds = exists
+        ? currentIds.filter((id) => id !== departmentId)
+        : [...currentIds, departmentId];
+
+      const nextDepartmentNames = getDepartmentNamesByIds(
+        nextDepartmentIds,
+        departments
+      );
+
+      return {
+        ...current,
+        departmentIds: nextDepartmentIds,
+        area: nextDepartmentNames[0] || "",
+      };
+    });
+  }
+
   function openCreateUserModal() {
     setCreatedTemporaryPassword("");
     setNewUserDraft(EMPTY_NEW_USER);
@@ -250,9 +350,16 @@ export default function CollaboratorsAdmin() {
   async function handleCreateUser() {
     const name = newUserDraft.name.trim();
     const email = newUserDraft.email.trim().toLowerCase();
-    const area = newUserDraft.area;
     const role = newUserDraft.role || "collaborator";
     const notes = newUserDraft.notes.trim();
+
+    const departmentIds = Array.isArray(newUserDraft.departmentIds)
+      ? newUserDraft.departmentIds
+      : [];
+
+    const departmentNames = getDepartmentNamesByIds(departmentIds, departments);
+    const primaryDepartmentId = departmentIds[0] || "";
+    const area = departmentNames[0] || "";
 
     if (!name) {
       setError("Escribe el nombre completo del usuario.");
@@ -264,8 +371,8 @@ export default function CollaboratorsAdmin() {
       return;
     }
 
-    if (!area) {
-      setError("Selecciona el área o departamento del usuario.");
+    if (departmentIds.length === 0) {
+      setError("Selecciona al menos un departamento para el usuario.");
       return;
     }
 
@@ -283,6 +390,19 @@ export default function CollaboratorsAdmin() {
         notes,
         active: true,
       });
+
+      if (result?.uid) {
+        await updateUserProfile(
+          result.uid,
+          {
+            area,
+            departmentIds,
+            departmentNames,
+            primaryDepartmentId,
+          },
+          profile
+        );
+      }
 
       setCreatedTemporaryPassword(result.temporaryPassword || "");
       setMessage("Usuario creado correctamente.");
@@ -313,6 +433,19 @@ export default function CollaboratorsAdmin() {
       return;
     }
 
+    const departmentIds = Array.isArray(selectedUserDraft.departmentIds)
+      ? selectedUserDraft.departmentIds
+      : [];
+
+    const departmentNames = getDepartmentNamesByIds(departmentIds, departments);
+    const primaryDepartmentId = departmentIds[0] || "";
+    const area = departmentNames[0] || selectedUserDraft.area || "";
+
+    if (departmentIds.length === 0) {
+      setError("Selecciona al menos un departamento para este usuario.");
+      return;
+    }
+
     setSaving(true);
     setError("");
     setMessage("");
@@ -323,7 +456,10 @@ export default function CollaboratorsAdmin() {
         {
           name: selectedUserDraft.name.trim(),
           email: selectedUserDraft.email.trim().toLowerCase(),
-          area: selectedUserDraft.area,
+          area,
+          departmentIds,
+          departmentNames,
+          primaryDepartmentId,
           role: selectedUserDraft.role,
           privilege: selectedUserDraft.privilege || selectedUserDraft.role,
           active: selectedUserDraft.active,
@@ -472,7 +608,7 @@ export default function CollaboratorsAdmin() {
           <span className="breadcrumb-line">Panel de administrador</span>
           <h2>Gestión de colaboradores</h2>
           <p>
-            Administra usuarios, áreas y privilegios desde un solo lugar.
+            Administra usuarios, departamentos y privilegios desde un solo lugar.
           </p>
         </div>
 
@@ -480,7 +616,7 @@ export default function CollaboratorsAdmin() {
           <button
             type="button"
             className="visual-outline-button"
-            onClick={loadUsers}
+            onClick={loadData}
             disabled={loading || saving || creatingUser}
           >
             ↻ Actualizar
@@ -541,7 +677,7 @@ export default function CollaboratorsAdmin() {
               <span>⌕</span>
               <input
                 type="text"
-                placeholder="Buscar por nombre, correo o área..."
+                placeholder="Buscar por nombre, correo o departamento..."
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
               />
@@ -551,10 +687,10 @@ export default function CollaboratorsAdmin() {
               value={areaFilter}
               onChange={(event) => setAreaFilter(event.target.value)}
             >
-              <option value="all">Todas las áreas</option>
-              {AREA_OPTIONS.map((area) => (
-                <option key={area} value={area}>
-                  {area}
+              <option value="all">Todos los departamentos</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
                 </option>
               ))}
             </select>
@@ -608,7 +744,7 @@ export default function CollaboratorsAdmin() {
                     <tr>
                       <th>Nombre</th>
                       <th>Correo</th>
-                      <th>Área / Departamento</th>
+                      <th>Departamentos</th>
                       <th>Privilegio</th>
                       <th>Estatus</th>
                       <th>Última actividad</th>
@@ -641,11 +777,10 @@ export default function CollaboratorsAdmin() {
                         <td>{user.email || "Sin correo"}</td>
 
                         <td>
-                          <span
-                            className={`area-chip ${getAreaClass(user.area)}`}
-                          >
-                            {user.area || "Sin área"}
-                          </span>
+                          <DepartmentChips
+                            departmentNames={getUserDepartmentNames(user)}
+                            fallbackArea={user.area}
+                          />
                         </td>
 
                         <td>
@@ -751,55 +886,64 @@ export default function CollaboratorsAdmin() {
                   />
                 </label>
 
-                <label>
-                  Área / Departamento
-                  <select
-                    value={selectedUserDraft.area}
-                    onChange={(event) =>
-                      updateDraft("area", event.target.value)
-                    }
-                  >
-                    <option value="">Seleccionar área</option>
-                    {AREA_OPTIONS.map((area) => (
-                      <option key={area} value={area}>
-                        {area}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="collaborator-editor-two-columns">
+                  <label>
+                    Privilegio
+                    <select
+                      value={selectedUserDraft.role}
+                      onChange={(event) => {
+                        updateDraft("role", event.target.value);
+                        updateDraft("privilege", event.target.value);
+                      }}
+                    >
+                      {PRIVILEGE_OPTIONS.map((privilege) => (
+                        <option key={privilege.value} value={privilege.value}>
+                          {privilege.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-                <label>
-                  Privilegio
-                  <select
-                    value={selectedUserDraft.role}
-                    onChange={(event) => {
-                      updateDraft("role", event.target.value);
-                      updateDraft("privilege", event.target.value);
-                    }}
-                  >
-                    {PRIVILEGE_OPTIONS.map((privilege) => (
-                      <option key={privilege.value} value={privilege.value}>
-                        {privilege.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  <label>
+                    Estado
+                    <select
+                      value={selectedUserDraft.active ? "active" : "inactive"}
+                      onChange={(event) =>
+                        updateDraft("active", event.target.value === "active")
+                      }
+                    >
+                      {STATUS_OPTIONS.map((status) => (
+                        <option key={status.value} value={status.value}>
+                          {status.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
 
-                <label>
-                  Estado
-                  <select
-                    value={selectedUserDraft.active ? "active" : "inactive"}
-                    onChange={(event) =>
-                      updateDraft("active", event.target.value === "active")
-                    }
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <DepartmentSelector
+                  title="Departamentos"
+                  helperText="Selecciona una o varias áreas. El primer departamento será el área principal."
+                  departments={departments}
+                  selectedDepartmentIds={selectedUserDraft.departmentIds}
+                  onToggleDepartment={toggleSelectedUserDepartment}
+                  disabled={saving || creatingUser}
+                />
+
+                <div className="collaborator-primary-area-card">
+                  <span>Área principal</span>
+                  <strong>
+                    {getDepartmentNamesByIds(
+                      selectedUserDraft.departmentIds,
+                      departments
+                    )[0] ||
+                      selectedUserDraft.area ||
+                      "Sin área principal"}
+                  </strong>
+                  <small>
+                    Se toma automáticamente del primer departamento seleccionado.
+                  </small>
+                </div>
 
                 <label>
                   Observaciones
@@ -881,8 +1025,8 @@ export default function CollaboratorsAdmin() {
               <div>
                 <h3>Nuevo usuario</h3>
                 <p>
-                  Crea una cuenta nueva y asígnale área y privilegio dentro del
-                  sistema.
+                  Crea una cuenta nueva y asígnale departamentos y privilegio
+                  dentro del sistema.
                 </p>
               </div>
 
@@ -916,22 +1060,17 @@ export default function CollaboratorsAdmin() {
                 />
               </label>
 
-              <label>
-                Área / Departamento
-                <select
-                  value={newUserDraft.area}
-                  onChange={(event) =>
-                    updateNewUserDraft("area", event.target.value)
-                  }
-                >
-                  <option value="">Seleccionar área</option>
-                  {AREA_OPTIONS.map((area) => (
-                    <option key={area} value={area}>
-                      {area}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="full">
+                <DepartmentSelector
+                  title="Departamentos"
+                  helperText="Selecciona al menos un departamento para crear el usuario."
+                  departments={departments}
+                  selectedDepartmentIds={newUserDraft.departmentIds}
+                  onToggleDepartment={toggleNewUserDepartment}
+                  disabled={creatingUser}
+                  compact={false}
+                />
+              </div>
 
               <label>
                 Privilegio
@@ -947,6 +1086,21 @@ export default function CollaboratorsAdmin() {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label>
+                Área principal
+                <input
+                  type="text"
+                  value={
+                    getDepartmentNamesByIds(
+                      newUserDraft.departmentIds,
+                      departments
+                    )[0] || ""
+                  }
+                  disabled
+                  placeholder="Se asignará automáticamente"
+                />
               </label>
 
               <label className="full">
@@ -989,13 +1143,83 @@ export default function CollaboratorsAdmin() {
                   creatingUser ||
                   !newUserDraft.name.trim() ||
                   !newUserDraft.email.trim() ||
-                  !newUserDraft.area
+                  !Array.isArray(newUserDraft.departmentIds) ||
+                  newUserDraft.departmentIds.length === 0
                 }
               >
                 {creatingUser ? "Creando..." : "Crear usuario"}
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DepartmentSelector({
+  title,
+  helperText,
+  departments = [],
+  selectedDepartmentIds = [],
+  onToggleDepartment,
+  disabled = false,
+  compact = true,
+}) {
+  const selectedIds = Array.isArray(selectedDepartmentIds)
+    ? selectedDepartmentIds
+    : [];
+
+  return (
+    <div className="department-selection-panel">
+      <div className="department-selection-header">
+        <div>
+          <span>{title}</span>
+          {helperText && <p>{helperText}</p>}
+        </div>
+
+        <strong>{selectedIds.length} seleccionados</strong>
+      </div>
+
+      {departments.length === 0 ? (
+        <p className="empty-state small">
+          No hay departamentos activos registrados.
+        </p>
+      ) : (
+        <div
+          className={
+            compact
+              ? "department-select-grid compact"
+              : "department-select-grid"
+          }
+        >
+          {departments.map((department) => {
+            const selected = selectedIds.includes(department.id);
+
+            return (
+              <button
+                key={department.id}
+                type="button"
+                className={
+                  selected
+                    ? "department-select-card selected"
+                    : "department-select-card"
+                }
+                onClick={() => onToggleDepartment?.(department.id)}
+                disabled={disabled}
+              >
+                <span className={`department-select-icon ${getAreaClass(department.name)}`}>
+                  {getDepartmentIcon(department.name)}
+                </span>
+
+                <strong>{department.name}</strong>
+
+                <span className="department-select-check">
+                  {selected ? "✓" : ""}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1013,6 +1237,29 @@ function MetricCard({ icon, label, value, hint, colorClass }) {
         <p>{hint}</p>
       </div>
     </article>
+  );
+}
+
+function DepartmentChips({ departmentNames = [], fallbackArea = "" }) {
+  const names =
+    Array.isArray(departmentNames) && departmentNames.length > 0
+      ? departmentNames
+      : fallbackArea
+      ? [fallbackArea]
+      : [];
+
+  if (names.length === 0) {
+    return <span className="area-chip area-gray">Sin departamento</span>;
+  }
+
+  return (
+    <div className="department-chip-list">
+      {names.map((name) => (
+        <span key={name} className={`area-chip ${getAreaClass(name)}`}>
+          {name}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -1057,6 +1304,21 @@ function getRoleClass(role = "") {
   return classes[role] || "role-collaborator";
 }
 
+function getDepartmentIcon(name = "") {
+  const normalizedName = String(name).toLowerCase();
+
+  if (normalizedName.includes("audiovisual")) return "🎬";
+  if (normalizedName.includes("software")) return "⌨";
+  if (normalizedName.includes("material")) return "📚";
+  if (normalizedName.includes("redes")) return "💬";
+  if (normalizedName.includes("imprenta")) return "🖨";
+  if (normalizedName.includes("soporte")) return "🎧";
+  if (normalizedName.includes("dirección")) return "🏛";
+  if (normalizedName.includes("general")) return "▦";
+
+  return "▤";
+}
+
 function getAreaClass(area = "") {
   const normalizedArea = area.toLowerCase();
 
@@ -1088,6 +1350,62 @@ function getAreaClass(area = "") {
   }
 
   return "area-gray";
+}
+
+function getUserDepartmentIds(user) {
+  if (Array.isArray(user?.departmentIds)) {
+    return user.departmentIds.filter(Boolean);
+  }
+
+  return [];
+}
+
+function getUserDepartmentNames(user) {
+  if (Array.isArray(user?.departmentNames) && user.departmentNames.length > 0) {
+    return user.departmentNames.filter(Boolean);
+  }
+
+  if (user?.area) {
+    return [user.area];
+  }
+
+  return [];
+}
+
+function getDepartmentIdsForDraft(user, departmentsSource = []) {
+  if (Array.isArray(user?.departmentIds) && user.departmentIds.length > 0) {
+    return user.departmentIds.filter(Boolean);
+  }
+
+  if (!user?.area) {
+    return [];
+  }
+
+  const matchedDepartment = departmentsSource.find(
+    (department) =>
+      String(department.name || "").toLowerCase() ===
+      String(user.area || "").toLowerCase()
+  );
+
+  return matchedDepartment ? [matchedDepartment.id] : [];
+}
+
+function getDepartmentNamesByIds(ids = [], departmentsSource = []) {
+  if (!Array.isArray(ids)) {
+    return [];
+  }
+
+  return ids
+    .map((id) => {
+      const department = departmentsSource.find((item) => item.id === id);
+      return department?.name || "";
+    })
+    .filter(Boolean);
+}
+
+function getDepartmentNameById(id, departmentsSource = []) {
+  const department = departmentsSource.find((item) => item.id === id);
+  return department?.name || "";
 }
 
 function formatDate(value) {

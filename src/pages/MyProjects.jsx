@@ -252,7 +252,7 @@ export default function MyProjects({ onOpenProject }) {
             id="my-projects-search"
             name="search"
             type="text"
-            placeholder="Buscar proyecto..."
+            placeholder="Buscar proyecto o departamento..."
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
@@ -433,7 +433,7 @@ export default function MyProjects({ onOpenProject }) {
                   >
                     <div>
                       <strong>{project.title}</strong>
-                      <span>{project.responsibleArea || "Sin área"}</span>
+                      <span>{getProjectDepartmentName(project)}</span>
                     </div>
 
                     <Badge color={isOverdue(project) ? "red" : "orange"}>
@@ -604,7 +604,7 @@ function ProjectList({ projects, onOpenProject }) {
             </div>
 
             <div className="my-project-meta-grid compact-meta-grid">
-              <MetaItem label="Área" value={project.responsibleArea} />
+              <MetaItem label="Departamento" value={getProjectDepartmentName(project)} />
               <MetaItem label="Prioridad" value={project.priority} />
               <MetaItem
                 label="Fecha límite"
@@ -714,6 +714,15 @@ function MetaItem({ label, value, danger }) {
   );
 }
 
+function getProjectDepartmentName(project) {
+  return (
+    project?.departmentName ||
+    project?.responsibleDepartmentName ||
+    project?.responsibleArea ||
+    "Sin departamento"
+  );
+}
+
 function filterProjects(projects, activeFilter, searchText) {
   const search = searchText.trim().toLowerCase();
 
@@ -722,6 +731,7 @@ function filterProjects(projects, activeFilter, searchText) {
       !search ||
       project.title?.toLowerCase().includes(search) ||
       project.description?.toLowerCase().includes(search) ||
+      getProjectDepartmentName(project).toLowerCase().includes(search) ||
       project.responsibleArea?.toLowerCase().includes(search) ||
       project.assignedToName?.toLowerCase().includes(search) ||
       project.status?.toLowerCase().includes(search) ||

@@ -1,18 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createProject } from "../services/projectsService";
 import { getActiveUsers } from "../services/usersService";
+import { getActiveDepartments } from "../services/departmentsService";
 import { useAuth } from "../context/AuthContext";
-
-const AREAS = [
-  "Administración",
-  "Académica",
-  "Imprenta",
-  "Mercadotecnia",
-  "Producción audiovisual",
-  "Recursos Humanos",
-  "Sistemas",
-  "Soporte técnico",
-];
 
 const PRIORITIES = ["Alta", "Media", "Baja"];
 
@@ -27,12 +17,17 @@ export default function CreateProject() {
   const { profile, currentUser, firebaseUser } = useAuth();
 
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   const [form, setForm] = useState({
     title: "",
+    departmentId: "",
+    departmentName: "",
+    responsibleDepartmentId: "",
+    responsibleDepartmentName: "",
     responsibleArea: "",
     requesterName: "",
     requesterEmail: "",
@@ -51,23 +46,28 @@ export default function CreateProject() {
   const [collaboratorIds, setCollaboratorIds] = useState([]);
   const [files, setFiles] = useState([]);
 
-  async function loadUsers() {
+  async function loadData() {
     setLoadingUsers(true);
     setMessage("");
 
     try {
-      const data = await getActiveUsers();
-      setUsers(data);
+      const [usersData, departmentsData] = await Promise.all([
+        getActiveUsers(),
+        getActiveDepartments(),
+      ]);
+
+      setUsers(usersData);
+      setDepartments(departmentsData);
     } catch (error) {
       console.error(error);
-      setMessage("No se pudieron cargar los usuarios activos.");
+      setMessage("No se pudieron cargar los usuarios activos o departamentos.");
     } finally {
       setLoadingUsers(false);
     }
   }
 
   useEffect(() => {
-    loadUsers();
+    loadData();
   }, []);
 
   function getCreatorUid() {
@@ -94,6 +94,21 @@ export default function CreateProject() {
     setForm((current) => ({
       ...current,
       [field]: value,
+    }));
+  }
+
+  function handleDepartmentChange(departmentId) {
+    const selectedDepartment = departments.find(
+      (department) => department.id === departmentId
+    );
+
+    setForm((current) => ({
+      ...current,
+      departmentId: selectedDepartment?.id || "",
+      departmentName: selectedDepartment?.name || "",
+      responsibleDepartmentId: selectedDepartment?.id || "",
+      responsibleDepartmentName: selectedDepartment?.name || "",
+      responsibleArea: selectedDepartment?.name || "",
     }));
   }
 
@@ -140,6 +155,10 @@ export default function CreateProject() {
   function resetForm() {
     setForm({
       title: "",
+      departmentId: "",
+      departmentName: "",
+      responsibleDepartmentId: "",
+      responsibleDepartmentName: "",
       responsibleArea: "",
       requesterName: "",
       requesterEmail: "",
@@ -170,8 +189,8 @@ export default function CreateProject() {
       complete: Boolean(form.title.trim()),
     },
     {
-      label: "Área responsable",
-      complete: Boolean(form.responsibleArea),
+      label: "Departamento responsable",
+      complete: Boolean(form.departmentId && form.departmentName),
     },
     {
       label: "Solicitante",
@@ -241,6 +260,13 @@ export default function CreateProject() {
         ...form,
 
         progress: Number(form.progress || 0),
+
+        departmentId: form.departmentId,
+        departmentName: form.departmentName,
+        responsibleDepartmentId: form.responsibleDepartmentId || form.departmentId,
+        responsibleDepartmentName:
+          form.responsibleDepartmentName || form.departmentName,
+        responsibleArea: form.departmentName || form.responsibleArea,
 
         assignedToUid: form.assignedToUid || form.assignedToId,
         assignedToId: form.assignedToId || form.assignedToUid,
@@ -326,19 +352,20 @@ export default function CreateProject() {
                   />
                 </Field>
 
-                <Field label="Área responsable" required>
+                <Field label="Departamento responsable" required>
                   <select
-                    id="create-project-responsible-area"
-                    name="responsibleArea"
-                    value={form.responsibleArea}
+                    id="create-project-department"
+                    name="departmentId"
+                    value={form.departmentId}
                     onChange={(event) =>
-                      updateField("responsibleArea", event.target.value)
+                      handleDepartmentChange(event.target.value)
                     }
+                    disabled={loadingUsers}
                   >
-                    <option value="">Selecciona un área</option>
-                    {AREAS.map((area) => (
-                      <option key={area} value={area}>
-                        {area}
+                    <option value="">Selecciona un departamento</option>
+                    {departments.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name}
                       </option>
                     ))}
                   </select>
@@ -627,7 +654,7 @@ export default function CreateProject() {
 
                 <div className="preview-badges">
                   <Badge color="blue">
-                    {form.responsibleArea || "Área responsable"}
+                    {form.departmentName || form.responsibleArea || "Departamento"}
                   </Badge>
 
                   <Badge color="orange">{form.priority || "Prioridad"}</Badge>

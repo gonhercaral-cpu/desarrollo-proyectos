@@ -353,7 +353,11 @@ function buildWorkloadByArea(projects) {
   const map = new Map();
 
   projects.forEach((project) => {
-    const area = project.responsibleArea || "Sin área";
+    const area =
+      project.departmentName ||
+      project.responsibleDepartmentName ||
+      project.responsibleArea ||
+      "Sin área";
 
     if (!map.has(area)) {
       map.set(area, {
@@ -680,6 +684,20 @@ export async function createProject(projectData, currentUser) {
 
     progress: Number(projectData.progress || 0),
 
+    departmentId: projectData.departmentId || projectData.responsibleDepartmentId || "",
+    departmentName:
+      projectData.departmentName ||
+      projectData.responsibleDepartmentName ||
+      projectData.responsibleArea ||
+      "",
+    responsibleDepartmentId:
+      projectData.responsibleDepartmentId || projectData.departmentId || "",
+    responsibleDepartmentName:
+      projectData.responsibleDepartmentName ||
+      projectData.departmentName ||
+      projectData.responsibleArea ||
+      "",
+
     createdByUid: currentUserUid,
     createdByEmail: currentUser.email || "",
     createdByName: currentUser.name || "",
@@ -742,6 +760,8 @@ export async function createProject(projectData, currentUser) {
       progress: Number(projectData.progress || 0),
       assignedToName: projectData.assignedToName || "",
       responsibleArea: projectData.responsibleArea || "",
+      departmentId: projectData.departmentId || "",
+      departmentName: projectData.departmentName || "",
       priority: projectData.priority || "",
     },
   });
@@ -1496,6 +1516,19 @@ export async function updateProjectAdmin(projectId, projectData, currentUser) {
     requesterName: projectData.requesterName,
     requesterArea: projectData.requesterArea,
     responsibleArea: projectData.responsibleArea,
+    departmentId: projectData.departmentId || projectData.responsibleDepartmentId || "",
+    departmentName:
+      projectData.departmentName ||
+      projectData.responsibleDepartmentName ||
+      projectData.responsibleArea ||
+      "",
+    responsibleDepartmentId:
+      projectData.responsibleDepartmentId || projectData.departmentId || "",
+    responsibleDepartmentName:
+      projectData.responsibleDepartmentName ||
+      projectData.departmentName ||
+      projectData.responsibleArea ||
+      "",
     assignedToUid: projectData.assignedToUid || projectData.assignedToId || "",
     assignedToId: projectData.assignedToId || projectData.assignedToUid || "",
     assignedToEmail: projectData.assignedToEmail,
@@ -1544,6 +1577,8 @@ export async function updateProjectAdmin(projectId, projectData, currentUser) {
       newProgress: shouldCloseProject ? 100 : newProgress,
       assignedToName: projectData.assignedToName || "",
       responsibleArea: projectData.responsibleArea || "",
+      departmentId: projectData.departmentId || "",
+      departmentName: projectData.departmentName || "",
       priority: projectData.priority || "",
     },
   });

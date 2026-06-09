@@ -16,12 +16,13 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
 
   const [searchText, setSearchText] = useState("");
   const [activeQuickFilter, setActiveQuickFilter] = useState("Todos");
-  const [areaFilter, setAreaFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   const [responsibleFilter, setResponsibleFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  const [showFullAreaSummary, setShowFullAreaSummary] = useState(false);
+  const [showFullDepartmentSummary, setShowFullDepartmentSummary] =
+    useState(false);
   const [showFullRecentProjects, setShowFullRecentProjects] = useState(false);
   const [showFullAlerts, setShowFullAlerts] = useState(false);
 
@@ -112,12 +113,14 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     return `${days} días restantes`;
   }
 
-  const areas = useMemo(() => {
+  const departments = useMemo(() => {
     return [
       ...new Set(
-        projects.map((project) => project.responsibleArea).filter(Boolean)
+        projects
+          .map((project) => getProjectDepartmentName(project))
+          .filter(Boolean)
       ),
-    ];
+    ].sort((a, b) => a.localeCompare(b, "es"));
   }, [projects]);
 
   const responsiblePeople = useMemo(() => {
@@ -125,17 +128,19 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
       ...new Set(
         projects.map((project) => project.assignedToName).filter(Boolean)
       ),
-    ];
+    ].sort((a, b) => a.localeCompare(b, "es"));
   }, [projects]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const search = searchText.trim().toLowerCase();
+      const departmentName = getProjectDepartmentName(project);
 
       const matchesSearch =
         !search ||
         project.title?.toLowerCase().includes(search) ||
         project.description?.toLowerCase().includes(search) ||
+        departmentName.toLowerCase().includes(search) ||
         project.responsibleArea?.toLowerCase().includes(search) ||
         project.assignedToName?.toLowerCase().includes(search);
 
@@ -146,7 +151,8 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
           project.status === "Listo para revisión") ||
         (activeQuickFilter === "Atrasados" && isOverdue(project));
 
-      const matchesArea = !areaFilter || project.responsibleArea === areaFilter;
+      const matchesDepartment =
+        !departmentFilter || departmentName === departmentFilter;
 
       const matchesResponsible =
         !responsibleFilter || project.assignedToName === responsibleFilter;
@@ -159,7 +165,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
       return (
         matchesSearch &&
         matchesQuick &&
-        matchesArea &&
+        matchesDepartment &&
         matchesResponsible &&
         matchesPriority &&
         matchesStatus
@@ -169,7 +175,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     projects,
     searchText,
     activeQuickFilter,
-    areaFilter,
+    departmentFilter,
     responsibleFilter,
     priorityFilter,
     statusFilter,
@@ -193,21 +199,21 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
     return { total, active, overdue, highPriority, review };
   }, [projects]);
 
-  const areaSummary = useMemo(() => {
+  const departmentSummary = useMemo(() => {
     const map = new Map();
 
     projects.forEach((project) => {
-      const area = project.responsibleArea || "Sin área";
+      const department = getProjectDepartmentName(project) || "Sin departamento";
 
-      if (!map.has(area)) {
-        map.set(area, {
-          area,
+      if (!map.has(department)) {
+        map.set(department, {
+          department,
           total: 0,
           progressTotal: 0,
         });
       }
 
-      const item = map.get(area);
+      const item = map.get(department);
 
       item.total += 1;
       item.progressTotal += calculateAutomaticProgress(project);
@@ -222,9 +228,9 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
       .sort((a, b) => b.total - a.total);
   }, [projects]);
 
-  const visibleAreaSummary = showFullAreaSummary
-    ? areaSummary
-    : areaSummary.slice(0, 5);
+  const visibleDepartmentSummary = showFullDepartmentSummary
+    ? departmentSummary
+    : departmentSummary.slice(0, 5);
 
   const recentProjects = useMemo(() => {
     return projects
@@ -293,7 +299,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
   function clearFilters() {
     setSearchText("");
     setActiveQuickFilter("Todos");
-    setAreaFilter("");
+    setDepartmentFilter("");
     setResponsibleFilter("");
     setPriorityFilter("");
     setStatusFilter("");
@@ -317,7 +323,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
           <span>⌕</span>
           <input
             type="text"
-            placeholder="Buscar proyecto, responsable o área..."
+            placeholder="Buscar proyecto, responsable o departamento..."
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
@@ -402,11 +408,11 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
 
             <div className="advanced-filters-grid">
               <SelectFilter
-                label="Área"
-                value={areaFilter}
-                onChange={setAreaFilter}
-                placeholder="Todas las áreas"
-                options={areas}
+                label="Departamento"
+                value={departmentFilter}
+                onChange={setDepartmentFilter}
+                placeholder="Todos los departamentos"
+                options={departments}
               />
 
               <SelectFilter
@@ -470,7 +476,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                 <thead>
                   <tr>
                     <th>Proyecto</th>
-                    <th>Área</th>
+                    <th>Departamento</th>
                     <th>Responsable</th>
                     <th>Estado</th>
                     <th>Prioridad</th>
@@ -494,7 +500,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                         </div>
                       </td>
 
-                      <td>{project.responsibleArea || "Sin área"}</td>
+                      <td>{getProjectDepartmentName(project)}</td>
 
                       <td>
                         <div className="collaborator-cell">
@@ -596,18 +602,25 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
         <aside className="all-projects-side">
           <section className="visual-card">
             <SectionHeader
-              title="Resumen por área"
-              action={showFullAreaSummary ? "Ver menos" : "Ver detalle"}
-              onAction={() => setShowFullAreaSummary((current) => !current)}
+              title="Resumen por departamento"
+              action={
+                showFullDepartmentSummary ? "Ver menos" : "Ver detalle"
+              }
+              onAction={() =>
+                setShowFullDepartmentSummary((current) => !current)
+              }
             />
 
             <div className="area-summary-list">
-              {visibleAreaSummary.length === 0 ? (
-                <EmptyState text="No hay áreas para mostrar." />
+              {visibleDepartmentSummary.length === 0 ? (
+                <EmptyState text="No hay departamentos para mostrar." />
               ) : (
-                visibleAreaSummary.map((item) => (
-                  <div className="area-summary-item" key={item.area}>
-                    <span>{item.area}</span>
+                visibleDepartmentSummary.map((item) => (
+                  <div
+                    className="area-summary-item"
+                    key={item.department}
+                  >
+                    <span>{item.department}</span>
 
                     <Badge color="blue">{item.total}</Badge>
 
@@ -785,6 +798,15 @@ function EmptyState({ text }) {
 
 function Badge({ color, children }) {
   return <span className={`visual-badge badge-${color}`}>{children}</span>;
+}
+
+function getProjectDepartmentName(project) {
+  return (
+    project?.departmentName ||
+    project?.responsibleDepartmentName ||
+    project?.responsibleArea ||
+    "Sin departamento"
+  );
 }
 
 function parseDate(value) {

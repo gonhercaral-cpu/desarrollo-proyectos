@@ -1089,8 +1089,8 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
             <HeroMeta
               icon="▣"
-              label="Área responsable"
-              value={project.responsibleArea || "Sin área"}
+              label="Departamento"
+              value={getProjectDepartmentName(project)}
               color="blue"
             />
           </div>
@@ -2330,6 +2330,15 @@ function getHistoryColor(type = "") {
   if (type === "Nota interna") return "purple";
 
   return "blue";
+}
+
+function getProjectDepartmentName(project) {
+  return (
+    project?.departmentName ||
+    project?.responsibleDepartmentName ||
+    project?.responsibleArea ||
+    "Sin departamento"
+  );
 }
 
 function getProjectCode(project) {

@@ -8,6 +8,7 @@ import ProjectDetail from "./ProjectDetail";
 import EditProject from "./EditProject";
 import ExecutiveDashboard from "./ExecutiveDashboard";
 import CollaboratorsAdmin from "./CollaboratorsAdmin";
+import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
@@ -41,6 +42,8 @@ export default function Dashboard() {
       setReturnPage("executive-dashboard");
     } else if (page === "collaborators-admin") {
       setReturnPage("collaborators-admin");
+    } else if (page === "departments-admin") {
+      setReturnPage("departments-admin");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -91,6 +94,10 @@ export default function Dashboard() {
 
     if (page === "collaborators-admin" && isAdmin) {
       return <CollaboratorsAdmin />;
+    }
+
+    if (page === "departments-admin" && isAdmin) {
+      return <DepartmentsAdmin />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -194,6 +201,10 @@ export default function Dashboard() {
       return page === "collaborators-admin";
     }
 
+    if (navPage === "departments-admin") {
+      return page === "departments-admin";
+    }
+
     return page === navPage;
   }
 
@@ -255,6 +266,14 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">☷</span>
                 Colaboradores
+              </button>
+
+              <button
+                className={isNavActive("departments-admin") ? "active" : ""}
+                onClick={() => goToPage("departments-admin")}
+              >
+                <span className="nav-icon">▤</span>
+                Departamentos
               </button>
 
               <button

@@ -93,7 +93,7 @@ export default function ExecutiveDashboard({ onOpenProject }) {
   const enhancedWorkloadByArea = useMemo(() => {
     return workloadByArea.map((item) => {
       const areaProjects = (projects.active || []).filter(
-        (project) => (project.responsibleArea || "Sin área") === item.area
+        (project) => getProjectDepartmentName(project) === item.area
       );
 
       return {
@@ -493,16 +493,16 @@ export default function ExecutiveDashboard({ onOpenProject }) {
       </div>
 
       <section className="visual-card">
-        <SectionTitle color="blue" icon="▦" title="Carga por área" />
+        <SectionTitle color="blue" icon="▦" title="Carga por departamento" />
 
         {enhancedWorkloadByArea.length === 0 ? (
-          <EmptyState text="No hay proyectos activos por área." />
+          <EmptyState text="No hay proyectos activos por departamento." />
         ) : (
           <div className="visual-table-wrap">
             <table className="visual-table area-table">
               <thead>
                 <tr>
-                  <th>Área</th>
+                  <th>Departamento</th>
                   <th>Activos</th>
                   <th>Atrasados</th>
                   <th>Por revisar</th>
@@ -649,8 +649,8 @@ function ProjectMiniCard({ project, icon, color, badge, badgeColor, onClick }) {
           </span>
 
           <span>
-            <small>Área</small>
-            {project.responsibleArea || "Sin área"}
+            <small>Departamento</small>
+            {getProjectDepartmentName(project)}
           </span>
 
           <span>
@@ -788,6 +788,15 @@ function getAlertColor(alert) {
   if (alert.level === "info") return "blue";
 
   return "green";
+}
+
+function getProjectDepartmentName(project) {
+  return (
+    project?.departmentName ||
+    project?.responsibleDepartmentName ||
+    project?.responsibleArea ||
+    "Sin departamento"
+  );
 }
 
 function getAlertIcon(alert) {

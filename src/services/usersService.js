@@ -11,15 +11,32 @@ import { auth, db, functions } from "./firebase";
 
 const USERS_COLLECTION = "users";
 
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function normalizeUser(docSnapshot) {
   const data = docSnapshot.data();
+
+  const departmentIds = normalizeStringArray(data.departmentIds);
+  const departmentNames = normalizeStringArray(data.departmentNames);
 
   return {
     id: docSnapshot.id,
     uid: docSnapshot.id,
     name: data.name || "",
     email: data.email || "",
-    area: data.area || "",
+    area: data.area || departmentNames[0] || "",
+    departmentIds,
+    departmentNames,
+    primaryDepartmentId: data.primaryDepartmentId || departmentIds[0] || "",
     role: data.role || "collaborator",
     privilege: data.privilege || data.role || "collaborator",
     active: data.active !== false,
