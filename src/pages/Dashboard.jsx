@@ -7,6 +7,7 @@ import ProjectHistory from "./ProjectHistory";
 import ProjectDetail from "./ProjectDetail";
 import EditProject from "./EditProject";
 import ExecutiveDashboard from "./ExecutiveDashboard";
+import CollaboratorsAdmin from "./CollaboratorsAdmin";
 
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
@@ -38,6 +39,8 @@ export default function Dashboard() {
       setReturnPage("my-projects");
     } else if (page === "executive-dashboard") {
       setReturnPage("executive-dashboard");
+    } else if (page === "collaborators-admin") {
+      setReturnPage("collaborators-admin");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -84,6 +87,10 @@ export default function Dashboard() {
 
     if (page === "executive-dashboard" && isAdmin) {
       return <ExecutiveDashboard onOpenProject={openProject} />;
+    }
+
+    if (page === "collaborators-admin" && isAdmin) {
+      return <CollaboratorsAdmin />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -183,6 +190,10 @@ export default function Dashboard() {
       );
     }
 
+    if (navPage === "collaborators-admin") {
+      return page === "collaborators-admin";
+    }
+
     return page === navPage;
   }
 
@@ -234,6 +245,16 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">☰</span>
                 Todos los proyectos
+              </button>
+
+              <button
+                className={
+                  isNavActive("collaborators-admin") ? "active" : ""
+                }
+                onClick={() => goToPage("collaborators-admin")}
+              >
+                <span className="nav-icon">☷</span>
+                Colaboradores
               </button>
 
               <button
@@ -316,7 +337,7 @@ function TopProfileBar({
             </div>
 
             <div className="profile-dropdown-info">
-              <span>{isAdmin ? "Administrador" : profile?.role || "Usuario"}</span>
+              <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
               <span>{profile?.area || "Sin área"}</span>
             </div>
 
@@ -361,7 +382,7 @@ function ProfilePage({ profile, isAdmin, onClose }) {
             <p>{profile?.email || "Sin correo registrado"}</p>
 
             <div className="profile-page-badges">
-              <span>{isAdmin ? "Administrador" : profile?.role || "Sin rol"}</span>
+              <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
               <span>{profile?.area || "Sin área"}</span>
               <span>{profile?.active === false ? "Inactivo" : "Activo"}</span>
             </div>
@@ -372,8 +393,8 @@ function ProfilePage({ profile, isAdmin, onClose }) {
           <ProfileInfoItem label="Nombre" value={profile?.name} />
           <ProfileInfoItem label="Correo" value={profile?.email} />
           <ProfileInfoItem
-            label="Rol"
-            value={isAdmin ? "Administrador" : profile?.role}
+            label="Privilegio"
+            value={isAdmin ? "Administrador" : getRoleLabel(profile?.role)}
           />
           <ProfileInfoItem label="Área" value={profile?.area} />
           <ProfileInfoItem
@@ -406,4 +427,14 @@ function getInitials(name = "") {
     .toUpperCase();
 
   return initials || "U";
+}
+
+function getRoleLabel(role = "") {
+  const labels = {
+    admin: "Administrador",
+    collaborator: "Colaborador",
+    requester: "Solicitante",
+  };
+
+  return labels[role] || role || "Usuario";
 }

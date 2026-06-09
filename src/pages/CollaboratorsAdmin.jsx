@@ -1,0 +1,1093 @@
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import {
+  createUserByAdmin,
+  deactivateUserProfile,
+  getAllUsers,
+  restoreUserProfile,
+  sendUserPasswordReset,
+  softDeleteUserProfile,
+  updateUserProfile,
+} from "../services/usersService";
+
+const AREA_OPTIONS = [
+  "Dirección",
+  "Administración",
+  "Recepción",
+  "Dirección Académica",
+  "Producción Audiovisual",
+  "Desarrollo de Software",
+  "Desarrollo de Material",
+  "Soporte Técnico",
+  "Imprenta",
+  "Soporte Técnico / Imprenta",
+  "Redes Sociales",
+  "Coffee Beans Factory",
+];
+
+const PRIVILEGE_OPTIONS = [
+  {
+    value: "admin",
+    label: "Administrador",
+    description: "Acceso total al sistema.",
+  },
+  {
+    value: "collaborator",
+    label: "Colaborador",
+    description: "Puede trabajar en proyectos asignados.",
+  },
+  {
+    value: "requester",
+    label: "Solicitante",
+    description: "Puede consultar proyectos relacionados con su área.",
+  },
+];
+
+const STATUS_OPTIONS = [
+  {
+    value: "active",
+    label: "Activo",
+  },
+  {
+    value: "inactive",
+    label: "Inactivo",
+  },
+];
+
+const EMPTY_NEW_USER = {
+  name: "",
+  email: "",
+  area: "",
+  role: "collaborator",
+  notes: "",
+};
+
+export default function CollaboratorsAdmin() {
+  const { profile, refreshProfile } = useAuth();
+
+  const [users, setUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedUserDraft, setSelectedUserDraft] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createdTemporaryPassword, setCreatedTemporaryPassword] = useState("");
+  const [newUserDraft, setNewUserDraft] = useState(EMPTY_NEW_USER);
+
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [areaFilter, setAreaFilter] = useState("all");
+  const [privilegeFilter, setPrivilegeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const selectedUser = useMemo(() => {
+    return users.find((user) => user.id === selectedUserId) || null;
+  }, [users, selectedUserId]);
+
+  const stats = useMemo(() => {
+    const total = users.filter((user) => user.deleted !== true).length;
+    const active = users.filter(
+      (user) => user.active === true && user.deleted !== true
+    ).length;
+    const admins = users.filter(
+      (user) => user.role === "admin" && user.deleted !== true
+    ).length;
+    const collaborators = users.filter(
+      (user) => user.role === "collaborator" && user.deleted !== true
+    ).length;
+
+    return {
+      total,
+      active,
+      admins,
+      collaborators,
+    };
+  }, [users]);
+
+  const visibleUsers = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+
+    return users.filter((user) => {
+      if (user.deleted === true && statusFilter !== "deleted") {
+        return false;
+      }
+
+      const searchableText = [
+        user.name,
+        user.email,
+        user.area,
+        user.role,
+        user.privilege,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !term || searchableText.includes(term);
+      const matchesArea = areaFilter === "all" || user.area === areaFilter;
+      const matchesPrivilege =
+        privilegeFilter === "all" || user.role === privilegeFilter;
+
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" &&
+          user.active === true &&
+          user.deleted !== true) ||
+        (statusFilter === "inactive" &&
+          user.active === false &&
+          user.deleted !== true) ||
+        (statusFilter === "deleted" && user.deleted === true);
+
+      return matchesSearch && matchesArea && matchesPrivilege && matchesStatus;
+    });
+  }, [users, searchTerm, areaFilter, privilegeFilter, statusFilter]);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedUser && users.length > 0) {
+      const firstVisibleUser =
+        users.find((user) => user.deleted !== true) || users[0];
+
+      selectUser(firstVisibleUser);
+    }
+  }, [users, selectedUser]);
+
+  async function loadUsers() {
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const result = await getAllUsers();
+      setUsers(result);
+
+      if (result.length > 0) {
+        const firstVisibleUser =
+          result.find((user) => user.deleted !== true) || result[0];
+
+        selectUser(firstVisibleUser);
+      }
+    } catch (loadError) {
+      console.error("No se pudieron cargar los usuarios:", loadError);
+      setError(
+        "No se pudieron cargar los colaboradores. Revisa permisos de Firestore o conexión."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function selectUser(user) {
+    if (!user) {
+      setSelectedUserId("");
+      setSelectedUserDraft(null);
+      return;
+    }
+
+    setSelectedUserId(user.id);
+    setSelectedUserDraft({
+      name: user.name || "",
+      email: user.email || "",
+      area: user.area || "",
+      role: user.role || "collaborator",
+      privilege: user.privilege || user.role || "collaborator",
+      active: user.active !== false,
+      notes: user.notes || "",
+    });
+    setMessage("");
+    setError("");
+  }
+
+  function updateDraft(field, value) {
+    setSelectedUserDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateNewUserDraft(field, value) {
+    setNewUserDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function openCreateUserModal() {
+    setCreatedTemporaryPassword("");
+    setNewUserDraft(EMPTY_NEW_USER);
+    setError("");
+    setMessage("");
+    setShowCreateUserModal(true);
+  }
+
+  function closeCreateUserModal() {
+    setShowCreateUserModal(false);
+    setCreatedTemporaryPassword("");
+    setNewUserDraft(EMPTY_NEW_USER);
+  }
+
+  async function handleCreateUser() {
+    const name = newUserDraft.name.trim();
+    const email = newUserDraft.email.trim().toLowerCase();
+    const area = newUserDraft.area;
+    const role = newUserDraft.role || "collaborator";
+    const notes = newUserDraft.notes.trim();
+
+    if (!name) {
+      setError("Escribe el nombre completo del usuario.");
+      return;
+    }
+
+    if (!email || !email.includes("@")) {
+      setError("Escribe un correo electrónico válido.");
+      return;
+    }
+
+    if (!area) {
+      setError("Selecciona el área o departamento del usuario.");
+      return;
+    }
+
+    setCreatingUser(true);
+    setError("");
+    setMessage("");
+    setCreatedTemporaryPassword("");
+
+    try {
+      const result = await createUserByAdmin({
+        name,
+        email,
+        area,
+        role,
+        notes,
+        active: true,
+      });
+
+      setCreatedTemporaryPassword(result.temporaryPassword || "");
+      setMessage("Usuario creado correctamente.");
+
+      const refreshedUsers = await getAllUsers();
+      setUsers(refreshedUsers);
+
+      const createdUser =
+        refreshedUsers.find((user) => user.id === result.uid) ||
+        refreshedUsers.find((user) => user.email === email);
+
+      if (createdUser) {
+        selectUser(createdUser);
+      }
+    } catch (createError) {
+      console.error("No se pudo crear el usuario:", createError);
+      setError(
+        createError?.message ||
+          "No se pudo crear el usuario. Revisa los datos e intenta nuevamente."
+      );
+    } finally {
+      setCreatingUser(false);
+    }
+  }
+
+  async function handleSaveChanges() {
+    if (!selectedUser || !selectedUserDraft) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      await updateUserProfile(
+        selectedUser.id,
+        {
+          name: selectedUserDraft.name.trim(),
+          email: selectedUserDraft.email.trim().toLowerCase(),
+          area: selectedUserDraft.area,
+          role: selectedUserDraft.role,
+          privilege: selectedUserDraft.privilege || selectedUserDraft.role,
+          active: selectedUserDraft.active,
+          notes: selectedUserDraft.notes.trim(),
+        },
+        profile
+      );
+
+      if (selectedUser.id === profile?.uid || selectedUser.id === profile?.id) {
+        await refreshProfile?.();
+      }
+
+      setMessage("Cambios guardados correctamente.");
+      await loadUsers();
+    } catch (saveError) {
+      console.error("No se pudieron guardar los cambios:", saveError);
+      setError("No se pudieron guardar los cambios del colaborador.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeactivateUser() {
+    if (!selectedUser) {
+      return;
+    }
+
+    const confirmDeactivate = window.confirm(
+      `¿Quieres desactivar a ${selectedUser.name || selectedUser.email}?`
+    );
+
+    if (!confirmDeactivate) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      await deactivateUserProfile(selectedUser.id, profile);
+      setMessage("Usuario desactivado correctamente.");
+      await loadUsers();
+    } catch (deactivateError) {
+      console.error("No se pudo desactivar el usuario:", deactivateError);
+      setError("No se pudo desactivar el usuario.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRestoreUser() {
+    if (!selectedUser) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      await restoreUserProfile(selectedUser.id, profile);
+      setMessage("Usuario restaurado correctamente.");
+      await loadUsers();
+    } catch (restoreError) {
+      console.error("No se pudo restaurar el usuario:", restoreError);
+      setError("No se pudo restaurar el usuario.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSoftDeleteUser() {
+    if (!selectedUser) {
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `Esta acción ocultará a ${
+        selectedUser.name || selectedUser.email
+      } del listado normal y lo marcará como eliminado. ¿Deseas continuar?`
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      await softDeleteUserProfile(selectedUser.id, profile);
+      setMessage("Usuario marcado como eliminado.");
+      await loadUsers();
+    } catch (deleteError) {
+      console.error("No se pudo eliminar el usuario:", deleteError);
+      setError("No se pudo eliminar el usuario.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!selectedUser?.email) {
+      setError("Este usuario no tiene correo registrado.");
+      return;
+    }
+
+    const confirmReset = window.confirm(
+      `Se enviará un correo para restablecer la contraseña a ${selectedUser.email}. ¿Deseas continuar?`
+    );
+
+    if (!confirmReset) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      await sendUserPasswordReset(selectedUser.email);
+      setMessage("Correo de restablecimiento de contraseña enviado.");
+    } catch (resetError) {
+      console.error("No se pudo enviar el restablecimiento:", resetError);
+      setError(
+        "No se pudo enviar el correo de restablecimiento. Verifica que el correo exista en Firebase Auth."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function clearFilters() {
+    setSearchTerm("");
+    setAreaFilter("all");
+    setPrivilegeFilter("all");
+    setStatusFilter("all");
+  }
+
+  return (
+    <div className="collaborators-admin-page">
+      <div className="visual-page-header collaborators-header">
+        <div>
+          <span className="breadcrumb-line">Panel de administrador</span>
+          <h2>Gestión de colaboradores</h2>
+          <p>
+            Administra usuarios, áreas y privilegios desde un solo lugar.
+          </p>
+        </div>
+
+        <div className="visual-page-actions">
+          <button
+            type="button"
+            className="visual-outline-button"
+            onClick={loadUsers}
+            disabled={loading || saving || creatingUser}
+          >
+            ↻ Actualizar
+          </button>
+
+          <button
+            type="button"
+            className="visual-primary-button"
+            onClick={openCreateUserModal}
+            disabled={loading || saving || creatingUser}
+          >
+            + Agregar usuario
+          </button>
+        </div>
+      </div>
+
+      {message && <div className="message-box">{message}</div>}
+      {error && <div className="error-box">{error}</div>}
+
+      <section className="collaborator-metrics-grid">
+        <MetricCard
+          icon="👥"
+          label="Usuarios totales"
+          value={stats.total}
+          hint="Perfiles registrados"
+          colorClass="metric-blue"
+        />
+
+        <MetricCard
+          icon="●"
+          label="Activos"
+          value={stats.active}
+          hint={`${getPercentage(stats.active, stats.total)}% del total`}
+          colorClass="metric-green"
+        />
+
+        <MetricCard
+          icon="🛡"
+          label="Administradores"
+          value={stats.admins}
+          hint={`${getPercentage(stats.admins, stats.total)}% del total`}
+          colorClass="metric-purple"
+        />
+
+        <MetricCard
+          icon="☷"
+          label="Colaboradores"
+          value={stats.collaborators}
+          hint={`${getPercentage(stats.collaborators, stats.total)}% del total`}
+          colorClass="metric-orange"
+        />
+      </section>
+
+      <section className="collaborators-layout">
+        <div className="collaborators-main-card">
+          <div className="collaborators-toolbar">
+            <div className="visual-search collaborators-search">
+              <span>⌕</span>
+              <input
+                type="text"
+                placeholder="Buscar por nombre, correo o área..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </div>
+
+            <select
+              value={areaFilter}
+              onChange={(event) => setAreaFilter(event.target.value)}
+            >
+              <option value="all">Todas las áreas</option>
+              {AREA_OPTIONS.map((area) => (
+                <option key={area} value={area}>
+                  {area}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={privilegeFilter}
+              onChange={(event) => setPrivilegeFilter(event.target.value)}
+            >
+              <option value="all">Todos los privilegios</option>
+              {PRIVILEGE_OPTIONS.map((privilege) => (
+                <option key={privilege.value} value={privilege.value}>
+                  {privilege.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">Todos los estados</option>
+              <option value="active">Activos</option>
+              <option value="inactive">Inactivos</option>
+              <option value="deleted">Eliminados</option>
+            </select>
+
+            <button
+              type="button"
+              className="visual-outline-button clear-users-filter"
+              onClick={clearFilters}
+            >
+              Limpiar
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="empty-state">
+              <div>⌛</div>
+              <p>Cargando colaboradores...</p>
+            </div>
+          ) : visibleUsers.length === 0 ? (
+            <div className="empty-state">
+              <div>⌕</div>
+              <p>No se encontraron usuarios con esos filtros.</p>
+            </div>
+          ) : (
+            <>
+              <div className="visual-table-wrap">
+                <table className="visual-table collaborators-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Correo</th>
+                      <th>Área / Departamento</th>
+                      <th>Privilegio</th>
+                      <th>Estatus</th>
+                      <th>Última actividad</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {visibleUsers.map((user) => (
+                      <tr
+                        key={user.id}
+                        className={
+                          selectedUserId === user.id ? "selected-user-row" : ""
+                        }
+                        onClick={() => selectUser(user)}
+                      >
+                        <td>
+                          <div className="user-name-cell">
+                            <div className="avatar-mini">
+                              {getInitials(user.name || user.email)}
+                            </div>
+
+                            <div>
+                              <strong>{user.name || "Sin nombre"}</strong>
+                              <small>{user.id}</small>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td>{user.email || "Sin correo"}</td>
+
+                        <td>
+                          <span
+                            className={`area-chip ${getAreaClass(user.area)}`}
+                          >
+                            {user.area || "Sin área"}
+                          </span>
+                        </td>
+
+                        <td>
+                          <span
+                            className={`role-chip ${getRoleClass(user.role)}`}
+                          >
+                            {getRoleLabel(user.role)}
+                          </span>
+                        </td>
+
+                        <td>
+                          <span
+                            className={`status-chip ${
+                              user.deleted
+                                ? "status-deleted"
+                                : user.active
+                                ? "status-active"
+                                : "status-inactive"
+                            }`}
+                          >
+                            {user.deleted
+                              ? "Eliminado"
+                              : user.active
+                              ? "Activo"
+                              : "Inactivo"}
+                          </span>
+                        </td>
+
+                        <td>{formatDate(user.lastLoginAt || user.updatedAt)}</td>
+
+                        <td>
+                          <button
+                            type="button"
+                            className="table-dot-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              selectUser(user);
+                            }}
+                          >
+                            ⋮
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="collaborators-table-footer">
+                <span>
+                  Mostrando {visibleUsers.length} de {users.length} usuarios
+                </span>
+
+                <span>Página 1</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <aside className="collaborator-editor-card">
+          {!selectedUserDraft ? (
+            <div className="empty-state small">
+              <div>👤</div>
+              <p>Selecciona un colaborador para editarlo.</p>
+            </div>
+          ) : (
+            <>
+              <div className="collaborator-editor-header">
+                <div className="profile-page-avatar small-avatar">
+                  {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
+                </div>
+
+                <div>
+                  <h3>Editar colaborador</h3>
+                  <strong>
+                    {selectedUserDraft.name || "Usuario sin nombre"}
+                  </strong>
+                  <span>{selectedUserDraft.email || "Sin correo"}</span>
+                </div>
+              </div>
+
+              <div className="collaborator-editor-form">
+                <label>
+                  Nombre completo
+                  <input
+                    type="text"
+                    value={selectedUserDraft.name}
+                    onChange={(event) =>
+                      updateDraft("name", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Correo electrónico
+                  <input
+                    type="email"
+                    value={selectedUserDraft.email}
+                    onChange={(event) =>
+                      updateDraft("email", event.target.value)
+                    }
+                  />
+                </label>
+
+                <label>
+                  Área / Departamento
+                  <select
+                    value={selectedUserDraft.area}
+                    onChange={(event) =>
+                      updateDraft("area", event.target.value)
+                    }
+                  >
+                    <option value="">Seleccionar área</option>
+                    {AREA_OPTIONS.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Privilegio
+                  <select
+                    value={selectedUserDraft.role}
+                    onChange={(event) => {
+                      updateDraft("role", event.target.value);
+                      updateDraft("privilege", event.target.value);
+                    }}
+                  >
+                    {PRIVILEGE_OPTIONS.map((privilege) => (
+                      <option key={privilege.value} value={privilege.value}>
+                        {privilege.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Estado
+                  <select
+                    value={selectedUserDraft.active ? "active" : "inactive"}
+                    onChange={(event) =>
+                      updateDraft("active", event.target.value === "active")
+                    }
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Observaciones
+                  <textarea
+                    value={selectedUserDraft.notes}
+                    onChange={(event) =>
+                      updateDraft("notes", event.target.value)
+                    }
+                    placeholder="Agrega notas administrativas sobre este colaborador..."
+                  />
+                </label>
+              </div>
+
+              <div className="collaborator-editor-actions">
+                <button
+                  type="button"
+                  className="visual-primary-button"
+                  onClick={handleSaveChanges}
+                  disabled={saving || creatingUser}
+                >
+                  Guardar cambios
+                </button>
+
+                <button
+                  type="button"
+                  className="visual-outline-button"
+                  onClick={handleResetPassword}
+                  disabled={saving || creatingUser}
+                >
+                  Restablecer contraseña
+                </button>
+
+                {selectedUser?.active === false || selectedUser?.deleted ? (
+                  <button
+                    type="button"
+                    className="restore-user-button"
+                    onClick={handleRestoreUser}
+                    disabled={saving || creatingUser}
+                  >
+                    Restaurar usuario
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="deactivate-user-button"
+                    onClick={handleDeactivateUser}
+                    disabled={saving || creatingUser}
+                  >
+                    Desactivar usuario
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="delete-user-button"
+                  onClick={handleSoftDeleteUser}
+                  disabled={saving || creatingUser}
+                >
+                  Eliminar usuario
+                </button>
+              </div>
+
+              <div className="new-user-hint-card">
+                <strong>Nuevo usuario</strong>
+                <p>
+                  El botón “Agregar usuario” crea la cuenta en Firebase
+                  Authentication y también genera su perfil en Firestore.
+                </p>
+              </div>
+            </>
+          )}
+        </aside>
+      </section>
+
+      {showCreateUserModal && (
+        <div className="modal-backdrop">
+          <div className="create-user-modal">
+            <div className="create-user-modal-header">
+              <div>
+                <h3>Nuevo usuario</h3>
+                <p>
+                  Crea una cuenta nueva y asígnale área y privilegio dentro del
+                  sistema.
+                </p>
+              </div>
+
+              <button type="button" onClick={closeCreateUserModal}>
+                ×
+              </button>
+            </div>
+
+            <div className="create-user-form">
+              <label>
+                Nombre completo
+                <input
+                  type="text"
+                  value={newUserDraft.name}
+                  onChange={(event) =>
+                    updateNewUserDraft("name", event.target.value)
+                  }
+                  placeholder="Ej. María González"
+                />
+              </label>
+
+              <label>
+                Correo electrónico
+                <input
+                  type="email"
+                  value={newUserDraft.email}
+                  onChange={(event) =>
+                    updateNewUserDraft("email", event.target.value)
+                  }
+                  placeholder="maria@activeenglish.mx"
+                />
+              </label>
+
+              <label>
+                Área / Departamento
+                <select
+                  value={newUserDraft.area}
+                  onChange={(event) =>
+                    updateNewUserDraft("area", event.target.value)
+                  }
+                >
+                  <option value="">Seleccionar área</option>
+                  {AREA_OPTIONS.map((area) => (
+                    <option key={area} value={area}>
+                      {area}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Privilegio
+                <select
+                  value={newUserDraft.role}
+                  onChange={(event) =>
+                    updateNewUserDraft("role", event.target.value)
+                  }
+                >
+                  {PRIVILEGE_OPTIONS.map((privilege) => (
+                    <option key={privilege.value} value={privilege.value}>
+                      {privilege.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full">
+                Observaciones
+                <textarea
+                  value={newUserDraft.notes}
+                  onChange={(event) =>
+                    updateNewUserDraft("notes", event.target.value)
+                  }
+                  placeholder="Notas internas sobre este usuario..."
+                />
+              </label>
+            </div>
+
+            {createdTemporaryPassword && (
+              <div className="temporary-password-box">
+                <strong>Contraseña temporal generada:</strong>
+                <code>{createdTemporaryPassword}</code>
+                <p>
+                  Copia esta contraseña y entrégala al usuario. Después podrá
+                  cambiarla desde el correo de restablecimiento.
+                </p>
+              </div>
+            )}
+
+            <div className="create-user-modal-actions">
+              <button
+                type="button"
+                className="visual-outline-button"
+                onClick={closeCreateUserModal}
+              >
+                Cerrar
+              </button>
+
+              <button
+                type="button"
+                className="visual-primary-button"
+                onClick={handleCreateUser}
+                disabled={
+                  creatingUser ||
+                  !newUserDraft.name.trim() ||
+                  !newUserDraft.email.trim() ||
+                  !newUserDraft.area
+                }
+              >
+                {creatingUser ? "Creando..." : "Crear usuario"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetricCard({ icon, label, value, hint, colorClass }) {
+  return (
+    <article className={`metric-card visual-metric ${colorClass}`}>
+      <div className="metric-icon">{icon}</div>
+
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <p>{hint}</p>
+      </div>
+    </article>
+  );
+}
+
+function getPercentage(value, total) {
+  if (!total) {
+    return 0;
+  }
+
+  return Math.round((value / total) * 100);
+}
+
+function getInitials(name = "") {
+  const initials = String(name)
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return initials || "U";
+}
+
+function getRoleLabel(role = "") {
+  const labels = {
+    admin: "Administrador",
+    collaborator: "Colaborador",
+    requester: "Solicitante",
+  };
+
+  return labels[role] || role || "Usuario";
+}
+
+function getRoleClass(role = "") {
+  const classes = {
+    admin: "role-admin",
+    collaborator: "role-collaborator",
+    requester: "role-requester",
+  };
+
+  return classes[role] || "role-collaborator";
+}
+
+function getAreaClass(area = "") {
+  const normalizedArea = area.toLowerCase();
+
+  if (normalizedArea.includes("software")) {
+    return "area-purple";
+  }
+
+  if (normalizedArea.includes("audiovisual")) {
+    return "area-blue";
+  }
+
+  if (normalizedArea.includes("material")) {
+    return "area-teal";
+  }
+
+  if (
+    normalizedArea.includes("soporte") ||
+    normalizedArea.includes("imprenta")
+  ) {
+    return "area-red";
+  }
+
+  if (normalizedArea.includes("redes")) {
+    return "area-orange";
+  }
+
+  if (normalizedArea.includes("administración")) {
+    return "area-gold";
+  }
+
+  return "area-gray";
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "Sin registro";
+  }
+
+  try {
+    const date = typeof value.toDate === "function" ? value.toDate() : value;
+
+    return new Intl.DateTimeFormat("es-MX", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "Sin registro";
+  }
+}

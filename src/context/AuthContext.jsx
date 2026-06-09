@@ -4,10 +4,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import {
-  doc,
-  getDoc,
-} from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
 
 const AuthContext = createContext();
@@ -18,23 +15,19 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   async function loadUserProfile(user) {
-    console.log("Proyecto conectado:", db.app.options.projectId);
-    console.log("Email autenticado:", user.email);
-    console.log("UID autenticado:", user.uid);
+    if (!user?.uid) {
+      return null;
+    }
 
-    // Ahora buscamos el documento directamente por UID:
-    // users / UID_DEL_USUARIO
     const userRef = doc(db, "users", user.uid);
     const userSnapshot = await getDoc(userRef);
-
-    console.log("Buscando perfil con UID:", user.uid);
-    console.log("¿Existe perfil?:", userSnapshot.exists());
 
     if (!userSnapshot.exists()) {
       console.warn(
         "No existe un documento en Firestore para este UID:",
         user.uid
       );
+
       return null;
     }
 
@@ -43,6 +36,18 @@ export function AuthProvider({ children }) {
       uid: user.uid,
       ...userSnapshot.data(),
     };
+  }
+
+  async function refreshProfile() {
+    if (!firebaseUser) {
+      setProfile(null);
+      return null;
+    }
+
+    const updatedProfile = await loadUserProfile(firebaseUser);
+    setProfile(updatedProfile);
+
+    return updatedProfile;
   }
 
   useEffect(() => {
@@ -77,6 +82,8 @@ export function AuthProvider({ children }) {
     return signOut(auth);
   }
 
+  const role = profile?.role || "";
+
   return (
     <AuthContext.Provider
       value={{
@@ -85,17 +92,15 @@ export function AuthProvider({ children }) {
         loading,
         login,
         logout,
+        refreshProfile,
 
-        // Datos útiles del usuario
         uid: firebaseUser?.uid || null,
         userEmail: firebaseUser?.email || null,
 
-        // Roles
-        isAdmin: profile?.role === "admin",
-        isCollaborator: profile?.role === "collaborator",
-        isRequester: profile?.role === "requester",
+        isAdmin: role === "admin",
+        isCollaborator: role === "collaborator",
+        isRequester: role === "requester",
 
-        // Estado del usuario
         isActive: profile?.active === true,
       }}
     >
