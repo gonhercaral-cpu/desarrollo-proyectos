@@ -89,6 +89,20 @@ export default function CollaboratorsAdmin() {
     return users.find((user) => user.id === selectedUserId) || null;
   }, [users, selectedUserId]);
 
+  const nonDeletedUsers = useMemo(() => {
+    return users.filter((user) => user.deleted !== true);
+  }, [users]);
+
+  const deletedUsers = useMemo(() => {
+    return users.filter((user) => user.deleted === true);
+  }, [users]);
+
+  const footerTotalUsers =
+    statusFilter === "deleted" ? deletedUsers.length : nonDeletedUsers.length;
+
+  const footerUserLabel =
+    statusFilter === "deleted" ? "usuarios eliminados" : "usuarios";
+
   const stats = useMemo(() => {
     const total = users.filter((user) => user.deleted !== true).length;
     const active = users.filter(
@@ -682,7 +696,8 @@ export default function CollaboratorsAdmin() {
 
               <div className="collaborators-table-footer">
                 <span>
-                  Mostrando {visibleUsers.length} de {users.length} usuarios
+                  Mostrando {visibleUsers.length} de {footerTotalUsers}{" "}
+                  {footerUserLabel}
                 </span>
 
                 <span>Página 1</span>
