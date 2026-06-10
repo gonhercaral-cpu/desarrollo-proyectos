@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import CreateProject from "./CreateProject";
 import MyProjects from "./MyProjects";
@@ -8,6 +8,7 @@ import ProjectDetail from "./ProjectDetail";
 import EditProject from "./EditProject";
 import ExecutiveDashboard from "./ExecutiveDashboard";
 import CollaboratorsAdmin from "./CollaboratorsAdmin";
+import TechnicalSupport from "./TechnicalSupport";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
@@ -22,6 +23,20 @@ export default function Dashboard() {
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pageFromUrl = params.get("page");
+    const assetIdFromUrl = params.get("assetId");
+
+    if (isAdmin && (pageFromUrl === "technical-support" || assetIdFromUrl)) {
+      setSelectedProjectId(null);
+      setReturnPage("technical-support");
+      setPage("technical-support");
+      setProfileMenuOpen(false);
+      setProfilePanelOpen(false);
+    }
+  }, [isAdmin]);
 
   function goToPage(nextPage) {
     setSelectedProjectId(null);
@@ -44,6 +59,8 @@ export default function Dashboard() {
       setReturnPage("collaborators-admin");
     } else if (page === "departments-admin") {
       setReturnPage("departments-admin");
+    } else if (page === "technical-support") {
+      setReturnPage("technical-support");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -98,6 +115,10 @@ export default function Dashboard() {
 
     if (page === "departments-admin" && isAdmin) {
       return <DepartmentsAdmin />;
+    }
+
+    if (page === "technical-support" && isAdmin) {
+      return <TechnicalSupport />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -205,6 +226,10 @@ export default function Dashboard() {
       return page === "departments-admin";
     }
 
+    if (navPage === "technical-support") {
+      return page === "technical-support";
+    }
+
     return page === navPage;
   }
 
@@ -274,6 +299,14 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">▤</span>
                 Departamentos
+              </button>
+
+              <button
+                className={isNavActive("technical-support") ? "active" : ""}
+                onClick={() => goToPage("technical-support")}
+              >
+                <span className="nav-icon">◈</span>
+                Soporte Técnico
               </button>
 
               <button

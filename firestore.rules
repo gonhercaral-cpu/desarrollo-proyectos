@@ -1,0 +1,658 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userExists() {
+      return signedIn() && exists(userPath());
+    }
+
+    function userDoc() {
+      return get(userPath());
+    }
+
+    function hasProfile() {
+      return userExists()
+        && userDoc().data.active == true;
+    }
+
+    function role() {
+      return userDoc().data.role;
+    }
+
+    function isAdmin() {
+      return hasProfile() && role() == "admin";
+    }
+
+    function isRequester() {
+      return hasProfile() && role() == "requester";
+    }
+
+    function hasUserArea() {
+      return hasProfile() && userDoc().data.area is string;
+    }
+
+    function isTechnicalSupportUser() {
+      return hasProfile()
+        && hasUserArea()
+        && (
+          userDoc().data.area == "Soporte Técnico" ||
+          userDoc().data.area == "Soporte tecnico" ||
+          userDoc().data.area == "Soporte técnico"
+        );
+    }
+
+    function canManageTechnicalSupport() {
+      return isAdmin() || isTechnicalSupportUser();
+    }
+
+    function projectPath(projectId) {
+      return /databases/$(database)/documents/projects/$(projectId);
+    }
+
+    function projectExists(projectId) {
+      return exists(projectPath(projectId));
+    }
+
+    function projectData(projectId) {
+      return get(projectPath(projectId)).data;
+    }
+
+    function isAssignedToProject() {
+      return hasProfile()
+        && (
+          resource.data.assignedToUid == request.auth.uid ||
+          resource.data.assignedToId == request.auth.uid ||
+          resource.data.assignedTo == request.auth.uid ||
+          resource.data.responsibleUid == request.auth.uid ||
+          resource.data.responsibleId == request.auth.uid
+        );
+    }
+
+    function isAssignedToProjectId(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          projectData(projectId).assignedToUid == request.auth.uid ||
+          projectData(projectId).assignedToId == request.auth.uid ||
+          projectData(projectId).assignedTo == request.auth.uid ||
+          projectData(projectId).responsibleUid == request.auth.uid ||
+          projectData(projectId).responsibleId == request.auth.uid
+        );
+    }
+
+    function isCollaboratorInProject() {
+      return hasProfile()
+        && (
+          (
+            resource.data.collaboratorIds is list
+            && request.auth.uid in resource.data.collaboratorIds
+          )
+          ||
+          (
+            resource.data.collaboratorUids is list
+            && request.auth.uid in resource.data.collaboratorUids
+          )
+          ||
+          (
+            resource.data.collaboratorsIds is list
+            && request.auth.uid in resource.data.collaboratorsIds
+          )
+          ||
+          (
+            resource.data.collaborators is list
+            && request.auth.uid in resource.data.collaborators
+          )
+        );
+    }
+
+    function isCollaboratorInProjectId(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          (
+            projectData(projectId).collaboratorIds is list
+            && request.auth.uid in projectData(projectId).collaboratorIds
+          )
+          ||
+          (
+            projectData(projectId).collaboratorUids is list
+            && request.auth.uid in projectData(projectId).collaboratorUids
+          )
+          ||
+          (
+            projectData(projectId).collaboratorsIds is list
+            && request.auth.uid in projectData(projectId).collaboratorsIds
+          )
+          ||
+          (
+            projectData(projectId).collaborators is list
+            && request.auth.uid in projectData(projectId).collaborators
+          )
+        );
+    }
+
+    function isCreatorOfProject() {
+      return hasProfile()
+        && (
+          resource.data.createdByUid == request.auth.uid ||
+          resource.data.createdBy == request.auth.uid
+        );
+    }
+
+    function isCreatorOfProjectId(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          projectData(projectId).createdByUid == request.auth.uid ||
+          projectData(projectId).createdBy == request.auth.uid
+        );
+    }
+
+    function isRequesterForProject() {
+      return hasProfile()
+        && isRequester()
+        && hasUserArea()
+        && (
+          resource.data.requesterArea == userDoc().data.area ||
+          resource.data.responsibleArea == userDoc().data.area
+        );
+    }
+
+    function isRequesterForProjectId(projectId) {
+      return hasProfile()
+        && isRequester()
+        && hasUserArea()
+        && projectExists(projectId)
+        && (
+          projectData(projectId).requesterArea == userDoc().data.area ||
+          projectData(projectId).responsibleArea == userDoc().data.area
+        );
+    }
+
+    function canAccessProject() {
+      return hasProfile()
+        && (
+          isAdmin() ||
+          isAssignedToProject() ||
+          isCollaboratorInProject() ||
+          isCreatorOfProject() ||
+          isRequesterForProject()
+        );
+    }
+
+    function canAccessProjectId(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          isAdmin() ||
+          isAssignedToProjectId(projectId) ||
+          isCollaboratorInProjectId(projectId) ||
+          isCreatorOfProjectId(projectId) ||
+          isRequesterForProjectId(projectId)
+        );
+    }
+
+    function canWorkOnProject() {
+      return hasProfile()
+        && !isHistoricalProject()
+        && (
+          isAdmin() ||
+          isAssignedToProject() ||
+          isCollaboratorInProject() ||
+          isCreatorOfProject()
+        );
+    }
+
+    function canWorkOnProjectId(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && !isHistoricalProjectId(projectId)
+        && (
+          isAdmin() ||
+          isAssignedToProjectId(projectId) ||
+          isCollaboratorInProjectId(projectId) ||
+          isCreatorOfProjectId(projectId)
+        );
+    }
+
+    function validProjectStatus(status) {
+      return status in [
+        "Pendiente",
+        "Por iniciar",
+        "Asignado",
+        "En planeación",
+        "En proceso",
+        "En espera de información",
+        "Listo para revisión",
+        "Correcciones solicitadas",
+        "Aprobado para entrega",
+        "Finalizado",
+        "Terminado",
+        "Cancelado",
+        "Pausado",
+        "Eliminado",
+        "Archivado"
+      ];
+    }
+
+    function validCollaboratorStatus(status) {
+      return status in [
+        "Por iniciar",
+        "Asignado",
+        "En planeación",
+        "En proceso",
+        "En espera de información",
+        "Listo para revisión",
+        "Pausado"
+      ];
+    }
+
+    function hasValidProgress() {
+      return request.resource.data.progress is number
+        && request.resource.data.progress >= 0
+        && request.resource.data.progress <= 100;
+    }
+
+    function hasValidStatus() {
+      return request.resource.data.status is string
+        && validProjectStatus(request.resource.data.status);
+    }
+
+    function hasValidCollaboratorStatus() {
+      return request.resource.data.status is string
+        && validCollaboratorStatus(request.resource.data.status);
+    }
+
+    function isHistoricalProject() {
+      return resource.data.deleted == true
+        || resource.data.archived == true
+        || resource.data.status == "Eliminado"
+        || resource.data.status == "Finalizado"
+        || resource.data.status == "Terminado"
+        || resource.data.status == "Cancelado"
+        || resource.data.status == "Archivado";
+    }
+
+    function isHistoricalProjectId(projectId) {
+      return projectExists(projectId)
+        && (
+          projectData(projectId).deleted == true
+          || projectData(projectId).archived == true
+          || projectData(projectId).status == "Eliminado"
+          || projectData(projectId).status == "Finalizado"
+          || projectData(projectId).status == "Terminado"
+          || projectData(projectId).status == "Cancelado"
+          || projectData(projectId).status == "Archivado"
+        );
+    }
+
+    function collaboratorAllowedProjectUpdate() {
+      return canWorkOnProject()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "reviewStatus",
+          "adminReview",
+          "reviewedAt",
+          "reviewedByUid",
+          "reviewedByName",
+          "reviewedByEmail",
+          "reviewComment"
+        ])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "progress",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail",
+
+          "closedAt",
+          "closedByUid",
+          "closedByName",
+
+          "history",
+          "formalHistory",
+          "projectHistory",
+
+          "comments",
+          "projectComments",
+          "lastCommentAt",
+          "lastCommentByUid",
+          "lastCommentByName",
+          "lastCommentByEmail",
+
+          "evidenceFiles",
+          "evidences",
+          "evidence",
+          "files",
+          "attachments",
+          "attachedFiles",
+          "projectFiles",
+          "documents",
+          "uploadedFiles",
+          "lastEvidenceAt",
+          "lastEvidenceByUid",
+          "lastEvidenceByName",
+          "lastEvidenceByEmail",
+
+          "advances",
+          "projectUpdates",
+          "progressUpdates",
+          "lastAdvanceAt",
+          "lastAdvanceByUid",
+          "lastAdvanceByName",
+          "lastAdvanceByEmail",
+
+          "activity",
+          "recentActivity",
+          "lastActivityAt",
+          "lastActivityByUid",
+          "lastActivityByName",
+          "lastActivityByEmail"
+        ])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            "status"
+          ])
+          || hasValidCollaboratorStatus()
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            "progress"
+          ])
+          || hasValidProgress()
+        );
+    }
+
+    function adminValidProjectCreate() {
+      return isAdmin()
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.status is string
+        && validProjectStatus(request.resource.data.status)
+        && (
+          request.resource.data.assignedToId is string ||
+          request.resource.data.assignedToUid is string
+        );
+    }
+
+    function adminValidProjectUpdate() {
+      return isAdmin()
+        && (
+          !("title" in request.resource.data) ||
+          (
+            request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+          )
+        )
+        && (
+          !("status" in request.resource.data) ||
+          hasValidStatus()
+        )
+        && (
+          !("progress" in request.resource.data) ||
+          hasValidProgress()
+        );
+    }
+
+    function validProjectLogType(type) {
+      return type in [
+        "PROJECT_CREATED",
+        "PROJECT_UPDATED",
+        "STATUS_CHANGED",
+        "PROGRESS_CHANGED",
+        "EVIDENCE_UPLOADED",
+        "EVIDENCE_REVIEWED",
+        "COMMENT_ADDED",
+        "ADVANCE_ADDED",
+        "ADVANCE_COMMENT_ADDED",
+        "REVIEW_REQUESTED",
+        "CORRECTIONS_REQUESTED",
+        "PROJECT_APPROVED",
+        "PROJECT_FINISHED",
+        "PROJECT_CANCELLED",
+        "PROJECT_DELETED",
+        "PROJECT_RESTORED",
+        "INTERNAL_NOTE_UPDATED",
+        "INTERNAL_NOTE_ADDED"
+      ];
+    }
+
+    function validProjectLogCreate() {
+      return hasProfile()
+        && request.resource.data.projectId is string
+        && projectExists(request.resource.data.projectId)
+        && (
+          isAdmin() ||
+          canWorkOnProjectId(request.resource.data.projectId)
+        )
+        && (
+          !("type" in request.resource.data)
+          || validProjectLogType(request.resource.data.type)
+        );
+    }
+
+    function validProjectUpdateCreate() {
+      return hasProfile()
+        && request.resource.data.projectId is string
+        && projectExists(request.resource.data.projectId)
+        && canWorkOnProjectId(request.resource.data.projectId);
+    }
+
+    function validEvidenceCreate() {
+      return hasProfile()
+        && request.resource.data.projectId is string
+        && projectExists(request.resource.data.projectId)
+        && canWorkOnProjectId(request.resource.data.projectId);
+    }
+
+    function validEvidenceUpdate() {
+      return isAdmin()
+        && resource.data.projectId is string
+        && projectExists(resource.data.projectId);
+    }
+
+    function validInternalNoteCreate() {
+      return isAdmin()
+        && request.resource.data.projectId is string
+        && request.resource.data.projectId.size() > 0
+        && projectExists(request.resource.data.projectId)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.createdByUid == request.auth.uid;
+    }
+
+    function validTechnicalLocationCreate() {
+      return canManageTechnicalSupport()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.campus is string
+        && request.resource.data.campus.size() > 0
+        && request.resource.data.type is string
+        && request.resource.data.type.size() > 0;
+    }
+
+    function validTechnicalLocationUpdate() {
+      return canManageTechnicalSupport()
+        && (
+          !("name" in request.resource.data) ||
+          (
+            request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+          )
+        )
+        && (
+          !("campus" in request.resource.data) ||
+          (
+            request.resource.data.campus is string
+            && request.resource.data.campus.size() > 0
+          )
+        )
+        && (
+          !("type" in request.resource.data) ||
+          (
+            request.resource.data.type is string
+            && request.resource.data.type.size() > 0
+          )
+        );
+    }
+
+    function validTechnicalLocationReviewCreate() {
+      return canManageTechnicalSupport()
+        && request.resource.data.locationId is string
+        && request.resource.data.locationId.size() > 0
+        && request.resource.data.locationName is string
+        && request.resource.data.locationName.size() > 0;
+    }
+
+    match /users/{userId} {
+      allow get: if hasProfile() && (
+        isAdmin() ||
+        userId == request.auth.uid
+      );
+
+      allow list: if isAdmin();
+
+      allow create: if isAdmin();
+
+      allow update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    match /projects/{projectId} {
+      allow get: if canAccessProject();
+
+      allow list: if hasProfile();
+
+      allow create: if adminValidProjectCreate();
+
+      allow update: if adminValidProjectUpdate()
+        || collaboratorAllowedProjectUpdate();
+
+      allow delete: if false;
+    }
+
+    match /projectUpdates/{updateId} {
+      allow read: if isAdmin()
+        || (
+          hasProfile()
+          && resource.data.projectId is string
+          && canAccessProjectId(resource.data.projectId)
+        );
+
+      allow create: if validProjectUpdateCreate();
+
+      allow update, delete: if false;
+    }
+
+    match /projectLogs/{logId} {
+      allow read: if isAdmin()
+        || (
+          hasProfile()
+          && resource.data.projectId is string
+          && canAccessProjectId(resource.data.projectId)
+        );
+
+      allow create: if validProjectLogCreate();
+
+      allow update, delete: if false;
+    }
+
+    match /evidence/{evidenceId} {
+      allow read: if isAdmin()
+        || (
+          hasProfile()
+          && resource.data.projectId is string
+          && canAccessProjectId(resource.data.projectId)
+        );
+
+      allow create: if validEvidenceCreate();
+
+      allow update: if validEvidenceUpdate();
+
+      allow delete: if false;
+    }
+
+    match /areas/{areaId} {
+      allow read: if hasProfile();
+
+      allow create, update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    match /departments/{departmentId} {
+      allow read: if hasProfile();
+
+      allow create, update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    match /technicalAssets/{assetId} {
+      allow read: if hasProfile();
+
+      allow create, update: if canManageTechnicalSupport();
+
+      allow delete: if isAdmin();
+    }
+
+    match /technicalAssetLogs/{logId} {
+      allow read: if hasProfile();
+
+      allow create: if canManageTechnicalSupport();
+
+      allow update, delete: if false;
+    }
+
+    match /technicalMaintenances/{maintenanceId} {
+      allow read: if hasProfile();
+
+      allow create, update: if canManageTechnicalSupport();
+
+      allow delete: if isAdmin();
+    }
+
+    match /technicalLocations/{locationId} {
+      allow read: if hasProfile();
+
+      allow create: if validTechnicalLocationCreate();
+
+      allow update: if validTechnicalLocationUpdate();
+
+      allow delete: if isAdmin();
+    }
+
+    match /technicalLocationReviews/{reviewId} {
+      allow read: if hasProfile();
+
+      allow create: if validTechnicalLocationReviewCreate();
+
+      allow update: if canManageTechnicalSupport();
+
+      allow delete: if isAdmin();
+    }
+
+    match /projectInternalNotes/{noteId} {
+      allow read: if isAdmin();
+
+      allow create: if validInternalNoteCreate();
+
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
