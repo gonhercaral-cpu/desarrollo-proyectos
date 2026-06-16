@@ -54,6 +54,23 @@ service cloud.firestore {
       return isAdmin() || isTechnicalSupportUser();
     }
 
+    function isPrintshopUser() {
+      return hasProfile()
+        && hasUserArea()
+        && (
+          userDoc().data.area == "Imprenta" ||
+          userDoc().data.area == "Impresión" ||
+          userDoc().data.area == "Impresion" ||
+          userDoc().data.area == "Soporte Técnico" ||
+          userDoc().data.area == "Soporte tecnico" ||
+          userDoc().data.area == "Soporte técnico"
+        );
+    }
+
+    function canAccessPrintshop() {
+      return isAdmin() || isPrintshopUser();
+    }
+
     function projectPath(projectId) {
       return /databases/$(database)/documents/projects/$(projectId);
     }
@@ -471,6 +488,794 @@ service cloud.firestore {
         && request.resource.data.createdByUid == request.auth.uid;
     }
 
+
+    function validPrintProductData() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.category is string
+        && request.resource.data.category in [
+          "Libro",
+          "Certificado",
+          "Diploma",
+          "Volante",
+          "Vinil",
+          "Hoja de canciones",
+          "Hoja de actividades",
+          "Material interno",
+          "Otro"
+        ]
+        && request.resource.data.productionType is string
+        && request.resource.data.productionType in [
+          "Producto terminado",
+          "Trabajo solicitado",
+          "Documento generado",
+          "Material interno"
+        ]
+        && request.resource.data.level is string
+        && request.resource.data.level in [
+          "No aplica",
+          "A1",
+          "A2",
+          "B1",
+          "B2",
+          "C1",
+          "Otro"
+        ]
+        && request.resource.data.unit is string
+        && request.resource.data.unit in [
+          "Pieza",
+          "Libro",
+          "Documento",
+          "Paquete",
+          "Hoja",
+          "Metro",
+          "Lote"
+        ]
+        && request.resource.data.minStock is number
+        && request.resource.data.minStock >= 0
+        && request.resource.data.idealStock is number
+        && request.resource.data.idealStock >= 0
+        && request.resource.data.idealStock >= request.resource.data.minStock
+        && request.resource.data.requiresPrinting is bool
+        && request.resource.data.requiresBinding is bool
+        && request.resource.data.requiresCutting is bool
+        && request.resource.data.requiresQualityCheck is bool
+        && request.resource.data.requiresSignature is bool
+        && request.resource.data.requiresValidationQr is bool
+        && request.resource.data.active is bool
+        && request.resource.data.notes is string;
+    }
+
+
+    function validPrintFinishedInventoryData() {
+      return request.resource.data.productId is string
+        && request.resource.data.productId.size() > 0
+        && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() > 0
+        && request.resource.data.category is string
+        && request.resource.data.category in [
+          "Libro",
+          "Certificado",
+          "Diploma",
+          "Volante",
+          "Vinil",
+          "Hoja de canciones",
+          "Hoja de actividades",
+          "Material interno",
+          "Otro"
+        ]
+        && request.resource.data.level is string
+        && request.resource.data.level in [
+          "No aplica",
+          "A1",
+          "A2",
+          "B1",
+          "B2",
+          "C1",
+          "Otro"
+        ]
+        && request.resource.data.unit is string
+        && request.resource.data.unit in [
+          "Pieza",
+          "Libro",
+          "Documento",
+          "Paquete",
+          "Hoja",
+          "Metro",
+          "Lote"
+        ]
+        && request.resource.data.currentStock is number
+        && request.resource.data.currentStock >= 0
+        && request.resource.data.minStock is number
+        && request.resource.data.minStock >= 0
+        && request.resource.data.idealStock is number
+        && request.resource.data.idealStock >= 0
+        && request.resource.data.idealStock >= request.resource.data.minStock
+        && request.resource.data.active is bool
+        && request.resource.data.notes is string;
+    }
+
+    function validPrintInventoryMovementData() {
+      return request.resource.data.inventoryId is string
+        && request.resource.data.inventoryId.size() > 0
+        && request.resource.data.productId is string
+        && request.resource.data.productId.size() > 0
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() > 0
+        && request.resource.data.type is string
+        && request.resource.data.type in [
+          "Entrada",
+          "Salida"
+        ]
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity > 0
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.previousStock is number
+        && request.resource.data.previousStock >= 0
+        && request.resource.data.newStock is number
+        && request.resource.data.newStock >= 0
+        && request.resource.data.notes is string
+        && request.resource.data.createdByUid == request.auth.uid;
+    }
+
+
+
+    function printBatchPath(batchId) {
+      return /databases/$(database)/documents/printProductionBatches/$(batchId);
+    }
+
+    function printBatchExists(batchId) {
+      return exists(printBatchPath(batchId));
+    }
+
+    function printBatchData(batchId) {
+      return get(printBatchPath(batchId)).data;
+    }
+
+    function isPrintBatchResponsible() {
+      return hasProfile()
+        && resource.data.responsibleUid is string
+        && resource.data.responsibleUid == request.auth.uid;
+    }
+
+    function isPrintBatchAuditor() {
+      return hasProfile()
+        && resource.data.auditorUid is string
+        && resource.data.auditorUid == request.auth.uid;
+    }
+
+    function isPrintBatchResponsibleId(batchId) {
+      return hasProfile()
+        && printBatchExists(batchId)
+        && printBatchData(batchId).responsibleUid is string
+        && printBatchData(batchId).responsibleUid == request.auth.uid;
+    }
+
+    function isAllowedResponsibleBatchStatus(status) {
+      return status in [
+        "En impresión",
+        "En encuadernado",
+        "En revisión de calidad"
+      ];
+    }
+
+    function isAllowedAuditorBatchStatus(status) {
+      return status in [
+        "En revisión de calidad",
+        "Aprobado",
+        "Cancelado"
+      ];
+    }
+
+    function responsibleProductionBatchUpdate() {
+      return isPrintBatchResponsible()
+        && validPrintProductionBatchData()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "producedQuantity",
+          "notes",
+          "students",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && isAllowedResponsibleBatchStatus(request.resource.data.status)
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function auditorQualityBatchUpdate() {
+      return isPrintBatchAuditor()
+        && validPrintProductionBatchData()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "approvedQuantity",
+          "rejectedQuantity",
+          "qualityChecklist",
+          "qualityStatus",
+          "qualityNotes",
+          "qualityCompleted",
+          "qualityReviewedAt",
+          "qualityReviewedByUid",
+          "qualityReviewedByName",
+          "qualityReviewedByEmail",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && isAllowedAuditorBatchStatus(request.resource.data.status)
+        && (
+          request.resource.data.status != "Aprobado"
+          || request.resource.data.qualityCompleted == true
+        )
+        && (
+          request.resource.data.qualityCompleted == false
+          || request.resource.data.qualityReviewedByUid == request.auth.uid
+        )
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function responsibleInventoryBatchApplyUpdate() {
+      return isPrintBatchResponsible()
+        && validPrintProductionBatchData()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "inventoryApplied",
+          "inventoryId",
+          "inventoryMovementId",
+          "inventoryAppliedAt",
+          "inventoryAppliedByUid",
+          "inventoryAppliedByName",
+          "inventoryAppliedByEmail",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && resource.data.inventoryApplied != true
+        && resource.data.qualityCompleted == true
+        && resource.data.qualityStatus in [
+          "Aprobado",
+          "Aprobado con observaciones"
+        ]
+        && request.resource.data.status == "Ingresado a inventario"
+        && request.resource.data.inventoryApplied == true
+        && request.resource.data.inventoryAppliedByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function responsibleInventoryEntryUpdate() {
+      return hasProfile()
+        && validPrintFinishedInventoryData()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "currentStock",
+          "lastBatchId",
+          "lastBatchFolio",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.lastBatchId is string
+        && printBatchExists(request.resource.data.lastBatchId)
+        && isPrintBatchResponsibleId(request.resource.data.lastBatchId)
+        && printBatchData(request.resource.data.lastBatchId).productId == resource.data.productId
+        && printBatchData(request.resource.data.lastBatchId).inventoryApplied != true
+        && printBatchData(request.resource.data.lastBatchId).qualityCompleted == true
+        && printBatchData(request.resource.data.lastBatchId).qualityStatus in [
+          "Aprobado",
+          "Aprobado con observaciones"
+        ]
+        && request.resource.data.currentStock == resource.data.currentStock + printBatchData(request.resource.data.lastBatchId).approvedQuantity
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function responsibleBatchInventoryMovementCreate() {
+      return hasProfile()
+        && request.resource.data.batchId is string
+        && printBatchExists(request.resource.data.batchId)
+        && isPrintBatchResponsibleId(request.resource.data.batchId)
+        && printBatchData(request.resource.data.batchId).productId == request.resource.data.productId
+        && printBatchData(request.resource.data.batchId).inventoryApplied != true
+        && printBatchData(request.resource.data.batchId).qualityCompleted == true
+        && printBatchData(request.resource.data.batchId).qualityStatus in [
+          "Aprobado",
+          "Aprobado con observaciones"
+        ]
+        && request.resource.data.type == "Entrada"
+        && request.resource.data.quantity == printBatchData(request.resource.data.batchId).approvedQuantity
+        && request.resource.data.reason == "Lote de producción cerrado"
+        && request.resource.data.createdByUid == request.auth.uid;
+    }
+
+    function validPrintBatchStatus(status) {
+      return status in [
+        "Planeado",
+        "En impresión",
+        "En encuadernado",
+        "En revisión de calidad",
+        "Aprobado",
+        "Ingresado a inventario",
+        "Cerrado",
+        "Cancelado"
+      ];
+    }
+
+    function validPrintQualityStatus(status) {
+      return status in [
+        "Pendiente",
+        "En revisión",
+        "Aprobado",
+        "Aprobado con observaciones",
+        "Rechazado"
+      ];
+    }
+
+    function validPrintProductionBatchData() {
+      return request.resource.data.folio is string
+        && request.resource.data.folio.size() > 0
+        && request.resource.data.productId is string
+        && request.resource.data.productId.size() > 0
+        && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() > 0
+        && request.resource.data.category is string
+        && request.resource.data.category in [
+          "Libro",
+          "Certificado",
+          "Diploma",
+          "Volante",
+          "Vinil",
+          "Hoja de canciones",
+          "Hoja de actividades",
+          "Material interno",
+          "Otro"
+        ]
+        && request.resource.data.level is string
+        && request.resource.data.level in [
+          "No aplica",
+          "A1",
+          "A2",
+          "B1",
+          "B2",
+          "C1",
+          "Otro"
+        ]
+        && request.resource.data.unit is string
+        && request.resource.data.unit in [
+          "Pieza",
+          "Libro",
+          "Documento",
+          "Paquete",
+          "Hoja",
+          "Metro",
+          "Lote"
+        ]
+        && request.resource.data.plannedQuantity is number
+        && request.resource.data.plannedQuantity > 0
+        && request.resource.data.producedQuantity is number
+        && request.resource.data.producedQuantity >= 0
+        && request.resource.data.approvedQuantity is number
+        && request.resource.data.approvedQuantity >= 0
+        && request.resource.data.rejectedQuantity is number
+        && request.resource.data.rejectedQuantity >= 0
+        && request.resource.data.approvedQuantity + request.resource.data.rejectedQuantity <= request.resource.data.producedQuantity
+        && request.resource.data.status is string
+        && validPrintBatchStatus(request.resource.data.status)
+        && request.resource.data.responsible is string
+        && request.resource.data.responsibleUid is string
+        && request.resource.data.responsibleUid.size() > 0
+        && request.resource.data.responsibleName is string
+        && request.resource.data.responsibleName.size() > 0
+        && request.resource.data.responsibleEmail is string
+        && request.resource.data.auditorUid is string
+        && request.resource.data.auditorUid.size() > 0
+        && request.resource.data.auditorName is string
+        && request.resource.data.auditorName.size() > 0
+        && request.resource.data.auditorEmail is string
+        && request.resource.data.responsibleUid != request.resource.data.auditorUid
+        && request.resource.data.startDate is string
+        && request.resource.data.dueDate is string
+        && request.resource.data.notes is string
+        && request.resource.data.qualityChecklist is list
+        && request.resource.data.qualityChecklist.size() == 10
+        && request.resource.data.qualityStatus is string
+        && validPrintQualityStatus(request.resource.data.qualityStatus)
+        && request.resource.data.qualityNotes is string
+        && request.resource.data.qualityCompleted is bool
+        && (
+          request.resource.data.status in [
+            "Planeado",
+            "En impresión",
+            "En encuadernado",
+            "En revisión de calidad",
+            "Cancelado"
+          ]
+          || request.resource.data.qualityCompleted == true
+        )
+        && (
+          request.resource.data.qualityCompleted == false
+          || request.resource.data.qualityStatus in [
+            "Aprobado",
+            "Aprobado con observaciones"
+          ]
+        )
+        && (
+          !("qualityReviewedByUid" in request.resource.data)
+          || request.resource.data.qualityReviewedByUid is string
+        )
+        && (
+          !("qualityReviewedByName" in request.resource.data)
+          || request.resource.data.qualityReviewedByName is string
+        )
+        && (
+          !("qualityReviewedByEmail" in request.resource.data)
+          || request.resource.data.qualityReviewedByEmail is string
+        )
+        && request.resource.data.inventoryApplied is bool
+        && (
+          !("inventoryId" in request.resource.data) ||
+          request.resource.data.inventoryId is string
+        )
+        && (
+          !("inventoryMovementId" in request.resource.data) ||
+          request.resource.data.inventoryMovementId is string
+        );
+    }
+
+
+
+    function validCertificateSignerType(type) {
+      return type in [
+        "Principal",
+        "Teacher"
+      ];
+    }
+
+    function validCertificateSignerData() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.role is string
+        && request.resource.data.role.size() > 0
+        && request.resource.data.type is string
+        && validCertificateSignerType(request.resource.data.type)
+        && request.resource.data.campus is string
+        && request.resource.data.campus.size() > 0
+        && request.resource.data.active is bool
+        && request.resource.data.notes is string
+        && request.resource.data.signatureUrl is string
+        && request.resource.data.signatureUrl.size() > 0
+        && (
+          !("signatureDataUrl" in request.resource.data)
+          || request.resource.data.signatureDataUrl is string
+        )
+        && request.resource.data.storagePath is string;
+    }
+
+    function validCertificateTemplateAudience(audience) {
+      return audience in [
+        "Adultos",
+        "Kids",
+        "Otro"
+      ];
+    }
+
+    function validCertificateTemplateType(type) {
+      return type in [
+        "Certificado",
+        "Diploma"
+      ];
+    }
+
+    function validCertificateTemplateData() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.level is string
+        && request.resource.data.level in [
+          "No aplica",
+          "A1",
+          "A2",
+          "B1",
+          "B2",
+          "C1",
+          "Otro"
+        ]
+        && request.resource.data.programName is string
+        && request.resource.data.programName.size() > 0
+        && request.resource.data.audience is string
+        && validCertificateTemplateAudience(request.resource.data.audience)
+        && request.resource.data.certificateType is string
+        && validCertificateTemplateType(request.resource.data.certificateType)
+        && request.resource.data.bodyText is string
+        && (
+          !("bodySegments" in request.resource.data)
+          || request.resource.data.bodySegments is list
+        )
+        && (
+          !("customTexts" in request.resource.data)
+          || request.resource.data.customTexts is list
+        )
+        && (
+          !("customImages" in request.resource.data)
+          || request.resource.data.customImages is list
+        )
+        && request.resource.data.active is bool
+        && request.resource.data.notes is string
+        && request.resource.data.templateImageUrl is string
+        && request.resource.data.templateImageUrl.size() > 0
+        && request.resource.data.templateImageDataUrl is string
+        && request.resource.data.templateImageDataUrl.size() > 0
+        && request.resource.data.storagePath is string
+        && request.resource.data.storagePath.size() > 0
+        && request.resource.data.positions is map;
+    }
+
+    function validPrintRequestStatus(status) {
+      return status in [
+        "Solicitud recibida",
+        "Datos incompletos",
+        "En revisión",
+        "Aprobada",
+        "En producción",
+        "En revisión de calidad",
+        "Lista para entrega",
+        "Entregada",
+        "Cancelada"
+      ];
+    }
+
+    function validPrintRequestType(type) {
+      return type in [
+        "Certificado",
+        "Diploma",
+        "Volante",
+        "Vinil",
+        "Hoja de canciones",
+        "Hoja de actividades",
+        "Material interno",
+        "Otro"
+      ];
+    }
+
+    function validPrintRequestPriority(priority) {
+      return priority in [
+        "Baja",
+        "Normal",
+        "Alta",
+        "Urgente"
+      ];
+    }
+
+    function validPrintRequestDeliveryType(deliveryType) {
+      return deliveryType in [
+        "Impresa",
+        "Digital",
+        "Ambas"
+      ];
+    }
+
+    function isCertificateOrDiplomaRequest() {
+      return request.resource.data.requestType in [
+        "Certificado",
+        "Diploma"
+      ];
+    }
+
+    function validPrintRequestData() {
+      return request.resource.data.folio is string
+        && request.resource.data.folio.size() > 0
+        && request.resource.data.productId is string
+        && request.resource.data.productId.size() > 0
+        && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() > 0
+        && request.resource.data.requestType is string
+        && validPrintRequestType(request.resource.data.requestType)
+        && request.resource.data.requesterName is string
+        && request.resource.data.requesterName.size() > 0
+        && request.resource.data.requesterArea is string
+        && request.resource.data.requesterArea.size() > 0
+        && request.resource.data.campus is string
+        && request.resource.data.campus.size() > 0
+        && request.resource.data.responsibleUid is string
+        && request.resource.data.responsibleName is string
+        && request.resource.data.responsibleEmail is string
+        && request.resource.data.priority is string
+        && validPrintRequestPriority(request.resource.data.priority)
+        && request.resource.data.requestedQuantity is number
+        && request.resource.data.requestedQuantity > 0
+        && request.resource.data.deliveredQuantity is number
+        && request.resource.data.deliveredQuantity >= 0
+        && request.resource.data.deliveredQuantity <= request.resource.data.requestedQuantity
+        && request.resource.data.deliveryType is string
+        && validPrintRequestDeliveryType(request.resource.data.deliveryType)
+        && request.resource.data.status is string
+        && validPrintRequestStatus(request.resource.data.status)
+        && request.resource.data.requestDate is string
+        && request.resource.data.dueDate is string
+        && (
+          !("certificateIssueDate" in request.resource.data)
+          || request.resource.data.certificateIssueDate is string
+        )
+        && (!("certificateTemplateId" in request.resource.data) || request.resource.data.certificateTemplateId is string)
+        && (!("certificateTemplateName" in request.resource.data) || request.resource.data.certificateTemplateName is string)
+        && (!("certificateTemplateLevel" in request.resource.data) || request.resource.data.certificateTemplateLevel is string)
+        && (!("certificateTemplateProgramName" in request.resource.data) || request.resource.data.certificateTemplateProgramName is string)
+        && (!("certificateTemplateAudience" in request.resource.data) || request.resource.data.certificateTemplateAudience is string)
+        && (!("certificateTemplateBodyText" in request.resource.data) || request.resource.data.certificateTemplateBodyText is string)
+        && (!("certificateTemplateBodySegments" in request.resource.data) || request.resource.data.certificateTemplateBodySegments is list)
+        && (!("certificateTemplateCustomTexts" in request.resource.data) || request.resource.data.certificateTemplateCustomTexts is list)
+        && (!("certificateTemplateCustomImages" in request.resource.data) || request.resource.data.certificateTemplateCustomImages is list)
+        && (!("certificateTemplateImageUrl" in request.resource.data) || request.resource.data.certificateTemplateImageUrl is string)
+        && (!("certificateTemplateImageDataUrl" in request.resource.data) || request.resource.data.certificateTemplateImageDataUrl is string)
+        && (!("certificateTemplateStoragePath" in request.resource.data) || request.resource.data.certificateTemplateStoragePath is string)
+        && (!("certificateTemplatePositions" in request.resource.data) || request.resource.data.certificateTemplatePositions is map)
+        && request.resource.data.notes is string
+        && request.resource.data.level is string
+        && request.resource.data.level in [
+          "No aplica",
+          "A1",
+          "A2",
+          "B1",
+          "B2",
+          "C1",
+          "Otro"
+        ]
+        && request.resource.data.group is string
+        && request.resource.data.teacherName is string
+        && request.resource.data.schedule is string
+        && request.resource.data.printedQuantity is number
+        && request.resource.data.printedQuantity >= 0
+        && request.resource.data.digitalQuantity is number
+        && request.resource.data.digitalQuantity >= 0
+        && (!("principalSignerId" in request.resource.data) || request.resource.data.principalSignerId is string)
+        && (!("principalSignerName" in request.resource.data) || request.resource.data.principalSignerName is string)
+        && (!("principalSignerRole" in request.resource.data) || request.resource.data.principalSignerRole is string)
+        && (!("principalSignatureUrl" in request.resource.data) || request.resource.data.principalSignatureUrl is string)
+        && (!("principalSignatureDataUrl" in request.resource.data) || request.resource.data.principalSignatureDataUrl is string)
+        && (!("teacherSignerId" in request.resource.data) || request.resource.data.teacherSignerId is string)
+        && (!("teacherSignerName" in request.resource.data) || request.resource.data.teacherSignerName is string)
+        && (!("teacherSignerRole" in request.resource.data) || request.resource.data.teacherSignerRole is string)
+        && (!("teacherSignatureUrl" in request.resource.data) || request.resource.data.teacherSignatureUrl is string)
+        && (!("teacherSignatureDataUrl" in request.resource.data) || request.resource.data.teacherSignatureDataUrl is string)
+        && request.resource.data.students is list
+        && (
+          !isCertificateOrDiplomaRequest()
+          || (
+            request.resource.data.group.size() > 0
+            && request.resource.data.teacherName.size() > 0
+            && request.resource.data.schedule.size() > 0
+            && (
+              !(("principalSignerId" in request.resource.data) || ("teacherSignerId" in request.resource.data))
+              || (
+                request.resource.data.principalSignerId.size() > 0
+                && request.resource.data.principalSignerName.size() > 0
+                && request.resource.data.principalSignerRole.size() > 0
+                && request.resource.data.principalSignatureUrl.size() > 0
+                && request.resource.data.teacherSignerId.size() > 0
+                && request.resource.data.teacherSignerName.size() > 0
+                && request.resource.data.teacherSignerRole.size() > 0
+                && request.resource.data.teacherSignatureUrl.size() > 0
+              )
+            )
+            && request.resource.data.printedQuantity + request.resource.data.digitalQuantity == request.resource.data.requestedQuantity
+          )
+        );
+    }
+
+    function isPrintRequestResponsible() {
+      return hasProfile()
+        && resource.data.responsibleUid is string
+        && resource.data.responsibleUid == request.auth.uid;
+    }
+
+    function responsiblePrintRequestUpdate() {
+      return isPrintRequestResponsible()
+        && validPrintRequestData()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "deliveredQuantity",
+          "notes",
+          "students",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.status in [
+          "Solicitud recibida",
+          "Datos incompletos",
+          "En revisión",
+          "Aprobada",
+          "En producción",
+          "En revisión de calidad",
+          "Lista para entrega",
+          "Entregada"
+        ]
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function printRequestPath(requestId) {
+      return /databases/$(database)/documents/printRequests/$(requestId);
+    }
+
+    function printRequestExists(requestId) {
+      return requestId is string
+        && requestId.size() > 0
+        && exists(printRequestPath(requestId));
+    }
+
+    function printRequestData(requestId) {
+      return get(printRequestPath(requestId)).data;
+    }
+
+    function canManageGeneratedCertificateRequest(requestId) {
+      return hasProfile()
+        && printRequestExists(requestId)
+        && (
+          isAdmin() ||
+          (
+            printRequestData(requestId).responsibleUid is string
+            && printRequestData(requestId).responsibleUid == request.auth.uid
+          )
+        );
+    }
+
+    function validGeneratedCertificateStatus(status) {
+      return status in [
+        "Generado",
+        "Entregado",
+        "Cancelado"
+      ];
+    }
+
+    function validGeneratedCertificateData() {
+      return request.resource.data.folio is string
+        && request.resource.data.folio.size() > 0
+        && request.resource.data.validationCode is string
+        && request.resource.data.validationCode.size() > 0
+        && request.resource.data.validationUrl is string
+        && request.resource.data.studentId is string
+        && request.resource.data.studentId.size() > 0
+        && request.resource.data.studentName is string
+        && request.resource.data.studentName.size() > 0
+        && request.resource.data.studentDeliveryType is string
+        && request.resource.data.requestId is string
+        && printRequestExists(request.resource.data.requestId)
+        && request.resource.data.requestFolio is string
+        && request.resource.data.requestType is string
+        && request.resource.data.productId is string
+        && request.resource.data.productName is string
+        && request.resource.data.responsibleUid is string
+        && request.resource.data.responsibleName is string
+        && request.resource.data.responsibleEmail is string
+        && request.resource.data.level is string
+        && request.resource.data.programName is string
+        && request.resource.data.templateId is string
+        && request.resource.data.templateName is string
+        && request.resource.data.issueDate is string
+        && request.resource.data.principalName is string
+        && request.resource.data.teacherName is string
+        && request.resource.data.status is string
+        && validGeneratedCertificateStatus(request.resource.data.status)
+        && request.resource.data.pdfFileName is string
+        && request.resource.data.generatedByUid is string
+        && request.resource.data.generatedByName is string
+        && request.resource.data.generatedByEmail is string
+        && request.resource.data.updatedByUid is string
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string
+        && (!("deliveredByUid" in request.resource.data) || request.resource.data.deliveredByUid is string)
+        && (!("deliveredByName" in request.resource.data) || request.resource.data.deliveredByName is string)
+        && (!("deliveredByEmail" in request.resource.data) || request.resource.data.deliveredByEmail is string)
+        && (!("cancelledByUid" in request.resource.data) || request.resource.data.cancelledByUid is string)
+        && (!("cancelledByName" in request.resource.data) || request.resource.data.cancelledByName is string)
+        && (!("cancelledByEmail" in request.resource.data) || request.resource.data.cancelledByEmail is string);
+    }
+
     function validTechnicalLocationCreate() {
       return canManageTechnicalSupport()
         && request.resource.data.name is string
@@ -515,9 +1320,9 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get: if hasProfile() && (
-        isAdmin() ||
-        userId == request.auth.uid
+      allow get: if signedIn() && (
+        userId == request.auth.uid ||
+        isAdmin()
       );
 
       allow list: if isAdmin();
@@ -595,6 +1400,109 @@ service cloud.firestore {
       allow read: if hasProfile();
 
       allow create, update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+
+    match /printProducts/{productId} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if isAdmin()
+        && validPrintProductData();
+
+      allow delete: if false;
+    }
+
+
+    match /printFinishedInventory/{inventoryId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if isAdmin()
+        && validPrintFinishedInventoryData();
+
+      allow update: if (
+          isAdmin()
+          && validPrintFinishedInventoryData()
+        )
+        || responsibleInventoryEntryUpdate();
+
+      allow delete: if false;
+    }
+
+    match /printInventoryMovements/{movementId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if (
+          isAdmin()
+          || responsibleBatchInventoryMovementCreate()
+        )
+        && validPrintInventoryMovementData();
+
+      allow update, delete: if false;
+    }
+
+
+    match /printProductionBatches/{batchId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if isAdmin()
+        && validPrintProductionBatchData();
+
+      allow update: if (
+          isAdmin()
+          && validPrintProductionBatchData()
+        )
+        || responsibleProductionBatchUpdate()
+        || auditorQualityBatchUpdate()
+        || responsibleInventoryBatchApplyUpdate();
+
+      allow delete: if false;
+    }
+
+
+    match /certificateSigners/{signerId} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if isAdmin()
+        && validCertificateSignerData();
+
+      allow delete: if false;
+    }
+
+    match /certificateTemplates/{templateId} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if isAdmin()
+        && validCertificateTemplateData();
+
+      allow delete: if false;
+    }
+
+    match /generatedCertificates/{certificateId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if canManageGeneratedCertificateRequest(request.resource.data.requestId)
+        && validGeneratedCertificateData();
+
+      allow update: if canManageGeneratedCertificateRequest(resource.data.requestId)
+        && validGeneratedCertificateData();
+
+      allow delete: if false;
+    }
+
+    match /printRequests/{requestId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if isAdmin()
+        && validPrintRequestData()
+        && request.resource.data.createdByUid == request.auth.uid;
+
+      allow update: if (
+          isAdmin()
+          && validPrintRequestData()
+        )
+        || responsiblePrintRequestUpdate();
 
       allow delete: if false;
     }
