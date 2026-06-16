@@ -93,6 +93,46 @@ const productionBatchStatuses = [
   "Cancelado",
 ];
 
+const productionResponsibleStatuses = [
+  "En impresión",
+  "En encuadernado",
+  "En revisión de calidad",
+];
+
+const qualityAuditorStatuses = [
+  "En revisión de calidad",
+  "Aprobado",
+  "Cancelado",
+];
+
+const qualityStatuses = [
+  "Pendiente",
+  "En revisión",
+  "Aprobado",
+  "Aprobado con observaciones",
+  "Rechazado",
+];
+
+const qualityChecklistItems = [
+  { id: "cover", label: "Portada correcta" },
+  { id: "level", label: "Nivel correcto" },
+  { id: "pagesComplete", label: "Páginas completas" },
+  { id: "pageOrder", label: "Orden correcto de páginas" },
+  { id: "printQuality", label: "Impresión legible" },
+  { id: "cleanPrint", label: "Sin manchas o líneas de impresión" },
+  { id: "cutting", label: "Corte correcto" },
+  { id: "binding", label: "Encuadernado firme" },
+  { id: "quantityMatches", label: "Cantidad producida coincide con el lote" },
+  { id: "approvedRejectedRegistered", label: "Cantidad aprobada y rechazada registrada" },
+];
+
+function getDefaultQualityChecklist() {
+  return qualityChecklistItems.map((item) => ({
+    ...item,
+    checked: false,
+  }));
+}
+
 const batchFormInitialState = {
   productId: "",
   plannedQuantity: 0,
@@ -101,9 +141,18 @@ const batchFormInitialState = {
   rejectedQuantity: 0,
   status: "Planeado",
   responsible: "",
+  responsibleUid: "",
+  responsibleName: "",
+  responsibleEmail: "",
+  auditorUid: "",
+  auditorName: "",
+  auditorEmail: "",
   startDate: "",
   dueDate: "",
   notes: "",
+  qualityStatus: "Pendiente",
+  qualityChecklist: getDefaultQualityChecklist(),
+  qualityNotes: "",
 };
 
 const basePrintProducts = [
@@ -548,6 +597,101 @@ function getBatchStatusTone(status) {
   return "teal";
 }
 
+function getQualityStatusTone(status) {
+  if (status === "Aprobado" || status === "Aprobado con observaciones") return "green";
+  if (status === "Rechazado") return "red";
+  if (status === "En revisión") return "orange";
+  return "blue";
+}
+
+function normalizeBatchQualityChecklist(checklist) {
+  const received = Array.isArray(checklist) ? checklist : [];
+
+  return qualityChecklistItems.map((baseItem) => {
+    const savedItem = received.find((item) => item?.id === baseItem.id);
+
+    return {
+      id: baseItem.id,
+      label: baseItem.label,
+      checked: savedItem?.checked === true,
+    };
+  });
+}
+
+function isQualityChecklistComplete(checklist) {
+  const normalized = normalizeBatchQualityChecklist(checklist);
+  return normalized.length > 0 && normalized.every((item) => item.checked === true);
+}
+
+function isBatchQualityApproved(batch) {
+  const status = batch?.qualityStatus || "Pendiente";
+  return (
+    isQualityChecklistComplete(batch?.qualityChecklist) &&
+    (status === "Aprobado" || status === "Aprobado con observaciones")
+  );
+}
+
+function getUserDisplayName(person) {
+  return (
+    person?.name ||
+    person?.displayName ||
+    person?.fullName ||
+    person?.email ||
+    "Usuario sin nombre"
+  );
+}
+
+function getUserEmail(person) {
+  return person?.email || "";
+}
+
+function getUserUid(person) {
+  return person?.uid || person?.id || "";
+}
+
+function isSameUid(a, b) {
+  return Boolean(a) && Boolean(b) && String(a) === String(b);
+}
+
+function normalizeComparable(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isSameText(a, b) {
+  const first = normalizeComparable(a);
+  const second = normalizeComparable(b);
+  return Boolean(first) && Boolean(second) && first === second;
+}
+
+function toDateInputValue(value) {
+  if (!value) return "";
+
+  const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toISOString().slice(0, 10);
+}
+
+function isBatchInsideRange(batch, from, to) {
+  if (!from && !to) return true;
+
+  const batchDate =
+    batch?.startDate ||
+    batch?.createdAt ||
+    batch?.updatedAt ||
+    batch?.dueDate ||
+    "";
+
+  const dateValue = toDateInputValue(batchDate);
+
+  if (!dateValue) return false;
+  if (from && dateValue < from) return false;
+  if (to && dateValue > to) return false;
+
+  return true;
+}
+
 function buildBatchFolio(product) {
   const year = new Date().getFullYear();
   const productCode = String(product?.name || "LIBRO")
@@ -599,6 +743,51 @@ export default function PrintShop() {
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
   const [closingBatchId, setClosingBatchId] = useState(null);
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState("");
+  const [batchSummaryFrom, setBatchSummaryFrom] = useState("");
+  const [batchSummaryTo, setBatchSummaryTo] = useState("");
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setActiveUsers([]);
+      return undefined;
+    }
+
+    setLoadingUsers(true);
+    setUsersError("");
+
+    const usersQuery = query(collection(db, "users"), orderBy("name", "asc"));
+
+    const unsubscribe = onSnapshot(
+      usersQuery,
+      (snapshot) => {
+        const nextUsers = snapshot.docs
+          .map((userDoc) => ({
+            id: userDoc.id,
+            ...userDoc.data(),
+          }))
+          .filter((person) => person.active !== false && person.deleted !== true)
+          .map((person) => ({
+            ...person,
+            uid: getUserUid(person),
+            name: getUserDisplayName(person),
+            email: getUserEmail(person),
+          }));
+
+        setActiveUsers(nextUsers);
+        setLoadingUsers(false);
+      },
+      (error) => {
+        console.error("No se pudo cargar la lista de usuarios:", error);
+        setUsersError("No se pudo cargar la lista de responsables y auditores.");
+        setLoadingUsers(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAdmin]);
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -809,6 +998,44 @@ export default function PrintShop() {
     };
   }, [productionBatches]);
 
+  const batchProductionSummary = useMemo(() => {
+    const visibleBatches = productionBatches.filter((batch) =>
+      isBatchInsideRange(batch, batchSummaryFrom, batchSummaryTo)
+    );
+
+    const planned = visibleBatches.reduce(
+      (sum, batch) => sum + Number(batch.plannedQuantity || 0),
+      0
+    );
+    const produced = visibleBatches.reduce(
+      (sum, batch) => sum + Number(batch.producedQuantity || 0),
+      0
+    );
+    const approved = visibleBatches.reduce(
+      (sum, batch) => sum + Number(batch.approvedQuantity || 0),
+      0
+    );
+    const rejected = visibleBatches.reduce(
+      (sum, batch) => sum + Number(batch.rejectedQuantity || 0),
+      0
+    );
+    const inventoryApplied = visibleBatches
+      .filter((batch) => batch.inventoryApplied === true || batch.status === "Ingresado a inventario")
+      .reduce((sum, batch) => sum + Number(batch.approvedQuantity || 0), 0);
+
+    const rejectionRate = produced > 0 ? Math.round((rejected / produced) * 1000) / 10 : 0;
+
+    return {
+      count: visibleBatches.length,
+      planned,
+      produced,
+      approved,
+      rejected,
+      inventoryApplied,
+      rejectionRate,
+    };
+  }, [productionBatches, batchSummaryFrom, batchSummaryTo]);
+
   const filteredProducts = useMemo(() => {
     const normalizedSearch = productSearch.trim().toLowerCase();
 
@@ -851,6 +1078,62 @@ export default function PrintShop() {
       name: profile?.name || user?.displayName || "Usuario",
       email: profile?.email || user?.email || "",
     };
+  }
+
+  function findAssignableUser(uid) {
+    return activeUsers.find((person) => isSameUid(person.uid, uid) || isSameUid(person.id, uid));
+  }
+
+  function isBatchResponsible(batch, auditUser = getAuditUser()) {
+    if (!batch) return false;
+
+    return (
+      isSameUid(auditUser.uid, batch.responsibleUid) ||
+      isSameText(auditUser.email, batch.responsibleEmail) ||
+      isSameText(auditUser.name, batch.responsibleName) ||
+      isSameText(auditUser.name, batch.responsible)
+    );
+  }
+
+  function isBatchAuditor(batch, auditUser = getAuditUser()) {
+    if (!batch) return false;
+
+    return (
+      isSameUid(auditUser.uid, batch.auditorUid) ||
+      isSameText(auditUser.email, batch.auditorEmail) ||
+      isSameText(auditUser.name, batch.auditorName)
+    );
+  }
+
+  function canCurrentUserSendBatchToInventory(batch, auditUser = getAuditUser()) {
+    if (!batch) return false;
+
+    const inventoryReady =
+      batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
+
+    return (
+      (isAdmin || isBatchResponsible(batch, auditUser)) &&
+      !inventoryReady &&
+      batch.status !== "Cancelado"
+    );
+  }
+
+  function getBatchUserRole(batch = selectedBatch) {
+    const auditUser = getAuditUser();
+
+    if (isAdmin) return "admin";
+    if (isBatchResponsible(batch, auditUser)) return "responsible";
+    if (isBatchAuditor(batch, auditUser)) return "auditor";
+
+    return "viewer";
+  }
+
+  function canUserSaveCurrentBatch() {
+    if (!selectedBatchId) return isAdmin;
+
+    const role = getBatchUserRole();
+
+    return role === "admin" || role === "responsible" || role === "auditor";
   }
 
   function handleProductInputChange(event) {
@@ -1291,10 +1574,35 @@ export default function PrintShop() {
     const { name, value } = event.target;
 
     setBatchMessage("");
-    setBatchForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+    setBatchForm((current) => {
+      if (name === "responsibleUid") {
+        const selectedUser = findAssignableUser(value);
+
+        return {
+          ...current,
+          responsibleUid: value,
+          responsibleName: selectedUser ? getUserDisplayName(selectedUser) : "",
+          responsibleEmail: selectedUser ? getUserEmail(selectedUser) : "",
+          responsible: selectedUser ? getUserDisplayName(selectedUser) : "",
+        };
+      }
+
+      if (name === "auditorUid") {
+        const selectedUser = findAssignableUser(value);
+
+        return {
+          ...current,
+          auditorUid: value,
+          auditorName: selectedUser ? getUserDisplayName(selectedUser) : "",
+          auditorEmail: selectedUser ? getUserEmail(selectedUser) : "",
+        };
+      }
+
+      return {
+        ...current,
+        [name]: value,
+      };
+    });
   }
 
   function handleBatchNumberInputChange(event) {
@@ -1305,6 +1613,16 @@ export default function PrintShop() {
     setBatchForm((current) => ({
       ...current,
       [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function handleQualityChecklistToggle(itemId) {
+    setBatchMessage("");
+    setBatchForm((current) => ({
+      ...current,
+      qualityChecklist: normalizeBatchQualityChecklist(current.qualityChecklist).map((item) =>
+        item.id === itemId ? { ...item, checked: !item.checked } : item
+      ),
     }));
   }
 
@@ -1324,10 +1642,19 @@ export default function PrintShop() {
       approvedQuantity: Number(batch.approvedQuantity || 0),
       rejectedQuantity: Number(batch.rejectedQuantity || 0),
       status: batch.status || "Planeado",
-      responsible: batch.responsible || "",
+      responsible: batch.responsible || batch.responsibleName || "",
+      responsibleUid: batch.responsibleUid || "",
+      responsibleName: batch.responsibleName || batch.responsible || "",
+      responsibleEmail: batch.responsibleEmail || "",
+      auditorUid: batch.auditorUid || "",
+      auditorName: batch.auditorName || "",
+      auditorEmail: batch.auditorEmail || "",
       startDate: batch.startDate || "",
       dueDate: batch.dueDate || "",
       notes: batch.notes || "",
+      qualityStatus: batch.qualityStatus || "Pendiente",
+      qualityChecklist: normalizeBatchQualityChecklist(batch.qualityChecklist),
+      qualityNotes: batch.qualityNotes || "",
     });
   }
 
@@ -1335,8 +1662,16 @@ export default function PrintShop() {
     event.preventDefault();
     setBatchMessage("");
 
-    if (!isAdmin) {
-      setBatchMessage("Solo los administradores pueden crear o editar lotes.");
+    const role = getBatchUserRole();
+    const auditUser = getAuditUser();
+
+    if (!selectedBatchId && !isAdmin) {
+      setBatchMessage("Solo los administradores pueden crear nuevos lotes.");
+      return;
+    }
+
+    if (selectedBatchId && !canUserSaveCurrentBatch()) {
+      setBatchMessage("No tienes permisos para modificar este lote.");
       return;
     }
 
@@ -1367,7 +1702,102 @@ export default function PrintShop() {
       return;
     }
 
-    const auditUser = getAuditUser();
+    const normalizedQualityChecklist = normalizeBatchQualityChecklist(batchForm.qualityChecklist);
+    const qualityStatus = batchForm.qualityStatus || "Pendiente";
+    const qualityCompleted =
+      isQualityChecklistComplete(normalizedQualityChecklist) &&
+      (qualityStatus === "Aprobado" || qualityStatus === "Aprobado con observaciones");
+    const requiresApprovedQuality = ["Aprobado", "Ingresado a inventario", "Cerrado"].includes(
+      batchForm.status
+    );
+
+    if (requiresApprovedQuality && !qualityCompleted) {
+      setBatchMessage(
+        "Antes de aprobar, cerrar o ingresar este lote al inventario, completa y aprueba la revisión de calidad."
+      );
+      return;
+    }
+
+    if (!isAdmin && role === "responsible") {
+      if (!productionResponsibleStatuses.includes(batchForm.status)) {
+        setBatchMessage(
+          "El responsable de producción solo puede mover el lote a En impresión, En encuadernado o En revisión de calidad."
+        );
+        return;
+      }
+
+      const payload = {
+        status: batchForm.status,
+        producedQuantity,
+        notes: batchForm.notes || "",
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      };
+
+      try {
+        setSavingBatch(true);
+        await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        setBatchMessage("Avance de producción actualizado correctamente.");
+      } catch (error) {
+        console.error("No se pudo guardar el avance de producción:", error);
+        setBatchMessage("No se pudo guardar el avance. Revisa permisos de Firestore.");
+      } finally {
+        setSavingBatch(false);
+      }
+
+      return;
+    }
+
+    if (!isAdmin && role === "auditor") {
+      if (!qualityAuditorStatuses.includes(batchForm.status)) {
+        setBatchMessage(
+          "El auditor solo puede trabajar el lote en revisión de calidad, aprobado o cancelado."
+        );
+        return;
+      }
+
+      if (batchForm.status === "Aprobado" && !qualityCompleted) {
+        setBatchMessage("Para aprobar el lote, completa el checklist y marca la calidad como aprobada.");
+        return;
+      }
+
+      const payload = {
+        status: batchForm.status,
+        approvedQuantity,
+        rejectedQuantity,
+        qualityChecklist: normalizedQualityChecklist,
+        qualityStatus,
+        qualityNotes: batchForm.qualityNotes || "",
+        qualityCompleted,
+        qualityReviewedAt: qualityCompleted ? serverTimestamp() : selectedBatch?.qualityReviewedAt || null,
+        qualityReviewedByUid: qualityCompleted ? auditUser.uid : selectedBatch?.qualityReviewedByUid || "",
+        qualityReviewedByName: qualityCompleted ? auditUser.name : selectedBatch?.qualityReviewedByName || "",
+        qualityReviewedByEmail: qualityCompleted ? auditUser.email : selectedBatch?.qualityReviewedByEmail || "",
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      };
+
+      try {
+        setSavingBatch(true);
+        await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        setBatchMessage("Revisión de calidad actualizada correctamente.");
+      } catch (error) {
+        console.error("No se pudo guardar la revisión de calidad:", error);
+        setBatchMessage("No se pudo guardar la revisión. Revisa permisos de Firestore.");
+      } finally {
+        setSavingBatch(false);
+      }
+
+      return;
+    }
+
+    const responsibleUser = findAssignableUser(batchForm.responsibleUid);
+    const auditorUser = findAssignableUser(batchForm.auditorUid);
+
     const payload = {
       folio: selectedBatch?.folio || buildBatchFolio(selectedProduct),
       productId: selectedProduct.id,
@@ -1380,10 +1810,32 @@ export default function PrintShop() {
       approvedQuantity,
       rejectedQuantity,
       status: batchForm.status || "Planeado",
-      responsible: batchForm.responsible.trim(),
+      responsible: batchForm.responsibleName || batchForm.responsible || "",
+      responsibleUid: batchForm.responsibleUid || "",
+      responsibleName: responsibleUser
+        ? getUserDisplayName(responsibleUser)
+        : batchForm.responsibleName || batchForm.responsible || "",
+      responsibleEmail: responsibleUser
+        ? getUserEmail(responsibleUser)
+        : batchForm.responsibleEmail || "",
+      auditorUid: batchForm.auditorUid || "",
+      auditorName: auditorUser
+        ? getUserDisplayName(auditorUser)
+        : batchForm.auditorName || "",
+      auditorEmail: auditorUser
+        ? getUserEmail(auditorUser)
+        : batchForm.auditorEmail || "",
       startDate: batchForm.startDate || "",
       dueDate: batchForm.dueDate || "",
       notes: batchForm.notes || "",
+      qualityChecklist: normalizedQualityChecklist,
+      qualityStatus,
+      qualityNotes: batchForm.qualityNotes || "",
+      qualityCompleted,
+      qualityReviewedAt: qualityCompleted ? serverTimestamp() : selectedBatch?.qualityReviewedAt || null,
+      qualityReviewedByUid: qualityCompleted ? auditUser.uid : selectedBatch?.qualityReviewedByUid || "",
+      qualityReviewedByName: qualityCompleted ? auditUser.name : selectedBatch?.qualityReviewedByName || "",
+      qualityReviewedByEmail: qualityCompleted ? auditUser.email : selectedBatch?.qualityReviewedByEmail || "",
       inventoryApplied: selectedBatch?.inventoryApplied === true,
       inventoryId: selectedBatch?.inventoryId || "",
       inventoryMovementId: selectedBatch?.inventoryMovementId || "",
@@ -1392,6 +1844,21 @@ export default function PrintShop() {
       updatedByName: auditUser.name,
       updatedByEmail: auditUser.email,
     };
+
+    if (!payload.responsibleUid) {
+      setBatchMessage("Selecciona un responsable de producción.");
+      return;
+    }
+
+    if (!payload.auditorUid) {
+      setBatchMessage("Selecciona un auditor de calidad.");
+      return;
+    }
+
+    if (payload.responsibleUid === payload.auditorUid) {
+      setBatchMessage("El responsable de producción y el auditor deben ser personas diferentes.");
+      return;
+    }
 
     try {
       setSavingBatch(true);
@@ -1421,11 +1888,20 @@ export default function PrintShop() {
   }
 
   async function sendBatchToInventory(batch) {
-    if (!isAdmin || !batch?.id) return;
+    if (!batch?.id) return;
 
     setBatchMessage("");
 
-    if (batch.inventoryApplied === true) {
+    const auditUser = getAuditUser();
+
+    if (!canCurrentUserSendBatchToInventory(batch, auditUser)) {
+      setBatchMessage(
+        "Solo el responsable asignado o un administrador puede ingresar el lote al inventario, y el lote no debe estar cancelado ni ingresado previamente."
+      );
+      return;
+    }
+
+    if (batch.inventoryApplied === true || batch.status === "Ingresado a inventario") {
       setBatchMessage("Este lote ya fue ingresado al inventario.");
       return;
     }
@@ -1434,6 +1910,13 @@ export default function PrintShop() {
 
     if (approvedQuantity <= 0) {
       setBatchMessage("Para ingresar un lote al inventario, primero registra cantidad aprobada.");
+      return;
+    }
+
+    if (!isBatchQualityApproved(batch)) {
+      setBatchMessage(
+        "Antes de ingresar este lote al inventario, completa el checklist y marca la revisión de calidad como aprobada."
+      );
       return;
     }
 
@@ -1448,7 +1931,6 @@ export default function PrintShop() {
       return;
     }
 
-    const auditUser = getAuditUser();
     const batchRef = doc(db, "printProductionBatches", batch.id);
     const inventoryRef = doc(db, "printFinishedInventory", inventoryItem.id);
     const movementRef = doc(collection(db, "printInventoryMovements"));
@@ -1474,12 +1956,22 @@ export default function PrintShop() {
           throw new Error("Este lote ya fue ingresado al inventario.");
         }
 
+        if (!isAdmin && !isBatchResponsible(batchData, auditUser)) {
+          throw new Error("Solo el responsable asignado puede ingresar este lote al inventario.");
+        }
+
+        if (!isBatchQualityApproved(batchData)) {
+          throw new Error("La revisión de calidad debe estar aprobada antes de ingresar al inventario.");
+        }
+
         const inventoryData = inventorySnapshot.data();
         const previousStock = Number(inventoryData.currentStock || 0);
         const newStock = previousStock + approvedQuantity;
 
         transaction.update(inventoryRef, {
           currentStock: newStock,
+          lastBatchId: batch.id,
+          lastBatchFolio: batch.folio || "",
           updatedAt: serverTimestamp(),
           updatedByUid: auditUser.uid,
           updatedByName: auditUser.name,
@@ -1671,8 +2163,18 @@ export default function PrintShop() {
           batchMessage={batchMessage}
           closingBatchId={closingBatchId}
           isAdmin={isAdmin}
+          currentUserUid={getAuditUser().uid}
+          activeUsers={activeUsers}
+          loadingUsers={loadingUsers}
+          usersError={usersError}
+          batchProductionSummary={batchProductionSummary}
+          batchSummaryFrom={batchSummaryFrom}
+          batchSummaryTo={batchSummaryTo}
+          onBatchSummaryFromChange={setBatchSummaryFrom}
+          onBatchSummaryToChange={setBatchSummaryTo}
           onBatchInputChange={handleBatchInputChange}
           onBatchNumberInputChange={handleBatchNumberInputChange}
+          onQualityChecklistToggle={handleQualityChecklistToggle}
           onSaveProductionBatch={saveProductionBatch}
           onSelectBatch={selectBatch}
           onResetBatchForm={resetBatchForm}
@@ -2203,8 +2705,18 @@ function ProductionBatchesView({
   batchMessage,
   closingBatchId,
   isAdmin,
+  currentUserUid,
+  activeUsers,
+  loadingUsers,
+  usersError,
+  batchProductionSummary,
+  batchSummaryFrom,
+  batchSummaryTo,
+  onBatchSummaryFromChange,
+  onBatchSummaryToChange,
   onBatchInputChange,
   onBatchNumberInputChange,
+  onQualityChecklistToggle,
   onSaveProductionBatch,
   onSelectBatch,
   onResetBatchForm,
@@ -2212,6 +2724,27 @@ function ProductionBatchesView({
   onOpenInventory,
 }) {
   const activeBatches = productionBatches.filter((batch) => batch.status !== "Cancelado");
+  const selectedRole = isAdmin
+    ? "admin"
+    : isSameUid(currentUserUid, selectedBatch?.responsibleUid)
+      ? "responsible"
+      : isSameUid(currentUserUid, selectedBatch?.auditorUid)
+        ? "auditor"
+        : "viewer";
+  const canCreateBatch = isAdmin;
+  const canEditAdministrativeFields = isAdmin;
+  const canEditProductionFields = isAdmin || selectedRole === "responsible";
+  const canEditQualityFields = isAdmin || selectedRole === "auditor";
+  const canSaveBatch =
+    (!selectedBatchId && canCreateBatch) ||
+    (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole));
+  const availableStatusOptions = isAdmin
+    ? productionBatchStatuses
+    : selectedRole === "responsible"
+      ? productionResponsibleStatuses
+      : selectedRole === "auditor"
+        ? qualityAuditorStatuses
+        : [batchForm.status || "Planeado"];
 
   return (
     <section className="printshop-batches-page">
@@ -2239,7 +2772,48 @@ function ProductionBatchesView({
         <CatalogMetric tone="red" icon="×" label="Cancelados" value={batchStats.cancelled} />
       </div>
 
+      <Panel title="Resumen de producción" icon="∑" actionLabel={`${batchProductionSummary.count} lotes`}>
+        <div className="batch-summary-toolbar">
+          <label>
+            <span>Desde</span>
+            <input
+              type="date"
+              value={batchSummaryFrom}
+              onChange={(event) => onBatchSummaryFromChange(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Hasta</span>
+            <input
+              type="date"
+              value={batchSummaryTo}
+              onChange={(event) => onBatchSummaryToChange(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="visual-outline-button"
+            onClick={() => {
+              onBatchSummaryFromChange("");
+              onBatchSummaryToChange("");
+            }}
+          >
+            Limpiar periodo
+          </button>
+        </div>
+
+        <div className="batch-summary-grid">
+          <CatalogMetric tone="blue" icon="□" label="Planeado" value={batchProductionSummary.planned} />
+          <CatalogMetric tone="teal" icon="▣" label="Producido" value={batchProductionSummary.produced} />
+          <CatalogMetric tone="green" icon="✓" label="Aprobado" value={batchProductionSummary.approved} />
+          <CatalogMetric tone="red" icon="×" label="Rechazado" value={batchProductionSummary.rejected} />
+          <CatalogMetric tone="orange" icon="%" label="Rechazo" value={`${batchProductionSummary.rejectionRate}%`} />
+          <CatalogMetric tone="purple" icon="↳" label="Inventario" value={batchProductionSummary.inventoryApplied} />
+        </div>
+      </Panel>
+
       {batchesError && <div className="form-error">{batchesError}</div>}
+      {usersError && <div className="form-error">{usersError}</div>}
 
       <div className="printshop-batches-layout">
         <div className="printshop-batches-main">
@@ -2265,11 +2839,14 @@ function ProductionBatchesView({
                     <tr>
                       <th>Lote</th>
                       <th>Producto</th>
+                      <th>Responsable</th>
+                      <th>Auditor</th>
                       <th>Planeado</th>
                       <th>Producido</th>
                       <th>Aprobado</th>
                       <th>Rechazado</th>
                       <th>Estado</th>
+                      <th>Calidad</th>
                       <th>Inventario</th>
                       <th>Acciones</th>
                     </tr>
@@ -2280,10 +2857,9 @@ function ProductionBatchesView({
                       const inventoryReady =
                         batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
                       const canSendToInventory =
-                        isAdmin &&
+                        (isAdmin || isSameUid(currentUserUid, batch.responsibleUid)) &&
                         !inventoryReady &&
-                        batch.status !== "Cancelado" &&
-                        Number(batch.approvedQuantity || 0) > 0;
+                        batch.status !== "Cancelado";
 
                       return (
                         <tr
@@ -2298,6 +2874,14 @@ function ProductionBatchesView({
                             <strong>{batch.productName}</strong>
                             <span>{batch.level || "No aplica"} · {batch.unit || "Libro"}</span>
                           </td>
+                          <td>
+                            <strong>{batch.responsibleName || batch.responsible || "Sin asignar"}</strong>
+                            <span>{batch.responsibleEmail || ""}</span>
+                          </td>
+                          <td>
+                            <strong>{batch.auditorName || "Sin asignar"}</strong>
+                            <span>{batch.auditorEmail || ""}</span>
+                          </td>
                           <td>{Number(batch.plannedQuantity || 0)}</td>
                           <td>{Number(batch.producedQuantity || 0)}</td>
                           <td>{Number(batch.approvedQuantity || 0)}</td>
@@ -2305,6 +2889,16 @@ function ProductionBatchesView({
                           <td>
                             <StatusBadge tone={tone}>{batch.status || "Planeado"}</StatusBadge>
                             <ProgressBar value={getBatchProgress(batch)} tone={tone} />
+                          </td>
+                          <td>
+                            <StatusBadge tone={getQualityStatusTone(batch.qualityStatus)}>
+                              {batch.qualityStatus || "Pendiente"}
+                            </StatusBadge>
+                            <span className="batch-quality-mini">
+                              {isQualityChecklistComplete(batch.qualityChecklist)
+                                ? "Checklist completo"
+                                : "Checklist pendiente"}
+                            </span>
                           </td>
                           <td>
                             <StatusBadge tone={inventoryReady ? "green" : "orange"}>
@@ -2320,6 +2914,11 @@ function ProductionBatchesView({
                                 type="button"
                                 onClick={() => onSendBatchToInventory(batch)}
                                 disabled={!canSendToInventory || closingBatchId === batch.id}
+                                title={
+                                  canSendToInventory
+                                    ? "Ingresar cantidad aprobada al inventario"
+                                    : "Disponible para el responsable asignado o administrador cuando el lote no esté cancelado ni ingresado"
+                                }
                               >
                                 {closingBatchId === batch.id ? "Ingresando..." : "Ingresar"}
                               </button>
@@ -2363,7 +2962,7 @@ function ProductionBatchesView({
                   name="productId"
                   value={batchForm.productId}
                   onChange={onBatchInputChange}
-                  disabled={!isAdmin || inventoryProducts.length === 0}
+                  disabled={!canEditAdministrativeFields || inventoryProducts.length === 0}
                 >
                   <option value="">Seleccionar libro</option>
                   {inventoryProducts.map((product) => (
@@ -2382,6 +2981,7 @@ function ProductionBatchesView({
                   min="0"
                   value={batchForm.plannedQuantity}
                   onChange={onBatchNumberInputChange}
+                  disabled={!canEditAdministrativeFields}
                 />
               </label>
 
@@ -2393,6 +2993,7 @@ function ProductionBatchesView({
                   min="0"
                   value={batchForm.producedQuantity}
                   onChange={onBatchNumberInputChange}
+                  disabled={!canEditProductionFields}
                 />
               </label>
 
@@ -2404,6 +3005,7 @@ function ProductionBatchesView({
                   min="0"
                   value={batchForm.approvedQuantity}
                   onChange={onBatchNumberInputChange}
+                  disabled={!canEditQualityFields}
                 />
               </label>
 
@@ -2415,27 +3017,76 @@ function ProductionBatchesView({
                   min="0"
                   value={batchForm.rejectedQuantity}
                   onChange={onBatchNumberInputChange}
+                  disabled={!canEditQualityFields}
                 />
               </label>
 
               <label className="full">
                 <span>Estado</span>
-                <select name="status" value={batchForm.status} onChange={onBatchInputChange}>
-                  {productionBatchStatuses.map((status) => (
+                <select
+                  name="status"
+                  value={batchForm.status}
+                  onChange={onBatchInputChange}
+                  disabled={selectedRole === "viewer"}
+                >
+                  {availableStatusOptions.map((status) => (
                     <option key={status}>{status}</option>
                   ))}
                 </select>
               </label>
 
               <label className="full">
-                <span>Responsable</span>
-                <input
-                  name="responsible"
-                  value={batchForm.responsible}
+                <span>Responsable de producción</span>
+                <select
+                  name="responsibleUid"
+                  value={batchForm.responsibleUid}
                   onChange={onBatchInputChange}
-                  placeholder="Ej. Emmanuel, Tony, Imprenta"
-                />
+                  disabled={!canEditAdministrativeFields || loadingUsers}
+                >
+                  <option value="">
+                    {loadingUsers ? "Cargando usuarios..." : "Seleccionar responsable"}
+                  </option>
+                  {activeUsers.map((person) => (
+                    <option key={person.uid || person.id} value={person.uid || person.id}>
+                      {person.name} · {person.email || "sin correo"}
+                    </option>
+                  ))}
+                </select>
               </label>
+
+              <label className="full">
+                <span>Auditor de calidad</span>
+                <select
+                  name="auditorUid"
+                  value={batchForm.auditorUid}
+                  onChange={onBatchInputChange}
+                  disabled={!canEditAdministrativeFields || loadingUsers}
+                >
+                  <option value="">
+                    {loadingUsers ? "Cargando usuarios..." : "Seleccionar auditor"}
+                  </option>
+                  {activeUsers.map((person) => (
+                    <option key={person.uid || person.id} value={person.uid || person.id}>
+                      {person.name} · {person.email || "sin correo"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedBatchId && (
+                <div className="batch-role-summary full">
+                  <span>Tu rol en este lote</span>
+                  <strong>
+                    {selectedRole === "admin"
+                      ? "Administrador"
+                      : selectedRole === "responsible"
+                        ? "Responsable de producción"
+                        : selectedRole === "auditor"
+                          ? "Auditor de calidad"
+                          : "Solo lectura"}
+                  </strong>
+                </div>
+              )}
 
               <label>
                 <span>Inicio</span>
@@ -2444,6 +3095,7 @@ function ProductionBatchesView({
                   name="startDate"
                   value={batchForm.startDate}
                   onChange={onBatchInputChange}
+                  disabled={!canEditAdministrativeFields}
                 />
               </label>
 
@@ -2454,6 +3106,7 @@ function ProductionBatchesView({
                   name="dueDate"
                   value={batchForm.dueDate}
                   onChange={onBatchInputChange}
+                  disabled={!canEditAdministrativeFields}
                 />
               </label>
 
@@ -2464,8 +3117,60 @@ function ProductionBatchesView({
                   value={batchForm.notes}
                   onChange={onBatchInputChange}
                   placeholder="Ej. Lote urgente para reponer stock bajo de Journey A1."
+                  disabled={!canEditProductionFields && !canEditAdministrativeFields}
                 />
               </label>
+
+              <div className="batch-quality-box full">
+                <div className="batch-quality-header">
+                  <div>
+                    <strong>Revisión de calidad</strong>
+                    <p>Completa esta revisión antes de aprobar o ingresar el lote al inventario.</p>
+                  </div>
+                  <StatusBadge tone={getQualityStatusTone(batchForm.qualityStatus)}>
+                    {batchForm.qualityStatus || "Pendiente"}
+                  </StatusBadge>
+                </div>
+
+                <div className="batch-quality-checklist">
+                  {normalizeBatchQualityChecklist(batchForm.qualityChecklist).map((item) => (
+                    <label key={item.id} className={item.checked ? "checked" : ""}>
+                      <input
+                        type="checkbox"
+                        checked={item.checked}
+                        onChange={() => onQualityChecklistToggle(item.id)}
+                        disabled={!canEditQualityFields}
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <label className="batch-quality-field">
+                  <span>Resultado de calidad</span>
+                  <select
+                    name="qualityStatus"
+                    value={batchForm.qualityStatus}
+                    onChange={onBatchInputChange}
+                    disabled={!canEditQualityFields}
+                  >
+                    {qualityStatuses.map((status) => (
+                      <option key={status}>{status}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="batch-quality-field">
+                  <span>Observaciones de calidad</span>
+                  <textarea
+                    name="qualityNotes"
+                    value={batchForm.qualityNotes}
+                    onChange={onBatchInputChange}
+                    placeholder="Ej. Se corrigieron dos portadas antes de aprobar el lote."
+                    disabled={!canEditQualityFields}
+                  />
+                </label>
+              </div>
 
               {batchMessage && <div className="message-box full">{batchMessage}</div>}
 
@@ -2479,7 +3184,7 @@ function ProductionBatchesView({
                 <button
                   type="submit"
                   className="visual-primary-button"
-                  disabled={savingBatch || !isAdmin || inventoryProducts.length === 0}
+                  disabled={savingBatch || !canSaveBatch || inventoryProducts.length === 0}
                 >
                   {savingBatch
                     ? "Guardando..."

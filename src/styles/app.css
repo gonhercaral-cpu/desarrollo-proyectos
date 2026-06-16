@@ -17241,3 +17241,242 @@ body:has(.field-mode-page) .main-content {
     width: 100%;
   }
 }
+
+/* =========================================================
+   IMPRENTA - CHECKLIST DE CALIDAD PARA LOTES
+========================================================= */
+
+.batch-quality-mini {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.batch-quality-box {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
+  padding: 15px;
+}
+
+.batch-quality-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5eaf2;
+}
+
+.batch-quality-header strong {
+  display: block;
+  color: #0f2442;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.batch-quality-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.batch-quality-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.batch-quality-checklist label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+  background: #ffffff;
+  padding: 10px 11px;
+  color: #344256;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+  transition: 0.16s ease;
+}
+
+.batch-quality-checklist label:hover {
+  border-color: #bad0ff;
+  box-shadow: 0 8px 18px rgba(15, 79, 196, 0.06);
+}
+
+.batch-quality-checklist label.checked {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.batch-quality-checklist input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #16a34a;
+}
+
+.batch-quality-field {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.batch-quality-field span {
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.batch-quality-field select,
+.batch-quality-field textarea {
+  width: 100%;
+  border: 1px solid #d9e2ef;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.batch-quality-field textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+@media (max-width: 900px) {
+  .batch-quality-header {
+    flex-direction: column;
+  }
+
+  .batch-quality-checklist {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - RESPONSABLES, AUDITORÍA Y RESUMEN DE LOTES
+========================================================= */
+
+.batch-summary-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.batch-summary-toolbar label {
+  margin: 0;
+  display: grid;
+  gap: 7px;
+  min-width: 180px;
+}
+
+.batch-summary-toolbar label span {
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.batch-summary-toolbar input {
+  height: 42px;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 0 12px;
+}
+
+.batch-summary-toolbar button {
+  height: 42px;
+  margin: 0;
+}
+
+.batch-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.batch-role-summary {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #dbe7ff;
+  border-left: 5px solid #0f4fc4;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 12px 14px;
+}
+
+.batch-role-summary span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.batch-role-summary strong {
+  color: #0f2442;
+  font-size: 14px;
+}
+
+.printshop-batches-table {
+  min-width: 1320px;
+}
+
+.printshop-batches-table td span {
+  display: block;
+  max-width: 180px;
+  overflow-wrap: anywhere;
+}
+
+.printshop-product-form select:disabled,
+.printshop-product-form input:disabled,
+.printshop-product-form textarea:disabled,
+.batch-quality-checklist input:disabled + span {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.batch-quality-checklist label:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+@media (max-width: 1300px) {
+  .batch-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .batch-summary-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .batch-summary-toolbar label,
+  .batch-summary-toolbar button {
+    width: 100%;
+  }
+
+  .batch-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -14,6 +14,11 @@ import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
+  const userArea = normalizeText(
+    profile?.area || profile?.department || profile?.departmentName
+  );
+  const canUsePrintShop =
+    isAdmin || userArea === "imprenta" || userArea === "soporte tecnico";
 
   const [page, setPage] = useState(
     isAdmin ? "executive-dashboard" : "my-projects"
@@ -36,8 +41,17 @@ export default function Dashboard() {
       setPage("technical-support");
       setProfileMenuOpen(false);
       setProfilePanelOpen(false);
+      return;
     }
-  }, [isAdmin]);
+
+    if (canUsePrintShop && pageFromUrl === "print-shop") {
+      setSelectedProjectId(null);
+      setReturnPage("print-shop");
+      setPage("print-shop");
+      setProfileMenuOpen(false);
+      setProfilePanelOpen(false);
+    }
+  }, [isAdmin, canUsePrintShop]);
 
   function goToPage(nextPage) {
     setSelectedProjectId(null);
@@ -124,7 +138,7 @@ export default function Dashboard() {
       return <TechnicalSupport />;
     }
 
-    if (page === "print-shop" && isAdmin) {
+    if (page === "print-shop" && canUsePrintShop) {
       return <PrintShop />;
     }
 
@@ -284,6 +298,16 @@ export default function Dashboard() {
             Mis proyectos
           </button>
 
+          {canUsePrintShop && (
+            <button
+              className={isNavActive("print-shop") ? "active" : ""}
+              onClick={() => goToPage("print-shop")}
+            >
+              <span className="nav-icon">▣</span>
+              Imprenta
+            </button>
+          )}
+
           {isAdmin && (
             <>
               <button
@@ -318,14 +342,6 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">◈</span>
                 Soporte Técnico
-              </button>
-
-              <button
-                className={isNavActive("print-shop") ? "active" : ""}
-                onClick={() => goToPage("print-shop")}
-              >
-                <span className="nav-icon">▣</span>
-                Imprenta
               </button>
 
               <button
@@ -498,6 +514,14 @@ function getInitials(name = "") {
     .toUpperCase();
 
   return initials || "U";
+}
+
+function normalizeText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function getRoleLabel(role = "") {
