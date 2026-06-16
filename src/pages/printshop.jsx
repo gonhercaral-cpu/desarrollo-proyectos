@@ -108,6 +108,10 @@ const printRequestPriorities = ["Baja", "Normal", "Alta", "Urgente"];
 
 const printDeliveryTypes = ["Impresa", "Digital", "Ambas"];
 
+const studentDeliveryTypes = ["Impreso", "Digital", "Ambos"];
+
+const studentStatuses = ["Pendiente", "Listo para generar", "Generado", "Entregado", "Cancelado"];
+
 const printCampuses = [
   "Plaza Estrella",
   "Plaza Bugambilias",
@@ -633,6 +637,65 @@ function isRequestCertificateLike(requestType) {
   return requestType === "Certificado" || requestType === "Diploma";
 }
 
+function createStudentId() {
+  return `student-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function normalizeRequestStudents(students) {
+  if (!Array.isArray(students)) return [];
+
+  return students
+    .map((student) => ({
+      id: student?.id || createStudentId(),
+      name: String(student?.name || "").trim(),
+      deliveryType: studentDeliveryTypes.includes(student?.deliveryType)
+        ? student.deliveryType
+        : "Impreso",
+      status: studentStatuses.includes(student?.status) ? student.status : "Pendiente",
+    }))
+    .filter((student) => student.name);
+}
+
+function getStudentDeliveryCounts(students) {
+  const normalizedStudents = normalizeRequestStudents(students);
+
+  return normalizedStudents.reduce(
+    (totals, student) => {
+      const deliveryType = student.deliveryType || "Impreso";
+
+      totals.total += 1;
+
+      if (deliveryType === "Impreso" || deliveryType === "Ambos") {
+        totals.printed += 1;
+      }
+
+      if (deliveryType === "Digital" || deliveryType === "Ambos") {
+        totals.digital += 1;
+      }
+
+      return totals;
+    },
+    { total: 0, printed: 0, digital: 0 }
+  );
+}
+
+function getStudentValidationSummary(request) {
+  const counts = getStudentDeliveryCounts(request?.students);
+  const requestedQuantity = Number(request?.requestedQuantity || 0);
+  const printedQuantity = Number(request?.printedQuantity || 0);
+  const digitalQuantity = Number(request?.digitalQuantity || 0);
+
+  return {
+    ...counts,
+    requestedQuantity,
+    printedQuantity,
+    digitalQuantity,
+    totalMatches: counts.total === requestedQuantity,
+    printedMatches: counts.printed === printedQuantity,
+    digitalMatches: counts.digital === digitalQuantity,
+  };
+}
+
 function getRequestProductLabel(request) {
   if (!request) return "Solicitud";
 
@@ -903,6 +966,18 @@ export default function PrintShop() {
   const [requestStatusFilter, setRequestStatusFilter] = useState("Todos");
   const [requestTypeFilter, setRequestTypeFilter] = useState("Todos");
   const [requestPriorityFilter, setRequestPriorityFilter] = useState("Todas");
+  const [studentName, setStudentName] = useState("");
+  const [studentDeliveryType, setStudentDeliveryType] = useState("Impreso");
+  const [bulkStudentsText, setBulkStudentsText] = useState("");
+  const [bulkStudentsDeliveryType, setBulkStudentsDeliveryType] = useState("Impreso");
+  const [savingStudents, setSavingStudents] = useState(false);
+
+  useEffect(() => {
+    setStudentName("");
+    setStudentDeliveryType("Impreso");
+    setBulkStudentsText("");
+    setBulkStudentsDeliveryType("Impreso");
+  }, [selectedRequestId]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -1445,6 +1520,10 @@ export default function PrintShop() {
     setSelectedRequestId(null);
     setRequestForm(requestFormInitialState);
     setRequestMessage("");
+    setStudentName("");
+    setStudentDeliveryType("Impreso");
+    setBulkStudentsText("");
+    setBulkStudentsDeliveryType("Impreso");
   }
 
   function selectRequest(request) {
@@ -1551,6 +1630,7 @@ export default function PrintShop() {
       schedule: requestForm.schedule.trim(),
       printedQuantity,
       digitalQuantity,
+      students: normalizeRequestStudents(currentRequest?.students || []),
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
       updatedByName: auditUser.name,
@@ -1599,6 +1679,137 @@ export default function PrintShop() {
     } finally {
       setSavingRequest(false);
     }
+  }
+
+  function canCurrentUserManageRequestStudents(request = selectedRequest) {
+    return Boolean(
+      request &&
+      selectedRequestId &&
+      isRequestCertificateLike(request.requestType) &&
+      canCurrentUserEditRequest(request)
+    );
+  }
+
+  async function updateSelectedRequestStudents(nextStudents, successMessage = "Lista de alumnos actualizada.") {
+    const currentRequest = selectedRequest;
+
+    if (!currentRequest || !selectedRequestId) {
+      setRequestMessage("Selecciona primero una solicitud de certificado o diploma.");
+      return;
+    }
+
+    if (!isRequestCertificateLike(currentRequest.requestType)) {
+      setRequestMessage("La lista de alumnos solo aplica para certificados y diplomas.");
+      return;
+    }
+
+    if (!canCurrentUserManageRequestStudents(currentRequest)) {
+      setRequestMessage("No tienes permisos para modificar la lista de alumnos de esta solicitud.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const normalizedStudents = normalizeRequestStudents(nextStudents);
+
+    try {
+      setSavingStudents(true);
+      setRequestMessage("");
+
+      await updateDoc(doc(db, "printRequests", selectedRequestId), {
+        students: normalizedStudents,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+
+      setRequestMessage(successMessage);
+    } catch (error) {
+      console.error("No se pudo actualizar la lista de alumnos:", error);
+      setRequestMessage("No se pudo actualizar la lista de alumnos. Revisa las reglas de Firestore.");
+    } finally {
+      setSavingStudents(false);
+    }
+  }
+
+  async function addSingleRequestStudent(event) {
+    event.preventDefault();
+
+    const cleanName = studentName.trim();
+
+    if (!cleanName) {
+      setRequestMessage("Escribe el nombre del alumno.");
+      return;
+    }
+
+    const currentStudents = normalizeRequestStudents(selectedRequest?.students || []);
+    const nextStudents = [
+      ...currentStudents,
+      {
+        id: createStudentId(),
+        name: cleanName,
+        deliveryType: studentDeliveryType,
+        status: "Pendiente",
+      },
+    ];
+
+    await updateSelectedRequestStudents(nextStudents, "Alumno agregado correctamente.");
+    setStudentName("");
+  }
+
+  async function addBulkRequestStudents(event) {
+    event.preventDefault();
+
+    const names = bulkStudentsText
+      .split(/\r?\n/)
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    if (names.length === 0) {
+      setRequestMessage("Pega al menos un nombre de alumno.");
+      return;
+    }
+
+    const currentStudents = normalizeRequestStudents(selectedRequest?.students || []);
+    const nextStudents = [
+      ...currentStudents,
+      ...names.map((name) => ({
+        id: createStudentId(),
+        name,
+        deliveryType: bulkStudentsDeliveryType,
+        status: "Pendiente",
+      })),
+    ];
+
+    await updateSelectedRequestStudents(nextStudents, `${names.length} alumnos agregados correctamente.`);
+    setBulkStudentsText("");
+  }
+
+  async function updateRequestStudent(studentId, changes) {
+    const currentStudents = normalizeRequestStudents(selectedRequest?.students || []);
+    const nextStudents = currentStudents.map((student) => {
+      if (student.id !== studentId) return student;
+
+      return {
+        ...student,
+        ...changes,
+        name: changes.name !== undefined ? String(changes.name || "").trim() : student.name,
+      };
+    });
+
+    if (changes.name !== undefined && !String(changes.name || "").trim()) {
+      setRequestMessage("El nombre del alumno no puede quedar vacío.");
+      return;
+    }
+
+    await updateSelectedRequestStudents(nextStudents, "Alumno actualizado correctamente.");
+  }
+
+  async function deleteRequestStudent(studentId) {
+    const currentStudents = normalizeRequestStudents(selectedRequest?.students || []);
+    const nextStudents = currentStudents.filter((student) => student.id !== studentId);
+
+    await updateSelectedRequestStudents(nextStudents, "Alumno eliminado correctamente.");
   }
 
   function handleProductInputChange(event) {
@@ -2659,6 +2870,19 @@ export default function PrintShop() {
           onRequestStatusFilterChange={setRequestStatusFilter}
           onRequestTypeFilterChange={setRequestTypeFilter}
           onRequestPriorityFilterChange={setRequestPriorityFilter}
+          studentName={studentName}
+          studentDeliveryType={studentDeliveryType}
+          bulkStudentsText={bulkStudentsText}
+          bulkStudentsDeliveryType={bulkStudentsDeliveryType}
+          savingStudents={savingStudents}
+          onStudentNameChange={setStudentName}
+          onStudentDeliveryTypeChange={setStudentDeliveryType}
+          onBulkStudentsTextChange={setBulkStudentsText}
+          onBulkStudentsDeliveryTypeChange={setBulkStudentsDeliveryType}
+          onAddSingleStudent={addSingleRequestStudent}
+          onAddBulkStudents={addBulkRequestStudents}
+          onUpdateStudent={updateRequestStudent}
+          onDeleteStudent={deleteRequestStudent}
         />
       ) : (
         <ProductionBatchesView
@@ -4117,6 +4341,19 @@ function PrintRequestsView({
   onRequestStatusFilterChange,
   onRequestTypeFilterChange,
   onRequestPriorityFilterChange,
+  studentName,
+  studentDeliveryType,
+  bulkStudentsText,
+  bulkStudentsDeliveryType,
+  savingStudents,
+  onStudentNameChange,
+  onStudentDeliveryTypeChange,
+  onBulkStudentsTextChange,
+  onBulkStudentsDeliveryTypeChange,
+  onAddSingleStudent,
+  onAddBulkStudents,
+  onUpdateStudent,
+  onDeleteStudent,
 }) {
   const requestProducts = products.filter(
     (product) => product.active !== false && product.category !== "Libro"
@@ -4308,7 +4545,24 @@ function PrintRequestsView({
 
         <aside className="printshop-batches-side">
           {selectedRequest && (
-            <RequestDetailCard request={selectedRequest} selectedRole={selectedRole} />
+            <RequestDetailCard
+              request={selectedRequest}
+              selectedRole={selectedRole}
+              canManageStudents={canEditOperationalFields}
+              studentName={studentName}
+              studentDeliveryType={studentDeliveryType}
+              bulkStudentsText={bulkStudentsText}
+              bulkStudentsDeliveryType={bulkStudentsDeliveryType}
+              savingStudents={savingStudents}
+              onStudentNameChange={onStudentNameChange}
+              onStudentDeliveryTypeChange={onStudentDeliveryTypeChange}
+              onBulkStudentsTextChange={onBulkStudentsTextChange}
+              onBulkStudentsDeliveryTypeChange={onBulkStudentsDeliveryTypeChange}
+              onAddSingleStudent={onAddSingleStudent}
+              onAddBulkStudents={onAddBulkStudents}
+              onUpdateStudent={onUpdateStudent}
+              onDeleteStudent={onDeleteStudent}
+            />
           )}
 
           <Panel
@@ -4594,7 +4848,24 @@ function PrintRequestsView({
 }
 
 
-function RequestDetailCard({ request, selectedRole }) {
+function RequestDetailCard({
+  request,
+  selectedRole,
+  canManageStudents,
+  studentName,
+  studentDeliveryType,
+  bulkStudentsText,
+  bulkStudentsDeliveryType,
+  savingStudents,
+  onStudentNameChange,
+  onStudentDeliveryTypeChange,
+  onBulkStudentsTextChange,
+  onBulkStudentsDeliveryTypeChange,
+  onAddSingleStudent,
+  onAddBulkStudents,
+  onUpdateStudent,
+  onDeleteStudent,
+}) {
   if (!request) return null;
 
   const isCertificateLike = isRequestCertificateLike(request.requestType);
@@ -4603,6 +4874,12 @@ function RequestDetailCard({ request, selectedRole }) {
   const printedQuantity = Number(request.printedQuantity || 0);
   const digitalQuantity = Number(request.digitalQuantity || 0);
   const pendingQuantity = Math.max(requestedQuantity - deliveredQuantity, 0);
+  const students = normalizeRequestStudents(request.students || []);
+  const studentSummary = getStudentValidationSummary(request);
+  const studentListComplete =
+    studentSummary.totalMatches &&
+    studentSummary.printedMatches &&
+    studentSummary.digitalMatches;
 
   return (
     <Panel
@@ -4647,10 +4924,181 @@ function RequestDetailCard({ request, selectedRole }) {
               <DetailItem label="Digitales" value={digitalQuantity} />
             </div>
 
+            <div className="request-students-card">
+              <div className="request-students-header">
+                <div>
+                  <strong>Alumnos para certificado / diploma</strong>
+                  <p>
+                    Agrega los nombres y define si cada alumno recibirá versión impresa,
+                    digital o ambas. Esta lista será la base para generar folios y QR.
+                  </p>
+                </div>
+                <StatusBadge tone={studentListComplete ? "green" : "orange"}>
+                  {studentListComplete ? "Lista completa" : "Pendiente"}
+                </StatusBadge>
+              </div>
+
+              <div className="request-students-summary">
+                <StudentSummaryPill
+                  label="Total alumnos"
+                  current={studentSummary.total}
+                  expected={studentSummary.requestedQuantity}
+                  valid={studentSummary.totalMatches}
+                />
+                <StudentSummaryPill
+                  label="Impresos"
+                  current={studentSummary.printed}
+                  expected={studentSummary.printedQuantity}
+                  valid={studentSummary.printedMatches}
+                />
+                <StudentSummaryPill
+                  label="Digitales"
+                  current={studentSummary.digital}
+                  expected={studentSummary.digitalQuantity}
+                  valid={studentSummary.digitalMatches}
+                />
+              </div>
+
+              {canManageStudents ? (
+                <div className="request-students-forms">
+                  <form className="request-student-inline-form" onSubmit={onAddSingleStudent}>
+                    <label>
+                      <span>Nombre del alumno</span>
+                      <input
+                        value={studentName}
+                        onChange={(event) => onStudentNameChange(event.target.value)}
+                        placeholder="Ej. Ana López Martínez"
+                        disabled={savingStudents}
+                      />
+                    </label>
+                    <label>
+                      <span>Entrega</span>
+                      <select
+                        value={studentDeliveryType}
+                        onChange={(event) => onStudentDeliveryTypeChange(event.target.value)}
+                        disabled={savingStudents}
+                      >
+                        {studentDeliveryTypes.map((type) => (
+                          <option key={type}>{type}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="submit" className="visual-primary-button" disabled={savingStudents}>
+                      Agregar
+                    </button>
+                  </form>
+
+                  <form className="request-student-bulk-form" onSubmit={onAddBulkStudents}>
+                    <label>
+                      <span>Pegar lista de alumnos</span>
+                      <textarea
+                        value={bulkStudentsText}
+                        onChange={(event) => onBulkStudentsTextChange(event.target.value)}
+                        placeholder={"Un alumno por línea:\nAna López\nCarlos Ramírez\nMariana Torres"}
+                        disabled={savingStudents}
+                      />
+                    </label>
+                    <label>
+                      <span>Entrega para todos</span>
+                      <select
+                        value={bulkStudentsDeliveryType}
+                        onChange={(event) => onBulkStudentsDeliveryTypeChange(event.target.value)}
+                        disabled={savingStudents}
+                      >
+                        {studentDeliveryTypes.map((type) => (
+                          <option key={type}>{type}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="submit" className="visual-outline-button" disabled={savingStudents}>
+                      Agregar lista
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div className="request-detail-note important">
+                  <strong>Lista en solo lectura</strong>
+                  <p>Solo el administrador o el responsable asignado pueden modificar los alumnos.</p>
+                </div>
+              )}
+
+              <div className="request-students-table-wrap">
+                {students.length === 0 ? (
+                  <div className="empty-state small">
+                    <div>◌</div>
+                    <p>No hay alumnos registrados todavía.</p>
+                  </div>
+                ) : (
+                  <table className="visual-table request-students-table">
+                    <thead>
+                      <tr>
+                        <th>Alumno</th>
+                        <th>Tipo de entrega</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.map((student) => (
+                        <tr key={student.id}>
+                          <td>
+                            <input
+                              defaultValue={student.name}
+                              disabled={!canManageStudents || savingStudents}
+                              onBlur={(event) => {
+                                const nextName = event.target.value.trim();
+                                if (nextName && nextName !== student.name) {
+                                  onUpdateStudent(student.id, { name: nextName });
+                                }
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <select
+                              value={student.deliveryType}
+                              disabled={!canManageStudents || savingStudents}
+                              onChange={(event) => onUpdateStudent(student.id, { deliveryType: event.target.value })}
+                            >
+                              {studentDeliveryTypes.map((type) => (
+                                <option key={type}>{type}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>
+                            <StatusBadge tone={student.status === "Pendiente" ? "purple" : "green"}>
+                              {student.status || "Pendiente"}
+                            </StatusBadge>
+                          </td>
+                          <td>
+                            <div className="table-actions">
+                              <button
+                                type="button"
+                                className="danger-table-button"
+                                disabled={!canManageStudents || savingStudents}
+                                onClick={() => onDeleteStudent(student.id)}
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {!studentListComplete && students.length > 0 && (
+                <div className="request-students-warning">
+                  Revisa las cantidades: el total de alumnos, impresos y digitales debe coincidir con la solicitud.
+                </div>
+              )}
+            </div>
+
             <div className="request-detail-note important">
               <strong>Siguiente paso</strong>
               <p>
-                El responsable ya puede consultar estos datos para preparar el trabajo. En la siguiente etapa agregaremos la lista de alumnos, generación automática, folio individual y QR de validación.
+                Cuando la lista esté completa, podremos generar automáticamente los certificados con folio individual, firma y QR de validación.
               </p>
             </div>
           </div>
@@ -4673,6 +5121,15 @@ function RequestDetailCard({ request, selectedRole }) {
         </div>
       </div>
     </Panel>
+  );
+}
+
+function StudentSummaryPill({ label, current, expected, valid }) {
+  return (
+    <div className={`request-students-summary-pill ${valid ? "valid" : "warning"}`}>
+      <span>{label}</span>
+      <strong>{current} / {expected}</strong>
+    </div>
   );
 }
 

@@ -17704,3 +17704,287 @@ body:has(.field-mode-page) .main-content {
     flex-direction: column;
   }
 }
+
+/* =========================================================
+   IMPRENTA - LISTA DE ALUMNOS PARA CERTIFICADOS / DIPLOMAS
+========================================================= */
+
+.request-students-card {
+  margin-top: 16px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: 16px;
+}
+
+.request-students-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.request-students-header strong {
+  display: block;
+  color: #0f2442;
+  font-size: 15px;
+  margin-bottom: 5px;
+}
+
+.request-students-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.request-students-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.request-students-summary-pill {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.request-students-summary-pill span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 5px;
+}
+
+.request-students-summary-pill strong {
+  display: block;
+  color: #0f2442;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.request-students-summary-pill.valid {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.request-students-summary-pill.valid strong {
+  color: #16a34a;
+}
+
+.request-students-summary-pill.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.request-students-summary-pill.warning strong {
+  color: #f97316;
+}
+
+.request-students-forms {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.request-student-inline-form,
+.request-student-bulk-form {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.request-student-inline-form {
+  grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.5fr) auto;
+}
+
+.request-student-bulk-form {
+  grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.45fr) auto;
+}
+
+.request-student-inline-form label,
+.request-student-bulk-form label {
+  margin: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.request-student-inline-form span,
+.request-student-bulk-form span {
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.request-student-inline-form input,
+.request-student-inline-form select,
+.request-student-bulk-form textarea,
+.request-student-bulk-form select,
+.request-students-table input,
+.request-students-table select {
+  width: 100%;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 10px 11px;
+  font-size: 13px;
+}
+
+.request-student-bulk-form textarea {
+  min-height: 88px;
+}
+
+.request-students-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.request-students-table {
+  min-width: 620px;
+}
+
+.request-students-table td {
+  vertical-align: middle;
+}
+
+.request-students-table .danger-table-button {
+  border: 1px solid #fecaca !important;
+  background: #fff5f5 !important;
+  color: #b42318 !important;
+}
+
+.request-students-warning {
+  margin-top: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 11px 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 1050px) {
+  .request-students-summary,
+  .request-student-inline-form,
+  .request-student-bulk-form {
+    grid-template-columns: 1fr;
+  }
+
+  .request-students-header {
+    flex-direction: column;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - SOLICITUDES: DETALLE AMPLIO
+   Corrige la tarjeta angosta de alumnos/certificados.
+   Pegar al FINAL de src/app.css para que sobrescriba estilos previos.
+========================================================= */
+
+/* En solicitudes, el detalle y el formulario bajan a una zona amplia
+   en vez de quedar comprimidos en la columna lateral de 390px. */
+.request-layout.printshop-batches-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.request-layout .printshop-batches-side {
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* Cuando no hay solicitud seleccionada, el formulario no queda demasiado ancho. */
+.request-layout .printshop-batches-side > .printshop-panel:only-child,
+.request-layout .printshop-batches-side > .visual-card:only-child,
+.request-layout .printshop-batches-side > .card:only-child {
+  max-width: 720px;
+}
+
+/* La tarjeta de detalle debe poder respirar. */
+.request-layout .request-detail-card,
+.request-layout .request-detail-certificate,
+.request-layout .request-students-card {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Mejor distribución de datos de certificados. */
+.request-layout .request-detail-grid.compact {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+/* Formularios de alumnos en columnas cómodas. */
+.request-layout .request-student-inline-form {
+  grid-template-columns: minmax(280px, 1fr) minmax(160px, 220px) auto;
+}
+
+.request-layout .request-student-bulk-form {
+  grid-template-columns: minmax(360px, 1fr) minmax(160px, 220px) auto;
+}
+
+.request-layout .request-student-inline-form button,
+.request-layout .request-student-bulk-form button {
+  min-height: 44px;
+  align-self: end;
+}
+
+.request-layout .request-student-bulk-form textarea {
+  min-height: 120px;
+}
+
+/* Resumen de alumnos con más espacio. */
+.request-layout .request-students-summary {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+/* Evita que textos largos se encimen. */
+.request-layout .request-students-header,
+.request-layout .request-detail-certificate-header {
+  min-width: 0;
+}
+
+.request-layout .request-students-header p,
+.request-layout .request-detail-note p,
+.request-layout .request-detail-item strong,
+.request-layout .request-detail-item small {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1500px) {
+  .request-layout .printshop-batches-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .request-layout .printshop-batches-side > .printshop-panel:only-child,
+  .request-layout .printshop-batches-side > .visual-card:only-child,
+  .request-layout .printshop-batches-side > .card:only-child {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 1050px) {
+  .request-layout .request-detail-grid.compact,
+  .request-layout .request-students-summary,
+  .request-layout .request-student-inline-form,
+  .request-layout .request-student-bulk-form {
+    grid-template-columns: 1fr;
+  }
+
+  .request-layout .request-student-inline-form button,
+  .request-layout .request-student-bulk-form button {
+    width: 100%;
+  }
+}
