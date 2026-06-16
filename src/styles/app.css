@@ -18798,3 +18798,211 @@ body:has(.field-mode-page) .main-content {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== PDF export fixes for certificate ===== */
+.certificate-preview-stage {
+  aspect-ratio: 8.5 / 11;
+}
+
+.certificate-preview-footer-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.certificate-preview-shape {
+  display: none;
+}
+
+.certificate-preview-course-bar {
+  line-height: 1;
+  overflow: hidden;
+}
+
+.certificate-preview-course-bar span,
+.certificate-preview-course-bar em {
+  line-height: 1;
+}
+
+.certificate-preview-stage.pdf-export-mode {
+  width: 816px !important;
+  min-height: 1056px !important;
+  height: 1056px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-logo-wrap {
+  padding-top: 14px;
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-course-bar {
+  bottom: 58px;
+  height: 78px;
+  font-size: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-signature-image {
+  max-height: 82px;
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-validation-block {
+  bottom: 160px;
+}
+
+/* ===== PDF export fixes v2 ===== */
+.certificate-preview-footer-graphics {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 300px;
+  pointer-events: none;
+}
+
+.certificate-preview-footer-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.certificate-preview-course-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 58px;
+  height: 78px;
+  background: var(--certificate-level-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 2;
+}
+
+.certificate-preview-course-bar span {
+  display: block;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-course-bar {
+  bottom: 58px;
+  height: 78px;
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-course-bar span {
+  transform: translateY(-2px);
+}
+
+.certificate-preview-signatures {
+  position: absolute;
+  left: 76px;
+  right: 76px;
+  bottom: 205px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  z-index: 3;
+}
+
+.certificate-signature-image-wrap {
+  height: 92px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  margin-bottom: 4px;
+  position: relative;
+  z-index: 3;
+}
+
+.certificate-signature-image {
+  max-width: 240px;
+  max-height: 88px;
+  object-fit: contain;
+  display: block;
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-signature-image {
+  max-height: 88px;
+}
+
+/* ===== PDF export fixes v3 ===== */
+.certificate-preview-course-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.certificate-preview-course-bar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  line-height: 1;
+  transform: translateY(-10px);
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-course-bar span {
+  transform: translateY(-12px);
+}
+
+.certificate-signature-image {
+  display: block;
+  max-width: 240px;
+  max-height: 88px;
+  object-fit: contain;
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ===== PDF export fixes v4 ===== */
+.certificate-preview-course-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.certificate-preview-course-bar span {
+  display: block;
+  line-height: 1;
+  transform: translateY(-20px);
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-course-bar span {
+  transform: translateY(-22px);
+}
+
+/* ===== PDF export fixes v5 ===== */
+.certificate-preview-course-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.certificate-preview-course-bar span {
+  display: block;
+  line-height: 1;
+  transform: translateY(-15px);
+}
+
+.certificate-preview-stage.pdf-export-mode .certificate-preview-course-bar span {
+  transform: translateY(-15px);
+}
+
+.certificate-signature-image {
+  display: block;
+  max-width: 240px;
+  max-height: 88px;
+  object-fit: contain;
+  opacity: 1;
+  visibility: visible;
+}

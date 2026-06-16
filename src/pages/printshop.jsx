@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import {
   addDoc,
   collection,
@@ -12,7 +14,7 @@ import {
   updateDoc,
   writeBatch,
 } from "firebase/firestore";
-import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
+import { getBytes, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, storage } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
 
@@ -132,6 +134,7 @@ const signerFormInitialState = {
   active: true,
   notes: "",
   signatureUrl: "",
+  signatureDataUrl: "",
   storagePath: "",
 };
 
@@ -164,10 +167,12 @@ const requestFormInitialState = {
   principalSignerName: "",
   principalSignerRole: "Principal",
   principalSignatureUrl: "",
+  principalSignatureDataUrl: "",
   teacherSignerId: "",
   teacherSignerName: "",
   teacherSignerRole: "Teacher",
   teacherSignatureUrl: "",
+  teacherSignatureDataUrl: "",
 };
 
 const productionBatchStatuses = [
@@ -681,6 +686,49 @@ function isValidSignatureFile(file) {
   return allowedTypes.includes(file.type) && file.size <= maxSize;
 }
 
+async function readFileAsDataUrl(file) {
+  if (!file) return "";
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const maxWidth = 900;
+    const maxHeight = 320;
+    const ratio = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight, 1);
+    const canvas = document.createElement("canvas");
+
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    return canvas.toDataURL("image/png");
+  } catch (error) {
+    console.error("No se pudo optimizar la firma, se guardará el archivo original:", error);
+
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function normalizeCertificateSigner(signer) {
   return {
     id: signer?.id || "",
@@ -691,6 +739,7 @@ function normalizeCertificateSigner(signer) {
     active: signer?.active !== false,
     notes: String(signer?.notes || ""),
     signatureUrl: String(signer?.signatureUrl || ""),
+    signatureDataUrl: String(signer?.signatureDataUrl || ""),
     storagePath: String(signer?.storagePath || ""),
     createdAt: signer?.createdAt || "",
     updatedAt: signer?.updatedAt || "",
@@ -1713,6 +1762,7 @@ export default function PrintShop() {
           principalSignerName: selectedSigner?.name || "",
           principalSignerRole: selectedSigner?.role || "Principal",
           principalSignatureUrl: selectedSigner?.signatureUrl || "",
+          principalSignatureDataUrl: selectedSigner?.signatureDataUrl || "",
         };
       }
 
@@ -1725,6 +1775,7 @@ export default function PrintShop() {
           teacherSignerName: selectedSigner?.name || "",
           teacherSignerRole: selectedSigner?.role || "Teacher",
           teacherSignatureUrl: selectedSigner?.signatureUrl || "",
+          teacherSignatureDataUrl: selectedSigner?.signatureDataUrl || "",
           teacherName: selectedSigner?.name || current.teacherName,
         };
       }
@@ -1811,6 +1862,7 @@ export default function PrintShop() {
       active: signer.active !== false,
       notes: signer.notes || "",
       signatureUrl: signer.signatureUrl || "",
+      signatureDataUrl: signer.signatureDataUrl || "",
       storagePath: signer.storagePath || "",
     });
   }
@@ -1852,9 +1904,11 @@ export default function PrintShop() {
       setSavingSigner(true);
 
       let signatureUrl = signerForm.signatureUrl || "";
+      let signatureDataUrl = signerForm.signatureDataUrl || "";
       let storagePath = signerForm.storagePath || "";
 
       if (signatureFile) {
+        signatureDataUrl = await readFileAsDataUrl(signatureFile);
         const safeName = sanitizeStorageFileName(signatureFile.name);
         const folder = getSignerTypeFolder(signerForm.type);
         storagePath = `printshop/signatures/${folder}/${auditUser.uid}/${Date.now()}-${safeName}`;
@@ -1874,6 +1928,7 @@ export default function PrintShop() {
         active: signerForm.active !== false,
         notes: signerForm.notes || "",
         signatureUrl,
+        signatureDataUrl,
         storagePath,
         updatedAt: serverTimestamp(),
         updatedByUid: auditUser.uid,
@@ -1964,10 +2019,12 @@ export default function PrintShop() {
       principalSignerName: request.principalSignerName || "",
       principalSignerRole: request.principalSignerRole || "Principal",
       principalSignatureUrl: request.principalSignatureUrl || "",
+      principalSignatureDataUrl: request.principalSignatureDataUrl || "",
       teacherSignerId: request.teacherSignerId || "",
       teacherSignerName: request.teacherSignerName || request.teacherName || "",
       teacherSignerRole: request.teacherSignerRole || "Teacher",
       teacherSignatureUrl: request.teacherSignatureUrl || "",
+      teacherSignatureDataUrl: request.teacherSignatureDataUrl || "",
     });
   }
 
@@ -5179,6 +5236,8 @@ function PrintRequestsView({
             <RequestDetailCard
               request={selectedRequest}
               selectedRole={selectedRole}
+              activePrincipalSigners={activePrincipalSigners}
+              activeTeacherSigners={activeTeacherSigners}
               canManageStudents={canEditOperationalFields}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
@@ -5537,6 +5596,8 @@ function PrintRequestsView({
 function RequestDetailCard({
   request,
   selectedRole,
+  activePrincipalSigners,
+  activeTeacherSigners,
   canManageStudents,
   studentName,
   studentDeliveryType,
@@ -5586,6 +5647,10 @@ function RequestDetailCard({
     students.find((student) => student.id === previewStudentId) ||
     students.find((student) => Boolean(student.certificateFolio)) ||
     null;
+  const selectedPrincipalSigner =
+    (activePrincipalSigners || []).find((signer) => signer.id === request.principalSignerId) || null;
+  const selectedTeacherSigner =
+    (activeTeacherSigners || []).find((signer) => signer.id === request.teacherSignerId) || null;
 
   return (
     <Panel
@@ -5888,7 +5953,12 @@ Mariana Torres`}
                   </div>
                   <StatusBadge tone="blue">{previewStudent.name}</StatusBadge>
                 </div>
-                <CertificatePreviewCard request={request} student={previewStudent} />
+                <CertificatePreviewCard
+                  request={request}
+                  student={previewStudent}
+                  principalSigner={selectedPrincipalSigner}
+                  teacherSigner={selectedTeacherSigner}
+                />
               </div>
             ) : students.some((student) => Boolean(student.certificateFolio)) ? null : (
               <div className="request-detail-note important">
@@ -5930,24 +6000,234 @@ Mariana Torres`}
   );
 }
 
-function CertificatePreviewCard({ request, student }) {
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function convertStoragePathToDataUrl(storagePath) {
+  if (!storagePath) return "";
+
+  const bytes = await getBytes(storageRef(storage, storagePath));
+  const blob = new Blob([bytes]);
+
+  return await blobToDataUrl(blob);
+}
+
+async function resolveCertificateSignatureDataUrl(preferredSignatureUrl, storagePath) {
+  const preferred = String(preferredSignatureUrl || "");
+
+  if (preferred.startsWith("data:")) {
+    return preferred;
+  }
+
+  if (storagePath) {
+    try {
+      return await convertStoragePathToDataUrl(storagePath);
+    } catch {
+      return preferred || "";
+    }
+  }
+
+  return preferred;
+}
+
+async function waitForCertificateAssets(container) {
+  if (!container) return;
+
+  const images = Array.from(container.querySelectorAll("img"));
+
+  await Promise.all(
+    images.map((image) => {
+      if (image.complete && image.naturalWidth > 0) {
+        if (typeof image.decode === "function") {
+          return image.decode().catch(() => undefined);
+        }
+
+        return Promise.resolve();
+      }
+
+      return new Promise((resolve) => {
+        const finish = () => resolve();
+
+        image.addEventListener("load", finish, { once: true });
+        image.addEventListener("error", finish, { once: true });
+      });
+    })
+  );
+}
+
+function sanitizePdfFileName(value) {
+  return String(value || "certificado")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "certificado";
+}
+
+function CertificatePreviewCard({ request, student, principalSigner, teacherSigner }) {
+  const certificateRef = useRef(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [embeddedPrincipalSignatureUrl, setEmbeddedPrincipalSignatureUrl] = useState("");
+  const [embeddedTeacherSignatureUrl, setEmbeddedTeacherSignatureUrl] = useState("");
+
   if (!request || !student) return null;
 
   const level = request.level || "A1";
   const issueDate = formatCertificatePreviewDate(getCertificateIssueDate(request));
-  const principalName = request.principalSignerName || CERTIFICATE_PRINCIPAL_NAME;
-  const principalRole = request.principalSignerRole || CERTIFICATE_PRINCIPAL_ROLE;
-  const principalSignatureUrl = request.principalSignatureUrl || DEFAULT_PRINCIPAL_SIGNATURE_DATA_URL;
-  const teacherName = request.teacherSignerName || request.teacherName || "Teacher";
-  const teacherRole = request.teacherSignerRole || CERTIFICATE_TEACHER_ROLE;
-  const teacherSignatureUrl = request.teacherSignatureUrl || DEFAULT_TEACHER_SIGNATURE_DATA_URL;
+  const principalName =
+    principalSigner?.name || request.principalSignerName || CERTIFICATE_PRINCIPAL_NAME;
+  const principalRole =
+    principalSigner?.role || request.principalSignerRole || CERTIFICATE_PRINCIPAL_ROLE;
+  const principalSignatureUrl =
+    principalSigner?.signatureDataUrl ||
+    request.principalSignatureDataUrl ||
+    DEFAULT_PRINCIPAL_SIGNATURE_DATA_URL;
+  const principalSignatureStoragePath = principalSigner?.storagePath || "";
+  const teacherName =
+    teacherSigner?.name || request.teacherSignerName || request.teacherName || "Teacher";
+  const teacherRole = teacherSigner?.role || request.teacherSignerRole || CERTIFICATE_TEACHER_ROLE;
+  const teacherSignatureUrl =
+    teacherSigner?.signatureDataUrl ||
+    request.teacherSignatureDataUrl ||
+    DEFAULT_TEACHER_SIGNATURE_DATA_URL;
+  const teacherSignatureStoragePath = teacherSigner?.storagePath || "";
+  const displayPrincipalSignatureUrl = embeddedPrincipalSignatureUrl || principalSignatureUrl;
+  const displayTeacherSignatureUrl = embeddedTeacherSignatureUrl || teacherSignatureUrl;
   const trackLabel = getCertificateTrackLabel(request);
   const programLabel = getCertificateProgramLabel(request);
   const levelColor = getCertificateLevelColor(level);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function prepareSignatures() {
+      setEmbeddedPrincipalSignatureUrl(principalSignatureUrl || "");
+      setEmbeddedTeacherSignatureUrl(teacherSignatureUrl || "");
+
+      try {
+        const [principalDataUrl, teacherDataUrl] = await Promise.all([
+          resolveCertificateSignatureDataUrl(
+            principalSignatureUrl,
+            principalSignatureStoragePath
+          ),
+          resolveCertificateSignatureDataUrl(
+            teacherSignatureUrl,
+            teacherSignatureStoragePath
+          ),
+        ]);
+
+        if (!cancelled) {
+          setEmbeddedPrincipalSignatureUrl(principalDataUrl || principalSignatureUrl || "");
+          setEmbeddedTeacherSignatureUrl(teacherDataUrl || teacherSignatureUrl || "");
+        }
+      } catch (error) {
+        console.error("No se pudieron preparar las firmas para el certificado:", error);
+        if (!cancelled) {
+          setEmbeddedPrincipalSignatureUrl(principalSignatureUrl || "");
+          setEmbeddedTeacherSignatureUrl(teacherSignatureUrl || "");
+        }
+      }
+    }
+
+    prepareSignatures();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    principalSignatureUrl,
+    principalSignatureStoragePath,
+    teacherSignatureUrl,
+    teacherSignatureStoragePath,
+  ]);
+
+  async function downloadCertificatePdf() {
+    if (!certificateRef.current || downloadingPdf) return;
+
+    const element = certificateRef.current;
+
+    try {
+      setDownloadingPdf(true);
+
+      if (document?.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
+      await waitForCertificateAssets(element);
+
+      element.classList.add("pdf-export-mode");
+
+      const exportWidth = 816;
+      const exportHeight = 1056;
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: "#f7f8f8",
+        logging: false,
+        width: exportWidth,
+        height: exportHeight,
+        windowWidth: exportWidth,
+        windowHeight: exportHeight,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const imageData = canvas.toDataURL("image/png", 1.0);
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "letter",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+
+      const fileName = sanitizePdfFileName(
+        `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
+      );
+
+      pdf.save(`${fileName}.pdf`);
+    } catch (error) {
+      console.error("No se pudo descargar el certificado en PDF:", error);
+      alert(
+        "No se pudo generar el PDF. Revisa que las firmas e imágenes carguen correctamente y vuelve a intentar."
+      );
+    } finally {
+      element.classList.remove("pdf-export-mode");
+      setDownloadingPdf(false);
+    }
+  }
+
   return (
     <div className="certificate-preview-shell">
-      <div className="certificate-preview-stage" style={{ "--certificate-level-color": levelColor }}>
+      <div className="certificate-preview-actions">
+        <button
+          type="button"
+          className="visual-primary-button"
+          onClick={downloadCertificatePdf}
+          disabled={downloadingPdf}
+        >
+          {downloadingPdf ? "Generando PDF..." : "Descargar PDF"}
+        </button>
+      </div>
+
+      <div
+        ref={certificateRef}
+        className="certificate-preview-stage"
+        style={{ "--certificate-level-color": levelColor }}
+      >
         <div className="certificate-preview-logo-wrap">
           <img
             src={DEFAULT_CERTIFICATE_LOGO_DATA_URL}
@@ -5970,10 +6250,28 @@ function CertificatePreviewCard({ request, student }) {
           <div className="certificate-preview-date">{issueDate}</div>
         </div>
 
-        <div className="certificate-preview-footer-graphics">
-          <div className="certificate-preview-shape shape-one" />
-          <div className="certificate-preview-shape shape-two" />
-          <div className="certificate-preview-shape shape-three" />
+        <div className="certificate-preview-footer-graphics" aria-hidden="true">
+          <svg
+            viewBox="0 0 816 300"
+            className="certificate-preview-footer-svg"
+            preserveAspectRatio="none"
+          >
+            <polygon
+              points="0,120 196,168 392,228 604,138 816,104 816,300 0,300"
+              fill="#d5e3d9"
+              opacity="0.75"
+            />
+            <polygon
+              points="0,220 147,96 359,174 539,108 816,182 816,300 0,300"
+              fill="#cddbcf"
+              opacity="0.82"
+            />
+            <polygon
+              points="0,146 278,224 498,166 816,234 816,300 0,300"
+              fill="#e1e9e2"
+              opacity="0.92"
+            />
+          </svg>
         </div>
 
         <div className="certificate-preview-validation-block">
@@ -5992,20 +6290,20 @@ function CertificatePreviewCard({ request, student }) {
 
         <div className="certificate-preview-signatures">
           <CertificateSignatureBlock
-            signatureUrl={principalSignatureUrl}
+            signatureUrl={displayPrincipalSignatureUrl}
             signatureAlt={`Firma de ${principalName}`}
             name={principalName}
             role={principalRole}
           />
           <CertificateSignatureBlock
-            signatureUrl={teacherSignatureUrl}
+            signatureUrl={displayTeacherSignatureUrl}
             signatureAlt={`Firma de ${teacherName}`}
             name={teacherName}
             role={teacherRole}
           />
         </div>
 
-        <div className="certificate-preview-course-bar">{trackLabel}</div>
+        <div className="certificate-preview-course-bar"><span>{trackLabel}</span></div>
       </div>
     </div>
   );
