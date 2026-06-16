@@ -17988,3 +17988,111 @@ body:has(.field-mode-page) .main-content {
     width: 100%;
   }
 }
+
+/* =========================================================
+   IMPRENTA - FOLIOS Y QR EN LISTA DE ALUMNOS
+========================================================= */
+
+.request-students-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.request-generate-all-button {
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  white-space: normal;
+}
+
+.request-student-locked-note {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.request-student-validation-card {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) 64px;
+  align-items: center;
+  gap: 10px;
+  min-width: 250px;
+  border: 1px solid #dbe7ff;
+  background: #f8fbff;
+  border-radius: 12px;
+  padding: 9px 10px;
+}
+
+.request-student-validation-card strong {
+  display: block;
+  color: #0f2442;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.request-student-validation-card small {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.25;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.request-student-validation-card img {
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 3px;
+}
+
+.request-student-no-folio {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.request-student-actions {
+  min-width: 190px;
+  flex-wrap: wrap;
+}
+
+.request-student-actions .visual-outline-button,
+.request-student-actions .danger-table-button {
+  padding: 8px 10px !important;
+  font-size: 11px !important;
+}
+
+@media (max-width: 900px) {
+  .request-students-header-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .request-generate-all-button {
+    width: 100%;
+  }
+
+  .request-student-validation-card {
+    grid-template-columns: 1fr;
+    min-width: 190px;
+  }
+
+  .request-student-validation-card img {
+    width: 72px;
+    height: 72px;
+  }
+}

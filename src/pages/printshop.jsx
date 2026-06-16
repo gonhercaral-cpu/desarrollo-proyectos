@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 import {
   addDoc,
   collection,
@@ -110,7 +111,7 @@ const printDeliveryTypes = ["Impresa", "Digital", "Ambas"];
 
 const studentDeliveryTypes = ["Impreso", "Digital", "Ambos"];
 
-const studentStatuses = ["Pendiente", "Listo para generar", "Generado", "Entregado", "Cancelado"];
+const studentStatuses = ["Pendiente", "Listo para generar", "Folio generado", "Generado", "Entregado", "Cancelado"];
 
 const printCampuses = [
   "Plaza Estrella",
@@ -652,6 +653,15 @@ function normalizeRequestStudents(students) {
         ? student.deliveryType
         : "Impreso",
       status: studentStatuses.includes(student?.status) ? student.status : "Pendiente",
+      certificateFolio: String(student?.certificateFolio || ""),
+      validationCode: String(student?.validationCode || ""),
+      validationUrl: String(student?.validationUrl || ""),
+      qrDataUrl: String(student?.qrDataUrl || ""),
+      qrGenerated: student?.qrGenerated === true,
+      generatedAt: String(student?.generatedAt || ""),
+      generatedByUid: String(student?.generatedByUid || ""),
+      generatedByName: String(student?.generatedByName || ""),
+      generatedByEmail: String(student?.generatedByEmail || ""),
     }))
     .filter((student) => student.name);
 }
@@ -694,6 +704,46 @@ function getStudentValidationSummary(request) {
     printedMatches: counts.printed === printedQuantity,
     digitalMatches: counts.digital === digitalQuantity,
   };
+}
+
+function sanitizeFolioSegment(value, fallback = "GEN") {
+  const cleaned = String(value || fallback)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toUpperCase();
+
+  return cleaned || fallback;
+}
+
+function getCertificatePrefix(requestType) {
+  return requestType === "Diploma" ? "DIPL" : "CERT";
+}
+
+function buildCertificateStudentFolio(request, studentIndex) {
+  const year = new Date().getFullYear();
+  const prefix = getCertificatePrefix(request?.requestType);
+  const levelCode = sanitizeFolioSegment(request?.level || "NA", "NA").slice(0, 8);
+  const requestCode = sanitizeFolioSegment(request?.folio || request?.id || Date.now(), "REQ")
+    .replace(/^IMP-?/, "")
+    .slice(-10);
+  const consecutive = String(studentIndex).padStart(3, "0");
+
+  return `${prefix}-${year}-${levelCode}-${requestCode}-${consecutive}`;
+}
+
+function buildValidationCode(folio) {
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${folio}-${randomPart}`;
+}
+
+function buildValidationUrl(validationCode) {
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "https://active-english-school.web.app";
+
+  return `${origin}/validar-certificado/${encodeURIComponent(validationCode)}`;
 }
 
 function getRequestProductLabel(request) {
@@ -971,6 +1021,7 @@ export default function PrintShop() {
   const [bulkStudentsText, setBulkStudentsText] = useState("");
   const [bulkStudentsDeliveryType, setBulkStudentsDeliveryType] = useState("Impreso");
   const [savingStudents, setSavingStudents] = useState(false);
+  const [generatingStudentId, setGeneratingStudentId] = useState(null);
 
   useEffect(() => {
     setStudentName("");
@@ -1810,6 +1861,163 @@ export default function PrintShop() {
     const nextStudents = currentStudents.filter((student) => student.id !== studentId);
 
     await updateSelectedRequestStudents(nextStudents, "Alumno eliminado correctamente.");
+  }
+
+
+  function validateStudentsReadyForFolios(request = selectedRequest) {
+    if (!request || !selectedRequestId) {
+      setRequestMessage("Selecciona primero una solicitud de certificado o diploma.");
+      return false;
+    }
+
+    if (!isRequestCertificateLike(request.requestType)) {
+      setRequestMessage("Los folios y QR solo aplican para certificados y diplomas.");
+      return false;
+    }
+
+    if (!canCurrentUserManageRequestStudents(request)) {
+      setRequestMessage("No tienes permisos para generar folios en esta solicitud.");
+      return false;
+    }
+
+    const students = normalizeRequestStudents(request.students || []);
+
+    if (students.length === 0) {
+      setRequestMessage("Agrega primero la lista de alumnos.");
+      return false;
+    }
+
+    const summary = getStudentValidationSummary(request);
+    const listMatchesRequest =
+      summary.totalMatches && summary.printedMatches && summary.digitalMatches;
+
+    if (!listMatchesRequest) {
+      setRequestMessage(
+        "Antes de generar folios, revisa que el total de alumnos, impresos y digitales coincida con la solicitud."
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  async function buildStudentWithFolio(request, student, studentIndex, auditUser) {
+    const certificateFolio = buildCertificateStudentFolio(request, studentIndex + 1);
+    const validationCode = buildValidationCode(certificateFolio);
+    const validationUrl = buildValidationUrl(validationCode);
+    const qrDataUrl = await QRCode.toDataURL(validationUrl, {
+      margin: 2,
+      width: 180,
+      errorCorrectionLevel: "M",
+    });
+
+    return {
+      ...student,
+      status: "Folio generado",
+      certificateFolio,
+      validationCode,
+      validationUrl,
+      qrDataUrl,
+      qrGenerated: true,
+      generatedAt: new Date().toISOString(),
+      generatedByUid: auditUser.uid,
+      generatedByName: auditUser.name,
+      generatedByEmail: auditUser.email,
+    };
+  }
+
+  async function generateStudentFolio(studentId) {
+    const currentRequest = selectedRequest;
+
+    if (!validateStudentsReadyForFolios(currentRequest)) return;
+
+    const currentStudents = normalizeRequestStudents(currentRequest.students || []);
+    const studentIndex = currentStudents.findIndex((student) => student.id === studentId);
+
+    if (studentIndex < 0) {
+      setRequestMessage("No se encontró el alumno seleccionado.");
+      return;
+    }
+
+    if (currentStudents[studentIndex].certificateFolio) {
+      setRequestMessage("Este alumno ya tiene folio y QR de validación.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+
+    try {
+      setGeneratingStudentId(studentId);
+      setRequestMessage("");
+
+      const studentWithFolio = await buildStudentWithFolio(
+        currentRequest,
+        currentStudents[studentIndex],
+        studentIndex,
+        auditUser
+      );
+
+      const nextStudents = currentStudents.map((student) =>
+        student.id === studentId ? studentWithFolio : student
+      );
+
+      await updateSelectedRequestStudents(nextStudents, "Folio y QR generados correctamente.");
+    } catch (error) {
+      console.error("No se pudo generar el folio/QR del alumno:", error);
+      setRequestMessage("No se pudo generar el folio y QR. Revisa que la librería qrcode esté instalada correctamente.");
+    } finally {
+      setGeneratingStudentId(null);
+    }
+  }
+
+  async function generateAllStudentFolios() {
+    const currentRequest = selectedRequest;
+
+    if (!validateStudentsReadyForFolios(currentRequest)) return;
+
+    const currentStudents = normalizeRequestStudents(currentRequest.students || []);
+    const pendingStudents = currentStudents.filter((student) => !student.certificateFolio);
+
+    if (pendingStudents.length === 0) {
+      setRequestMessage("Todos los alumnos ya tienen folio y QR de validación.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+
+    try {
+      setGeneratingStudentId("all");
+      setRequestMessage("");
+
+      const nextStudents = [];
+
+      for (let index = 0; index < currentStudents.length; index += 1) {
+        const student = currentStudents[index];
+
+        if (student.certificateFolio) {
+          nextStudents.push(student);
+        } else {
+          // eslint-disable-next-line no-await-in-loop
+          const studentWithFolio = await buildStudentWithFolio(
+            currentRequest,
+            student,
+            index,
+            auditUser
+          );
+          nextStudents.push(studentWithFolio);
+        }
+      }
+
+      await updateSelectedRequestStudents(
+        nextStudents,
+        `${pendingStudents.length} folios y QR generados correctamente.`
+      );
+    } catch (error) {
+      console.error("No se pudieron generar los folios/QR:", error);
+      setRequestMessage("No se pudieron generar los folios y QR. Revisa que la librería qrcode esté instalada correctamente.");
+    } finally {
+      setGeneratingStudentId(null);
+    }
   }
 
   function handleProductInputChange(event) {
@@ -2875,6 +3083,7 @@ export default function PrintShop() {
           bulkStudentsText={bulkStudentsText}
           bulkStudentsDeliveryType={bulkStudentsDeliveryType}
           savingStudents={savingStudents}
+          generatingStudentId={generatingStudentId}
           onStudentNameChange={setStudentName}
           onStudentDeliveryTypeChange={setStudentDeliveryType}
           onBulkStudentsTextChange={setBulkStudentsText}
@@ -2883,6 +3092,8 @@ export default function PrintShop() {
           onAddBulkStudents={addBulkRequestStudents}
           onUpdateStudent={updateRequestStudent}
           onDeleteStudent={deleteRequestStudent}
+          onGenerateStudentFolio={generateStudentFolio}
+          onGenerateAllStudentFolios={generateAllStudentFolios}
         />
       ) : (
         <ProductionBatchesView
@@ -4346,6 +4557,7 @@ function PrintRequestsView({
   bulkStudentsText,
   bulkStudentsDeliveryType,
   savingStudents,
+  generatingStudentId,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -4354,6 +4566,8 @@ function PrintRequestsView({
   onAddBulkStudents,
   onUpdateStudent,
   onDeleteStudent,
+  onGenerateStudentFolio,
+  onGenerateAllStudentFolios,
 }) {
   const requestProducts = products.filter(
     (product) => product.active !== false && product.category !== "Libro"
@@ -4554,6 +4768,7 @@ function PrintRequestsView({
               bulkStudentsText={bulkStudentsText}
               bulkStudentsDeliveryType={bulkStudentsDeliveryType}
               savingStudents={savingStudents}
+              generatingStudentId={generatingStudentId}
               onStudentNameChange={onStudentNameChange}
               onStudentDeliveryTypeChange={onStudentDeliveryTypeChange}
               onBulkStudentsTextChange={onBulkStudentsTextChange}
@@ -4562,6 +4777,8 @@ function PrintRequestsView({
               onAddBulkStudents={onAddBulkStudents}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
+              onGenerateStudentFolio={onGenerateStudentFolio}
+              onGenerateAllStudentFolios={onGenerateAllStudentFolios}
             />
           )}
 
@@ -4857,6 +5074,7 @@ function RequestDetailCard({
   bulkStudentsText,
   bulkStudentsDeliveryType,
   savingStudents,
+  generatingStudentId,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -4865,6 +5083,8 @@ function RequestDetailCard({
   onAddBulkStudents,
   onUpdateStudent,
   onDeleteStudent,
+  onGenerateStudentFolio,
+  onGenerateAllStudentFolios,
 }) {
   if (!request) return null;
 
@@ -4933,9 +5153,26 @@ function RequestDetailCard({
                     digital o ambas. Esta lista será la base para generar folios y QR.
                   </p>
                 </div>
-                <StatusBadge tone={studentListComplete ? "green" : "orange"}>
-                  {studentListComplete ? "Lista completa" : "Pendiente"}
-                </StatusBadge>
+                <div className="request-students-header-actions">
+                  <StatusBadge tone={studentListComplete ? "green" : "orange"}>
+                    {studentListComplete ? "Lista completa" : "Pendiente"}
+                  </StatusBadge>
+                  {canManageStudents && students.length > 0 && (
+                    <button
+                      type="button"
+                      className="visual-outline-button request-generate-all-button"
+                      disabled={
+                        savingStudents ||
+                        Boolean(generatingStudentId) ||
+                        !studentListComplete ||
+                        students.every((student) => Boolean(student.certificateFolio))
+                      }
+                      onClick={onGenerateAllStudentFolios}
+                    >
+                      {generatingStudentId === "all" ? "Generando..." : "Generar folios para todos"}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="request-students-summary">
@@ -5035,6 +5272,7 @@ function RequestDetailCard({
                         <th>Alumno</th>
                         <th>Tipo de entrega</th>
                         <th>Estado</th>
+                        <th>Folio / QR</th>
                         <th>Acciones</th>
                       </tr>
                     </thead>
@@ -5044,7 +5282,7 @@ function RequestDetailCard({
                           <td>
                             <input
                               defaultValue={student.name}
-                              disabled={!canManageStudents || savingStudents}
+                              disabled={!canManageStudents || savingStudents || Boolean(student.certificateFolio)}
                               onBlur={(event) => {
                                 const nextName = event.target.value.trim();
                                 if (nextName && nextName !== student.name) {
@@ -5052,11 +5290,16 @@ function RequestDetailCard({
                                 }
                               }}
                             />
+                            {student.certificateFolio && (
+                              <small className="request-student-locked-note">
+                                Nombre bloqueado después de generar folio.
+                              </small>
+                            )}
                           </td>
                           <td>
                             <select
                               value={student.deliveryType}
-                              disabled={!canManageStudents || savingStudents}
+                              disabled={!canManageStudents || savingStudents || Boolean(student.certificateFolio)}
                               onChange={(event) => onUpdateStudent(student.id, { deliveryType: event.target.value })}
                             >
                               {studentDeliveryTypes.map((type) => (
@@ -5070,11 +5313,45 @@ function RequestDetailCard({
                             </StatusBadge>
                           </td>
                           <td>
-                            <div className="table-actions">
+                            {student.certificateFolio ? (
+                              <div className="request-student-validation-card">
+                                <div>
+                                  <strong>{student.certificateFolio}</strong>
+                                  <small>{student.validationCode}</small>
+                                </div>
+                                {student.qrDataUrl && (
+                                  <img
+                                    src={student.qrDataUrl}
+                                    alt={`QR de validación de ${student.name}`}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <span className="request-student-no-folio">Sin folio</span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="table-actions request-student-actions">
+                              {!student.certificateFolio && (
+                                <button
+                                  type="button"
+                                  className="visual-outline-button"
+                                  disabled={
+                                    !canManageStudents ||
+                                    savingStudents ||
+                                    Boolean(generatingStudentId) ||
+                                    !studentListComplete
+                                  }
+                                  onClick={() => onGenerateStudentFolio(student.id)}
+                                >
+                                  {generatingStudentId === student.id ? "Generando..." : "Generar folio"}
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 className="danger-table-button"
-                                disabled={!canManageStudents || savingStudents}
+                                disabled={!canManageStudents || savingStudents || Boolean(generatingStudentId)}
                                 onClick={() => onDeleteStudent(student.id)}
                               >
                                 Eliminar
@@ -5098,7 +5375,7 @@ function RequestDetailCard({
             <div className="request-detail-note important">
               <strong>Siguiente paso</strong>
               <p>
-                Cuando la lista esté completa, podremos generar automáticamente los certificados con folio individual, firma y QR de validación.
+                Cuando la lista esté completa, genera los folios y QR de validación. Después construiremos la plantilla visual y la descarga del certificado en PDF.
               </p>
             </div>
           </div>
