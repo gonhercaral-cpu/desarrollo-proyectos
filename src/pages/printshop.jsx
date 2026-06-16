@@ -116,6 +116,8 @@ const studentDeliveryTypes = ["Impreso", "Digital", "Ambos"];
 
 const studentStatuses = ["Pendiente", "Listo para generar", "Folio generado", "Generado", "Entregado", "Cancelado"];
 
+const generatedCertificateStatuses = ["Generado", "Entregado", "Cancelado"];
+
 const printCampuses = [
   "Plaza Estrella",
   "Plaza Bugambilias",
@@ -1342,6 +1344,19 @@ function normalizeRequestStudents(students) {
       generatedByUid: String(student?.generatedByUid || ""),
       generatedByName: String(student?.generatedByName || ""),
       generatedByEmail: String(student?.generatedByEmail || ""),
+      certificateRecordId: String(student?.certificateRecordId || ""),
+      certificateGeneratedAt: String(student?.certificateGeneratedAt || ""),
+      certificateGeneratedByUid: String(student?.certificateGeneratedByUid || ""),
+      certificateGeneratedByName: String(student?.certificateGeneratedByName || ""),
+      certificateGeneratedByEmail: String(student?.certificateGeneratedByEmail || ""),
+      certificateDeliveredAt: String(student?.certificateDeliveredAt || ""),
+      certificateDeliveredByUid: String(student?.certificateDeliveredByUid || ""),
+      certificateDeliveredByName: String(student?.certificateDeliveredByName || ""),
+      certificateDeliveredByEmail: String(student?.certificateDeliveredByEmail || ""),
+      certificateCancelledAt: String(student?.certificateCancelledAt || ""),
+      certificateCancelledByUid: String(student?.certificateCancelledByUid || ""),
+      certificateCancelledByName: String(student?.certificateCancelledByName || ""),
+      certificateCancelledByEmail: String(student?.certificateCancelledByEmail || ""),
     }))
     .filter((student) => student.name);
 }
@@ -1764,6 +1779,13 @@ export default function PrintShop() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateMessage, setTemplateMessage] = useState("");
 
+  const [generatedCertificates, setGeneratedCertificates] = useState([]);
+  const [loadingGeneratedCertificates, setLoadingGeneratedCertificates] = useState(true);
+  const [generatedCertificatesError, setGeneratedCertificatesError] = useState("");
+  const [generatedCertificateSearch, setGeneratedCertificateSearch] = useState("");
+  const [generatedCertificateStatusFilter, setGeneratedCertificateStatusFilter] = useState("Todos");
+  const [updatingGeneratedCertificateId, setUpdatingGeneratedCertificateId] = useState(null);
+
   useEffect(() => {
     setStudentName("");
     setStudentDeliveryType("Impreso");
@@ -2031,6 +2053,38 @@ export default function PrintShop() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    setLoadingGeneratedCertificates(true);
+    setGeneratedCertificatesError("");
+
+    const certificatesQuery = query(
+      collection(db, "generatedCertificates"),
+      orderBy("generatedAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      certificatesQuery,
+      (snapshot) => {
+        const nextCertificates = snapshot.docs.map((certificateDoc) =>
+          normalizeGeneratedCertificate({
+            id: certificateDoc.id,
+            ...certificateDoc.data(),
+          })
+        );
+
+        setGeneratedCertificates(nextCertificates);
+        setLoadingGeneratedCertificates(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los certificados generados:", error);
+        setGeneratedCertificatesError("No se pudieron cargar los certificados generados. Revisa las reglas de Firestore.");
+        setLoadingGeneratedCertificates(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const productStats = useMemo(() => {
     const activeProducts = products.filter((product) => product.active !== false);
     const inactiveProducts = products.filter((product) => product.active === false);
@@ -2233,6 +2287,24 @@ export default function PrintShop() {
       return matchesSearch && matchesStatus && matchesType && matchesPriority;
     });
   }, [printRequests, requestSearch, requestStatusFilter, requestTypeFilter, requestPriorityFilter]);
+
+  const filteredGeneratedCertificates = useMemo(() => {
+    const normalizedSearch = generatedCertificateSearch.trim().toLowerCase();
+
+    return generatedCertificates.filter((certificate) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        `${certificate.folio} ${certificate.validationCode} ${certificate.studentName} ${certificate.level} ${certificate.programName} ${certificate.requestFolio} ${certificate.templateName} ${certificate.teacherName} ${certificate.principalName}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+
+      const matchesStatus =
+        generatedCertificateStatusFilter === "Todos" ||
+        certificate.status === generatedCertificateStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [generatedCertificates, generatedCertificateSearch, generatedCertificateStatusFilter]);
 
   const selectedRequest = useMemo(
     () => printRequests.find((request) => request.id === selectedRequestId) || null,
@@ -3432,6 +3504,189 @@ export default function PrintShop() {
     }
   }
 
+  async function registerGeneratedCertificate({ request, student, certificateTemplate, principalName, teacherName, fileName }) {
+    if (!request?.id || !student?.id) {
+      throw new Error("No se encontró la solicitud o el alumno para registrar el certificado.");
+    }
+
+    if (!student.certificateFolio || !student.validationCode) {
+      throw new Error("Primero genera folio y QR para este alumno.");
+    }
+
+    const auditUser = getAuditUser();
+    const nowIso = new Date().toISOString();
+    const certificateId = sanitizeGeneratedCertificateId(
+      student.validationCode || student.certificateFolio || `${request.id}-${student.id}`
+    );
+    const existingCertificate = generatedCertificates.find(
+      (certificate) => certificate.id === certificateId || certificate.validationCode === student.validationCode
+    );
+    const nextStatus =
+      existingCertificate?.status === "Entregado" ? "Entregado" : "Generado";
+    const normalizedStudents = normalizeRequestStudents(request.students || []);
+    const nextStudents = normalizedStudents.map((currentStudent) =>
+      currentStudent.id === student.id
+        ? {
+            ...currentStudent,
+            status: nextStatus,
+            certificateRecordId: certificateId,
+            certificateGeneratedAt: nowIso,
+            certificateGeneratedByUid: auditUser.uid,
+            certificateGeneratedByName: auditUser.name,
+            certificateGeneratedByEmail: auditUser.email,
+          }
+        : currentStudent
+    );
+
+    const programName =
+      certificateTemplate?.programName ||
+      request.certificateTemplateProgramName ||
+      getCertificateTrackLabel(request);
+    const templateName =
+      certificateTemplate?.name || request.certificateTemplateName || "Plantilla no especificada";
+
+    const certificatePayload = {
+      folio: student.certificateFolio,
+      validationCode: student.validationCode,
+      validationUrl: student.validationUrl || buildValidationUrl(student.validationCode),
+      studentId: student.id,
+      studentName: student.name,
+      studentDeliveryType: student.deliveryType || "Impreso",
+      requestId: request.id,
+      requestFolio: request.folio || "",
+      requestType: request.requestType || "Certificado",
+      productId: request.productId || "",
+      productName: request.productName || "",
+      responsibleUid: request.responsibleUid || "",
+      responsibleName: request.responsibleName || "",
+      responsibleEmail: request.responsibleEmail || "",
+      level: request.level || "No aplica",
+      programName,
+      templateId: request.certificateTemplateId || certificateTemplate?.id || "",
+      templateName,
+      issueDate: getCertificateIssueDate(request),
+      principalName: principalName || request.principalSignerName || "",
+      teacherName: teacherName || request.teacherSignerName || request.teacherName || "",
+      status: nextStatus,
+      pdfFileName: fileName || "",
+      generatedAt: serverTimestamp(),
+      generatedByUid: auditUser.uid,
+      generatedByName: auditUser.name,
+      generatedByEmail: auditUser.email,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    const batch = writeBatch(db);
+    batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
+    batch.update(doc(db, "printRequests", request.id), {
+      students: nextStudents,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    });
+
+    await batch.commit();
+    setRequestMessage(`Certificado ${student.certificateFolio} registrado en el historial.`);
+  }
+
+  async function updateGeneratedCertificateStatus(certificate, nextStatus) {
+    if (!certificate?.id || !generatedCertificateStatuses.includes(nextStatus)) return;
+
+    const auditUser = getAuditUser();
+    const nowIso = new Date().toISOString();
+    const request = printRequests.find((item) => item.id === certificate.requestId) || null;
+    const batch = writeBatch(db);
+    const certificateRef = doc(db, "generatedCertificates", certificate.id);
+    const statusPayload = {
+      status: nextStatus,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    if (nextStatus === "Entregado") {
+      statusPayload.deliveredAt = serverTimestamp();
+      statusPayload.deliveredByUid = auditUser.uid;
+      statusPayload.deliveredByName = auditUser.name;
+      statusPayload.deliveredByEmail = auditUser.email;
+    }
+
+    if (nextStatus === "Cancelado") {
+      statusPayload.cancelledAt = serverTimestamp();
+      statusPayload.cancelledByUid = auditUser.uid;
+      statusPayload.cancelledByName = auditUser.name;
+      statusPayload.cancelledByEmail = auditUser.email;
+    }
+
+    batch.update(certificateRef, statusPayload);
+
+    if (request) {
+      const nextStudents = normalizeRequestStudents(request.students || []).map((student) => {
+        const matchesStudent =
+          student.id === certificate.studentId ||
+          student.certificateRecordId === certificate.id ||
+          student.certificateFolio === certificate.folio;
+
+        if (!matchesStudent) return student;
+
+        const nextStudent = {
+          ...student,
+          status: nextStatus,
+          certificateRecordId: certificate.id,
+        };
+
+        if (nextStatus === "Entregado") {
+          nextStudent.certificateDeliveredAt = nowIso;
+          nextStudent.certificateDeliveredByUid = auditUser.uid;
+          nextStudent.certificateDeliveredByName = auditUser.name;
+          nextStudent.certificateDeliveredByEmail = auditUser.email;
+        }
+
+        if (nextStatus === "Cancelado") {
+          nextStudent.certificateCancelledAt = nowIso;
+          nextStudent.certificateCancelledByUid = auditUser.uid;
+          nextStudent.certificateCancelledByName = auditUser.name;
+          nextStudent.certificateCancelledByEmail = auditUser.email;
+        }
+
+        return nextStudent;
+      });
+
+      batch.update(doc(db, "printRequests", request.id), {
+        students: nextStudents,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    }
+
+    try {
+      setUpdatingGeneratedCertificateId(certificate.id);
+      await batch.commit();
+    } catch (error) {
+      console.error("No se pudo actualizar el estado del certificado:", error);
+      setGeneratedCertificatesError("No se pudo actualizar el certificado. Revisa las reglas de Firestore.");
+    } finally {
+      setUpdatingGeneratedCertificateId(null);
+    }
+  }
+
+  function openRequestFromGeneratedCertificate(certificate) {
+    const request = printRequests.find((item) => item.id === certificate.requestId);
+
+    if (request) {
+      selectRequest(request);
+    }
+
+    setActiveSection("requests");
+  }
+
   async function addSingleRequestStudent(event) {
     event.preventDefault();
 
@@ -4572,15 +4827,17 @@ export default function PrintShop() {
           <input
             type="search"
             placeholder="Buscar folio, producto o insumo"
-            value={activeSection === "catalog" ? productSearch : activeSection === "requests" ? requestSearch : ""}
+            value={activeSection === "catalog" ? productSearch : activeSection === "requests" ? requestSearch : activeSection === "certificates" ? generatedCertificateSearch : ""}
             onChange={(event) => {
               if (activeSection === "requests") {
                 setRequestSearch(event.target.value);
+              } else if (activeSection === "certificates") {
+                setGeneratedCertificateSearch(event.target.value);
               } else {
                 setProductSearch(event.target.value);
               }
             }}
-            onFocus={() => setActiveSection(activeSection === "requests" ? "requests" : "catalog")}
+            onFocus={() => setActiveSection(activeSection === "requests" ? "requests" : activeSection === "certificates" ? "certificates" : "catalog")}
           />
         </label>
       </section>
@@ -4625,6 +4882,14 @@ export default function PrintShop() {
         >
           <span>▧</span>
           Lotes de producción
+        </button>
+        <button
+          type="button"
+          className={activeSection === "certificates" ? "active" : ""}
+          onClick={() => setActiveSection("certificates")}
+        >
+          <span>☑</span>
+          Certificados
         </button>
         {isAdmin && (
           <button
@@ -4766,6 +5031,24 @@ export default function PrintShop() {
           onDeleteStudent={deleteRequestStudent}
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
+          onRegisterGeneratedCertificate={registerGeneratedCertificate}
+        />
+      ) : activeSection === "certificates" ? (
+        <GeneratedCertificatesView
+          certificates={generatedCertificates}
+          filteredCertificates={filteredGeneratedCertificates}
+          loadingCertificates={loadingGeneratedCertificates}
+          certificatesError={generatedCertificatesError}
+          search={generatedCertificateSearch}
+          statusFilter={generatedCertificateStatusFilter}
+          updatingCertificateId={updatingGeneratedCertificateId}
+          isAdmin={isAdmin}
+          currentUserUid={getAuditUser().uid}
+          onSearchChange={setGeneratedCertificateSearch}
+          onStatusFilterChange={setGeneratedCertificateStatusFilter}
+          onMarkDelivered={(certificate) => updateGeneratedCertificateStatus(certificate, "Entregado")}
+          onCancelCertificate={(certificate) => updateGeneratedCertificateStatus(certificate, "Cancelado")}
+          onOpenRequest={openRequestFromGeneratedCertificate}
         />
       ) : activeSection === "templates" && isAdmin ? (
         <CertificateTemplatesView
@@ -4856,6 +5139,178 @@ export default function PrintShop() {
         />
       )}
     </div>
+  );
+}
+
+
+function GeneratedCertificatesView({
+  certificates,
+  filteredCertificates,
+  loadingCertificates,
+  certificatesError,
+  search,
+  statusFilter,
+  updatingCertificateId,
+  isAdmin,
+  currentUserUid,
+  onSearchChange,
+  onStatusFilterChange,
+  onMarkDelivered,
+  onCancelCertificate,
+  onOpenRequest,
+}) {
+  const stats = useMemo(() => {
+    const generated = certificates.filter((certificate) => certificate.status === "Generado").length;
+    const delivered = certificates.filter((certificate) => certificate.status === "Entregado").length;
+    const cancelled = certificates.filter((certificate) => certificate.status === "Cancelado").length;
+
+    return {
+      total: certificates.length,
+      generated,
+      delivered,
+      cancelled,
+    };
+  }, [certificates]);
+
+  return (
+    <section className="generated-certificates-section">
+      <div className="printshop-section-heading">
+        <div>
+          <p className="section-kicker printshop-kicker">Historial de certificados</p>
+          <h2>Certificados generados</h2>
+          <p>
+            Consulta los certificados emitidos, su folio, alumno, solicitud de origen y estado de entrega.
+          </p>
+        </div>
+      </div>
+
+      <div className="catalog-metrics-grid generated-certificates-metrics">
+        <CatalogMetric tone="blue" icon="☑" label="Total" value={stats.total} />
+        <CatalogMetric tone="teal" icon="↧" label="Generados" value={stats.generated} />
+        <CatalogMetric tone="green" icon="✓" label="Entregados" value={stats.delivered} />
+        <CatalogMetric tone="red" icon="!" label="Cancelados" value={stats.cancelled} />
+      </div>
+
+      <Panel title="Registro de certificados" icon="☑" actionLabel={`${filteredCertificates.length} registros`}>
+        <div className="generated-certificates-toolbar">
+          <label className="catalog-filter-search">
+            <span>Buscar</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Folio, alumno, nivel, solicitud..."
+            />
+          </label>
+
+          <label>
+            <span>Estado</span>
+            <select value={statusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
+              <option>Todos</option>
+              {generatedCertificateStatuses.map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {loadingCertificates ? (
+          <div className="empty-state small">
+            <div>⌛</div>
+            <p>Cargando certificados generados...</p>
+          </div>
+        ) : certificatesError ? (
+          <div className="message-box">{certificatesError}</div>
+        ) : filteredCertificates.length === 0 ? (
+          <div className="empty-state small">
+            <div>☑</div>
+            <p>No hay certificados generados con esos filtros.</p>
+          </div>
+        ) : (
+          <div className="table-wrapper generated-certificates-table-wrapper">
+            <table className="data-table generated-certificates-table">
+              <thead>
+                <tr>
+                  <th>Folio</th>
+                  <th>Alumno</th>
+                  <th>Nivel / programa</th>
+                  <th>Fecha certificado</th>
+                  <th>Solicitud</th>
+                  <th>Estado</th>
+                  <th>Generado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCertificates.map((certificate) => {
+                  const canManageCertificate =
+                    isAdmin || isSameUid(currentUserUid, certificate.responsibleUid);
+                  const updating = updatingCertificateId === certificate.id;
+
+                  return (
+                    <tr key={certificate.id || certificate.validationCode || certificate.folio}>
+                      <td>
+                        <strong>{certificate.folio || "Sin folio"}</strong>
+                        <small>{certificate.validationCode || "Sin código"}</small>
+                      </td>
+                      <td>
+                        <strong>{certificate.studentName || "Sin alumno"}</strong>
+                        <small>{certificate.studentDeliveryType || "Sin modalidad"}</small>
+                      </td>
+                      <td>
+                        {certificate.level || "No aplica"}
+                        <small>{certificate.programName || certificate.templateName || "Sin programa"}</small>
+                      </td>
+                      <td>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="link-table-button"
+                          onClick={() => onOpenRequest(certificate)}
+                        >
+                          {certificate.requestFolio || "Abrir solicitud"}
+                        </button>
+                      </td>
+                      <td>
+                        <StatusBadge tone={getGeneratedCertificateStatusTone(certificate.status)}>
+                          {certificate.status}
+                        </StatusBadge>
+                      </td>
+                      <td>
+                        {formatDate(certificate.generatedAt)}
+                        <small>{certificate.generatedByName || ""}</small>
+                      </td>
+                      <td>
+                        <div className="table-actions generated-certificate-actions">
+                          <button type="button" onClick={() => onOpenRequest(certificate)}>
+                            Ver solicitud
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canManageCertificate || updating || certificate.status === "Entregado"}
+                            onClick={() => onMarkDelivered(certificate)}
+                          >
+                            Entregado
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-table-button"
+                            disabled={!canManageCertificate || updating || certificate.status === "Cancelado"}
+                            onClick={() => onCancelCertificate(certificate)}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+    </section>
   );
 }
 
@@ -6297,6 +6752,7 @@ function PrintRequestsView({
   onDeleteStudent,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
+  onRegisterGeneratedCertificate,
 }) {
   const requestProducts = products.filter(
     (product) => product.active !== false && product.category !== "Libro"
@@ -6511,6 +6967,7 @@ function PrintRequestsView({
               onDeleteStudent={onDeleteStudent}
               onGenerateStudentFolio={onGenerateStudentFolio}
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
+              onRegisterGeneratedCertificate={onRegisterGeneratedCertificate}
             />
           )}
 
@@ -6896,6 +7353,7 @@ function RequestDetailCard({
   onDeleteStudent,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
+  onRegisterGeneratedCertificate,
 }) {
   const students = normalizeRequestStudents(request?.students || []);
   const [previewStudentId, setPreviewStudentId] = useState("");
@@ -7243,6 +7701,7 @@ Mariana Torres`}
                   principalSigner={selectedPrincipalSigner}
                   teacherSigner={selectedTeacherSigner}
                   certificateTemplate={selectedCertificateTemplate}
+                  onCertificateGenerated={onRegisterGeneratedCertificate}
                 />
               </div>
             ) : students.some((student) => Boolean(student.certificateFolio)) ? null : (
@@ -7258,8 +7717,7 @@ Mariana Torres`}
             <div className="request-detail-note important">
               <strong>Siguiente paso</strong>
               <p>
-                Ya puedes revisar la vista previa del certificado. Después podremos agregar
-                descarga en PDF, generación masiva y control de entrega por alumno.
+                Al descargar el PDF, el certificado quedará registrado en el historial de Imprenta.
               </p>
             </div>
           </div>
@@ -7358,18 +7816,79 @@ function sanitizePdfFileName(value) {
     .slice(0, 120) || "certificado";
 }
 
+function sanitizeGeneratedCertificateId(value) {
+  return String(value || "certificado")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 140) || `certificado-${Date.now()}`;
+}
+
+function normalizeGeneratedCertificate(certificate) {
+  return {
+    id: certificate?.id || "",
+    folio: String(certificate?.folio || ""),
+    validationCode: String(certificate?.validationCode || ""),
+    validationUrl: String(certificate?.validationUrl || ""),
+    studentId: String(certificate?.studentId || ""),
+    studentName: String(certificate?.studentName || ""),
+    studentDeliveryType: String(certificate?.studentDeliveryType || ""),
+    requestId: String(certificate?.requestId || ""),
+    requestFolio: String(certificate?.requestFolio || ""),
+    requestType: String(certificate?.requestType || "Certificado"),
+    productId: String(certificate?.productId || ""),
+    productName: String(certificate?.productName || ""),
+    responsibleUid: String(certificate?.responsibleUid || ""),
+    responsibleName: String(certificate?.responsibleName || ""),
+    responsibleEmail: String(certificate?.responsibleEmail || ""),
+    level: String(certificate?.level || "No aplica"),
+    programName: String(certificate?.programName || ""),
+    templateId: String(certificate?.templateId || ""),
+    templateName: String(certificate?.templateName || ""),
+    issueDate: String(certificate?.issueDate || ""),
+    principalName: String(certificate?.principalName || ""),
+    teacherName: String(certificate?.teacherName || ""),
+    status: generatedCertificateStatuses.includes(certificate?.status)
+      ? certificate.status
+      : "Generado",
+    pdfFileName: String(certificate?.pdfFileName || ""),
+    generatedAt: certificate?.generatedAt || "",
+    generatedByUid: String(certificate?.generatedByUid || ""),
+    generatedByName: String(certificate?.generatedByName || ""),
+    generatedByEmail: String(certificate?.generatedByEmail || ""),
+    deliveredAt: certificate?.deliveredAt || "",
+    deliveredByUid: String(certificate?.deliveredByUid || ""),
+    deliveredByName: String(certificate?.deliveredByName || ""),
+    deliveredByEmail: String(certificate?.deliveredByEmail || ""),
+    cancelledAt: certificate?.cancelledAt || "",
+    cancelledByUid: String(certificate?.cancelledByUid || ""),
+    cancelledByName: String(certificate?.cancelledByName || ""),
+    cancelledByEmail: String(certificate?.cancelledByEmail || ""),
+    updatedAt: certificate?.updatedAt || "",
+  };
+}
+
+function getGeneratedCertificateStatusTone(status) {
+  if (status === "Entregado") return "green";
+  if (status === "Cancelado") return "red";
+  return "blue";
+}
+
 function CertificatePreviewCard({
   request,
   student,
   principalSigner,
   teacherSigner,
   certificateTemplate,
+  onCertificateGenerated,
 }) {
   const certificateRef = useRef(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [embeddedPrincipalSignatureUrl, setEmbeddedPrincipalSignatureUrl] = useState("");
   const [embeddedTeacherSignatureUrl, setEmbeddedTeacherSignatureUrl] = useState("");
-
+  const [generationMessage, setGenerationMessage] = useState("");
 
   if (!request || !student) return null;
 
@@ -7501,6 +8020,19 @@ function CertificatePreviewCard({
       );
 
       pdf.save(`${fileName}.pdf`);
+
+      if (typeof onCertificateGenerated === "function") {
+        await onCertificateGenerated({
+          request,
+          student,
+          certificateTemplate,
+          principalName,
+          teacherName,
+          fileName: `${fileName}.pdf`,
+        });
+      }
+
+      setGenerationMessage("PDF descargado y certificado registrado en el historial.");
     } catch (error) {
       console.error("No se pudo descargar el certificado en PDF:", error);
       alert(
@@ -7524,6 +8056,8 @@ function CertificatePreviewCard({
           {downloadingPdf ? "Generando PDF..." : "Descargar PDF"}
         </button>
       </div>
+
+      {generationMessage && <div className="message-box certificate-generation-message">{generationMessage}</div>}
 
       <div
         ref={certificateRef}
