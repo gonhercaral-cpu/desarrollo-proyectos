@@ -81,6 +81,31 @@ const movementReasons = [
   "Otro",
 ];
 
+
+const productionBatchStatuses = [
+  "Planeado",
+  "En impresión",
+  "En encuadernado",
+  "En revisión de calidad",
+  "Aprobado",
+  "Ingresado a inventario",
+  "Cerrado",
+  "Cancelado",
+];
+
+const batchFormInitialState = {
+  productId: "",
+  plannedQuantity: 0,
+  producedQuantity: 0,
+  approvedQuantity: 0,
+  rejectedQuantity: 0,
+  status: "Planeado",
+  responsible: "",
+  startDate: "",
+  dueDate: "",
+  notes: "",
+};
+
 const basePrintProducts = [
   {
     name: "Journey A1",
@@ -499,6 +524,44 @@ function formatDate(value) {
   }).format(date);
 }
 
+
+function getBatchProgress(batch) {
+  const statusProgress = {
+    Planeado: 10,
+    "En impresión": 35,
+    "En encuadernado": 55,
+    "En revisión de calidad": 75,
+    Aprobado: 90,
+    "Ingresado a inventario": 100,
+    Cerrado: 100,
+    Cancelado: 0,
+  };
+
+  return statusProgress[batch?.status] ?? 0;
+}
+
+function getBatchStatusTone(status) {
+  if (status === "Cancelado") return "red";
+  if (status === "Ingresado a inventario" || status === "Cerrado") return "green";
+  if (status === "Aprobado" || status === "En revisión de calidad") return "orange";
+  if (status === "En impresión" || status === "En encuadernado") return "blue";
+  return "teal";
+}
+
+function buildBatchFolio(product) {
+  const year = new Date().getFullYear();
+  const productCode = String(product?.name || "LIBRO")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toUpperCase()
+    .slice(0, 18) || "LIBRO";
+  const suffix = String(Date.now()).slice(-5);
+
+  return `LOTE-${productCode}-${year}-${suffix}`;
+}
+
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
 
@@ -526,6 +589,16 @@ export default function PrintShop() {
   const [savingMovement, setSavingMovement] = useState(false);
   const [inventoryMessage, setInventoryMessage] = useState("");
   const [movementMessage, setMovementMessage] = useState("");
+
+
+  const [productionBatches, setProductionBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(true);
+  const [batchesError, setBatchesError] = useState("");
+  const [batchForm, setBatchForm] = useState(batchFormInitialState);
+  const [selectedBatchId, setSelectedBatchId] = useState(null);
+  const [savingBatch, setSavingBatch] = useState(false);
+  const [batchMessage, setBatchMessage] = useState("");
+  const [closingBatchId, setClosingBatchId] = useState(null);
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -618,6 +691,39 @@ export default function PrintShop() {
     return () => unsubscribe();
   }, []);
 
+
+  useEffect(() => {
+    setLoadingBatches(true);
+    setBatchesError("");
+
+    const batchesQuery = query(
+      collection(db, "printProductionBatches"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      batchesQuery,
+      (snapshot) => {
+        const nextBatches = snapshot.docs.map((batchDoc) => ({
+          id: batchDoc.id,
+          ...batchDoc.data(),
+        }));
+
+        setProductionBatches(nextBatches);
+        setLoadingBatches(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los lotes de producción:", error);
+        setBatchesError(
+          "No se pudieron cargar los lotes de producción. Revisa las reglas de Firestore."
+        );
+        setLoadingBatches(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const productStats = useMemo(() => {
     const activeProducts = products.filter((product) => product.active !== false);
     const inactiveProducts = products.filter((product) => product.active === false);
@@ -677,6 +783,32 @@ export default function PrintShop() {
     );
   }, [inventoryProducts, inventoryItems]);
 
+
+  const batchStats = useMemo(() => {
+    const activeBatches = productionBatches.filter(
+      (batch) =>
+        !["Ingresado a inventario", "Cerrado", "Cancelado"].includes(batch.status)
+    );
+    const pendingInventory = productionBatches.filter(
+      (batch) =>
+        batch.status === "Aprobado" &&
+        batch.inventoryApplied !== true &&
+        Number(batch.approvedQuantity || 0) > 0
+    );
+    const completed = productionBatches.filter(
+      (batch) => batch.inventoryApplied === true || batch.status === "Ingresado a inventario"
+    );
+    const cancelled = productionBatches.filter((batch) => batch.status === "Cancelado");
+
+    return {
+      total: productionBatches.length,
+      active: activeBatches.length,
+      pendingInventory: pendingInventory.length,
+      completed: completed.length,
+      cancelled: cancelled.length,
+    };
+  }, [productionBatches]);
+
   const filteredProducts = useMemo(() => {
     const normalizedSearch = productSearch.trim().toLowerCase();
 
@@ -705,6 +837,12 @@ export default function PrintShop() {
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === selectedProductId) || null,
     [products, selectedProductId]
+  );
+
+
+  const selectedBatch = useMemo(
+    () => productionBatches.find((batch) => batch.id === selectedBatchId) || null,
+    [productionBatches, selectedBatchId]
   );
 
   function getAuditUser() {
@@ -1148,6 +1286,250 @@ export default function PrintShop() {
     }
   }
 
+
+  function handleBatchInputChange(event) {
+    const { name, value } = event.target;
+
+    setBatchMessage("");
+    setBatchForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  function handleBatchNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setBatchMessage("");
+    setBatchForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function resetBatchForm() {
+    setSelectedBatchId(null);
+    setBatchForm(batchFormInitialState);
+    setBatchMessage("");
+  }
+
+  function selectBatch(batch) {
+    setSelectedBatchId(batch.id);
+    setBatchMessage("");
+    setBatchForm({
+      productId: batch.productId || "",
+      plannedQuantity: Number(batch.plannedQuantity || 0),
+      producedQuantity: Number(batch.producedQuantity || 0),
+      approvedQuantity: Number(batch.approvedQuantity || 0),
+      rejectedQuantity: Number(batch.rejectedQuantity || 0),
+      status: batch.status || "Planeado",
+      responsible: batch.responsible || "",
+      startDate: batch.startDate || "",
+      dueDate: batch.dueDate || "",
+      notes: batch.notes || "",
+    });
+  }
+
+  async function saveProductionBatch(event) {
+    event.preventDefault();
+    setBatchMessage("");
+
+    if (!isAdmin) {
+      setBatchMessage("Solo los administradores pueden crear o editar lotes.");
+      return;
+    }
+
+    if (!batchForm.productId) {
+      setBatchMessage("Selecciona un producto del catálogo para el lote.");
+      return;
+    }
+
+    const selectedProduct = products.find((product) => product.id === batchForm.productId);
+
+    if (!selectedProduct) {
+      setBatchMessage("No se encontró el producto seleccionado.");
+      return;
+    }
+
+    const plannedQuantity = Number(batchForm.plannedQuantity || 0);
+    const producedQuantity = Number(batchForm.producedQuantity || 0);
+    const approvedQuantity = Number(batchForm.approvedQuantity || 0);
+    const rejectedQuantity = Number(batchForm.rejectedQuantity || 0);
+
+    if (plannedQuantity <= 0) {
+      setBatchMessage("La cantidad planeada debe ser mayor que cero.");
+      return;
+    }
+
+    if (approvedQuantity + rejectedQuantity > producedQuantity) {
+      setBatchMessage("La suma de aprobados y rechazados no puede ser mayor que la cantidad producida.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const payload = {
+      folio: selectedBatch?.folio || buildBatchFolio(selectedProduct),
+      productId: selectedProduct.id,
+      productName: selectedProduct.name || "",
+      category: selectedProduct.category || "Libro",
+      level: selectedProduct.level || "No aplica",
+      unit: selectedProduct.unit || "Libro",
+      plannedQuantity,
+      producedQuantity,
+      approvedQuantity,
+      rejectedQuantity,
+      status: batchForm.status || "Planeado",
+      responsible: batchForm.responsible.trim(),
+      startDate: batchForm.startDate || "",
+      dueDate: batchForm.dueDate || "",
+      notes: batchForm.notes || "",
+      inventoryApplied: selectedBatch?.inventoryApplied === true,
+      inventoryId: selectedBatch?.inventoryId || "",
+      inventoryMovementId: selectedBatch?.inventoryMovementId || "",
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    try {
+      setSavingBatch(true);
+
+      if (selectedBatchId) {
+        await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        setBatchMessage("Lote actualizado correctamente.");
+      } else {
+        await addDoc(collection(db, "printProductionBatches"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+        setBatchForm(batchFormInitialState);
+        setBatchMessage("Lote creado correctamente.");
+      }
+    } catch (error) {
+      console.error("No se pudo guardar el lote de producción:", error);
+      setBatchMessage(
+        "No se pudo guardar el lote. Revisa que hayas publicado las reglas nuevas de Firestore."
+      );
+    } finally {
+      setSavingBatch(false);
+    }
+  }
+
+  async function sendBatchToInventory(batch) {
+    if (!isAdmin || !batch?.id) return;
+
+    setBatchMessage("");
+
+    if (batch.inventoryApplied === true) {
+      setBatchMessage("Este lote ya fue ingresado al inventario.");
+      return;
+    }
+
+    const approvedQuantity = Number(batch.approvedQuantity || 0);
+
+    if (approvedQuantity <= 0) {
+      setBatchMessage("Para ingresar un lote al inventario, primero registra cantidad aprobada.");
+      return;
+    }
+
+    const inventoryItem = inventoryItems.find(
+      (item) => item.productId === batch.productId && item.active !== false
+    );
+
+    if (!inventoryItem) {
+      setBatchMessage(
+        "Este producto todavía no tiene inventario terminado. Primero créalo en la pestaña Inventario terminado."
+      );
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const batchRef = doc(db, "printProductionBatches", batch.id);
+    const inventoryRef = doc(db, "printFinishedInventory", inventoryItem.id);
+    const movementRef = doc(collection(db, "printInventoryMovements"));
+
+    try {
+      setClosingBatchId(batch.id);
+
+      await runTransaction(db, async (transaction) => {
+        const inventorySnapshot = await transaction.get(inventoryRef);
+        const batchSnapshot = await transaction.get(batchRef);
+
+        if (!inventorySnapshot.exists()) {
+          throw new Error("No se encontró el inventario terminado para este producto.");
+        }
+
+        if (!batchSnapshot.exists()) {
+          throw new Error("No se encontró el lote de producción.");
+        }
+
+        const batchData = batchSnapshot.data();
+
+        if (batchData.inventoryApplied === true) {
+          throw new Error("Este lote ya fue ingresado al inventario.");
+        }
+
+        const inventoryData = inventorySnapshot.data();
+        const previousStock = Number(inventoryData.currentStock || 0);
+        const newStock = previousStock + approvedQuantity;
+
+        transaction.update(inventoryRef, {
+          currentStock: newStock,
+          updatedAt: serverTimestamp(),
+          updatedByUid: auditUser.uid,
+          updatedByName: auditUser.name,
+          updatedByEmail: auditUser.email,
+        });
+
+        transaction.set(movementRef, {
+          inventoryId: inventoryItem.id,
+          productId: batch.productId || "",
+          productName: batch.productName || "",
+          type: "Entrada",
+          quantity: approvedQuantity,
+          reason: "Lote de producción cerrado",
+          previousStock,
+          newStock,
+          notes: `Ingreso automático desde ${batch.folio || "lote de producción"}.`,
+          batchId: batch.id,
+          batchFolio: batch.folio || "",
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+
+        transaction.update(batchRef, {
+          status: "Ingresado a inventario",
+          inventoryApplied: true,
+          inventoryId: inventoryItem.id,
+          inventoryMovementId: movementRef.id,
+          inventoryAppliedAt: serverTimestamp(),
+          inventoryAppliedByUid: auditUser.uid,
+          inventoryAppliedByName: auditUser.name,
+          inventoryAppliedByEmail: auditUser.email,
+          updatedAt: serverTimestamp(),
+          updatedByUid: auditUser.uid,
+          updatedByName: auditUser.name,
+          updatedByEmail: auditUser.email,
+        });
+      });
+
+      setBatchMessage("Lote ingresado al inventario correctamente.");
+      resetBatchForm();
+    } catch (error) {
+      console.error("No se pudo ingresar el lote al inventario:", error);
+      setBatchMessage(error?.message || "No se pudo ingresar el lote al inventario.");
+    } finally {
+      setClosingBatchId(null);
+    }
+  }
+
   return (
     <div className="printshop-page">
       <section className="printshop-topbar">
@@ -1197,6 +1579,14 @@ export default function PrintShop() {
           <span>▣</span>
           Inventario terminado
         </button>
+        <button
+          type="button"
+          className={activeSection === "batches" ? "active" : ""}
+          onClick={() => setActiveSection("batches")}
+        >
+          <span>▧</span>
+          Lotes de producción
+        </button>
       </section>
 
       {activeSection === "dashboard" ? (
@@ -1205,8 +1595,11 @@ export default function PrintShop() {
           productStats={productStats}
           inventoryItems={inventoryItems}
           inventoryStats={inventoryStats}
+          productionBatches={productionBatches}
+          batchStats={batchStats}
           onOpenCatalog={() => setActiveSection("catalog")}
           onOpenInventory={() => setActiveSection("inventory")}
+          onOpenBatches={() => setActiveSection("batches")}
         />
       ) : activeSection === "catalog" ? (
         <ProductCatalogView
@@ -1238,7 +1631,7 @@ export default function PrintShop() {
           onToggleStatus={toggleProductStatus}
           onSeedBaseProducts={seedBaseProducts}
         />
-      ) : (
+      ) : activeSection === "inventory" ? (
         <FinishedInventoryView
           productsWithoutInventory={productsWithoutInventory}
           inventoryProducts={inventoryProducts}
@@ -1263,12 +1656,44 @@ export default function PrintShop() {
           onPrepareMovement={prepareMovement}
           onResetInventoryForm={resetInventoryForm}
         />
+      ) : (
+        <ProductionBatchesView
+          inventoryProducts={inventoryProducts}
+          inventoryItems={inventoryItems}
+          productionBatches={productionBatches}
+          loadingBatches={loadingBatches}
+          batchesError={batchesError}
+          batchStats={batchStats}
+          batchForm={batchForm}
+          selectedBatch={selectedBatch}
+          selectedBatchId={selectedBatchId}
+          savingBatch={savingBatch}
+          batchMessage={batchMessage}
+          closingBatchId={closingBatchId}
+          isAdmin={isAdmin}
+          onBatchInputChange={handleBatchInputChange}
+          onBatchNumberInputChange={handleBatchNumberInputChange}
+          onSaveProductionBatch={saveProductionBatch}
+          onSelectBatch={selectBatch}
+          onResetBatchForm={resetBatchForm}
+          onSendBatchToInventory={sendBatchToInventory}
+          onOpenInventory={() => setActiveSection("inventory")}
+        />
       )}
     </div>
   );
 }
 
-function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCatalog, onOpenInventory }) {
+function DashboardView({
+  productStats,
+  inventoryItems,
+  inventoryStats,
+  productionBatches,
+  batchStats,
+  onOpenCatalog,
+  onOpenInventory,
+  onOpenBatches,
+}) {
   const lowInventoryItems = inventoryItems
     .filter((item) => {
       const currentStock = Number(item.currentStock || 0);
@@ -1289,8 +1714,28 @@ function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCat
       };
     }
 
+    if (metric.label === "Lotes activos") {
+      return {
+        ...metric,
+        value: String(batchStats.active),
+        helper: batchStats.active === 1 ? "Producción en curso" : "Producciones en curso",
+      };
+    }
+
     return metric;
   });
+
+
+  const dashboardBatches = productionBatches.length
+    ? productionBatches.slice(0, 3).map((batch) => ({
+        folio: batch.folio || "Sin folio",
+        product: batch.productName || "Producto sin nombre",
+        progress: getBatchProgress(batch),
+        status: batch.status || "Planeado",
+        statusTone: getBatchStatusTone(batch.status),
+        quantity: `${Number(batch.approvedQuantity || 0)} aprobados / ${Number(batch.plannedQuantity || 0)} planeados`,
+      }))
+    : batches;
 
   const operationalCards = [
     {
@@ -1303,7 +1748,7 @@ function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCat
     {
       icon: "▧",
       title: "Producción para inventario",
-      value: "2 lotes",
+      value: `${batchStats.active} lotes`,
       description: "Libros en impresión, encuadernado o revisión de calidad.",
       tone: "teal",
     },
@@ -1426,7 +1871,7 @@ function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCat
           icon="▧"
           title="Nuevo lote"
           description="Crear producción interna de libros para inventario terminado."
-          onClick={onOpenInventory}
+          onClick={onOpenBatches}
         />
         <ActionCard
           icon="◎"
@@ -1480,7 +1925,7 @@ function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCat
                 </div>
 
                 <div className="printshop-batch-card-list">
-                  {batches.map((batch) => (
+                  {dashboardBatches.map((batch) => (
                     <article className="printshop-batch-card" key={batch.folio}>
                       <div className="printshop-batch-card-top">
                         <div>
@@ -1707,11 +2152,13 @@ function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCat
               number="3"
               title="Inventario terminado"
               description="Controlar libros producidos, mínimos, ideales y alertas de reposición."
+              active
             />
             <RoadmapItem
               number="4"
-              title="Solicitudes y lotes"
-              description="Separar trabajos solicitados de producción para inventario."
+              title="Lotes de producción"
+              description="Producir libros para inventario y registrar entradas automáticas."
+              active
             />
             <RoadmapItem
               number="5"
@@ -1723,21 +2170,335 @@ function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCat
 
         <Panel title="Siguiente función sugerida" icon="→" actionLabel="Etapa 3">
           <div className="printshop-next-feature-card">
-            <span>▣</span>
+            <span>☑</span>
             <div>
-              <strong>Inventario de productos terminados</strong>
+              <strong>Checklist de calidad para lotes</strong>
               <p>
-                El siguiente paso lógico es conectar los libros del catálogo con
-                existencias reales, stock mínimo, stock ideal y alertas automáticas.
+                Después de crear lotes, lo ideal será validar impresión, corte,
+                encuadernado y conteo antes de ingresar al inventario.
               </p>
-              <button type="button" className="visual-outline-button" onClick={onOpenInventory}>
-                Abrir inventario terminado
+              <button type="button" className="visual-outline-button" onClick={onOpenBatches}>
+                Abrir lotes de producción
               </button>
             </div>
           </div>
         </Panel>
       </section>
     </>
+  );
+}
+
+
+function ProductionBatchesView({
+  inventoryProducts,
+  inventoryItems,
+  productionBatches,
+  loadingBatches,
+  batchesError,
+  batchStats,
+  batchForm,
+  selectedBatch,
+  selectedBatchId,
+  savingBatch,
+  batchMessage,
+  closingBatchId,
+  isAdmin,
+  onBatchInputChange,
+  onBatchNumberInputChange,
+  onSaveProductionBatch,
+  onSelectBatch,
+  onResetBatchForm,
+  onSendBatchToInventory,
+  onOpenInventory,
+}) {
+  const activeBatches = productionBatches.filter((batch) => batch.status !== "Cancelado");
+
+  return (
+    <section className="printshop-batches-page">
+      <div className="printshop-catalog-hero batches-hero">
+        <div>
+          <p className="section-kicker printshop-kicker">Etapa 4</p>
+          <h2>Lotes de producción</h2>
+          <p>
+            Registra producciones internas de libros, controla su avance y, al aprobarlos,
+            ingrésalos automáticamente al inventario terminado.
+          </p>
+        </div>
+
+        <div className="inventory-hero-card batches-hero-card">
+          <strong>{batchStats.active}</strong>
+          <span>Lotes activos</span>
+        </div>
+      </div>
+
+      <div className="printshop-catalog-metrics">
+        <CatalogMetric tone="blue" icon="▧" label="Total" value={batchStats.total} />
+        <CatalogMetric tone="teal" icon="↻" label="Activos" value={batchStats.active} />
+        <CatalogMetric tone="orange" icon="→" label="Por ingresar" value={batchStats.pendingInventory} />
+        <CatalogMetric tone="green" icon="✓" label="Ingresados" value={batchStats.completed} />
+        <CatalogMetric tone="red" icon="×" label="Cancelados" value={batchStats.cancelled} />
+      </div>
+
+      {batchesError && <div className="form-error">{batchesError}</div>}
+
+      <div className="printshop-batches-layout">
+        <div className="printshop-batches-main">
+          <Panel title="Lotes registrados" icon="▧" actionLabel={`${activeBatches.length} visibles`}>
+            {loadingBatches ? (
+              <div className="printshop-empty-catalog">
+                <div>▧</div>
+                <h3>Cargando lotes...</h3>
+                <p>Estamos consultando las producciones registradas.</p>
+              </div>
+            ) : productionBatches.length === 0 ? (
+              <div className="printshop-empty-catalog">
+                <div>▧</div>
+                <h3>Aún no hay lotes de producción</h3>
+                <p>
+                  Crea el primer lote para producir libros y conectarlo con el inventario terminado.
+                </p>
+              </div>
+            ) : (
+              <div className="printshop-table-wrap">
+                <table className="printshop-table printshop-batches-table">
+                  <thead>
+                    <tr>
+                      <th>Lote</th>
+                      <th>Producto</th>
+                      <th>Planeado</th>
+                      <th>Producido</th>
+                      <th>Aprobado</th>
+                      <th>Rechazado</th>
+                      <th>Estado</th>
+                      <th>Inventario</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productionBatches.map((batch) => {
+                      const tone = getBatchStatusTone(batch.status);
+                      const inventoryReady =
+                        batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
+                      const canSendToInventory =
+                        isAdmin &&
+                        !inventoryReady &&
+                        batch.status !== "Cancelado" &&
+                        Number(batch.approvedQuantity || 0) > 0;
+
+                      return (
+                        <tr
+                          key={batch.id}
+                          className={selectedBatchId === batch.id ? "selected-product-row" : ""}
+                        >
+                          <td>
+                            <strong>{batch.folio}</strong>
+                            <span>{formatDate(batch.createdAt)}</span>
+                          </td>
+                          <td>
+                            <strong>{batch.productName}</strong>
+                            <span>{batch.level || "No aplica"} · {batch.unit || "Libro"}</span>
+                          </td>
+                          <td>{Number(batch.plannedQuantity || 0)}</td>
+                          <td>{Number(batch.producedQuantity || 0)}</td>
+                          <td>{Number(batch.approvedQuantity || 0)}</td>
+                          <td>{Number(batch.rejectedQuantity || 0)}</td>
+                          <td>
+                            <StatusBadge tone={tone}>{batch.status || "Planeado"}</StatusBadge>
+                            <ProgressBar value={getBatchProgress(batch)} tone={tone} />
+                          </td>
+                          <td>
+                            <StatusBadge tone={inventoryReady ? "green" : "orange"}>
+                              {inventoryReady ? "Ingresado" : "Pendiente"}
+                            </StatusBadge>
+                          </td>
+                          <td>
+                            <div className="printshop-product-actions batch-actions">
+                              <button type="button" onClick={() => onSelectBatch(batch)}>
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onSendBatchToInventory(batch)}
+                                disabled={!canSendToInventory || closingBatchId === batch.id}
+                              >
+                                {closingBatchId === batch.id ? "Ingresando..." : "Ingresar"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Relación con inventario terminado" icon="▣" actionLabel={`${inventoryItems.length} inventarios`}>
+            <div className="batch-inventory-helper">
+              <div>
+                <strong>Cómo funciona</strong>
+                <p>
+                  Cuando un lote tenga cantidad aprobada, presiona “Ingresar”. El sistema sumará
+                  esa cantidad al inventario terminado y creará un movimiento automático de entrada.
+                </p>
+              </div>
+              <button type="button" className="visual-outline-button" onClick={onOpenInventory}>
+                Ver inventario terminado
+              </button>
+            </div>
+          </Panel>
+        </div>
+
+        <aside className="printshop-batches-side">
+          <Panel
+            title={selectedBatch ? "Editar lote" : "Nuevo lote"}
+            icon={selectedBatch ? "✎" : "＋"}
+            actionLabel={selectedBatch ? "Editando" : "Alta"}
+          >
+            <form className="printshop-product-form" onSubmit={onSaveProductionBatch}>
+              <label className="full">
+                <span>Producto</span>
+                <select
+                  name="productId"
+                  value={batchForm.productId}
+                  onChange={onBatchInputChange}
+                  disabled={!isAdmin || inventoryProducts.length === 0}
+                >
+                  <option value="">Seleccionar libro</option>
+                  {inventoryProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} · {product.level || "No aplica"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Cantidad planeada</span>
+                <input
+                  type="number"
+                  name="plannedQuantity"
+                  min="0"
+                  value={batchForm.plannedQuantity}
+                  onChange={onBatchNumberInputChange}
+                />
+              </label>
+
+              <label>
+                <span>Cantidad producida</span>
+                <input
+                  type="number"
+                  name="producedQuantity"
+                  min="0"
+                  value={batchForm.producedQuantity}
+                  onChange={onBatchNumberInputChange}
+                />
+              </label>
+
+              <label>
+                <span>Aprobados</span>
+                <input
+                  type="number"
+                  name="approvedQuantity"
+                  min="0"
+                  value={batchForm.approvedQuantity}
+                  onChange={onBatchNumberInputChange}
+                />
+              </label>
+
+              <label>
+                <span>Rechazados</span>
+                <input
+                  type="number"
+                  name="rejectedQuantity"
+                  min="0"
+                  value={batchForm.rejectedQuantity}
+                  onChange={onBatchNumberInputChange}
+                />
+              </label>
+
+              <label className="full">
+                <span>Estado</span>
+                <select name="status" value={batchForm.status} onChange={onBatchInputChange}>
+                  {productionBatchStatuses.map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full">
+                <span>Responsable</span>
+                <input
+                  name="responsible"
+                  value={batchForm.responsible}
+                  onChange={onBatchInputChange}
+                  placeholder="Ej. Emmanuel, Tony, Imprenta"
+                />
+              </label>
+
+              <label>
+                <span>Inicio</span>
+                <input
+                  type="date"
+                  name="startDate"
+                  value={batchForm.startDate}
+                  onChange={onBatchInputChange}
+                />
+              </label>
+
+              <label>
+                <span>Entrega estimada</span>
+                <input
+                  type="date"
+                  name="dueDate"
+                  value={batchForm.dueDate}
+                  onChange={onBatchInputChange}
+                />
+              </label>
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea
+                  name="notes"
+                  value={batchForm.notes}
+                  onChange={onBatchInputChange}
+                  placeholder="Ej. Lote urgente para reponer stock bajo de Journey A1."
+                />
+              </label>
+
+              {batchMessage && <div className="message-box full">{batchMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                {selectedBatchId && (
+                  <button type="button" className="visual-outline-button" onClick={onResetBatchForm}>
+                    Nuevo lote
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  className="visual-primary-button"
+                  disabled={savingBatch || !isAdmin || inventoryProducts.length === 0}
+                >
+                  {savingBatch
+                    ? "Guardando..."
+                    : selectedBatchId
+                      ? "Guardar cambios"
+                      : "Crear lote"}
+                </button>
+              </div>
+
+              {inventoryProducts.length === 0 && (
+                <p className="inventory-side-help full">
+                  Primero crea productos de categoría Libro y tipo Producto terminado en el catálogo.
+                </p>
+              )}
+            </form>
+          </Panel>
+        </aside>
+      </div>
+    </section>
   );
 }
 

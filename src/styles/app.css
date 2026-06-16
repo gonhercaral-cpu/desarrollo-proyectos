@@ -17140,3 +17140,104 @@ body:has(.field-mode-page) .main-content {
     white-space: normal;
   }
 }
+
+/* =========================================================
+   IMPRENTA - LOTES DE PRODUCCIÓN
+========================================================= */
+
+.printshop-batches-page {
+  display: grid;
+  gap: 20px;
+}
+
+.batches-hero {
+  background:
+    radial-gradient(circle at 92% 20%, rgba(15, 79, 196, 0.12), transparent 34%),
+    linear-gradient(135deg, #ffffff, #f8fbff 55%, #eef5ff);
+}
+
+.batches-hero-card {
+  background: linear-gradient(135deg, #eaf2ff, #ffffff);
+  border-color: #bad0ff;
+}
+
+.printshop-batches-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 20px;
+  align-items: start;
+}
+
+.printshop-batches-main,
+.printshop-batches-side {
+  min-width: 0;
+}
+
+.printshop-batches-side {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: 24px;
+}
+
+.printshop-batches-table {
+  min-width: 1120px;
+}
+
+.printshop-batches-table td .printshop-progress-cell {
+  margin-top: 8px;
+  min-width: 135px;
+}
+
+.batch-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f1f5f9 !important;
+  color: #94a3b8 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.batch-inventory-helper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: #f8fbff;
+  padding: 16px;
+}
+
+.batch-inventory-helper strong {
+  display: block;
+  color: #0f2442;
+  font-size: 15px;
+  margin-bottom: 5px;
+}
+
+.batch-inventory-helper p {
+  margin: 0;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1300px) {
+  .printshop-batches-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-batches-side {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .batch-inventory-helper {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-inventory-helper .visual-outline-button {
+    width: 100%;
+  }
+}
