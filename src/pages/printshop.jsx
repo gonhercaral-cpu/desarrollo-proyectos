@@ -1,3 +1,266 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  writeBatch,
+} from "firebase/firestore";
+import { db } from "../services/firebase";
+import { useAuth } from "../context/AuthContext";
+
+const productCategories = [
+  "Libro",
+  "Certificado",
+  "Diploma",
+  "Volante",
+  "Vinil",
+  "Hoja de canciones",
+  "Hoja de actividades",
+  "Material interno",
+  "Otro",
+];
+
+const productionTypes = [
+  "Producto terminado",
+  "Trabajo solicitado",
+  "Documento generado",
+  "Material interno",
+];
+
+const levels = ["No aplica", "A1", "A2", "B1", "B2", "C1", "Otro"];
+
+const units = ["Pieza", "Libro", "Documento", "Paquete", "Hoja", "Metro", "Lote"];
+
+const productFormInitialState = {
+  name: "",
+  category: "Libro",
+  productionType: "Producto terminado",
+  level: "No aplica",
+  unit: "Pieza",
+  minStock: 0,
+  idealStock: 0,
+  requiresPrinting: true,
+  requiresBinding: false,
+  requiresCutting: false,
+  requiresQualityCheck: true,
+  requiresSignature: false,
+  requiresValidationQr: false,
+  active: true,
+  notes: "",
+};
+
+const basePrintProducts = [
+  {
+    name: "Journey A1",
+    category: "Libro",
+    productionType: "Producto terminado",
+    level: "A1",
+    unit: "Libro",
+    minStock: 10,
+    idealStock: 30,
+    requiresPrinting: true,
+    requiresBinding: true,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Libro producido internamente para inventario terminado.",
+  },
+  {
+    name: "Explore A2",
+    category: "Libro",
+    productionType: "Producto terminado",
+    level: "A2",
+    unit: "Libro",
+    minStock: 10,
+    idealStock: 30,
+    requiresPrinting: true,
+    requiresBinding: true,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Libro producido internamente para inventario terminado.",
+  },
+  {
+    name: "Discover B1",
+    category: "Libro",
+    productionType: "Producto terminado",
+    level: "B1",
+    unit: "Libro",
+    minStock: 10,
+    idealStock: 25,
+    requiresPrinting: true,
+    requiresBinding: true,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Libro producido internamente para inventario terminado.",
+  },
+  {
+    name: "B2",
+    category: "Libro",
+    productionType: "Producto terminado",
+    level: "B2",
+    unit: "Libro",
+    minStock: 8,
+    idealStock: 20,
+    requiresPrinting: true,
+    requiresBinding: true,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Libro producido internamente para inventario terminado.",
+  },
+  {
+    name: "New Horizons C1",
+    category: "Libro",
+    productionType: "Producto terminado",
+    level: "C1",
+    unit: "Libro",
+    minStock: 8,
+    idealStock: 20,
+    requiresPrinting: true,
+    requiresBinding: true,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Libro producido internamente para inventario terminado.",
+  },
+  {
+    name: "Certificado A1",
+    category: "Certificado",
+    productionType: "Documento generado",
+    level: "A1",
+    unit: "Documento",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: false,
+    requiresQualityCheck: true,
+    requiresSignature: true,
+    requiresValidationQr: true,
+    active: true,
+    notes: "Documento generado con folio, firma y QR de validación.",
+  },
+  {
+    name: "Certificado A2",
+    category: "Certificado",
+    productionType: "Documento generado",
+    level: "A2",
+    unit: "Documento",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: false,
+    requiresQualityCheck: true,
+    requiresSignature: true,
+    requiresValidationQr: true,
+    active: true,
+    notes: "Documento generado con folio, firma y QR de validación.",
+  },
+  {
+    name: "Diploma de finalización",
+    category: "Diploma",
+    productionType: "Documento generado",
+    level: "No aplica",
+    unit: "Documento",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: false,
+    requiresQualityCheck: true,
+    requiresSignature: true,
+    requiresValidationQr: true,
+    active: true,
+    notes: "Diploma generado con folio, firma y QR de validación.",
+  },
+  {
+    name: "Volante promocional",
+    category: "Volante",
+    productionType: "Trabajo solicitado",
+    level: "No aplica",
+    unit: "Pieza",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Trabajo solicitado por área o plantel.",
+  },
+  {
+    name: "Vinil",
+    category: "Vinil",
+    productionType: "Trabajo solicitado",
+    level: "No aplica",
+    unit: "Metro",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Trabajo solicitado para corte, impresión o rotulación.",
+  },
+  {
+    name: "Hoja de canciones",
+    category: "Hoja de canciones",
+    productionType: "Material interno",
+    level: "No aplica",
+    unit: "Hoja",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: false,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Material interno para clases o actividades académicas.",
+  },
+  {
+    name: "Hoja de actividades",
+    category: "Hoja de actividades",
+    productionType: "Material interno",
+    level: "No aplica",
+    unit: "Hoja",
+    minStock: 0,
+    idealStock: 0,
+    requiresPrinting: true,
+    requiresBinding: false,
+    requiresCutting: false,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    active: true,
+    notes: "Material interno para clases o actividades académicas.",
+  },
+];
+
 const metrics = [
   {
     label: "Solicitudes pendientes",
@@ -176,6 +439,267 @@ const certificateStudents = [
 ];
 
 export default function PrintShop() {
+  const { user, profile, isAdmin } = useAuth();
+
+  const [activeSection, setActiveSection] = useState("dashboard");
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [productsError, setProductsError] = useState("");
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [seedingProducts, setSeedingProducts] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState(null);
+  const [productForm, setProductForm] = useState(productFormInitialState);
+  const [productSearch, setProductSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("Todas");
+  const [typeFilter, setTypeFilter] = useState("Todos");
+  const [statusFilter, setStatusFilter] = useState("Activos");
+  const [formMessage, setFormMessage] = useState("");
+
+  useEffect(() => {
+    setLoadingProducts(true);
+    setProductsError("");
+
+    const productsQuery = query(
+      collection(db, "printProducts"),
+      orderBy("name", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      productsQuery,
+      (snapshot) => {
+        const nextProducts = snapshot.docs.map((productDoc) => ({
+          id: productDoc.id,
+          ...productDoc.data(),
+        }));
+
+        setProducts(nextProducts);
+        setLoadingProducts(false);
+      },
+      (error) => {
+        console.error("No se pudo cargar el catálogo de imprenta:", error);
+        setProductsError(
+          "No se pudo cargar el catálogo. Revisa las reglas de Firestore o tu conexión."
+        );
+        setLoadingProducts(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const productStats = useMemo(() => {
+    const activeProducts = products.filter((product) => product.active !== false);
+    const inactiveProducts = products.filter((product) => product.active === false);
+    const books = activeProducts.filter((product) => product.category === "Libro");
+    const generatedDocuments = activeProducts.filter(
+      (product) => product.productionType === "Documento generado"
+    );
+
+    return {
+      total: products.length,
+      active: activeProducts.length,
+      inactive: inactiveProducts.length,
+      books: books.length,
+      generatedDocuments: generatedDocuments.length,
+    };
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const normalizedSearch = productSearch.trim().toLowerCase();
+
+    return products.filter((product) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        `${product.name || ""} ${product.category || ""} ${product.level || ""}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+
+      const matchesCategory =
+        categoryFilter === "Todas" || product.category === categoryFilter;
+
+      const matchesType =
+        typeFilter === "Todos" || product.productionType === typeFilter;
+
+      const matchesStatus =
+        statusFilter === "Todos" ||
+        (statusFilter === "Activos" && product.active !== false) ||
+        (statusFilter === "Inactivos" && product.active === false);
+
+      return matchesSearch && matchesCategory && matchesType && matchesStatus;
+    });
+  }, [products, productSearch, categoryFilter, typeFilter, statusFilter]);
+
+  const selectedProduct = useMemo(
+    () => products.find((product) => product.id === selectedProductId) || null,
+    [products, selectedProductId]
+  );
+
+  function getAuditUser() {
+    return {
+      uid: user?.uid || profile?.uid || profile?.id || "",
+      name: profile?.name || user?.displayName || "Usuario",
+      email: profile?.email || user?.email || "",
+    };
+  }
+
+  function handleProductInputChange(event) {
+    const { name, value, type, checked } = event.target;
+
+    setProductForm((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  function handleNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setProductForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function resetProductForm() {
+    setSelectedProductId(null);
+    setProductForm(productFormInitialState);
+    setFormMessage("");
+  }
+
+  function selectProduct(product) {
+    setSelectedProductId(product.id);
+    setFormMessage("");
+    setProductForm({
+      name: product.name || "",
+      category: product.category || "Libro",
+      productionType: product.productionType || "Producto terminado",
+      level: product.level || "No aplica",
+      unit: product.unit || "Pieza",
+      minStock: Number(product.minStock || 0),
+      idealStock: Number(product.idealStock || 0),
+      requiresPrinting: product.requiresPrinting !== false,
+      requiresBinding: product.requiresBinding === true,
+      requiresCutting: product.requiresCutting === true,
+      requiresQualityCheck: product.requiresQualityCheck !== false,
+      requiresSignature: product.requiresSignature === true,
+      requiresValidationQr: product.requiresValidationQr === true,
+      active: product.active !== false,
+      notes: product.notes || "",
+    });
+  }
+
+  async function saveProduct(event) {
+    event.preventDefault();
+    setFormMessage("");
+
+    const trimmedName = productForm.name.trim();
+
+    if (!trimmedName) {
+      setFormMessage("Escribe el nombre del producto antes de guardar.");
+      return;
+    }
+
+    if (Number(productForm.idealStock) < Number(productForm.minStock)) {
+      setFormMessage("El stock ideal no puede ser menor que el stock mínimo.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const payload = {
+      ...productForm,
+      name: trimmedName,
+      minStock: Number(productForm.minStock || 0),
+      idealStock: Number(productForm.idealStock || 0),
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    try {
+      setSavingProduct(true);
+
+      if (selectedProductId) {
+        await updateDoc(doc(db, "printProducts", selectedProductId), payload);
+        setFormMessage("Producto actualizado correctamente.");
+      } else {
+        await addDoc(collection(db, "printProducts"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+        setProductForm(productFormInitialState);
+        setFormMessage("Producto agregado correctamente.");
+      }
+    } catch (error) {
+      console.error("No se pudo guardar el producto de imprenta:", error);
+      setFormMessage(
+        "No se pudo guardar. Revisa que hayas publicado las reglas nuevas de Firestore."
+      );
+    } finally {
+      setSavingProduct(false);
+    }
+  }
+
+  async function toggleProductStatus(product) {
+    if (!product?.id) return;
+
+    const auditUser = getAuditUser();
+
+    try {
+      await updateDoc(doc(db, "printProducts", product.id), {
+        active: product.active === false,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    } catch (error) {
+      console.error("No se pudo cambiar el estado del producto:", error);
+      setProductsError(
+        "No se pudo cambiar el estado del producto. Revisa permisos de Firestore."
+      );
+    }
+  }
+
+  async function seedBaseProducts() {
+    if (!isAdmin || products.length > 0) return;
+
+    const auditUser = getAuditUser();
+    const batch = writeBatch(db);
+
+    basePrintProducts.forEach((product) => {
+      const productRef = doc(collection(db, "printProducts"));
+      batch.set(productRef, {
+        ...product,
+        createdAt: serverTimestamp(),
+        createdByUid: auditUser.uid,
+        createdByName: auditUser.name,
+        createdByEmail: auditUser.email,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    });
+
+    try {
+      setSeedingProducts(true);
+      await batch.commit();
+      setFormMessage("Productos base cargados correctamente.");
+    } catch (error) {
+      console.error("No se pudieron cargar los productos base:", error);
+      setFormMessage(
+        "No se pudieron cargar los productos base. Publica primero las reglas nuevas de Firestore."
+      );
+    } finally {
+      setSeedingProducts(false);
+    }
+  }
+
   return (
     <div className="printshop-page">
       <section className="printshop-topbar">
@@ -190,17 +714,202 @@ export default function PrintShop() {
 
         <label className="printshop-search">
           <span>⌕</span>
-          <input type="search" placeholder="Buscar folio, producto o insumo" />
+          <input
+            type="search"
+            placeholder="Buscar folio, producto o insumo"
+            value={activeSection === "catalog" ? productSearch : ""}
+            onChange={(event) => setProductSearch(event.target.value)}
+            onFocus={() => setActiveSection("catalog")}
+          />
         </label>
       </section>
 
-      <section className="printshop-metrics-grid">
+      <section className="printshop-section-tabs">
+        <button
+          type="button"
+          className={activeSection === "dashboard" ? "active" : ""}
+          onClick={() => setActiveSection("dashboard")}
+        >
+          <span>▦</span>
+          Inicio
+        </button>
+        <button
+          type="button"
+          className={activeSection === "catalog" ? "active" : ""}
+          onClick={() => setActiveSection("catalog")}
+        >
+          <span>▤</span>
+          Catálogo de productos
+        </button>
+      </section>
+
+      {activeSection === "dashboard" ? (
+        <DashboardView
+          products={products}
+          productStats={productStats}
+          onOpenCatalog={() => setActiveSection("catalog")}
+        />
+      ) : (
+        <ProductCatalogView
+          products={products}
+          filteredProducts={filteredProducts}
+          loadingProducts={loadingProducts}
+          productsError={productsError}
+          productStats={productStats}
+          productForm={productForm}
+          formMessage={formMessage}
+          savingProduct={savingProduct}
+          seedingProducts={seedingProducts}
+          selectedProduct={selectedProduct}
+          selectedProductId={selectedProductId}
+          productSearch={productSearch}
+          categoryFilter={categoryFilter}
+          typeFilter={typeFilter}
+          statusFilter={statusFilter}
+          isAdmin={isAdmin}
+          onSearchChange={setProductSearch}
+          onCategoryFilterChange={setCategoryFilter}
+          onTypeFilterChange={setTypeFilter}
+          onStatusFilterChange={setStatusFilter}
+          onInputChange={handleProductInputChange}
+          onNumberInputChange={handleNumberInputChange}
+          onSaveProduct={saveProduct}
+          onSelectProduct={selectProduct}
+          onResetForm={resetProductForm}
+          onToggleStatus={toggleProductStatus}
+          onSeedBaseProducts={seedBaseProducts}
+        />
+      )}
+    </div>
+  );
+}
+
+function DashboardView({ productStats, onOpenCatalog }) {
+  const operationalCards = [
+    {
+      icon: "▤",
+      title: "Solicitudes especiales",
+      value: "3 activas",
+      description: "Certificados, volantes y viniles con fechas próximas.",
+      tone: "blue",
+    },
+    {
+      icon: "▧",
+      title: "Producción para inventario",
+      value: "2 lotes",
+      description: "Libros en impresión, encuadernado o revisión de calidad.",
+      tone: "teal",
+    },
+    {
+      icon: "◎",
+      title: "Certificados profesionales",
+      value: "Folio + QR",
+      description: "Base preparada para documentos digitales e impresos.",
+      tone: "purple",
+    },
+    {
+      icon: "!",
+      title: "Insumos por revisar",
+      value: "4 alertas",
+      description: "Papel, opalina y tintas debajo del mínimo sugerido.",
+      tone: "red",
+    },
+  ];
+
+  const workflowSteps = [
+    {
+      number: "01",
+      title: "Recibir solicitud",
+      description: "Trabajos solicitados por dirección, recepción, administración o maestros.",
+    },
+    {
+      number: "02",
+      title: "Producir o generar",
+      description: "Impresión física, lote de libros o certificado digital automático.",
+    },
+    {
+      number: "03",
+      title: "Revisión de calidad",
+      description: "Validación de nombres, cortes, encuadernado, folio, firma y QR.",
+    },
+    {
+      number: "04",
+      title: "Entregar y registrar",
+      description: "Salida física o digital con evidencia y control de inventario.",
+    },
+  ];
+
+  return (
+    <>
+      <section className="printshop-dashboard-hero">
+        <div className="printshop-hero-content">
+          <p className="section-kicker printshop-hero-kicker">Centro operativo</p>
+          <h2>Producción, solicitudes e inventario en un solo lugar</h2>
+          <p>
+            Esta pantalla será el punto de control de Imprenta: trabajos solicitados,
+            lotes de libros, certificados con folio, insumos críticos y entregas pendientes.
+          </p>
+
+          <div className="printshop-hero-badges">
+            <span>{productStats.active} productos activos</span>
+            <span>{productStats.books} libros configurados</span>
+            <span>{productStats.generatedDocuments} documentos generados</span>
+          </div>
+
+          <div className="printshop-hero-actions">
+            <button type="button" className="visual-primary-button" onClick={onOpenCatalog}>
+              Administrar catálogo
+            </button>
+            <button type="button" className="visual-outline-button">
+              Ver flujo de producción
+            </button>
+          </div>
+        </div>
+
+        <div className="printshop-hero-visual" aria-hidden="true">
+          <div className="printshop-hero-printer">
+            <div className="printer-top" />
+            <div className="printer-body">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="printer-paper">
+              <b>CERT</b>
+              <small>Folio + QR</small>
+            </div>
+          </div>
+
+          <div className="printshop-hero-floating-card one">
+            <strong>LOTE</strong>
+            <span>Journey A1 · 75%</span>
+          </div>
+
+          <div className="printshop-hero-floating-card two">
+            <strong>QR</strong>
+            <span>Validación activa</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="printshop-metrics-grid printshop-metrics-enhanced">
         {metrics.map((metric) => (
           <MetricCard key={metric.label} metric={metric} />
         ))}
       </section>
 
-      <section className="printshop-action-grid">
+      <section className="printshop-operational-grid">
+        {operationalCards.map((card) => (
+          <article className={`printshop-operational-card ${card.tone}`} key={card.title}>
+            <div>{card.icon}</div>
+            <span>{card.title}</span>
+            <strong>{card.value}</strong>
+            <p>{card.description}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="printshop-action-grid printshop-action-grid-enhanced">
         <ActionCard
           icon="＋"
           title="Nueva solicitud"
@@ -212,98 +921,91 @@ export default function PrintShop() {
           description="Crear producción interna de libros para inventario terminado."
         />
         <ActionCard
-          icon="▣"
+          icon="◎"
           title="Generar certificados"
-          description="Generar documentos con folio, firma y QR de validación."
+          description="Preparar documentos con folio, firma precargada y QR de validación."
+        />
+        <ActionCard
+          icon="▤"
+          title="Catálogo de productos"
+          description={`${productStats.active} productos activos registrados para imprenta.`}
+          onClick={onOpenCatalog}
         />
       </section>
 
-      <section className="printshop-main-grid">
-        <div className="printshop-main-column">
-          <Panel
-            title="Solicitudes recientes"
-            icon="▤"
-            actionLabel="Ver todas"
-          >
-            <div className="printshop-table-wrap">
-              <table className="printshop-table">
-                <thead>
-                  <tr>
-                    <th>Folio</th>
-                    <th>Producto / Servicio</th>
-                    <th>Solicitante</th>
-                    <th>Estado</th>
-                    <th>Entrega estimada</th>
-                  </tr>
-                </thead>
-                <tbody>
+      <section className="printshop-dashboard-layout-enhanced">
+        <div className="printshop-dashboard-main-enhanced">
+          <Panel title="Tablero de trabajo" icon="▦" actionLabel="Vista operativa">
+            <div className="printshop-workboard-grid">
+              <div className="printshop-workboard-column">
+                <div className="printshop-mini-heading">
+                  <span>▤</span>
+                  <div>
+                    <strong>Solicitudes recientes</strong>
+                    <p>Trabajos pedidos por áreas o planteles.</p>
+                  </div>
+                </div>
+
+                <div className="printshop-request-card-list">
                   {requests.map((request) => (
-                    <tr key={request.folio}>
-                      <td>
-                        <strong>{request.folio}</strong>
-                      </td>
-                      <td>{request.product}</td>
-                      <td>{request.requester}</td>
-                      <td>
-                        <StatusBadge tone={request.statusTone}>
-                          {request.status}
-                        </StatusBadge>
-                      </td>
-                      <td>{request.delivery}</td>
-                    </tr>
+                    <article className="printshop-request-card" key={request.folio}>
+                      <div>
+                        <strong>{request.product}</strong>
+                        <span>{request.folio} · {request.requester}</span>
+                      </div>
+                      <div>
+                        <StatusBadge tone={request.statusTone}>{request.status}</StatusBadge>
+                        <small>{request.delivery}</small>
+                      </div>
+                    </article>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
+
+              <div className="printshop-workboard-column">
+                <div className="printshop-mini-heading">
+                  <span>▧</span>
+                  <div>
+                    <strong>Lotes de producción</strong>
+                    <p>Producción interna para mantener inventario.</p>
+                  </div>
+                </div>
+
+                <div className="printshop-batch-card-list">
+                  {batches.map((batch) => (
+                    <article className="printshop-batch-card" key={batch.folio}>
+                      <div className="printshop-batch-card-top">
+                        <div>
+                          <strong>{batch.product}</strong>
+                          <span>{batch.folio}</span>
+                        </div>
+                        <StatusBadge tone={batch.statusTone}>{batch.status}</StatusBadge>
+                      </div>
+                      <ProgressBar value={batch.progress} tone={batch.statusTone} />
+                      <small>{batch.quantity}</small>
+                    </article>
+                  ))}
+                </div>
+              </div>
             </div>
           </Panel>
 
-          <Panel
-            title="Lotes de producción"
-            icon="▧"
-            actionLabel="Ver todos"
-          >
-            <div className="printshop-table-wrap">
-              <table className="printshop-table printshop-batches-table">
-                <thead>
-                  <tr>
-                    <th>Folio del lote</th>
-                    <th>Producto</th>
-                    <th>Progreso</th>
-                    <th>Estado</th>
-                    <th>Cantidad</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batches.map((batch) => (
-                    <tr key={batch.folio}>
-                      <td>
-                        <strong>{batch.folio}</strong>
-                      </td>
-                      <td>{batch.product}</td>
-                      <td>
-                        <ProgressBar value={batch.progress} tone={batch.statusTone} />
-                      </td>
-                      <td>
-                        <StatusBadge tone={batch.statusTone}>
-                          {batch.status}
-                        </StatusBadge>
-                      </td>
-                      <td>{batch.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <Panel title="Flujo recomendado de Imprenta" icon="▥" actionLabel="Proceso base">
+            <div className="printshop-workflow-track">
+              {workflowSteps.map((step) => (
+                <article className="printshop-workflow-step" key={step.number}>
+                  <span>{step.number}</span>
+                  <strong>{step.title}</strong>
+                  <p>{step.description}</p>
+                </article>
+              ))}
             </div>
           </Panel>
         </div>
 
-        <aside className="printshop-side-column">
-          <Panel
-            title="Inventario de productos terminados"
-            icon="▣"
-            actionLabel="Ver inventario"
-          >
-            <div className="finished-inventory-list">
+        <aside className="printshop-dashboard-side-enhanced">
+          <Panel title="Inventario de productos terminados" icon="▣" actionLabel="Libros">
+            <div className="finished-inventory-list enhanced">
               {finishedInventory.map((item) => (
                 <div className="finished-inventory-row" key={item.product}>
                   <div>
@@ -316,20 +1018,38 @@ export default function PrintShop() {
             </div>
           </Panel>
 
-          <Panel title="Insumos críticos" icon="!" actionLabel="Ver todos">
-            <div className="critical-supplies-list">
+          <Panel title="Catálogo de productos" icon="▤" actionLabel="Base real">
+            <div className="printshop-catalog-summary-card enhanced">
+              <div>
+                <strong>{productStats.total}</strong>
+                <span>Productos registrados</span>
+              </div>
+              <div>
+                <strong>{productStats.books}</strong>
+                <span>Libros</span>
+              </div>
+              <div>
+                <strong>{productStats.generatedDocuments}</strong>
+                <span>Documentos generados</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="visual-outline-button printshop-full-button"
+              onClick={onOpenCatalog}
+            >
+              Administrar catálogo
+            </button>
+          </Panel>
+
+          <Panel title="Insumos críticos" icon="!" actionLabel="Alertas">
+            <div className="critical-supplies-list compact">
               {criticalSupplies.map((supply) => (
                 <div className="critical-supply-row" key={`${supply.name}-${supply.spec}`}>
-                  <div className={`critical-supply-icon ${supply.tone}`}>
-                    {supply.icon}
-                  </div>
+                  <div className={`critical-supply-icon ${supply.tone}`}>{supply.icon}</div>
                   <div className="critical-supply-info">
                     <strong>{supply.name}</strong>
-                    <span>{supply.spec}</span>
-                  </div>
-                  <div className="critical-supply-stock">
-                    <strong>{supply.available}</strong>
-                    <span>Mín. {supply.minimum}</span>
+                    <span>{supply.spec} · {supply.available}</span>
                   </div>
                   <StatusBadge tone={supply.tone}>{supply.status}</StatusBadge>
                 </div>
@@ -339,163 +1059,555 @@ export default function PrintShop() {
         </aside>
       </section>
 
-      <section className="printshop-bottom-grid">
-        <Panel
-          title="Certificados y diplomas"
+      <section className="printshop-certificate-feature">
+        <div className="printshop-certificate-feature-copy">
+          <p className="section-kicker printshop-kicker">Certificados y diplomas</p>
+          <h2>Generación automática con folio y QR de validación</h2>
+          <p>
+            Esta sección quedará preparada para capturar nivel, grupo, maestro,
+            horario, lista de alumnos, entrega impresa o digital, firma precargada
+            y validación profesional por código QR.
+          </p>
+
+          <div className="printshop-certificate-feature-stats">
+            <div>
+              <strong>12</strong>
+              <span>Impresos</span>
+            </div>
+            <div>
+              <strong>6</strong>
+              <span>Digitales</span>
+            </div>
+            <div>
+              <strong>18</strong>
+              <span>Total del grupo</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="certificate-card-preview enhanced-preview">
+          <div className="certificate-border">
+            <div className="certificate-logo">AES</div>
+            <small>Active English School</small>
+            <h3>CERTIFICADO</h3>
+            <p>Otorgado a</p>
+            <strong>Juan Pérez García</strong>
+            <span>
+              Por haber concluido satisfactoriamente el nivel A2 del programa académico correspondiente.
+            </span>
+            <div className="certificate-signature">Samantha Rodríguez</div>
+            <div className="certificate-footer">
+              <div>
+                <small>Folio</small>
+                <b>CERT-2026-000123</b>
+              </div>
+              <div>
+                <small>QR de validación</small>
+                <div className="qr-placeholder">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="certificate-students-card enhanced-students">
+          <div className="mini-section-header no-margin">
+            <div>
+              <span>☑</span>
+              <h3>Lista de alumnos</h3>
+            </div>
+          </div>
+
+          <div className="certificate-students-list">
+            {certificateStudents.map((student) => (
+              <div className="certificate-student-row" key={student.name}>
+                <strong>{student.name}</strong>
+                <StatusBadge
+                  tone={
+                    student.delivery === "Digital"
+                      ? "blue"
+                      : student.delivery === "Ambos"
+                        ? "purple"
+                        : "green"
+                  }
+                >
+                  {student.delivery}
+                </StatusBadge>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="printshop-bottom-grid enhanced-bottom">
+        <Panel title="Ruta de desarrollo" icon="▥" actionLabel="Plan activo">
+          <div className="printshop-roadmap-list">
+            <RoadmapItem
+              number="1"
+              title="Interfaz principal"
+              description="Dashboard profesional para visualizar operación, inventario y alertas."
+              active
+            />
+            <RoadmapItem
+              number="2"
+              title="Catálogo de productos"
+              description="Registrar productos reales y usarlos como base de lotes y solicitudes."
+              active
+            />
+            <RoadmapItem
+              number="3"
+              title="Inventario terminado"
+              description="Controlar libros producidos, mínimos, ideales y alertas de reposición."
+            />
+            <RoadmapItem
+              number="4"
+              title="Solicitudes y lotes"
+              description="Separar trabajos solicitados de producción para inventario."
+            />
+            <RoadmapItem
+              number="5"
+              title="Certificados automáticos"
+              description="Folio, firma precargada, QR de validación y versión digital."
+            />
+          </div>
+        </Panel>
+
+        <Panel title="Siguiente función sugerida" icon="→" actionLabel="Etapa 3">
+          <div className="printshop-next-feature-card">
+            <span>▣</span>
+            <div>
+              <strong>Inventario de productos terminados</strong>
+              <p>
+                El siguiente paso lógico es conectar los libros del catálogo con
+                existencias reales, stock mínimo, stock ideal y alertas automáticas.
+              </p>
+              <button type="button" className="visual-outline-button" onClick={onOpenCatalog}>
+                Revisar productos base
+              </button>
+            </div>
+          </div>
+        </Panel>
+      </section>
+    </>
+  );
+}
+
+function ProductCatalogView({
+  products,
+  filteredProducts,
+  loadingProducts,
+  productsError,
+  productStats,
+  productForm,
+  formMessage,
+  savingProduct,
+  seedingProducts,
+  selectedProduct,
+  selectedProductId,
+  productSearch,
+  categoryFilter,
+  typeFilter,
+  statusFilter,
+  isAdmin,
+  onSearchChange,
+  onCategoryFilterChange,
+  onTypeFilterChange,
+  onStatusFilterChange,
+  onInputChange,
+  onNumberInputChange,
+  onSaveProduct,
+  onSelectProduct,
+  onResetForm,
+  onToggleStatus,
+  onSeedBaseProducts,
+}) {
+  return (
+    <section className="printshop-catalog-page">
+      <div className="printshop-catalog-hero">
+        <div>
+          <p className="section-kicker printshop-kicker">Etapa 2</p>
+          <h2>Catálogo de productos</h2>
+          <p>
+            Registra libros, certificados, diplomas, volantes, viniles y
+            materiales internos. Este catálogo será la base de lotes,
+            solicitudes, inventario terminado y certificados automáticos.
+          </p>
+        </div>
+
+        {products.length === 0 && isAdmin && (
+          <button
+            type="button"
+            className="visual-primary-button"
+            onClick={onSeedBaseProducts}
+            disabled={seedingProducts}
+          >
+            {seedingProducts ? "Cargando..." : "Cargar productos base"}
+          </button>
+        )}
+      </div>
+
+      <div className="printshop-catalog-metrics">
+        <CatalogMetric tone="blue" icon="▤" label="Total" value={productStats.total} />
+        <CatalogMetric tone="green" icon="✓" label="Activos" value={productStats.active} />
+        <CatalogMetric tone="orange" icon="▣" label="Libros" value={productStats.books} />
+        <CatalogMetric
+          tone="purple"
           icon="◎"
-          actionLabel="Configurar plantillas"
-        >
-          <div className="certificate-workflow-layout">
-            <div className="certificate-form-preview">
+          label="Docs. generados"
+          value={productStats.generatedDocuments}
+        />
+        <CatalogMetric tone="red" icon="○" label="Inactivos" value={productStats.inactive} />
+      </div>
+
+      {productsError && <div className="form-error">{productsError}</div>}
+
+      <div className="printshop-catalog-layout">
+        <div className="printshop-catalog-main">
+          <Panel title="Productos registrados" icon="▤" actionLabel={`${filteredProducts.length} visibles`}>
+            <div className="printshop-catalog-toolbar">
+              <label className="printshop-catalog-search">
+                <span>Buscar</span>
+                <input
+                  type="search"
+                  placeholder="Nombre, categoría o nivel"
+                  value={productSearch}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                />
+              </label>
+
               <label>
-                <span>Tipo de documento</span>
-                <select defaultValue="Certificado">
-                  <option>Certificado</option>
-                  <option>Diploma</option>
+                <span>Categoría</span>
+                <select
+                  value={categoryFilter}
+                  onChange={(event) => onCategoryFilterChange(event.target.value)}
+                >
+                  <option>Todas</option>
+                  {productCategories.map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tipo</span>
+                <select
+                  value={typeFilter}
+                  onChange={(event) => onTypeFilterChange(event.target.value)}
+                >
+                  <option>Todos</option>
+                  {productionTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Estado</span>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => onStatusFilterChange(event.target.value)}
+                >
+                  <option>Activos</option>
+                  <option>Inactivos</option>
+                  <option>Todos</option>
+                </select>
+              </label>
+            </div>
+
+            {loadingProducts ? (
+              <div className="printshop-empty-catalog">
+                <div>▤</div>
+                <h3>Cargando catálogo...</h3>
+                <p>Estamos consultando los productos registrados en Firestore.</p>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="printshop-empty-catalog">
+                <div>▤</div>
+                <h3>No hay productos para mostrar</h3>
+                <p>
+                  Ajusta los filtros o registra el primer producto del catálogo
+                  de imprenta.
+                </p>
+              </div>
+            ) : (
+              <div className="printshop-table-wrap">
+                <table className="printshop-table printshop-products-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Categoría</th>
+                      <th>Tipo</th>
+                      <th>Nivel</th>
+                      <th>Stock</th>
+                      <th>Requisitos</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.map((product) => (
+                      <tr
+                        key={product.id}
+                        className={selectedProductId === product.id ? "selected-product-row" : ""}
+                      >
+                        <td>
+                          <strong>{product.name}</strong>
+                          <span>{product.unit || "Pieza"}</span>
+                        </td>
+                        <td>{product.category}</td>
+                        <td>{product.productionType}</td>
+                        <td>{product.level || "No aplica"}</td>
+                        <td>
+                          <span>Mín. {Number(product.minStock || 0)}</span>
+                          <span>Ideal {Number(product.idealStock || 0)}</span>
+                        </td>
+                        <td>
+                          <RequirementChips product={product} />
+                        </td>
+                        <td>
+                          <StatusBadge tone={product.active === false ? "red" : "green"}>
+                            {product.active === false ? "Inactivo" : "Activo"}
+                          </StatusBadge>
+                        </td>
+                        <td>
+                          <div className="printshop-product-actions">
+                            <button type="button" onClick={() => onSelectProduct(product)}>
+                              Editar
+                            </button>
+                            <button type="button" onClick={() => onToggleStatus(product)}>
+                              {product.active === false ? "Activar" : "Desactivar"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <aside className="printshop-catalog-side">
+          <Panel
+            title={selectedProduct ? "Editar producto" : "Nuevo producto"}
+            icon={selectedProduct ? "✎" : "＋"}
+            actionLabel={selectedProduct ? "Editando" : "Alta"}
+          >
+            <form className="printshop-product-form" onSubmit={onSaveProduct}>
+              <label className="full">
+                <span>Nombre del producto</span>
+                <input
+                  name="name"
+                  value={productForm.name}
+                  onChange={onInputChange}
+                  placeholder="Ej. Journey A1"
+                />
+              </label>
+
+              <label>
+                <span>Categoría</span>
+                <select
+                  name="category"
+                  value={productForm.category}
+                  onChange={onInputChange}
+                >
+                  {productCategories.map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tipo de producción</span>
+                <select
+                  name="productionType"
+                  value={productForm.productionType}
+                  onChange={onInputChange}
+                >
+                  {productionTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
                 </select>
               </label>
 
               <label>
                 <span>Nivel</span>
-                <select defaultValue="A2">
-                  <option>A1</option>
-                  <option>A2</option>
-                  <option>B1</option>
-                  <option>B2</option>
-                  <option>C1</option>
+                <select name="level" value={productForm.level} onChange={onInputChange}>
+                  {levels.map((level) => (
+                    <option key={level}>{level}</option>
+                  ))}
                 </select>
               </label>
 
               <label>
-                <span>Grupo</span>
-                <select defaultValue="Teacher Samantha · Lun/Mié 6:00 pm">
-                  <option>Teacher Samantha · Lun/Mié 6:00 pm</option>
-                  <option>Teacher David · Mar/Jue 7:00 pm</option>
-                  <option>Teacher Evelyn · Sábado 9:00 am</option>
+                <span>Unidad</span>
+                <select name="unit" value={productForm.unit} onChange={onInputChange}>
+                  {units.map((unit) => (
+                    <option key={unit}>{unit}</option>
+                  ))}
                 </select>
               </label>
 
               <label>
-                <span>Maestro / firma</span>
-                <select defaultValue="Samantha Rodríguez">
-                  <option>Samantha Rodríguez</option>
-                  <option>David Hernández</option>
-                  <option>Evelyn Martínez</option>
-                </select>
+                <span>Stock mínimo</span>
+                <input
+                  type="number"
+                  name="minStock"
+                  min="0"
+                  value={productForm.minStock}
+                  onChange={onNumberInputChange}
+                />
               </label>
 
-              <div className="certificate-counts">
-                <div>
-                  <span>Impresos</span>
-                  <strong>12</strong>
-                </div>
-                <div>
-                  <span>Digitales</span>
-                  <strong>6</strong>
-                </div>
-                <div>
-                  <span>Total</span>
-                  <strong>18</strong>
-                </div>
+              <label>
+                <span>Stock ideal</span>
+                <input
+                  type="number"
+                  name="idealStock"
+                  min="0"
+                  value={productForm.idealStock}
+                  onChange={onNumberInputChange}
+                />
+              </label>
+
+              <div className="printshop-product-checks full">
+                <span>Requisitos del producto</span>
+                <ProductCheckbox
+                  name="requiresPrinting"
+                  label="Requiere impresión"
+                  checked={productForm.requiresPrinting}
+                  onChange={onInputChange}
+                />
+                <ProductCheckbox
+                  name="requiresBinding"
+                  label="Requiere encuadernado"
+                  checked={productForm.requiresBinding}
+                  onChange={onInputChange}
+                />
+                <ProductCheckbox
+                  name="requiresCutting"
+                  label="Requiere corte"
+                  checked={productForm.requiresCutting}
+                  onChange={onInputChange}
+                />
+                <ProductCheckbox
+                  name="requiresQualityCheck"
+                  label="Requiere revisión de calidad"
+                  checked={productForm.requiresQualityCheck}
+                  onChange={onInputChange}
+                />
+                <ProductCheckbox
+                  name="requiresSignature"
+                  label="Requiere firma"
+                  checked={productForm.requiresSignature}
+                  onChange={onInputChange}
+                />
+                <ProductCheckbox
+                  name="requiresValidationQr"
+                  label="Requiere folio / QR de validación"
+                  checked={productForm.requiresValidationQr}
+                  onChange={onInputChange}
+                />
+                <ProductCheckbox
+                  name="active"
+                  label="Producto activo"
+                  checked={productForm.active}
+                  onChange={onInputChange}
+                />
               </div>
 
-              <button type="button" className="visual-primary-button certificate-button">
-                Generar certificados
-              </button>
-            </div>
+              <label className="full">
+                <span>Observaciones</span>
+                <textarea
+                  name="notes"
+                  value={productForm.notes}
+                  onChange={onInputChange}
+                  placeholder="Notas internas sobre uso, producción, plantillas o calidad."
+                />
+              </label>
 
-            <div className="certificate-card-preview">
-              <div className="certificate-border">
-                <div className="certificate-logo">AES</div>
-                <small>Active English School</small>
-                <h3>CERTIFICADO</h3>
-                <p>Otorgado a</p>
-                <strong>Juan Pérez García</strong>
-                <span>
-                  Por haber concluido satisfactoriamente el nivel A2 del
-                  programa académico correspondiente.
-                </span>
-                <div className="certificate-signature">Samantha Rodríguez</div>
-                <div className="certificate-footer">
-                  <div>
-                    <small>Folio</small>
-                    <b>CERT-2026-000123</b>
-                  </div>
-                  <div>
-                    <small>QR de validación</small>
-                    <div className="qr-placeholder">
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                      <i />
-                    </div>
-                  </div>
-                </div>
+              {formMessage && <div className="message-box">{formMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                {selectedProductId && (
+                  <button
+                    type="button"
+                    className="visual-outline-button"
+                    onClick={onResetForm}
+                  >
+                    Nuevo producto
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  className="visual-primary-button"
+                  disabled={savingProduct || !isAdmin}
+                >
+                  {savingProduct
+                    ? "Guardando..."
+                    : selectedProductId
+                      ? "Guardar cambios"
+                      : "Agregar producto"}
+                </button>
               </div>
-            </div>
+            </form>
+          </Panel>
+        </aside>
+      </div>
+    </section>
+  );
+}
 
-            <div className="certificate-students-card">
-              <div className="mini-section-header no-margin">
-                <div>
-                  <span>☑</span>
-                  <h3>Lista de alumnos</h3>
-                </div>
-              </div>
+function ProductCheckbox({ name, label, checked, onChange }) {
+  return (
+    <label className="product-check-item">
+      <input type="checkbox" name={name} checked={checked} onChange={onChange} />
+      <span>{label}</span>
+    </label>
+  );
+}
 
-              <div className="certificate-students-list">
-                {certificateStudents.map((student) => (
-                  <div className="certificate-student-row" key={student.name}>
-                    <strong>{student.name}</strong>
-                    <StatusBadge
-                      tone={
-                        student.delivery === "Digital"
-                          ? "blue"
-                          : student.delivery === "Ambos"
-                            ? "purple"
-                            : "green"
-                      }
-                    >
-                      {student.delivery}
-                    </StatusBadge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Panel>
+function RequirementChips({ product }) {
+  const requirements = [
+    product.requiresPrinting !== false ? "Impresión" : null,
+    product.requiresBinding ? "Encuadernado" : null,
+    product.requiresCutting ? "Corte" : null,
+    product.requiresQualityCheck !== false ? "Calidad" : null,
+    product.requiresSignature ? "Firma" : null,
+    product.requiresValidationQr ? "QR" : null,
+  ].filter(Boolean);
 
-        <Panel title="Ruta de desarrollo" icon="▥" actionLabel="Ver plan">
-          <div className="printshop-roadmap-list">
-            <RoadmapItem
-              number="1"
-              title="Interfaz principal"
-              description="Dejar el módulo visible y navegable con datos de ejemplo."
-              active
-            />
-            <RoadmapItem
-              number="2"
-              title="Solicitudes y lotes"
-              description="Separar trabajos solicitados de producción para inventario."
-            />
-            <RoadmapItem
-              number="3"
-              title="Certificados automáticos"
-              description="Folio, firma precargada, QR de validación y versión digital."
-            />
-            <RoadmapItem
-              number="4"
-              title="Inventario, merma y reportes"
-              description="Conectar insumos, costos, desperdicio y estadísticas."
-            />
-          </div>
-        </Panel>
-      </section>
+  if (!requirements.length) {
+    return <span className="printshop-muted-text">Sin requisitos</span>;
+  }
+
+  return (
+    <div className="requirement-chip-list">
+      {requirements.map((requirement) => (
+        <span key={requirement}>{requirement}</span>
+      ))}
     </div>
+  );
+}
+
+function CatalogMetric({ tone, icon, label, value }) {
+  return (
+    <article className={`catalog-metric-card ${tone}`}>
+      <div>{icon}</div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
   );
 }
 
@@ -512,9 +1624,9 @@ function MetricCard({ metric }) {
   );
 }
 
-function ActionCard({ icon, title, description }) {
+function ActionCard({ icon, title, description, onClick }) {
   return (
-    <button type="button" className="printshop-action-card">
+    <button type="button" className="printshop-action-card" onClick={onClick}>
       <span>{icon}</span>
       <div>
         <strong>{title}</strong>

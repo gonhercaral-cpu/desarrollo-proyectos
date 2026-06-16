@@ -14920,7 +14920,6 @@ body:has(.field-mode-page) .main-content {
     min-width: 0 !important;
   }
 }
-
 /* =========================================================
    MÓDULO DE IMPRENTA - VISTA INICIAL
 ========================================================= */
@@ -15765,5 +15764,1144 @@ body:has(.field-mode-page) .main-content {
   .qr-placeholder {
     width: 72px;
     height: 72px;
+  }
+}
+/* =========================================================
+   IMPRENTA - CATÁLOGO DE PRODUCTOS
+========================================================= */
+
+.printshop-section-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -4px 0 20px;
+}
+
+.printshop-section-tabs button {
+  border: 1px solid #dbe7ff;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #344256;
+  padding: 10px 15px;
+  font-size: 13px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.04);
+}
+
+.printshop-section-tabs button.active {
+  background: #0f4fc4;
+  color: #ffffff;
+  border-color: #0f4fc4;
+  box-shadow: 0 12px 24px rgba(15, 79, 196, 0.2);
+}
+
+.printshop-catalog-page {
+  display: grid;
+  gap: 18px;
+}
+
+.printshop-catalog-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid #dbe7ff;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 92% 16%, rgba(15, 79, 196, 0.08), transparent 30%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.printshop-catalog-hero h2 {
+  margin: 4px 0 8px;
+  color: #0f2442;
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.printshop-catalog-hero p {
+  margin: 0;
+  color: #526176;
+  line-height: 1.55;
+  max-width: 820px;
+}
+
+.printshop-catalog-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.catalog-metric-card {
+  position: relative;
+  min-height: 112px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #e9eef6;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 17px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.catalog-metric-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+}
+
+.catalog-metric-card div {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 900;
+  grid-row: span 2;
+}
+
+.catalog-metric-card span {
+  color: #344256;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.catalog-metric-card strong {
+  color: #0f2442;
+  font-size: 31px;
+  line-height: 1;
+}
+
+.catalog-metric-card.blue div {
+  color: #0f4fc4;
+  background: #eaf2ff;
+}
+
+.catalog-metric-card.blue::after {
+  background: #0f4fc4;
+}
+
+.catalog-metric-card.green div {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.catalog-metric-card.green::after {
+  background: #16a34a;
+}
+
+.catalog-metric-card.orange div {
+  color: #f97316;
+  background: #ffedd5;
+}
+
+.catalog-metric-card.orange::after {
+  background: #f97316;
+}
+
+.catalog-metric-card.purple div {
+  color: #7c3aed;
+  background: #ede9fe;
+}
+
+.catalog-metric-card.purple::after {
+  background: #7c3aed;
+}
+
+.catalog-metric-card.red div {
+  color: #ed1c24;
+  background: #fee2e2;
+}
+
+.catalog-metric-card.red::after {
+  background: #ed1c24;
+}
+
+.printshop-catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: 18px;
+  align-items: start;
+}
+
+.printshop-catalog-main,
+.printshop-catalog-side {
+  min-width: 0;
+}
+
+.printshop-catalog-side {
+  position: sticky;
+  top: 24px;
+}
+
+.printshop-catalog-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 170px 210px 145px;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.printshop-catalog-toolbar label,
+.printshop-product-form label {
+  margin: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.printshop-catalog-toolbar label > span,
+.printshop-product-form label > span,
+.printshop-product-checks > span {
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.printshop-catalog-toolbar input,
+.printshop-catalog-toolbar select,
+.printshop-product-form input,
+.printshop-product-form select,
+.printshop-product-form textarea {
+  width: 100%;
+  border: 1px solid #d9e2ef;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.printshop-product-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.printshop-catalog-toolbar input:focus,
+.printshop-catalog-toolbar select:focus,
+.printshop-product-form input:focus,
+.printshop-product-form select:focus,
+.printshop-product-form textarea:focus {
+  outline: none;
+  border-color: #0f4fc4;
+  box-shadow: 0 0 0 3px rgba(15, 79, 196, 0.12);
+}
+
+.printshop-products-table {
+  min-width: 1120px;
+}
+
+.printshop-products-table tbody tr {
+  transition: 0.16s ease;
+}
+
+.printshop-products-table tbody tr:hover,
+.printshop-products-table tbody tr.selected-product-row {
+  background: #f8fbff;
+}
+
+.printshop-products-table tbody tr.selected-product-row {
+  outline: 1px solid #bad0ff;
+  outline-offset: -1px;
+}
+
+.printshop-products-table td span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.requirement-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.requirement-chip-list span {
+  display: inline-flex !important;
+  width: fit-content;
+  margin: 0 !important;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4 !important;
+  border: 1px solid #bad0ff;
+  padding: 5px 8px;
+  font-size: 10px !important;
+  font-weight: 900;
+}
+
+.printshop-muted-text {
+  color: #94a3b8 !important;
+  font-size: 12px;
+}
+
+.printshop-product-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.printshop-product-actions button {
+  border: 1px solid #dbe7ff;
+  background: #ffffff;
+  color: #0f4fc4;
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.printshop-product-actions button:hover {
+  background: #eef5ff;
+}
+
+.printshop-product-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.printshop-product-form .full {
+  grid-column: 1 / -1;
+}
+
+.printshop-product-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  border: 1px solid #e5eaf2;
+  border-radius: 15px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.printshop-product-checks > span {
+  grid-column: 1 / -1;
+}
+
+.product-check-item {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px !important;
+  margin: 0 !important;
+  color: #344256;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.product-check-item input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: #0f4fc4;
+}
+
+.printshop-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.printshop-catalog-summary-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.printshop-catalog-summary-card div {
+  border: 1px solid #e5eaf2;
+  border-radius: 13px;
+  background: #fbfdff;
+  padding: 12px;
+  text-align: center;
+}
+
+.printshop-catalog-summary-card strong {
+  display: block;
+  color: #0f4fc4;
+  font-size: 24px;
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.printshop-catalog-summary-card span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.printshop-full-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.printshop-empty-catalog {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: #64748b;
+  border: 1px dashed #cbd7e6;
+  border-radius: 18px;
+  background: #fbfdff;
+  padding: 28px;
+}
+
+.printshop-empty-catalog div {
+  color: #d1d8e2;
+  font-size: 58px;
+  line-height: 1;
+}
+
+.printshop-empty-catalog h3 {
+  margin: 8px 0 5px;
+  color: #0f2442;
+}
+
+.printshop-empty-catalog p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+@media (max-width: 1450px) {
+  .printshop-catalog-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-catalog-side {
+    position: static;
+  }
+}
+
+@media (max-width: 1200px) {
+  .printshop-catalog-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .printshop-catalog-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .printshop-catalog-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .printshop-catalog-hero .visual-primary-button {
+    width: 100%;
+  }
+
+  .printshop-catalog-metrics,
+  .printshop-catalog-toolbar,
+  .printshop-product-form,
+  .printshop-product-checks,
+  .printshop-catalog-summary-card {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-form-actions {
+    flex-direction: column;
+  }
+
+  .printshop-form-actions button {
+    width: 100%;
+  }
+}
+/* =========================================================
+   IMPRENTA - INICIO VISUAL MEJORADO
+   Pegar al final de src/app.css
+========================================================= */
+
+.printshop-dashboard-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 28px;
+  align-items: center;
+  padding: 30px;
+  border-radius: 30px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 88% 20%, rgba(237, 28, 36, 0.22), transparent 30%),
+    radial-gradient(circle at 16% 10%, rgba(255, 255, 255, 0.18), transparent 30%),
+    linear-gradient(135deg, #0b2f72 0%, #06245d 48%, #071936 100%);
+  color: #ffffff;
+  box-shadow: 0 28px 62px rgba(15, 23, 42, 0.24);
+}
+
+.printshop-dashboard-hero::after {
+  content: "";
+  position: absolute;
+  right: -130px;
+  bottom: -180px;
+  width: 430px;
+  height: 430px;
+  border: 42px solid rgba(255, 255, 255, 0.09);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.printshop-hero-content,
+.printshop-hero-visual {
+  position: relative;
+  z-index: 1;
+}
+
+.printshop-hero-kicker {
+  color: #bfdbfe !important;
+}
+
+.printshop-hero-content h2 {
+  margin: 4px 0 12px;
+  max-width: 780px;
+  color: #ffffff;
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.05;
+  letter-spacing: -0.05em;
+}
+
+.printshop-hero-content p:not(.section-kicker) {
+  margin: 0;
+  max-width: 760px;
+  color: rgba(226, 238, 255, 0.88);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.printshop-hero-badges {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.printshop-hero-badges span {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  backdrop-filter: blur(10px);
+}
+
+.printshop-hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.printshop-hero-actions .visual-outline-button {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
+.printshop-hero-visual {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+}
+
+.printshop-hero-printer {
+  position: relative;
+  width: 230px;
+  height: 190px;
+}
+
+.printer-top {
+  position: absolute;
+  top: 0;
+  left: 42px;
+  width: 145px;
+  height: 72px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 18px 18px 8px 8px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.printer-body {
+  position: absolute;
+  top: 54px;
+  left: 0;
+  right: 0;
+  height: 96px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 22px 28px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, #ffffff, #eaf2ff);
+  box-shadow: 0 26px 54px rgba(0, 0, 0, 0.28);
+}
+
+.printer-body span {
+  width: 36px;
+  height: 12px;
+  border-radius: 999px;
+  background: #bad0ff;
+}
+
+.printer-body span:nth-child(2) {
+  background: #ed1c24;
+}
+
+.printer-body span:nth-child(3) {
+  width: 52px;
+  margin-left: auto;
+  background: #0f4fc4;
+}
+
+.printer-paper {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: 0;
+  min-height: 92px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #0f2442;
+  text-align: center;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+}
+
+.printer-paper b {
+  color: #0f4fc4;
+  font-size: 28px;
+  letter-spacing: 0.1em;
+}
+
+.printer-paper small {
+  color: #64748b;
+  font-weight: 900;
+}
+
+.printshop-hero-floating-card {
+  position: absolute;
+  display: grid;
+  gap: 3px;
+  min-width: 145px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.printshop-hero-floating-card strong {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.printshop-hero-floating-card span {
+  font-size: 12px;
+  color: #dbeafe;
+  font-weight: 800;
+}
+
+.printshop-hero-floating-card.one {
+  top: 18px;
+  left: 2px;
+}
+
+.printshop-hero-floating-card.two {
+  right: 0;
+  bottom: 14px;
+}
+
+.printshop-metrics-enhanced .printshop-metric-card {
+  min-height: 112px;
+}
+
+.printshop-operational-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.printshop-operational-card {
+  position: relative;
+  min-height: 155px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(15, 79, 196, 0.08), transparent 34%),
+    #ffffff;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.printshop-operational-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+}
+
+.printshop-operational-card > div {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.printshop-operational-card span {
+  color: #344256;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.printshop-operational-card strong {
+  color: #0f2442;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.printshop-operational-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.printshop-operational-card.blue > div {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.printshop-operational-card.blue::after {
+  background: #0f4fc4;
+}
+
+.printshop-operational-card.teal > div {
+  background: #ccfbf1;
+  color: #0f9488;
+}
+
+.printshop-operational-card.teal::after {
+  background: #0f9488;
+}
+
+.printshop-operational-card.purple > div {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.printshop-operational-card.purple::after {
+  background: #7c3aed;
+}
+
+.printshop-operational-card.red > div {
+  background: #fee2e2;
+  color: #ed1c24;
+}
+
+.printshop-operational-card.red::after {
+  background: #ed1c24;
+}
+
+.printshop-action-grid-enhanced {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.printshop-dashboard-layout-enhanced {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 18px;
+  align-items: start;
+}
+
+.printshop-dashboard-main-enhanced,
+.printshop-dashboard-side-enhanced {
+  min-width: 0;
+  display: grid;
+  gap: 18px;
+}
+
+.printshop-dashboard-side-enhanced {
+  position: sticky;
+  top: 24px;
+}
+
+.printshop-workboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.printshop-workboard-column {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.printshop-mini-heading {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5eaf2;
+}
+
+.printshop-mini-heading > span {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-weight: 900;
+}
+
+.printshop-mini-heading strong {
+  display: block;
+  color: #0f2442;
+  font-size: 14px;
+}
+
+.printshop-mini-heading p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.printshop-request-card-list,
+.printshop-batch-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.printshop-request-card,
+.printshop-batch-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  padding: 13px;
+  transition: 0.16s ease;
+}
+
+.printshop-request-card:hover,
+.printshop-batch-card:hover {
+  border-color: #b9cdfa;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+}
+
+.printshop-request-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.printshop-request-card strong,
+.printshop-batch-card strong {
+  display: block;
+  color: #0f2442;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.printshop-request-card span,
+.printshop-batch-card span,
+.printshop-request-card small,
+.printshop-batch-card small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.printshop-request-card > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.printshop-batch-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.printshop-workflow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.printshop-workflow-step {
+  position: relative;
+  min-height: 150px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: #f8fbff;
+  padding: 16px;
+}
+
+.printshop-workflow-step span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #0f4fc4;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 12px;
+}
+
+.printshop-workflow-step strong {
+  display: block;
+  color: #0f2442;
+  font-size: 14px;
+}
+
+.printshop-workflow-step p {
+  margin: 7px 0 0;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.printshop-catalog-summary-card.enhanced {
+  margin-bottom: 12px;
+}
+
+.critical-supplies-list.compact .critical-supply-row {
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+
+.critical-supplies-list.compact .critical-supply-stock {
+  display: none;
+}
+
+.printshop-certificate-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(320px, 0.82fr) minmax(260px, 0.55fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 24px;
+  border: 1px solid #dbe7ff;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(15, 79, 196, 0.08), transparent 28%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.printshop-certificate-feature-copy {
+  display: grid;
+  align-content: center;
+}
+
+.printshop-certificate-feature-copy h2 {
+  margin: 4px 0 10px;
+  color: #0f2442;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.printshop-certificate-feature-copy p:not(.section-kicker) {
+  margin: 0;
+  color: #526176;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.printshop-certificate-feature-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.printshop-certificate-feature-stats div {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 13px;
+}
+
+.printshop-certificate-feature-stats strong {
+  display: block;
+  color: #0f4fc4;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.printshop-certificate-feature-stats span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  margin-top: 6px;
+}
+
+.enhanced-preview {
+  min-height: 100%;
+}
+
+.enhanced-students {
+  align-self: center;
+  min-height: 0;
+}
+
+.enhanced-bottom {
+  align-items: stretch;
+}
+
+.printshop-next-feature-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  min-height: 100%;
+  padding: 16px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.printshop-next-feature-card > span {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.printshop-next-feature-card strong {
+  display: block;
+  color: #0f2442;
+  font-size: 16px;
+}
+
+.printshop-next-feature-card p {
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 8px 0 14px;
+}
+
+@media (max-width: 1500px) {
+  .printshop-dashboard-hero,
+  .printshop-dashboard-layout-enhanced,
+  .printshop-certificate-feature {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-hero-visual {
+    min-height: 220px;
+  }
+
+  .printshop-dashboard-side-enhanced {
+    position: static;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1250px) {
+  .printshop-operational-grid,
+  .printshop-action-grid-enhanced,
+  .printshop-workflow-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .printshop-dashboard-side-enhanced,
+  .printshop-workboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .printshop-dashboard-hero,
+  .printshop-certificate-feature {
+    padding: 20px;
+  }
+
+  .printshop-hero-content h2 {
+    font-size: 32px;
+  }
+
+  .printshop-hero-actions,
+  .printshop-hero-actions button {
+    width: 100%;
+  }
+
+  .printshop-hero-visual {
+    display: none;
+  }
+
+  .printshop-request-card,
+  .printshop-batch-card-top,
+  .printshop-next-feature-card {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-request-card > div:last-child {
+    justify-items: start;
+  }
+
+  .printshop-certificate-feature-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .printshop-operational-grid,
+  .printshop-action-grid-enhanced,
+  .printshop-workflow-track {
+    grid-template-columns: 1fr;
   }
 }
