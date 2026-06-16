@@ -9,6 +9,7 @@ import EditProject from "./EditProject";
 import ExecutiveDashboard from "./ExecutiveDashboard";
 import CollaboratorsAdmin from "./CollaboratorsAdmin";
 import TechnicalSupport from "./TechnicalSupport";
+import PrintShop from "./printshop";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
@@ -61,6 +62,8 @@ export default function Dashboard() {
       setReturnPage("departments-admin");
     } else if (page === "technical-support") {
       setReturnPage("technical-support");
+    } else if (page === "print-shop") {
+      setReturnPage("print-shop");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -119,6 +122,10 @@ export default function Dashboard() {
 
     if (page === "technical-support" && isAdmin) {
       return <TechnicalSupport />;
+    }
+
+    if (page === "print-shop" && isAdmin) {
+      return <PrintShop />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -230,6 +237,10 @@ export default function Dashboard() {
       return page === "technical-support";
     }
 
+    if (navPage === "print-shop") {
+      return page === "print-shop";
+    }
+
     return page === navPage;
   }
 
@@ -307,6 +318,14 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">◈</span>
                 Soporte Técnico
+              </button>
+
+              <button
+                className={isNavActive("print-shop") ? "active" : ""}
+                onClick={() => goToPage("print-shop")}
+              >
+                <span className="nav-icon">▣</span>
+                Imprenta
               </button>
 
               <button
