@@ -1760,6 +1760,7 @@ export default function PrintShop() {
   const [bulkStudentsDeliveryType, setBulkStudentsDeliveryType] = useState("Impreso");
   const [savingStudents, setSavingStudents] = useState(false);
   const [generatingStudentId, setGeneratingStudentId] = useState(null);
+  const [reprintCertificateStudentId, setReprintCertificateStudentId] = useState("");
 
   const [certificateSigners, setCertificateSigners] = useState([]);
   const [loadingSigners, setLoadingSigners] = useState(true);
@@ -1784,6 +1785,10 @@ export default function PrintShop() {
   const [generatedCertificatesError, setGeneratedCertificatesError] = useState("");
   const [generatedCertificateSearch, setGeneratedCertificateSearch] = useState("");
   const [generatedCertificateStatusFilter, setGeneratedCertificateStatusFilter] = useState("Todos");
+  const [generatedCertificateYearFilter, setGeneratedCertificateYearFilter] = useState("Todos");
+  const [generatedCertificateCampusFilter, setGeneratedCertificateCampusFilter] = useState("Todos");
+  const [generatedCertificateTeacherFilter, setGeneratedCertificateTeacherFilter] = useState("Todos");
+  const [generatedCertificateLevelFilter, setGeneratedCertificateLevelFilter] = useState("Todos");
   const [updatingGeneratedCertificateId, setUpdatingGeneratedCertificateId] = useState(null);
 
   useEffect(() => {
@@ -2292,9 +2297,16 @@ export default function PrintShop() {
     const normalizedSearch = generatedCertificateSearch.trim().toLowerCase();
 
     return generatedCertificates.filter((certificate) => {
+      const certificateYear = String(
+        certificate.issueYear || certificate.generatedYear || getYearFromDateString(certificate.issueDate) || ""
+      );
+      const certificateCampus = certificate.campus || "Sin plantel";
+      const certificateTeacher = certificate.teacherName || "Sin maestro";
+      const certificateLevel = certificate.level || "No aplica";
+
       const matchesSearch =
         !normalizedSearch ||
-        `${certificate.folio} ${certificate.validationCode} ${certificate.studentName} ${certificate.level} ${certificate.programName} ${certificate.requestFolio} ${certificate.templateName} ${certificate.teacherName} ${certificate.principalName}`
+        `${certificate.folio} ${certificate.validationCode} ${certificate.studentName} ${certificate.level} ${certificate.programName} ${certificate.requestFolio} ${certificate.templateName} ${certificate.teacherName} ${certificate.principalName} ${certificate.campus} ${certificate.group}`
           .toLowerCase()
           .includes(normalizedSearch);
 
@@ -2302,9 +2314,33 @@ export default function PrintShop() {
         generatedCertificateStatusFilter === "Todos" ||
         certificate.status === generatedCertificateStatusFilter;
 
-      return matchesSearch && matchesStatus;
+      const matchesYear =
+        generatedCertificateYearFilter === "Todos" ||
+        certificateYear === String(generatedCertificateYearFilter);
+
+      const matchesCampus =
+        generatedCertificateCampusFilter === "Todos" ||
+        certificateCampus === generatedCertificateCampusFilter;
+
+      const matchesTeacher =
+        generatedCertificateTeacherFilter === "Todos" ||
+        certificateTeacher === generatedCertificateTeacherFilter;
+
+      const matchesLevel =
+        generatedCertificateLevelFilter === "Todos" ||
+        certificateLevel === generatedCertificateLevelFilter;
+
+      return matchesSearch && matchesStatus && matchesYear && matchesCampus && matchesTeacher && matchesLevel;
     });
-  }, [generatedCertificates, generatedCertificateSearch, generatedCertificateStatusFilter]);
+  }, [
+    generatedCertificates,
+    generatedCertificateSearch,
+    generatedCertificateStatusFilter,
+    generatedCertificateYearFilter,
+    generatedCertificateCampusFilter,
+    generatedCertificateTeacherFilter,
+    generatedCertificateLevelFilter,
+  ]);
 
   const selectedRequest = useMemo(
     () => printRequests.find((request) => request.id === selectedRequestId) || null,
@@ -3222,6 +3258,7 @@ export default function PrintShop() {
     setSelectedRequestId(null);
     setRequestForm(requestFormInitialState);
     setRequestMessage("");
+    setReprintCertificateStudentId("");
     setStudentName("");
     setStudentDeliveryType("Impreso");
     setBulkStudentsText("");
@@ -3230,6 +3267,7 @@ export default function PrintShop() {
 
   function selectRequest(request) {
     setSelectedRequestId(request.id);
+    setReprintCertificateStudentId("");
     setRequestMessage("");
     setRequestForm({
       productId: request.productId || "",
@@ -3545,6 +3583,9 @@ export default function PrintShop() {
     const templateName =
       certificateTemplate?.name || request.certificateTemplateName || "Plantilla no especificada";
 
+    const issueDate = getCertificateIssueDate(request);
+    const issueYear = getYearFromDateString(issueDate) || String(new Date().getFullYear());
+
     const certificatePayload = {
       folio: student.certificateFolio,
       validationCode: student.validationCode,
@@ -3552,6 +3593,8 @@ export default function PrintShop() {
       studentId: student.id,
       studentName: student.name,
       studentDeliveryType: student.deliveryType || "Impreso",
+      campus: request.campus || "Sin plantel",
+      group: request.group || "",
       requestId: request.id,
       requestFolio: request.folio || "",
       requestType: request.requestType || "Certificado",
@@ -3564,7 +3607,9 @@ export default function PrintShop() {
       programName,
       templateId: request.certificateTemplateId || certificateTemplate?.id || "",
       templateName,
-      issueDate: getCertificateIssueDate(request),
+      issueDate,
+      issueYear,
+      generatedYear: issueYear,
       principalName: principalName || request.principalSignerName || "",
       teacherName: teacherName || request.teacherSignerName || request.teacherName || "",
       status: nextStatus,
@@ -3684,6 +3729,22 @@ export default function PrintShop() {
       selectRequest(request);
     }
 
+    setActiveSection("requests");
+  }
+
+  function reprintGeneratedCertificate(certificate) {
+    const request = printRequests.find((item) => item.id === certificate.requestId);
+
+    if (!request) {
+      setGeneratedCertificatesError("No se encontró la solicitud original de este certificado.");
+      return;
+    }
+
+    selectRequest(request);
+    setReprintCertificateStudentId(certificate.studentId || "");
+    setRequestMessage(
+      `Certificado ${certificate.folio || ""} listo para reimpresión. Revisa la vista previa y presiona Descargar PDF.`
+    );
     setActiveSection("requests");
   }
 
@@ -4826,7 +4887,7 @@ export default function PrintShop() {
           <span>⌕</span>
           <input
             type="search"
-            placeholder="Buscar folio, producto o insumo"
+            placeholder="Buscar folio, producto, insumo o certificado"
             value={activeSection === "catalog" ? productSearch : activeSection === "requests" ? requestSearch : activeSection === "certificates" ? generatedCertificateSearch : ""}
             onChange={(event) => {
               if (activeSection === "requests") {
@@ -4889,7 +4950,7 @@ export default function PrintShop() {
           onClick={() => setActiveSection("certificates")}
         >
           <span>☑</span>
-          Certificados
+          Historial de certificados
         </button>
         {isAdmin && (
           <button
@@ -5021,6 +5082,7 @@ export default function PrintShop() {
           bulkStudentsDeliveryType={bulkStudentsDeliveryType}
           savingStudents={savingStudents}
           generatingStudentId={generatingStudentId}
+          reprintCertificateStudentId={reprintCertificateStudentId}
           onStudentNameChange={setStudentName}
           onStudentDeliveryTypeChange={setStudentDeliveryType}
           onBulkStudentsTextChange={setBulkStudentsText}
@@ -5041,14 +5103,23 @@ export default function PrintShop() {
           certificatesError={generatedCertificatesError}
           search={generatedCertificateSearch}
           statusFilter={generatedCertificateStatusFilter}
+          yearFilter={generatedCertificateYearFilter}
+          campusFilter={generatedCertificateCampusFilter}
+          teacherFilter={generatedCertificateTeacherFilter}
+          levelFilter={generatedCertificateLevelFilter}
           updatingCertificateId={updatingGeneratedCertificateId}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
           onSearchChange={setGeneratedCertificateSearch}
           onStatusFilterChange={setGeneratedCertificateStatusFilter}
+          onYearFilterChange={setGeneratedCertificateYearFilter}
+          onCampusFilterChange={setGeneratedCertificateCampusFilter}
+          onTeacherFilterChange={setGeneratedCertificateTeacherFilter}
+          onLevelFilterChange={setGeneratedCertificateLevelFilter}
           onMarkDelivered={(certificate) => updateGeneratedCertificateStatus(certificate, "Entregado")}
           onCancelCertificate={(certificate) => updateGeneratedCertificateStatus(certificate, "Cancelado")}
           onOpenRequest={openRequestFromGeneratedCertificate}
+          onReprintCertificate={reprintGeneratedCertificate}
         />
       ) : activeSection === "templates" && isAdmin ? (
         <CertificateTemplatesView
@@ -5150,57 +5221,172 @@ function GeneratedCertificatesView({
   certificatesError,
   search,
   statusFilter,
+  yearFilter,
+  campusFilter,
+  teacherFilter,
+  levelFilter,
   updatingCertificateId,
   isAdmin,
   currentUserUid,
   onSearchChange,
   onStatusFilterChange,
+  onYearFilterChange,
+  onCampusFilterChange,
+  onTeacherFilterChange,
+  onLevelFilterChange,
   onMarkDelivered,
   onCancelCertificate,
   onOpenRequest,
+  onReprintCertificate,
 }) {
   const stats = useMemo(() => {
-    const generated = certificates.filter((certificate) => certificate.status === "Generado").length;
-    const delivered = certificates.filter((certificate) => certificate.status === "Entregado").length;
-    const cancelled = certificates.filter((certificate) => certificate.status === "Cancelado").length;
+    const generated = filteredCertificates.filter((certificate) => certificate.status === "Generado").length;
+    const delivered = filteredCertificates.filter((certificate) => certificate.status === "Entregado").length;
+    const cancelled = filteredCertificates.filter((certificate) => certificate.status === "Cancelado").length;
+    const uniqueTeachers = new Set(filteredCertificates.map((certificate) => certificate.teacherName || "Sin maestro")).size;
+    const uniqueCampuses = new Set(filteredCertificates.map((certificate) => certificate.campus || "Sin plantel")).size;
 
     return {
-      total: certificates.length,
+      total: filteredCertificates.length,
+      all: certificates.length,
       generated,
       delivered,
       cancelled,
+      uniqueTeachers,
+      uniqueCampuses,
     };
+  }, [certificates, filteredCertificates]);
+
+  const yearOptions = useMemo(() => {
+    const years = certificates
+      .map((certificate) => certificate.issueYear || certificate.generatedYear || getYearFromDateString(certificate.issueDate))
+      .filter(Boolean)
+      .map(String);
+
+    return [...new Set(years)].sort((a, b) => Number(b) - Number(a));
   }, [certificates]);
+
+  const campusOptions = useMemo(
+    () => sortTextValues(certificates.map((certificate) => certificate.campus || "Sin plantel")),
+    [certificates]
+  );
+
+  const teacherOptions = useMemo(
+    () => sortTextValues(certificates.map((certificate) => certificate.teacherName || "Sin maestro")),
+    [certificates]
+  );
+
+  const levelOptions = useMemo(
+    () => sortTextValues(certificates.map((certificate) => certificate.level || "No aplica")),
+    [certificates]
+  );
+
+  const teacherChart = useMemo(
+    () => buildCertificateDistribution(filteredCertificates, (certificate) => certificate.teacherName || "Sin maestro"),
+    [filteredCertificates]
+  );
+
+  const campusChart = useMemo(
+    () => buildCertificateDistribution(filteredCertificates, (certificate) => certificate.campus || "Sin plantel"),
+    [filteredCertificates]
+  );
+
+  const levelChart = useMemo(
+    () => buildCertificateDistribution(filteredCertificates, (certificate) => certificate.level || "No aplica"),
+    [filteredCertificates]
+  );
 
   return (
     <section className="generated-certificates-section">
       <div className="printshop-section-heading">
         <div>
           <p className="section-kicker printshop-kicker">Historial de certificados</p>
-          <h2>Certificados generados</h2>
+          <h2>Historial de certificados generados</h2>
           <p>
-            Consulta los certificados emitidos, su folio, alumno, solicitud de origen y estado de entrega.
+            Consulta todos los certificados emitidos, filtra por año, plantel, maestro o estado,
+            revisa indicadores rápidos y abre cualquier certificado listo para reimprimir.
           </p>
         </div>
       </div>
 
       <div className="catalog-metrics-grid generated-certificates-metrics">
-        <CatalogMetric tone="blue" icon="☑" label="Total" value={stats.total} />
-        <CatalogMetric tone="teal" icon="↧" label="Generados" value={stats.generated} />
+        <CatalogMetric tone="blue" icon="☑" label="Filtrados" value={stats.total} />
+        <CatalogMetric tone="teal" icon="▥" label="Total histórico" value={stats.all} />
         <CatalogMetric tone="green" icon="✓" label="Entregados" value={stats.delivered} />
         <CatalogMetric tone="red" icon="!" label="Cancelados" value={stats.cancelled} />
       </div>
 
-      <Panel title="Registro de certificados" icon="☑" actionLabel={`${filteredCertificates.length} registros`}>
-        <div className="generated-certificates-toolbar">
+      <div className="generated-certificates-insights-grid">
+        <CertificateDistributionCard
+          title="Certificados por maestro"
+          subtitle={`${stats.uniqueTeachers} maestros en la selección`}
+          data={teacherChart}
+          emptyLabel="Sin certificados para graficar por maestro."
+        />
+        <CertificateDistributionCard
+          title="Certificados por plantel"
+          subtitle={`${stats.uniqueCampuses} planteles en la selección`}
+          data={campusChart}
+          emptyLabel="Sin certificados para graficar por plantel."
+        />
+        <CertificateDistributionCard
+          title="Certificados por nivel"
+          subtitle="Distribución académica"
+          data={levelChart}
+          emptyLabel="Sin certificados para graficar por nivel."
+        />
+      </div>
+
+      <Panel title="Registro histórico" icon="☑" actionLabel={`${filteredCertificates.length} registros`}>
+        <div className="generated-certificates-toolbar enhanced">
           <label className="catalog-filter-search">
             <span>Buscar</span>
             <input
               type="search"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Folio, alumno, nivel, solicitud..."
+              placeholder="Folio, alumno, maestro, nivel, plantel..."
             />
+          </label>
+
+          <label>
+            <span>Año</span>
+            <select value={yearFilter} onChange={(event) => onYearFilterChange(event.target.value)}>
+              <option>Todos</option>
+              {yearOptions.map((year) => (
+                <option key={year}>{year}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Plantel</span>
+            <select value={campusFilter} onChange={(event) => onCampusFilterChange(event.target.value)}>
+              <option>Todos</option>
+              {campusOptions.map((campus) => (
+                <option key={campus}>{campus}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Maestro</span>
+            <select value={teacherFilter} onChange={(event) => onTeacherFilterChange(event.target.value)}>
+              <option>Todos</option>
+              {teacherOptions.map((teacher) => (
+                <option key={teacher}>{teacher}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Nivel</span>
+            <select value={levelFilter} onChange={(event) => onLevelFilterChange(event.target.value)}>
+              <option>Todos</option>
+              {levelOptions.map((level) => (
+                <option key={level}>{level}</option>
+              ))}
+            </select>
           </label>
 
           <label>
@@ -5217,7 +5403,7 @@ function GeneratedCertificatesView({
         {loadingCertificates ? (
           <div className="empty-state small">
             <div>⌛</div>
-            <p>Cargando certificados generados...</p>
+            <p>Cargando historial de certificados...</p>
           </div>
         ) : certificatesError ? (
           <div className="message-box">{certificatesError}</div>
@@ -5234,6 +5420,8 @@ function GeneratedCertificatesView({
                   <th>Folio</th>
                   <th>Alumno</th>
                   <th>Nivel / programa</th>
+                  <th>Maestro</th>
+                  <th>Plantel</th>
                   <th>Fecha certificado</th>
                   <th>Solicitud</th>
                   <th>Estado</th>
@@ -5261,6 +5449,11 @@ function GeneratedCertificatesView({
                         {certificate.level || "No aplica"}
                         <small>{certificate.programName || certificate.templateName || "Sin programa"}</small>
                       </td>
+                      <td>
+                        {certificate.teacherName || "Sin maestro"}
+                        <small>{certificate.group || "Sin grupo"}</small>
+                      </td>
+                      <td>{certificate.campus || "Sin plantel"}</td>
                       <td>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</td>
                       <td>
                         <button
@@ -5282,6 +5475,14 @@ function GeneratedCertificatesView({
                       </td>
                       <td>
                         <div className="table-actions generated-certificate-actions">
+                          <button
+                            type="button"
+                            className="visual-outline-button"
+                            disabled={!certificate.requestId || !certificate.studentId}
+                            onClick={() => onReprintCertificate(certificate)}
+                          >
+                            Reimprimir
+                          </button>
                           <button type="button" onClick={() => onOpenRequest(certificate)}>
                             Ver solicitud
                           </button>
@@ -5311,6 +5512,43 @@ function GeneratedCertificatesView({
         )}
       </Panel>
     </section>
+  );
+}
+
+function CertificateDistributionCard({ title, subtitle, data, emptyLabel }) {
+  const maxValue = Math.max(...data.map((item) => Number(item.value || 0)), 0);
+
+  return (
+    <article className="certificate-distribution-card">
+      <div className="certificate-distribution-header">
+        <div>
+          <strong>{title}</strong>
+          <span>{subtitle}</span>
+        </div>
+      </div>
+
+      {data.length === 0 ? (
+        <p className="certificate-distribution-empty">{emptyLabel}</p>
+      ) : (
+        <div className="certificate-distribution-bars">
+          {data.slice(0, 8).map((item) => {
+            const width = maxValue > 0 ? Math.max(8, Math.round((Number(item.value || 0) / maxValue) * 100)) : 0;
+
+            return (
+              <div className="certificate-distribution-row" key={item.label}>
+                <div className="certificate-distribution-label">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+                <div className="certificate-distribution-track">
+                  <span style={{ width: `${width}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -6742,6 +6980,7 @@ function PrintRequestsView({
   bulkStudentsDeliveryType,
   savingStudents,
   generatingStudentId,
+  reprintCertificateStudentId,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -6957,6 +7196,7 @@ function PrintRequestsView({
               bulkStudentsDeliveryType={bulkStudentsDeliveryType}
               savingStudents={savingStudents}
               generatingStudentId={generatingStudentId}
+              reprintCertificateStudentId={reprintCertificateStudentId}
               onStudentNameChange={onStudentNameChange}
               onStudentDeliveryTypeChange={onStudentDeliveryTypeChange}
               onBulkStudentsTextChange={onBulkStudentsTextChange}
@@ -7343,6 +7583,7 @@ function RequestDetailCard({
   bulkStudentsDeliveryType,
   savingStudents,
   generatingStudentId,
+  reprintCertificateStudentId,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -7359,6 +7600,16 @@ function RequestDetailCard({
   const [previewStudentId, setPreviewStudentId] = useState("");
 
   useEffect(() => {
+    if (
+      reprintCertificateStudentId &&
+      students.some(
+        (student) => student.id === reprintCertificateStudentId && Boolean(student.certificateFolio)
+      )
+    ) {
+      setPreviewStudentId(reprintCertificateStudentId);
+      return;
+    }
+
     const stillExists = students.some(
       (student) => student.id === previewStudentId && Boolean(student.certificateFolio)
     );
@@ -7367,7 +7618,7 @@ function RequestDetailCard({
       const firstGenerated = students.find((student) => Boolean(student.certificateFolio));
       setPreviewStudentId(firstGenerated?.id || "");
     }
-  }, [request?.id, request?.students, previewStudentId]);
+  }, [request?.id, request?.students, previewStudentId, reprintCertificateStudentId]);
 
   if (!request) return null;
 
@@ -7806,6 +8057,43 @@ async function waitForCertificateAssets(container) {
   );
 }
 
+function getYearFromDateString(value) {
+  const rawValue = String(value || "").trim();
+
+  if (!rawValue) return "";
+
+  const directYear = rawValue.match(/^(\d{4})/);
+
+  if (directYear) {
+    return directYear[1];
+  }
+
+  const parsedDate = new Date(rawValue);
+
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return String(parsedDate.getFullYear());
+  }
+
+  return "";
+}
+
+function sortTextValues(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function buildCertificateDistribution(items, keyGetter, fallbackLabel = "Sin dato") {
+  const counter = items.reduce((map, item) => {
+    const label = String(keyGetter(item) || fallbackLabel).trim() || fallbackLabel;
+    map.set(label, (map.get(label) || 0) + 1);
+    return map;
+  }, new Map());
+
+  return [...counter.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
+}
+
 function sanitizePdfFileName(value) {
   return String(value || "certificado")
     .normalize("NFD")
@@ -7835,6 +8123,8 @@ function normalizeGeneratedCertificate(certificate) {
     studentId: String(certificate?.studentId || ""),
     studentName: String(certificate?.studentName || ""),
     studentDeliveryType: String(certificate?.studentDeliveryType || ""),
+    campus: String(certificate?.campus || "Sin plantel"),
+    group: String(certificate?.group || ""),
     requestId: String(certificate?.requestId || ""),
     requestFolio: String(certificate?.requestFolio || ""),
     requestType: String(certificate?.requestType || "Certificado"),
@@ -7848,6 +8138,8 @@ function normalizeGeneratedCertificate(certificate) {
     templateId: String(certificate?.templateId || ""),
     templateName: String(certificate?.templateName || ""),
     issueDate: String(certificate?.issueDate || ""),
+    issueYear: String(certificate?.issueYear || getYearFromDateString(certificate?.issueDate) || ""),
+    generatedYear: String(certificate?.generatedYear || certificate?.issueYear || getYearFromDateString(certificate?.issueDate) || ""),
     principalName: String(certificate?.principalName || ""),
     teacherName: String(certificate?.teacherName || ""),
     status: generatedCertificateStatuses.includes(certificate?.status)
