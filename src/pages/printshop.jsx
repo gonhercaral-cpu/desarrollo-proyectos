@@ -81,6 +81,65 @@ const movementReasons = [
   "Otro",
 ];
 
+const printRequestTypes = [
+  "Certificado",
+  "Diploma",
+  "Volante",
+  "Vinil",
+  "Hoja de canciones",
+  "Hoja de actividades",
+  "Material interno",
+  "Otro",
+];
+
+const printRequestStatuses = [
+  "Solicitud recibida",
+  "Datos incompletos",
+  "En revisión",
+  "Aprobada",
+  "En producción",
+  "En revisión de calidad",
+  "Lista para entrega",
+  "Entregada",
+  "Cancelada",
+];
+
+const printRequestPriorities = ["Baja", "Normal", "Alta", "Urgente"];
+
+const printDeliveryTypes = ["Impresa", "Digital", "Ambas"];
+
+const printCampuses = [
+  "Plaza Estrella",
+  "Plaza Bugambilias",
+  "Plaza Aranjuez",
+  "Coffee Beans Factory",
+  "Otro",
+];
+
+const requestFormInitialState = {
+  productId: "",
+  requestType: "Volante",
+  requesterName: "",
+  requesterArea: "",
+  campus: "Plaza Estrella",
+  responsibleUid: "",
+  responsibleName: "",
+  responsibleEmail: "",
+  priority: "Normal",
+  requestedQuantity: 1,
+  deliveredQuantity: 0,
+  deliveryType: "Impresa",
+  status: "Solicitud recibida",
+  requestDate: "",
+  dueDate: "",
+  notes: "",
+  level: "No aplica",
+  group: "",
+  teacherName: "",
+  schedule: "",
+  printedQuantity: 0,
+  digitalQuantity: 0,
+};
 
 const productionBatchStatuses = [
   "Planeado",
@@ -540,6 +599,90 @@ const certificateStudents = [
 ];
 
 
+function getRequestStatusTone(status) {
+  if (status === "Cancelada" || status === "Datos incompletos") return "red";
+  if (status === "Entregada") return "green";
+  if (status === "Lista para entrega") return "teal";
+  if (status === "En producción" || status === "En revisión de calidad") return "orange";
+  if (status === "Aprobada" || status === "En revisión") return "blue";
+  return "purple";
+}
+
+function getPriorityTone(priority) {
+  if (priority === "Urgente") return "red";
+  if (priority === "Alta") return "orange";
+  if (priority === "Baja") return "teal";
+  return "blue";
+}
+
+function buildRequestFolio(type) {
+  const year = new Date().getFullYear();
+  const typeCode = String(type || "IMP")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toUpperCase()
+    .slice(0, 12) || "IMP";
+  const suffix = String(Date.now()).slice(-5);
+
+  return `IMP-${typeCode}-${year}-${suffix}`;
+}
+
+function isRequestCertificateLike(requestType) {
+  return requestType === "Certificado" || requestType === "Diploma";
+}
+
+function getRequestProductLabel(request) {
+  if (!request) return "Solicitud";
+
+  const baseName = request.productName || request.requestType || "Solicitud";
+
+  if (isRequestCertificateLike(request.requestType) && request.level && request.level !== "No aplica") {
+    return `${baseName} ${request.level}`;
+  }
+
+  return baseName;
+}
+
+function isRequestPending(status) {
+  return [
+    "Solicitud recibida",
+    "Datos incompletos",
+    "En revisión",
+    "Aprobada",
+    "En producción",
+    "En revisión de calidad",
+  ].includes(status);
+}
+
+function getRequestProgress(status) {
+  const statusProgress = {
+    "Solicitud recibida": 10,
+    "Datos incompletos": 8,
+    "En revisión": 25,
+    Aprobada: 40,
+    "En producción": 62,
+    "En revisión de calidad": 78,
+    "Lista para entrega": 90,
+    Entregada: 100,
+    Cancelada: 0,
+  };
+
+  return statusProgress[status] ?? 0;
+}
+
+function getRequestDueLabel(request) {
+  if (!request?.dueDate) return "Sin compromiso";
+
+  const date = new Date(`${request.dueDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return request.dueDate;
+
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+  }).format(date);
+}
+
 function getInventoryStatus(item) {
   const currentStock = Number(item?.currentStock || 0);
   const minStock = Number(item?.minStock || 0);
@@ -749,6 +892,18 @@ export default function PrintShop() {
   const [batchSummaryFrom, setBatchSummaryFrom] = useState("");
   const [batchSummaryTo, setBatchSummaryTo] = useState("");
 
+  const [printRequests, setPrintRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [requestsError, setRequestsError] = useState("");
+  const [requestForm, setRequestForm] = useState(requestFormInitialState);
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [savingRequest, setSavingRequest] = useState(false);
+  const [requestMessage, setRequestMessage] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
+  const [requestStatusFilter, setRequestStatusFilter] = useState("Todos");
+  const [requestTypeFilter, setRequestTypeFilter] = useState("Todos");
+  const [requestPriorityFilter, setRequestPriorityFilter] = useState("Todas");
+
   useEffect(() => {
     if (!isAdmin) {
       setActiveUsers([]);
@@ -913,6 +1068,38 @@ export default function PrintShop() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    setLoadingRequests(true);
+    setRequestsError("");
+
+    const requestsQuery = query(
+      collection(db, "printRequests"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      requestsQuery,
+      (snapshot) => {
+        const nextRequests = snapshot.docs.map((requestDoc) => ({
+          id: requestDoc.id,
+          ...requestDoc.data(),
+        }));
+
+        setPrintRequests(nextRequests);
+        setLoadingRequests(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar las solicitudes de imprenta:", error);
+        setRequestsError(
+          "No se pudieron cargar las solicitudes de imprenta. Revisa las reglas de Firestore."
+        );
+        setLoadingRequests(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const productStats = useMemo(() => {
     const activeProducts = products.filter((product) => product.active !== false);
     const inactiveProducts = products.filter((product) => product.active === false);
@@ -998,6 +1185,27 @@ export default function PrintShop() {
     };
   }, [productionBatches]);
 
+  const requestStats = useMemo(() => {
+    const pending = printRequests.filter((request) => isRequestPending(request.status)).length;
+    const inProduction = printRequests.filter((request) => request.status === "En producción").length;
+    const ready = printRequests.filter((request) => request.status === "Lista para entrega").length;
+    const urgent = printRequests.filter(
+      (request) => request.priority === "Urgente" && request.status !== "Entregada" && request.status !== "Cancelada"
+    ).length;
+    const delivered = printRequests.filter((request) => request.status === "Entregada").length;
+    const cancelled = printRequests.filter((request) => request.status === "Cancelada").length;
+
+    return {
+      total: printRequests.length,
+      pending,
+      inProduction,
+      ready,
+      urgent,
+      delivered,
+      cancelled,
+    };
+  }, [printRequests]);
+
   const batchProductionSummary = useMemo(() => {
     const visibleBatches = productionBatches.filter((batch) =>
       isBatchInsideRange(batch, batchSummaryFrom, batchSummaryTo)
@@ -1072,6 +1280,34 @@ export default function PrintShop() {
     [productionBatches, selectedBatchId]
   );
 
+  const filteredRequests = useMemo(() => {
+    const normalizedSearch = requestSearch.trim().toLowerCase();
+
+    return printRequests.filter((request) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        `${request.folio || ""} ${request.productName || ""} ${request.requestType || ""} ${request.requesterName || ""} ${request.requesterArea || ""}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+
+      const matchesStatus =
+        requestStatusFilter === "Todos" || request.status === requestStatusFilter;
+
+      const matchesType =
+        requestTypeFilter === "Todos" || request.requestType === requestTypeFilter;
+
+      const matchesPriority =
+        requestPriorityFilter === "Todas" || request.priority === requestPriorityFilter;
+
+      return matchesSearch && matchesStatus && matchesType && matchesPriority;
+    });
+  }, [printRequests, requestSearch, requestStatusFilter, requestTypeFilter, requestPriorityFilter]);
+
+  const selectedRequest = useMemo(
+    () => printRequests.find((request) => request.id === selectedRequestId) || null,
+    [printRequests, selectedRequestId]
+  );
+
   function getAuditUser() {
     return {
       uid: user?.uid || profile?.uid || profile?.id || "",
@@ -1134,6 +1370,235 @@ export default function PrintShop() {
     const role = getBatchUserRole();
 
     return role === "admin" || role === "responsible" || role === "auditor";
+  }
+
+  function isPrintRequestResponsible(request, auditUser = getAuditUser()) {
+    if (!request) return false;
+
+    return (
+      isSameUid(auditUser.uid, request.responsibleUid) ||
+      isSameText(auditUser.email, request.responsibleEmail) ||
+      isSameText(auditUser.name, request.responsibleName)
+    );
+  }
+
+  function canCurrentUserEditRequest(request = selectedRequest) {
+    return isAdmin || isPrintRequestResponsible(request);
+  }
+
+  function handleRequestInputChange(event) {
+    const { name, value } = event.target;
+
+    setRequestMessage("");
+    setRequestForm((current) => {
+      if (name === "responsibleUid") {
+        const selectedUser = findAssignableUser(value);
+
+        return {
+          ...current,
+          responsibleUid: value,
+          responsibleName: selectedUser ? getUserDisplayName(selectedUser) : "",
+          responsibleEmail: selectedUser ? getUserEmail(selectedUser) : "",
+        };
+      }
+
+      if (name === "productId") {
+        const selectedProduct = products.find((product) => product.id === value);
+
+        return {
+          ...current,
+          productId: value,
+          requestType: selectedProduct?.category && printRequestTypes.includes(selectedProduct.category)
+            ? selectedProduct.category
+            : current.requestType,
+          level: selectedProduct?.level || current.level,
+        };
+      }
+
+      if (name === "requestType") {
+        return {
+          ...current,
+          requestType: value,
+          deliveryType: isRequestCertificateLike(value) ? "Ambas" : current.deliveryType,
+        };
+      }
+
+      return {
+        ...current,
+        [name]: value,
+      };
+    });
+  }
+
+  function handleRequestNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setRequestMessage("");
+    setRequestForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function resetRequestForm() {
+    setSelectedRequestId(null);
+    setRequestForm(requestFormInitialState);
+    setRequestMessage("");
+  }
+
+  function selectRequest(request) {
+    setSelectedRequestId(request.id);
+    setRequestMessage("");
+    setRequestForm({
+      productId: request.productId || "",
+      requestType: request.requestType || "Volante",
+      requesterName: request.requesterName || "",
+      requesterArea: request.requesterArea || "",
+      campus: request.campus || "Plaza Estrella",
+      responsibleUid: request.responsibleUid || "",
+      responsibleName: request.responsibleName || "",
+      responsibleEmail: request.responsibleEmail || "",
+      priority: request.priority || "Normal",
+      requestedQuantity: Number(request.requestedQuantity || 0),
+      deliveredQuantity: Number(request.deliveredQuantity || 0),
+      deliveryType: request.deliveryType || "Impresa",
+      status: request.status || "Solicitud recibida",
+      requestDate: request.requestDate || "",
+      dueDate: request.dueDate || "",
+      notes: request.notes || "",
+      level: request.level || "No aplica",
+      group: request.group || "",
+      teacherName: request.teacherName || "",
+      schedule: request.schedule || "",
+      printedQuantity: Number(request.printedQuantity || 0),
+      digitalQuantity: Number(request.digitalQuantity || 0),
+    });
+  }
+
+  async function savePrintRequest(event) {
+    event.preventDefault();
+    setRequestMessage("");
+
+    const auditUser = getAuditUser();
+    const currentRequest = selectedRequest;
+
+    if (!selectedRequestId && !isAdmin) {
+      setRequestMessage("Solo los administradores pueden crear solicitudes desde esta vista.");
+      return;
+    }
+
+    if (selectedRequestId && !canCurrentUserEditRequest(currentRequest)) {
+      setRequestMessage("No tienes permisos para modificar esta solicitud.");
+      return;
+    }
+
+    const selectedProduct = products.find((product) => product.id === requestForm.productId);
+
+    if (!selectedProduct) {
+      setRequestMessage("Selecciona un producto o servicio del catálogo.");
+      return;
+    }
+
+    const requestedQuantity = Number(requestForm.requestedQuantity || 0);
+    const deliveredQuantity = Number(requestForm.deliveredQuantity || 0);
+    const printedQuantity = Number(requestForm.printedQuantity || 0);
+    const digitalQuantity = Number(requestForm.digitalQuantity || 0);
+
+    if (requestedQuantity <= 0) {
+      setRequestMessage("La cantidad solicitada debe ser mayor que cero.");
+      return;
+    }
+
+    if (deliveredQuantity > requestedQuantity) {
+      setRequestMessage("La cantidad entregada no puede ser mayor que la cantidad solicitada.");
+      return;
+    }
+
+    if (isRequestCertificateLike(requestForm.requestType)) {
+      if (printedQuantity + digitalQuantity !== requestedQuantity) {
+        setRequestMessage("En certificados y diplomas, impresos + digitales debe coincidir con la cantidad solicitada.");
+        return;
+      }
+
+      if (!requestForm.group.trim() || !requestForm.teacherName.trim() || !requestForm.schedule.trim()) {
+        setRequestMessage("Para certificados o diplomas indica grupo, maestro y horario.");
+        return;
+      }
+    }
+
+    const basePayload = {
+      productId: selectedProduct.id,
+      productName: selectedProduct.name || "",
+      requestType: requestForm.requestType,
+      requesterName: requestForm.requesterName.trim(),
+      requesterArea: requestForm.requesterArea.trim(),
+      campus: requestForm.campus,
+      responsibleUid: requestForm.responsibleUid || "",
+      responsibleName: requestForm.responsibleName || "",
+      responsibleEmail: requestForm.responsibleEmail || "",
+      priority: requestForm.priority,
+      requestedQuantity,
+      deliveredQuantity,
+      deliveryType: requestForm.deliveryType,
+      status: requestForm.status,
+      requestDate: requestForm.requestDate,
+      dueDate: requestForm.dueDate,
+      notes: requestForm.notes || "",
+      level: requestForm.level || "No aplica",
+      group: requestForm.group.trim(),
+      teacherName: requestForm.teacherName.trim(),
+      schedule: requestForm.schedule.trim(),
+      printedQuantity,
+      digitalQuantity,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    try {
+      setSavingRequest(true);
+
+      if (selectedRequestId) {
+        const payload = isAdmin
+          ? basePayload
+          : {
+              status: basePayload.status,
+              deliveredQuantity: basePayload.deliveredQuantity,
+              notes: basePayload.notes,
+              updatedAt: basePayload.updatedAt,
+              updatedByUid: basePayload.updatedByUid,
+              updatedByName: basePayload.updatedByName,
+              updatedByEmail: basePayload.updatedByEmail,
+            };
+
+        await updateDoc(doc(db, "printRequests", selectedRequestId), payload);
+        setRequestMessage("Solicitud actualizada correctamente.");
+      } else {
+        if (!requestForm.requesterName.trim() || !requestForm.requesterArea.trim()) {
+          setRequestMessage("Indica solicitante y área solicitante.");
+          setSavingRequest(false);
+          return;
+        }
+
+        await addDoc(collection(db, "printRequests"), {
+          ...basePayload,
+          folio: buildRequestFolio(requestForm.requestType),
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+        setRequestForm(requestFormInitialState);
+        setRequestMessage("Solicitud creada correctamente.");
+      }
+    } catch (error) {
+      console.error("No se pudo guardar la solicitud de imprenta:", error);
+      setRequestMessage("No se pudo guardar la solicitud. Revisa las reglas de Firestore.");
+    } finally {
+      setSavingRequest(false);
+    }
   }
 
   function handleProductInputChange(event) {
@@ -2039,9 +2504,15 @@ export default function PrintShop() {
           <input
             type="search"
             placeholder="Buscar folio, producto o insumo"
-            value={activeSection === "catalog" ? productSearch : ""}
-            onChange={(event) => setProductSearch(event.target.value)}
-            onFocus={() => setActiveSection("catalog")}
+            value={activeSection === "catalog" ? productSearch : activeSection === "requests" ? requestSearch : ""}
+            onChange={(event) => {
+              if (activeSection === "requests") {
+                setRequestSearch(event.target.value);
+              } else {
+                setProductSearch(event.target.value);
+              }
+            }}
+            onFocus={() => setActiveSection(activeSection === "requests" ? "requests" : "catalog")}
           />
         </label>
       </section>
@@ -2073,6 +2544,14 @@ export default function PrintShop() {
         </button>
         <button
           type="button"
+          className={activeSection === "requests" ? "active" : ""}
+          onClick={() => setActiveSection("requests")}
+        >
+          <span>▤</span>
+          Solicitudes
+        </button>
+        <button
+          type="button"
           className={activeSection === "batches" ? "active" : ""}
           onClick={() => setActiveSection("batches")}
         >
@@ -2089,9 +2568,12 @@ export default function PrintShop() {
           inventoryStats={inventoryStats}
           productionBatches={productionBatches}
           batchStats={batchStats}
+          printRequests={printRequests}
+          requestStats={requestStats}
           onOpenCatalog={() => setActiveSection("catalog")}
           onOpenInventory={() => setActiveSection("inventory")}
           onOpenBatches={() => setActiveSection("batches")}
+          onOpenRequests={() => setActiveSection("requests")}
         />
       ) : activeSection === "catalog" ? (
         <ProductCatalogView
@@ -2148,6 +2630,36 @@ export default function PrintShop() {
           onPrepareMovement={prepareMovement}
           onResetInventoryForm={resetInventoryForm}
         />
+      ) : activeSection === "requests" ? (
+        <PrintRequestsView
+          printRequests={printRequests}
+          filteredRequests={filteredRequests}
+          products={products}
+          activeUsers={activeUsers}
+          loadingRequests={loadingRequests}
+          requestsError={requestsError}
+          requestStats={requestStats}
+          requestForm={requestForm}
+          selectedRequest={selectedRequest}
+          selectedRequestId={selectedRequestId}
+          savingRequest={savingRequest}
+          requestMessage={requestMessage}
+          requestSearch={requestSearch}
+          requestStatusFilter={requestStatusFilter}
+          requestTypeFilter={requestTypeFilter}
+          requestPriorityFilter={requestPriorityFilter}
+          isAdmin={isAdmin}
+          currentUserUid={getAuditUser().uid}
+          onRequestInputChange={handleRequestInputChange}
+          onRequestNumberInputChange={handleRequestNumberInputChange}
+          onSavePrintRequest={savePrintRequest}
+          onSelectRequest={selectRequest}
+          onResetRequestForm={resetRequestForm}
+          onRequestSearchChange={setRequestSearch}
+          onRequestStatusFilterChange={setRequestStatusFilter}
+          onRequestTypeFilterChange={setRequestTypeFilter}
+          onRequestPriorityFilterChange={setRequestPriorityFilter}
+        />
       ) : (
         <ProductionBatchesView
           inventoryProducts={inventoryProducts}
@@ -2192,9 +2704,12 @@ function DashboardView({
   inventoryStats,
   productionBatches,
   batchStats,
+  printRequests,
+  requestStats,
   onOpenCatalog,
   onOpenInventory,
   onOpenBatches,
+  onOpenRequests,
 }) {
   const lowInventoryItems = inventoryItems
     .filter((item) => {
@@ -2205,6 +2720,22 @@ function DashboardView({
     .slice(0, 5);
 
   const dashboardMetrics = metrics.map((metric) => {
+    if (metric.label === "Solicitudes pendientes") {
+      return {
+        ...metric,
+        value: String(requestStats.pending),
+        helper: requestStats.pending === 1 ? "Trabajo por atender" : "Trabajos por atender",
+      };
+    }
+
+    if (metric.label === "Listos para entrega") {
+      return {
+        ...metric,
+        value: String(requestStats.ready),
+        helper: requestStats.ready === 1 ? "Solicitud lista" : "Solicitudes listas",
+      };
+    }
+
     if (metric.label === "Libros con stock bajo") {
       return {
         ...metric,
@@ -2228,6 +2759,17 @@ function DashboardView({
   });
 
 
+  const dashboardRequests = printRequests.length
+    ? printRequests.slice(0, 4).map((request) => ({
+        folio: request.folio || "Sin folio",
+        product: getRequestProductLabel(request),
+        requester: request.requesterName || request.requesterArea || "Sin solicitante",
+        status: request.status || "Solicitud recibida",
+        statusTone: getRequestStatusTone(request.status),
+        delivery: getRequestDueLabel(request),
+      }))
+    : requests;
+
   const dashboardBatches = productionBatches.length
     ? productionBatches.slice(0, 3).map((batch) => ({
         folio: batch.folio || "Sin folio",
@@ -2243,7 +2785,7 @@ function DashboardView({
     {
       icon: "▤",
       title: "Solicitudes especiales",
-      value: "3 activas",
+      value: `${requestStats.pending} activas`,
       description: "Certificados, volantes y viniles con fechas próximas.",
       tone: "blue",
     },
@@ -2368,6 +2910,7 @@ function DashboardView({
           icon="＋"
           title="Nueva solicitud"
           description="Registrar certificados, diplomas, volantes, viniles o materiales internos."
+          onClick={onOpenRequests}
         />
         <ActionCard
           icon="▧"
@@ -2402,7 +2945,7 @@ function DashboardView({
                 </div>
 
                 <div className="printshop-request-card-list">
-                  {requests.map((request) => (
+                  {dashboardRequests.map((request) => (
                     <article className="printshop-request-card" key={request.folio}>
                       <div>
                         <strong>{request.product}</strong>
@@ -3545,6 +4088,607 @@ function FinishedInventoryView({
   );
 }
 
+
+function PrintRequestsView({
+  printRequests,
+  filteredRequests,
+  products,
+  activeUsers,
+  loadingRequests,
+  requestsError,
+  requestStats,
+  requestForm,
+  selectedRequest,
+  selectedRequestId,
+  savingRequest,
+  requestMessage,
+  requestSearch,
+  requestStatusFilter,
+  requestTypeFilter,
+  requestPriorityFilter,
+  isAdmin,
+  currentUserUid,
+  onRequestInputChange,
+  onRequestNumberInputChange,
+  onSavePrintRequest,
+  onSelectRequest,
+  onResetRequestForm,
+  onRequestSearchChange,
+  onRequestStatusFilterChange,
+  onRequestTypeFilterChange,
+  onRequestPriorityFilterChange,
+}) {
+  const requestProducts = products.filter(
+    (product) => product.active !== false && product.category !== "Libro"
+  );
+  const selectedRole = selectedRequest
+    ? isAdmin
+      ? "admin"
+      : isSameUid(currentUserUid, selectedRequest.responsibleUid)
+        ? "responsible"
+        : "viewer"
+    : isAdmin
+      ? "admin"
+      : "viewer";
+  const canEditAdministrativeFields = isAdmin;
+  const canEditOperationalFields = isAdmin || selectedRole === "responsible";
+  const canCreateRequest = isAdmin;
+  const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
+
+  const requestMetricCards = [
+    {
+      tone: "blue",
+      icon: "▤",
+      label: "Pendientes",
+      value: requestStats.pending,
+    },
+    {
+      tone: "orange",
+      icon: "◷",
+      label: "En producción",
+      value: requestStats.inProduction,
+    },
+    {
+      tone: "teal",
+      icon: "✓",
+      label: "Listas para entrega",
+      value: requestStats.ready,
+    },
+    {
+      tone: "red",
+      icon: "!",
+      label: "Urgentes",
+      value: requestStats.urgent,
+    },
+    {
+      tone: "green",
+      icon: "↗",
+      label: "Entregadas",
+      value: requestStats.delivered,
+    },
+  ];
+
+  return (
+    <section className="printshop-requests-section">
+      <div className="printshop-section-heading">
+        <div>
+          <p className="section-kicker printshop-kicker">Solicitudes de imprenta</p>
+          <h2>Trabajos solicitados por áreas y planteles</h2>
+          <p>
+            Registra certificados, diplomas, volantes, viniles, hojas de actividades y
+            otros materiales solicitados a Imprenta.
+          </p>
+        </div>
+      </div>
+
+      <div className="catalog-metrics-grid request-metrics-grid">
+        {requestMetricCards.map((metric) => (
+          <CatalogMetric
+            key={metric.label}
+            tone={metric.tone}
+            icon={metric.icon}
+            label={metric.label}
+            value={metric.value}
+          />
+        ))}
+      </div>
+
+      <div className="printshop-batches-layout request-layout">
+        <div className="printshop-batches-main">
+          <Panel title="Solicitudes registradas" icon="▤" actionLabel={`${filteredRequests.length} visibles`}>
+            <div className="catalog-toolbar request-toolbar">
+              <label className="visual-search catalog-search">
+                <span>⌕</span>
+                <input
+                  type="search"
+                  placeholder="Buscar folio, producto, solicitante o área"
+                  value={requestSearch}
+                  onChange={(event) => onRequestSearchChange(event.target.value)}
+                />
+              </label>
+
+              <select value={requestStatusFilter} onChange={(event) => onRequestStatusFilterChange(event.target.value)}>
+                <option>Todos</option>
+                {printRequestStatuses.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+
+              <select value={requestTypeFilter} onChange={(event) => onRequestTypeFilterChange(event.target.value)}>
+                <option>Todos</option>
+                {printRequestTypes.map((type) => (
+                  <option key={type}>{type}</option>
+                ))}
+              </select>
+
+              <select value={requestPriorityFilter} onChange={(event) => onRequestPriorityFilterChange(event.target.value)}>
+                <option>Todas</option>
+                {printRequestPriorities.map((priority) => (
+                  <option key={priority}>{priority}</option>
+                ))}
+              </select>
+            </div>
+
+            {requestsError && <div className="form-error">{requestsError}</div>}
+
+            {loadingRequests ? (
+              <div className="empty-state small">
+                <p>Cargando solicitudes de imprenta...</p>
+              </div>
+            ) : filteredRequests.length === 0 ? (
+              <div className="empty-state small">
+                <div>▤</div>
+                <p>No hay solicitudes con los filtros seleccionados.</p>
+              </div>
+            ) : (
+              <div className="visual-table-wrap">
+                <table className="visual-table production-batches-table request-table">
+                  <thead>
+                    <tr>
+                      <th>Folio</th>
+                      <th>Producto / servicio</th>
+                      <th>Solicitante</th>
+                      <th>Responsable</th>
+                      <th>Cantidad</th>
+                      <th>Prioridad</th>
+                      <th>Estado</th>
+                      <th>Compromiso</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((request) => {
+                      const progress = getRequestProgress(request.status);
+
+                      return (
+                        <tr key={request.id} className={selectedRequestId === request.id ? "selected-user-row" : ""}>
+                          <td>
+                            <strong>{request.folio || "Sin folio"}</strong>
+                            <small>{request.requestType || "Solicitud"}</small>
+                          </td>
+                          <td>
+                            <strong>{getRequestProductLabel(request)}</strong>
+                            <small>{request.deliveryType || "Sin tipo de entrega"}</small>
+                          </td>
+                          <td>
+                            <strong>{request.requesterName || "Sin solicitante"}</strong>
+                            <small>{request.requesterArea || "Sin área"} · {request.campus || "Sin plantel"}</small>
+                          </td>
+                          <td>
+                            <strong>{request.responsibleName || "Sin asignar"}</strong>
+                            <small>{request.responsibleEmail || ""}</small>
+                          </td>
+                          <td>
+                            <strong>{Number(request.deliveredQuantity || 0)} / {Number(request.requestedQuantity || 0)}</strong>
+                            <ProgressBar value={progress} tone={getRequestStatusTone(request.status)} />
+                          </td>
+                          <td>
+                            <StatusBadge tone={getPriorityTone(request.priority)}>{request.priority || "Normal"}</StatusBadge>
+                          </td>
+                          <td>
+                            <StatusBadge tone={getRequestStatusTone(request.status)}>{request.status || "Solicitud recibida"}</StatusBadge>
+                          </td>
+                          <td>{getRequestDueLabel(request)}</td>
+                          <td>
+                            <div className="table-actions">
+                              <button type="button" onClick={() => onSelectRequest(request)}>
+                                Abrir
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <aside className="printshop-batches-side">
+          {selectedRequest && (
+            <RequestDetailCard request={selectedRequest} selectedRole={selectedRole} />
+          )}
+
+          <Panel
+            title={selectedRequest ? "Actualizar solicitud" : "Nueva solicitud"}
+            icon={selectedRequest ? "✎" : "＋"}
+            actionLabel={selectedRequest ? "Seguimiento" : "Alta"}
+          >
+            <form className="printshop-product-form request-form" onSubmit={onSavePrintRequest}>
+              <label className="full">
+                <span>Producto o servicio</span>
+                <select
+                  name="productId"
+                  value={requestForm.productId}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields || requestProducts.length === 0}
+                >
+                  <option value="">Seleccionar producto del catálogo</option>
+                  {requestProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} · {product.category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tipo</span>
+                <select
+                  name="requestType"
+                  value={requestForm.requestType}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields}
+                >
+                  {printRequestTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Prioridad</span>
+                <select
+                  name="priority"
+                  value={requestForm.priority}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields}
+                >
+                  {printRequestPriorities.map((priority) => (
+                    <option key={priority}>{priority}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full">
+                <span>Solicitante</span>
+                <input
+                  name="requesterName"
+                  value={requestForm.requesterName}
+                  onChange={onRequestInputChange}
+                  placeholder="Nombre o área que solicita"
+                  disabled={!canEditAdministrativeFields}
+                />
+              </label>
+
+              <label>
+                <span>Área solicitante</span>
+                <input
+                  name="requesterArea"
+                  value={requestForm.requesterArea}
+                  onChange={onRequestInputChange}
+                  placeholder="Recepción, Dirección Académica, Administración..."
+                  disabled={!canEditAdministrativeFields}
+                />
+              </label>
+
+              <label>
+                <span>Plantel</span>
+                <select
+                  name="campus"
+                  value={requestForm.campus}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields}
+                >
+                  {printCampuses.map((campus) => (
+                    <option key={campus}>{campus}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full">
+                <span>Responsable de producción</span>
+                <select
+                  name="responsibleUid"
+                  value={requestForm.responsibleUid}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields || activeUsers.length === 0}
+                >
+                  <option value="">Seleccionar responsable</option>
+                  {activeUsers.map((person) => (
+                    <option key={person.uid || person.id} value={person.uid || person.id}>
+                      {person.name} · {person.email || "sin correo"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Cantidad solicitada</span>
+                <input
+                  type="number"
+                  name="requestedQuantity"
+                  min="0"
+                  value={requestForm.requestedQuantity}
+                  onChange={onRequestNumberInputChange}
+                  disabled={!canEditAdministrativeFields}
+                />
+              </label>
+
+              <label>
+                <span>Cantidad entregada</span>
+                <input
+                  type="number"
+                  name="deliveredQuantity"
+                  min="0"
+                  value={requestForm.deliveredQuantity}
+                  onChange={onRequestNumberInputChange}
+                  disabled={!canEditOperationalFields}
+                />
+              </label>
+
+              <label>
+                <span>Tipo de entrega</span>
+                <select
+                  name="deliveryType"
+                  value={requestForm.deliveryType}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields}
+                >
+                  {printDeliveryTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Estado</span>
+                <select
+                  name="status"
+                  value={requestForm.status}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditOperationalFields}
+                >
+                  {printRequestStatuses.map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Fecha solicitada</span>
+                <input
+                  type="date"
+                  name="requestDate"
+                  value={requestForm.requestDate}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields}
+                />
+              </label>
+
+              <label>
+                <span>Fecha compromiso</span>
+                <input
+                  type="date"
+                  name="dueDate"
+                  value={requestForm.dueDate}
+                  onChange={onRequestInputChange}
+                  disabled={!canEditAdministrativeFields}
+                />
+              </label>
+
+              {isCertificateLike && (
+                <div className="request-certificate-fields full">
+                  <div className="batch-quality-header">
+                    <div>
+                      <strong>Datos para certificados o diplomas</strong>
+                      <p>Estos datos preparan la siguiente etapa de generación automática.</p>
+                    </div>
+                  </div>
+
+                  <label>
+                    <span>Nivel</span>
+                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields}>
+                      {levels.map((level) => (
+                        <option key={level}>{level}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Grupo</span>
+                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditAdministrativeFields} />
+                  </label>
+
+                  <label>
+                    <span>Maestro</span>
+                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditAdministrativeFields} />
+                  </label>
+
+                  <label>
+                    <span>Horario</span>
+                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditAdministrativeFields} />
+                  </label>
+
+                  <label>
+                    <span>Impresos</span>
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                  </label>
+
+                  <label>
+                    <span>Digitales</span>
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                  </label>
+                </div>
+              )}
+
+              <label className="full">
+                <span>Observaciones</span>
+                <textarea
+                  name="notes"
+                  value={requestForm.notes}
+                  onChange={onRequestInputChange}
+                  placeholder="Notas, instrucciones de impresión, medidas, colores, archivos pendientes, etc."
+                  disabled={!canEditOperationalFields}
+                />
+              </label>
+
+              {selectedRequestId && (
+                <div className="batch-role-summary full">
+                  <span>Tu rol en esta solicitud</span>
+                  <strong>
+                    {selectedRole === "admin"
+                      ? "Administrador"
+                      : selectedRole === "responsible"
+                        ? "Responsable asignado"
+                        : "Solo lectura"}
+                  </strong>
+                </div>
+              )}
+
+              {requestMessage && <div className="message-box full">{requestMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                {selectedRequestId && (
+                  <button type="button" className="visual-outline-button" onClick={onResetRequestForm}>
+                    Nueva solicitud
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  className="visual-primary-button"
+                  disabled={savingRequest || (!canCreateRequest && !canEditOperationalFields) || requestProducts.length === 0}
+                >
+                  {savingRequest
+                    ? "Guardando..."
+                    : selectedRequestId
+                      ? "Guardar cambios"
+                      : "Crear solicitud"}
+                </button>
+              </div>
+
+              {requestProducts.length === 0 && (
+                <p className="inventory-side-help full">
+                  Primero crea productos o servicios de solicitud en el catálogo.
+                </p>
+              )}
+            </form>
+          </Panel>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+
+function RequestDetailCard({ request, selectedRole }) {
+  if (!request) return null;
+
+  const isCertificateLike = isRequestCertificateLike(request.requestType);
+  const requestedQuantity = Number(request.requestedQuantity || 0);
+  const deliveredQuantity = Number(request.deliveredQuantity || 0);
+  const printedQuantity = Number(request.printedQuantity || 0);
+  const digitalQuantity = Number(request.digitalQuantity || 0);
+  const pendingQuantity = Math.max(requestedQuantity - deliveredQuantity, 0);
+
+  return (
+    <Panel
+      title="Detalle de solicitud"
+      icon="ℹ"
+      actionLabel={request.folio || "Sin folio"}
+    >
+      <div className="request-detail-card">
+        <div className="request-detail-hero">
+          <div>
+            <span>Producto / servicio</span>
+            <strong>{getRequestProductLabel(request)}</strong>
+            <p>{request.requestType || "Solicitud"} · {request.deliveryType || "Sin tipo de entrega"}</p>
+          </div>
+          <StatusBadge tone={getRequestStatusTone(request.status)}>
+            {request.status || "Solicitud recibida"}
+          </StatusBadge>
+        </div>
+
+        <div className="request-detail-grid">
+          <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} · ${request.campus || "Sin plantel"}`} />
+          <DetailItem label="Responsable" value={request.responsibleName || "Sin asignar"} helper={request.responsibleEmail || ""} />
+          <DetailItem label="Prioridad" value={request.priority || "Normal"} badgeTone={getPriorityTone(request.priority)} />
+          <DetailItem label="Compromiso" value={getRequestDueLabel(request)} helper={request.requestDate ? `Solicitado: ${request.requestDate}` : "Sin fecha solicitada"} />
+          <DetailItem label="Cantidad solicitada" value={requestedQuantity} helper={`Pendiente: ${pendingQuantity}`} />
+          <DetailItem label="Cantidad entregada" value={deliveredQuantity} helper="Actualizable por el responsable" />
+        </div>
+
+        {isCertificateLike && (
+          <div className="request-detail-certificate">
+            <div className="request-detail-certificate-header">
+              <strong>Datos para generar certificados / diplomas</strong>
+              <span>{request.level || "Nivel no definido"}</span>
+            </div>
+
+            <div className="request-detail-grid compact">
+              <DetailItem label="Nivel" value={request.level || "No definido"} />
+              <DetailItem label="Grupo" value={request.group || "No especificado"} />
+              <DetailItem label="Maestro" value={request.teacherName || "No especificado"} />
+              <DetailItem label="Horario" value={request.schedule || "No especificado"} />
+              <DetailItem label="Impresos" value={printedQuantity} />
+              <DetailItem label="Digitales" value={digitalQuantity} />
+            </div>
+
+            <div className="request-detail-note important">
+              <strong>Siguiente paso</strong>
+              <p>
+                El responsable ya puede consultar estos datos para preparar el trabajo. En la siguiente etapa agregaremos la lista de alumnos, generación automática, folio individual y QR de validación.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="request-detail-note">
+          <strong>Observaciones / instrucciones</strong>
+          <p>{request.notes || "Sin observaciones registradas."}</p>
+        </div>
+
+        <div className="batch-role-summary request-role-summary">
+          <span>Tu rol en esta solicitud</span>
+          <strong>
+            {selectedRole === "admin"
+              ? "Administrador"
+              : selectedRole === "responsible"
+                ? "Responsable asignado"
+                : "Solo lectura"}
+          </strong>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function DetailItem({ label, value, helper = "", badgeTone = "" }) {
+  return (
+    <div className="request-detail-item">
+      <span>{label}</span>
+      {badgeTone ? (
+        <StatusBadge tone={badgeTone}>{value}</StatusBadge>
+      ) : (
+        <strong>{value}</strong>
+      )}
+      {helper && <small>{helper}</small>}
+    </div>
+  );
+}
 
 function ProductCatalogView({
   products,

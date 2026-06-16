@@ -17480,3 +17480,227 @@ body:has(.field-mode-page) .main-content {
   }
 }
 
+/* =========================================================
+   IMPRENTA - SOLICITUDES
+========================================================= */
+
+.printshop-requests-section {
+  display: grid;
+  gap: 18px;
+}
+
+.request-metrics-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.request-layout {
+  align-items: start;
+}
+
+.request-toolbar {
+  grid-template-columns: minmax(260px, 1fr) 190px 180px 150px;
+}
+
+.request-table {
+  min-width: 1180px;
+}
+
+.request-table .printshop-progress-cell {
+  margin-top: 7px;
+  grid-template-columns: minmax(70px, 1fr) 38px;
+}
+
+.request-form .request-certificate-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: #f8fbff;
+  padding: 14px;
+}
+
+.request-form .request-certificate-fields .batch-quality-header {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.request-form .request-certificate-fields label {
+  margin: 0;
+}
+
+@media (max-width: 1200px) {
+  .request-metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .request-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .request-toolbar .visual-search {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .request-metrics-grid,
+  .request-toolbar,
+  .request-form .request-certificate-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - DETALLE DE SOLICITUD
+========================================================= */
+
+.request-detail-card {
+  display: grid;
+  gap: 14px;
+}
+
+.request-detail-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid #dbe7ff;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(15, 79, 196, 0.08), transparent 34%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.request-detail-hero span,
+.request-detail-item span,
+.request-detail-certificate-header span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 5px;
+}
+
+.request-detail-hero strong {
+  display: block;
+  color: #0f2442;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.request-detail-hero p {
+  margin: 5px 0 0;
+  color: #526176;
+  font-size: 12px;
+}
+
+.request-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.request-detail-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.request-detail-item {
+  min-width: 0;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 11px 12px;
+}
+
+.request-detail-item strong {
+  display: block;
+  color: #0f2442;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.request-detail-item small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.request-detail-certificate {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dbe7ff;
+  border-radius: 16px;
+  background: #f8fbff;
+  padding: 13px;
+}
+
+.request-detail-certificate-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.request-detail-certificate-header strong {
+  color: #0f2442;
+  font-size: 13px;
+}
+
+.request-detail-certificate-header span {
+  width: fit-content;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  border-radius: 999px;
+  padding: 6px 9px;
+  margin: 0;
+}
+
+.request-detail-note {
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.request-detail-note.important {
+  border-color: #bad0ff;
+  background: #eef5ff;
+}
+
+.request-detail-note strong {
+  display: block;
+  color: #0f2442;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.request-detail-note p {
+  margin: 0;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.request-role-summary {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .request-detail-grid,
+  .request-detail-grid.compact,
+  .request-detail-hero,
+  .request-detail-certificate-header {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+}
