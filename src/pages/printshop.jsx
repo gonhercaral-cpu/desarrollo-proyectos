@@ -126,6 +126,67 @@ const printCampuses = [
 
 const certificateSignerTypes = ["Principal", "Teacher"];
 
+const certificateTemplateAudiences = ["Adultos", "Kids", "Otro"];
+const certificateTemplateTypes = ["Certificado", "Diploma"];
+
+const DEFAULT_CERTIFICATE_BODY_TEXT =
+  "For having successfully completed 100 hours of {program} and having had a remarkable performance.";
+
+const DEFAULT_CERTIFICATE_BODY_SEGMENTS = [
+  {
+    id: "seg-intro",
+    text: "For having successfully completed 100 hours of ",
+    bold: false,
+    italic: false,
+    underline: false,
+  },
+  {
+    id: "seg-program",
+    text: "{program}",
+    bold: true,
+    italic: false,
+    underline: false,
+  },
+  {
+    id: "seg-outro",
+    text: " and having had a remarkable performance.",
+    bold: false,
+    italic: false,
+    underline: false,
+  },
+];
+
+const certificateTemplateEditorElements = [
+  { key: "studentName", label: "Nombre del alumno", kind: "text" },
+  { key: "bodyText", label: "Texto del certificado", kind: "text" },
+  { key: "date", label: "Fecha", kind: "text" },
+  { key: "principalSignature", label: "Firma principal", kind: "image" },
+  { key: "principalName", label: "Nombre principal", kind: "text" },
+  { key: "teacherSignature", label: "Firma teacher", kind: "image" },
+  { key: "teacherName", label: "Nombre teacher", kind: "text" },
+  { key: "qr", label: "Código QR", kind: "qr" },
+  { key: "folio", label: "Folio / validación", kind: "text" },
+];
+
+const templateFormInitialState = {
+  name: "",
+  level: "A1",
+  programName: "Journey",
+  audience: "Adultos",
+  certificateType: "Certificado",
+  bodyText: DEFAULT_CERTIFICATE_BODY_TEXT,
+  bodySegments: getDefaultCertificateBodySegments(),
+  customTexts: [],
+  customImages: [],
+  active: true,
+  notes: "",
+  templateImageUrl: "",
+  templateImageDataUrl: "",
+  storagePath: "",
+  positions: getDefaultCertificateTemplatePositions(),
+  positionsVersion: 2,
+};
+
 const signerFormInitialState = {
   name: "",
   role: "Teacher",
@@ -156,6 +217,19 @@ const requestFormInitialState = {
   requestDate: "",
   dueDate: "",
   certificateIssueDate: "",
+  certificateTemplateId: "",
+  certificateTemplateName: "",
+  certificateTemplateLevel: "",
+  certificateTemplateProgramName: "",
+  certificateTemplateAudience: "",
+  certificateTemplateBodyText: "",
+  certificateTemplateBodySegments: getDefaultCertificateBodySegments(),
+  certificateTemplateCustomTexts: [],
+  certificateTemplateCustomImages: [],
+  certificateTemplateImageUrl: "",
+  certificateTemplateImageDataUrl: "",
+  certificateTemplateStoragePath: "",
+  certificateTemplatePositions: getDefaultCertificateTemplatePositions(),
   notes: "",
   level: "No aplica",
   group: "",
@@ -664,6 +738,424 @@ function getPriorityTone(priority) {
   return "blue";
 }
 
+function getDefaultCertificateTemplatePositions() {
+  return {
+    studentName: { x: 50, y: 38, width: 78, fontSize: 34, active: true },
+    bodyText: { x: 50, y: 49, width: 72, fontSize: 21, active: true },
+    date: { x: 50, y: 58, width: 40, fontSize: 18, active: true },
+    principalSignature: { x: 24, y: 71, width: 25, active: true },
+    principalName: { x: 24, y: 82, width: 28, fontSize: 12, active: true },
+    teacherSignature: { x: 76, y: 71, width: 25, active: true },
+    teacherName: { x: 76, y: 82, width: 28, fontSize: 12, active: true },
+    qr: { x: 50, y: 76, size: 9.5, active: true },
+    folio: { x: 50, y: 84, width: 34, fontSize: 7, active: true },
+  };
+}
+
+function normalizeTemplatePosition(position, fallback) {
+  const current = position && typeof position === "object" ? position : {};
+  const safeFallback = fallback || {};
+
+  return {
+    x: Number.isFinite(Number(current.x)) ? Number(current.x) : Number(safeFallback.x || 50),
+    y: Number.isFinite(Number(current.y)) ? Number(current.y) : Number(safeFallback.y || 50),
+    width: Number.isFinite(Number(current.width)) ? Number(current.width) : Number(safeFallback.width || 20),
+    size: Number.isFinite(Number(current.size)) ? Number(current.size) : Number(safeFallback.size || safeFallback.width || 10),
+    fontSize: Number.isFinite(Number(current.fontSize)) ? Number(current.fontSize) : Number(safeFallback.fontSize || 12),
+    active: current.active === false ? false : safeFallback.active !== false,
+  };
+}
+
+function normalizeCertificateTemplatePositions(positions) {
+  const defaults = getDefaultCertificateTemplatePositions();
+  const source = positions && typeof positions === "object" ? positions : {};
+
+  return Object.keys(defaults).reduce((nextPositions, key) => {
+    nextPositions[key] = normalizeTemplatePosition(source[key], defaults[key]);
+    return nextPositions;
+  }, {});
+}
+
+function getTemplateElementStyle(position, extra = {}) {
+  const normalized = normalizeTemplatePosition(position, {});
+  const width = extra.size ? normalized.size : normalized.width;
+
+  return {
+    position: "absolute",
+    left: `${normalized.x}%`,
+    top: `${normalized.y}%`,
+    width: `${width}%`,
+    transform: "translate(-50%, -50%)",
+    textAlign: "center",
+    ...extra,
+  };
+}
+
+function getTemplateTextStyle(position, extra = {}) {
+  const normalized = normalizeTemplatePosition(position, {});
+  return getTemplateElementStyle(normalized, {
+    fontSize: `${normalized.fontSize}px`,
+    ...extra,
+  });
+}
+
+function getDefaultCertificateBodySegments() {
+  return DEFAULT_CERTIFICATE_BODY_SEGMENTS.map((segment) => ({ ...segment }));
+}
+
+function createTemplateBodySegmentId() {
+  return `seg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeCertificateBodySegment(segment, index = 0) {
+  const source = segment && typeof segment === "object" ? segment : {};
+
+  return {
+    id: String(source.id || `seg-${index + 1}`),
+    text: String(source.text ?? ""),
+    bold: source.bold === true,
+    italic: source.italic === true,
+    underline: source.underline === true,
+  };
+}
+
+function normalizeCertificateBodySegments(segments, fallbackText = DEFAULT_CERTIFICATE_BODY_TEXT) {
+  if (Array.isArray(segments) && segments.length > 0) {
+    const normalizedSegments = segments
+      .map((segment, index) => normalizeCertificateBodySegment(segment, index))
+      .filter((segment) => segment.text.length > 0);
+
+    if (normalizedSegments.length > 0) {
+      return normalizedSegments;
+    }
+  }
+
+  const fallback = String(fallbackText || DEFAULT_CERTIFICATE_BODY_TEXT);
+
+  if (fallback === DEFAULT_CERTIFICATE_BODY_TEXT || fallback.includes("{program}")) {
+    return getDefaultCertificateBodySegments();
+  }
+
+  return [
+    {
+      id: "seg-1",
+      text: fallback,
+      bold: false,
+      italic: false,
+      underline: false,
+    },
+  ];
+}
+
+function getCertificateBodyTextFromSegments(segments, fallbackText = DEFAULT_CERTIFICATE_BODY_TEXT) {
+  return normalizeCertificateBodySegments(segments, fallbackText)
+    .map((segment) => segment.text)
+    .join("");
+}
+
+function getResolvedCertificateBodySegments(segments, fallbackText, programLabel) {
+  const program = programLabel || "English course";
+
+  return normalizeCertificateBodySegments(segments, fallbackText).map((segment) => ({
+    ...segment,
+    text: String(segment.text || "").replaceAll("{program}", program),
+  }));
+}
+
+function createTemplateCustomTextId() {
+  return `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createDefaultTemplateCustomText(index = 0) {
+  const nextNumber = index + 1;
+
+  return {
+    id: createTemplateCustomTextId(),
+    label: `Texto adicional ${nextNumber}`,
+    x: 50,
+    y: 62 + index * 5,
+    width: 52,
+    fontSize: 16,
+    color: "#111827",
+    textAlign: "center",
+    active: true,
+    segments: [
+      {
+        id: createTemplateBodySegmentId(),
+        text: "Texto adicional",
+        bold: false,
+        italic: false,
+        underline: false,
+      },
+    ],
+  };
+}
+
+function normalizeTemplateCustomText(customText, index = 0) {
+  const source = customText && typeof customText === "object" ? customText : {};
+  const fallback = createDefaultTemplateCustomText(index);
+
+  return {
+    id: String(source.id || fallback.id),
+    label: String(source.label || fallback.label),
+    x: Number.isFinite(Number(source.x)) ? Number(source.x) : fallback.x,
+    y: Number.isFinite(Number(source.y)) ? Number(source.y) : fallback.y,
+    width: Number.isFinite(Number(source.width)) ? Number(source.width) : fallback.width,
+    fontSize: Number.isFinite(Number(source.fontSize)) ? Number(source.fontSize) : fallback.fontSize,
+    color: String(source.color || fallback.color),
+    textAlign: ["left", "center", "right"].includes(source.textAlign)
+      ? source.textAlign
+      : fallback.textAlign,
+    active: source.active === false ? false : true,
+    segments: normalizeCertificateBodySegments(source.segments, source.text || "Texto adicional"),
+  };
+}
+
+function normalizeTemplateCustomTexts(customTexts) {
+  if (!Array.isArray(customTexts)) return [];
+
+  return customTexts.map((customText, index) => normalizeTemplateCustomText(customText, index));
+}
+
+function getTemplateCustomTextKey(customTextId) {
+  return `customText:${customTextId}`;
+}
+
+function isTemplateCustomTextKey(key) {
+  return String(key || "").startsWith("customText:");
+}
+
+function getTemplateCustomTextIdFromKey(key) {
+  return String(key || "").replace("customText:", "");
+}
+
+function getResolvedCustomTextSegments(customText, programLabel) {
+  return getResolvedCertificateBodySegments(
+    customText?.segments,
+    customText?.segments?.map((segment) => segment.text).join("") || "Texto adicional",
+    programLabel
+  );
+}
+
+function getTemplateCustomTextStyle(customText) {
+  const normalized = normalizeTemplateCustomText(customText);
+
+  return {
+    position: "absolute",
+    left: `${normalized.x}%`,
+    top: `${normalized.y}%`,
+    width: `${normalized.width}%`,
+    transform: "translate(-50%, -50%)",
+    textAlign: normalized.textAlign,
+    fontSize: `${normalized.fontSize}px`,
+    color: normalized.color,
+  };
+}
+function createTemplateCustomImageId() {
+  return `image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createDefaultTemplateCustomImage(index = 0, data = {}) {
+  const nextNumber = index + 1;
+
+  return {
+    id: data.id || createTemplateCustomImageId(),
+    label: data.label || `Imagen adicional ${nextNumber}`,
+    x: Number.isFinite(Number(data.x)) ? Number(data.x) : 50,
+    y: Number.isFinite(Number(data.y)) ? Number(data.y) : 58 + index * 5,
+    width: Number.isFinite(Number(data.width)) ? Number(data.width) : 18,
+    height: Number.isFinite(Number(data.height)) ? Number(data.height) : 18,
+    opacity: Number.isFinite(Number(data.opacity)) ? Number(data.opacity) : 1,
+    zIndex: Number.isFinite(Number(data.zIndex)) ? Number(data.zIndex) : 6,
+    active: data.active === false ? false : true,
+    imageUrl: data.imageUrl || "",
+    imageDataUrl: data.imageDataUrl || "",
+    storagePath: data.storagePath || "",
+    file: data.file || null,
+  };
+}
+
+function normalizeTemplateCustomImage(customImage, index = 0, options = {}) {
+  const source = customImage && typeof customImage === "object" ? customImage : {};
+  const fallback = createDefaultTemplateCustomImage(index);
+  const opacity = Number.isFinite(Number(source.opacity)) ? Number(source.opacity) : fallback.opacity;
+
+  return {
+    id: String(source.id || fallback.id),
+    label: String(source.label || fallback.label),
+    x: Number.isFinite(Number(source.x)) ? Number(source.x) : fallback.x,
+    y: Number.isFinite(Number(source.y)) ? Number(source.y) : fallback.y,
+    width: Number.isFinite(Number(source.width)) ? Number(source.width) : fallback.width,
+    height: Number.isFinite(Number(source.height)) ? Number(source.height) : fallback.height,
+    opacity: Math.min(1, Math.max(0, opacity)),
+    zIndex: Number.isFinite(Number(source.zIndex)) ? Number(source.zIndex) : fallback.zIndex,
+    active: source.active === false ? false : true,
+    imageUrl: String(source.imageUrl || ""),
+    imageDataUrl: String(source.imageDataUrl || ""),
+    storagePath: String(source.storagePath || ""),
+    file: options.keepFile ? source.file || null : null,
+  };
+}
+
+function normalizeTemplateCustomImages(customImages, options = {}) {
+  if (!Array.isArray(customImages)) return [];
+
+  return customImages.map((customImage, index) =>
+    normalizeTemplateCustomImage(customImage, index, options)
+  );
+}
+
+function getTemplateCustomImageKey(customImageId) {
+  return `customImage:${customImageId}`;
+}
+
+function isTemplateCustomImageKey(key) {
+  return String(key || "").startsWith("customImage:");
+}
+
+function getTemplateCustomImageIdFromKey(key) {
+  return String(key || "").replace("customImage:", "");
+}
+
+function getTemplateCustomImageStyle(customImage) {
+  const normalized = normalizeTemplateCustomImage(customImage);
+
+  return {
+    position: "absolute",
+    left: `${normalized.x}%`,
+    top: `${normalized.y}%`,
+    width: `${normalized.width}%`,
+    height: `${normalized.height}%`,
+    transform: "translate(-50%, -50%)",
+    opacity: normalized.opacity,
+    zIndex: normalized.zIndex,
+  };
+}
+
+
+function getCertificateBodyText(templateBodyText, programLabel) {
+  const templateText = String(templateBodyText || DEFAULT_CERTIFICATE_BODY_TEXT);
+  return templateText.replaceAll("{program}", programLabel || "English course");
+}
+
+function splitBodyTextForRendering(text) {
+  const value = String(text || "");
+  const lower = value.toLowerCase();
+  const basicIndex = lower.indexOf("basic english");
+
+  if (basicIndex < 0) {
+    return { before: value, emphasis: "", after: "" };
+  }
+
+  const afterBasic = value.slice(basicIndex);
+  const andIndex = afterBasic.toLowerCase().indexOf(" and ");
+
+  if (andIndex < 0) {
+    return {
+      before: value.slice(0, basicIndex),
+      emphasis: value.slice(basicIndex),
+      after: "",
+    };
+  }
+
+  return {
+    before: value.slice(0, basicIndex),
+    emphasis: value.slice(basicIndex, basicIndex + andIndex),
+    after: value.slice(basicIndex + andIndex),
+  };
+}
+
+function normalizeCertificateTemplate(template) {
+  return {
+    id: template?.id || "",
+    name: String(template?.name || "").trim(),
+    level: String(template?.level || "No aplica"),
+    programName: String(template?.programName || "").trim(),
+    audience: certificateTemplateAudiences.includes(template?.audience)
+      ? template.audience
+      : "Adultos",
+    certificateType: certificateTemplateTypes.includes(template?.certificateType)
+      ? template.certificateType
+      : "Certificado",
+    bodyText: String(template?.bodyText || DEFAULT_CERTIFICATE_BODY_TEXT),
+    bodySegments: normalizeCertificateBodySegments(template?.bodySegments, template?.bodyText),
+    customTexts: normalizeTemplateCustomTexts(template?.customTexts),
+    customImages: normalizeTemplateCustomImages(template?.customImages),
+    active: template?.active !== false,
+    notes: String(template?.notes || ""),
+    templateImageUrl: String(template?.templateImageUrl || ""),
+    templateImageDataUrl: String(template?.templateImageDataUrl || ""),
+    storagePath: String(template?.storagePath || ""),
+    positions: normalizeCertificateTemplatePositions(
+      template?.positionsVersion === 2 ? template?.positions : null
+    ),
+    positionsVersion: Number(template?.positionsVersion || 0),
+    createdAt: template?.createdAt || "",
+    updatedAt: template?.updatedAt || "",
+  };
+}
+
+function isValidCertificateTemplateFile(file) {
+  if (!file) return false;
+
+  const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+  const maxSize = 12 * 1024 * 1024;
+
+  return allowedTypes.includes(file.type) && file.size <= maxSize;
+}
+function isValidTemplateAssetImage(file) {
+  if (!file) return false;
+
+  const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+  const maxSize = 5 * 1024 * 1024;
+
+  return allowedTypes.includes(file.type) && file.size <= maxSize;
+}
+
+async function readTemplateAssetFileAsDataUrl(file) {
+  if (!file) return "";
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const maxWidth = 900;
+    const maxHeight = 900;
+    const ratio = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight, 1);
+    const canvas = document.createElement("canvas");
+
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    return canvas.toDataURL("image/png");
+  } catch (error) {
+    console.error("No se pudo optimizar la imagen personalizada:", error);
+
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+
 function sanitizeStorageFileName(name) {
   return String(name || "firma")
     .normalize("NFD")
@@ -717,6 +1209,68 @@ async function readFileAsDataUrl(file) {
   } catch (error) {
     console.error("No se pudo optimizar la firma, se guardará el archivo original:", error);
 
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+
+async function readTemplateFileAsDataUrl(file) {
+  if (!file) return "";
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const canvas = document.createElement("canvas");
+    const targetWidth = 816;
+    const targetHeight = 1056;
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+
+    const imageRatio = image.naturalWidth / image.naturalHeight;
+    const targetRatio = targetWidth / targetHeight;
+
+    let drawWidth = targetWidth;
+    let drawHeight = targetHeight;
+    let drawX = 0;
+    let drawY = 0;
+
+    if (imageRatio > targetRatio) {
+      drawHeight = targetHeight;
+      drawWidth = targetHeight * imageRatio;
+      drawX = (targetWidth - drawWidth) / 2;
+    } else {
+      drawWidth = targetWidth;
+      drawHeight = targetWidth / imageRatio;
+      drawY = (targetHeight - drawHeight) / 2;
+    }
+
+    context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+    return canvas.toDataURL("image/jpeg", 0.92);
+  } catch (error) {
+    console.error("No se pudo optimizar la plantilla:", error);
     return await new Promise((resolve, reject) => {
       const reader = new FileReader();
 
@@ -1201,6 +1755,15 @@ export default function PrintShop() {
   const [savingSigner, setSavingSigner] = useState(false);
   const [signerMessage, setSignerMessage] = useState("");
 
+  const [certificateTemplates, setCertificateTemplates] = useState([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [templatesError, setTemplatesError] = useState("");
+  const [templateForm, setTemplateForm] = useState(templateFormInitialState);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [templateFile, setTemplateFile] = useState(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateMessage, setTemplateMessage] = useState("");
+
   useEffect(() => {
     setStudentName("");
     setStudentDeliveryType("Impreso");
@@ -1436,6 +1999,38 @@ export default function PrintShop() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    setLoadingTemplates(true);
+    setTemplatesError("");
+
+    const templatesQuery = query(
+      collection(db, "certificateTemplates"),
+      orderBy("name", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      templatesQuery,
+      (snapshot) => {
+        const nextTemplates = snapshot.docs.map((templateDoc) =>
+          normalizeCertificateTemplate({
+            id: templateDoc.id,
+            ...templateDoc.data(),
+          })
+        );
+
+        setCertificateTemplates(nextTemplates);
+        setLoadingTemplates(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar las plantillas de certificados:", error);
+        setTemplatesError("No se pudieron cargar las plantillas. Revisa las reglas de Firestore.");
+        setLoadingTemplates(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const productStats = useMemo(() => {
     const activeProducts = products.filter((product) => product.active !== false);
     const inactiveProducts = products.filter((product) => product.active === false);
@@ -1654,6 +2249,16 @@ export default function PrintShop() {
     [certificateSigners]
   );
 
+  const activeCertificateTemplates = useMemo(
+    () => certificateTemplates.filter((template) => template.active !== false),
+    [certificateTemplates]
+  );
+
+  const selectedTemplate = useMemo(
+    () => certificateTemplates.find((template) => template.id === selectedTemplateId) || null,
+    [certificateTemplates, selectedTemplateId]
+  );
+
   const selectedSigner = useMemo(
     () => certificateSigners.find((signer) => signer.id === selectedSignerId) || null,
     [certificateSigners, selectedSignerId]
@@ -1753,6 +2358,31 @@ export default function PrintShop() {
         };
       }
 
+      if (name === "certificateTemplateId") {
+        const selectedTemplate = findCertificateTemplate(value);
+
+        return {
+          ...current,
+          certificateTemplateId: value,
+          certificateTemplateName: selectedTemplate?.name || "",
+          certificateTemplateLevel: selectedTemplate?.level || "",
+          certificateTemplateProgramName: selectedTemplate?.programName || "",
+          certificateTemplateAudience: selectedTemplate?.audience || "",
+          certificateTemplateBodyText: selectedTemplate?.bodyText || DEFAULT_CERTIFICATE_BODY_TEXT,
+          certificateTemplateBodySegments: normalizeCertificateBodySegments(
+            selectedTemplate?.bodySegments,
+            selectedTemplate?.bodyText
+          ),
+          certificateTemplateCustomTexts: normalizeTemplateCustomTexts(selectedTemplate?.customTexts),
+          certificateTemplateCustomImages: normalizeTemplateCustomImages(selectedTemplate?.customImages),
+          certificateTemplateImageUrl: selectedTemplate?.templateImageUrl || "",
+          certificateTemplateImageDataUrl: selectedTemplate?.templateImageDataUrl || "",
+          certificateTemplateStoragePath: selectedTemplate?.storagePath || "",
+          certificateTemplatePositions: normalizeCertificateTemplatePositions(selectedTemplate?.positions),
+          level: selectedTemplate?.level || current.level,
+        };
+      }
+
       if (name === "principalSignerId") {
         const selectedSigner = findCertificateSigner(value);
 
@@ -1821,6 +2451,544 @@ export default function PrintShop() {
 
   function findCertificateSigner(signerId) {
     return certificateSigners.find((signer) => signer.id === signerId) || null;
+  }
+
+  function findCertificateTemplate(templateId) {
+    return certificateTemplates.find((template) => template.id === templateId) || null;
+  }
+
+  function handleTemplateInputChange(event) {
+    const { name, value, type, checked } = event.target;
+
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  function handleTemplateBodySegmentChange(segmentId, field, value) {
+    setTemplateMessage("");
+    setTemplateForm((current) => {
+      const nextSegments = normalizeCertificateBodySegments(
+        current.bodySegments,
+        current.bodyText
+      ).map((segment) =>
+        segment.id === segmentId
+          ? {
+              ...segment,
+              [field]: field === "text" ? value : Boolean(value),
+            }
+          : segment
+      );
+
+      return {
+        ...current,
+        bodySegments: nextSegments,
+        bodyText: getCertificateBodyTextFromSegments(nextSegments, current.bodyText),
+      };
+    });
+  }
+
+  function addTemplateBodySegment() {
+    setTemplateMessage("");
+    setTemplateForm((current) => {
+      const nextSegments = [
+        ...normalizeCertificateBodySegments(current.bodySegments, current.bodyText),
+        {
+          id: createTemplateBodySegmentId(),
+          text: "Nuevo texto",
+          bold: false,
+          italic: false,
+          underline: false,
+        },
+      ];
+
+      return {
+        ...current,
+        bodySegments: nextSegments,
+        bodyText: getCertificateBodyTextFromSegments(nextSegments, current.bodyText),
+      };
+    });
+  }
+
+  function removeTemplateBodySegment(segmentId) {
+    setTemplateMessage("");
+    setTemplateForm((current) => {
+      const currentSegments = normalizeCertificateBodySegments(current.bodySegments, current.bodyText);
+      if (currentSegments.length <= 1) return current;
+
+      const nextSegments = currentSegments.filter((segment) => segment.id !== segmentId);
+
+      return {
+        ...current,
+        bodySegments: nextSegments,
+        bodyText: getCertificateBodyTextFromSegments(nextSegments, current.bodyText),
+      };
+    });
+  }
+
+  function resetTemplateBodySegments() {
+    setTemplateMessage("");
+    const nextSegments = getDefaultCertificateBodySegments();
+
+    setTemplateForm((current) => ({
+      ...current,
+      bodySegments: nextSegments,
+      bodyText: getCertificateBodyTextFromSegments(nextSegments),
+    }));
+  }
+
+  function handleTemplateCustomTextChange(customTextId, field, value) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeTemplateCustomTexts(current.customTexts).map((customText) => {
+        if (customText.id !== customTextId) return customText;
+
+        if (["x", "y", "width", "fontSize"].includes(field)) {
+          return {
+            ...customText,
+            [field]: Number(value),
+          };
+        }
+
+        if (field === "active") {
+          return {
+            ...customText,
+            active: Boolean(value),
+          };
+        }
+
+        return {
+          ...customText,
+          [field]: value,
+        };
+      }),
+    }));
+  }
+
+  function addTemplateCustomText() {
+    setTemplateMessage("");
+    setTemplateForm((current) => {
+      const customTexts = normalizeTemplateCustomTexts(current.customTexts);
+
+      return {
+        ...current,
+        customTexts: [
+          ...customTexts,
+          createDefaultTemplateCustomText(customTexts.length),
+        ],
+      };
+    });
+  }
+
+  function removeTemplateCustomText(customTextId) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeTemplateCustomTexts(current.customTexts).filter(
+        (customText) => customText.id !== customTextId
+      ),
+    }));
+  }
+
+  function handleTemplateCustomTextSegmentChange(customTextId, segmentId, field, value) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeTemplateCustomTexts(current.customTexts).map((customText) => {
+        if (customText.id !== customTextId) return customText;
+
+        return {
+          ...customText,
+          segments: normalizeCertificateBodySegments(customText.segments).map((segment) =>
+            segment.id === segmentId
+              ? {
+                  ...segment,
+                  [field]: field === "text" ? value : Boolean(value),
+                }
+              : segment
+          ),
+        };
+      }),
+    }));
+  }
+
+  function addTemplateCustomTextSegment(customTextId) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeTemplateCustomTexts(current.customTexts).map((customText) => {
+        if (customText.id !== customTextId) return customText;
+
+        return {
+          ...customText,
+          segments: [
+            ...normalizeCertificateBodySegments(customText.segments),
+            {
+              id: createTemplateBodySegmentId(),
+              text: "Nuevo texto",
+              bold: false,
+              italic: false,
+              underline: false,
+            },
+          ],
+        };
+      }),
+    }));
+  }
+
+  function removeTemplateCustomTextSegment(customTextId, segmentId) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeTemplateCustomTexts(current.customTexts).map((customText) => {
+        if (customText.id !== customTextId) return customText;
+
+        const segments = normalizeCertificateBodySegments(customText.segments);
+        if (segments.length <= 1) return customText;
+
+        return {
+          ...customText,
+          segments: segments.filter((segment) => segment.id !== segmentId),
+        };
+      }),
+    }));
+  }
+
+  async function addTemplateCustomImage(file) {
+    setTemplateMessage("");
+
+    if (!file) return;
+
+    if (!isValidTemplateAssetImage(file)) {
+      setTemplateMessage("La imagen personalizada debe ser PNG, JPG o WEBP y pesar menos de 5 MB.");
+      return;
+    }
+
+    try {
+      const imageDataUrl = await readTemplateAssetFileAsDataUrl(file);
+
+      setTemplateForm((current) => {
+        const customImages = normalizeTemplateCustomImages(current.customImages, { keepFile: true });
+
+        return {
+          ...current,
+          customImages: [
+            ...customImages,
+            createDefaultTemplateCustomImage(customImages.length, {
+              label: file.name?.replace(/\.[^.]+$/, "") || `Imagen adicional ${customImages.length + 1}`,
+              imageDataUrl,
+              file,
+            }),
+          ],
+        };
+      });
+    } catch (error) {
+      console.error("No se pudo agregar la imagen personalizada:", error);
+      setTemplateMessage("No se pudo agregar la imagen personalizada.");
+    }
+  }
+
+  function handleTemplateCustomImageChange(customImageId, field, value) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customImages: normalizeTemplateCustomImages(current.customImages, { keepFile: true }).map((image) => {
+        if (image.id !== customImageId) return image;
+
+        if (["x", "y", "width", "height", "opacity", "zIndex"].includes(field)) {
+          return {
+            ...image,
+            [field]: Number(value),
+          };
+        }
+
+        if (field === "active") {
+          return {
+            ...image,
+            active: Boolean(value),
+          };
+        }
+
+        return {
+          ...image,
+          [field]: value,
+        };
+      }),
+    }));
+  }
+
+  function removeTemplateCustomImage(customImageId) {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      customImages: normalizeTemplateCustomImages(current.customImages, { keepFile: true }).filter(
+        (image) => image.id !== customImageId
+      ),
+    }));
+  }
+
+  function handleTemplateEditorLayerMove(elementKey, nextPosition) {
+    if (isTemplateCustomImageKey(elementKey)) {
+      const customImageId = getTemplateCustomImageIdFromKey(elementKey);
+      setTemplateForm((current) => ({
+        ...current,
+        customImages: normalizeTemplateCustomImages(current.customImages, { keepFile: true }).map((image) =>
+          image.id === customImageId
+            ? {
+                ...image,
+                x: nextPosition.x,
+                y: nextPosition.y,
+              }
+            : image
+        ),
+      }));
+      return;
+    }
+
+    if (isTemplateCustomTextKey(elementKey)) {
+      const customTextId = getTemplateCustomTextIdFromKey(elementKey);
+      setTemplateForm((current) => ({
+        ...current,
+        customTexts: normalizeTemplateCustomTexts(current.customTexts).map((customText) =>
+          customText.id === customTextId
+            ? {
+                ...customText,
+                x: nextPosition.x,
+                y: nextPosition.y,
+              }
+            : customText
+        ),
+      }));
+      return;
+    }
+
+    setTemplateForm((current) => {
+      const normalizedPositions = normalizeCertificateTemplatePositions(current.positions);
+      const currentPosition = normalizedPositions[elementKey] || normalizeTemplatePosition(null, {});
+
+      return {
+        ...current,
+        positions: {
+          ...normalizedPositions,
+          [elementKey]: {
+            ...currentPosition,
+            x: nextPosition.x,
+            y: nextPosition.y,
+          },
+        },
+      };
+    });
+  }
+
+  function handleTemplatePositionChange(elementKey, field, value) {
+    setTemplateMessage("");
+    setTemplateForm((current) => {
+      const normalizedPositions = normalizeCertificateTemplatePositions(current.positions);
+      const currentPosition = normalizedPositions[elementKey] || normalizeTemplatePosition(null, {});
+
+      return {
+        ...current,
+        positions: {
+          ...normalizedPositions,
+          [elementKey]: {
+            ...currentPosition,
+            [field]: field === "active" ? Boolean(value) : Number(value),
+          },
+        },
+      };
+    });
+  }
+
+  function resetTemplatePositions() {
+    setTemplateMessage("");
+    setTemplateForm((current) => ({
+      ...current,
+      positions: getDefaultCertificateTemplatePositions(),
+      positionsVersion: 2,
+    }));
+  }
+
+  function resetTemplateForm() {
+    setSelectedTemplateId(null);
+    setTemplateForm(templateFormInitialState);
+    setTemplateFile(null);
+    setTemplateMessage("");
+  }
+
+  function selectTemplate(template) {
+    setSelectedTemplateId(template.id);
+    setTemplateMessage("");
+    setTemplateFile(null);
+    setTemplateForm({
+      name: template.name || "",
+      level: template.level || "A1",
+      programName: template.programName || "",
+      audience: template.audience || "Adultos",
+      certificateType: template.certificateType || "Certificado",
+      bodyText: template.bodyText || DEFAULT_CERTIFICATE_BODY_TEXT,
+      bodySegments: normalizeCertificateBodySegments(template.bodySegments, template.bodyText),
+      customTexts: normalizeTemplateCustomTexts(template.customTexts),
+      customImages: normalizeTemplateCustomImages(template.customImages, { keepFile: true }),
+      active: template.active !== false,
+      notes: template.notes || "",
+      templateImageUrl: template.templateImageUrl || "",
+      templateImageDataUrl: template.templateImageDataUrl || "",
+      storagePath: template.storagePath || "",
+      positions: normalizeCertificateTemplatePositions(template.positions),
+      positionsVersion: 2,
+    });
+  }
+
+  async function saveCertificateTemplate(event) {
+    event.preventDefault();
+    setTemplateMessage("");
+
+    if (!isAdmin) {
+      setTemplateMessage("Solo los administradores pueden administrar plantillas.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const name = templateForm.name.trim();
+    const programName = templateForm.programName.trim();
+
+    if (!name) {
+      setTemplateMessage("Indica el nombre de la plantilla.");
+      return;
+    }
+
+    if (!programName) {
+      setTemplateMessage("Indica el nombre del programa o curso.");
+      return;
+    }
+
+    if (!selectedTemplateId && !templateFile) {
+      setTemplateMessage("Sube la imagen base de la plantilla.");
+      return;
+    }
+
+    if (templateFile && !isValidCertificateTemplateFile(templateFile)) {
+      setTemplateMessage("La plantilla debe ser PNG, JPG o WEBP y pesar menos de 12 MB.");
+      return;
+    }
+
+    try {
+      setSavingTemplate(true);
+
+      let templateImageUrl = templateForm.templateImageUrl || "";
+      let templateImageDataUrl = templateForm.templateImageDataUrl || "";
+      let storagePath = templateForm.storagePath || "";
+
+      if (templateFile) {
+        templateImageDataUrl = await readTemplateFileAsDataUrl(templateFile);
+        const safeName = sanitizeStorageFileName(templateFile.name);
+        storagePath = `printshop/certificate-templates/${auditUser.uid}/${Date.now()}-${safeName}`;
+        const fileRef = storageRef(storage, storagePath);
+
+        await uploadBytes(fileRef, templateFile, {
+          contentType: templateFile.type,
+        });
+        templateImageUrl = await getDownloadURL(fileRef);
+      }
+
+      const customImages = [];
+      const rawCustomImages = normalizeTemplateCustomImages(templateForm.customImages, { keepFile: true });
+
+      for (const [index, image] of rawCustomImages.entries()) {
+        let nextImage = normalizeTemplateCustomImage(image, index);
+
+        if (image.file) {
+          const safeName = sanitizeStorageFileName(image.file.name || `${image.label || "imagen"}.png`);
+          const imageStoragePath = `printshop/template-assets/${auditUser.uid}/${Date.now()}-${index}-${safeName}`;
+          const imageRef = storageRef(storage, imageStoragePath);
+
+          await uploadBytes(imageRef, image.file, {
+            contentType: image.file.type || "image/png",
+          });
+
+          nextImage = {
+            ...nextImage,
+            imageUrl: await getDownloadURL(imageRef),
+            imageDataUrl: image.imageDataUrl || await readTemplateAssetFileAsDataUrl(image.file),
+            storagePath: imageStoragePath,
+          };
+        }
+
+        customImages.push(nextImage);
+      }
+
+      const payload = {
+        name,
+        level: templateForm.level || "No aplica",
+        programName,
+        audience: templateForm.audience || "Adultos",
+        certificateType: templateForm.certificateType || "Certificado",
+        bodyText: getCertificateBodyTextFromSegments(
+          templateForm.bodySegments,
+          templateForm.bodyText
+        ),
+        bodySegments: normalizeCertificateBodySegments(
+          templateForm.bodySegments,
+          templateForm.bodyText
+        ),
+        customTexts: normalizeTemplateCustomTexts(templateForm.customTexts),
+        customImages,
+        active: templateForm.active !== false,
+        notes: templateForm.notes || "",
+        templateImageUrl,
+        templateImageDataUrl,
+        storagePath,
+        positions: normalizeCertificateTemplatePositions(templateForm.positions),
+        positionsVersion: 2,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      };
+
+      if (selectedTemplateId) {
+        await updateDoc(doc(db, "certificateTemplates", selectedTemplateId), payload);
+        setTemplateMessage("Plantilla actualizada correctamente.");
+      } else {
+        await addDoc(collection(db, "certificateTemplates"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+        setTemplateMessage("Plantilla creada correctamente.");
+      }
+
+      resetTemplateForm();
+    } catch (error) {
+      console.error("No se pudo guardar la plantilla:", error);
+      setTemplateMessage("No se pudo guardar la plantilla. Revisa reglas de Firestore y Storage.");
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
+  async function toggleTemplateStatus(template) {
+    if (!isAdmin || !template?.id) return;
+
+    const auditUser = getAuditUser();
+
+    try {
+      await updateDoc(doc(db, "certificateTemplates", template.id), {
+        active: template.active === false,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    } catch (error) {
+      console.error("No se pudo cambiar el estado de la plantilla:", error);
+      setTemplateMessage("No se pudo cambiar el estado de la plantilla.");
+    }
   }
 
   function handleSignerInputChange(event) {
@@ -2008,6 +3176,22 @@ export default function PrintShop() {
       requestDate: request.requestDate || "",
       dueDate: request.dueDate || "",
       certificateIssueDate: request.certificateIssueDate || "",
+      certificateTemplateId: request.certificateTemplateId || "",
+      certificateTemplateName: request.certificateTemplateName || "",
+      certificateTemplateLevel: request.certificateTemplateLevel || "",
+      certificateTemplateProgramName: request.certificateTemplateProgramName || "",
+      certificateTemplateAudience: request.certificateTemplateAudience || "",
+      certificateTemplateBodyText: request.certificateTemplateBodyText || "",
+      certificateTemplateBodySegments: normalizeCertificateBodySegments(
+        request.certificateTemplateBodySegments,
+        request.certificateTemplateBodyText
+      ),
+      certificateTemplateCustomTexts: normalizeTemplateCustomTexts(request.certificateTemplateCustomTexts),
+      certificateTemplateCustomImages: normalizeTemplateCustomImages(request.certificateTemplateCustomImages),
+      certificateTemplateImageUrl: request.certificateTemplateImageUrl || "",
+      certificateTemplateImageDataUrl: request.certificateTemplateImageDataUrl || "",
+      certificateTemplateStoragePath: request.certificateTemplateStoragePath || "",
+      certificateTemplatePositions: normalizeCertificateTemplatePositions(request.certificateTemplatePositions),
       notes: request.notes || "",
       level: request.level || "No aplica",
       group: request.group || "",
@@ -2073,6 +3257,11 @@ export default function PrintShop() {
         return;
       }
 
+      if (!requestForm.certificateTemplateId || !requestForm.certificateTemplateImageDataUrl) {
+        setRequestMessage("Selecciona una plantilla de certificado con imagen base optimizada. Si la plantilla es antigua, edítala y vuelve a subir su imagen.");
+        return;
+      }
+
       if (!requestForm.group.trim() || !requestForm.teacherName.trim() || !requestForm.schedule.trim()) {
         setRequestMessage("Para certificados o diplomas indica grupo, maestro y horario.");
         return;
@@ -2107,6 +3296,25 @@ export default function PrintShop() {
       requestDate: requestForm.requestDate,
       dueDate: requestForm.dueDate,
       certificateIssueDate: requestForm.certificateIssueDate || "",
+      certificateTemplateId: requestForm.certificateTemplateId || "",
+      certificateTemplateName: requestForm.certificateTemplateName || "",
+      certificateTemplateLevel: requestForm.certificateTemplateLevel || "",
+      certificateTemplateProgramName: requestForm.certificateTemplateProgramName || "",
+      certificateTemplateAudience: requestForm.certificateTemplateAudience || "",
+      certificateTemplateBodyText: getCertificateBodyTextFromSegments(
+        requestForm.certificateTemplateBodySegments,
+        requestForm.certificateTemplateBodyText
+      ),
+      certificateTemplateBodySegments: normalizeCertificateBodySegments(
+        requestForm.certificateTemplateBodySegments,
+        requestForm.certificateTemplateBodyText
+      ),
+      certificateTemplateCustomTexts: normalizeTemplateCustomTexts(requestForm.certificateTemplateCustomTexts),
+      certificateTemplateCustomImages: normalizeTemplateCustomImages(requestForm.certificateTemplateCustomImages),
+      certificateTemplateImageUrl: requestForm.certificateTemplateImageUrl || "",
+      certificateTemplateImageDataUrl: requestForm.certificateTemplateImageDataUrl || "",
+      certificateTemplateStoragePath: requestForm.certificateTemplateStoragePath || "",
+      certificateTemplatePositions: normalizeCertificateTemplatePositions(requestForm.certificateTemplatePositions),
       notes: requestForm.notes || "",
       level: requestForm.level || "No aplica",
       group: requestForm.group.trim(),
@@ -3421,6 +4629,16 @@ export default function PrintShop() {
         {isAdmin && (
           <button
             type="button"
+            className={activeSection === "templates" ? "active" : ""}
+            onClick={() => setActiveSection("templates")}
+          >
+            <span>▧</span>
+            Plantillas
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            type="button"
             className={activeSection === "signers" ? "active" : ""}
             onClick={() => setActiveSection("signers")}
           >
@@ -3508,6 +4726,7 @@ export default function PrintShop() {
           activeUsers={activeUsers}
           activePrincipalSigners={activePrincipalSigners}
           activeTeacherSigners={activeTeacherSigners}
+          activeCertificateTemplates={activeCertificateTemplates}
           loadingRequests={loadingRequests}
           requestsError={requestsError}
           requestStats={requestStats}
@@ -3547,6 +4766,41 @@ export default function PrintShop() {
           onDeleteStudent={deleteRequestStudent}
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
+        />
+      ) : activeSection === "templates" && isAdmin ? (
+        <CertificateTemplatesView
+          templates={certificateTemplates}
+          loadingTemplates={loadingTemplates}
+          templatesError={templatesError}
+          templateForm={templateForm}
+          selectedTemplate={selectedTemplate}
+          selectedTemplateId={selectedTemplateId}
+          templateFile={templateFile}
+          savingTemplate={savingTemplate}
+          templateMessage={templateMessage}
+          isAdmin={isAdmin}
+          onTemplateInputChange={handleTemplateInputChange}
+          onTemplateBodySegmentChange={handleTemplateBodySegmentChange}
+          onAddTemplateBodySegment={addTemplateBodySegment}
+          onRemoveTemplateBodySegment={removeTemplateBodySegment}
+          onResetTemplateBodySegments={resetTemplateBodySegments}
+          onTemplateCustomTextChange={handleTemplateCustomTextChange}
+          onAddTemplateCustomText={addTemplateCustomText}
+          onRemoveTemplateCustomText={removeTemplateCustomText}
+          onTemplateCustomTextSegmentChange={handleTemplateCustomTextSegmentChange}
+          onAddTemplateCustomTextSegment={addTemplateCustomTextSegment}
+          onRemoveTemplateCustomTextSegment={removeTemplateCustomTextSegment}
+          onAddTemplateCustomImage={addTemplateCustomImage}
+          onTemplateCustomImageChange={handleTemplateCustomImageChange}
+          onRemoveTemplateCustomImage={removeTemplateCustomImage}
+          onTemplatePositionChange={handleTemplatePositionChange}
+          onTemplateEditorLayerMove={handleTemplateEditorLayerMove}
+          onResetTemplatePositions={resetTemplatePositions}
+          onTemplateFileChange={setTemplateFile}
+          onSaveTemplate={saveCertificateTemplate}
+          onSelectTemplate={selectTemplate}
+          onResetTemplateForm={resetTemplateForm}
+          onToggleTemplateStatus={toggleTemplateStatus}
         />
       ) : activeSection === "signers" && isAdmin ? (
         <CertificateSignersView
@@ -5003,6 +6257,7 @@ function PrintRequestsView({
   activeUsers,
   activePrincipalSigners,
   activeTeacherSigners,
+  activeCertificateTemplates,
   loadingRequests,
   requestsError,
   requestStats,
@@ -5238,6 +6493,7 @@ function PrintRequestsView({
               selectedRole={selectedRole}
               activePrincipalSigners={activePrincipalSigners}
               activeTeacherSigners={activeTeacherSigners}
+              activeCertificateTemplates={activeCertificateTemplates}
               canManageStudents={canEditOperationalFields}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
@@ -5445,12 +6701,36 @@ function PrintRequestsView({
                     </div>
                   </div>
 
+                  {activeCertificateTemplates.length === 0 && (
+                    <div className="request-detail-note important full">
+                      <strong>Faltan plantillas registradas</strong>
+                      <p>Primero registra al menos una plantilla en la pestaña Plantillas.</p>
+                    </div>
+                  )}
+
                   {(activePrincipalSigners.length === 0 || activeTeacherSigners.length === 0) && (
                     <div className="request-detail-note important full">
                       <strong>Faltan firmas registradas</strong>
                       <p>Primero registra al menos un principal y un teacher en la pestaña Firmas.</p>
                     </div>
                   )}
+
+                  <label className="full">
+                    <span>Plantilla de certificado</span>
+                    <select
+                      name="certificateTemplateId"
+                      value={requestForm.certificateTemplateId}
+                      onChange={onRequestInputChange}
+                      disabled={!canEditAdministrativeFields || activeCertificateTemplates.length === 0}
+                    >
+                      <option value="">Seleccionar plantilla</option>
+                      {activeCertificateTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name} · {template.level} · {template.audience}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
                   <label>
                     <span>Nivel</span>
@@ -5598,6 +6878,7 @@ function RequestDetailCard({
   selectedRole,
   activePrincipalSigners,
   activeTeacherSigners,
+  activeCertificateTemplates,
   canManageStudents,
   studentName,
   studentDeliveryType,
@@ -5651,6 +6932,8 @@ function RequestDetailCard({
     (activePrincipalSigners || []).find((signer) => signer.id === request.principalSignerId) || null;
   const selectedTeacherSigner =
     (activeTeacherSigners || []).find((signer) => signer.id === request.teacherSignerId) || null;
+  const selectedCertificateTemplate =
+    (activeCertificateTemplates || []).find((template) => template.id === request.certificateTemplateId) || null;
 
   return (
     <Panel
@@ -5687,6 +6970,7 @@ function RequestDetailCard({
             </div>
 
             <div className="request-detail-grid compact">
+              <DetailItem label="Plantilla" value={request.certificateTemplateName || selectedCertificateTemplate?.name || "No seleccionada"} />
               <DetailItem label="Nivel" value={request.level || "No definido"} />
               <DetailItem label="Grupo" value={request.group || "No especificado"} />
               <DetailItem label="Principal" value={request.principalSignerName || "No especificado"} />
@@ -5958,6 +7242,7 @@ Mariana Torres`}
                   student={previewStudent}
                   principalSigner={selectedPrincipalSigner}
                   teacherSigner={selectedTeacherSigner}
+                  certificateTemplate={selectedCertificateTemplate}
                 />
               </div>
             ) : students.some((student) => Boolean(student.certificateFolio)) ? null : (
@@ -6073,11 +7358,18 @@ function sanitizePdfFileName(value) {
     .slice(0, 120) || "certificado";
 }
 
-function CertificatePreviewCard({ request, student, principalSigner, teacherSigner }) {
+function CertificatePreviewCard({
+  request,
+  student,
+  principalSigner,
+  teacherSigner,
+  certificateTemplate,
+}) {
   const certificateRef = useRef(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [embeddedPrincipalSignatureUrl, setEmbeddedPrincipalSignatureUrl] = useState("");
   const [embeddedTeacherSignatureUrl, setEmbeddedTeacherSignatureUrl] = useState("");
+
 
   if (!request || !student) return null;
 
@@ -6102,9 +7394,19 @@ function CertificatePreviewCard({ request, student, principalSigner, teacherSign
   const teacherSignatureStoragePath = teacherSigner?.storagePath || "";
   const displayPrincipalSignatureUrl = embeddedPrincipalSignatureUrl || principalSignatureUrl;
   const displayTeacherSignatureUrl = embeddedTeacherSignatureUrl || teacherSignatureUrl;
-  const trackLabel = getCertificateTrackLabel(request);
+  const trackLabel =
+    certificateTemplate?.programName ||
+    request.certificateTemplateProgramName ||
+    getCertificateTrackLabel(request);
   const programLabel = getCertificateProgramLabel(request);
   const levelColor = getCertificateLevelColor(level);
+  const templateImageUrl =
+    certificateTemplate?.templateImageDataUrl ||
+    request.certificateTemplateImageDataUrl ||
+    "";
+  const templatePositions = normalizeCertificateTemplatePositions(
+    certificateTemplate?.positions || request.certificateTemplatePositions
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -6225,86 +7527,262 @@ function CertificatePreviewCard({ request, student, principalSigner, teacherSign
 
       <div
         ref={certificateRef}
-        className="certificate-preview-stage"
+        className={`certificate-preview-stage ${templateImageUrl ? "template-mode" : ""}`}
         style={{ "--certificate-level-color": levelColor }}
       >
-        <div className="certificate-preview-logo-wrap">
-          <img
-            src={DEFAULT_CERTIFICATE_LOGO_DATA_URL}
-            alt="Active for life"
-            className="certificate-preview-logo-image"
-          />
-        </div>
-
-        <div className="certificate-preview-body">
-          <p className="certificate-preview-kicker">Confers this</p>
-          <h3 className="certificate-preview-title">CERTIFICATE</h3>
-          <p className="certificate-preview-to">to:</p>
-          <div className="certificate-preview-name">{student.name}</div>
-
-          <p className="certificate-preview-text">
-            For having successfully completed 100 hours of <em>{programLabel}</em>{" "}
-            and having had a remarkable performance.
-          </p>
-
-          <div className="certificate-preview-date">{issueDate}</div>
-        </div>
-
-        <div className="certificate-preview-footer-graphics" aria-hidden="true">
-          <svg
-            viewBox="0 0 816 300"
-            className="certificate-preview-footer-svg"
-            preserveAspectRatio="none"
-          >
-            <polygon
-              points="0,120 196,168 392,228 604,138 816,104 816,300 0,300"
-              fill="#d5e3d9"
-              opacity="0.75"
-            />
-            <polygon
-              points="0,220 147,96 359,174 539,108 816,182 816,300 0,300"
-              fill="#cddbcf"
-              opacity="0.82"
-            />
-            <polygon
-              points="0,146 278,224 498,166 816,234 816,300 0,300"
-              fill="#e1e9e2"
-              opacity="0.92"
-            />
-          </svg>
-        </div>
-
-        <div className="certificate-preview-validation-block">
-          {student.qrDataUrl && (
-            <img
-              src={student.qrDataUrl}
-              alt={`QR de validación de ${student.name}`}
-              className="certificate-preview-validation-qr"
-            />
-          )}
-          <div className="certificate-preview-validation-copy">
-            <strong>Verify certificate</strong>
-            <span>{student.certificateFolio}</span>
+        {!templateImageUrl && (certificateTemplate || request.certificateTemplateId) ? (
+          <div className="certificate-template-loading">
+            Esta plantilla necesita optimizarse. Ve a Imprenta → Plantillas, edita la plantilla y vuelve a subir su imagen.
           </div>
-        </div>
-
-        <div className="certificate-preview-signatures">
-          <CertificateSignatureBlock
-            signatureUrl={displayPrincipalSignatureUrl}
-            signatureAlt={`Firma de ${principalName}`}
-            name={principalName}
-            role={principalRole}
+        ) : templateImageUrl ? (
+          <CertificateTemplateOverlay
+            templateImageUrl={templateImageUrl}
+            positions={templatePositions}
+            student={student}
+            issueDate={issueDate}
+            principalName={principalName}
+            principalRole={principalRole}
+            principalSignatureUrl={displayPrincipalSignatureUrl}
+            programLabel={programLabel}
+            bodyText={getCertificateBodyText(certificateTemplate?.bodyText || request.certificateTemplateBodyText, programLabel)}
+            bodySegments={getResolvedCertificateBodySegments(
+              certificateTemplate?.bodySegments || request.certificateTemplateBodySegments,
+              certificateTemplate?.bodyText || request.certificateTemplateBodyText,
+              programLabel
+            )}
+            customTexts={normalizeTemplateCustomTexts(
+              certificateTemplate?.customTexts || request.certificateTemplateCustomTexts
+            )}
+            customImages={normalizeTemplateCustomImages(
+              certificateTemplate?.customImages || request.certificateTemplateCustomImages
+            )}
+            teacherName={teacherName}
+            teacherRole={teacherRole}
+            teacherSignatureUrl={displayTeacherSignatureUrl}
           />
-          <CertificateSignatureBlock
-            signatureUrl={displayTeacherSignatureUrl}
-            signatureAlt={`Firma de ${teacherName}`}
-            name={teacherName}
-            role={teacherRole}
-          />
-        </div>
+        ) : (
+          <>
+            <div className="certificate-preview-logo-wrap">
+              <img
+                src={DEFAULT_CERTIFICATE_LOGO_DATA_URL}
+                alt="Active for life"
+                className="certificate-preview-logo-image"
+              />
+            </div>
 
-        <div className="certificate-preview-course-bar"><span>{trackLabel}</span></div>
+            <div className="certificate-preview-body">
+              <p className="certificate-preview-kicker">Confers this</p>
+              <h3 className="certificate-preview-title">CERTIFICATE</h3>
+              <p className="certificate-preview-to">to:</p>
+              <div className="certificate-preview-name">{student.name}</div>
+
+              <p className="certificate-preview-text">
+                For having successfully completed 100 hours of <em>{programLabel}</em>{" "}
+                and having had a remarkable performance.
+              </p>
+
+              <div className="certificate-preview-date">{issueDate}</div>
+            </div>
+
+            <div className="certificate-preview-footer-graphics" aria-hidden="true">
+              <svg
+                viewBox="0 0 816 300"
+                className="certificate-preview-footer-svg"
+                preserveAspectRatio="none"
+              >
+                <polygon
+                  points="0,120 196,168 392,228 604,138 816,104 816,300 0,300"
+                  fill="#d5e3d9"
+                  opacity="0.75"
+                />
+                <polygon
+                  points="0,220 147,96 359,174 539,108 816,182 816,300 0,300"
+                  fill="#cddbcf"
+                  opacity="0.82"
+                />
+                <polygon
+                  points="0,146 278,224 498,166 816,234 816,300 0,300"
+                  fill="#e1e9e2"
+                  opacity="0.92"
+                />
+              </svg>
+            </div>
+
+            <div className="certificate-preview-validation-block">
+              {student.qrDataUrl && (
+                <img
+                  src={student.qrDataUrl}
+                  alt={`QR de validación de ${student.name}`}
+                  className="certificate-preview-validation-qr"
+                />
+              )}
+              <div className="certificate-preview-validation-copy">
+                <strong>Verify certificate</strong>
+                <span>{student.certificateFolio}</span>
+              </div>
+            </div>
+
+            <div className="certificate-preview-signatures">
+              <CertificateSignatureBlock
+                signatureUrl={displayPrincipalSignatureUrl}
+                signatureAlt={`Firma de ${principalName}`}
+                name={principalName}
+                role={principalRole}
+              />
+              <CertificateSignatureBlock
+                signatureUrl={displayTeacherSignatureUrl}
+                signatureAlt={`Firma de ${teacherName}`}
+                name={teacherName}
+                role={teacherRole}
+              />
+            </div>
+
+            <div className="certificate-preview-course-bar"><span>{trackLabel}</span></div>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+function CertificateTemplateOverlay({
+  templateImageUrl,
+  positions,
+  student,
+  issueDate,
+  principalName,
+  principalRole,
+  principalSignatureUrl,
+  programLabel,
+  bodyText,
+  bodySegments,
+  customTexts,
+  customImages,
+  teacherName,
+  teacherRole,
+  teacherSignatureUrl,
+}) {
+  const resolvedBodySegments = getResolvedCertificateBodySegments(
+    bodySegments,
+    bodyText || DEFAULT_CERTIFICATE_BODY_TEXT,
+    programLabel
+  );
+
+  return (
+    <div className="certificate-template-stage">
+      <img
+        src={templateImageUrl}
+        alt="Plantilla de certificado"
+        className="certificate-template-background"
+      />
+
+      {positions.studentName?.active !== false && (
+        <div
+          className="certificate-template-student-name"
+          style={getTemplateTextStyle(positions.studentName)}
+        >
+          {student.name}
+        </div>
+      )}
+
+      {positions.bodyText?.active !== false && (
+        <div
+          className="certificate-template-body-text"
+          style={getTemplateTextStyle(positions.bodyText)}
+        >
+          <CertificateBodySegments segments={resolvedBodySegments} />
+        </div>
+      )}
+
+      {positions.date?.active !== false && (
+        <div
+          className="certificate-template-date"
+          style={getTemplateTextStyle(positions.date)}
+        >
+          {issueDate}
+        </div>
+      )}
+
+      {positions.principalSignature?.active !== false && (
+        <img
+          src={principalSignatureUrl}
+          alt={`Firma de ${principalName}`}
+          className="certificate-template-signature"
+          style={getTemplateElementStyle(positions.principalSignature)}
+        />
+      )}
+
+      {positions.principalName?.active !== false && (
+        <div
+          className="certificate-template-signer-name"
+          style={getTemplateTextStyle(positions.principalName)}
+        >
+          <strong>{principalName}</strong>
+          <span>{principalRole}</span>
+        </div>
+      )}
+
+      {positions.teacherSignature?.active !== false && (
+        <img
+          src={teacherSignatureUrl}
+          alt={`Firma de ${teacherName}`}
+          className="certificate-template-signature"
+          style={getTemplateElementStyle(positions.teacherSignature)}
+        />
+      )}
+
+      {positions.teacherName?.active !== false && (
+        <div
+          className="certificate-template-signer-name"
+          style={getTemplateTextStyle(positions.teacherName)}
+        >
+          <strong>{teacherName}</strong>
+          <span>{teacherRole}</span>
+        </div>
+      )}
+
+      {student.qrDataUrl && positions.qr?.active !== false && (
+        <img
+          src={student.qrDataUrl}
+          alt={`QR de validación de ${student.name}`}
+          className="certificate-template-qr"
+          style={getTemplateElementStyle(positions.qr, { size: true })}
+        />
+      )}
+
+      {positions.folio?.active !== false && (
+        <div
+          className="certificate-template-folio"
+          style={getTemplateTextStyle(positions.folio)}
+        >
+          <strong>Verify certificate</strong>
+          <span>{student.certificateFolio}</span>
+        </div>
+      )}
+
+      {normalizeTemplateCustomImages(customImages).map((customImage) =>
+        customImage.active === false || !(customImage.imageDataUrl || customImage.imageUrl) ? null : (
+          <img
+            key={customImage.id}
+            src={customImage.imageDataUrl || customImage.imageUrl}
+            alt={customImage.label || "Imagen personalizada"}
+            className="certificate-template-custom-image"
+            style={getTemplateCustomImageStyle(customImage)}
+          />
+        )
+      )}
+
+      {normalizeTemplateCustomTexts(customTexts).map((customText) =>
+        customText.active === false ? null : (
+          <div
+            key={customText.id}
+            className="certificate-template-custom-text"
+            style={getTemplateCustomTextStyle(customText)}
+          >
+            <CertificateBodySegments segments={getResolvedCustomTextSegments(customText, programLabel)} />
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -6342,6 +7820,1005 @@ function DetailItem({ label, value, helper = "", badgeTone = "" }) {
       )}
       {helper && <small>{helper}</small>}
     </div>
+  );
+}
+
+function CertificateTemplatesView({
+  templates,
+  loadingTemplates,
+  templatesError,
+  templateForm,
+  selectedTemplate,
+  selectedTemplateId,
+  templateFile,
+  savingTemplate,
+  templateMessage,
+  isAdmin,
+  onTemplateInputChange,
+  onTemplateBodySegmentChange,
+  onAddTemplateBodySegment,
+  onRemoveTemplateBodySegment,
+  onResetTemplateBodySegments,
+  onTemplateCustomTextChange,
+  onAddTemplateCustomText,
+  onRemoveTemplateCustomText,
+  onTemplateCustomTextSegmentChange,
+  onAddTemplateCustomTextSegment,
+  onRemoveTemplateCustomTextSegment,
+  onAddTemplateCustomImage,
+  onTemplateCustomImageChange,
+  onRemoveTemplateCustomImage,
+  onTemplatePositionChange,
+  onTemplateEditorLayerMove,
+  onResetTemplatePositions,
+  onTemplateFileChange,
+  onSaveTemplate,
+  onSelectTemplate,
+  onResetTemplateForm,
+  onToggleTemplateStatus,
+}) {
+  const [selectedEditorElement, setSelectedEditorElement] = useState("studentName");
+  const activeTemplates = templates.filter((template) => template.active !== false);
+  const adultTemplates = activeTemplates.filter((template) => template.audience === "Adultos");
+  const kidsTemplates = activeTemplates.filter((template) => template.audience === "Kids");
+  const editorPositions = normalizeCertificateTemplatePositions(templateForm.positions);
+  const customTexts = normalizeTemplateCustomTexts(templateForm.customTexts);
+  const customImages = normalizeTemplateCustomImages(templateForm.customImages, { keepFile: true });
+  const selectedCustomTextId = isTemplateCustomTextKey(selectedEditorElement)
+    ? getTemplateCustomTextIdFromKey(selectedEditorElement)
+    : "";
+  const selectedCustomImageId = isTemplateCustomImageKey(selectedEditorElement)
+    ? getTemplateCustomImageIdFromKey(selectedEditorElement)
+    : "";
+  const selectedCustomText = customTexts.find((customText) => customText.id === selectedCustomTextId) || null;
+  const selectedCustomImage = customImages.find((image) => image.id === selectedCustomImageId) || null;
+  const currentEditorPosition = selectedCustomText
+    ? selectedCustomText
+    : selectedCustomImage
+      ? selectedCustomImage
+      : editorPositions[selectedEditorElement] ||
+        normalizeTemplatePosition(null, getDefaultCertificateTemplatePositions()[selectedEditorElement]);
+  const selectedEditorMeta = selectedCustomText
+    ? { key: selectedEditorElement, label: selectedCustomText.label || "Texto personalizado", kind: "customText" }
+    : selectedCustomImage
+      ? { key: selectedEditorElement, label: selectedCustomImage.label || "Imagen personalizada", kind: "customImage" }
+      : certificateTemplateEditorElements.find((element) => element.key === selectedEditorElement) ||
+        certificateTemplateEditorElements[0];
+  const editorElementOptions = [
+    ...certificateTemplateEditorElements,
+    ...customTexts.map((customText, index) => ({
+      key: getTemplateCustomTextKey(customText.id),
+      label: customText.label || `Texto adicional ${index + 1}`,
+      kind: "customText",
+    })),
+    ...customImages.map((image, index) => ({
+      key: getTemplateCustomImageKey(image.id),
+      label: image.label || `Imagen adicional ${index + 1}`,
+      kind: "customImage",
+    })),
+  ];
+  const templatePreviewImage = templateForm.templateImageDataUrl || templateForm.templateImageUrl || "";
+  const previewProgramLabel = templateForm.programName || templateForm.level || "basic English A1";
+  const previewBodySegments = getResolvedCertificateBodySegments(
+    templateForm.bodySegments,
+    templateForm.bodyText,
+    previewProgramLabel
+  );
+
+  function updateSelectedPosition(field, value) {
+    if (selectedCustomText) {
+      onTemplateCustomTextChange(selectedCustomText.id, field, value);
+      return;
+    }
+
+    if (selectedCustomImage) {
+      onTemplateCustomImageChange(selectedCustomImage.id, field, value);
+      return;
+    }
+
+    onTemplatePositionChange(selectedEditorElement, field, value);
+  }
+
+  function handleAddCustomImage(event) {
+    const file = event.target.files?.[0] || null;
+    onAddTemplateCustomImage(file);
+    event.target.value = "";
+  }
+
+  function handleAddCustomText() {
+    onAddTemplateCustomText();
+  }
+
+  function handleRemoveSelectedCustomText() {
+    if (!selectedCustomText) return;
+    onRemoveTemplateCustomText(selectedCustomText.id);
+    setSelectedEditorElement("studentName");
+  }
+
+  function handleRemoveSelectedCustomImage() {
+    if (!selectedCustomImage) return;
+    onRemoveTemplateCustomImage(selectedCustomImage.id);
+    setSelectedEditorElement("studentName");
+  }
+
+  return (
+    <section className="certificate-templates-section">
+      <div className="printshop-section-heading">
+        <div>
+          <p className="section-kicker printshop-kicker">Plantillas de certificados</p>
+          <h2>Imágenes base para certificados y diplomas</h2>
+          <p>
+            Sube el diseño completo del certificado. El sistema colocará encima el nombre
+            del alumno, fecha, firmas, folio, QR y textos personalizados.
+          </p>
+        </div>
+      </div>
+
+      <div className="catalog-metrics-grid template-metrics-grid">
+        <CatalogMetric tone="blue" icon="▧" label="Plantillas" value={templates.length} />
+        <CatalogMetric tone="green" icon="✓" label="Activas" value={activeTemplates.length} />
+        <CatalogMetric tone="teal" icon="A" label="Adultos" value={adultTemplates.length} />
+        <CatalogMetric tone="orange" icon="K" label="Kids" value={kidsTemplates.length} />
+      </div>
+
+      <div className="printshop-batches-layout template-admin-layout">
+        <div className="printshop-batches-main">
+          <Panel title="Plantillas registradas" icon="▧" actionLabel={`${templates.length} plantillas`}>
+            {loadingTemplates ? (
+              <div className="empty-state small">
+                <div>⌛</div>
+                <p>Cargando plantillas...</p>
+              </div>
+            ) : templatesError ? (
+              <div className="message-box">{templatesError}</div>
+            ) : templates.length === 0 ? (
+              <div className="empty-state small">
+                <div>▧</div>
+                <p>No hay plantillas registradas todavía.</p>
+              </div>
+            ) : (
+              <div className="template-cards-grid">
+                {templates.map((template) => (
+                  <article
+                    key={template.id}
+                    className={`template-card ${template.active === false ? "inactive" : ""}`}
+                  >
+                    <div className="template-card-preview">
+                      {template.templateImageDataUrl || template.templateImageUrl ? (
+                        <img
+                          src={template.templateImageDataUrl || template.templateImageUrl}
+                          alt={template.name}
+                        />
+                      ) : (
+                        <span>Sin imagen</span>
+                      )}
+                    </div>
+                    <div className="template-card-body">
+                      <div>
+                        <strong>{template.name}</strong>
+                        <p>
+                          {template.programName || "Sin programa"} · {template.level || "Sin nivel"} · {template.audience}
+                        </p>
+                      </div>
+                      <div className="template-card-badges">
+                        <StatusBadge tone={template.active === false ? "red" : "green"}>
+                          {template.active === false ? "Inactiva" : "Activa"}
+                        </StatusBadge>
+                        <StatusBadge tone="blue">{template.certificateType}</StatusBadge>
+                      </div>
+                      {template.notes && <small>{template.notes}</small>}
+                      <div className="table-actions">
+                        <button type="button" onClick={() => onSelectTemplate(template)}>
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className={template.active === false ? "" : "danger-table-button"}
+                          onClick={() => onToggleTemplateStatus(template)}
+                        >
+                          {template.active === false ? "Activar" : "Desactivar"}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Editor visual de posiciones" icon="◎" actionLabel={selectedTemplateId ? "Arrastrar" : "Vista previa"}>
+            <div className="certificate-template-editor">
+              <div className="certificate-template-editor-preview">
+                {templatePreviewImage ? (
+                  <CertificateTemplateEditorPreview
+                    templateImageUrl={templatePreviewImage}
+                    positions={editorPositions}
+                    customTexts={customTexts}
+                    customImages={customImages}
+                    selectedElement={selectedEditorElement}
+                    bodySegments={previewBodySegments}
+                    programLabel={previewProgramLabel}
+                    onSelectElement={setSelectedEditorElement}
+                    onLayerMove={onTemplateEditorLayerMove}
+                    disabled={!isAdmin}
+                  />
+                ) : (
+                  <div className="empty-state small">
+                    <div>▧</div>
+                    <p>Sube o selecciona una plantilla para editar posiciones.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="certificate-template-editor-controls">
+                <label>
+                  <span>Elemento</span>
+                  <select
+                    value={selectedEditorElement}
+                    onChange={(event) => setSelectedEditorElement(event.target.value)}
+                    disabled={!isAdmin}
+                  >
+                    {editorElementOptions.map((element) => (
+                      <option key={element.key} value={element.key}>
+                        {element.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="template-editor-actions-row">
+                  <button type="button" className="visual-primary-button" onClick={handleAddCustomText} disabled={!isAdmin}>
+                    Agregar cuadro de texto
+                  </button>
+                  {selectedCustomText && (
+                    <button type="button" className="danger-table-button" onClick={handleRemoveSelectedCustomText} disabled={!isAdmin}>
+                      Quitar texto
+                    </button>
+                  )}
+                </div>
+
+                <div className="template-editor-actions-row">
+                  <label className="visual-outline-button template-image-upload-button">
+                    Agregar imagen
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleAddCustomImage}
+                      disabled={!isAdmin}
+                    />
+                  </label>
+                  {selectedCustomImage && (
+                    <button type="button" className="danger-table-button" onClick={handleRemoveSelectedCustomImage} disabled={!isAdmin}>
+                      Quitar imagen
+                    </button>
+                  )}
+                </div>
+
+                {selectedCustomText && (
+                  <>
+                    <label>
+                      <span>Etiqueta del cuadro</span>
+                      <input
+                        value={selectedCustomText.label}
+                        onChange={(event) => onTemplateCustomTextChange(selectedCustomText.id, "label", event.target.value)}
+                        disabled={!isAdmin}
+                      />
+                    </label>
+
+                    <div className="template-editor-mini-grid">
+                      <label>
+                        <span>Color</span>
+                        <input
+                          type="color"
+                          value={selectedCustomText.color || "#111827"}
+                          onChange={(event) => onTemplateCustomTextChange(selectedCustomText.id, "color", event.target.value)}
+                          disabled={!isAdmin}
+                        />
+                      </label>
+                      <label>
+                        <span>Alineación</span>
+                        <select
+                          value={selectedCustomText.textAlign || "center"}
+                          onChange={(event) => onTemplateCustomTextChange(selectedCustomText.id, "textAlign", event.target.value)}
+                          disabled={!isAdmin}
+                        >
+                          <option value="left">Izquierda</option>
+                          <option value="center">Centro</option>
+                          <option value="right">Derecha</option>
+                        </select>
+                      </label>
+                    </div>
+                  </>
+                )}
+
+                {selectedCustomImage && (
+                  <>
+                    <label>
+                      <span>Etiqueta de la imagen</span>
+                      <input
+                        value={selectedCustomImage.label}
+                        onChange={(event) => onTemplateCustomImageChange(selectedCustomImage.id, "label", event.target.value)}
+                        disabled={!isAdmin}
+                      />
+                    </label>
+
+                    <div className="template-editor-mini-grid">
+                      <TemplatePositionNumberInput
+                        label="Alto"
+                        value={selectedCustomImage.height}
+                        onChange={(value) => onTemplateCustomImageChange(selectedCustomImage.id, "height", value)}
+                        disabled={!isAdmin}
+                      />
+                      <TemplatePositionNumberInput
+                        label="Opacidad"
+                        value={selectedCustomImage.opacity}
+                        onChange={(value) => onTemplateCustomImageChange(selectedCustomImage.id, "opacity", value)}
+                        disabled={!isAdmin}
+                      />
+                      <TemplatePositionNumberInput
+                        label="Capa"
+                        value={selectedCustomImage.zIndex}
+                        onChange={(value) => onTemplateCustomImageChange(selectedCustomImage.id, "zIndex", value)}
+                        disabled={!isAdmin}
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="template-editor-mini-grid">
+                  <TemplatePositionNumberInput
+                    label="X"
+                    value={currentEditorPosition.x}
+                    onChange={(value) => updateSelectedPosition("x", value)}
+                    disabled={!isAdmin}
+                  />
+                  <TemplatePositionNumberInput
+                    label="Y"
+                    value={currentEditorPosition.y}
+                    onChange={(value) => updateSelectedPosition("y", value)}
+                    disabled={!isAdmin}
+                  />
+                  {selectedEditorMeta.kind === "qr" ? (
+                    <TemplatePositionNumberInput
+                      label="Tamaño"
+                      value={currentEditorPosition.size}
+                      onChange={(value) => updateSelectedPosition("size", value)}
+                      disabled={!isAdmin}
+                    />
+                  ) : (
+                    <TemplatePositionNumberInput
+                      label="Ancho"
+                      value={currentEditorPosition.width}
+                      onChange={(value) => updateSelectedPosition("width", value)}
+                      disabled={!isAdmin}
+                    />
+                  )}
+                  {(selectedEditorMeta.kind === "text" || selectedEditorMeta.kind === "customText") && (
+                    <TemplatePositionNumberInput
+                      label="Fuente"
+                      value={currentEditorPosition.fontSize}
+                      onChange={(value) => updateSelectedPosition("fontSize", value)}
+                      disabled={!isAdmin}
+                    />
+                  )}
+                </div>
+
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={currentEditorPosition.active !== false}
+                    onChange={(event) => updateSelectedPosition("active", event.target.checked)}
+                    disabled={!isAdmin}
+                  />
+                  <span>Mostrar este elemento</span>
+                </label>
+
+                <div className="template-editor-nudge-grid">
+                  <button type="button" onClick={() => updateSelectedPosition("y", Number(currentEditorPosition.y) - 1)} disabled={!isAdmin}>
+                    ↑
+                  </button>
+                  <button type="button" onClick={() => updateSelectedPosition("x", Number(currentEditorPosition.x) - 1)} disabled={!isAdmin}>
+                    ←
+                  </button>
+                  <button type="button" onClick={() => updateSelectedPosition("x", Number(currentEditorPosition.x) + 1)} disabled={!isAdmin}>
+                    →
+                  </button>
+                  <button type="button" onClick={() => updateSelectedPosition("y", Number(currentEditorPosition.y) + 1)} disabled={!isAdmin}>
+                    ↓
+                  </button>
+                </div>
+
+                {selectedCustomText && (
+                  <TemplateBodySegmentsEditor
+                    title="Texto personalizado por segmentos"
+                    description="Edita el cuadro seleccionado y aplica negritas, cursiva o subrayado por partes."
+                    segments={selectedCustomText.segments}
+                    disabled={!isAdmin}
+                    onSegmentChange={(segmentId, field, value) =>
+                      onTemplateCustomTextSegmentChange(selectedCustomText.id, segmentId, field, value)
+                    }
+                    onAddSegment={() => onAddTemplateCustomTextSegment(selectedCustomText.id)}
+                    onRemoveSegment={(segmentId) => onRemoveTemplateCustomTextSegment(selectedCustomText.id, segmentId)}
+                    onResetSegments={() => {
+                      onTemplateCustomTextChange(selectedCustomText.id, "segments", createDefaultTemplateCustomText(0).segments);
+                    }}
+                  />
+                )}
+
+                <button
+                  type="button"
+                  className="visual-outline-button"
+                  onClick={onResetTemplatePositions}
+                  disabled={!isAdmin}
+                >
+                  Restaurar posiciones base
+                </button>
+
+                <p className="inventory-side-help">
+                  Puedes arrastrar los elementos directamente sobre el certificado. Los valores X/Y están en porcentaje de la hoja.
+                </p>
+              </div>
+            </div>
+          </Panel>
+        </div>
+
+        <aside className="printshop-batches-side">
+          <Panel
+            title={selectedTemplateId ? "Editar plantilla" : "Nueva plantilla"}
+            icon={selectedTemplateId ? "✎" : "＋"}
+            actionLabel={selectedTemplateId ? "Edición" : "Alta"}
+          >
+            <form className="printshop-product-form template-form" onSubmit={onSaveTemplate}>
+              <label className="full">
+                <span>Nombre de plantilla</span>
+                <input
+                  name="name"
+                  value={templateForm.name}
+                  onChange={onTemplateInputChange}
+                  placeholder="Ej. Certificado Journey A1"
+                  disabled={!isAdmin}
+                />
+              </label>
+
+              <label>
+                <span>Nivel</span>
+                <select name="level" value={templateForm.level} onChange={onTemplateInputChange} disabled={!isAdmin}>
+                  {levels.map((level) => (
+                    <option key={level}>{level}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Programa</span>
+                <input
+                  name="programName"
+                  value={templateForm.programName}
+                  onChange={onTemplateInputChange}
+                  placeholder="Journey, Explore, Kids 1..."
+                  disabled={!isAdmin}
+                />
+              </label>
+
+              <label>
+                <span>Público</span>
+                <select name="audience" value={templateForm.audience} onChange={onTemplateInputChange} disabled={!isAdmin}>
+                  {certificateTemplateAudiences.map((audience) => (
+                    <option key={audience}>{audience}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tipo</span>
+                <select name="certificateType" value={templateForm.certificateType} onChange={onTemplateInputChange} disabled={!isAdmin}>
+                  {certificateTemplateTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <TemplateBodySegmentsEditor
+                title="Texto principal por segmentos"
+                description="Divide el texto en partes y aplica negritas, cursiva o subrayado solo donde lo necesites."
+                segments={normalizeCertificateBodySegments(templateForm.bodySegments, templateForm.bodyText)}
+                disabled={!isAdmin}
+                onSegmentChange={onTemplateBodySegmentChange}
+                onAddSegment={onAddTemplateBodySegment}
+                onRemoveSegment={onRemoveTemplateBodySegment}
+                onResetSegments={onResetTemplateBodySegments}
+              />
+
+              <label className="full template-body-text-output">
+                <span>Texto completo generado</span>
+                <textarea
+                  name="bodyText"
+                  value={templateForm.bodyText}
+                  onChange={onTemplateInputChange}
+                  placeholder={DEFAULT_CERTIFICATE_BODY_TEXT}
+                  disabled={!isAdmin}
+                />
+                <small>
+                  Usa {"{program}"} dentro de cualquier segmento para insertar el programa seleccionado, por ejemplo basic English A1.
+                </small>
+              </label>
+
+              <label className="full">
+                <span>Imagen base</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => onTemplateFileChange(event.target.files?.[0] || null)}
+                  disabled={!isAdmin}
+                />
+                <small>
+                  Recomendado: imagen vertical tamaño carta, PNG o JPG, máximo 12 MB.
+                </small>
+              </label>
+
+              {(templateFile || templateForm.templateImageDataUrl || templateForm.templateImageUrl) && (
+                <div className="template-selected-preview full">
+                  <span>{templateFile ? templateFile.name : "Imagen actual"}</span>
+                  {(templateForm.templateImageDataUrl || templateForm.templateImageUrl) && !templateFile && (
+                    <img
+                      src={templateForm.templateImageDataUrl || templateForm.templateImageUrl}
+                      alt="Plantilla actual"
+                    />
+                  )}
+                </div>
+              )}
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea
+                  name="notes"
+                  value={templateForm.notes}
+                  onChange={onTemplateInputChange}
+                  placeholder="Notas internas sobre la plantilla"
+                  disabled={!isAdmin}
+                />
+              </label>
+
+              <label className="toggle-row full">
+                <input
+                  type="checkbox"
+                  name="active"
+                  checked={templateForm.active}
+                  onChange={onTemplateInputChange}
+                  disabled={!isAdmin}
+                />
+                <span>Plantilla activa</span>
+              </label>
+
+              {templateMessage && <div className="message-box full">{templateMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                {selectedTemplateId && (
+                  <button type="button" className="visual-outline-button" onClick={onResetTemplateForm}>
+                    Nueva plantilla
+                  </button>
+                )}
+
+                <button type="submit" className="visual-primary-button" disabled={savingTemplate || !isAdmin}>
+                  {savingTemplate ? "Guardando..." : selectedTemplateId ? "Guardar cambios" : "Crear plantilla"}
+                </button>
+              </div>
+            </form>
+          </Panel>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function CertificateBodySegments({ segments }) {
+  const normalizedSegments = normalizeCertificateBodySegments(segments);
+
+  return (
+    <>
+      {normalizedSegments.map((segment) => (
+        <span
+          key={segment.id}
+          className={[
+            segment.bold ? "body-segment-bold" : "",
+            segment.italic ? "body-segment-italic" : "",
+            segment.underline ? "body-segment-underline" : "",
+          ].filter(Boolean).join(" ")}
+        >
+          {segment.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function TemplateBodySegmentsEditor({
+  title = "Texto del certificado por segmentos",
+  description = "Divide el texto en partes y aplica negritas, cursiva o subrayado solo donde lo necesites.",
+  segments,
+  disabled,
+  onSegmentChange,
+  onAddSegment,
+  onRemoveSegment,
+  onResetSegments,
+}) {
+  const normalizedSegments = normalizeCertificateBodySegments(segments);
+
+  return (
+    <div className="template-body-segments-editor full">
+      <div className="template-body-segments-header">
+        <div>
+          <strong>{title}</strong>
+          <p>{description}</p>
+        </div>
+        <button
+          type="button"
+          className="visual-outline-button"
+          onClick={onResetSegments}
+          disabled={disabled}
+        >
+          Restaurar texto base
+        </button>
+      </div>
+
+      <div className="template-body-segments-list">
+        {normalizedSegments.map((segment, index) => (
+          <div className="template-body-segment-row" key={segment.id}>
+            <label>
+              <span>Segmento {index + 1}</span>
+              <textarea
+                value={segment.text}
+                onChange={(event) => onSegmentChange(segment.id, "text", event.target.value)}
+                disabled={disabled}
+              />
+            </label>
+
+            <div className="template-segment-style-actions">
+              <label className="toggle-row compact">
+                <input
+                  type="checkbox"
+                  checked={segment.bold}
+                  onChange={(event) => onSegmentChange(segment.id, "bold", event.target.checked)}
+                  disabled={disabled}
+                />
+                <span>Negritas</span>
+              </label>
+
+              <label className="toggle-row compact">
+                <input
+                  type="checkbox"
+                  checked={segment.italic}
+                  onChange={(event) => onSegmentChange(segment.id, "italic", event.target.checked)}
+                  disabled={disabled}
+                />
+                <span>Cursiva</span>
+              </label>
+
+              <label className="toggle-row compact">
+                <input
+                  type="checkbox"
+                  checked={segment.underline}
+                  onChange={(event) => onSegmentChange(segment.id, "underline", event.target.checked)}
+                  disabled={disabled}
+                />
+                <span>Subrayado</span>
+              </label>
+
+              <button
+                type="button"
+                className="danger-table-button"
+                onClick={() => onRemoveSegment(segment.id)}
+                disabled={disabled || normalizedSegments.length <= 1}
+              >
+                Quitar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="template-body-segments-actions">
+        <button
+          type="button"
+          className="visual-primary-button"
+          onClick={onAddSegment}
+          disabled={disabled}
+        >
+          Agregar segmento
+        </button>
+      </div>
+
+      <div className="template-body-segments-help">
+        Puedes usar <code>{"{program}"}</code> en cualquier segmento para insertar
+        automáticamente el programa de la plantilla.
+      </div>
+    </div>
+  );
+}
+
+function TemplatePositionNumberInput({ label, value, onChange, disabled }) {
+  return (
+    <label>
+      <span>{label}</span>
+      <input
+        type="number"
+        step="0.5"
+        value={Number(value || 0)}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      />
+    </label>
+  );
+}
+
+function CertificateTemplateEditorPreview({
+  templateImageUrl,
+  positions,
+  customTexts,
+  customImages,
+  selectedElement,
+  bodySegments,
+  programLabel,
+  onSelectElement,
+  onLayerMove,
+  disabled,
+}) {
+  const stageRef = useRef(null);
+  const sampleQr = "data:image/svg+xml;utf8," + encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+      <rect width="80" height="80" fill="white"/>
+      <rect x="8" y="8" width="18" height="18" fill="#111827"/>
+      <rect x="54" y="8" width="18" height="18" fill="#111827"/>
+      <rect x="8" y="54" width="18" height="18" fill="#111827"/>
+      <rect x="34" y="16" width="8" height="8" fill="#111827"/>
+      <rect x="46" y="34" width="8" height="8" fill="#111827"/>
+      <rect x="30" y="50" width="10" height="10" fill="#111827"/>
+      <rect x="54" y="54" width="8" height="8" fill="#111827"/>
+    </svg>
+  `);
+
+  function handleLayerPointerDown(event, elementKey) {
+    if (disabled || !stageRef.current) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectElement(elementKey);
+
+    const stage = stageRef.current;
+    const pointerId = event.pointerId;
+    stage.setPointerCapture?.(pointerId);
+
+    function moveLayer(moveEvent) {
+      const rect = stage.getBoundingClientRect();
+      const nextX = Math.min(100, Math.max(0, ((moveEvent.clientX - rect.left) / rect.width) * 100));
+      const nextY = Math.min(100, Math.max(0, ((moveEvent.clientY - rect.top) / rect.height) * 100));
+
+      onLayerMove(elementKey, {
+        x: Number(nextX.toFixed(2)),
+        y: Number(nextY.toFixed(2)),
+      });
+    }
+
+    function stopDrag() {
+      stage.releasePointerCapture?.(pointerId);
+      window.removeEventListener("pointermove", moveLayer);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+    }
+
+    moveLayer(event);
+    window.addEventListener("pointermove", moveLayer);
+    window.addEventListener("pointerup", stopDrag);
+    window.addEventListener("pointercancel", stopDrag);
+  }
+
+  return (
+    <div className="certificate-template-editor-stage" ref={stageRef}>
+      <img src={templateImageUrl} alt="Vista previa de plantilla" draggable="false" />
+
+      <EditorTemplateLayer
+        elementKey="studentName"
+        selectedElement={selectedElement}
+        position={positions.studentName}
+        className="editor-layer-text strong"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        Nombre del alumno
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="bodyText"
+        selectedElement={selectedElement}
+        position={positions.bodyText}
+        className="editor-layer-text body"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        <CertificateBodySegments segments={bodySegments} />
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="date"
+        selectedElement={selectedElement}
+        position={positions.date}
+        className="editor-layer-text"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        June 18, 2026
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="principalSignature"
+        selectedElement={selectedElement}
+        position={positions.principalSignature}
+        className="editor-layer-signature"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        Firma principal
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="principalName"
+        selectedElement={selectedElement}
+        position={positions.principalName}
+        className="editor-layer-text small"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        Keyla Ruelas<br />
+        <small>Principal</small>
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="teacherSignature"
+        selectedElement={selectedElement}
+        position={positions.teacherSignature}
+        className="editor-layer-signature"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        Firma teacher
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="teacherName"
+        selectedElement={selectedElement}
+        position={positions.teacherName}
+        className="editor-layer-text small"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        Manuel Martínez<br />
+        <small>Teacher</small>
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="qr"
+        selectedElement={selectedElement}
+        position={positions.qr}
+        className="editor-layer-qr"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+        isQr
+      >
+        <img src={sampleQr} alt="QR de muestra" draggable="false" />
+      </EditorTemplateLayer>
+
+      <EditorTemplateLayer
+        elementKey="folio"
+        selectedElement={selectedElement}
+        position={positions.folio}
+        className="editor-layer-text folio"
+        onSelectElement={onSelectElement}
+        onPointerDown={handleLayerPointerDown}
+      >
+        Verify certificate<br />
+        CERT-2026-A1-0001
+      </EditorTemplateLayer>
+
+      {normalizeTemplateCustomImages(customImages).map((image) => (
+        <EditorCustomImageLayer
+          key={image.id}
+          customImage={image}
+          selectedElement={selectedElement}
+          onSelectElement={onSelectElement}
+          onPointerDown={handleLayerPointerDown}
+        />
+      ))}
+
+      {normalizeTemplateCustomTexts(customTexts).map((customText) => (
+        <EditorCustomTextLayer
+          key={customText.id}
+          customText={customText}
+          programLabel={programLabel}
+          selectedElement={selectedElement}
+          onSelectElement={onSelectElement}
+          onPointerDown={handleLayerPointerDown}
+        />
+      ))}
+    </div>
+  );
+}
+
+function EditorTemplateLayer({
+  elementKey,
+  selectedElement,
+  position,
+  className = "",
+  onSelectElement,
+  onPointerDown,
+  children,
+  isQr = false,
+}) {
+  const normalized = normalizeTemplatePosition(position, {});
+  if (normalized.active === false) return null;
+
+  const style = isQr
+    ? getTemplateElementStyle(normalized, { size: true })
+    : getTemplateTextStyle(normalized);
+
+  return (
+    <button
+      type="button"
+      className={`editor-template-layer ${className} ${selectedElement === elementKey ? "selected" : ""}`}
+      style={style}
+      onClick={() => onSelectElement(elementKey)}
+      onPointerDown={(event) => onPointerDown?.(event, elementKey)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EditorCustomImageLayer({
+  customImage,
+  selectedElement,
+  onSelectElement,
+  onPointerDown,
+}) {
+  const normalized = normalizeTemplateCustomImage(customImage);
+  if (normalized.active === false || !normalized.imageDataUrl && !normalized.imageUrl) return null;
+
+  const elementKey = getTemplateCustomImageKey(normalized.id);
+
+  return (
+    <button
+      type="button"
+      className={`editor-template-layer editor-layer-custom-image ${selectedElement === elementKey ? "selected" : ""}`}
+      style={getTemplateCustomImageStyle(normalized)}
+      onClick={() => onSelectElement(elementKey)}
+      onPointerDown={(event) => onPointerDown?.(event, elementKey)}
+    >
+      <img src={normalized.imageDataUrl || normalized.imageUrl} alt={normalized.label} draggable="false" />
+    </button>
+  );
+}
+
+function EditorCustomTextLayer({
+  customText,
+  programLabel,
+  selectedElement,
+  onSelectElement,
+  onPointerDown,
+}) {
+  const normalized = normalizeTemplateCustomText(customText);
+  if (normalized.active === false) return null;
+
+  const elementKey = getTemplateCustomTextKey(normalized.id);
+
+  return (
+    <button
+      type="button"
+      className={`editor-template-layer editor-layer-text custom ${selectedElement === elementKey ? "selected" : ""}`}
+      style={getTemplateCustomTextStyle(normalized)}
+      onClick={() => onSelectElement(elementKey)}
+      onPointerDown={(event) => onPointerDown?.(event, elementKey)}
+    >
+      <CertificateBodySegments segments={getResolvedCustomTextSegments(normalized, programLabel)} />
+    </button>
   );
 }
 
