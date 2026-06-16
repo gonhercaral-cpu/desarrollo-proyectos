@@ -6,6 +6,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   writeBatch,
@@ -53,6 +54,32 @@ const productFormInitialState = {
   active: true,
   notes: "",
 };
+
+const inventoryFormInitialState = {
+  productId: "",
+  initialStock: 0,
+  minStock: 0,
+  idealStock: 0,
+  notes: "",
+};
+
+const movementFormInitialState = {
+  inventoryId: "",
+  type: "Entrada",
+  quantity: 1,
+  reason: "Producción terminada",
+  notes: "",
+};
+
+const movementReasons = [
+  "Producción terminada",
+  "Entrega a plantel",
+  "Entrega a alumno",
+  "Ajuste de inventario",
+  "Reposición",
+  "Daño o merma",
+  "Otro",
+];
 
 const basePrintProducts = [
   {
@@ -438,6 +465,40 @@ const certificateStudents = [
   },
 ];
 
+
+function getInventoryStatus(item) {
+  const currentStock = Number(item?.currentStock || 0);
+  const minStock = Number(item?.minStock || 0);
+  const idealStock = Number(item?.idealStock || 0);
+
+  if (currentStock <= 0) {
+    return { label: "Crítico", tone: "red" };
+  }
+
+  if (minStock > 0 && currentStock < minStock) {
+    return { label: "Bajo", tone: "orange" };
+  }
+
+  if (idealStock > 0 && currentStock >= idealStock) {
+    return { label: "Óptimo", tone: "green" };
+  }
+
+  return { label: "Normal", tone: "blue" };
+}
+
+function formatDate(value) {
+  if (!value) return "Sin fecha";
+
+  const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
 
@@ -454,6 +515,17 @@ export default function PrintShop() {
   const [typeFilter, setTypeFilter] = useState("Todos");
   const [statusFilter, setStatusFilter] = useState("Activos");
   const [formMessage, setFormMessage] = useState("");
+
+  const [inventoryItems, setInventoryItems] = useState([]);
+  const [inventoryMovements, setInventoryMovements] = useState([]);
+  const [loadingInventory, setLoadingInventory] = useState(true);
+  const [inventoryError, setInventoryError] = useState("");
+  const [inventoryForm, setInventoryForm] = useState(inventoryFormInitialState);
+  const [movementForm, setMovementForm] = useState(movementFormInitialState);
+  const [savingInventory, setSavingInventory] = useState(false);
+  const [savingMovement, setSavingMovement] = useState(false);
+  const [inventoryMessage, setInventoryMessage] = useState("");
+  const [movementMessage, setMovementMessage] = useState("");
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -487,6 +559,65 @@ export default function PrintShop() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    setLoadingInventory(true);
+    setInventoryError("");
+
+    const inventoryQuery = query(
+      collection(db, "printFinishedInventory"),
+      orderBy("productName", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      inventoryQuery,
+      (snapshot) => {
+        const nextInventory = snapshot.docs.map((inventoryDoc) => ({
+          id: inventoryDoc.id,
+          ...inventoryDoc.data(),
+        }));
+
+        setInventoryItems(nextInventory);
+        setLoadingInventory(false);
+      },
+      (error) => {
+        console.error("No se pudo cargar el inventario terminado:", error);
+        setInventoryError(
+          "No se pudo cargar el inventario terminado. Revisa las reglas de Firestore."
+        );
+        setLoadingInventory(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const movementsQuery = query(
+      collection(db, "printInventoryMovements"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      movementsQuery,
+      (snapshot) => {
+        const nextMovements = snapshot.docs.map((movementDoc) => ({
+          id: movementDoc.id,
+          ...movementDoc.data(),
+        }));
+
+        setInventoryMovements(nextMovements);
+      },
+      (error) => {
+        console.error("No se pudo cargar el historial de inventario:", error);
+        setInventoryError(
+          "No se pudo cargar el historial de movimientos. Revisa las reglas de Firestore."
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const productStats = useMemo(() => {
     const activeProducts = products.filter((product) => product.active !== false);
     const inactiveProducts = products.filter((product) => product.active === false);
@@ -503,6 +634,48 @@ export default function PrintShop() {
       generatedDocuments: generatedDocuments.length,
     };
   }, [products]);
+
+  const inventoryStats = useMemo(() => {
+    const activeInventory = inventoryItems.filter((item) => item.active !== false);
+    const lowStock = activeInventory.filter((item) => {
+      const currentStock = Number(item.currentStock || 0);
+      const minStock = Number(item.minStock || 0);
+      return minStock > 0 && currentStock < minStock;
+    });
+    const critical = activeInventory.filter(
+      (item) => Number(item.currentStock || 0) <= 0
+    );
+    const totalStock = activeInventory.reduce(
+      (sum, item) => sum + Number(item.currentStock || 0),
+      0
+    );
+
+    return {
+      total: activeInventory.length,
+      lowStock: lowStock.length,
+      critical: critical.length,
+      totalStock,
+    };
+  }, [inventoryItems]);
+
+  const inventoryProducts = useMemo(() => {
+    return products.filter(
+      (product) =>
+        product.active !== false &&
+        product.category === "Libro" &&
+        product.productionType === "Producto terminado"
+    );
+  }, [products]);
+
+  const productsWithoutInventory = useMemo(() => {
+    const inventoryProductIds = new Set(
+      inventoryItems.map((item) => item.productId).filter(Boolean)
+    );
+
+    return inventoryProducts.filter(
+      (product) => !inventoryProductIds.has(product.id)
+    );
+  }, [inventoryProducts, inventoryItems]);
 
   const filteredProducts = useMemo(() => {
     const normalizedSearch = productSearch.trim().toLowerCase();
@@ -700,6 +873,281 @@ export default function PrintShop() {
     }
   }
 
+  function handleInventoryInputChange(event) {
+    const { name, value } = event.target;
+
+    setInventoryMessage("");
+
+    setInventoryForm((current) => {
+      const nextForm = {
+        ...current,
+        [name]: value,
+      };
+
+      if (name === "productId") {
+        const selectedProduct = products.find((product) => product.id === value);
+
+        if (selectedProduct) {
+          nextForm.minStock = Number(selectedProduct.minStock || 0);
+          nextForm.idealStock = Number(selectedProduct.idealStock || 0);
+        }
+      }
+
+      return nextForm;
+    });
+  }
+
+  function handleInventoryNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setInventoryMessage("");
+
+    setInventoryForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function resetInventoryForm() {
+    setInventoryForm(inventoryFormInitialState);
+    setInventoryMessage("");
+  }
+
+  function handleMovementInputChange(event) {
+    const { name, value } = event.target;
+
+    setMovementMessage("");
+    setMovementForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  function handleMovementNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setMovementMessage("");
+    setMovementForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 1 : Math.max(1, nextValue),
+    }));
+  }
+
+  function prepareMovement(item, type = "Entrada") {
+    setActiveSection("inventory");
+    setMovementForm((current) => ({
+      ...current,
+      inventoryId: item.id,
+      type,
+      reason: type === "Entrada" ? "Producción terminada" : "Entrega a plantel",
+      quantity: 1,
+      notes: "",
+    }));
+    setMovementMessage(
+      `Se preparó una ${type.toLowerCase()} para ${item.productName}. Revisa la cantidad y el motivo, luego presiona “Registrar movimiento”.`
+    );
+
+    window.setTimeout(() => {
+      const movementPanel = document.getElementById("printshop-movement-panel");
+      const quantityInput = document.getElementById("printshop-movement-quantity");
+
+      if (movementPanel) {
+        movementPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      if (quantityInput) {
+        quantityInput.focus();
+        quantityInput.select();
+      }
+    }, 80);
+  }
+
+  async function createInventoryItem(event) {
+    event.preventDefault();
+    setInventoryMessage("");
+
+    if (!isAdmin) {
+      setInventoryMessage("Solo los administradores pueden crear inventario.");
+      return;
+    }
+
+    if (!inventoryForm.productId) {
+      setInventoryMessage("Selecciona un producto del catálogo.");
+      return;
+    }
+
+    if (Number(inventoryForm.idealStock) < Number(inventoryForm.minStock)) {
+      setInventoryMessage("El stock ideal no puede ser menor que el stock mínimo.");
+      return;
+    }
+
+    const selectedProduct = products.find(
+      (product) => product.id === inventoryForm.productId
+    );
+
+    if (!selectedProduct) {
+      setInventoryMessage("No se encontró el producto seleccionado.");
+      return;
+    }
+
+    const alreadyExists = inventoryItems.some(
+      (item) => item.productId === selectedProduct.id
+    );
+
+    if (alreadyExists) {
+      setInventoryMessage("Este producto ya tiene inventario registrado.");
+      return;
+    }
+
+    const initialStock = Number(inventoryForm.initialStock || 0);
+    const minStock = Number(inventoryForm.minStock || 0);
+    const idealStock = Number(inventoryForm.idealStock || 0);
+    const auditUser = getAuditUser();
+
+    const inventoryRef = doc(collection(db, "printFinishedInventory"));
+    const batch = writeBatch(db);
+
+    batch.set(inventoryRef, {
+      productId: selectedProduct.id,
+      productName: selectedProduct.name || "",
+      category: selectedProduct.category || "Libro",
+      level: selectedProduct.level || "No aplica",
+      unit: selectedProduct.unit || "Pieza",
+      currentStock: initialStock,
+      minStock,
+      idealStock,
+      active: true,
+      notes: inventoryForm.notes || "",
+      createdAt: serverTimestamp(),
+      createdByUid: auditUser.uid,
+      createdByName: auditUser.name,
+      createdByEmail: auditUser.email,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    });
+
+    if (initialStock > 0) {
+      const movementRef = doc(collection(db, "printInventoryMovements"));
+      batch.set(movementRef, {
+        inventoryId: inventoryRef.id,
+        productId: selectedProduct.id,
+        productName: selectedProduct.name || "",
+        type: "Entrada",
+        quantity: initialStock,
+        reason: "Stock inicial",
+        previousStock: 0,
+        newStock: initialStock,
+        notes: inventoryForm.notes || "Alta inicial de inventario terminado.",
+        createdAt: serverTimestamp(),
+        createdByUid: auditUser.uid,
+        createdByName: auditUser.name,
+        createdByEmail: auditUser.email,
+      });
+    }
+
+    try {
+      setSavingInventory(true);
+      await batch.commit();
+      setInventoryForm(inventoryFormInitialState);
+      setInventoryMessage("Inventario creado correctamente.");
+    } catch (error) {
+      console.error("No se pudo crear el inventario terminado:", error);
+      setInventoryMessage(
+        "No se pudo crear el inventario. Revisa que hayas publicado las reglas nuevas de Firestore."
+      );
+    } finally {
+      setSavingInventory(false);
+    }
+  }
+
+  async function registerInventoryMovement(event) {
+    event.preventDefault();
+    setMovementMessage("");
+
+    if (!isAdmin) {
+      setMovementMessage("Solo los administradores pueden registrar movimientos.");
+      return;
+    }
+
+    if (!movementForm.inventoryId) {
+      setMovementMessage("Selecciona un producto del inventario.");
+      return;
+    }
+
+    const quantity = Number(movementForm.quantity || 0);
+
+    if (quantity <= 0) {
+      setMovementMessage("La cantidad debe ser mayor que cero.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const inventoryRef = doc(db, "printFinishedInventory", movementForm.inventoryId);
+    const movementRef = doc(collection(db, "printInventoryMovements"));
+
+    try {
+      setSavingMovement(true);
+
+      await runTransaction(db, async (transaction) => {
+        const inventorySnapshot = await transaction.get(inventoryRef);
+
+        if (!inventorySnapshot.exists()) {
+          throw new Error("No se encontró el inventario seleccionado.");
+        }
+
+        const inventoryData = inventorySnapshot.data();
+        const previousStock = Number(inventoryData.currentStock || 0);
+        const newStock =
+          movementForm.type === "Entrada"
+            ? previousStock + quantity
+            : previousStock - quantity;
+
+        if (newStock < 0) {
+          throw new Error("No puedes registrar una salida mayor al stock disponible.");
+        }
+
+        transaction.update(inventoryRef, {
+          currentStock: newStock,
+          updatedAt: serverTimestamp(),
+          updatedByUid: auditUser.uid,
+          updatedByName: auditUser.name,
+          updatedByEmail: auditUser.email,
+        });
+
+        transaction.set(movementRef, {
+          inventoryId: movementForm.inventoryId,
+          productId: inventoryData.productId || "",
+          productName: inventoryData.productName || "",
+          type: movementForm.type,
+          quantity,
+          reason: movementForm.reason || "Ajuste de inventario",
+          previousStock,
+          newStock,
+          notes: movementForm.notes || "",
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+      });
+
+      setMovementForm(movementFormInitialState);
+      setMovementMessage("Movimiento registrado correctamente.");
+    } catch (error) {
+      console.error("No se pudo registrar el movimiento:", error);
+      setMovementMessage(
+        error?.message ||
+          "No se pudo registrar el movimiento. Revisa reglas de Firestore."
+      );
+    } finally {
+      setSavingMovement(false);
+    }
+  }
+
   return (
     <div className="printshop-page">
       <section className="printshop-topbar">
@@ -741,15 +1189,26 @@ export default function PrintShop() {
           <span>▤</span>
           Catálogo de productos
         </button>
+        <button
+          type="button"
+          className={activeSection === "inventory" ? "active" : ""}
+          onClick={() => setActiveSection("inventory")}
+        >
+          <span>▣</span>
+          Inventario terminado
+        </button>
       </section>
 
       {activeSection === "dashboard" ? (
         <DashboardView
           products={products}
           productStats={productStats}
+          inventoryItems={inventoryItems}
+          inventoryStats={inventoryStats}
           onOpenCatalog={() => setActiveSection("catalog")}
+          onOpenInventory={() => setActiveSection("inventory")}
         />
-      ) : (
+      ) : activeSection === "catalog" ? (
         <ProductCatalogView
           products={products}
           filteredProducts={filteredProducts}
@@ -779,12 +1238,60 @@ export default function PrintShop() {
           onToggleStatus={toggleProductStatus}
           onSeedBaseProducts={seedBaseProducts}
         />
+      ) : (
+        <FinishedInventoryView
+          productsWithoutInventory={productsWithoutInventory}
+          inventoryProducts={inventoryProducts}
+          inventoryItems={inventoryItems}
+          inventoryMovements={inventoryMovements}
+          loadingInventory={loadingInventory}
+          inventoryError={inventoryError}
+          inventoryStats={inventoryStats}
+          inventoryForm={inventoryForm}
+          movementForm={movementForm}
+          savingInventory={savingInventory}
+          savingMovement={savingMovement}
+          inventoryMessage={inventoryMessage}
+          movementMessage={movementMessage}
+          isAdmin={isAdmin}
+          onInventoryInputChange={handleInventoryInputChange}
+          onInventoryNumberInputChange={handleInventoryNumberInputChange}
+          onMovementInputChange={handleMovementInputChange}
+          onMovementNumberInputChange={handleMovementNumberInputChange}
+          onCreateInventoryItem={createInventoryItem}
+          onRegisterMovement={registerInventoryMovement}
+          onPrepareMovement={prepareMovement}
+          onResetInventoryForm={resetInventoryForm}
+        />
       )}
     </div>
   );
 }
 
-function DashboardView({ productStats, onOpenCatalog }) {
+function DashboardView({ productStats, inventoryItems, inventoryStats, onOpenCatalog, onOpenInventory }) {
+  const lowInventoryItems = inventoryItems
+    .filter((item) => {
+      const currentStock = Number(item.currentStock || 0);
+      const minStock = Number(item.minStock || 0);
+      return minStock > 0 && currentStock < minStock;
+    })
+    .slice(0, 5);
+
+  const dashboardMetrics = metrics.map((metric) => {
+    if (metric.label === "Libros con stock bajo") {
+      return {
+        ...metric,
+        value: String(inventoryStats.lowStock),
+        helper:
+          inventoryStats.lowStock === 1
+            ? "Libro bajo mínimo"
+            : "Libros bajo mínimo",
+      };
+    }
+
+    return metric;
+  });
+
   const operationalCards = [
     {
       icon: "▤",
@@ -893,7 +1400,7 @@ function DashboardView({ productStats, onOpenCatalog }) {
       </section>
 
       <section className="printshop-metrics-grid printshop-metrics-enhanced">
-        {metrics.map((metric) => (
+        {dashboardMetrics.map((metric) => (
           <MetricCard key={metric.label} metric={metric} />
         ))}
       </section>
@@ -919,6 +1426,7 @@ function DashboardView({ productStats, onOpenCatalog }) {
           icon="▧"
           title="Nuevo lote"
           description="Crear producción interna de libros para inventario terminado."
+          onClick={onOpenInventory}
         />
         <ActionCard
           icon="◎"
@@ -1004,18 +1512,50 @@ function DashboardView({ productStats, onOpenCatalog }) {
         </div>
 
         <aside className="printshop-dashboard-side-enhanced">
-          <Panel title="Inventario de productos terminados" icon="▣" actionLabel="Libros">
+          <Panel title="Inventario de productos terminados" icon="▣" actionLabel={`${inventoryStats.total} libros`}>
             <div className="finished-inventory-list enhanced">
-              {finishedInventory.map((item) => (
-                <div className="finished-inventory-row" key={item.product}>
-                  <div>
-                    <strong>{item.product}</strong>
-                    <span>Stock {item.stock} · mínimo {item.minimum}</span>
-                  </div>
-                  <StatusBadge tone={item.tone}>{item.status}</StatusBadge>
+              {inventoryItems.length === 0 ? (
+                <div className="printshop-small-empty">
+                  <strong>Inventario pendiente</strong>
+                  <span>Configura los libros terminados desde la pestaña Inventario.</span>
                 </div>
-              ))}
+              ) : lowInventoryItems.length === 0 ? (
+                inventoryItems.slice(0, 3).map((item) => {
+                  const status = getInventoryStatus(item);
+
+                  return (
+                    <div className="finished-inventory-row" key={item.id}>
+                      <div>
+                        <strong>{item.productName}</strong>
+                        <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
+                      </div>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                    </div>
+                  );
+                })
+              ) : (
+                lowInventoryItems.map((item) => {
+                  const status = getInventoryStatus(item);
+
+                  return (
+                    <div className="finished-inventory-row" key={item.id}>
+                      <div>
+                        <strong>{item.productName}</strong>
+                        <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
+                      </div>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                    </div>
+                  );
+                })
+              )}
             </div>
+            <button
+              type="button"
+              className="visual-outline-button printshop-full-button"
+              onClick={onOpenInventory}
+            >
+              Administrar inventario
+            </button>
           </Panel>
 
           <Panel title="Catálogo de productos" icon="▤" actionLabel="Base real">
@@ -1190,8 +1730,8 @@ function DashboardView({ productStats, onOpenCatalog }) {
                 El siguiente paso lógico es conectar los libros del catálogo con
                 existencias reales, stock mínimo, stock ideal y alertas automáticas.
               </p>
-              <button type="button" className="visual-outline-button" onClick={onOpenCatalog}>
-                Revisar productos base
+              <button type="button" className="visual-outline-button" onClick={onOpenInventory}>
+                Abrir inventario terminado
               </button>
             </div>
           </div>
@@ -1200,6 +1740,345 @@ function DashboardView({ productStats, onOpenCatalog }) {
     </>
   );
 }
+
+
+function FinishedInventoryView({
+  productsWithoutInventory,
+  inventoryProducts,
+  inventoryItems,
+  inventoryMovements,
+  loadingInventory,
+  inventoryError,
+  inventoryStats,
+  inventoryForm,
+  movementForm,
+  savingInventory,
+  savingMovement,
+  inventoryMessage,
+  movementMessage,
+  isAdmin,
+  onInventoryInputChange,
+  onInventoryNumberInputChange,
+  onMovementInputChange,
+  onMovementNumberInputChange,
+  onCreateInventoryItem,
+  onRegisterMovement,
+  onPrepareMovement,
+  onResetInventoryForm,
+}) {
+  const latestMovements = inventoryMovements.slice(0, 8);
+
+  return (
+    <section className="printshop-inventory-page">
+      <div className="printshop-catalog-hero inventory-hero">
+        <div>
+          <p className="section-kicker printshop-kicker">Etapa 3</p>
+          <h2>Inventario de productos terminados</h2>
+          <p>
+            Controla libros ya producidos, existencias actuales, mínimos, ideales,
+            entradas, salidas e historial de movimientos para saber cuándo reponer.
+          </p>
+        </div>
+
+        <div className="inventory-hero-card">
+          <strong>{inventoryStats.totalStock}</strong>
+          <span>Unidades disponibles</span>
+        </div>
+      </div>
+
+      <div className="printshop-catalog-metrics">
+        <CatalogMetric tone="blue" icon="▣" label="Productos" value={inventoryStats.total} />
+        <CatalogMetric tone="orange" icon="!" label="Stock bajo" value={inventoryStats.lowStock} />
+        <CatalogMetric tone="red" icon="×" label="Críticos" value={inventoryStats.critical} />
+        <CatalogMetric tone="green" icon="✓" label="Unidades" value={inventoryStats.totalStock} />
+        <CatalogMetric tone="purple" icon="↕" label="Movimientos" value={inventoryMovements.length} />
+      </div>
+
+      {inventoryError && <div className="form-error">{inventoryError}</div>}
+
+      <div className="printshop-inventory-layout">
+        <div className="printshop-inventory-main">
+          <Panel title="Existencias actuales" icon="▣" actionLabel={`${inventoryItems.length} productos`}>
+            {loadingInventory ? (
+              <div className="printshop-empty-catalog">
+                <div>▣</div>
+                <h3>Cargando inventario...</h3>
+                <p>Estamos consultando las existencias registradas.</p>
+              </div>
+            ) : inventoryItems.length === 0 ? (
+              <div className="printshop-empty-catalog">
+                <div>▣</div>
+                <h3>Aún no hay inventario terminado</h3>
+                <p>
+                  Crea inventario desde productos del catálogo, empezando por los libros.
+                </p>
+              </div>
+            ) : (
+              <div className="printshop-table-wrap">
+                <table className="printshop-table printshop-inventory-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Stock actual</th>
+                      <th>Mínimo</th>
+                      <th>Ideal</th>
+                      <th>Estado</th>
+                      <th>Actualización</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventoryItems.map((item) => {
+                      const status = getInventoryStatus(item);
+
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.productName}</strong>
+                            <span>{item.level || "No aplica"} · {item.unit || "Pieza"}</span>
+                          </td>
+                          <td>
+                            <strong>{Number(item.currentStock || 0)}</strong>
+                          </td>
+                          <td>{Number(item.minStock || 0)}</td>
+                          <td>{Number(item.idealStock || 0)}</td>
+                          <td>
+                            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                          </td>
+                          <td>
+                            <span>{formatDate(item.updatedAt)}</span>
+                          </td>
+                          <td>
+                            <div className="printshop-product-actions">
+                              <button type="button" onClick={() => onPrepareMovement(item, "Entrada")}>
+                                Entrada
+                              </button>
+                              <button type="button" onClick={() => onPrepareMovement(item, "Salida")}>
+                                Salida
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Historial de movimientos" icon="↕" actionLabel="Últimos registros">
+            {latestMovements.length === 0 ? (
+              <div className="printshop-small-empty">
+                <strong>Sin movimientos registrados</strong>
+                <span>Las entradas y salidas aparecerán en este historial.</span>
+              </div>
+            ) : (
+              <div className="inventory-movement-list">
+                {latestMovements.map((movement) => (
+                  <article className="inventory-movement-item" key={movement.id}>
+                    <div className={`inventory-movement-icon ${movement.type === "Entrada" ? "green" : "orange"}`}>
+                      {movement.type === "Entrada" ? "+" : "−"}
+                    </div>
+                    <div>
+                      <strong>{movement.productName}</strong>
+                      <p>
+                        {movement.type} de {Number(movement.quantity || 0)} · {movement.reason || "Ajuste"}
+                      </p>
+                      <span>
+                        Stock {Number(movement.previousStock || 0)} → {Number(movement.newStock || 0)}
+                      </span>
+                    </div>
+                    <small>{formatDate(movement.createdAt)}</small>
+                  </article>
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <aside className="printshop-inventory-side">
+          <Panel title="Crear inventario" icon="＋" actionLabel="Desde catálogo">
+            <form className="printshop-product-form" onSubmit={onCreateInventoryItem}>
+              <label className="full">
+                <span>Producto del catálogo</span>
+                <select
+                  name="productId"
+                  value={inventoryForm.productId}
+                  onChange={onInventoryInputChange}
+                  disabled={!isAdmin || productsWithoutInventory.length === 0}
+                >
+                  <option value="">Seleccionar producto</option>
+                  {productsWithoutInventory.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} · {product.level || "No aplica"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="inventory-form-note full">
+                <strong>{inventoryProducts.length}</strong>
+                <span>productos terminados disponibles en catálogo</span>
+              </div>
+
+              <label>
+                <span>Stock inicial</span>
+                <input
+                  type="number"
+                  name="initialStock"
+                  min="0"
+                  value={inventoryForm.initialStock}
+                  onChange={onInventoryNumberInputChange}
+                />
+              </label>
+
+              <label>
+                <span>Stock mínimo</span>
+                <input
+                  type="number"
+                  name="minStock"
+                  min="0"
+                  value={inventoryForm.minStock}
+                  onChange={onInventoryNumberInputChange}
+                />
+              </label>
+
+              <label>
+                <span>Stock ideal</span>
+                <input
+                  type="number"
+                  name="idealStock"
+                  min="0"
+                  value={inventoryForm.idealStock}
+                  onChange={onInventoryNumberInputChange}
+                />
+              </label>
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea
+                  name="notes"
+                  value={inventoryForm.notes}
+                  onChange={onInventoryInputChange}
+                  placeholder="Ej. Alta inicial de libros disponibles."
+                />
+              </label>
+
+              {inventoryMessage && <div className="message-box full">{inventoryMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                <button
+                  type="button"
+                  className="visual-outline-button"
+                  onClick={onResetInventoryForm}
+                >
+                  Limpiar
+                </button>
+                <button
+                  type="submit"
+                  className="visual-primary-button"
+                  disabled={savingInventory || !isAdmin || productsWithoutInventory.length === 0}
+                >
+                  {savingInventory ? "Guardando..." : "Crear inventario"}
+                </button>
+              </div>
+
+              {productsWithoutInventory.length === 0 && (
+                <p className="inventory-side-help full">
+                  Todos los libros activos del catálogo ya tienen inventario, o aún no has creado productos tipo libro.
+                </p>
+              )}
+            </form>
+          </Panel>
+
+          <div id="printshop-movement-panel">
+            <Panel title="Registrar movimiento" icon="↕" actionLabel="Entrada / salida">
+              <form className="printshop-product-form" onSubmit={onRegisterMovement}>
+              <label className="full">
+                <span>Producto</span>
+                <select
+                  name="inventoryId"
+                  value={movementForm.inventoryId}
+                  onChange={onMovementInputChange}
+                  disabled={!isAdmin || inventoryItems.length === 0}
+                >
+                  <option value="">Seleccionar inventario</option>
+                  {inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.productName} · stock {Number(item.currentStock || 0)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tipo</span>
+                <select
+                  name="type"
+                  value={movementForm.type}
+                  onChange={onMovementInputChange}
+                >
+                  <option>Entrada</option>
+                  <option>Salida</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Cantidad</span>
+                <input
+                  id="printshop-movement-quantity"
+                  type="number"
+                  name="quantity"
+                  min="1"
+                  value={movementForm.quantity}
+                  onChange={onMovementNumberInputChange}
+                />
+              </label>
+
+              <label className="full">
+                <span>Motivo</span>
+                <select
+                  name="reason"
+                  value={movementForm.reason}
+                  onChange={onMovementInputChange}
+                >
+                  {movementReasons.map((reason) => (
+                    <option key={reason}>{reason}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea
+                  name="notes"
+                  value={movementForm.notes}
+                  onChange={onMovementInputChange}
+                  placeholder="Ej. Entrega a Plaza Estrella, producción terminada, ajuste, etc."
+                />
+              </label>
+
+              {movementMessage && <div className="message-box full">{movementMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                <button
+                  type="submit"
+                  className="visual-primary-button"
+                  disabled={savingMovement || !isAdmin || inventoryItems.length === 0}
+                >
+                  {savingMovement ? "Registrando..." : "Registrar movimiento"}
+                </button>
+              </div>
+              </form>
+            </Panel>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 
 function ProductCatalogView({
   products,

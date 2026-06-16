@@ -16905,3 +16905,238 @@ body:has(.field-mode-page) .main-content {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   IMPRENTA - INVENTARIO DE PRODUCTOS TERMINADOS
+========================================================= */
+
+.printshop-inventory-page {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+}
+
+.inventory-hero {
+  align-items: center;
+}
+
+.inventory-hero-card {
+  min-width: 190px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 95% 12%, rgba(15, 79, 196, 0.12), transparent 30%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: 18px;
+  text-align: center;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+}
+
+.inventory-hero-card strong {
+  display: block;
+  color: #0f4fc4;
+  font-size: 38px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.inventory-hero-card span {
+  color: #526176;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.printshop-inventory-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 20px;
+  align-items: start;
+}
+
+.printshop-inventory-main,
+.printshop-inventory-side {
+  min-width: 0;
+}
+
+.printshop-inventory-main,
+.printshop-inventory-side {
+  display: grid;
+  gap: 18px;
+}
+
+.printshop-inventory-side {
+  position: sticky;
+  top: 24px;
+}
+
+.printshop-inventory-table {
+  min-width: 940px;
+}
+
+.printshop-inventory-table td > strong {
+  display: block;
+  color: #0f2442;
+  font-size: 16px;
+}
+
+.inventory-form-note {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px dashed #bad0ff;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 11px 12px;
+}
+
+.inventory-form-note strong {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 18px;
+}
+
+.inventory-form-note span {
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.inventory-side-help {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 11px;
+}
+
+.printshop-small-empty {
+  display: grid;
+  gap: 4px;
+  border: 1px dashed #d9e2ef;
+  border-radius: 14px;
+  background: #fbfdff;
+  padding: 14px;
+  text-align: center;
+}
+
+.printshop-small-empty strong {
+  color: #0f2442;
+  font-size: 13px;
+}
+
+.printshop-small-empty span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inventory-movement-list {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-movement-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  padding: 12px;
+}
+
+.inventory-movement-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.inventory-movement-icon.green {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.inventory-movement-icon.orange {
+  background: #ffedd5;
+  color: #f97316;
+}
+
+.inventory-movement-item strong {
+  display: block;
+  color: #0f2442;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.inventory-movement-item p {
+  margin: 0;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.inventory-movement-item span {
+  display: block;
+  color: #0f4fc4;
+  font-size: 11px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+
+.inventory-movement-item small {
+  color: #64748b;
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 1450px) {
+  .printshop-inventory-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-inventory-side {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .inventory-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-hero-card {
+    width: 100%;
+  }
+
+  .printshop-inventory-side {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-movement-item {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .inventory-movement-item small {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+}
