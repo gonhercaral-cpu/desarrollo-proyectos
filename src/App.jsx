@@ -1,10 +1,28 @@
 import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import CertificateValidation from "./pages/CertificateValidation";
 import "./styles/app.css";
+
+function getCertificateValidationCodeFromPath() {
+  if (typeof window === "undefined") return "";
+
+  const path = window.location.pathname || "";
+  const marker = "/validar-certificado/";
+  const markerIndex = path.indexOf(marker);
+
+  if (markerIndex < 0) return "";
+
+  return decodeURIComponent(path.slice(markerIndex + marker.length).replace(/\/+$/, ""));
+}
 
 export default function App() {
   const { firebaseUser, profile, loading } = useAuth();
+  const certificateValidationCode = getCertificateValidationCodeFromPath();
+
+  if (certificateValidationCode) {
+    return <CertificateValidation validationCode={certificateValidationCode} />;
+  }
 
   if (loading) {
     return (

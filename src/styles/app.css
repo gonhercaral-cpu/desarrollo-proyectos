@@ -20365,3 +20365,200 @@ body:has(.field-mode-page) .main-content {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Página pública de validación de certificados ===== */
+.certificate-validation-page {
+  min-height: 100vh;
+  padding: 32px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at top left, rgba(36, 79, 134, 0.16), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(184, 60, 75, 0.14), transparent 30%),
+    linear-gradient(135deg, #eef4fb, #f7fafc);
+}
+
+.certificate-validation-card {
+  width: min(760px, 100%);
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(209, 223, 238, 0.9);
+  box-shadow: 0 26px 70px rgba(20, 42, 74, 0.18);
+  padding: 28px;
+  display: grid;
+  gap: 22px;
+}
+
+.certificate-validation-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e1e9f2;
+}
+
+.certificate-validation-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #244f86, #b83c4b);
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.certificate-validation-brand span {
+  display: block;
+  color: #65758c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.certificate-validation-brand strong {
+  display: block;
+  margin-top: 3px;
+  color: #17345f;
+  font-size: 20px;
+}
+
+.certificate-validation-state {
+  border-radius: 24px;
+  padding: 28px;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 12px;
+  border: 1px solid #dce7f5;
+  background: #f8fbff;
+}
+
+.certificate-validation-state.success {
+  border-color: #bfe3ca;
+  background: #f1fbf4;
+}
+
+.certificate-validation-state.info {
+  border-color: #bdd6f2;
+  background: #f3f8ff;
+}
+
+.certificate-validation-state.danger {
+  border-color: #f2c0c8;
+  background: #fff4f6;
+}
+
+.certificate-validation-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  background: #244f86;
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.certificate-validation-state.success .certificate-validation-icon {
+  background: #198754;
+}
+
+.certificate-validation-state.danger .certificate-validation-icon {
+  background: #b83c4b;
+}
+
+.certificate-validation-state h1 {
+  margin: 0;
+  color: #17345f;
+  font-size: clamp(28px, 5vw, 42px);
+}
+
+.certificate-validation-state p {
+  margin: 0;
+  max-width: 560px;
+  color: #526176;
+  line-height: 1.6;
+}
+
+.certificate-validation-state small {
+  color: #7b8797;
+  word-break: break-word;
+}
+
+.certificate-validation-spinner {
+  width: 48px;
+  height: 48px;
+  border: 5px solid #dce7f5;
+  border-top-color: #244f86;
+  border-radius: 50%;
+  animation: certificateValidationSpin 0.9s linear infinite;
+}
+
+@keyframes certificateValidationSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.certificate-validation-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.certificate-validation-details div {
+  border-radius: 18px;
+  padding: 15px;
+  background: #f7fbff;
+  border: 1px solid #dce7f5;
+  display: grid;
+  gap: 5px;
+}
+
+.certificate-validation-details span,
+.certificate-validation-footer span {
+  color: #65758c;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.certificate-validation-details strong {
+  color: #17345f;
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.certificate-validation-footer {
+  border-radius: 20px;
+  padding: 16px;
+  background: #fff;
+  border: 1px dashed #bdd0e4;
+  display: grid;
+  gap: 6px;
+}
+
+.certificate-validation-footer strong {
+  color: #17345f;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .certificate-validation-card {
+    padding: 20px;
+    border-radius: 24px;
+  }
+
+  .certificate-validation-details {
+    grid-template-columns: 1fr;
+  }
+
+  .certificate-validation-brand strong {
+    font-size: 17px;
+  }
+}

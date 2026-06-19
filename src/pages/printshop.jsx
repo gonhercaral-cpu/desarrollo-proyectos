@@ -3624,8 +3624,13 @@ export default function PrintShop() {
       updatedByEmail: auditUser.email,
     };
 
+    const publicCertificatePayload = buildPublicCertificateValidationPayload(certificatePayload, {
+      publishedAt: serverTimestamp(),
+    });
+
     const batch = writeBatch(db);
     batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
+    batch.set(doc(db, "publicCertificateValidations", certificateId), publicCertificatePayload, { merge: true });
     batch.update(doc(db, "printRequests", request.id), {
       students: nextStudents,
       updatedAt: serverTimestamp(),
@@ -3669,6 +3674,18 @@ export default function PrintShop() {
     }
 
     batch.update(certificateRef, statusPayload);
+
+    const publicCertificateId = sanitizeGeneratedCertificateId(
+      certificate.validationCode || certificate.id || certificate.folio
+    );
+    batch.set(
+      doc(db, "publicCertificateValidations", publicCertificateId),
+      buildPublicCertificateValidationPayload(certificate, {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      }),
+      { merge: true }
+    );
 
     if (request) {
       const nextStudents = normalizeRequestStudents(request.students || []).map((student) => {
@@ -8162,6 +8179,35 @@ function normalizeGeneratedCertificate(certificate) {
   };
 }
 
+function buildPublicCertificateValidationPayload(certificate, overrides = {}) {
+  const source = {
+    ...(certificate || {}),
+    ...(overrides || {}),
+  };
+  const issueDate = String(source.issueDate || "");
+  const issueYear = String(source.issueYear || source.generatedYear || getYearFromDateString(issueDate) || "");
+
+  return {
+    validationCode: String(source.validationCode || ""),
+    folio: String(source.folio || ""),
+    validationUrl: String(source.validationUrl || buildValidationUrl(source.validationCode || "")),
+    studentName: String(source.studentName || ""),
+    level: String(source.level || "No aplica"),
+    programName: String(source.programName || ""),
+    requestType: String(source.requestType || "Certificado"),
+    productName: String(source.productName || ""),
+    templateName: String(source.templateName || ""),
+    issueDate,
+    issueYear,
+    campus: String(source.campus || "Sin plantel"),
+    teacherName: String(source.teacherName || ""),
+    status: generatedCertificateStatuses.includes(source.status) ? source.status : "Generado",
+    institution: "Active English School",
+    requestId: String(source.requestId || ""),
+    updatedAt: serverTimestamp(),
+  };
+}
+
 function getGeneratedCertificateStatusTone(status) {
   if (status === "Entregado") return "green";
   if (status === "Cancelado") return "red";
@@ -8314,17 +8360,26 @@ function CertificatePreviewCard({
       pdf.save(`${fileName}.pdf`);
 
       if (typeof onCertificateGenerated === "function") {
-        await onCertificateGenerated({
-          request,
-          student,
-          certificateTemplate,
-          principalName,
-          teacherName,
-          fileName: `${fileName}.pdf`,
-        });
-      }
+        try {
+          await onCertificateGenerated({
+            request,
+            student,
+            certificateTemplate,
+            principalName,
+            teacherName,
+            fileName: `${fileName}.pdf`,
+          });
 
-      setGenerationMessage("PDF descargado y certificado registrado en el historial.");
+          setGenerationMessage("PDF descargado y certificado registrado en el historial.");
+        } catch (registrationError) {
+          console.error("El PDF se descargó, pero no se pudo registrar el certificado:", registrationError);
+          setGenerationMessage(
+            "PDF descargado. No se pudo registrar el certificado en el historial o en la validación pública. Revisa Firestore Rules y vuelve a presionar Descargar PDF."
+          );
+        }
+      } else {
+        setGenerationMessage("PDF descargado correctamente.");
+      }
     } catch (error) {
       console.error("No se pudo descargar el certificado en PDF:", error);
       alert(
