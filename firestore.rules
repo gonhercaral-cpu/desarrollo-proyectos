@@ -1303,6 +1303,34 @@ service cloud.firestore {
         && printRequestExists(request.resource.data.requestId);
     }
 
+    function validPrintshopLogData() {
+      return request.resource.data.type is string
+        && request.resource.data.type.size() > 0
+        && request.resource.data.module is string
+        && request.resource.data.module.size() > 0
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.description is string
+        && request.resource.data.referenceType is string
+        && request.resource.data.referenceId is string
+        && request.resource.data.requestId is string
+        && request.resource.data.requestFolio is string
+        && request.resource.data.certificateId is string
+        && request.resource.data.certificateFolio is string
+        && request.resource.data.validationCode is string
+        && request.resource.data.studentName is string
+        && request.resource.data.batchId is string
+        && request.resource.data.batchFolio is string
+        && request.resource.data.productId is string
+        && request.resource.data.productName is string
+        && request.resource.data.campus is string
+        && request.resource.data.level is string
+        && request.resource.data.performedByUid == request.auth.uid
+        && request.resource.data.performedByName is string
+        && request.resource.data.performedByEmail is string
+        && request.resource.data.createdAt is timestamp;
+    }
+
     function validTechnicalLocationCreate() {
       return canManageTechnicalSupport()
         && request.resource.data.name is string
@@ -1516,6 +1544,15 @@ service cloud.firestore {
         && validGeneratedCertificateData();
 
       allow delete: if false;
+    }
+
+    match /printshopLogs/{logId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if canAccessPrintshop()
+        && validPrintshopLogData();
+
+      allow update, delete: if false;
     }
 
     match /publicCertificateValidations/{validationId} {

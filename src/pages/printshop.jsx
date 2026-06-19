@@ -119,6 +119,36 @@ const studentStatuses = ["Pendiente", "Listo para generar", "Folio generado", "G
 
 const generatedCertificateStatuses = ["Generado", "Entregado", "Cancelado"];
 
+const printshopLogModules = [
+  "Todos",
+  "Solicitudes",
+  "Certificados",
+  "Plantillas",
+  "Firmas",
+  "Lotes",
+  "Inventario",
+];
+
+const printshopLogTypes = [
+  "Todos",
+  "REQUEST_CREATED",
+  "REQUEST_UPDATED",
+  "CERTIFICATE_GENERATED",
+  "CERTIFICATE_DELIVERED",
+  "CERTIFICATE_CANCELLED",
+  "CERTIFICATE_REPRINT_OPENED",
+  "CERTIFICATE_BULK_PDFS_SAVED",
+  "CERTIFICATE_ZIP_DOWNLOADED",
+  "TEMPLATE_CREATED",
+  "TEMPLATE_UPDATED",
+  "SIGNER_CREATED",
+  "SIGNER_UPDATED",
+  "BATCH_CREATED",
+  "BATCH_UPDATED",
+  "BATCH_INVENTORY_APPLIED",
+  "INVENTORY_MOVEMENT_CREATED",
+];
+
 const printCampuses = [
   "Plaza Estrella",
   "Plaza Bugambilias",
@@ -1555,6 +1585,78 @@ function getInventoryStatus(item) {
   return { label: "Normal", tone: "blue" };
 }
 
+function getPrintshopLogModuleLabel(module) {
+  const labels = {
+    requests: "Solicitudes",
+    certificates: "Certificados",
+    templates: "Plantillas",
+    signers: "Firmas",
+    batches: "Lotes",
+    inventory: "Inventario",
+  };
+
+  return labels[module] || "Imprenta";
+}
+
+function getPrintshopLogTypeLabel(type) {
+  const labels = {
+    REQUEST_CREATED: "Solicitud creada",
+    REQUEST_UPDATED: "Solicitud actualizada",
+    CERTIFICATE_GENERATED: "Certificado generado",
+    CERTIFICATE_DELIVERED: "Certificado entregado",
+    CERTIFICATE_CANCELLED: "Certificado cancelado",
+    CERTIFICATE_REPRINT_OPENED: "Reimpresión preparada",
+    CERTIFICATE_BULK_PDFS_SAVED: "PDFs masivos guardados",
+    CERTIFICATE_ZIP_DOWNLOADED: "ZIP descargado",
+    TEMPLATE_CREATED: "Plantilla creada",
+    TEMPLATE_UPDATED: "Plantilla actualizada",
+    SIGNER_CREATED: "Firma creada",
+    SIGNER_UPDATED: "Firma actualizada",
+    BATCH_CREATED: "Lote creado",
+    BATCH_UPDATED: "Lote actualizado",
+    BATCH_INVENTORY_APPLIED: "Lote ingresado a inventario",
+    INVENTORY_MOVEMENT_CREATED: "Movimiento de inventario",
+  };
+
+  return labels[type] || type || "Acción registrada";
+}
+
+function getPrintshopLogTone(type) {
+  if (String(type || "").includes("CANCEL")) return "red";
+  if (String(type || "").includes("DELIVER") || String(type || "").includes("INVENTORY")) return "green";
+  if (String(type || "").includes("ZIP") || String(type || "").includes("BULK")) return "teal";
+  if (String(type || "").includes("UPDATED")) return "orange";
+  return "blue";
+}
+
+function normalizePrintshopLog(log) {
+  return {
+    id: log?.id || "",
+    type: String(log?.type || ""),
+    module: String(log?.module || ""),
+    title: String(log?.title || getPrintshopLogTypeLabel(log?.type)),
+    description: String(log?.description || ""),
+    referenceType: String(log?.referenceType || ""),
+    referenceId: String(log?.referenceId || ""),
+    requestId: String(log?.requestId || ""),
+    requestFolio: String(log?.requestFolio || ""),
+    certificateId: String(log?.certificateId || ""),
+    certificateFolio: String(log?.certificateFolio || ""),
+    validationCode: String(log?.validationCode || ""),
+    studentName: String(log?.studentName || ""),
+    batchId: String(log?.batchId || ""),
+    batchFolio: String(log?.batchFolio || ""),
+    productId: String(log?.productId || ""),
+    productName: String(log?.productName || ""),
+    campus: String(log?.campus || ""),
+    level: String(log?.level || ""),
+    performedByUid: String(log?.performedByUid || ""),
+    performedByName: String(log?.performedByName || ""),
+    performedByEmail: String(log?.performedByEmail || ""),
+    createdAt: log?.createdAt || "",
+  };
+}
+
 function formatDate(value) {
   if (!value) return "Sin fecha";
 
@@ -1791,6 +1893,13 @@ export default function PrintShop() {
   const [generatedCertificateTeacherFilter, setGeneratedCertificateTeacherFilter] = useState("Todos");
   const [generatedCertificateLevelFilter, setGeneratedCertificateLevelFilter] = useState("Todos");
   const [updatingGeneratedCertificateId, setUpdatingGeneratedCertificateId] = useState(null);
+
+  const [printshopLogs, setPrintshopLogs] = useState([]);
+  const [loadingPrintshopLogs, setLoadingPrintshopLogs] = useState(true);
+  const [printshopLogsError, setPrintshopLogsError] = useState("");
+  const [printshopLogSearch, setPrintshopLogSearch] = useState("");
+  const [printshopLogModuleFilter, setPrintshopLogModuleFilter] = useState("Todos");
+  const [printshopLogTypeFilter, setPrintshopLogTypeFilter] = useState("Todos");
 
   useEffect(() => {
     setStudentName("");
@@ -2091,6 +2200,38 @@ export default function PrintShop() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    setLoadingPrintshopLogs(true);
+    setPrintshopLogsError("");
+
+    const logsQuery = query(
+      collection(db, "printshopLogs"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      logsQuery,
+      (snapshot) => {
+        const nextLogs = snapshot.docs.map((logDoc) =>
+          normalizePrintshopLog({
+            id: logDoc.id,
+            ...logDoc.data(),
+          })
+        );
+
+        setPrintshopLogs(nextLogs);
+        setLoadingPrintshopLogs(false);
+      },
+      (error) => {
+        console.error("No se pudo cargar la bitácora de imprenta:", error);
+        setPrintshopLogsError("No se pudo cargar la bitácora. Revisa las reglas de Firestore.");
+        setLoadingPrintshopLogs(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const productStats = useMemo(() => {
     const activeProducts = products.filter((product) => product.active !== false);
     const inactiveProducts = products.filter((product) => product.active === false);
@@ -2343,6 +2484,31 @@ export default function PrintShop() {
     generatedCertificateLevelFilter,
   ]);
 
+  const filteredPrintshopLogs = useMemo(() => {
+    const normalizedSearch = printshopLogSearch.trim().toLowerCase();
+
+    return printshopLogs.filter((log) => {
+      const moduleLabel = getPrintshopLogModuleLabel(log.module);
+      const typeLabel = getPrintshopLogTypeLabel(log.type);
+
+      const matchesSearch =
+        !normalizedSearch ||
+        `${log.title} ${log.description} ${log.requestFolio} ${log.certificateFolio} ${log.validationCode} ${log.studentName} ${log.batchFolio} ${log.productName} ${log.campus} ${log.performedByName} ${log.performedByEmail} ${moduleLabel} ${typeLabel}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+
+      const matchesModule =
+        printshopLogModuleFilter === "Todos" ||
+        moduleLabel === printshopLogModuleFilter;
+
+      const matchesType =
+        printshopLogTypeFilter === "Todos" ||
+        log.type === printshopLogTypeFilter;
+
+      return matchesSearch && matchesModule && matchesType;
+    });
+  }, [printshopLogs, printshopLogSearch, printshopLogModuleFilter, printshopLogTypeFilter]);
+
   const selectedRequest = useMemo(
     () => printRequests.find((request) => request.id === selectedRequestId) || null,
     [printRequests, selectedRequestId]
@@ -2379,6 +2545,41 @@ export default function PrintShop() {
       name: profile?.name || user?.displayName || "Usuario",
       email: profile?.email || user?.email || "",
     };
+  }
+
+  async function createPrintshopLog(logData = {}) {
+    const auditUser = getAuditUser();
+
+    if (!auditUser.uid) return;
+
+    try {
+      await addDoc(collection(db, "printshopLogs"), {
+        type: String(logData.type || "ACTION"),
+        module: String(logData.module || "general"),
+        title: String(logData.title || getPrintshopLogTypeLabel(logData.type)),
+        description: String(logData.description || ""),
+        referenceType: String(logData.referenceType || ""),
+        referenceId: String(logData.referenceId || ""),
+        requestId: String(logData.requestId || ""),
+        requestFolio: String(logData.requestFolio || ""),
+        certificateId: String(logData.certificateId || ""),
+        certificateFolio: String(logData.certificateFolio || ""),
+        validationCode: String(logData.validationCode || ""),
+        studentName: String(logData.studentName || ""),
+        batchId: String(logData.batchId || ""),
+        batchFolio: String(logData.batchFolio || ""),
+        productId: String(logData.productId || ""),
+        productName: String(logData.productName || ""),
+        campus: String(logData.campus || ""),
+        level: String(logData.level || ""),
+        performedByUid: auditUser.uid,
+        performedByName: auditUser.name,
+        performedByEmail: auditUser.email,
+        createdAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("No se pudo registrar la bitácora de imprenta:", error);
+    }
   }
 
   function findAssignableUser(uid) {
@@ -3060,14 +3261,34 @@ export default function PrintShop() {
 
       if (selectedTemplateId) {
         await updateDoc(doc(db, "certificateTemplates", selectedTemplateId), payload);
+        await createPrintshopLog({
+          type: "TEMPLATE_UPDATED",
+          module: "templates",
+          title: "Plantilla actualizada",
+          description: `Se actualizó la plantilla ${name}.`,
+          referenceType: "template",
+          referenceId: selectedTemplateId,
+          productName: name,
+          level: payload.level || "",
+        });
         setTemplateMessage("Plantilla actualizada correctamente.");
       } else {
-        await addDoc(collection(db, "certificateTemplates"), {
+        const newTemplateRef = await addDoc(collection(db, "certificateTemplates"), {
           ...payload,
           createdAt: serverTimestamp(),
           createdByUid: auditUser.uid,
           createdByName: auditUser.name,
           createdByEmail: auditUser.email,
+        });
+        await createPrintshopLog({
+          type: "TEMPLATE_CREATED",
+          module: "templates",
+          title: "Plantilla creada",
+          description: `Se creó la plantilla ${name}.`,
+          referenceType: "template",
+          referenceId: newTemplateRef.id,
+          productName: name,
+          level: payload.level || "",
         });
         setTemplateMessage("Plantilla creada correctamente.");
       }
@@ -3215,14 +3436,32 @@ export default function PrintShop() {
 
       if (selectedSignerId) {
         await updateDoc(doc(db, "certificateSigners", selectedSignerId), payload);
+        await createPrintshopLog({
+          type: "SIGNER_UPDATED",
+          module: "signers",
+          title: "Firma actualizada",
+          description: `Se actualizó la firma de ${name}.`,
+          referenceType: "signer",
+          referenceId: selectedSignerId,
+          campus: payload.campus || "",
+        });
         setSignerMessage("Firmante actualizado correctamente.");
       } else {
-        await addDoc(collection(db, "certificateSigners"), {
+        const newSignerRef = await addDoc(collection(db, "certificateSigners"), {
           ...payload,
           createdAt: serverTimestamp(),
           createdByUid: auditUser.uid,
           createdByName: auditUser.name,
           createdByEmail: auditUser.email,
+        });
+        await createPrintshopLog({
+          type: "SIGNER_CREATED",
+          module: "signers",
+          title: "Firma creada",
+          description: `Se creó la firma de ${name}.`,
+          referenceType: "signer",
+          referenceId: newSignerRef.id,
+          campus: payload.campus || "",
         });
         setSignerMessage("Firmante creado correctamente.");
       }
@@ -3465,6 +3704,20 @@ export default function PrintShop() {
             };
 
         await updateDoc(doc(db, "printRequests", selectedRequestId), payload);
+        await createPrintshopLog({
+          type: "REQUEST_UPDATED",
+          module: "requests",
+          title: "Solicitud de imprenta actualizada",
+          description: `Se actualizó la solicitud ${currentRequest?.folio || selectedRequestId}.`,
+          referenceType: "request",
+          referenceId: selectedRequestId,
+          requestId: selectedRequestId,
+          requestFolio: currentRequest?.folio || "",
+          productId: selectedProduct.id,
+          productName: selectedProduct.name || "",
+          campus: basePayload.campus || "",
+          level: basePayload.level || "",
+        });
         setRequestMessage("Solicitud actualizada correctamente.");
       } else {
         if (!requestForm.requesterName.trim() || !requestForm.requesterArea.trim()) {
@@ -3473,13 +3726,28 @@ export default function PrintShop() {
           return;
         }
 
-        await addDoc(collection(db, "printRequests"), {
+        const newRequestFolio = buildRequestFolio(requestForm.requestType);
+        const newRequestRef = await addDoc(collection(db, "printRequests"), {
           ...basePayload,
-          folio: buildRequestFolio(requestForm.requestType),
+          folio: newRequestFolio,
           createdAt: serverTimestamp(),
           createdByUid: auditUser.uid,
           createdByName: auditUser.name,
           createdByEmail: auditUser.email,
+        });
+        await createPrintshopLog({
+          type: "REQUEST_CREATED",
+          module: "requests",
+          title: "Solicitud de imprenta creada",
+          description: `Se creó la solicitud ${newRequestFolio}.`,
+          referenceType: "request",
+          referenceId: newRequestRef.id,
+          requestId: newRequestRef.id,
+          requestFolio: newRequestFolio,
+          productId: selectedProduct.id,
+          productName: selectedProduct.name || "",
+          campus: basePayload.campus || "",
+          level: basePayload.level || "",
         });
         setRequestForm(requestFormInitialState);
         setRequestMessage("Solicitud creada correctamente.");
@@ -3653,6 +3921,24 @@ export default function PrintShop() {
     });
 
     await batch.commit();
+    await createPrintshopLog({
+      type: "CERTIFICATE_GENERATED",
+      module: "certificates",
+      title: "Certificado generado",
+      description: `Se generó el certificado de ${student.name}.`,
+      referenceType: "certificate",
+      referenceId: certificateId,
+      requestId: request.id,
+      requestFolio: request.folio || "",
+      certificateId,
+      certificateFolio: student.certificateFolio,
+      validationCode: student.validationCode,
+      studentName: student.name,
+      productId: request.productId || "",
+      productName: request.productName || "",
+      campus: request.campus || "",
+      level: request.level || "",
+    });
     setRequestMessage(`Certificado ${student.certificateFolio} registrado en el historial.`);
   }
 
@@ -3744,6 +4030,24 @@ export default function PrintShop() {
     try {
       setUpdatingGeneratedCertificateId(certificate.id);
       await batch.commit();
+      await createPrintshopLog({
+        type: nextStatus === "Cancelado" ? "CERTIFICATE_CANCELLED" : "CERTIFICATE_DELIVERED",
+        module: "certificates",
+        title: nextStatus === "Cancelado" ? "Certificado cancelado" : "Certificado entregado",
+        description: `${certificate.studentName || "Alumno"} quedó como ${nextStatus}.`,
+        referenceType: "certificate",
+        referenceId: certificate.id,
+        requestId: certificate.requestId || "",
+        requestFolio: certificate.requestFolio || "",
+        certificateId: certificate.id,
+        certificateFolio: certificate.folio || "",
+        validationCode: certificate.validationCode || "",
+        studentName: certificate.studentName || "",
+        productId: certificate.productId || "",
+        productName: certificate.productName || "",
+        campus: certificate.campus || "",
+        level: certificate.level || "",
+      });
     } catch (error) {
       console.error("No se pudo actualizar el estado del certificado:", error);
       setGeneratedCertificatesError("No se pudo actualizar el certificado. Revisa las reglas de Firestore.");
@@ -3775,6 +4079,24 @@ export default function PrintShop() {
     setRequestMessage(
       `Certificado ${certificate.folio || ""} listo para reimpresión. Revisa la vista previa y presiona Descargar PDF.`
     );
+    createPrintshopLog({
+      type: "CERTIFICATE_REPRINT_OPENED",
+      module: "certificates",
+      title: "Certificado preparado para reimpresión",
+      description: `Se abrió para reimprimir el certificado de ${certificate.studentName || "alumno"}.`,
+      referenceType: "certificate",
+      referenceId: certificate.id || "",
+      requestId: certificate.requestId || "",
+      requestFolio: certificate.requestFolio || "",
+      certificateId: certificate.id || "",
+      certificateFolio: certificate.folio || "",
+      validationCode: certificate.validationCode || "",
+      studentName: certificate.studentName || "",
+      productId: certificate.productId || "",
+      productName: certificate.productName || "",
+      campus: certificate.campus || "",
+      level: certificate.level || "",
+    });
     setActiveSection("requests");
   }
 
@@ -4435,6 +4757,15 @@ export default function PrintShop() {
         });
       });
 
+      await createPrintshopLog({
+        type: "INVENTORY_MOVEMENT_CREATED",
+        module: "inventory",
+        title: "Movimiento de inventario registrado",
+        description: `${movementForm.type} de ${quantity} unidades por ${movementForm.reason || "Ajuste de inventario"}.`,
+        referenceType: "inventory",
+        referenceId: movementForm.inventoryId,
+        productName: movementForm.productName || "",
+      });
       setMovementForm(movementFormInitialState);
       setMovementMessage("Movimiento registrado correctamente.");
     } catch (error) {
@@ -4618,6 +4949,19 @@ export default function PrintShop() {
       try {
         setSavingBatch(true);
         await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        await createPrintshopLog({
+          type: "BATCH_UPDATED",
+          module: "batches",
+          title: "Lote actualizado",
+          description: `Se actualizó el avance del lote ${selectedBatch?.folio || selectedBatchId}.`,
+          referenceType: "batch",
+          referenceId: selectedBatchId,
+          batchId: selectedBatchId,
+          batchFolio: selectedBatch?.folio || "",
+          productId: selectedBatch?.productId || "",
+          productName: selectedBatch?.productName || "",
+          level: selectedBatch?.level || "",
+        });
         setBatchMessage("Avance de producción actualizado correctamente.");
       } catch (error) {
         console.error("No se pudo guardar el avance de producción:", error);
@@ -4663,6 +5007,19 @@ export default function PrintShop() {
       try {
         setSavingBatch(true);
         await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        await createPrintshopLog({
+          type: "BATCH_UPDATED",
+          module: "batches",
+          title: "Revisión de calidad actualizada",
+          description: `Se actualizó la revisión de calidad del lote ${selectedBatch?.folio || selectedBatchId}.`,
+          referenceType: "batch",
+          referenceId: selectedBatchId,
+          batchId: selectedBatchId,
+          batchFolio: selectedBatch?.folio || "",
+          productId: selectedBatch?.productId || "",
+          productName: selectedBatch?.productName || "",
+          level: selectedBatch?.level || "",
+        });
         setBatchMessage("Revisión de calidad actualizada correctamente.");
       } catch (error) {
         console.error("No se pudo guardar la revisión de calidad:", error);
@@ -4744,14 +5101,40 @@ export default function PrintShop() {
 
       if (selectedBatchId) {
         await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        await createPrintshopLog({
+          type: "BATCH_UPDATED",
+          module: "batches",
+          title: "Lote actualizado",
+          description: `Se actualizó el lote ${selectedBatch?.folio || selectedBatchId}.`,
+          referenceType: "batch",
+          referenceId: selectedBatchId,
+          batchId: selectedBatchId,
+          batchFolio: selectedBatch?.folio || "",
+          productId: payload.productId || "",
+          productName: payload.productName || "",
+          level: payload.level || "",
+        });
         setBatchMessage("Lote actualizado correctamente.");
       } else {
-        await addDoc(collection(db, "printProductionBatches"), {
+        const newBatchRef = await addDoc(collection(db, "printProductionBatches"), {
           ...payload,
           createdAt: serverTimestamp(),
           createdByUid: auditUser.uid,
           createdByName: auditUser.name,
           createdByEmail: auditUser.email,
+        });
+        await createPrintshopLog({
+          type: "BATCH_CREATED",
+          module: "batches",
+          title: "Lote creado",
+          description: `Se creó el lote ${payload.folio}.`,
+          referenceType: "batch",
+          referenceId: newBatchRef.id,
+          batchId: newBatchRef.id,
+          batchFolio: payload.folio || "",
+          productId: payload.productId || "",
+          productName: payload.productName || "",
+          level: payload.level || "",
         });
         setBatchForm(batchFormInitialState);
         setBatchMessage("Lote creado correctamente.");
@@ -4891,6 +5274,19 @@ export default function PrintShop() {
         });
       });
 
+      await createPrintshopLog({
+        type: "BATCH_INVENTORY_APPLIED",
+        module: "batches",
+        title: "Lote ingresado a inventario",
+        description: `Se ingresó el lote ${batch.folio || ""} al inventario terminado.`,
+        referenceType: "batch",
+        referenceId: batch.id,
+        batchId: batch.id,
+        batchFolio: batch.folio || "",
+        productId: batch.productId || "",
+        productName: batch.productName || "",
+        level: batch.level || "",
+      });
       setBatchMessage("Lote ingresado al inventario correctamente.");
       resetBatchForm();
     } catch (error) {
@@ -4918,17 +5314,39 @@ export default function PrintShop() {
           <input
             type="search"
             placeholder="Buscar folio, producto, insumo o certificado"
-            value={activeSection === "catalog" ? productSearch : activeSection === "requests" ? requestSearch : activeSection === "certificates" ? generatedCertificateSearch : ""}
+            value={
+              activeSection === "catalog"
+                ? productSearch
+                : activeSection === "requests"
+                  ? requestSearch
+                  : activeSection === "certificates"
+                    ? generatedCertificateSearch
+                    : activeSection === "logs"
+                      ? printshopLogSearch
+                      : ""
+            }
             onChange={(event) => {
               if (activeSection === "requests") {
                 setRequestSearch(event.target.value);
               } else if (activeSection === "certificates") {
                 setGeneratedCertificateSearch(event.target.value);
+              } else if (activeSection === "logs") {
+                setPrintshopLogSearch(event.target.value);
               } else {
                 setProductSearch(event.target.value);
               }
             }}
-            onFocus={() => setActiveSection(activeSection === "requests" ? "requests" : activeSection === "certificates" ? "certificates" : "catalog")}
+            onFocus={() =>
+              setActiveSection(
+                activeSection === "requests"
+                  ? "requests"
+                  : activeSection === "certificates"
+                    ? "certificates"
+                    : activeSection === "logs"
+                      ? "logs"
+                      : "catalog"
+              )
+            }
           />
         </label>
       </section>
@@ -4981,6 +5399,14 @@ export default function PrintShop() {
         >
           <span>☑</span>
           Historial de certificados
+        </button>
+        <button
+          type="button"
+          className={activeSection === "logs" ? "active" : ""}
+          onClick={() => setActiveSection("logs")}
+        >
+          <span>▨</span>
+          Bitácora
         </button>
         {isAdmin && (
           <button
@@ -5125,6 +5551,7 @@ export default function PrintShop() {
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
           onRegisterGeneratedCertificate={registerGeneratedCertificate}
+          onLogPrintshopAction={createPrintshopLog}
         />
       ) : activeSection === "certificates" ? (
         <GeneratedCertificatesView
@@ -5151,6 +5578,19 @@ export default function PrintShop() {
           onCancelCertificate={(certificate) => updateGeneratedCertificateStatus(certificate, "Cancelado")}
           onOpenRequest={openRequestFromGeneratedCertificate}
           onReprintCertificate={reprintGeneratedCertificate}
+        />
+      ) : activeSection === "logs" ? (
+        <PrintshopLogsView
+          logs={printshopLogs}
+          filteredLogs={filteredPrintshopLogs}
+          loadingLogs={loadingPrintshopLogs}
+          logsError={printshopLogsError}
+          search={printshopLogSearch}
+          moduleFilter={printshopLogModuleFilter}
+          typeFilter={printshopLogTypeFilter}
+          onSearchChange={setPrintshopLogSearch}
+          onModuleFilterChange={setPrintshopLogModuleFilter}
+          onTypeFilterChange={setPrintshopLogTypeFilter}
         />
       ) : activeSection === "templates" && isAdmin ? (
         <CertificateTemplatesView
@@ -5244,6 +5684,151 @@ export default function PrintShop() {
   );
 }
 
+
+function PrintshopLogsView({
+  logs,
+  filteredLogs,
+  loadingLogs,
+  logsError,
+  search,
+  moduleFilter,
+  typeFilter,
+  onSearchChange,
+  onModuleFilterChange,
+  onTypeFilterChange,
+}) {
+  const stats = useMemo(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const today = filteredLogs.filter((log) => {
+      const date = typeof log.createdAt?.toDate === "function"
+        ? log.createdAt.toDate()
+        : new Date(log.createdAt);
+
+      if (Number.isNaN(date.getTime())) return false;
+
+      return date.toISOString().slice(0, 10) === todayKey;
+    }).length;
+
+    const users = new Set(filteredLogs.map((log) => log.performedByName || log.performedByEmail).filter(Boolean));
+
+    return {
+      total: filteredLogs.length,
+      all: logs.length,
+      today,
+      users: users.size,
+    };
+  }, [logs, filteredLogs]);
+
+  const latestLogs = filteredLogs.slice(0, 250);
+
+  return (
+    <section className="printshop-logs-section">
+      <div className="printshop-section-heading">
+        <div>
+          <p className="section-kicker printshop-kicker">Bitácora de imprenta</p>
+          <h2>Registro de acciones importantes</h2>
+          <p>
+            Consulta quién generó certificados, descargó ZIPs, actualizó solicitudes,
+            movió lotes o registró movimientos de inventario.
+          </p>
+        </div>
+      </div>
+
+      <div className="catalog-metrics-grid printshop-logs-metrics">
+        <CatalogMetric tone="blue" icon="▨" label="Filtradas" value={stats.total} />
+        <CatalogMetric tone="teal" icon="↺" label="Total histórico" value={stats.all} />
+        <CatalogMetric tone="green" icon="◷" label="Hoy" value={stats.today} />
+        <CatalogMetric tone="orange" icon="👤" label="Usuarios" value={stats.users} />
+      </div>
+
+      <Panel title="Bitácora" icon="▨" actionLabel={`${latestLogs.length} registros`}>
+        <div className="printshop-logs-toolbar">
+          <label className="catalog-filter-search">
+            <span>Buscar</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Acción, folio, alumno, lote, usuario..."
+            />
+          </label>
+
+          <label>
+            <span>Módulo</span>
+            <select value={moduleFilter} onChange={(event) => onModuleFilterChange(event.target.value)}>
+              {printshopLogModules.map((module) => (
+                <option key={module}>{module}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Acción</span>
+            <select value={typeFilter} onChange={(event) => onTypeFilterChange(event.target.value)}>
+              {printshopLogTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type === "Todos" ? "Todas" : getPrintshopLogTypeLabel(type)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {loadingLogs ? (
+          <div className="empty-state small">
+            <div>⌛</div>
+            <p>Cargando bitácora...</p>
+          </div>
+        ) : logsError ? (
+          <div className="message-box">{logsError}</div>
+        ) : latestLogs.length === 0 ? (
+          <div className="empty-state small">
+            <div>▨</div>
+            <p>No hay acciones registradas con esos filtros.</p>
+          </div>
+        ) : (
+          <div className="printshop-log-list">
+            {latestLogs.map((log) => (
+              <article className="printshop-log-card" key={log.id}>
+                <div className={`printshop-log-icon ${getPrintshopLogTone(log.type)}`}>
+                  {getPrintshopLogModuleLabel(log.module).slice(0, 1)}
+                </div>
+
+                <div className="printshop-log-content">
+                  <div className="printshop-log-title-row">
+                    <div>
+                      <strong>{log.title || getPrintshopLogTypeLabel(log.type)}</strong>
+                      <span>{getPrintshopLogTypeLabel(log.type)} · {getPrintshopLogModuleLabel(log.module)}</span>
+                    </div>
+                    <small>{formatDate(log.createdAt)}</small>
+                  </div>
+
+                  <p>{log.description || "Sin descripción registrada."}</p>
+
+                  <div className="printshop-log-tags">
+                    {log.requestFolio && <span>Solicitud: {log.requestFolio}</span>}
+                    {log.certificateFolio && <span>Certificado: {log.certificateFolio}</span>}
+                    {log.studentName && <span>Alumno: {log.studentName}</span>}
+                    {log.batchFolio && <span>Lote: {log.batchFolio}</span>}
+                    {log.productName && <span>Producto: {log.productName}</span>}
+                    {log.campus && <span>Plantel: {log.campus}</span>}
+                    {log.level && <span>Nivel: {log.level}</span>}
+                  </div>
+
+                  <div className="printshop-log-user">
+                    <span>Usuario</span>
+                    <strong>{log.performedByName || "Sin usuario"}</strong>
+                    {log.performedByEmail && <small>{log.performedByEmail}</small>}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </section>
+  );
+}
 
 function GeneratedCertificatesView({
   certificates,
@@ -7037,6 +7622,7 @@ function PrintRequestsView({
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
   onRegisterGeneratedCertificate,
+  onLogPrintshopAction,
 }) {
   const requestProducts = products.filter(
     (product) => product.active !== false && product.category !== "Libro"
@@ -7254,6 +7840,7 @@ function PrintRequestsView({
               onGenerateStudentFolio={onGenerateStudentFolio}
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
               onRegisterGeneratedCertificate={onRegisterGeneratedCertificate}
+              onLogPrintshopAction={onLogPrintshopAction}
             />
           )}
 
@@ -7642,6 +8229,7 @@ function RequestDetailCard({
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
   onRegisterGeneratedCertificate,
+  onLogPrintshopAction,
 }) {
   const students = normalizeRequestStudents(request?.students || []);
   const [previewStudentId, setPreviewStudentId] = useState("");
@@ -7775,6 +8363,22 @@ function RequestDetailCard({
         await buildAndStoreStudentCertificatePdf(student);
       }
 
+      if (typeof onLogPrintshopAction === "function") {
+        await onLogPrintshopAction({
+          type: "CERTIFICATE_BULK_PDFS_SAVED",
+          module: "certificates",
+          title: "PDFs faltantes guardados",
+          description: `Se guardaron ${certificateStudentsMissingPdf.length} PDFs faltantes de la solicitud ${request.folio || ""}.`,
+          referenceType: "request",
+          referenceId: request.id,
+          requestId: request.id,
+          requestFolio: request.folio || "",
+          productId: request.productId || "",
+          productName: request.productName || "",
+          campus: request.campus || "",
+          level: request.level || "",
+        });
+      }
       setBulkCertificateMessage("PDFs faltantes guardados correctamente.");
     } catch (error) {
       console.error("No se pudieron guardar los PDFs faltantes:", error);
@@ -7805,22 +8409,28 @@ function RequestDetailCard({
         );
 
         const record = getGeneratedCertificateRecordForStudent(student);
-        let fileName = `${sanitizePdfFileName(
-          `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
-        )}.pdf`;
+        let fileName =
+          record?.pdfFileName ||
+          `${sanitizePdfFileName(
+            `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
+          )}.pdf`;
         let pdfBlob = null;
 
-        if (record?.pdfStoragePath) {
-          try {
-            const bytes = await getBytes(storageRef(storage, record.pdfStoragePath));
-            pdfBlob = new Blob([bytes], { type: "application/pdf" });
-            fileName = record.pdfFileName || fileName;
-          } catch (downloadError) {
-            console.warn("No se pudo leer el PDF guardado; se regenerará:", downloadError);
-          }
-        }
+        /*
+          No descargamos el PDF ya guardado desde Storage para armar el ZIP,
+          porque Firebase Storage puede bloquear esa lectura desde localhost por CORS.
+          En su lugar, generamos el PDF desde la plantilla que ya está cargada en el sistema.
+          Si el alumno todavía no tiene PDF original guardado, además lo guardamos en Storage.
+        */
+        if (record?.pdfUrl) {
+          const element = bulkCertificateRefs.current?.[student.id];
 
-        if (!pdfBlob) {
+          if (!element) {
+            throw new Error(`No se encontró la vista oculta del certificado de ${student.name}.`);
+          }
+
+          pdfBlob = await buildCertificatePdfBlobFromElement(element);
+        } else {
           const saved = await buildAndStoreStudentCertificatePdf(student);
           pdfBlob = saved.pdfBlob;
           fileName = saved.fileName;
@@ -7835,6 +8445,22 @@ function RequestDetailCard({
         `certificados-${request.level || "nivel"}-${request.group || request.folio || "solicitud"}`
       )}.zip`;
       downloadBlobFile(zipBlob, zipFileName);
+      if (typeof onLogPrintshopAction === "function") {
+        await onLogPrintshopAction({
+          type: "CERTIFICATE_ZIP_DOWNLOADED",
+          module: "certificates",
+          title: "ZIP de certificados descargado",
+          description: `Se descargó un ZIP con ${certificateStudentsWithFolios.length} certificados de la solicitud ${request.folio || ""}.`,
+          referenceType: "request",
+          referenceId: request.id,
+          requestId: request.id,
+          requestFolio: request.folio || "",
+          productId: request.productId || "",
+          productName: request.productName || "",
+          campus: request.campus || "",
+          level: request.level || "",
+        });
+      }
       setBulkCertificateMessage("ZIP descargado correctamente.");
     } catch (error) {
       console.error("No se pudo descargar el ZIP de certificados:", error);

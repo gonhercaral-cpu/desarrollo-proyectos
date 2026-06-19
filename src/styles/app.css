@@ -20621,3 +20621,166 @@ body:has(.field-mode-page) .main-content {
     justify-content: flex-start;
   }
 }
+
+/* ===== Bitácora de imprenta ===== */
+.printshop-logs-section {
+  display: grid;
+  gap: 18px;
+}
+
+.printshop-logs-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) minmax(170px, 0.7fr) minmax(220px, 1fr);
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.printshop-logs-toolbar label {
+  display: grid;
+  gap: 6px;
+}
+
+.printshop-logs-toolbar label span {
+  color: #526176;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.printshop-log-list {
+  display: grid;
+  gap: 14px;
+}
+
+.printshop-log-card {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #dce7f5;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 12px 26px rgba(21, 42, 74, 0.06);
+}
+
+.printshop-log-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-weight: 800;
+  background: #244f86;
+}
+
+.printshop-log-icon.green {
+  background: #2f855a;
+}
+
+.printshop-log-icon.red {
+  background: #b83c4b;
+}
+
+.printshop-log-icon.orange {
+  background: #c7791f;
+}
+
+.printshop-log-icon.teal {
+  background: #197b7a;
+}
+
+.printshop-log-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.printshop-log-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.printshop-log-title-row strong {
+  display: block;
+  color: #17345f;
+  font-size: 15px;
+}
+
+.printshop-log-title-row span,
+.printshop-log-title-row small {
+  color: #66758c;
+  font-size: 12px;
+}
+
+.printshop-log-content p {
+  margin: 0;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.printshop-log-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.printshop-log-tags span {
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #244f86;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.printshop-log-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px dashed #dce7f5;
+}
+
+.printshop-log-user span {
+  color: #7a8799;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.printshop-log-user strong {
+  color: #17345f;
+  font-size: 12px;
+}
+
+.printshop-log-user small {
+  color: #66758c;
+  font-size: 12px;
+}
+
+@media (max-width: 920px) {
+  .printshop-logs-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-log-title-row {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .printshop-log-card {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-log-icon {
+    width: 42px;
+    height: 42px;
+  }
+}
