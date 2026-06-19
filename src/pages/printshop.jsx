@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import JSZip from "jszip";
+import { BrowserCodeReader, BrowserMultiFormatReader } from "@zxing/browser";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import {
@@ -8285,6 +8286,39 @@ function FinishedInventoryView({
 
 
 
+function getSupplyBarcodeValues(item) {
+  return String(item?.barcode || "")
+    .split(/[\s,;|]+/)
+    .map((code) => code.trim())
+    .filter(Boolean);
+}
+
+function findSupplyByBarcode(supplyItems, barcode) {
+  const normalizedCode = String(barcode || "").trim();
+
+  if (!normalizedCode) return null;
+
+  return (
+    supplyItems.find((item) =>
+      getSupplyBarcodeValues(item).some((code) => code === normalizedCode)
+    ) || null
+  );
+}
+
+function getBarcodeScannerErrorMessage(error) {
+  const message = String(error?.message || error || "");
+
+  if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("denied")) {
+    return "No se pudo abrir la cámara porque el permiso fue denegado.";
+  }
+
+  if (message.toLowerCase().includes("notfound") || message.toLowerCase().includes("no camera")) {
+    return "No se encontró una cámara disponible en este dispositivo.";
+  }
+
+  return "No se pudo iniciar el escáner. Revisa permisos de cámara e intenta de nuevo.";
+}
+
 function SupplyInventoryView({
   supplyItems,
   filteredSupplyItems,
@@ -8325,6 +8359,152 @@ function SupplyInventoryView({
     selectedMovementSupply && Number(selectedMovementSupply.expectedYield || 0) > 0
       ? Math.floor(Number(supplyMovementForm.quantity || 0) * Number(selectedMovementSupply.expectedYield || 0))
       : 0;
+  const scannerVideoRef = useRef(null);
+  const scannerControlsRef = useRef(null);
+  const scannerLockRef = useRef(false);
+  const [barcodeScannerActive, setBarcodeScannerActive] = useState(false);
+  const [barcodeScanInput, setBarcodeScanInput] = useState("");
+  const [barcodeScanMessage, setBarcodeScanMessage] = useState("");
+  const [barcodeScanResult, setBarcodeScanResult] = useState(null);
+
+  function stopBarcodeScanner() {
+    try {
+      if (scannerControlsRef.current?.stop) {
+        scannerControlsRef.current.stop();
+      }
+    } catch (error) {
+      console.warn("No se pudo detener el escáner:", error);
+    }
+
+    scannerControlsRef.current = null;
+    scannerLockRef.current = false;
+    setBarcodeScannerActive(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      stopBarcodeScanner();
+    };
+  }, []);
+
+  function applyBarcodeResult(rawCode, source = "manual") {
+    const scannedCode = String(rawCode || "").trim();
+
+    if (!scannedCode) {
+      setBarcodeScanMessage("Escanea o escribe un código de barras.");
+      return;
+    }
+
+    const matchedSupply = findSupplyByBarcode(supplyItems, scannedCode);
+
+    setBarcodeScanInput(scannedCode);
+
+    if (!matchedSupply) {
+      setBarcodeScanResult({
+        found: false,
+        code: scannedCode,
+        source,
+      });
+      setBarcodeScanMessage(
+        `Código no registrado: ${scannedCode}. Puedes copiarlo al campo Código / barcode de un insumo nuevo o existente.`
+      );
+      onSearchChange(scannedCode);
+      return;
+    }
+
+    setBarcodeScanResult({
+      found: true,
+      code: scannedCode,
+      source,
+      supply: matchedSupply,
+    });
+    setBarcodeScanMessage(
+      `Insumo encontrado: ${matchedSupply.name}. Se preparó una salida para confirmar cantidad y motivo.`
+    );
+    onSearchChange(matchedSupply.name);
+    onSupplyMovementInputChange({ target: { name: "supplyId", value: matchedSupply.id } });
+    onSupplyMovementInputChange({ target: { name: "type", value: "Salida" } });
+    onSupplyMovementInputChange({ target: { name: "reason", value: "Producción de libros" } });
+    onSupplyMovementNumberInputChange({ target: { name: "quantity", value: 1 } });
+  }
+
+  async function startBarcodeScanner() {
+    setBarcodeScanMessage("");
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setBarcodeScanMessage("Este navegador no permite usar la cámara para escanear códigos.");
+      return;
+    }
+
+    try {
+      scannerLockRef.current = false;
+      setBarcodeScannerActive(true);
+      setBarcodeScanMessage("Abriendo cámara... apunta al código de barras del insumo.");
+
+      const reader = new BrowserMultiFormatReader();
+      let devices = [];
+
+      try {
+        devices = await BrowserCodeReader.listVideoInputDevices();
+      } catch {
+        const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+        devices = mediaDevices.filter((device) => device.kind === "videoinput");
+      }
+
+      const preferredDevice =
+        devices.find((device) => /back|rear|environment|trasera|posterior/i.test(device.label || "")) ||
+        devices[0] ||
+        null;
+      const deviceId = preferredDevice?.deviceId || undefined;
+
+      const controls = await reader.decodeFromVideoDevice(
+        deviceId,
+        scannerVideoRef.current,
+        (result, error, controlsFromCallback) => {
+          if (result && !scannerLockRef.current) {
+            scannerLockRef.current = true;
+
+            const code = typeof result.getText === "function" ? result.getText() : String(result.text || result || "");
+
+            try {
+              controlsFromCallback?.stop?.();
+            } catch {
+              // Si el navegador no permite detener desde aquí, lo detenemos abajo.
+            }
+
+            scannerControlsRef.current = null;
+            setBarcodeScannerActive(false);
+            applyBarcodeResult(code, "camera");
+          }
+
+          if (error) {
+            const errorName = error?.name || error?.constructor?.name || "";
+
+            if (!/NotFoundException|ChecksumException|FormatException/i.test(errorName)) {
+              console.warn("Lectura de código de barras:", error);
+            }
+          }
+        }
+      );
+
+      scannerControlsRef.current = controls;
+      setBarcodeScanMessage("Cámara activa. Centra el código de barras dentro de la imagen.");
+    } catch (error) {
+      console.error("No se pudo iniciar el escáner de código de barras:", error);
+      setBarcodeScannerActive(false);
+      scannerControlsRef.current = null;
+      setBarcodeScanMessage(getBarcodeScannerErrorMessage(error));
+    }
+  }
+
+  function copyScannedCodeToSupplyForm() {
+    const code = barcodeScanResult?.code || barcodeScanInput.trim();
+
+    if (!code) return;
+
+    onSupplyInputChange({ target: { name: "barcode", value: code, type: "text" } });
+    setBarcodeScanMessage(`Código ${code} copiado al formulario de insumo.`);
+  }
 
   return (
     <section className="printshop-supplies-page">
@@ -8356,6 +8536,81 @@ function SupplyInventoryView({
 
       <div className="printshop-supplies-layout">
         <div className="printshop-supplies-main">
+          <Panel title="Escaneo rápido" icon="▦" actionLabel="Cámara / código">
+            <div className="supply-barcode-scanner">
+              <div className="supply-barcode-copy">
+                <strong>Escanear código de barras del producto</strong>
+                <p>
+                  Usa la cámara del celular para reconocer el código del insumo. Si el código ya está registrado,
+                  el sistema seleccionará el insumo y preparará una salida para confirmar.
+                </p>
+              </div>
+
+              <div className="supply-barcode-controls">
+                <label>
+                  <span>Código leído o manual</span>
+                  <input
+                    value={barcodeScanInput}
+                    onChange={(event) => setBarcodeScanInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyBarcodeResult(barcodeScanInput, "manual");
+                      }
+                    }}
+                    placeholder="Escanea o escribe el código..."
+                  />
+                </label>
+
+                <div className="supply-barcode-buttons">
+                  <button
+                    type="button"
+                    className="visual-primary-button"
+                    onClick={barcodeScannerActive ? stopBarcodeScanner : startBarcodeScanner}
+                  >
+                    {barcodeScannerActive ? "Detener cámara" : "Abrir cámara"}
+                  </button>
+                  <button
+                    type="button"
+                    className="visual-outline-button"
+                    onClick={() => applyBarcodeResult(barcodeScanInput, "manual")}
+                  >
+                    Buscar código
+                  </button>
+                  {barcodeScanResult?.found === false && isAdmin && (
+                    <button
+                      type="button"
+                      className="visual-outline-button"
+                      onClick={copyScannedCodeToSupplyForm}
+                    >
+                      Usar en nuevo insumo
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className={`supply-barcode-video-wrap ${barcodeScannerActive ? "active" : ""}`}>
+                <video ref={scannerVideoRef} muted playsInline autoPlay />
+              </div>
+
+              {barcodeScanResult?.found === true && barcodeScanResult.supply && (
+                <div className="supply-barcode-result found">
+                  <strong>{barcodeScanResult.supply.name}</strong>
+                  <span>{barcodeScanResult.supply.category}</span>
+                  <span>
+                    Stock actual: {barcodeScanResult.supply.currentStock} {barcodeScanResult.supply.stockUnit}
+                  </span>
+                </div>
+              )}
+
+              {barcodeScanMessage && (
+                <div className="message-box supply-barcode-message">
+                  {barcodeScanMessage}
+                </div>
+              )}
+            </div>
+          </Panel>
+
           <Panel title="Existencias de insumos" icon="▥" actionLabel={`${filteredSupplyItems.length} registros`}>
             <div className="printshop-supplies-toolbar">
               <label className="catalog-filter-search">
