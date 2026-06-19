@@ -1844,6 +1844,15 @@ function getSupplyMovementTone(type) {
   return "teal";
 }
 
+function getDefaultSupplyMovementReason(type) {
+  if (type === "Entrada") return "Compra";
+  if (type === "Salida") return "Producción de libros";
+  if (type === "Merma") return "Merma / desperdicio";
+  if (type === "Devolución") return "Devolución";
+  if (type === "Ajuste") return "Ajuste de inventario";
+  return "Otro";
+}
+
 function generateSupplyBarcode(category, name) {
   const categoryCode = String(category || "INS")
     .normalize("NFD")
@@ -8412,6 +8421,9 @@ function SupplyInventoryView({
       return;
     }
 
+    const nextMovementType = supplyMovementForm.type || "Salida";
+    const nextReason = getDefaultSupplyMovementReason(nextMovementType);
+
     setBarcodeScanResult({
       found: true,
       code: scannedCode,
@@ -8419,13 +8431,34 @@ function SupplyInventoryView({
       supply: matchedSupply,
     });
     setBarcodeScanMessage(
-      `Insumo encontrado: ${matchedSupply.name}. Se preparó una salida para confirmar cantidad y motivo.`
+      `Insumo encontrado: ${matchedSupply.name}. Se preparó ${nextMovementType.toLowerCase()} para confirmar cantidad y motivo.`
     );
     onSearchChange(matchedSupply.name);
     onSupplyMovementInputChange({ target: { name: "supplyId", value: matchedSupply.id } });
-    onSupplyMovementInputChange({ target: { name: "type", value: "Salida" } });
-    onSupplyMovementInputChange({ target: { name: "reason", value: "Producción de libros" } });
+    onSupplyMovementInputChange({ target: { name: "type", value: nextMovementType } });
+    onSupplyMovementInputChange({ target: { name: "reason", value: nextReason } });
     onSupplyMovementNumberInputChange({ target: { name: "quantity", value: 1 } });
+  }
+
+  function setQuickScanMovementType(nextType) {
+    onSupplyMovementInputChange({ target: { name: "type", value: nextType } });
+    onSupplyMovementInputChange({
+      target: {
+        name: "reason",
+        value: getDefaultSupplyMovementReason(nextType),
+      },
+    });
+  }
+
+  function registerQuickScanMovement() {
+    if (!selectedMovementSupply) {
+      setBarcodeScanMessage("Primero escanea o selecciona un insumo.");
+      return;
+    }
+
+    onRegisterSupplyMovement({
+      preventDefault: () => undefined,
+    });
   }
 
   async function startBarcodeScanner() {
@@ -8541,8 +8574,8 @@ function SupplyInventoryView({
               <div className="supply-barcode-copy">
                 <strong>Escanear código de barras del producto</strong>
                 <p>
-                  Usa la cámara del celular para reconocer el código del insumo. Si el código ya está registrado,
-                  el sistema seleccionará el insumo y preparará una salida para confirmar.
+                  Usa la cámara del celular para reconocer el código del insumo. Elige primero si quieres registrar
+                  entrada, salida, merma, devolución o ajuste; luego confirma cantidad y motivo.
                 </p>
               </div>
 
@@ -8591,6 +8624,122 @@ function SupplyInventoryView({
 
               <div className={`supply-barcode-video-wrap ${barcodeScannerActive ? "active" : ""}`}>
                 <video ref={scannerVideoRef} muted playsInline autoPlay />
+              </div>
+
+              <div className="supply-quick-scan-card">
+                <div className="supply-quick-scan-heading">
+                  <strong>Movimiento rápido</strong>
+                  <span>Elige el tipo de movimiento antes o después de escanear.</span>
+                </div>
+
+                <div className="supply-quick-scan-modes">
+                  {supplyMovementTypes.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={supplyMovementForm.type === type ? "active" : ""}
+                      onClick={() => setQuickScanMovementType(type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="supply-quick-scan-fields">
+                  <label>
+                    <span>{supplyMovementForm.type === "Ajuste" ? "Nuevo stock" : "Cantidad"}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={supplyMovementForm.quantity}
+                      onChange={(event) =>
+                        onSupplyMovementNumberInputChange({
+                          target: {
+                            name: "quantity",
+                            value: event.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    <span>Motivo</span>
+                    <select
+                      value={supplyMovementForm.reason}
+                      onChange={(event) =>
+                        onSupplyMovementInputChange({
+                          target: {
+                            name: "reason",
+                            value: event.target.value,
+                          },
+                        })
+                      }
+                    >
+                      {supplyMovementReasons.map((reason) => (
+                        <option key={reason}>{reason}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Folio relacionado</span>
+                    <input
+                      value={supplyMovementForm.relatedFolio}
+                      onChange={(event) =>
+                        onSupplyMovementInputChange({
+                          target: {
+                            name: "relatedFolio",
+                            value: event.target.value,
+                          },
+                        })
+                      }
+                      placeholder="Ej. LOTE-2026-0012"
+                    />
+                  </label>
+
+                  <label>
+                    <span>Notas rápidas</span>
+                    <input
+                      value={supplyMovementForm.notes}
+                      onChange={(event) =>
+                        onSupplyMovementInputChange({
+                          target: {
+                            name: "notes",
+                            value: event.target.value,
+                          },
+                        })
+                      }
+                      placeholder="Ej. Compra, uso en lote, pruebas..."
+                    />
+                  </label>
+                </div>
+
+                {selectedMovementSupply && estimatedYield > 0 && (
+                  <div className="supply-yield-estimate">
+                    <strong>Rendimiento esperado</strong>
+                    <p>
+                      Con {supplyMovementForm.quantity} {selectedMovementSupply.stockUnit.toLowerCase()} deberían salir aproximadamente{" "}
+                      <b>{estimatedYield} {selectedMovementSupply.expectedYieldUnit}</b>.
+                    </p>
+                  </div>
+                )}
+
+                <div className="supply-quick-scan-actions">
+                  <button
+                    type="button"
+                    className="visual-primary-button"
+                    disabled={savingSupplyMovement || !selectedMovementSupply}
+                    onClick={registerQuickScanMovement}
+                  >
+                    {savingSupplyMovement ? "Registrando..." : "Registrar movimiento"}
+                  </button>
+                  <span>
+                    {selectedMovementSupply
+                      ? `Seleccionado: ${selectedMovementSupply.name}`
+                      : "Escanea o busca un código para seleccionar un insumo."}
+                  </span>
+                </div>
               </div>
 
               {barcodeScanResult?.found === true && barcodeScanResult.supply && (
