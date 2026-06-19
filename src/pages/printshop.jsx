@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
+import JSZip from "jszip";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import {
@@ -5082,6 +5083,7 @@ export default function PrintShop() {
           activePrincipalSigners={activePrincipalSigners}
           activeTeacherSigners={activeTeacherSigners}
           activeCertificateTemplates={activeCertificateTemplates}
+          generatedCertificates={generatedCertificates}
           loadingRequests={loadingRequests}
           requestsError={requestsError}
           requestStats={requestStats}
@@ -6993,6 +6995,7 @@ function PrintRequestsView({
   activePrincipalSigners,
   activeTeacherSigners,
   activeCertificateTemplates,
+  generatedCertificates,
   loadingRequests,
   requestsError,
   requestStats,
@@ -7231,6 +7234,7 @@ function PrintRequestsView({
               activePrincipalSigners={activePrincipalSigners}
               activeTeacherSigners={activeTeacherSigners}
               activeCertificateTemplates={activeCertificateTemplates}
+              generatedCertificates={generatedCertificates}
               canManageStudents={canEditOperationalFields}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
@@ -7618,6 +7622,7 @@ function RequestDetailCard({
   activePrincipalSigners,
   activeTeacherSigners,
   activeCertificateTemplates,
+  generatedCertificates,
   canManageStudents,
   studentName,
   studentDeliveryType,
@@ -7640,6 +7645,9 @@ function RequestDetailCard({
 }) {
   const students = normalizeRequestStudents(request?.students || []);
   const [previewStudentId, setPreviewStudentId] = useState("");
+  const [bulkCertificateWorking, setBulkCertificateWorking] = useState(false);
+  const [bulkCertificateMessage, setBulkCertificateMessage] = useState("");
+  const bulkCertificateRefs = useRef({});
 
   useEffect(() => {
     if (
@@ -7685,6 +7693,156 @@ function RequestDetailCard({
     (activeTeacherSigners || []).find((signer) => signer.id === request.teacherSignerId) || null;
   const selectedCertificateTemplate =
     (activeCertificateTemplates || []).find((template) => template.id === request.certificateTemplateId) || null;
+  const certificateStudentsWithFolios = students.filter(
+    (student) => Boolean(student.certificateFolio) && Boolean(student.validationCode)
+  );
+
+  function getGeneratedCertificateRecordForStudent(student) {
+    return (generatedCertificates || []).find(
+      (certificate) =>
+        certificate.requestId === request.id &&
+        (
+          certificate.studentId === student.id ||
+          certificate.validationCode === student.validationCode ||
+          certificate.folio === student.certificateFolio
+        )
+    ) || null;
+  }
+
+  const certificateStudentsMissingPdf = certificateStudentsWithFolios.filter(
+    (student) => !getGeneratedCertificateRecordForStudent(student)?.pdfUrl
+  );
+
+  async function buildAndStoreStudentCertificatePdf(student) {
+    const element = bulkCertificateRefs.current?.[student.id];
+
+    if (!element) {
+      throw new Error(`No se encontró la vista oculta del certificado de ${student.name}.`);
+    }
+
+    const fileName = `${sanitizePdfFileName(
+      `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
+    )}.pdf`;
+    const pdfBlob = await buildCertificatePdfBlobFromElement(element);
+    const { pdfUrl, pdfStoragePath } = await saveGeneratedCertificatePdfBlob({
+      request,
+      student,
+      fileName,
+      pdfBlob,
+    });
+
+    await onRegisterGeneratedCertificate({
+      request,
+      student,
+      certificateTemplate: selectedCertificateTemplate,
+      principalName: selectedPrincipalSigner?.name || request.principalSignerName || "",
+      teacherName: selectedTeacherSigner?.name || request.teacherSignerName || request.teacherName || "",
+      fileName,
+      pdfUrl,
+      pdfStoragePath,
+    });
+
+    return {
+      fileName,
+      pdfBlob,
+      pdfUrl,
+      pdfStoragePath,
+    };
+  }
+
+  async function saveMissingCertificatePdfs() {
+    if (bulkCertificateWorking) return;
+
+    if (certificateStudentsWithFolios.length === 0) {
+      setBulkCertificateMessage("Primero genera folios para los alumnos.");
+      return;
+    }
+
+    if (certificateStudentsMissingPdf.length === 0) {
+      setBulkCertificateMessage("Todos los certificados de esta solicitud ya tienen PDF original guardado.");
+      return;
+    }
+
+    try {
+      setBulkCertificateWorking(true);
+      setBulkCertificateMessage(`Preparando ${certificateStudentsMissingPdf.length} PDFs faltantes...`);
+
+      for (let index = 0; index < certificateStudentsMissingPdf.length; index += 1) {
+        const student = certificateStudentsMissingPdf[index];
+        setBulkCertificateMessage(
+          `Guardando PDF ${index + 1} de ${certificateStudentsMissingPdf.length}: ${student.name}`
+        );
+        await buildAndStoreStudentCertificatePdf(student);
+      }
+
+      setBulkCertificateMessage("PDFs faltantes guardados correctamente.");
+    } catch (error) {
+      console.error("No se pudieron guardar los PDFs faltantes:", error);
+      setBulkCertificateMessage(error?.message || "No se pudieron guardar los PDFs faltantes.");
+    } finally {
+      setBulkCertificateWorking(false);
+    }
+  }
+
+  async function downloadCertificatesZip() {
+    if (bulkCertificateWorking) return;
+
+    if (certificateStudentsWithFolios.length === 0) {
+      setBulkCertificateMessage("Primero genera folios para los alumnos.");
+      return;
+    }
+
+    try {
+      setBulkCertificateWorking(true);
+      setBulkCertificateMessage(`Preparando ZIP con ${certificateStudentsWithFolios.length} certificados...`);
+
+      const zip = new JSZip();
+
+      for (let index = 0; index < certificateStudentsWithFolios.length; index += 1) {
+        const student = certificateStudentsWithFolios[index];
+        setBulkCertificateMessage(
+          `Agregando al ZIP ${index + 1} de ${certificateStudentsWithFolios.length}: ${student.name}`
+        );
+
+        const record = getGeneratedCertificateRecordForStudent(student);
+        let fileName = `${sanitizePdfFileName(
+          `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
+        )}.pdf`;
+        let pdfBlob = null;
+
+        if (record?.pdfStoragePath) {
+          try {
+            const bytes = await getBytes(storageRef(storage, record.pdfStoragePath));
+            pdfBlob = new Blob([bytes], { type: "application/pdf" });
+            fileName = record.pdfFileName || fileName;
+          } catch (downloadError) {
+            console.warn("No se pudo leer el PDF guardado; se regenerará:", downloadError);
+          }
+        }
+
+        if (!pdfBlob) {
+          const saved = await buildAndStoreStudentCertificatePdf(student);
+          pdfBlob = saved.pdfBlob;
+          fileName = saved.fileName;
+        }
+
+        zip.file(fileName, pdfBlob);
+      }
+
+      setBulkCertificateMessage("Comprimiendo certificados...");
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const zipFileName = `${sanitizePdfFileName(
+        `certificados-${request.level || "nivel"}-${request.group || request.folio || "solicitud"}`
+      )}.zip`;
+      downloadBlobFile(zipBlob, zipFileName);
+      setBulkCertificateMessage("ZIP descargado correctamente.");
+    } catch (error) {
+      console.error("No se pudo descargar el ZIP de certificados:", error);
+      setBulkCertificateMessage(error?.message || "No se pudo descargar el ZIP de certificados.");
+    } finally {
+      setBulkCertificateWorking(false);
+    }
+  }
 
   return (
     <Panel
@@ -7786,7 +7944,56 @@ function RequestDetailCard({
                   expected={studentSummary.digitalQuantity}
                   valid={studentSummary.digitalMatches}
                 />
+                <StudentSummaryPill
+                  label="Con folio"
+                  current={certificateStudentsWithFolios.length}
+                  expected={studentSummary.total}
+                  valid={certificateStudentsWithFolios.length === studentSummary.total && studentSummary.total > 0}
+                />
+                <StudentSummaryPill
+                  label="PDF pendiente"
+                  current={certificateStudentsMissingPdf.length}
+                  expected={0}
+                  valid={certificateStudentsMissingPdf.length === 0}
+                />
               </div>
+
+              <div className="request-bulk-certificate-actions">
+                <div>
+                  <strong>Acciones masivas de certificados</strong>
+                  <p>
+                    Guarda los PDFs originales faltantes o descarga todos los certificados de la solicitud en un ZIP.
+                  </p>
+                </div>
+                <div className="request-bulk-certificate-buttons">
+                  <button
+                    type="button"
+                    className="visual-outline-button"
+                    disabled={
+                      bulkCertificateWorking ||
+                      certificateStudentsWithFolios.length === 0 ||
+                      certificateStudentsMissingPdf.length === 0
+                    }
+                    onClick={saveMissingCertificatePdfs}
+                  >
+                    {bulkCertificateWorking ? "Procesando..." : "Guardar PDFs faltantes"}
+                  </button>
+                  <button
+                    type="button"
+                    className="visual-primary-button"
+                    disabled={bulkCertificateWorking || certificateStudentsWithFolios.length === 0}
+                    onClick={downloadCertificatesZip}
+                  >
+                    {bulkCertificateWorking ? "Procesando..." : "Descargar ZIP"}
+                  </button>
+                </div>
+              </div>
+
+              {bulkCertificateMessage && (
+                <div className="message-box request-bulk-certificate-message">
+                  {bulkCertificateMessage}
+                </div>
+              )}
 
               {canManageStudents ? (
                 <div className="request-students-forms">
@@ -8007,6 +8214,15 @@ Mariana Torres`}
               </div>
             )}
 
+            <HiddenBulkCertificateStages
+              request={request}
+              students={certificateStudentsWithFolios}
+              principalSigner={selectedPrincipalSigner}
+              teacherSigner={selectedTeacherSigner}
+              certificateTemplate={selectedCertificateTemplate}
+              refsMap={bulkCertificateRefs}
+            />
+
             <div className="request-detail-note important">
               <strong>Siguiente paso</strong>
               <p>
@@ -8146,6 +8362,80 @@ function buildGeneratedCertificatePdfStoragePath(request, student, fileName) {
   return `printshop/generated-certificates/${year}/${safeCode}.pdf`;
 }
 
+async function buildCertificatePdfBlobFromElement(element) {
+  if (!element) {
+    throw new Error("No se encontró el certificado para generar el PDF.");
+  }
+
+  if (document?.fonts?.ready) {
+    await document.fonts.ready;
+  }
+
+  await waitForCertificateAssets(element);
+
+  element.classList.add("pdf-export-mode");
+
+  try {
+    const exportWidth = 816;
+    const exportHeight = 1056;
+    const canvas = await html2canvas(element, {
+      scale: 3,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: "#f7f8f8",
+      logging: false,
+      width: exportWidth,
+      height: exportHeight,
+      windowWidth: exportWidth,
+      windowHeight: exportHeight,
+      scrollX: 0,
+      scrollY: 0,
+    });
+
+    const imageData = canvas.toDataURL("image/png", 1.0);
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "pt",
+      format: "letter",
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+
+    return pdf.output("blob");
+  } finally {
+    element.classList.remove("pdf-export-mode");
+  }
+}
+
+async function saveGeneratedCertificatePdfBlob({ request, student, fileName, pdfBlob }) {
+  const pdfStoragePath = buildGeneratedCertificatePdfStoragePath(request, student, fileName);
+  const pdfRef = storageRef(storage, pdfStoragePath);
+
+  await uploadBytes(pdfRef, pdfBlob, {
+    contentType: "application/pdf",
+  });
+
+  const pdfUrl = await getDownloadURL(pdfRef);
+
+  return { pdfUrl, pdfStoragePath };
+}
+
+function downloadBlobFile(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function sanitizePdfFileName(value) {
   return String(value || "certificado")
     .normalize("NFD")
@@ -8252,6 +8542,217 @@ function getGeneratedCertificateStatusTone(status) {
   return "blue";
 }
 
+function HiddenBulkCertificateStages({
+  request,
+  students,
+  principalSigner,
+  teacherSigner,
+  certificateTemplate,
+  refsMap,
+}) {
+  if (!request || !Array.isArray(students) || students.length === 0) return null;
+
+  return (
+    <div
+      className="bulk-certificate-render-zone"
+      aria-hidden="true"
+      style={{
+        position: "fixed",
+        left: "-12000px",
+        top: 0,
+        width: "816px",
+        height: "1056px",
+        overflow: "hidden",
+        pointerEvents: "none",
+        opacity: 0,
+      }}
+    >
+      {students.map((student) => (
+        <CertificateStaticStage
+          key={student.id}
+          request={request}
+          student={student}
+          principalSigner={principalSigner}
+          teacherSigner={teacherSigner}
+          certificateTemplate={certificateTemplate}
+          elementRef={(node) => {
+            if (!refsMap?.current) return;
+
+            if (node) {
+              refsMap.current[student.id] = node;
+            } else {
+              delete refsMap.current[student.id];
+            }
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CertificateStaticStage({
+  request,
+  student,
+  principalSigner,
+  teacherSigner,
+  certificateTemplate,
+  elementRef,
+}) {
+  if (!request || !student) return null;
+
+  const level = request.level || "A1";
+  const issueDate = formatCertificatePreviewDate(getCertificateIssueDate(request));
+  const principalName =
+    principalSigner?.name || request.principalSignerName || CERTIFICATE_PRINCIPAL_NAME;
+  const principalRole =
+    principalSigner?.role || request.principalSignerRole || CERTIFICATE_PRINCIPAL_ROLE;
+  const principalSignatureUrl =
+    principalSigner?.signatureDataUrl ||
+    request.principalSignatureDataUrl ||
+    request.principalSignatureUrl ||
+    DEFAULT_PRINCIPAL_SIGNATURE_DATA_URL;
+  const teacherName =
+    teacherSigner?.name || request.teacherSignerName || request.teacherName || "Teacher";
+  const teacherRole = teacherSigner?.role || request.teacherSignerRole || CERTIFICATE_TEACHER_ROLE;
+  const teacherSignatureUrl =
+    teacherSigner?.signatureDataUrl ||
+    request.teacherSignatureDataUrl ||
+    request.teacherSignatureUrl ||
+    DEFAULT_TEACHER_SIGNATURE_DATA_URL;
+  const trackLabel =
+    certificateTemplate?.programName ||
+    request.certificateTemplateProgramName ||
+    getCertificateTrackLabel(request);
+  const programLabel = getCertificateProgramLabel(request);
+  const levelColor = getCertificateLevelColor(level);
+  const templateImageUrl =
+    certificateTemplate?.templateImageDataUrl ||
+    request.certificateTemplateImageDataUrl ||
+    "";
+  const templatePositions = normalizeCertificateTemplatePositions(
+    certificateTemplate?.positions || request.certificateTemplatePositions
+  );
+
+  return (
+    <div
+      ref={elementRef}
+      className={`certificate-preview-stage ${templateImageUrl ? "template-mode" : ""}`}
+      style={{ "--certificate-level-color": levelColor }}
+    >
+      {!templateImageUrl && (certificateTemplate || request.certificateTemplateId) ? (
+        <div className="certificate-template-loading">
+          Esta plantilla necesita optimizarse. Ve a Imprenta → Plantillas, edita la plantilla y vuelve a subir su imagen.
+        </div>
+      ) : templateImageUrl ? (
+        <CertificateTemplateOverlay
+          templateImageUrl={templateImageUrl}
+          positions={templatePositions}
+          student={student}
+          issueDate={issueDate}
+          principalName={principalName}
+          principalRole={principalRole}
+          principalSignatureUrl={principalSignatureUrl}
+          programLabel={programLabel}
+          bodyText={getCertificateBodyText(certificateTemplate?.bodyText || request.certificateTemplateBodyText, programLabel)}
+          bodySegments={getResolvedCertificateBodySegments(
+            certificateTemplate?.bodySegments || request.certificateTemplateBodySegments,
+            certificateTemplate?.bodyText || request.certificateTemplateBodyText,
+            programLabel
+          )}
+          customTexts={normalizeTemplateCustomTexts(
+            certificateTemplate?.customTexts || request.certificateTemplateCustomTexts
+          )}
+          customImages={normalizeTemplateCustomImages(
+            certificateTemplate?.customImages || request.certificateTemplateCustomImages
+          )}
+          teacherName={teacherName}
+          teacherRole={teacherRole}
+          teacherSignatureUrl={teacherSignatureUrl}
+        />
+      ) : (
+        <>
+          <div className="certificate-preview-logo-wrap">
+            <img
+              src={DEFAULT_CERTIFICATE_LOGO_DATA_URL}
+              alt="Active for life"
+              className="certificate-preview-logo-image"
+            />
+          </div>
+
+          <div className="certificate-preview-body">
+            <p className="certificate-preview-kicker">Confers this</p>
+            <h3 className="certificate-preview-title">CERTIFICATE</h3>
+            <p className="certificate-preview-to">to:</p>
+            <div className="certificate-preview-name">{student.name}</div>
+
+            <p className="certificate-preview-text">
+              For having successfully completed 100 hours of <em>{programLabel}</em>{" "}
+              and having had a remarkable performance.
+            </p>
+
+            <div className="certificate-preview-date">{issueDate}</div>
+          </div>
+
+          <div className="certificate-preview-footer-graphics" aria-hidden="true">
+            <svg
+              viewBox="0 0 816 300"
+              className="certificate-preview-footer-svg"
+              preserveAspectRatio="none"
+            >
+              <polygon
+                points="0,120 196,168 392,228 604,138 816,104 816,300 0,300"
+                fill="#d5e3d9"
+                opacity="0.75"
+              />
+              <polygon
+                points="0,220 147,96 359,174 539,108 816,182 816,300 0,300"
+                fill="#cddbcf"
+                opacity="0.82"
+              />
+              <polygon
+                points="0,146 278,224 498,166 816,234 816,300 0,300"
+                fill="#e1e9e2"
+                opacity="0.92"
+              />
+            </svg>
+          </div>
+
+          <div className="certificate-preview-validation-block">
+            {student.qrDataUrl && (
+              <img
+                src={student.qrDataUrl}
+                alt={`QR de validación de ${student.name}`}
+                className="certificate-preview-validation-qr"
+              />
+            )}
+            <div className="certificate-preview-validation-copy">
+              <strong>Verify certificate</strong>
+              <span>{student.certificateFolio}</span>
+            </div>
+          </div>
+
+          <div className="certificate-preview-signatures">
+            <CertificateSignatureBlock
+              signatureUrl={principalSignatureUrl}
+              signatureAlt={`Firma de ${principalName}`}
+              name={principalName}
+              role={principalRole}
+            />
+            <CertificateSignatureBlock
+              signatureUrl={teacherSignatureUrl}
+              signatureAlt={`Firma de ${teacherName}`}
+              name={teacherName}
+              role={teacherRole}
+            />
+          </div>
+
+          <div className="certificate-preview-course-bar"><span>{trackLabel}</span></div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CertificatePreviewCard({
   request,
   student,
@@ -8355,60 +8856,25 @@ function CertificatePreviewCard({
     try {
       setDownloadingPdf(true);
 
-      if (document?.fonts?.ready) {
-        await document.fonts.ready;
-      }
-
-      await waitForCertificateAssets(element);
-
-      element.classList.add("pdf-export-mode");
-
-      const exportWidth = 816;
-      const exportHeight = 1056;
-      const canvas = await html2canvas(element, {
-        scale: 3,
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: "#f7f8f8",
-        logging: false,
-        width: exportWidth,
-        height: exportHeight,
-        windowWidth: exportWidth,
-        windowHeight: exportHeight,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      const imageData = canvas.toDataURL("image/png", 1.0);
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "letter",
-      });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
-
       const fileName = sanitizePdfFileName(
         `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
       );
       const finalFileName = `${fileName}.pdf`;
-      const pdfBlob = pdf.output("blob");
+      const pdfBlob = await buildCertificatePdfBlobFromElement(element);
       let pdfUrl = "";
       let pdfStoragePath = "";
       let storageWarning = "";
 
       try {
-        pdfStoragePath = buildGeneratedCertificatePdfStoragePath(request, student, finalFileName);
-        const pdfRef = storageRef(storage, pdfStoragePath);
-
-        await uploadBytes(pdfRef, pdfBlob, {
-          contentType: "application/pdf",
+        const savedPdf = await saveGeneratedCertificatePdfBlob({
+          request,
+          student,
+          fileName: finalFileName,
+          pdfBlob,
         });
 
-        pdfUrl = await getDownloadURL(pdfRef);
+        pdfStoragePath = savedPdf.pdfStoragePath;
+        pdfUrl = savedPdf.pdfUrl;
       } catch (uploadError) {
         console.error("No se pudo guardar el PDF original en Storage:", uploadError);
         pdfStoragePath = "";
@@ -8417,7 +8883,7 @@ function CertificatePreviewCard({
           " El PDF se descargó, pero no se pudo guardar el original en Storage. Revisa Storage Rules.";
       }
 
-      pdf.save(finalFileName);
+      downloadBlobFile(pdfBlob, finalFileName);
 
       if (typeof onCertificateGenerated === "function") {
         try {

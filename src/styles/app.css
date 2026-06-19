@@ -20562,3 +20562,62 @@ body:has(.field-mode-page) .main-content {
     font-size: 17px;
   }
 }
+
+/* ===== Acciones masivas de certificados ===== */
+.request-bulk-certificate-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  margin: 14px 0;
+  border: 1px solid #dce7f5;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f7fbff, #ffffff);
+  box-shadow: 0 12px 26px rgba(21, 42, 74, 0.06);
+}
+
+.request-bulk-certificate-actions strong {
+  display: block;
+  color: #17345f;
+  font-size: 14px;
+}
+
+.request-bulk-certificate-actions p {
+  margin: 4px 0 0;
+  color: #60708a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.request-bulk-certificate-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.request-bulk-certificate-message {
+  margin: 10px 0 14px;
+}
+
+.bulk-certificate-render-zone .certificate-preview-stage {
+  width: 816px !important;
+  height: 1056px !important;
+  min-height: 1056px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 0 24px !important;
+}
+
+@media (max-width: 860px) {
+  .request-bulk-certificate-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .request-bulk-certificate-buttons {
+    justify-content: flex-start;
+  }
+}
