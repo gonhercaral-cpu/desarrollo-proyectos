@@ -118,6 +118,12 @@ const supplyFormInitialState = {
   supplier: "",
   approximateCost: 0,
   barcode: "",
+  barcodePresentations: [],
+  presentationName: "",
+  presentationBarcode: "",
+  presentationQuantity: 1,
+  presentationUnit: "Resma",
+  presentationNotes: "",
   expectedYield: 0,
   expectedYieldUnit: "Libros",
   active: true,
@@ -1759,6 +1765,47 @@ function normalizePrintshopLog(log) {
   };
 }
 
+function normalizeBarcodePresentations(presentations, fallbackBarcode = "", fallbackUnit = "Pieza") {
+  const received = Array.isArray(presentations) ? presentations : [];
+  const normalized = received
+    .map((presentation, index) => ({
+      id: String(presentation?.id || `presentation-${index + 1}`),
+      name: String(presentation?.name || "Presentación"),
+      barcode: String(presentation?.barcode || "").trim(),
+      quantity: Number(presentation?.quantity || 1),
+      unit: String(presentation?.unit || fallbackUnit || "Pieza"),
+      active: presentation?.active === false ? false : true,
+      notes: String(presentation?.notes || ""),
+    }))
+    .filter((presentation) => presentation.barcode && presentation.quantity > 0);
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const fallback = String(fallbackBarcode || "").trim();
+
+  if (!fallback) {
+    return [];
+  }
+
+  return [
+    {
+      id: "primary-barcode",
+      name: "Código principal",
+      barcode: fallback,
+      quantity: 1,
+      unit: fallbackUnit || "Pieza",
+      active: true,
+      notes: "",
+    },
+  ];
+}
+
+function buildPresentationId() {
+  return `presentation-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
 function normalizeSupplyItem(item) {
   return {
     id: item?.id || "",
@@ -1776,6 +1823,11 @@ function normalizeSupplyItem(item) {
     supplier: String(item?.supplier || ""),
     approximateCost: Number(item?.approximateCost || 0),
     barcode: String(item?.barcode || ""),
+    barcodePresentations: normalizeBarcodePresentations(
+      item?.barcodePresentations,
+      item?.barcode,
+      item?.stockUnit || item?.unit || "Pieza"
+    ),
     expectedYield: Number(item?.expectedYield || 0),
     expectedYieldUnit: String(item?.expectedYieldUnit || ""),
     active: item?.active === false ? false : true,
@@ -2604,7 +2656,7 @@ export default function PrintShop() {
       const status = getSupplyStatus(item);
       const matchesSearch =
         !normalizedSearch ||
-        `${item.name} ${item.category} ${item.barcode} ${item.color} ${item.size} ${item.supplier}`
+        `${item.name} ${item.category} ${item.barcode} ${getSupplyBarcodeValues(item).join(" ")} ${item.color} ${item.size} ${item.supplier}`
           .toLowerCase()
           .includes(normalizedSearch);
 
@@ -5180,6 +5232,16 @@ export default function PrintShop() {
       supplier: item.supplier || "",
       approximateCost: Number(item.approximateCost || 0),
       barcode: item.barcode || "",
+      barcodePresentations: normalizeBarcodePresentations(
+        item.barcodePresentations,
+        item.barcode,
+        item.stockUnit || "Pieza"
+      ),
+      presentationName: "",
+      presentationBarcode: "",
+      presentationQuantity: 1,
+      presentationUnit: item.stockUnit || "Pieza",
+      presentationNotes: "",
       expectedYield: Number(item.expectedYield || 0),
       expectedYieldUnit: item.expectedYieldUnit || "Libros",
       active: item.active !== false,
@@ -5207,6 +5269,16 @@ export default function PrintShop() {
     }
 
     const auditUser = getAuditUser();
+    const normalizedPresentations = normalizeBarcodePresentations(
+      supplyForm.barcodePresentations,
+      supplyForm.barcode,
+      supplyForm.stockUnit || "Pieza"
+    );
+    const primaryBarcode =
+      String(supplyForm.barcode || "").trim() ||
+      normalizedPresentations[0]?.barcode ||
+      generateSupplyBarcode(supplyForm.category, supplyForm.name);
+
     const payload = {
       name: supplyForm.name.trim(),
       category: supplyForm.category || "Otro",
@@ -5221,7 +5293,10 @@ export default function PrintShop() {
       weight: supplyForm.weight || "",
       supplier: supplyForm.supplier || "",
       approximateCost: Number(supplyForm.approximateCost || 0),
-      barcode: supplyForm.barcode || generateSupplyBarcode(supplyForm.category, supplyForm.name),
+      barcode: primaryBarcode,
+      barcodePresentations: normalizedPresentations.length
+        ? normalizedPresentations
+        : normalizeBarcodePresentations([], primaryBarcode, supplyForm.stockUnit || "Pieza"),
       expectedYield: Number(supplyForm.expectedYield || 0),
       expectedYieldUnit: supplyForm.expectedYieldUnit || "Piezas",
       active: supplyForm.active !== false,
@@ -8296,9 +8371,15 @@ function FinishedInventoryView({
 
 
 function getSupplyBarcodeValues(item) {
-  return String(item?.barcode || "")
-    .split(/[\s,;|]+/)
-    .map((code) => code.trim())
+  const presentations = normalizeBarcodePresentations(
+    item?.barcodePresentations,
+    item?.barcode,
+    item?.stockUnit || "Pieza"
+  );
+
+  return presentations
+    .filter((presentation) => presentation.active !== false)
+    .map((presentation) => presentation.barcode)
     .filter(Boolean);
 }
 
@@ -8307,11 +8388,27 @@ function findSupplyByBarcode(supplyItems, barcode) {
 
   if (!normalizedCode) return null;
 
-  return (
-    supplyItems.find((item) =>
-      getSupplyBarcodeValues(item).some((code) => code === normalizedCode)
-    ) || null
-  );
+  for (const item of supplyItems) {
+    const presentations = normalizeBarcodePresentations(
+      item?.barcodePresentations,
+      item?.barcode,
+      item?.stockUnit || "Pieza"
+    ).filter((presentation) => presentation.active !== false);
+
+    const matchedPresentation = presentations.find(
+      (presentation) => presentation.barcode === normalizedCode
+    );
+
+    if (matchedPresentation) {
+      return {
+        supply: item,
+        presentation: matchedPresentation,
+        code: normalizedCode,
+      };
+    }
+  }
+
+  return null;
 }
 
 function getBarcodeScannerErrorMessage(error) {
@@ -8404,11 +8501,11 @@ function SupplyInventoryView({
       return;
     }
 
-    const matchedSupply = findSupplyByBarcode(supplyItems, scannedCode);
+    const matchedBarcode = findSupplyByBarcode(supplyItems, scannedCode);
 
     setBarcodeScanInput(scannedCode);
 
-    if (!matchedSupply) {
+    if (!matchedBarcode) {
       setBarcodeScanResult({
         found: false,
         code: scannedCode,
@@ -8421,23 +8518,27 @@ function SupplyInventoryView({
       return;
     }
 
+    const matchedSupply = matchedBarcode.supply;
+    const matchedPresentation = matchedBarcode.presentation;
     const nextMovementType = supplyMovementForm.type || "Salida";
     const nextReason = getDefaultSupplyMovementReason(nextMovementType);
+    const nextQuantity = Number(matchedPresentation?.quantity || 1);
 
     setBarcodeScanResult({
       found: true,
       code: scannedCode,
       source,
       supply: matchedSupply,
+      presentation: matchedPresentation,
     });
     setBarcodeScanMessage(
-      `Insumo encontrado: ${matchedSupply.name}. Se preparó ${nextMovementType.toLowerCase()} para confirmar cantidad y motivo.`
+      `Insumo encontrado: ${matchedSupply.name}. Presentación: ${matchedPresentation.name} (${nextQuantity} ${matchedSupply.stockUnit}). Se preparó ${nextMovementType.toLowerCase()} para confirmar.`
     );
     onSearchChange(matchedSupply.name);
     onSupplyMovementInputChange({ target: { name: "supplyId", value: matchedSupply.id } });
     onSupplyMovementInputChange({ target: { name: "type", value: nextMovementType } });
     onSupplyMovementInputChange({ target: { name: "reason", value: nextReason } });
-    onSupplyMovementNumberInputChange({ target: { name: "quantity", value: 1 } });
+    onSupplyMovementNumberInputChange({ target: { name: "quantity", value: nextQuantity } });
   }
 
   function setQuickScanMovementType(nextType) {
@@ -8536,7 +8637,89 @@ function SupplyInventoryView({
     if (!code) return;
 
     onSupplyInputChange({ target: { name: "barcode", value: code, type: "text" } });
-    setBarcodeScanMessage(`Código ${code} copiado al formulario de insumo.`);
+    onSupplyInputChange({ target: { name: "presentationBarcode", value: code, type: "text" } });
+    onSupplyInputChange({ target: { name: "presentationQuantity", value: 1, type: "number" } });
+    setBarcodeScanMessage(`Código ${code} copiado al formulario. Completa la presentación y presiona “Agregar presentación”.`);
+  }
+
+  function updateSupplyPresentations(nextPresentations) {
+    onSupplyInputChange({
+      target: {
+        name: "barcodePresentations",
+        value: nextPresentations,
+        type: "custom",
+      },
+    });
+  }
+
+  function addPresentationToSupplyForm() {
+    const barcode = String(supplyForm.presentationBarcode || "").trim();
+
+    if (!barcode) {
+      setBarcodeScanMessage("Escribe o escanea un código para agregar la presentación.");
+      return;
+    }
+
+    const existing = normalizeBarcodePresentations(
+      supplyForm.barcodePresentations,
+      "",
+      supplyForm.stockUnit || "Pieza"
+    );
+
+    if (existing.some((presentation) => presentation.barcode === barcode)) {
+      setBarcodeScanMessage("Ese código ya está agregado a este insumo.");
+      return;
+    }
+
+    const nextPresentation = {
+      id: buildPresentationId(),
+      name: String(supplyForm.presentationName || "").trim() || "Presentación",
+      barcode,
+      quantity: Math.max(0.01, Number(supplyForm.presentationQuantity || 1)),
+      unit: supplyForm.presentationUnit || supplyForm.stockUnit || "Pieza",
+      active: true,
+      notes: supplyForm.presentationNotes || "",
+    };
+
+    updateSupplyPresentations([...existing, nextPresentation]);
+
+    if (!String(supplyForm.barcode || "").trim()) {
+      onSupplyInputChange({ target: { name: "barcode", value: barcode, type: "text" } });
+    }
+
+    onSupplyInputChange({ target: { name: "presentationName", value: "", type: "text" } });
+    onSupplyInputChange({ target: { name: "presentationBarcode", value: "", type: "text" } });
+    onSupplyInputChange({ target: { name: "presentationQuantity", value: 1, type: "number" } });
+    onSupplyInputChange({ target: { name: "presentationUnit", value: supplyForm.stockUnit || "Pieza", type: "text" } });
+    onSupplyInputChange({ target: { name: "presentationNotes", value: "", type: "text" } });
+
+    setBarcodeScanMessage(`Presentación agregada: ${nextPresentation.name} · ${nextPresentation.quantity} ${nextPresentation.unit}.`);
+  }
+
+  function removePresentationFromSupplyForm(presentationId) {
+    const existing = normalizeBarcodePresentations(
+      supplyForm.barcodePresentations,
+      "",
+      supplyForm.stockUnit || "Pieza"
+    );
+
+    updateSupplyPresentations(existing.filter((presentation) => presentation.id !== presentationId));
+  }
+
+  function togglePresentationFromSupplyForm(presentationId) {
+    const existing = normalizeBarcodePresentations(
+      supplyForm.barcodePresentations,
+      "",
+      supplyForm.stockUnit || "Pieza"
+    );
+
+    updateSupplyPresentations(
+      existing.map((presentation) =>
+        presentation.id === presentationId
+          ? { ...presentation, active: presentation.active === false }
+          : presentation
+      )
+    );
   }
 
   return (
@@ -8746,6 +8929,11 @@ function SupplyInventoryView({
                 <div className="supply-barcode-result found">
                   <strong>{barcodeScanResult.supply.name}</strong>
                   <span>{barcodeScanResult.supply.category}</span>
+                  {barcodeScanResult.presentation && (
+                    <span>
+                      Presentación: {barcodeScanResult.presentation.name} · equivale a {barcodeScanResult.presentation.quantity} {barcodeScanResult.supply.stockUnit}
+                    </span>
+                  )}
                   <span>
                     Stock actual: {barcodeScanResult.supply.currentStock} {barcodeScanResult.supply.stockUnit}
                   </span>
@@ -8864,6 +9052,11 @@ function SupplyInventoryView({
                           <td>
                             <code>{item.barcode || "Sin código"}</code>
                             <small>{item.supplier || "Sin proveedor"}</small>
+                            {item.barcodePresentations?.length > 0 && (
+                              <small>
+                                {item.barcodePresentations.length} presentación{item.barcodePresentations.length === 1 ? "" : "es"}
+                              </small>
+                            )}
                           </td>
                           <td>
                             {formatDate(item.updatedAt || item.createdAt)}
@@ -9106,9 +9299,132 @@ function SupplyInventoryView({
               </label>
 
               <label>
-                <span>Código / barcode</span>
-                <input name="barcode" value={supplyForm.barcode} onChange={onSupplyInputChange} placeholder="Se genera automático si lo dejas vacío" disabled={!isAdmin || savingSupply} />
+                <span>Código principal / compatibilidad</span>
+                <input name="barcode" value={supplyForm.barcode} onChange={onSupplyInputChange} placeholder="Se puede generar automático" disabled={!isAdmin || savingSupply} />
               </label>
+
+              <div className="supply-presentations-editor full">
+                <div className="supply-presentations-header">
+                  <strong>Presentaciones / códigos de barras</strong>
+                  <p>
+                    Registra cada código con su equivalencia en la unidad base del insumo.
+                    Ejemplo: caja = 10 resmas, resma individual = 1 resma.
+                  </p>
+                </div>
+
+                {normalizeBarcodePresentations(
+                  supplyForm.barcodePresentations,
+                  "",
+                  supplyForm.stockUnit || "Pieza"
+                ).length === 0 ? (
+                  <div className="supply-presentations-empty">
+                    Aún no hay presentaciones agregadas.
+                  </div>
+                ) : (
+                  <div className="supply-presentations-list">
+                    {normalizeBarcodePresentations(
+                      supplyForm.barcodePresentations,
+                      "",
+                      supplyForm.stockUnit || "Pieza"
+                    ).map((presentation) => (
+                      <div
+                        key={presentation.id}
+                        className={`supply-presentation-card ${presentation.active === false ? "inactive" : ""}`}
+                      >
+                        <div>
+                          <strong>{presentation.name}</strong>
+                          <code>{presentation.barcode}</code>
+                          <span>
+                            Equivale a {presentation.quantity} {supplyForm.stockUnit || presentation.unit}
+                          </span>
+                          {presentation.notes && <small>{presentation.notes}</small>}
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            className="visual-outline-button"
+                            onClick={() => togglePresentationFromSupplyForm(presentation.id)}
+                            disabled={!isAdmin || savingSupply}
+                          >
+                            {presentation.active === false ? "Activar" : "Desactivar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="visual-outline-button"
+                            onClick={() => removePresentationFromSupplyForm(presentation.id)}
+                            disabled={!isAdmin || savingSupply}
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="supply-presentation-form">
+                  <label>
+                    <span>Presentación</span>
+                    <input
+                      name="presentationName"
+                      value={supplyForm.presentationName}
+                      onChange={onSupplyInputChange}
+                      placeholder="Ej. Caja de 10 resmas"
+                      disabled={!isAdmin || savingSupply}
+                    />
+                  </label>
+                  <label>
+                    <span>Código de barras</span>
+                    <input
+                      name="presentationBarcode"
+                      value={supplyForm.presentationBarcode}
+                      onChange={onSupplyInputChange}
+                      placeholder="Ej. 7501234567890"
+                      disabled={!isAdmin || savingSupply}
+                    />
+                  </label>
+                  <label>
+                    <span>Equivale a</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      name="presentationQuantity"
+                      value={supplyForm.presentationQuantity}
+                      onChange={onSupplyNumberInputChange}
+                      disabled={!isAdmin || savingSupply}
+                    />
+                  </label>
+                  <label>
+                    <span>Unidad base</span>
+                    <input
+                      name="presentationUnit"
+                      value={supplyForm.presentationUnit || supplyForm.stockUnit}
+                      onChange={onSupplyInputChange}
+                      placeholder={supplyForm.stockUnit}
+                      disabled={!isAdmin || savingSupply}
+                    />
+                  </label>
+                  <label className="full">
+                    <span>Notas de presentación</span>
+                    <input
+                      name="presentationNotes"
+                      value={supplyForm.presentationNotes}
+                      onChange={onSupplyInputChange}
+                      placeholder="Ej. Código de caja, proveedor alterno, paquete anterior..."
+                      disabled={!isAdmin || savingSupply}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="visual-outline-button full"
+                    onClick={addPresentationToSupplyForm}
+                    disabled={!isAdmin || savingSupply}
+                  >
+                    Agregar presentación
+                  </button>
+                </div>
+              </div>
 
               <label className="full checkbox-inline">
                 <input

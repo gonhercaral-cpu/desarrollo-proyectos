@@ -21094,3 +21094,134 @@ body:has(.field-mode-page) .main-content {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== Presentaciones / códigos de barras por insumo ===== */
+.supply-presentations-editor {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #dce7f5;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f8fbff, #ffffff);
+}
+
+.supply-presentations-header {
+  display: grid;
+  gap: 4px;
+}
+
+.supply-presentations-header strong {
+  color: #17345f;
+  font-size: 14px;
+}
+
+.supply-presentations-header p {
+  margin: 0;
+  color: #60708a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.supply-presentations-empty {
+  padding: 12px;
+  border: 1px dashed #c9d8ea;
+  border-radius: 14px;
+  color: #60708a;
+  font-size: 12px;
+  background: #ffffff;
+}
+
+.supply-presentations-list {
+  display: grid;
+  gap: 10px;
+}
+
+.supply-presentation-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #dce7f5;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.supply-presentation-card.inactive {
+  opacity: 0.58;
+}
+
+.supply-presentation-card > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.supply-presentation-card strong {
+  color: #17345f;
+  font-size: 13px;
+}
+
+.supply-presentation-card code {
+  display: inline-block;
+  width: fit-content;
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: #eef4fb;
+  color: #17345f;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.supply-presentation-card span,
+.supply-presentation-card small {
+  color: #60708a;
+  font-size: 12px;
+}
+
+.supply-presentation-card > div:last-child {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.supply-presentation-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.supply-presentation-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.supply-presentation-form label span {
+  color: #526176;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.supply-presentation-form .full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 960px) {
+  .supply-presentation-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .supply-presentation-card {
+    flex-direction: column;
+  }
+
+  .supply-presentation-card > div:last-child {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .supply-presentation-form {
+    grid-template-columns: 1fr;
+  }
+}
