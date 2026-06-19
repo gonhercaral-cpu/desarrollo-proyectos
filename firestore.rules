@@ -622,6 +622,129 @@ service cloud.firestore {
 
 
 
+    function validPrintSupplyCategory(category) {
+      return category in [
+        "Papel para libros",
+        "Papel para portadas",
+        "Papel para certificados",
+        "Papel para diplomas",
+        "Vinil",
+        "Laminado",
+        "Pegamento / encuadernado",
+        "Tintas / tóner",
+        "Empaque",
+        "Herramientas menores",
+        "Otro"
+      ];
+    }
+
+    function validPrintSupplyMovementType(type) {
+      return type in [
+        "Entrada",
+        "Salida",
+        "Ajuste",
+        "Merma",
+        "Devolución"
+      ];
+    }
+
+    function validPrintSupplyItemData() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.category is string
+        && validPrintSupplyCategory(request.resource.data.category)
+        && request.resource.data.stockUnit is string
+        && request.resource.data.stockUnit.size() > 0
+        && request.resource.data.currentStock is number
+        && request.resource.data.currentStock >= 0
+        && request.resource.data.minStock is number
+        && request.resource.data.minStock >= 0
+        && request.resource.data.idealStock is number
+        && request.resource.data.idealStock >= 0
+        && request.resource.data.idealStock >= request.resource.data.minStock
+        && request.resource.data.contentQuantity is number
+        && request.resource.data.contentQuantity >= 0
+        && request.resource.data.contentUnit is string
+        && request.resource.data.color is string
+        && request.resource.data.size is string
+        && request.resource.data.weight is string
+        && request.resource.data.supplier is string
+        && request.resource.data.approximateCost is number
+        && request.resource.data.approximateCost >= 0
+        && request.resource.data.barcode is string
+        && request.resource.data.expectedYield is number
+        && request.resource.data.expectedYield >= 0
+        && request.resource.data.expectedYieldUnit is string
+        && request.resource.data.active is bool
+        && request.resource.data.notes is string;
+    }
+
+    function validSupplyStockMovementUpdate() {
+      return canAccessPrintshop()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "currentStock",
+          "lastMovementAt",
+          "lastMovementType",
+          "lastMovementReason",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.currentStock is number
+        && request.resource.data.currentStock >= 0
+        && request.resource.data.lastMovementType is string
+        && validPrintSupplyMovementType(request.resource.data.lastMovementType)
+        && request.resource.data.lastMovementReason is string
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function printSupplyItemPath(supplyId) {
+      return /databases/$(database)/documents/printSupplyItems/$(supplyId);
+    }
+
+    function printSupplyItemExists(supplyId) {
+      return supplyId is string
+        && supplyId.size() > 0
+        && exists(printSupplyItemPath(supplyId));
+    }
+
+    function validPrintSupplyMovementData() {
+      return request.resource.data.supplyId is string
+        && printSupplyItemExists(request.resource.data.supplyId)
+        && request.resource.data.supplyName is string
+        && request.resource.data.supplyName.size() > 0
+        && request.resource.data.category is string
+        && request.resource.data.type is string
+        && validPrintSupplyMovementType(request.resource.data.type)
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 0
+        && request.resource.data.stockUnit is string
+        && request.resource.data.stockUnit.size() > 0
+        && request.resource.data.contentQuantity is number
+        && request.resource.data.contentQuantity >= 0
+        && request.resource.data.contentUnit is string
+        && request.resource.data.expectedYield is number
+        && request.resource.data.expectedYield >= 0
+        && request.resource.data.expectedYieldUnit is string
+        && request.resource.data.previousStock is number
+        && request.resource.data.previousStock >= 0
+        && request.resource.data.newStock is number
+        && request.resource.data.newStock >= 0
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.relatedType is string
+        && request.resource.data.relatedId is string
+        && request.resource.data.relatedFolio is string
+        && request.resource.data.wasteQuantity is number
+        && request.resource.data.wasteQuantity >= 0
+        && request.resource.data.notes is string
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByEmail is string;
+    }
+
+
     function printBatchPath(batchId) {
       return /databases/$(database)/documents/printProductionBatches/$(batchId);
     }
@@ -1493,6 +1616,31 @@ service cloud.firestore {
           || responsibleBatchInventoryMovementCreate()
         )
         && validPrintInventoryMovementData();
+
+      allow update, delete: if false;
+    }
+
+
+    match /printSupplyItems/{supplyId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if isAdmin()
+        && validPrintSupplyItemData();
+
+      allow update: if (
+          isAdmin()
+          && validPrintSupplyItemData()
+        )
+        || validSupplyStockMovementUpdate();
+
+      allow delete: if false;
+    }
+
+    match /printSupplyMovements/{movementId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if canAccessPrintshop()
+        && validPrintSupplyMovementData();
 
       allow update, delete: if false;
     }

@@ -42,6 +42,99 @@ const levels = ["No aplica", "A1", "A2", "B1", "B2", "C1", "Otro"];
 
 const units = ["Pieza", "Libro", "Documento", "Paquete", "Hoja", "Metro", "Lote"];
 
+const supplyCategories = [
+  "Papel para libros",
+  "Papel para portadas",
+  "Papel para certificados",
+  "Papel para diplomas",
+  "Vinil",
+  "Laminado",
+  "Pegamento / encuadernado",
+  "Tintas / tóner",
+  "Empaque",
+  "Herramientas menores",
+  "Otro",
+];
+
+const supplyUnits = [
+  "Resma",
+  "Paquete",
+  "Caja",
+  "Rollo",
+  "Bote",
+  "Cartucho",
+  "Pieza",
+  "Litro",
+  "Mililitro",
+  "Kilogramo",
+  "Gramo",
+  "Metro",
+  "Hoja",
+  "Otro",
+];
+
+const supplyContentUnits = ["Hoja", "Metro", "Pieza", "Mililitro", "Gramo", "Otro"];
+
+const supplyMovementTypes = ["Entrada", "Salida", "Ajuste", "Merma", "Devolución"];
+
+const supplyMovementReasons = [
+  "Compra",
+  "Producción de libros",
+  "Producción de certificados",
+  "Producción de diplomas",
+  "Producción de vinil",
+  "Reposición",
+  "Ajuste de inventario",
+  "Merma / desperdicio",
+  "Devolución",
+  "Otro",
+];
+
+const supplyRelatedTypes = ["Ninguno", "Solicitud", "Lote", "Certificado", "Otro"];
+
+const supplyYieldUnits = [
+  "Libros",
+  "Certificados",
+  "Diplomas",
+  "Hojas impresas",
+  "Viniles",
+  "Piezas",
+  "Otro",
+];
+
+const supplyFormInitialState = {
+  name: "",
+  category: "Papel para libros",
+  stockUnit: "Resma",
+  currentStock: 0,
+  minStock: 0,
+  idealStock: 0,
+  contentQuantity: 500,
+  contentUnit: "Hoja",
+  color: "",
+  size: "Carta",
+  weight: "",
+  supplier: "",
+  approximateCost: 0,
+  barcode: "",
+  expectedYield: 0,
+  expectedYieldUnit: "Libros",
+  active: true,
+  notes: "",
+};
+
+const supplyMovementFormInitialState = {
+  supplyId: "",
+  type: "Salida",
+  quantity: 1,
+  reason: "Producción de libros",
+  relatedType: "Ninguno",
+  relatedId: "",
+  relatedFolio: "",
+  wasteQuantity: 0,
+  notes: "",
+};
+
 const productFormInitialState = {
   name: "",
   category: "Libro",
@@ -127,6 +220,7 @@ const printshopLogModules = [
   "Firmas",
   "Lotes",
   "Inventario",
+  "Insumos",
 ];
 
 const printshopLogTypes = [
@@ -147,6 +241,9 @@ const printshopLogTypes = [
   "BATCH_UPDATED",
   "BATCH_INVENTORY_APPLIED",
   "INVENTORY_MOVEMENT_CREATED",
+  "SUPPLY_CREATED",
+  "SUPPLY_UPDATED",
+  "SUPPLY_MOVEMENT_CREATED",
 ];
 
 const printCampuses = [
@@ -1593,6 +1690,7 @@ function getPrintshopLogModuleLabel(module) {
     signers: "Firmas",
     batches: "Lotes",
     inventory: "Inventario",
+    supplies: "Insumos",
   };
 
   return labels[module] || "Imprenta";
@@ -1616,6 +1714,9 @@ function getPrintshopLogTypeLabel(type) {
     BATCH_UPDATED: "Lote actualizado",
     BATCH_INVENTORY_APPLIED: "Lote ingresado a inventario",
     INVENTORY_MOVEMENT_CREATED: "Movimiento de inventario",
+    SUPPLY_CREATED: "Insumo creado",
+    SUPPLY_UPDATED: "Insumo actualizado",
+    SUPPLY_MOVEMENT_CREATED: "Movimiento de insumo",
   };
 
   return labels[type] || type || "Acción registrada";
@@ -1655,6 +1756,124 @@ function normalizePrintshopLog(log) {
     performedByEmail: String(log?.performedByEmail || ""),
     createdAt: log?.createdAt || "",
   };
+}
+
+function normalizeSupplyItem(item) {
+  return {
+    id: item?.id || "",
+    name: String(item?.name || ""),
+    category: String(item?.category || "Otro"),
+    stockUnit: String(item?.stockUnit || item?.unit || "Pieza"),
+    currentStock: Number(item?.currentStock || 0),
+    minStock: Number(item?.minStock || 0),
+    idealStock: Number(item?.idealStock || 0),
+    contentQuantity: Number(item?.contentQuantity || 0),
+    contentUnit: String(item?.contentUnit || ""),
+    color: String(item?.color || ""),
+    size: String(item?.size || ""),
+    weight: String(item?.weight || ""),
+    supplier: String(item?.supplier || ""),
+    approximateCost: Number(item?.approximateCost || 0),
+    barcode: String(item?.barcode || ""),
+    expectedYield: Number(item?.expectedYield || 0),
+    expectedYieldUnit: String(item?.expectedYieldUnit || ""),
+    active: item?.active === false ? false : true,
+    notes: String(item?.notes || ""),
+    lastMovementAt: item?.lastMovementAt || "",
+    lastMovementType: String(item?.lastMovementType || ""),
+    lastMovementReason: String(item?.lastMovementReason || ""),
+    createdAt: item?.createdAt || "",
+    updatedAt: item?.updatedAt || "",
+  };
+}
+
+function normalizeSupplyMovement(movement) {
+  return {
+    id: movement?.id || "",
+    supplyId: String(movement?.supplyId || ""),
+    supplyName: String(movement?.supplyName || ""),
+    category: String(movement?.category || ""),
+    type: String(movement?.type || "Salida"),
+    quantity: Number(movement?.quantity || 0),
+    stockUnit: String(movement?.stockUnit || "Pieza"),
+    contentQuantity: Number(movement?.contentQuantity || 0),
+    contentUnit: String(movement?.contentUnit || ""),
+    expectedYield: Number(movement?.expectedYield || 0),
+    expectedYieldUnit: String(movement?.expectedYieldUnit || ""),
+    previousStock: Number(movement?.previousStock || 0),
+    newStock: Number(movement?.newStock || 0),
+    reason: String(movement?.reason || ""),
+    relatedType: String(movement?.relatedType || ""),
+    relatedId: String(movement?.relatedId || ""),
+    relatedFolio: String(movement?.relatedFolio || ""),
+    wasteQuantity: Number(movement?.wasteQuantity || 0),
+    notes: String(movement?.notes || ""),
+    createdAt: movement?.createdAt || "",
+    createdByUid: String(movement?.createdByUid || ""),
+    createdByName: String(movement?.createdByName || ""),
+    createdByEmail: String(movement?.createdByEmail || ""),
+  };
+}
+
+function getSupplyStatus(item) {
+  const currentStock = Number(item?.currentStock || 0);
+  const minStock = Number(item?.minStock || 0);
+  const idealStock = Number(item?.idealStock || 0);
+
+  if (currentStock <= 0) {
+    return { label: "Crítico", tone: "red" };
+  }
+
+  if (minStock > 0 && currentStock < minStock) {
+    return { label: "Bajo", tone: "orange" };
+  }
+
+  if (idealStock > 0 && currentStock >= idealStock) {
+    return { label: "Óptimo", tone: "green" };
+  }
+
+  return { label: "Normal", tone: "blue" };
+}
+
+function getSupplyMovementTone(type) {
+  if (type === "Entrada" || type === "Devolución") return "green";
+  if (type === "Merma") return "red";
+  if (type === "Ajuste") return "orange";
+  if (type === "Salida") return "blue";
+  return "teal";
+}
+
+function generateSupplyBarcode(category, name) {
+  const categoryCode = String(category || "INS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 3).toUpperCase())
+    .slice(0, 3)
+    .join("-") || "INS";
+  const nameCode = String(name || "ITEM")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 3).toUpperCase())
+    .slice(0, 2)
+    .join("-") || "GEN";
+
+  return `INS-${categoryCode}-${nameCode}-${String(Date.now()).slice(-5)}`;
+}
+
+function formatCurrency(value) {
+  const amount = Number(value || 0);
+
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function formatDate(value) {
@@ -1830,6 +2049,21 @@ export default function PrintShop() {
   const [savingMovement, setSavingMovement] = useState(false);
   const [inventoryMessage, setInventoryMessage] = useState("");
   const [movementMessage, setMovementMessage] = useState("");
+
+  const [supplyItems, setSupplyItems] = useState([]);
+  const [supplyMovements, setSupplyMovements] = useState([]);
+  const [loadingSupplies, setLoadingSupplies] = useState(true);
+  const [suppliesError, setSuppliesError] = useState("");
+  const [supplyForm, setSupplyForm] = useState(supplyFormInitialState);
+  const [selectedSupplyId, setSelectedSupplyId] = useState(null);
+  const [savingSupply, setSavingSupply] = useState(false);
+  const [supplyMessage, setSupplyMessage] = useState("");
+  const [supplySearch, setSupplySearch] = useState("");
+  const [supplyCategoryFilter, setSupplyCategoryFilter] = useState("Todas");
+  const [supplyStatusFilter, setSupplyStatusFilter] = useState("Activos");
+  const [supplyMovementForm, setSupplyMovementForm] = useState(supplyMovementFormInitialState);
+  const [savingSupplyMovement, setSavingSupplyMovement] = useState(false);
+  const [supplyMovementMessage, setSupplyMovementMessage] = useState("");
 
 
   const [productionBatches, setProductionBatches] = useState([]);
@@ -2033,6 +2267,65 @@ export default function PrintShop() {
         setInventoryError(
           "No se pudo cargar el historial de movimientos. Revisa las reglas de Firestore."
         );
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    setLoadingSupplies(true);
+    setSuppliesError("");
+
+    const suppliesQuery = query(
+      collection(db, "printSupplyItems"),
+      orderBy("name", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      suppliesQuery,
+      (snapshot) => {
+        const nextSupplies = snapshot.docs.map((supplyDoc) =>
+          normalizeSupplyItem({
+            id: supplyDoc.id,
+            ...supplyDoc.data(),
+          })
+        );
+
+        setSupplyItems(nextSupplies);
+        setLoadingSupplies(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los insumos de imprenta:", error);
+        setSuppliesError("No se pudieron cargar los insumos. Revisa las reglas de Firestore.");
+        setLoadingSupplies(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const movementsQuery = query(
+      collection(db, "printSupplyMovements"),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      movementsQuery,
+      (snapshot) => {
+        const nextMovements = snapshot.docs.map((movementDoc) =>
+          normalizeSupplyMovement({
+            id: movementDoc.id,
+            ...movementDoc.data(),
+          })
+        );
+
+        setSupplyMovements(nextMovements);
+      },
+      (error) => {
+        console.error("No se pudo cargar el historial de movimientos de insumos:", error);
+        setSuppliesError("No se pudo cargar el historial de movimientos de insumos.");
       }
     );
 
@@ -2271,6 +2564,58 @@ export default function PrintShop() {
       totalStock,
     };
   }, [inventoryItems]);
+
+  const supplyStats = useMemo(() => {
+    const activeSupplies = supplyItems.filter((item) => item.active !== false);
+    const lowStock = activeSupplies.filter((item) => {
+      const currentStock = Number(item.currentStock || 0);
+      const minStock = Number(item.minStock || 0);
+      return minStock > 0 && currentStock < minStock && currentStock > 0;
+    });
+    const critical = activeSupplies.filter((item) => Number(item.currentStock || 0) <= 0);
+    const totalValue = activeSupplies.reduce(
+      (sum, item) => sum + Number(item.currentStock || 0) * Number(item.approximateCost || 0),
+      0
+    );
+
+    return {
+      total: activeSupplies.length,
+      lowStock: lowStock.length,
+      critical: critical.length,
+      movements: supplyMovements.length,
+      totalValue,
+    };
+  }, [supplyItems, supplyMovements]);
+
+  const filteredSupplyItems = useMemo(() => {
+    const normalizedSearch = supplySearch.trim().toLowerCase();
+
+    return supplyItems.filter((item) => {
+      const status = getSupplyStatus(item);
+      const matchesSearch =
+        !normalizedSearch ||
+        `${item.name} ${item.category} ${item.barcode} ${item.color} ${item.size} ${item.supplier}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+
+      const matchesCategory =
+        supplyCategoryFilter === "Todas" || item.category === supplyCategoryFilter;
+
+      const matchesStatus =
+        supplyStatusFilter === "Todos" ||
+        (supplyStatusFilter === "Activos" && item.active !== false) ||
+        (supplyStatusFilter === "Inactivos" && item.active === false) ||
+        (supplyStatusFilter === "Bajo" && status.label === "Bajo") ||
+        (supplyStatusFilter === "Crítico" && status.label === "Crítico");
+
+      return matchesSearch && matchesCategory && matchesStatus;
+    });
+  }, [supplyItems, supplySearch, supplyCategoryFilter, supplyStatusFilter]);
+
+  const selectedSupply = useMemo(
+    () => supplyItems.find((item) => item.id === selectedSupplyId) || null,
+    [supplyItems, selectedSupplyId]
+  );
 
   const inventoryProducts = useMemo(() => {
     return products.filter(
@@ -4780,6 +5125,325 @@ export default function PrintShop() {
   }
 
 
+  function handleSupplyInputChange(event) {
+    const { name, value, type, checked } = event.target;
+
+    setSupplyMessage("");
+    setSupplyForm((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  function handleSupplyNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setSupplyMessage("");
+    setSupplyForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function resetSupplyForm() {
+    setSelectedSupplyId(null);
+    setSupplyForm(supplyFormInitialState);
+    setSupplyMessage("");
+  }
+
+  function selectSupplyItem(item) {
+    setSelectedSupplyId(item.id);
+    setSupplyMessage("");
+    setSupplyForm({
+      name: item.name || "",
+      category: item.category || "Papel para libros",
+      stockUnit: item.stockUnit || "Resma",
+      currentStock: Number(item.currentStock || 0),
+      minStock: Number(item.minStock || 0),
+      idealStock: Number(item.idealStock || 0),
+      contentQuantity: Number(item.contentQuantity || 0),
+      contentUnit: item.contentUnit || "Hoja",
+      color: item.color || "",
+      size: item.size || "",
+      weight: item.weight || "",
+      supplier: item.supplier || "",
+      approximateCost: Number(item.approximateCost || 0),
+      barcode: item.barcode || "",
+      expectedYield: Number(item.expectedYield || 0),
+      expectedYieldUnit: item.expectedYieldUnit || "Libros",
+      active: item.active !== false,
+      notes: item.notes || "",
+    });
+  }
+
+  async function saveSupplyItem(event) {
+    event.preventDefault();
+    setSupplyMessage("");
+
+    if (!isAdmin) {
+      setSupplyMessage("Solo los administradores pueden crear o editar insumos.");
+      return;
+    }
+
+    if (!supplyForm.name.trim()) {
+      setSupplyMessage("Escribe el nombre del insumo.");
+      return;
+    }
+
+    if (Number(supplyForm.idealStock || 0) < Number(supplyForm.minStock || 0)) {
+      setSupplyMessage("El stock ideal no puede ser menor que el stock mínimo.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const payload = {
+      name: supplyForm.name.trim(),
+      category: supplyForm.category || "Otro",
+      stockUnit: supplyForm.stockUnit || "Pieza",
+      currentStock: Number(supplyForm.currentStock || 0),
+      minStock: Number(supplyForm.minStock || 0),
+      idealStock: Number(supplyForm.idealStock || 0),
+      contentQuantity: Number(supplyForm.contentQuantity || 0),
+      contentUnit: supplyForm.contentUnit || "Pieza",
+      color: supplyForm.color || "",
+      size: supplyForm.size || "",
+      weight: supplyForm.weight || "",
+      supplier: supplyForm.supplier || "",
+      approximateCost: Number(supplyForm.approximateCost || 0),
+      barcode: supplyForm.barcode || generateSupplyBarcode(supplyForm.category, supplyForm.name),
+      expectedYield: Number(supplyForm.expectedYield || 0),
+      expectedYieldUnit: supplyForm.expectedYieldUnit || "Piezas",
+      active: supplyForm.active !== false,
+      notes: supplyForm.notes || "",
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    try {
+      setSavingSupply(true);
+
+      if (selectedSupplyId) {
+        await updateDoc(doc(db, "printSupplyItems", selectedSupplyId), payload);
+        await createPrintshopLog({
+          type: "SUPPLY_UPDATED",
+          module: "supplies",
+          title: "Insumo actualizado",
+          description: `Se actualizó el insumo ${payload.name}.`,
+          referenceType: "supply",
+          referenceId: selectedSupplyId,
+          productName: payload.name,
+        });
+        setSupplyMessage("Insumo actualizado correctamente.");
+      } else {
+        const supplyRef = await addDoc(collection(db, "printSupplyItems"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+
+        await createPrintshopLog({
+          type: "SUPPLY_CREATED",
+          module: "supplies",
+          title: "Insumo creado",
+          description: `Se creó el insumo ${payload.name}.`,
+          referenceType: "supply",
+          referenceId: supplyRef.id,
+          productName: payload.name,
+        });
+
+        setSupplyForm(supplyFormInitialState);
+        setSupplyMessage("Insumo creado correctamente.");
+      }
+    } catch (error) {
+      console.error("No se pudo guardar el insumo:", error);
+      setSupplyMessage("No se pudo guardar el insumo. Revisa las reglas de Firestore.");
+    } finally {
+      setSavingSupply(false);
+    }
+  }
+
+  async function toggleSupplyStatus(item) {
+    if (!item?.id || !isAdmin) return;
+
+    const auditUser = getAuditUser();
+
+    try {
+      await updateDoc(doc(db, "printSupplyItems", item.id), {
+        active: item.active === false,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    } catch (error) {
+      console.error("No se pudo cambiar el estado del insumo:", error);
+      setSuppliesError("No se pudo cambiar el estado del insumo.");
+    }
+  }
+
+  function handleSupplyMovementInputChange(event) {
+    const { name, value } = event.target;
+
+    setSupplyMovementMessage("");
+    setSupplyMovementForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  function handleSupplyMovementNumberInputChange(event) {
+    const { name, value } = event.target;
+    const nextValue = Number(value);
+
+    setSupplyMovementMessage("");
+    setSupplyMovementForm((current) => ({
+      ...current,
+      [name]: Number.isNaN(nextValue) ? 0 : Math.max(0, nextValue),
+    }));
+  }
+
+  function prepareSupplyMovement(item, type = "Salida") {
+    setActiveSection("supplies");
+    setSupplyMovementForm((current) => ({
+      ...current,
+      supplyId: item.id,
+      type,
+      quantity: type === "Ajuste" ? Number(item.currentStock || 0) : 1,
+      reason:
+        type === "Entrada"
+          ? "Compra"
+          : type === "Merma"
+            ? "Merma / desperdicio"
+            : "Producción de libros",
+      relatedType: "Ninguno",
+      relatedId: "",
+      relatedFolio: "",
+      wasteQuantity: 0,
+      notes: "",
+    }));
+    setSupplyMovementMessage(`Se preparó ${type.toLowerCase()} para ${item.name}.`);
+  }
+
+  async function registerSupplyMovement(event) {
+    event.preventDefault();
+    setSupplyMovementMessage("");
+
+    if (!supplyMovementForm.supplyId) {
+      setSupplyMovementMessage("Selecciona un insumo.");
+      return;
+    }
+
+    const quantity = Number(supplyMovementForm.quantity || 0);
+
+    if (quantity <= 0 && supplyMovementForm.type !== "Ajuste") {
+      setSupplyMovementMessage("La cantidad debe ser mayor que cero.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const supplyRef = doc(db, "printSupplyItems", supplyMovementForm.supplyId);
+    const movementRef = doc(collection(db, "printSupplyMovements"));
+
+    try {
+      setSavingSupplyMovement(true);
+
+      let movementLogPayload = null;
+
+      await runTransaction(db, async (transaction) => {
+        const supplySnapshot = await transaction.get(supplyRef);
+
+        if (!supplySnapshot.exists()) {
+          throw new Error("No se encontró el insumo seleccionado.");
+        }
+
+        const supplyData = normalizeSupplyItem({
+          id: supplySnapshot.id,
+          ...supplySnapshot.data(),
+        });
+        const previousStock = Number(supplyData.currentStock || 0);
+        let newStock = previousStock;
+
+        if (supplyMovementForm.type === "Entrada" || supplyMovementForm.type === "Devolución") {
+          newStock = previousStock + quantity;
+        } else if (supplyMovementForm.type === "Ajuste") {
+          newStock = quantity;
+        } else {
+          newStock = previousStock - quantity;
+        }
+
+        if (newStock < 0) {
+          throw new Error("No puedes registrar una salida o merma mayor al stock disponible.");
+        }
+
+        const movementPayload = {
+          supplyId: supplySnapshot.id,
+          supplyName: supplyData.name || "",
+          category: supplyData.category || "",
+          type: supplyMovementForm.type || "Salida",
+          quantity,
+          stockUnit: supplyData.stockUnit || "Pieza",
+          contentQuantity: Number(supplyData.contentQuantity || 0),
+          contentUnit: supplyData.contentUnit || "",
+          expectedYield: Number(supplyData.expectedYield || 0),
+          expectedYieldUnit: supplyData.expectedYieldUnit || "",
+          previousStock,
+          newStock,
+          reason: supplyMovementForm.reason || "Movimiento de insumo",
+          relatedType: supplyMovementForm.relatedType || "Ninguno",
+          relatedId: supplyMovementForm.relatedId || "",
+          relatedFolio: supplyMovementForm.relatedFolio || "",
+          wasteQuantity: Number(supplyMovementForm.wasteQuantity || 0),
+          notes: supplyMovementForm.notes || "",
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        };
+
+        transaction.update(supplyRef, {
+          currentStock: newStock,
+          lastMovementAt: serverTimestamp(),
+          lastMovementType: movementPayload.type,
+          lastMovementReason: movementPayload.reason,
+          updatedAt: serverTimestamp(),
+          updatedByUid: auditUser.uid,
+          updatedByName: auditUser.name,
+          updatedByEmail: auditUser.email,
+        });
+
+        transaction.set(movementRef, movementPayload);
+        movementLogPayload = movementPayload;
+      });
+
+      if (movementLogPayload) {
+        await createPrintshopLog({
+          type: "SUPPLY_MOVEMENT_CREATED",
+          module: "supplies",
+          title: "Movimiento de insumo registrado",
+          description: `${movementLogPayload.type} de ${movementLogPayload.quantity} ${movementLogPayload.stockUnit} · ${movementLogPayload.supplyName}.`,
+          referenceType: "supply",
+          referenceId: movementLogPayload.supplyId,
+          productName: movementLogPayload.supplyName,
+          campus: "",
+        });
+      }
+
+      setSupplyMovementForm(supplyMovementFormInitialState);
+      setSupplyMovementMessage("Movimiento de insumo registrado correctamente.");
+    } catch (error) {
+      console.error("No se pudo registrar el movimiento de insumo:", error);
+      setSupplyMovementMessage(error?.message || "No se pudo registrar el movimiento de insumo.");
+    } finally {
+      setSavingSupplyMovement(false);
+    }
+  }
+
+
   function handleBatchInputChange(event) {
     const { name, value } = event.target;
 
@@ -5317,17 +5981,21 @@ export default function PrintShop() {
             value={
               activeSection === "catalog"
                 ? productSearch
-                : activeSection === "requests"
-                  ? requestSearch
-                  : activeSection === "certificates"
-                    ? generatedCertificateSearch
-                    : activeSection === "logs"
-                      ? printshopLogSearch
-                      : ""
+                : activeSection === "supplies"
+                  ? supplySearch
+                  : activeSection === "requests"
+                    ? requestSearch
+                    : activeSection === "certificates"
+                      ? generatedCertificateSearch
+                      : activeSection === "logs"
+                        ? printshopLogSearch
+                        : ""
             }
             onChange={(event) => {
               if (activeSection === "requests") {
                 setRequestSearch(event.target.value);
+              } else if (activeSection === "supplies") {
+                setSupplySearch(event.target.value);
               } else if (activeSection === "certificates") {
                 setGeneratedCertificateSearch(event.target.value);
               } else if (activeSection === "logs") {
@@ -5340,11 +6008,13 @@ export default function PrintShop() {
               setActiveSection(
                 activeSection === "requests"
                   ? "requests"
-                  : activeSection === "certificates"
-                    ? "certificates"
-                    : activeSection === "logs"
-                      ? "logs"
-                      : "catalog"
+                  : activeSection === "supplies"
+                    ? "supplies"
+                    : activeSection === "certificates"
+                      ? "certificates"
+                      : activeSection === "logs"
+                        ? "logs"
+                        : "catalog"
               )
             }
           />
@@ -5375,6 +6045,14 @@ export default function PrintShop() {
         >
           <span>▣</span>
           Inventario terminado
+        </button>
+        <button
+          type="button"
+          className={activeSection === "supplies" ? "active" : ""}
+          onClick={() => setActiveSection("supplies")}
+        >
+          <span>▥</span>
+          Insumos
         </button>
         <button
           type="button"
@@ -5499,6 +6177,40 @@ export default function PrintShop() {
           onRegisterMovement={registerInventoryMovement}
           onPrepareMovement={prepareMovement}
           onResetInventoryForm={resetInventoryForm}
+        />
+      ) : activeSection === "supplies" ? (
+        <SupplyInventoryView
+          supplyItems={supplyItems}
+          filteredSupplyItems={filteredSupplyItems}
+          supplyMovements={supplyMovements}
+          loadingSupplies={loadingSupplies}
+          suppliesError={suppliesError}
+          supplyStats={supplyStats}
+          supplyForm={supplyForm}
+          selectedSupply={selectedSupply}
+          selectedSupplyId={selectedSupplyId}
+          savingSupply={savingSupply}
+          supplyMessage={supplyMessage}
+          supplySearch={supplySearch}
+          supplyCategoryFilter={supplyCategoryFilter}
+          supplyStatusFilter={supplyStatusFilter}
+          supplyMovementForm={supplyMovementForm}
+          savingSupplyMovement={savingSupplyMovement}
+          supplyMovementMessage={supplyMovementMessage}
+          isAdmin={isAdmin}
+          onSearchChange={setSupplySearch}
+          onCategoryFilterChange={setSupplyCategoryFilter}
+          onStatusFilterChange={setSupplyStatusFilter}
+          onSupplyInputChange={handleSupplyInputChange}
+          onSupplyNumberInputChange={handleSupplyNumberInputChange}
+          onSaveSupply={saveSupplyItem}
+          onSelectSupply={selectSupplyItem}
+          onResetSupplyForm={resetSupplyForm}
+          onToggleSupplyStatus={toggleSupplyStatus}
+          onPrepareSupplyMovement={prepareSupplyMovement}
+          onSupplyMovementInputChange={handleSupplyMovementInputChange}
+          onSupplyMovementNumberInputChange={handleSupplyMovementNumberInputChange}
+          onRegisterSupplyMovement={registerSupplyMovement}
         />
       ) : activeSection === "requests" ? (
         <PrintRequestsView
@@ -7565,6 +8277,570 @@ function FinishedInventoryView({
               </form>
             </Panel>
           </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+
+
+function SupplyInventoryView({
+  supplyItems,
+  filteredSupplyItems,
+  supplyMovements,
+  loadingSupplies,
+  suppliesError,
+  supplyStats,
+  supplyForm,
+  selectedSupply,
+  selectedSupplyId,
+  savingSupply,
+  supplyMessage,
+  supplySearch,
+  supplyCategoryFilter,
+  supplyStatusFilter,
+  supplyMovementForm,
+  savingSupplyMovement,
+  supplyMovementMessage,
+  isAdmin,
+  onSearchChange,
+  onCategoryFilterChange,
+  onStatusFilterChange,
+  onSupplyInputChange,
+  onSupplyNumberInputChange,
+  onSaveSupply,
+  onSelectSupply,
+  onResetSupplyForm,
+  onToggleSupplyStatus,
+  onPrepareSupplyMovement,
+  onSupplyMovementInputChange,
+  onSupplyMovementNumberInputChange,
+  onRegisterSupplyMovement,
+}) {
+  const latestMovements = supplyMovements.slice(0, 10);
+  const selectedMovementSupply =
+    supplyItems.find((item) => item.id === supplyMovementForm.supplyId) || null;
+  const estimatedYield =
+    selectedMovementSupply && Number(selectedMovementSupply.expectedYield || 0) > 0
+      ? Math.floor(Number(supplyMovementForm.quantity || 0) * Number(selectedMovementSupply.expectedYield || 0))
+      : 0;
+
+  return (
+    <section className="printshop-supplies-page">
+      <div className="printshop-catalog-hero supplies-hero">
+        <div>
+          <p className="section-kicker printshop-kicker">Inventario de insumos</p>
+          <h2>Materiales para producción de imprenta</h2>
+          <p>
+            Controla papel, portadas, certificados, diplomas, viniles, laminado,
+            pegamento y otros consumibles. Registra entradas, salidas, ajustes y merma.
+          </p>
+        </div>
+
+        <div className="inventory-hero-card">
+          <strong>{supplyStats.total}</strong>
+          <span>Insumos activos</span>
+        </div>
+      </div>
+
+      <div className="printshop-catalog-metrics supplies-metrics">
+        <CatalogMetric tone="blue" icon="▥" label="Insumos" value={supplyStats.total} />
+        <CatalogMetric tone="orange" icon="!" label="Stock bajo" value={supplyStats.lowStock} />
+        <CatalogMetric tone="red" icon="×" label="Críticos" value={supplyStats.critical} />
+        <CatalogMetric tone="green" icon="$" label="Valor aprox." value={formatCurrency(supplyStats.totalValue)} />
+        <CatalogMetric tone="purple" icon="↕" label="Movimientos" value={supplyStats.movements} />
+      </div>
+
+      {suppliesError && <div className="form-error">{suppliesError}</div>}
+
+      <div className="printshop-supplies-layout">
+        <div className="printshop-supplies-main">
+          <Panel title="Existencias de insumos" icon="▥" actionLabel={`${filteredSupplyItems.length} registros`}>
+            <div className="printshop-supplies-toolbar">
+              <label className="catalog-filter-search">
+                <span>Buscar</span>
+                <input
+                  type="search"
+                  value={supplySearch}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder="Nombre, código, color, proveedor..."
+                />
+              </label>
+
+              <label>
+                <span>Categoría</span>
+                <select value={supplyCategoryFilter} onChange={(event) => onCategoryFilterChange(event.target.value)}>
+                  <option>Todas</option>
+                  {supplyCategories.map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Estado</span>
+                <select value={supplyStatusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
+                  <option>Todos</option>
+                  <option>Activos</option>
+                  <option>Inactivos</option>
+                  <option>Bajo</option>
+                  <option>Crítico</option>
+                </select>
+              </label>
+            </div>
+
+            {loadingSupplies ? (
+              <div className="printshop-empty-catalog">
+                <div>▥</div>
+                <h3>Cargando insumos...</h3>
+                <p>Estamos consultando el inventario de materiales.</p>
+              </div>
+            ) : filteredSupplyItems.length === 0 ? (
+              <div className="printshop-empty-catalog">
+                <div>▥</div>
+                <h3>No hay insumos con esos filtros</h3>
+                <p>Agrega insumos como papel, vinil, laminado o pegamento desde el formulario lateral.</p>
+              </div>
+            ) : (
+              <div className="printshop-table-wrap">
+                <table className="printshop-table printshop-supplies-table">
+                  <thead>
+                    <tr>
+                      <th>Insumo</th>
+                      <th>Stock</th>
+                      <th>Mínimo / ideal</th>
+                      <th>Estado</th>
+                      <th>Rendimiento</th>
+                      <th>Código</th>
+                      <th>Actualización</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSupplyItems.map((item) => {
+                      const status = getSupplyStatus(item);
+
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.name}</strong>
+                            <small>{item.category}</small>
+                            <small>
+                              {[item.color, item.size, item.weight].filter(Boolean).join(" · ") || "Sin características"}
+                            </small>
+                          </td>
+                          <td>
+                            <strong>{item.currentStock}</strong>
+                            <small>{item.stockUnit}</small>
+                            {Number(item.contentQuantity || 0) > 0 && (
+                              <small>
+                                {item.contentQuantity} {item.contentUnit} por {item.stockUnit.toLowerCase()}
+                              </small>
+                            )}
+                          </td>
+                          <td>
+                            {item.minStock} / {item.idealStock}
+                            <small>{item.stockUnit}</small>
+                          </td>
+                          <td>
+                            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                            {item.active === false && <small>Inactivo</small>}
+                          </td>
+                          <td>
+                            {Number(item.expectedYield || 0) > 0 ? (
+                              <>
+                                {item.expectedYield} {item.expectedYieldUnit}
+                                <small>por {item.stockUnit.toLowerCase()}</small>
+                              </>
+                            ) : (
+                              <span className="printshop-muted-text">Sin rendimiento</span>
+                            )}
+                          </td>
+                          <td>
+                            <code>{item.barcode || "Sin código"}</code>
+                            <small>{item.supplier || "Sin proveedor"}</small>
+                          </td>
+                          <td>
+                            {formatDate(item.updatedAt || item.createdAt)}
+                            {item.lastMovementType && <small>{item.lastMovementType} · {item.lastMovementReason}</small>}
+                          </td>
+                          <td>
+                            <div className="table-actions supply-actions">
+                              <button type="button" onClick={() => onPrepareSupplyMovement(item, "Entrada")}>
+                                Entrada
+                              </button>
+                              <button type="button" onClick={() => onPrepareSupplyMovement(item, "Salida")}>
+                                Salida
+                              </button>
+                              <button type="button" onClick={() => onPrepareSupplyMovement(item, "Merma")}>
+                                Merma
+                              </button>
+                              {isAdmin && (
+                                <>
+                                  <button type="button" onClick={() => onSelectSupply(item)}>
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={item.active === false ? "" : "danger-table-button"}
+                                    onClick={() => onToggleSupplyStatus(item)}
+                                  >
+                                    {item.active === false ? "Activar" : "Desactivar"}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Movimientos recientes de insumos" icon="↕" actionLabel={`${latestMovements.length} recientes`}>
+            {latestMovements.length === 0 ? (
+              <div className="empty-state small">
+                <div>↕</div>
+                <p>Aún no hay movimientos de insumos.</p>
+              </div>
+            ) : (
+              <div className="printshop-table-wrap">
+                <table className="printshop-table supply-movements-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Insumo</th>
+                      <th>Tipo</th>
+                      <th>Cantidad</th>
+                      <th>Stock</th>
+                      <th>Motivo</th>
+                      <th>Usuario</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {latestMovements.map((movement) => (
+                      <tr key={movement.id}>
+                        <td>{formatDate(movement.createdAt)}</td>
+                        <td>
+                          <strong>{movement.supplyName}</strong>
+                          <small>{movement.category}</small>
+                        </td>
+                        <td>
+                          <StatusBadge tone={getSupplyMovementTone(movement.type)}>
+                            {movement.type}
+                          </StatusBadge>
+                        </td>
+                        <td>
+                          {movement.quantity} {movement.stockUnit}
+                          {movement.wasteQuantity > 0 && <small>Merma reportada: {movement.wasteQuantity}</small>}
+                        </td>
+                        <td>
+                          {movement.previousStock} → {movement.newStock}
+                        </td>
+                        <td>
+                          {movement.reason}
+                          {movement.relatedFolio && <small>{movement.relatedType}: {movement.relatedFolio}</small>}
+                        </td>
+                        <td>{movement.createdByName || "Usuario"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <aside className="printshop-supplies-side">
+          <Panel
+            title={selectedSupplyId ? "Editar insumo" : "Nuevo insumo"}
+            icon="＋"
+            actionLabel={selectedSupplyId ? "Edición" : "Alta"}
+          >
+            <form className="printshop-product-form supply-form" onSubmit={onSaveSupply}>
+              <label className="full">
+                <span>Nombre del insumo</span>
+                <input
+                  name="name"
+                  value={supplyForm.name}
+                  onChange={onSupplyInputChange}
+                  placeholder="Ej. Papel bond carta para libros"
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Categoría</span>
+                <select name="category" value={supplyForm.category} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                  {supplyCategories.map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Unidad de stock</span>
+                <select name="stockUnit" value={supplyForm.stockUnit} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                  {supplyUnits.map((unit) => (
+                    <option key={unit}>{unit}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Stock actual</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="currentStock"
+                  value={supplyForm.currentStock}
+                  onChange={onSupplyNumberInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Mínimo</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="minStock"
+                  value={supplyForm.minStock}
+                  onChange={onSupplyNumberInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Ideal</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="idealStock"
+                  value={supplyForm.idealStock}
+                  onChange={onSupplyNumberInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Contenido por unidad</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="contentQuantity"
+                  value={supplyForm.contentQuantity}
+                  onChange={onSupplyNumberInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Unidad de contenido</span>
+                <select name="contentUnit" value={supplyForm.contentUnit} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                  {supplyContentUnits.map((unit) => (
+                    <option key={unit}>{unit}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Rendimiento esperado</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="expectedYield"
+                  value={supplyForm.expectedYield}
+                  onChange={onSupplyNumberInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Unidad de rendimiento</span>
+                <select name="expectedYieldUnit" value={supplyForm.expectedYieldUnit} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                  {supplyYieldUnits.map((unit) => (
+                    <option key={unit}>{unit}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Color</span>
+                <input name="color" value={supplyForm.color} onChange={onSupplyInputChange} placeholder="Ej. Blanco" disabled={!isAdmin || savingSupply} />
+              </label>
+
+              <label>
+                <span>Medida</span>
+                <input name="size" value={supplyForm.size} onChange={onSupplyInputChange} placeholder="Ej. Carta" disabled={!isAdmin || savingSupply} />
+              </label>
+
+              <label>
+                <span>Gramaje / tipo</span>
+                <input name="weight" value={supplyForm.weight} onChange={onSupplyInputChange} placeholder="Ej. 75 g" disabled={!isAdmin || savingSupply} />
+              </label>
+
+              <label>
+                <span>Proveedor</span>
+                <input name="supplier" value={supplyForm.supplier} onChange={onSupplyInputChange} placeholder="Proveedor" disabled={!isAdmin || savingSupply} />
+              </label>
+
+              <label>
+                <span>Costo aprox.</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="approximateCost"
+                  value={supplyForm.approximateCost}
+                  onChange={onSupplyNumberInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+              </label>
+
+              <label>
+                <span>Código / barcode</span>
+                <input name="barcode" value={supplyForm.barcode} onChange={onSupplyInputChange} placeholder="Se genera automático si lo dejas vacío" disabled={!isAdmin || savingSupply} />
+              </label>
+
+              <label className="full checkbox-inline">
+                <input
+                  type="checkbox"
+                  name="active"
+                  checked={supplyForm.active !== false}
+                  onChange={onSupplyInputChange}
+                  disabled={!isAdmin || savingSupply}
+                />
+                <span>Insumo activo</span>
+              </label>
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea name="notes" value={supplyForm.notes} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply} />
+              </label>
+
+              {supplyMessage && <div className="message-box full">{supplyMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                {selectedSupplyId && (
+                  <button type="button" className="visual-outline-button" onClick={onResetSupplyForm}>
+                    Nuevo insumo
+                  </button>
+                )}
+                <button type="submit" className="visual-primary-button" disabled={!isAdmin || savingSupply}>
+                  {savingSupply ? "Guardando..." : selectedSupplyId ? "Guardar cambios" : "Crear insumo"}
+                </button>
+              </div>
+
+              {!isAdmin && (
+                <p className="inventory-side-help full">
+                  Solo los administradores pueden crear o editar insumos.
+                </p>
+              )}
+            </form>
+          </Panel>
+
+          <Panel title="Registrar movimiento" icon="↕" actionLabel="Entrada / salida">
+            <form className="printshop-product-form supply-movement-form" onSubmit={onRegisterSupplyMovement}>
+              <label className="full">
+                <span>Insumo</span>
+                <select name="supplyId" value={supplyMovementForm.supplyId} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
+                  <option value="">Seleccionar insumo</option>
+                  {supplyItems.filter((item) => item.active !== false).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} · {item.currentStock} {item.stockUnit}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tipo</span>
+                <select name="type" value={supplyMovementForm.type} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
+                  {supplyMovementTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>{supplyMovementForm.type === "Ajuste" ? "Nuevo stock" : "Cantidad"}</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="quantity"
+                  value={supplyMovementForm.quantity}
+                  onChange={onSupplyMovementNumberInputChange}
+                  disabled={savingSupplyMovement}
+                />
+              </label>
+
+              <label>
+                <span>Motivo</span>
+                <select name="reason" value={supplyMovementForm.reason} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
+                  {supplyMovementReasons.map((reason) => (
+                    <option key={reason}>{reason}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Relacionado con</span>
+                <select name="relatedType" value={supplyMovementForm.relatedType} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
+                  {supplyRelatedTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Folio relacionado</span>
+                <input name="relatedFolio" value={supplyMovementForm.relatedFolio} onChange={onSupplyMovementInputChange} placeholder="Ej. LOTE-2026-0012" disabled={savingSupplyMovement} />
+              </label>
+
+              <label>
+                <span>Merma reportada</span>
+                <input
+                  type="number"
+                  min="0"
+                  name="wasteQuantity"
+                  value={supplyMovementForm.wasteQuantity}
+                  onChange={onSupplyMovementNumberInputChange}
+                  disabled={savingSupplyMovement}
+                />
+              </label>
+
+              {selectedMovementSupply && estimatedYield > 0 && (
+                <div className="supply-yield-estimate full">
+                  <strong>Rendimiento esperado</strong>
+                  <p>
+                    Con {supplyMovementForm.quantity} {selectedMovementSupply.stockUnit.toLowerCase()} de este insumo deberían salir aproximadamente{" "}
+                    <b>{estimatedYield} {selectedMovementSupply.expectedYieldUnit}</b>.
+                  </p>
+                </div>
+              )}
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea name="notes" value={supplyMovementForm.notes} onChange={onSupplyMovementInputChange} placeholder="Ej. Salida para lote Journey A1, merma por pruebas, ajuste físico..." disabled={savingSupplyMovement} />
+              </label>
+
+              {supplyMovementMessage && <div className="message-box full">{supplyMovementMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                <button
+                  type="submit"
+                  className="visual-primary-button"
+                  disabled={savingSupplyMovement || supplyItems.length === 0}
+                >
+                  {savingSupplyMovement ? "Registrando..." : "Registrar movimiento"}
+                </button>
+              </div>
+            </form>
+          </Panel>
         </aside>
       </div>
     </section>

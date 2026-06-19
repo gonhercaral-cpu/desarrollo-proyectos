@@ -20784,3 +20784,126 @@ body:has(.field-mode-page) .main-content {
     height: 42px;
   }
 }
+
+/* ===== Inventario de insumos de imprenta ===== */
+.printshop-supplies-page {
+  display: grid;
+  gap: 18px;
+}
+
+.supplies-hero {
+  background:
+    radial-gradient(circle at top right, rgba(184, 60, 75, 0.14), transparent 34%),
+    linear-gradient(135deg, #f7fbff, #ffffff);
+}
+
+.supplies-metrics .catalog-metric-card strong {
+  word-break: break-word;
+}
+
+.printshop-supplies-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  gap: 18px;
+  align-items: start;
+}
+
+.printshop-supplies-main,
+.printshop-supplies-side {
+  display: grid;
+  gap: 18px;
+}
+
+.printshop-supplies-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(180px, 1fr) minmax(160px, 0.8fr);
+  gap: 14px;
+  margin-bottom: 16px;
+  align-items: end;
+}
+
+.printshop-supplies-toolbar label {
+  display: grid;
+  gap: 6px;
+}
+
+.printshop-supplies-toolbar label span {
+  color: #526176;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.printshop-supplies-table td,
+.supply-movements-table td {
+  vertical-align: top;
+}
+
+.printshop-supplies-table code {
+  display: inline-block;
+  max-width: 170px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: #eef4fb;
+  color: #17345f;
+  font-size: 11px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.supply-actions {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.supply-form,
+.supply-movement-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checkbox-inline {
+  display: flex !important;
+  align-items: center;
+  gap: 10px !important;
+  min-height: 42px;
+}
+
+.checkbox-inline input {
+  width: auto !important;
+}
+
+.supply-yield-estimate {
+  padding: 12px;
+  border: 1px solid #cfe0f4;
+  border-radius: 14px;
+  background: #f7fbff;
+}
+
+.supply-yield-estimate strong {
+  display: block;
+  color: #17345f;
+  font-size: 13px;
+}
+
+.supply-yield-estimate p {
+  margin: 5px 0 0;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1180px) {
+  .printshop-supplies-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-supplies-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .supply-form,
+  .supply-movement-form {
+    grid-template-columns: 1fr;
+  }
+}
