@@ -3542,7 +3542,16 @@ export default function PrintShop() {
     }
   }
 
-  async function registerGeneratedCertificate({ request, student, certificateTemplate, principalName, teacherName, fileName }) {
+  async function registerGeneratedCertificate({
+    request,
+    student,
+    certificateTemplate,
+    principalName,
+    teacherName,
+    fileName,
+    pdfUrl = "",
+    pdfStoragePath = "",
+  }) {
     if (!request?.id || !student?.id) {
       throw new Error("No se encontró la solicitud o el alumno para registrar el certificado.");
     }
@@ -3614,6 +3623,9 @@ export default function PrintShop() {
       teacherName: teacherName || request.teacherSignerName || request.teacherName || "",
       status: nextStatus,
       pdfFileName: fileName || "",
+      pdfUrl: pdfUrl || existingCertificate?.pdfUrl || "",
+      pdfStoragePath: pdfStoragePath || existingCertificate?.pdfStoragePath || "",
+      ...(pdfStoragePath || pdfUrl ? { pdfSavedAt: serverTimestamp() } : {}),
       generatedAt: serverTimestamp(),
       generatedByUid: auditUser.uid,
       generatedByName: auditUser.name,
@@ -5489,9 +5501,22 @@ function GeneratedCertificatesView({
                       <td>
                         {formatDate(certificate.generatedAt)}
                         <small>{certificate.generatedByName || ""}</small>
+                        <small>{certificate.pdfUrl ? "PDF original guardado" : "Sin PDF original"}</small>
                       </td>
                       <td>
                         <div className="table-actions generated-certificate-actions">
+                          <button
+                            type="button"
+                            className="visual-outline-button"
+                            disabled={!certificate.pdfUrl}
+                            onClick={() => {
+                              if (certificate.pdfUrl) {
+                                window.open(certificate.pdfUrl, "_blank", "noopener,noreferrer");
+                              }
+                            }}
+                          >
+                            PDF original
+                          </button>
                           <button
                             type="button"
                             className="visual-outline-button"
@@ -8111,6 +8136,16 @@ function buildCertificateDistribution(items, keyGetter, fallbackLabel = "Sin dat
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
 }
 
+function buildGeneratedCertificatePdfStoragePath(request, student, fileName) {
+  const issueDate = getCertificateIssueDate(request);
+  const year = getYearFromDateString(issueDate) || String(new Date().getFullYear());
+  const safeCode = sanitizePdfFileName(
+    student?.validationCode || student?.certificateFolio || fileName || `certificado-${Date.now()}`
+  );
+
+  return `printshop/generated-certificates/${year}/${safeCode}.pdf`;
+}
+
 function sanitizePdfFileName(value) {
   return String(value || "certificado")
     .normalize("NFD")
@@ -8163,6 +8198,9 @@ function normalizeGeneratedCertificate(certificate) {
       ? certificate.status
       : "Generado",
     pdfFileName: String(certificate?.pdfFileName || ""),
+    pdfUrl: String(certificate?.pdfUrl || ""),
+    pdfStoragePath: String(certificate?.pdfStoragePath || ""),
+    pdfSavedAt: certificate?.pdfSavedAt || "",
     generatedAt: certificate?.generatedAt || "",
     generatedByUid: String(certificate?.generatedByUid || ""),
     generatedByName: String(certificate?.generatedByName || ""),
@@ -8356,8 +8394,30 @@ function CertificatePreviewCard({
       const fileName = sanitizePdfFileName(
         `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
       );
+      const finalFileName = `${fileName}.pdf`;
+      const pdfBlob = pdf.output("blob");
+      let pdfUrl = "";
+      let pdfStoragePath = "";
+      let storageWarning = "";
 
-      pdf.save(`${fileName}.pdf`);
+      try {
+        pdfStoragePath = buildGeneratedCertificatePdfStoragePath(request, student, finalFileName);
+        const pdfRef = storageRef(storage, pdfStoragePath);
+
+        await uploadBytes(pdfRef, pdfBlob, {
+          contentType: "application/pdf",
+        });
+
+        pdfUrl = await getDownloadURL(pdfRef);
+      } catch (uploadError) {
+        console.error("No se pudo guardar el PDF original en Storage:", uploadError);
+        pdfStoragePath = "";
+        pdfUrl = "";
+        storageWarning =
+          " El PDF se descargó, pero no se pudo guardar el original en Storage. Revisa Storage Rules.";
+      }
+
+      pdf.save(finalFileName);
 
       if (typeof onCertificateGenerated === "function") {
         try {
@@ -8367,18 +8427,24 @@ function CertificatePreviewCard({
             certificateTemplate,
             principalName,
             teacherName,
-            fileName: `${fileName}.pdf`,
+            fileName: finalFileName,
+            pdfUrl,
+            pdfStoragePath,
           });
 
-          setGenerationMessage("PDF descargado y certificado registrado en el historial.");
+          setGenerationMessage(
+            pdfUrl
+              ? "PDF descargado, guardado en Storage y certificado registrado en el historial."
+              : `PDF descargado y certificado registrado en el historial.${storageWarning}`
+          );
         } catch (registrationError) {
           console.error("El PDF se descargó, pero no se pudo registrar el certificado:", registrationError);
           setGenerationMessage(
-            "PDF descargado. No se pudo registrar el certificado en el historial o en la validación pública. Revisa Firestore Rules y vuelve a presionar Descargar PDF."
+            `PDF descargado.${storageWarning} No se pudo registrar el certificado en el historial o en la validación pública. Revisa Firestore Rules y vuelve a presionar Descargar PDF.`
           );
         }
       } else {
-        setGenerationMessage("PDF descargado correctamente.");
+        setGenerationMessage(pdfUrl ? "PDF descargado y guardado en Storage." : `PDF descargado correctamente.${storageWarning}`);
       }
     } catch (error) {
       console.error("No se pudo descargar el certificado en PDF:", error);

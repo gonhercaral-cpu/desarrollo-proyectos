@@ -1,0 +1,237 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function hasUserDoc() {
+      return signedIn()
+        && firestore.exists(userPath());
+    }
+
+    function userDoc() {
+      return firestore.get(userPath());
+    }
+
+    function hasProfile() {
+      return hasUserDoc()
+        && userDoc().data.active == true;
+    }
+
+    function hasUserArea() {
+      return hasProfile()
+        && userDoc().data.area is string;
+    }
+
+    function isAdmin() {
+      return hasProfile()
+        && userDoc().data.role == "admin";
+    }
+
+    function isPrintshopUser() {
+      return hasProfile()
+        && hasUserArea()
+        && (
+          userDoc().data.area == "Imprenta" ||
+          userDoc().data.area == "Impresión" ||
+          userDoc().data.area == "Impresion"
+        );
+    }
+
+    function isTechnicalSupportUser() {
+      return hasProfile()
+        && hasUserArea()
+        && (
+          userDoc().data.area == "Soporte Técnico" ||
+          userDoc().data.area == "Soporte tecnico" ||
+          userDoc().data.area == "Soporte técnico"
+        );
+    }
+
+    function canAccessPrintshop() {
+      return isAdmin()
+        || isPrintshopUser()
+        || isTechnicalSupportUser();
+    }
+
+    function projectPath(projectId) {
+      return /databases/(default)/documents/projects/$(projectId);
+    }
+
+    function projectExists(projectId) {
+      return firestore.exists(projectPath(projectId));
+    }
+
+    function projectData(projectId) {
+      return firestore.get(projectPath(projectId)).data;
+    }
+
+    function isAssignedToProject(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          projectData(projectId).assignedToUid == request.auth.uid ||
+          projectData(projectId).assignedToId == request.auth.uid ||
+          projectData(projectId).assignedTo == request.auth.uid ||
+          projectData(projectId).responsibleUid == request.auth.uid ||
+          projectData(projectId).responsibleId == request.auth.uid
+        );
+    }
+
+    function isCollaboratorInProject(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          (
+            projectData(projectId).collaboratorIds is list
+            && request.auth.uid in projectData(projectId).collaboratorIds
+          )
+          ||
+          (
+            projectData(projectId).collaboratorUids is list
+            && request.auth.uid in projectData(projectId).collaboratorUids
+          )
+        );
+    }
+
+    function isCreatorOfProject(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          projectData(projectId).createdByUid == request.auth.uid ||
+          projectData(projectId).createdBy == request.auth.uid
+        );
+    }
+
+    function canAccessProject(projectId) {
+      return hasProfile()
+        && projectExists(projectId)
+        && (
+          isAdmin() ||
+          isAssignedToProject(projectId) ||
+          isCollaboratorInProject(projectId) ||
+          isCreatorOfProject(projectId)
+        );
+    }
+
+    function validEvidenceSize() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    function validSignatureImage() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp)');
+    }
+
+    function validCertificateTemplateImage() {
+      return request.resource.size < 12 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp)');
+    }
+
+    function validGeneratedCertificatePdf() {
+      return request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType == "application/pdf";
+    }
+
+    /*
+      Evidencias de proyectos:
+      evidence/{projectId}/{userUid}/{fileName}
+    */
+    match /evidence/{projectId}/{userUid}/{fileName} {
+      allow read: if canAccessProject(projectId);
+
+      allow create: if signedIn()
+        && hasProfile()
+        && request.auth.uid == userUid
+        && validEvidenceSize();
+
+      allow update, delete: if false;
+    }
+
+    /*
+      Ruta anterior de evidencias:
+      evidence/{projectId}/{fileName}
+    */
+    match /evidence/{projectId}/{fileName} {
+      allow read: if canAccessProject(projectId);
+
+      allow create: if signedIn()
+        && hasProfile()
+        && validEvidenceSize();
+
+      allow update, delete: if false;
+    }
+
+    /*
+      Firmas para certificados:
+      printshop/signatures/principals/{userUid}/{fileName}
+      printshop/signatures/teachers/{userUid}/{fileName}
+    */
+    match /printshop/signatures/{signerType}/{userUid}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if signedIn()
+        && isAdmin()
+        && request.auth.uid == userUid
+        && signerType in ["principals", "teachers"]
+        && validSignatureImage();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      Plantillas base para certificados:
+      printshop/certificate-templates/{userUid}/{fileName}
+    */
+    match /printshop/certificate-templates/{userUid}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if signedIn()
+        && isAdmin()
+        && request.auth.uid == userUid
+        && validCertificateTemplateImage();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      Imágenes personalizadas de plantillas:
+      printshop/template-assets/{userUid}/{fileName}
+    */
+    match /printshop/template-assets/{userUid}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if signedIn()
+        && isAdmin()
+        && request.auth.uid == userUid
+        && validCertificateTemplateImage();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      PDF originales de certificados generados:
+      printshop/generated-certificates/{year}/{fileName}
+    */
+    match /printshop/generated-certificates/{year}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if signedIn()
+        && canAccessPrintshop()
+        && validGeneratedCertificatePdf();
+
+      allow delete: if isAdmin();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

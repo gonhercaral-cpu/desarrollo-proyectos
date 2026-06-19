@@ -1262,9 +1262,12 @@ service cloud.firestore {
         && request.resource.data.status is string
         && validGeneratedCertificateStatus(request.resource.data.status)
         && request.resource.data.pdfFileName is string
+        && (!("pdfUrl" in request.resource.data) || request.resource.data.pdfUrl is string)
+        && (!("pdfStoragePath" in request.resource.data) || request.resource.data.pdfStoragePath is string)
         && request.resource.data.generatedByUid is string
         && request.resource.data.generatedByName is string
         && request.resource.data.generatedByEmail is string
+        && (!("pdfSavedAt" in request.resource.data) || request.resource.data.pdfSavedAt is timestamp)
         && request.resource.data.updatedByUid is string
         && request.resource.data.updatedByName is string
         && request.resource.data.updatedByEmail is string
