@@ -8470,6 +8470,130 @@ function RequestDetailCard({
     }
   }
 
+  async function openCertificatesPrintPdf() {
+    if (bulkCertificateWorking) return;
+
+    if (certificateStudentsWithFolios.length === 0) {
+      setBulkCertificateMessage("Primero genera folios para los alumnos.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Preparando certificados...</title>
+            <style>
+              body {
+                margin: 0;
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                font-family: Arial, sans-serif;
+                color: #17345f;
+                background: #f5f8fb;
+              }
+              div {
+                max-width: 520px;
+                padding: 32px;
+                border-radius: 20px;
+                background: #ffffff;
+                box-shadow: 0 18px 45px rgba(23, 52, 95, 0.12);
+                text-align: center;
+              }
+            </style>
+          </head>
+          <body>
+            <div>
+              <h1>Preparando PDF para impresión...</h1>
+              <p>No cierres esta pestaña. El visor se abrirá automáticamente.</p>
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+
+    try {
+      setBulkCertificateWorking(true);
+      setBulkCertificateMessage(
+        `Preparando PDF consolidado con ${certificateStudentsWithFolios.length} certificados...`
+      );
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "letter",
+      });
+
+      for (let index = 0; index < certificateStudentsWithFolios.length; index += 1) {
+        const student = certificateStudentsWithFolios[index];
+        const element = bulkCertificateRefs.current?.[student.id];
+
+        if (!element) {
+          throw new Error(`No se encontró la vista oculta del certificado de ${student.name}.`);
+        }
+
+        setBulkCertificateMessage(
+          `Agregando página ${index + 1} de ${certificateStudentsWithFolios.length}: ${student.name}`
+        );
+
+        await appendCertificateElementToPdf(pdf, element, index > 0);
+      }
+
+      const pdfBlob = pdf.output("blob");
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      if (printWindow) {
+        printWindow.location.replace(pdfUrl);
+      } else {
+        const fallbackLink = document.createElement("a");
+
+        fallbackLink.href = pdfUrl;
+        fallbackLink.target = "_blank";
+        fallbackLink.rel = "noopener noreferrer";
+        fallbackLink.click();
+      }
+
+      window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 5 * 60 * 1000);
+
+      if (typeof onLogPrintshopAction === "function") {
+        await onLogPrintshopAction({
+          type: "CERTIFICATE_PRINT_PDF_OPENED",
+          module: "certificates",
+          title: "PDF consolidado abierto para impresión",
+          description: `Se abrió un PDF consolidado con ${certificateStudentsWithFolios.length} certificados de la solicitud ${request.folio || ""}.`,
+          referenceType: "request",
+          referenceId: request.id,
+          requestId: request.id,
+          requestFolio: request.folio || "",
+          productId: request.productId || "",
+          productName: request.productName || "",
+          campus: request.campus || "",
+          level: request.level || "",
+        });
+      }
+
+      setBulkCertificateMessage("PDF consolidado abierto en una pestaña nueva. Desde el visor puedes imprimir todos juntos.");
+    } catch (error) {
+      console.error("No se pudo abrir el PDF consolidado de certificados:", error);
+      setBulkCertificateMessage(error?.message || "No se pudo abrir el PDF consolidado de certificados.");
+
+      if (printWindow) {
+        printWindow.document.body.innerHTML = `
+          <div style="font-family: Arial, sans-serif; padding: 32px; color: #7f1d1d;">
+            <h1>No se pudo preparar el PDF</h1>
+            <p>${String(error?.message || "Intenta de nuevo.")}</p>
+          </div>
+        `;
+      }
+    } finally {
+      setBulkCertificateWorking(false);
+    }
+  }
+
   return (
     <Panel
       title="Detalle de solicitud"
@@ -8588,7 +8712,7 @@ function RequestDetailCard({
                 <div>
                   <strong>Acciones masivas de certificados</strong>
                   <p>
-                    Guarda los PDFs originales faltantes o descarga todos los certificados de la solicitud en un ZIP.
+                    Guarda PDFs faltantes, descarga ZIP o abre un solo PDF con todos los certificados para imprimirlos juntos.
                   </p>
                 </div>
                 <div className="request-bulk-certificate-buttons">
@@ -8603,6 +8727,14 @@ function RequestDetailCard({
                     onClick={saveMissingCertificatePdfs}
                   >
                     {bulkCertificateWorking ? "Procesando..." : "Guardar PDFs faltantes"}
+                  </button>
+                  <button
+                    type="button"
+                    className="visual-outline-button"
+                    disabled={bulkCertificateWorking || certificateStudentsWithFolios.length === 0}
+                    onClick={openCertificatesPrintPdf}
+                  >
+                    {bulkCertificateWorking ? "Procesando..." : "Abrir PDF para impresión"}
                   </button>
                   <button
                     type="button"
@@ -8988,7 +9120,7 @@ function buildGeneratedCertificatePdfStoragePath(request, student, fileName) {
   return `printshop/generated-certificates/${year}/${safeCode}.pdf`;
 }
 
-async function buildCertificatePdfBlobFromElement(element) {
+async function appendCertificateElementToPdf(pdf, element, addPage = false) {
   if (!element) {
     throw new Error("No se encontró el certificado para generar el PDF.");
   }
@@ -9019,21 +9151,30 @@ async function buildCertificatePdfBlobFromElement(element) {
     });
 
     const imageData = canvas.toDataURL("image/png", 1.0);
-    const pdf = new jsPDF({
-      orientation: "portrait",
-      unit: "pt",
-      format: "letter",
-    });
+
+    if (addPage) {
+      pdf.addPage("letter", "portrait");
+    }
 
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
 
     pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
-
-    return pdf.output("blob");
   } finally {
     element.classList.remove("pdf-export-mode");
   }
+}
+
+async function buildCertificatePdfBlobFromElement(element) {
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "pt",
+    format: "letter",
+  });
+
+  await appendCertificateElementToPdf(pdf, element, false);
+
+  return pdf.output("blob");
 }
 
 async function saveGeneratedCertificatePdfBlob({ request, student, fileName, pdfBlob }) {
