@@ -542,6 +542,7 @@ service cloud.firestore {
         && request.resource.data.requiresQualityCheck is bool
         && request.resource.data.requiresSignature is bool
         && request.resource.data.requiresValidationQr is bool
+        && (!("productionRecipe" in request.resource.data) || request.resource.data.productionRecipe is list)
         && request.resource.data.active is bool
         && request.resource.data.notes is string;
     }

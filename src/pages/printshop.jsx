@@ -103,6 +103,18 @@ const supplyYieldUnits = [
   "Otro",
 ];
 
+const recipeUnits = [
+  "Hoja",
+  "Metro",
+  "Pieza",
+  "Resma",
+  "Rollo",
+  "Bote",
+  "Mililitro",
+  "Gramo",
+  "Otro",
+];
+
 const supplyFormInitialState = {
   name: "",
   category: "Papel para libros",
@@ -156,6 +168,11 @@ const productFormInitialState = {
   requiresQualityCheck: true,
   requiresSignature: false,
   requiresValidationQr: false,
+  productionRecipe: [],
+  recipeSupplyId: "",
+  recipeQuantityPerUnit: 0,
+  recipeUnit: "Hoja",
+  recipeNotes: "",
   active: true,
   notes: "",
 };
@@ -1886,6 +1903,204 @@ function getSupplyStatus(item) {
   }
 
   return { label: "Normal", tone: "blue" };
+}
+
+function buildRecipeItemId() {
+  return `recipe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeProductRecipe(recipe) {
+  if (!Array.isArray(recipe)) return [];
+
+  return recipe
+    .map((item) => ({
+      id: String(item?.id || buildRecipeItemId()),
+      supplyId: String(item?.supplyId || ""),
+      supplyName: String(item?.supplyName || ""),
+      category: String(item?.category || ""),
+      quantityPerUnit: Number(item?.quantityPerUnit || 0),
+      unit: String(item?.unit || "Hoja"),
+      notes: String(item?.notes || ""),
+      active: item?.active === false ? false : true,
+    }))
+    .filter((item) => item.supplyId && item.quantityPerUnit > 0);
+}
+
+function getProductRecipeForSupply(product, supplyId) {
+  return normalizeProductRecipe(product?.productionRecipe).find(
+    (item) => item.active !== false && item.supplyId === supplyId
+  ) || null;
+}
+
+function convertSupplyQuantityToRecipeUnit(quantity, supplyReference, movement, recipeUnit) {
+  const amount = Number(quantity || 0);
+  const targetUnit = String(recipeUnit || "");
+  const stockUnit = String(supplyReference?.stockUnit || movement?.stockUnit || "");
+  const contentUnit = String(supplyReference?.contentUnit || movement?.contentUnit || "");
+  const contentQuantity = Number(supplyReference?.contentQuantity || movement?.contentQuantity || 0);
+
+  if (!targetUnit || targetUnit === stockUnit) return amount;
+
+  if (targetUnit === contentUnit && contentQuantity > 0) {
+    return amount * contentQuantity;
+  }
+
+  return amount;
+}
+
+function isSupplyMovementForBatch(movement, batch) {
+  if (!movement || !batch) return false;
+
+  const batchId = String(batch.id || "");
+  const batchFolio = String(batch.folio || "");
+  const movementRelatedType = String(movement.relatedType || "");
+  const movementRelatedId = String(movement.relatedId || "");
+  const movementRelatedFolio = String(movement.relatedFolio || "");
+
+  return (
+    movementRelatedType === "Lote" &&
+    (
+      (batchId && movementRelatedId === batchId) ||
+      (batchFolio && movementRelatedFolio === batchFolio)
+    )
+  );
+}
+
+function getSupplyMovementConsumptionQuantity(movement) {
+  const quantity = Number(movement?.quantity || 0);
+
+  if (movement?.type === "Salida" || movement?.type === "Merma") return quantity;
+  if (movement?.type === "Devolución") return -quantity;
+
+  return 0;
+}
+
+function getBatchSupplyConsumptionRows(batch, supplyMovements, supplyItems = [], products = []) {
+  if (!batch) return [];
+
+  const relatedMovements = (supplyMovements || []).filter((movement) =>
+    isSupplyMovementForBatch(movement, batch)
+  );
+  const batchProduct =
+    (products || []).find((product) => product.id === batch.productId) || null;
+  const groups = new Map();
+
+  relatedMovements.forEach((movement) => {
+    const supplyReference =
+      (supplyItems || []).find((item) => item.id === movement.supplyId) || null;
+    const recipeItem = getProductRecipeForSupply(batchProduct, movement.supplyId);
+    const fallbackExpectedYield = Number(supplyReference?.expectedYield || 0);
+    const movementExpectedYield = Number(movement.expectedYield || 0);
+    const resolvedExpectedYield =
+      movementExpectedYield > 0 ? movementExpectedYield : fallbackExpectedYield;
+    const resolvedExpectedYieldUnit =
+      movement.expectedYieldUnit ||
+      supplyReference?.expectedYieldUnit ||
+      "Piezas";
+    const key = movement.supplyId || movement.supplyName || movement.id;
+    const current = groups.get(key) || {
+      supplyId: movement.supplyId || "",
+      supplyName: movement.supplyName || supplyReference?.name || "Insumo",
+      category: movement.category || supplyReference?.category || "",
+      stockUnit: movement.stockUnit || supplyReference?.stockUnit || "Pieza",
+      contentQuantity: Number(supplyReference?.contentQuantity || movement.contentQuantity || 0),
+      contentUnit: supplyReference?.contentUnit || movement.contentUnit || "",
+      expectedYield: resolvedExpectedYield,
+      expectedYieldUnit: resolvedExpectedYieldUnit,
+      recipeQuantityPerUnit: Number(recipeItem?.quantityPerUnit || 0),
+      recipeUnit: recipeItem?.unit || "",
+      recipeNotes: recipeItem?.notes || "",
+      hasProductRecipe: Boolean(recipeItem),
+      usedRecipeQuantity: 0,
+      salida: 0,
+      merma: 0,
+      devolucion: 0,
+      netQuantity: 0,
+      movementCount: 0,
+      lastMovementAt: movement.createdAt || "",
+    };
+
+    const quantity = Number(movement.quantity || 0);
+    const consumptionQuantity = getSupplyMovementConsumptionQuantity(movement);
+
+    if (movement.type === "Salida") current.salida += quantity;
+    if (movement.type === "Merma") current.merma += quantity;
+    if (movement.type === "Devolución") current.devolucion += quantity;
+
+    current.netQuantity += consumptionQuantity;
+    current.usedRecipeQuantity += recipeItem
+      ? convertSupplyQuantityToRecipeUnit(
+          consumptionQuantity,
+          supplyReference,
+          movement,
+          recipeItem.unit
+        )
+      : 0;
+    current.movementCount += 1;
+    current.lastMovementAt = movement.createdAt || current.lastMovementAt;
+
+    if (!current.expectedYield && resolvedExpectedYield > 0) {
+      current.expectedYield = resolvedExpectedYield;
+      current.expectedYieldUnit = resolvedExpectedYieldUnit;
+    }
+
+    groups.set(key, current);
+  });
+
+  const actualProduction =
+    Number(batch.approvedQuantity || 0) > 0
+      ? Number(batch.approvedQuantity || 0)
+      : Number(batch.producedQuantity || 0);
+
+  return Array.from(groups.values())
+    .filter((row) => row.netQuantity > 0 || row.salida > 0 || row.merma > 0 || row.devolucion > 0)
+    .map((row) => {
+      const expectedProduction = row.hasProductRecipe && row.recipeQuantityPerUnit > 0
+        ? Math.floor(row.usedRecipeQuantity / row.recipeQuantityPerUnit)
+        : row.expectedYield > 0 && row.netQuantity > 0
+          ? Math.floor(row.netQuantity * row.expectedYield)
+          : 0;
+      const difference = expectedProduction > 0 ? actualProduction - expectedProduction : 0;
+      const wastePercent =
+        expectedProduction > 0 && difference < 0
+          ? Math.round((Math.abs(difference) / expectedProduction) * 1000) / 10
+          : 0;
+
+      return {
+        ...row,
+        actualProduction,
+        expectedProduction,
+        difference,
+        wastePercent,
+      };
+    })
+    .sort((a, b) => a.supplyName.localeCompare(b.supplyName));
+}
+
+function getBatchSupplyConsumptionSummary(batch, supplyMovements, supplyItems = [], products = []) {
+  const rows = getBatchSupplyConsumptionRows(batch, supplyMovements, supplyItems, products);
+  const expectedValues = rows
+    .map((row) => Number(row.expectedProduction || 0))
+    .filter((value) => value > 0);
+  const estimatedCapacity = expectedValues.length ? Math.min(...expectedValues) : 0;
+  const actualProduction =
+    Number(batch?.approvedQuantity || 0) > 0
+      ? Number(batch?.approvedQuantity || 0)
+      : Number(batch?.producedQuantity || 0);
+  const difference = estimatedCapacity > 0 ? actualProduction - estimatedCapacity : 0;
+  const wastePercent =
+    estimatedCapacity > 0 && difference < 0
+      ? Math.round((Math.abs(difference) / estimatedCapacity) * 1000) / 10
+      : 0;
+
+  return {
+    rows,
+    estimatedCapacity,
+    actualProduction,
+    difference,
+    wastePercent,
+    movementCount: rows.reduce((sum, row) => sum + Number(row.movementCount || 0), 0),
+  };
 }
 
 function getSupplyMovementTone(type) {
@@ -4763,6 +4978,65 @@ export default function PrintShop() {
     }));
   }
 
+  function addProductRecipeItem() {
+    setFormMessage("");
+
+    if (!productForm.recipeSupplyId) {
+      setFormMessage("Selecciona un insumo para agregarlo a la receta.");
+      return;
+    }
+
+    const quantityPerUnit = Number(productForm.recipeQuantityPerUnit || 0);
+
+    if (quantityPerUnit <= 0) {
+      setFormMessage("La cantidad por unidad producida debe ser mayor que cero.");
+      return;
+    }
+
+    const selectedSupply = supplyItems.find((item) => item.id === productForm.recipeSupplyId);
+
+    if (!selectedSupply) {
+      setFormMessage("No se encontró el insumo seleccionado.");
+      return;
+    }
+
+    setProductForm((current) => {
+      const currentRecipe = normalizeProductRecipe(current.productionRecipe).filter(
+        (item) => item.supplyId !== selectedSupply.id
+      );
+
+      return {
+        ...current,
+        productionRecipe: [
+          ...currentRecipe,
+          {
+            id: buildRecipeItemId(),
+            supplyId: selectedSupply.id,
+            supplyName: selectedSupply.name || "Insumo",
+            category: selectedSupply.category || "",
+            quantityPerUnit,
+            unit: current.recipeUnit || selectedSupply.contentUnit || selectedSupply.stockUnit || "Pieza",
+            notes: current.recipeNotes || "",
+            active: true,
+          },
+        ],
+        recipeSupplyId: "",
+        recipeQuantityPerUnit: 0,
+        recipeUnit: "Hoja",
+        recipeNotes: "",
+      };
+    });
+  }
+
+  function removeProductRecipeItem(recipeItemId) {
+    setProductForm((current) => ({
+      ...current,
+      productionRecipe: normalizeProductRecipe(current.productionRecipe).filter(
+        (item) => item.id !== recipeItemId
+      ),
+    }));
+  }
+
   function resetProductForm() {
     setSelectedProductId(null);
     setProductForm(productFormInitialState);
@@ -4786,6 +5060,11 @@ export default function PrintShop() {
       requiresQualityCheck: product.requiresQualityCheck !== false,
       requiresSignature: product.requiresSignature === true,
       requiresValidationQr: product.requiresValidationQr === true,
+      productionRecipe: normalizeProductRecipe(product.productionRecipe),
+      recipeSupplyId: "",
+      recipeQuantityPerUnit: 0,
+      recipeUnit: "Hoja",
+      recipeNotes: "",
       active: product.active !== false,
       notes: product.notes || "",
     });
@@ -4808,11 +5087,19 @@ export default function PrintShop() {
     }
 
     const auditUser = getAuditUser();
+    const {
+      recipeSupplyId,
+      recipeQuantityPerUnit,
+      recipeUnit,
+      recipeNotes,
+      ...productPayloadFields
+    } = productForm;
     const payload = {
-      ...productForm,
+      ...productPayloadFields,
       name: trimmedName,
       minStock: Number(productForm.minStock || 0),
       idealStock: Number(productForm.idealStock || 0),
+      productionRecipe: normalizeProductRecipe(productForm.productionRecipe),
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
       updatedByName: auditUser.name,
@@ -5412,6 +5699,35 @@ export default function PrintShop() {
       notes: "",
     }));
     setSupplyMovementMessage(`Se preparó ${type.toLowerCase()} para ${item.name}.`);
+  }
+
+  function prepareBatchSupplyMovement(batch) {
+    if (!batch?.id) return;
+
+    setActiveSection("supplies");
+    setSupplyMovementForm((current) => ({
+      ...current,
+      supplyId: "",
+      type: "Salida",
+      quantity: 1,
+      reason: "Producción de libros",
+      relatedType: "Lote",
+      relatedId: batch.id,
+      relatedFolio: batch.folio || "",
+      wasteQuantity: 0,
+      notes: `Salida relacionada con el lote ${batch.folio || ""}`.trim(),
+    }));
+    setSupplyMovementMessage(
+      `Se preparó una salida de insumo relacionada con el lote ${batch.folio || ""}. Escanea o selecciona el insumo y confirma la cantidad.`
+    );
+
+    window.setTimeout(() => {
+      const suppliesPanel = document.querySelector(".supply-barcode-scanner") || document.querySelector(".supply-movement-form");
+
+      if (suppliesPanel) {
+        suppliesPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 120);
   }
 
   async function registerSupplyMovement(event) {
@@ -6230,8 +6546,11 @@ export default function PrintShop() {
           onCategoryFilterChange={setCategoryFilter}
           onTypeFilterChange={setTypeFilter}
           onStatusFilterChange={setStatusFilter}
+          supplyItems={supplyItems}
           onInputChange={handleProductInputChange}
           onNumberInputChange={handleNumberInputChange}
+          onAddRecipeItem={addProductRecipeItem}
+          onRemoveRecipeItem={removeProductRecipeItem}
           onSaveProduct={saveProduct}
           onSelectProduct={selectProduct}
           onResetForm={resetProductForm}
@@ -6268,6 +6587,7 @@ export default function PrintShop() {
           supplyItems={supplyItems}
           filteredSupplyItems={filteredSupplyItems}
           supplyMovements={supplyMovements}
+          productionBatches={productionBatches}
           loadingSupplies={loadingSupplies}
           suppliesError={suppliesError}
           supplyStats={supplyStats}
@@ -6448,6 +6768,8 @@ export default function PrintShop() {
           inventoryProducts={inventoryProducts}
           inventoryItems={inventoryItems}
           productionBatches={productionBatches}
+          supplyMovements={supplyMovements}
+          supplyItems={supplyItems}
           loadingBatches={loadingBatches}
           batchesError={batchesError}
           batchStats={batchStats}
@@ -6474,6 +6796,7 @@ export default function PrintShop() {
           onSelectBatch={selectBatch}
           onResetBatchForm={resetBatchForm}
           onSendBatchToInventory={sendBatchToInventory}
+          onPrepareBatchSupplyMovement={prepareBatchSupplyMovement}
           onOpenInventory={() => setActiveSection("inventory")}
         />
       )}
@@ -7518,6 +7841,8 @@ function ProductionBatchesView({
   inventoryProducts,
   inventoryItems,
   productionBatches,
+  supplyMovements,
+  supplyItems,
   loadingBatches,
   batchesError,
   batchStats,
@@ -7544,6 +7869,7 @@ function ProductionBatchesView({
   onSelectBatch,
   onResetBatchForm,
   onSendBatchToInventory,
+  onPrepareBatchSupplyMovement,
   onOpenInventory,
 }) {
   const activeBatches = productionBatches.filter((batch) => batch.status !== "Cancelado");
@@ -7568,6 +7894,23 @@ function ProductionBatchesView({
       : selectedRole === "auditor"
         ? qualityAuditorStatuses
         : [batchForm.status || "Planeado"];
+  const selectedBatchConsumption = selectedBatch
+    ? getBatchSupplyConsumptionSummary(selectedBatch, supplyMovements, supplyItems, inventoryProducts)
+    : null;
+
+  function openBatchDetails(batch) {
+    onSelectBatch(batch);
+
+    window.setTimeout(() => {
+      const detailsPanel =
+        document.getElementById("batch-supply-consumption-panel") ||
+        document.querySelector(".printshop-batches-side");
+
+      if (detailsPanel) {
+        detailsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 100);
+  }
 
   return (
     <section className="printshop-batches-page">
@@ -7730,8 +8073,18 @@ function ProductionBatchesView({
                           </td>
                           <td>
                             <div className="printshop-product-actions batch-actions">
+                              <button type="button" onClick={() => openBatchDetails(batch)}>
+                                Ver detalles
+                              </button>
                               <button type="button" onClick={() => onSelectBatch(batch)}>
                                 Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onPrepareBatchSupplyMovement(batch)}
+                                title="Preparar salida de insumo vinculada a este lote"
+                              >
+                                Insumos
                               </button>
                               <button
                                 type="button"
@@ -7770,6 +8123,141 @@ function ProductionBatchesView({
               </button>
             </div>
           </Panel>
+
+          <div id="batch-supply-consumption-panel">
+            <Panel
+              title="Consumo de insumos del lote"
+              icon="▥"
+              actionLabel={selectedBatch ? selectedBatch.folio : "Selecciona lote"}
+            >
+            {!selectedBatch ? (
+              <div className="empty-state small">
+                <div>▥</div>
+                <p>Selecciona un lote para ver los insumos vinculados a su producción.</p>
+              </div>
+            ) : selectedBatchConsumption.rows.length === 0 ? (
+              <div className="batch-supply-empty">
+                <div>
+                  <strong>Sin consumos vinculados</strong>
+                  <p>
+                    Registra salidas o mermas de insumos relacionadas con el lote {selectedBatch.folio}
+                    para calcular rendimiento y aprovechamiento.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="visual-primary-button"
+                  onClick={() => onPrepareBatchSupplyMovement(selectedBatch)}
+                >
+                  Registrar salida de insumo
+                </button>
+              </div>
+            ) : (
+              <div className="batch-supply-consumption">
+                <div className="batch-supply-summary">
+                  <CatalogMetric
+                    tone="blue"
+                    icon="≈"
+                    label="Capacidad estimada"
+                    value={selectedBatchConsumption.estimatedCapacity || "Sin rendimiento"}
+                  />
+                  <CatalogMetric
+                    tone="green"
+                    icon="✓"
+                    label="Producción real"
+                    value={selectedBatchConsumption.actualProduction}
+                  />
+                  <CatalogMetric
+                    tone={selectedBatchConsumption.difference < 0 ? "red" : "teal"}
+                    icon="∆"
+                    label="Diferencia"
+                    value={selectedBatchConsumption.estimatedCapacity ? selectedBatchConsumption.difference : "Sin rendimiento"}
+                  />
+                  <CatalogMetric
+                    tone={selectedBatchConsumption.wastePercent > 0 ? "orange" : "green"}
+                    icon="%"
+                    label="Merma estimada"
+                    value={selectedBatchConsumption.estimatedCapacity ? `${selectedBatchConsumption.wastePercent}%` : "Sin rendimiento"}
+                  />
+                </div>
+
+                <div className="printshop-table-wrap">
+                  <table className="printshop-table batch-supply-table">
+                    <thead>
+                      <tr>
+                        <th>Insumo</th>
+                        <th>Usado neto</th>
+                        <th>Salida / merma / dev.</th>
+                        <th>Rendimiento</th>
+                        <th>Esperado</th>
+                        <th>Real</th>
+                        <th>Diferencia</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedBatchConsumption.rows.map((row) => (
+                        <tr key={row.supplyId || row.supplyName}>
+                          <td>
+                            <strong>{row.supplyName}</strong>
+                            <small>{row.category || "Sin categoría"}</small>
+                          </td>
+                          <td>
+                            {row.netQuantity} {row.stockUnit}
+                            <small>{row.movementCount} movimiento(s)</small>
+                          </td>
+                          <td>
+                            <span>Salida: {row.salida}</span>
+                            <small>Merma: {row.merma} · Dev.: {row.devolucion}</small>
+                          </td>
+                          <td>
+                            {row.hasProductRecipe ? (
+                              <>
+                                {row.recipeQuantityPerUnit} {row.recipeUnit}
+                                <small>por {selectedBatch?.unit || "unidad"}</small>
+                                <small>
+                                  Usado: {Math.round(Number(row.usedRecipeQuantity || 0) * 100) / 100} {row.recipeUnit}
+                                </small>
+                              </>
+                            ) : row.expectedYield > 0 ? (
+                              <>
+                                {row.expectedYield} {row.expectedYieldUnit}
+                                <small>por {row.stockUnit.toLowerCase()}</small>
+                              </>
+                            ) : (
+                              <span className="printshop-muted-text">Sin receta</span>
+                            )}
+                          </td>
+                          <td>{row.expectedProduction || "Sin rendimiento"}</td>
+                          <td>{row.actualProduction}</td>
+                          <td>
+                            {row.expectedProduction ? (
+                              <StatusBadge tone={row.difference < 0 ? "red" : "green"}>
+                                {row.difference}
+                              </StatusBadge>
+                            ) : (
+                              <span className="printshop-muted-text">Sin rendimiento</span>
+                            )}
+                            {row.wastePercent > 0 && <small>{row.wastePercent}% estimado</small>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="batch-supply-actions">
+                  <button
+                    type="button"
+                    className="visual-primary-button"
+                    onClick={() => onPrepareBatchSupplyMovement(selectedBatch)}
+                  >
+                    Registrar otra salida
+                  </button>
+                </div>
+              </div>
+            )}
+            </Panel>
+          </div>
         </div>
 
         <aside className="printshop-batches-side">
@@ -8429,6 +8917,7 @@ function SupplyInventoryView({
   supplyItems,
   filteredSupplyItems,
   supplyMovements,
+  productionBatches,
   loadingSupplies,
   suppliesError,
   supplyStats,
@@ -8465,6 +8954,35 @@ function SupplyInventoryView({
     selectedMovementSupply && Number(selectedMovementSupply.expectedYield || 0) > 0
       ? Math.floor(Number(supplyMovementForm.quantity || 0) * Number(selectedMovementSupply.expectedYield || 0))
       : 0;
+  const activeProductionBatches = (productionBatches || []).filter(
+    (batch) => !["Cancelado", "Ingresado a inventario", "Cerrado"].includes(batch.status)
+  );
+  const selectedRelatedBatch =
+    activeProductionBatches.find((batch) => batch.id === supplyMovementForm.relatedId) || null;
+
+  function setRelatedProductionBatch(batchId) {
+    const matchedBatch = activeProductionBatches.find((batch) => batch.id === batchId) || null;
+
+    onSupplyMovementInputChange({
+      target: {
+        name: "relatedType",
+        value: matchedBatch ? "Lote" : "Ninguno",
+      },
+    });
+    onSupplyMovementInputChange({
+      target: {
+        name: "relatedId",
+        value: matchedBatch?.id || "",
+      },
+    });
+    onSupplyMovementInputChange({
+      target: {
+        name: "relatedFolio",
+        value: matchedBatch?.folio || "",
+      },
+    });
+  }
+
   const scannerVideoRef = useRef(null);
   const scannerControlsRef = useRef(null);
   const scannerLockRef = useRef(false);
@@ -8861,6 +9379,21 @@ function SupplyInventoryView({
                     >
                       {supplyMovementReasons.map((reason) => (
                         <option key={reason}>{reason}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Lote relacionado</span>
+                    <select
+                      value={supplyMovementForm.relatedId}
+                      onChange={(event) => setRelatedProductionBatch(event.target.value)}
+                    >
+                      <option value="">Sin lote</option>
+                      {activeProductionBatches.map((batch) => (
+                        <option key={batch.id} value={batch.id}>
+                          {batch.folio} · {batch.productName}
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -9512,6 +10045,22 @@ function SupplyInventoryView({
                 <select name="relatedType" value={supplyMovementForm.relatedType} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
                   {supplyRelatedTypes.map((type) => (
                     <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Lote relacionado</span>
+                <select
+                  value={supplyMovementForm.relatedId}
+                  onChange={(event) => setRelatedProductionBatch(event.target.value)}
+                  disabled={savingSupplyMovement}
+                >
+                  <option value="">Sin lote</option>
+                  {activeProductionBatches.map((batch) => (
+                    <option key={batch.id} value={batch.id}>
+                      {batch.folio} · {batch.productName}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -13182,12 +13731,15 @@ function ProductCatalogView({
   typeFilter,
   statusFilter,
   isAdmin,
+  supplyItems,
   onSearchChange,
   onCategoryFilterChange,
   onTypeFilterChange,
   onStatusFilterChange,
   onInputChange,
   onNumberInputChange,
+  onAddRecipeItem,
+  onRemoveRecipeItem,
   onSaveProduct,
   onSelectProduct,
   onResetForm,
@@ -13336,6 +13888,11 @@ function ProductCatalogView({
                         </td>
                         <td>
                           <RequirementChips product={product} />
+                          {normalizeProductRecipe(product.productionRecipe).length > 0 && (
+                            <small className="product-recipe-count">
+                              Receta: {normalizeProductRecipe(product.productionRecipe).length} insumo(s)
+                            </small>
+                          )}
                         </td>
                         <td>
                           <StatusBadge tone={product.active === false ? "red" : "green"}>
@@ -13488,6 +14045,115 @@ function ProductCatalogView({
                   checked={productForm.active}
                   onChange={onInputChange}
                 />
+              </div>
+
+              <div className="product-recipe-box full">
+                <div className="product-recipe-header">
+                  <div>
+                    <strong>Receta de producción</strong>
+                    <p>
+                      Define cuánto insumo se usa por cada unidad producida. Para laminado, usa metros;
+                      por ejemplo, 0.35 metros por libro. Para papel, usa hojas por libro.
+                    </p>
+                  </div>
+                  <StatusBadge tone={normalizeProductRecipe(productForm.productionRecipe).length > 0 ? "green" : "orange"}>
+                    {normalizeProductRecipe(productForm.productionRecipe).length} insumo(s)
+                  </StatusBadge>
+                </div>
+
+                <div className="product-recipe-inputs">
+                  <label>
+                    <span>Insumo</span>
+                    <select
+                      name="recipeSupplyId"
+                      value={productForm.recipeSupplyId}
+                      onChange={onInputChange}
+                    >
+                      <option value="">Seleccionar insumo</option>
+                      {supplyItems.filter((item) => item.active !== false).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.stockUnit}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Cantidad por {productForm.unit || "unidad"}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      name="recipeQuantityPerUnit"
+                      value={productForm.recipeQuantityPerUnit}
+                      onChange={onNumberInputChange}
+                      placeholder="Ej. 40"
+                    />
+                  </label>
+
+                  <label>
+                    <span>Unidad de consumo</span>
+                    <select name="recipeUnit" value={productForm.recipeUnit} onChange={onInputChange}>
+                      {recipeUnits.map((unit) => (
+                        <option key={unit}>{unit}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Notas</span>
+                    <input
+                      name="recipeNotes"
+                      value={productForm.recipeNotes}
+                      onChange={onInputChange}
+                      placeholder="Ej. interiores, portada, laminado"
+                    />
+                  </label>
+                </div>
+
+                <div className="product-recipe-actions">
+                  <button
+                    type="button"
+                    className="visual-outline-button"
+                    onClick={onAddRecipeItem}
+                    disabled={!isAdmin || !productForm.recipeSupplyId}
+                  >
+                    Agregar a receta
+                  </button>
+                </div>
+
+                {normalizeProductRecipe(productForm.productionRecipe).length === 0 ? (
+                  <div className="product-recipe-empty">
+                    Sin receta configurada. El cálculo del lote usará el rendimiento general del insumo como respaldo.
+                  </div>
+                ) : (
+                  <div className="product-recipe-list">
+                    {normalizeProductRecipe(productForm.productionRecipe).map((item) => (
+                      <article key={item.id} className="product-recipe-item">
+                        <div>
+                          <strong>{item.supplyName}</strong>
+                          <span>
+                            {item.quantityPerUnit} {item.unit} por {productForm.unit || "unidad"}
+                          </span>
+                          {item.notes && <small>{item.notes}</small>}
+                        </div>
+                        <button
+                          type="button"
+                          className="danger-table-button"
+                          onClick={() => onRemoveRecipeItem(item.id)}
+                          disabled={!isAdmin}
+                        >
+                          Quitar
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                <p className="product-recipe-tip">
+                  Tip: para rollos de laminado, configura el insumo con unidad base “Metro”.
+                  La presentación puede ser “Rollo de 50 metros” y equivaler a 50 metros.
+                </p>
               </div>
 
               <label className="full">
