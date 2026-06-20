@@ -11,6 +11,7 @@ import CollaboratorsAdmin from "./CollaboratorsAdmin";
 import TechnicalSupport from "./TechnicalSupport";
 import PrintShop from "./printshop";
 import PurchaseRequests from "./PurchaseRequests";
+import TeamAgenda from "./TeamAgenda";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
@@ -81,6 +82,8 @@ export default function Dashboard() {
       setReturnPage("print-shop");
     } else if (page === "purchase-requests") {
       setReturnPage("purchase-requests");
+    } else if (page === "team-agenda") {
+      setReturnPage("team-agenda");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -147,6 +150,10 @@ export default function Dashboard() {
 
     if (page === "purchase-requests") {
       return <PurchaseRequests />;
+    }
+
+    if (page === "team-agenda") {
+      return <TeamAgenda />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -266,6 +273,10 @@ export default function Dashboard() {
       return page === "purchase-requests";
     }
 
+    if (navPage === "team-agenda") {
+      return page === "team-agenda";
+    }
+
     return page === navPage;
   }
 
@@ -307,6 +318,14 @@ export default function Dashboard() {
           >
             <span className="nav-icon">▱</span>
             Mis proyectos
+          </button>
+
+          <button
+            className={isNavActive("team-agenda") ? "active" : ""}
+            onClick={() => goToPage("team-agenda")}
+          >
+            <span className="nav-icon">🗓️</span>
+            Agenda del equipo
           </button>
 
           <button

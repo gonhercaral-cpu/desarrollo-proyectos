@@ -1749,10 +1749,11 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if signedIn() && (
         userId == request.auth.uid ||
-        isAdmin()
+        isAdmin() ||
+        hasProfile()
       );
 
-      allow list: if isAdmin();
+      allow list: if hasProfile();
 
       allow create: if isAdmin();
 
@@ -1829,6 +1830,40 @@ service cloud.firestore {
       allow create, update: if isAdmin();
 
       allow delete: if false;
+    }
+
+
+    match /workSchedules/{scheduleId} {
+      allow read: if hasProfile();
+
+      allow create, update, delete: if isAdmin();
+    }
+
+
+    match /scheduleRequests/{requestId} {
+      allow get, list: if isAdmin();
+
+      allow create: if hasProfile()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == "pending";
+
+      allow update: if isAdmin();
+
+      allow delete: if false;
+    }
+
+    match /scheduleAdjustments/{adjustmentId} {
+      allow read: if hasProfile();
+
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /scheduleLogs/{logId} {
+      allow read: if isAdmin();
+
+      allow create: if isAdmin();
+
+      allow update, delete: if false;
     }
 
 
