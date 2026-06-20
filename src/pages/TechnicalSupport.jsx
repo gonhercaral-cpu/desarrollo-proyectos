@@ -588,6 +588,117 @@ function isMaintenanceVisibleForActiveAssets(maintenance, activeAssetIds) {
   return activeAssetIds.has(maintenance.assetId);
 }
 
+
+function normalizeInstallationFilterText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeInstallationFilterKey(value) {
+  return normalizeInstallationFilterText(value).toLowerCase();
+}
+
+function getInstallationFilterDateValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value.toDate === "function") {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+}
+
+function getInstallationReferenceDate(installation = {}) {
+  return (
+    getInstallationFilterDateValue(installation.completedAt) ||
+    getInstallationFilterDateValue(installation.cancelledAt) ||
+    getInstallationFilterDateValue(installation.updatedAt) ||
+    getInstallationFilterDateValue(installation.createdAt) ||
+    getInstallationFilterDateValue(installation.startedAt)
+  );
+}
+
+function getDateInputStart(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDateInputEnd(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(`${value}T23:59:59.999`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getInstallationLocationFilterValue(installation = {}) {
+  return (
+    normalizeInstallationFilterText(installation.locationId) ||
+    normalizeInstallationFilterText(installation.locationName)
+  );
+}
+
+function getInstallationResponsibleFilterValue(installation = {}) {
+  return (
+    normalizeInstallationFilterText(installation.responsibleId) ||
+    normalizeInstallationFilterText(installation.responsibleName)
+  );
+}
+
+function getInstallationTemplateFilterValue(installation = {}) {
+  return (
+    normalizeInstallationFilterText(installation.templateId) ||
+    normalizeInstallationFilterText(installation.templateName)
+  );
+}
+
+function buildInstallationFilterOptions(items, getValue, getLabel) {
+  const optionsByValue = new Map();
+
+  items.forEach((item) => {
+    const value = normalizeInstallationFilterText(getValue(item));
+
+    if (!value) {
+      return;
+    }
+
+    const label = normalizeInstallationFilterText(getLabel(item)) || value;
+
+    if (!optionsByValue.has(value)) {
+      optionsByValue.set(value, {
+        value,
+        label,
+      });
+    }
+  });
+
+  return Array.from(optionsByValue.values()).sort((first, second) =>
+    first.label.localeCompare(second.label, "es", { sensitivity: "base" })
+  );
+}
+
+
 export default function TechnicalSupport() {
   const { profile } = useAuth();
 
@@ -658,6 +769,21 @@ export default function TechnicalSupport() {
   const [installationSearchTerm, setInstallationSearchTerm] = useState("");
   const [installationStatusFilter, setInstallationStatusFilter] =
     useState("active");
+  const [installationCampusFilter, setInstallationCampusFilter] = useState("Todos");
+  const [installationLocationFilter, setInstallationLocationFilter] =
+    useState("Todas");
+  const [installationResponsibleFilter, setInstallationResponsibleFilter] =
+    useState("Todos");
+  const [installationTemplateFilter, setInstallationTemplateFilter] =
+    useState("Todas");
+  const [installationEvidenceFilter, setInstallationEvidenceFilter] =
+    useState("todos");
+  const [installationEquipmentFilter, setInstallationEquipmentFilter] =
+    useState("todos");
+  const [installationSparePartsFilter, setInstallationSparePartsFilter] =
+    useState("todos");
+  const [installationDateFrom, setInstallationDateFrom] = useState("");
+  const [installationDateTo, setInstallationDateTo] = useState("");
   const [showInstallationForm, setShowInstallationForm] = useState(false);
   const [installationForm, setInstallationForm] = useState(EMPTY_INSTALLATION_FORM);
   const [installationFormError, setInstallationFormError] = useState("");
@@ -1389,14 +1515,73 @@ export default function TechnicalSupport() {
     };
   }, [activeInstallationTemplates, inactiveInstallationTemplates]);
 
+  const installationFilterOptions = useMemo(() => {
+    const visibleInstallations = installations.filter(
+      (installation) => installation.deleted !== true
+    );
+
+    return {
+      campuses: buildInstallationFilterOptions(
+        visibleInstallations,
+        (installation) => installation.campus,
+        (installation) => installation.campus
+      ),
+      locations: buildInstallationFilterOptions(
+        visibleInstallations,
+        getInstallationLocationFilterValue,
+        (installation) =>
+          [
+            installation.locationName || "Sin ubicación",
+            installation.campus || "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+      ),
+      responsibles: buildInstallationFilterOptions(
+        visibleInstallations,
+        getInstallationResponsibleFilterValue,
+        (installation) => installation.responsibleName || "Sin responsable"
+      ),
+      templates: buildInstallationFilterOptions(
+        visibleInstallations,
+        getInstallationTemplateFilterValue,
+        (installation) => installation.templateName || "Sin plantilla"
+      ),
+    };
+  }, [installations]);
+
   const filteredInstallations = useMemo(() => {
-    const normalizedSearch = installationSearchTerm.trim().toLowerCase();
+    const normalizedSearch = normalizeInstallationFilterKey(installationSearchTerm);
+    const dateFrom = getDateInputStart(installationDateFrom);
+    const dateTo = getDateInputEnd(installationDateTo);
 
     return installations.filter((installation) => {
       const status = installation.status || "in_progress";
       const isCompleted = status === "completed";
       const isCancelled = status === "cancelled";
       const isActive = !isCompleted && !isCancelled && installation.deleted !== true;
+      const installedEquipmentCount = Number(
+        installation.installedEquipmentCount ||
+          (Array.isArray(installation.installedEquipment)
+            ? installation.installedEquipment.length
+            : 0)
+      );
+      const usedSparePartsCount = Number(
+        installation.usedSparePartsCount ||
+          (Array.isArray(installation.usedSpareParts)
+            ? installation.usedSpareParts.length
+            : 0)
+      );
+      const usedSparePartsQuantity = Number(
+        installation.usedSparePartsTotalQuantity || 0
+      );
+      const evidenceCount = Number(
+        installation.evidenceCount ||
+          (Array.isArray(installation.evidenceItems)
+            ? installation.evidenceItems.length
+            : 0)
+      );
+      const referenceDate = getInstallationReferenceDate(installation);
 
       const searchableText = [
         installation.title,
@@ -1406,6 +1591,13 @@ export default function TechnicalSupport() {
         installation.locationType,
         installation.responsibleName,
         installation.notes,
+        ...(Array.isArray(installation.evidenceItems)
+          ? installation.evidenceItems.flatMap((evidence) => [
+              evidence.fileName,
+              evidence.description,
+              evidence.uploadedByName,
+            ])
+          : []),
         ...(Array.isArray(installation.installedEquipment)
           ? installation.installedEquipment.flatMap((equipment) => [
               equipment.equipmentCode,
@@ -1413,6 +1605,7 @@ export default function TechnicalSupport() {
               equipment.category,
               equipment.brand,
               equipment.model,
+              equipment.serialNumber,
             ])
           : []),
         ...(Array.isArray(installation.usedSpareParts)
@@ -1429,16 +1622,152 @@ export default function TechnicalSupport() {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = !normalizedSearch || searchableText.includes(normalizedSearch);
+      const matchesSearch =
+        !normalizedSearch || searchableText.includes(normalizedSearch);
       const matchesStatus =
         installationStatusFilter === "todos" ||
         (installationStatusFilter === "active" && isActive) ||
-        (installationStatusFilter === "completed" && isCompleted) ||
-        (installationStatusFilter === "cancelled" && isCancelled);
+        (installationStatusFilter !== "active" && status === installationStatusFilter);
+      const matchesCampus =
+        installationCampusFilter === "Todos" ||
+        normalizeInstallationFilterText(installation.campus) ===
+          installationCampusFilter;
+      const matchesLocation =
+        installationLocationFilter === "Todas" ||
+        getInstallationLocationFilterValue(installation) ===
+          installationLocationFilter;
+      const matchesResponsible =
+        installationResponsibleFilter === "Todos" ||
+        getInstallationResponsibleFilterValue(installation) ===
+          installationResponsibleFilter;
+      const matchesTemplate =
+        installationTemplateFilter === "Todas" ||
+        getInstallationTemplateFilterValue(installation) ===
+          installationTemplateFilter;
+      const matchesEvidence =
+        installationEvidenceFilter === "todos" ||
+        (installationEvidenceFilter === "with" && evidenceCount > 0) ||
+        (installationEvidenceFilter === "without" && evidenceCount <= 0);
+      const matchesEquipment =
+        installationEquipmentFilter === "todos" ||
+        (installationEquipmentFilter === "with" && installedEquipmentCount > 0) ||
+        (installationEquipmentFilter === "without" &&
+          installedEquipmentCount <= 0);
+      const matchesSpareParts =
+        installationSparePartsFilter === "todos" ||
+        (installationSparePartsFilter === "with" &&
+          (usedSparePartsCount > 0 || usedSparePartsQuantity > 0)) ||
+        (installationSparePartsFilter === "without" &&
+          usedSparePartsCount <= 0 &&
+          usedSparePartsQuantity <= 0);
+      const matchesDateFrom =
+        !dateFrom || (referenceDate && referenceDate >= dateFrom);
+      const matchesDateTo =
+        !dateTo || (referenceDate && referenceDate <= dateTo);
 
-      return matchesSearch && matchesStatus;
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesCampus &&
+        matchesLocation &&
+        matchesResponsible &&
+        matchesTemplate &&
+        matchesEvidence &&
+        matchesEquipment &&
+        matchesSpareParts &&
+        matchesDateFrom &&
+        matchesDateTo
+      );
     });
-  }, [installations, installationSearchTerm, installationStatusFilter]);
+  }, [
+    installations,
+    installationSearchTerm,
+    installationStatusFilter,
+    installationCampusFilter,
+    installationLocationFilter,
+    installationResponsibleFilter,
+    installationTemplateFilter,
+    installationEvidenceFilter,
+    installationEquipmentFilter,
+    installationSparePartsFilter,
+    installationDateFrom,
+    installationDateTo,
+  ]);
+
+  const installationHasActiveFilters = useMemo(
+    () =>
+      Boolean(installationSearchTerm.trim()) ||
+      installationStatusFilter !== "active" ||
+      installationCampusFilter !== "Todos" ||
+      installationLocationFilter !== "Todas" ||
+      installationResponsibleFilter !== "Todos" ||
+      installationTemplateFilter !== "Todas" ||
+      installationEvidenceFilter !== "todos" ||
+      installationEquipmentFilter !== "todos" ||
+      installationSparePartsFilter !== "todos" ||
+      Boolean(installationDateFrom) ||
+      Boolean(installationDateTo),
+    [
+      installationSearchTerm,
+      installationStatusFilter,
+      installationCampusFilter,
+      installationLocationFilter,
+      installationResponsibleFilter,
+      installationTemplateFilter,
+      installationEvidenceFilter,
+      installationEquipmentFilter,
+      installationSparePartsFilter,
+      installationDateFrom,
+      installationDateTo,
+    ]
+  );
+
+  const filteredInstallationMetrics = useMemo(() => {
+    const completed = filteredInstallations.filter(
+      (installation) => installation.status === "completed"
+    ).length;
+    const inProgress = filteredInstallations.filter((installation) =>
+      ["draft", "in_progress", "paused"].includes(
+        installation.status || "in_progress"
+      )
+    ).length;
+    const cancelled = filteredInstallations.filter(
+      (installation) => installation.status === "cancelled"
+    ).length;
+    const withEvidence = filteredInstallations.filter(
+      (installation) =>
+        Number(
+          installation.evidenceCount ||
+            (Array.isArray(installation.evidenceItems)
+              ? installation.evidenceItems.length
+              : 0)
+        ) > 0
+    ).length;
+    const withEquipment = filteredInstallations.filter(
+      (installation) =>
+        Number(
+          installation.installedEquipmentCount ||
+            (Array.isArray(installation.installedEquipment)
+              ? installation.installedEquipment.length
+              : 0)
+        ) > 0
+    ).length;
+    const withSpareParts = filteredInstallations.filter(
+      (installation) =>
+        Number(installation.usedSparePartsCount || 0) > 0 ||
+        Number(installation.usedSparePartsTotalQuantity || 0) > 0
+    ).length;
+
+    return {
+      completed,
+      inProgress,
+      cancelled,
+      withEvidence,
+      withEquipment,
+      withSpareParts,
+    };
+  }, [filteredInstallations]);
+
 
   const installationMetrics = useMemo(() => {
     const active = installations.filter(
@@ -4436,6 +4765,20 @@ function closeCompletionForm(options = {}) {
     resetInstallationEvidenceForm();
   }
 
+  function clearInstallationAdvancedFilters() {
+    setInstallationSearchTerm("");
+    setInstallationStatusFilter("active");
+    setInstallationCampusFilter("Todos");
+    setInstallationLocationFilter("Todas");
+    setInstallationResponsibleFilter("Todos");
+    setInstallationTemplateFilter("Todas");
+    setInstallationEvidenceFilter("todos");
+    setInstallationEquipmentFilter("todos");
+    setInstallationSparePartsFilter("todos");
+    setInstallationDateFrom("");
+    setInstallationDateTo("");
+  }
+
   function updateSelectedInstallationItem(sectionKey, itemIndex, fieldName, value) {
     setSelectedInstallation((current) => {
       if (!current) return current;
@@ -6710,27 +7053,196 @@ function closeCompletionForm(options = {}) {
         )}
 
         <section className="installation-runs-list-panel">
-          <div className="installation-runs-toolbar">
-            <div className="visual-search wide installation-run-search">
-              <span>⌕</span>
-              <input
-                type="search"
-                value={installationSearchTerm}
-                onChange={(event) => setInstallationSearchTerm(event.target.value)}
-                placeholder="Buscar por título, plantilla, plantel o responsable..."
-              />
+          <div className="installation-advanced-filters">
+            <div className="installation-advanced-filters-header">
+              <div>
+                <strong>Filtros avanzados</strong>
+                <p>
+                  Mostrando {filteredInstallations.length} de {installations.length} instalaciones.
+                </p>
+              </div>
+
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={clearInstallationAdvancedFilters}
+                disabled={!installationHasActiveFilters}
+              >
+                Limpiar filtros
+              </button>
             </div>
 
-            <select
-              value={installationStatusFilter}
-              onChange={(event) => setInstallationStatusFilter(event.target.value)}
-            >
-              {INSTALLATION_STATUS_FILTERS.map((filter) => (
-                <option key={filter.value} value={filter.value}>
-                  {filter.label}
-                </option>
-              ))}
-            </select>
+            <div className="installation-advanced-filters-grid">
+              <label className="installation-filter-search">
+                Buscar
+                <div className="visual-search wide installation-run-search">
+                  <span>⌕</span>
+                  <input
+                    type="search"
+                    value={installationSearchTerm}
+                    onChange={(event) => setInstallationSearchTerm(event.target.value)}
+                    placeholder="Título, ubicación, equipo, recambio, evidencia..."
+                  />
+                </div>
+              </label>
+
+              <label>
+                Estado
+                <select
+                  value={installationStatusFilter}
+                  onChange={(event) => setInstallationStatusFilter(event.target.value)}
+                >
+                  {INSTALLATION_STATUS_FILTERS.map((filter) => (
+                    <option key={filter.value} value={filter.value}>
+                      {filter.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Plantel
+                <select
+                  value={installationCampusFilter}
+                  onChange={(event) => setInstallationCampusFilter(event.target.value)}
+                >
+                  <option value="Todos">Todos los planteles</option>
+                  {installationFilterOptions.campuses.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Ubicación técnica
+                <select
+                  value={installationLocationFilter}
+                  onChange={(event) => setInstallationLocationFilter(event.target.value)}
+                >
+                  <option value="Todas">Todas las ubicaciones</option>
+                  {installationFilterOptions.locations.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Responsable
+                <select
+                  value={installationResponsibleFilter}
+                  onChange={(event) =>
+                    setInstallationResponsibleFilter(event.target.value)
+                  }
+                >
+                  <option value="Todos">Todos los responsables</option>
+                  {installationFilterOptions.responsibles.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Plantilla
+                <select
+                  value={installationTemplateFilter}
+                  onChange={(event) => setInstallationTemplateFilter(event.target.value)}
+                >
+                  <option value="Todas">Todas las plantillas</option>
+                  {installationFilterOptions.templates.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Desde
+                <input
+                  type="date"
+                  value={installationDateFrom}
+                  onChange={(event) => setInstallationDateFrom(event.target.value)}
+                />
+              </label>
+
+              <label>
+                Hasta
+                <input
+                  type="date"
+                  value={installationDateTo}
+                  onChange={(event) => setInstallationDateTo(event.target.value)}
+                />
+              </label>
+
+              <label>
+                Evidencias
+                <select
+                  value={installationEvidenceFilter}
+                  onChange={(event) => setInstallationEvidenceFilter(event.target.value)}
+                >
+                  <option value="todos">Con o sin evidencias</option>
+                  <option value="with">Solo con evidencias</option>
+                  <option value="without">Sin evidencias</option>
+                </select>
+              </label>
+
+              <label>
+                Equipos vinculados
+                <select
+                  value={installationEquipmentFilter}
+                  onChange={(event) => setInstallationEquipmentFilter(event.target.value)}
+                >
+                  <option value="todos">Con o sin equipos</option>
+                  <option value="with">Solo con equipos</option>
+                  <option value="without">Sin equipos</option>
+                </select>
+              </label>
+
+              <label>
+                Recambios usados
+                <select
+                  value={installationSparePartsFilter}
+                  onChange={(event) => setInstallationSparePartsFilter(event.target.value)}
+                >
+                  <option value="todos">Con o sin recambios</option>
+                  <option value="with">Solo con recambios</option>
+                  <option value="without">Sin recambios</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="installation-filter-summary-row">
+              <span>
+                <strong>{filteredInstallationMetrics.inProgress}</strong>
+                En proceso
+              </span>
+              <span>
+                <strong>{filteredInstallationMetrics.completed}</strong>
+                Completadas
+              </span>
+              <span>
+                <strong>{filteredInstallationMetrics.cancelled}</strong>
+                Canceladas
+              </span>
+              <span>
+                <strong>{filteredInstallationMetrics.withEvidence}</strong>
+                Con evidencias
+              </span>
+              <span>
+                <strong>{filteredInstallationMetrics.withEquipment}</strong>
+                Con equipos
+              </span>
+              <span>
+                <strong>{filteredInstallationMetrics.withSpareParts}</strong>
+                Con recambios
+              </span>
+            </div>
           </div>
 
           {loadingInstallations ? (
@@ -6765,6 +7277,7 @@ function closeCompletionForm(options = {}) {
                       <span><strong>Pasos</strong>{Number(installation.completedSteps || 0)} / {Number(installation.totalSteps || 0)}</span>
                       <span><strong>Equipos</strong>{Number(installation.installedEquipmentCount || installation.installedEquipment?.length || 0)}</span>
                       <span><strong>Recambios</strong>{Number(installation.usedSparePartsTotalQuantity || 0)}</span>
+                      <span><strong>Evidencias</strong>{Number(installation.evidenceCount || installation.evidenceItems?.length || 0)}</span>
                       <span><strong>Ubicaciones</strong>{installation.equipmentLocationsUpdated === true ? "Actualizadas" : "Pendientes"}</span>
                     </div>
 

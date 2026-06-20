@@ -25683,3 +25683,174 @@ body:has(.field-mode-page) .main-content {
   opacity: 0.68;
   cursor: not-allowed;
 }
+
+
+/* =========================================================
+   SOPORTE TÉCNICO - FILTROS AVANZADOS DE INSTALACIONES
+========================================================= */
+
+.installation-advanced-filters {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid #dbe7ff;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(15, 79, 196, 0.08), transparent 30%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.07);
+}
+
+.installation-advanced-filters-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #e5eaf2;
+}
+
+.installation-advanced-filters-header strong {
+  display: block;
+  color: #0f2442;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.installation-advanced-filters-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.installation-advanced-filters-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.6fr) repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.installation-advanced-filters-grid label {
+  margin: 0;
+  display: grid;
+  gap: 7px;
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.installation-advanced-filters-grid input,
+.installation-advanced-filters-grid select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #d9e2ef;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.installation-advanced-filters-grid input:focus,
+.installation-advanced-filters-grid select:focus {
+  outline: none;
+  border-color: #0f4fc4;
+  box-shadow: 0 0 0 4px rgba(15, 79, 196, 0.11);
+}
+
+.installation-filter-search {
+  grid-column: span 2;
+}
+
+.installation-filter-search .visual-search {
+  width: 100%;
+  height: 44px;
+  background: #ffffff;
+}
+
+.installation-filter-search .visual-search input {
+  min-height: auto;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font-weight: 600;
+  background: transparent;
+}
+
+.installation-filter-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.installation-filter-summary-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  border: 1px solid #dbe7ff;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #526176;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.installation-filter-summary-row strong {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 12px;
+}
+
+@media (max-width: 1450px) {
+  .installation-advanced-filters-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .installation-filter-search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .installation-advanced-filters-header {
+    flex-direction: column;
+  }
+
+  .installation-advanced-filters-header button {
+    width: 100%;
+  }
+
+  .installation-advanced-filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .installation-filter-search {
+    grid-column: auto;
+  }
+
+  .installation-filter-summary-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .installation-filter-summary-row span {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .installation-filter-summary-row {
+    grid-template-columns: 1fr;
+  }
+}
+
