@@ -4464,7 +4464,7 @@ function closeCompletionForm(options = {}) {
 
       await loadInstallations();
       if (status === "completed") {
-        await loadSpareParts();
+        await Promise.all([loadSpareParts(), loadAssets()]);
       }
       setSelectedInstallation({
         ...selectedInstallation,
@@ -4478,6 +4478,16 @@ function closeCompletionForm(options = {}) {
         sparePartsConsumed:
           updatedInstallation.sparePartsConsumed === true ||
           selectedInstallation.sparePartsConsumed === true,
+        equipmentLocationsUpdated:
+          updatedInstallation.equipmentLocationsUpdated === true ||
+          selectedInstallation.equipmentLocationsUpdated === true,
+        equipmentLocationUpdatedCount:
+          Number(updatedInstallation.equipmentLocationUpdatedCount || 0) ||
+          Number(selectedInstallation.equipmentLocationUpdatedCount || 0),
+        equipmentLocationLogIds:
+          updatedInstallation.equipmentLocationLogIds ||
+          selectedInstallation.equipmentLocationLogIds ||
+          [],
         checklistSections,
       });
     } catch (error) {
@@ -5168,6 +5178,85 @@ function closeCompletionForm(options = {}) {
       </section>
     );
   }
+
+  function renderInstallationEquipmentLocationNotice(installation) {
+    const installedEquipment = normalizeInstalledEquipmentForInstallation(
+      installation?.installedEquipment
+    );
+    const locationName = installation?.locationName || "Sin ubicación técnica";
+    const campus = installation?.campus || "Sin plantel";
+    const hasDestination = Boolean(installation?.locationId);
+    const isCompleted = installation?.status === "completed";
+    const wasUpdated = installation?.equipmentLocationsUpdated === true;
+
+    if (installedEquipment.length === 0) {
+      return null;
+    }
+
+    if (isCompleted && wasUpdated) {
+      return (
+        <section className="installation-location-update-card success">
+          <div>
+            <span>✓</span>
+          </div>
+          <div>
+            <strong>Ubicación de equipos actualizada</strong>
+            <p>
+              Los {installedEquipment.length} equipo(s) vinculados ya fueron asignados a {campus} · {locationName}.
+              También se creó un movimiento en el historial de cada equipo.
+            </p>
+          </div>
+        </section>
+      );
+    }
+
+    if (!hasDestination) {
+      return (
+        <section className="installation-location-update-card warning">
+          <div>
+            <span>!</span>
+          </div>
+          <div>
+            <strong>Sin ubicación técnica de destino</strong>
+            <p>
+              Esta instalación tiene equipos vinculados, pero no tiene una ubicación técnica seleccionada. Al finalizar no se moverán automáticamente los equipos.
+            </p>
+          </div>
+        </section>
+      );
+    }
+
+    if (!isCompleted) {
+      return (
+        <section className="installation-location-update-card info">
+          <div>
+            <span>↦</span>
+          </div>
+          <div>
+            <strong>Actualización automática al finalizar</strong>
+            <p>
+              Al finalizar esta instalación, los {installedEquipment.length} equipo(s) vinculados serán asignados automáticamente a {campus} · {locationName} y se registrará un movimiento en la ficha de cada equipo.
+            </p>
+          </div>
+        </section>
+      );
+    }
+
+    return (
+      <section className="installation-location-update-card warning">
+        <div>
+          <span>!</span>
+        </div>
+        <div>
+          <strong>Ubicación no actualizada automáticamente</strong>
+          <p>
+            Esta instalación ya está completada, pero no tiene el registro de actualización automática de ubicación. Las nuevas instalaciones que se finalicen desde esta fase sí moverán los equipos vinculados.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   function renderRelatedInstallationCards(relatedInstallations, emptyTitle, emptyDescription) {
     const items = Array.isArray(relatedInstallations) ? relatedInstallations : [];
 
@@ -5248,6 +5337,9 @@ function closeCompletionForm(options = {}) {
                 <span>{usedSparePartsTotalQuantity} recambio(s)</span>
                 {installation.sparePartsConsumed === true && (
                   <span>Recambios descontados</span>
+                )}
+                {installation.equipmentLocationsUpdated === true && (
+                  <span>Ubicaciones actualizadas</span>
                 )}
               </div>
             </article>
@@ -6110,6 +6202,8 @@ function closeCompletionForm(options = {}) {
 
             {renderInstallationSparePartsManager(selectedInstallation)}
 
+            {renderInstallationEquipmentLocationNotice(selectedInstallation)}
+
             <div className="technical-form-actions installation-run-save-actions">
               <button
                 type="button"
@@ -6207,6 +6301,7 @@ function closeCompletionForm(options = {}) {
                       <span><strong>Pasos</strong>{Number(installation.completedSteps || 0)} / {Number(installation.totalSteps || 0)}</span>
                       <span><strong>Equipos</strong>{Number(installation.installedEquipmentCount || installation.installedEquipment?.length || 0)}</span>
                       <span><strong>Recambios</strong>{Number(installation.usedSparePartsTotalQuantity || 0)}</span>
+                      <span><strong>Ubicaciones</strong>{installation.equipmentLocationsUpdated === true ? "Actualizadas" : "Pendientes"}</span>
                     </div>
 
                     <div className="installation-run-card-progress">

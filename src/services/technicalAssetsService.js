@@ -8,6 +8,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -295,6 +296,144 @@ export async function restoreTechnicalAsset(assetId, currentUserProfile) {
   );
 
   return { id: assetId, deleted: false, active: true, status: "Activo" };
+}
+
+
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeInstalledEquipmentForLocationUpdate(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const seenEquipmentIds = new Set();
+
+  return items
+    .map((item) => {
+      const equipmentId = normalizeText(
+        item?.equipmentId || item?.assetId || item?.id
+      );
+
+      if (!equipmentId || seenEquipmentIds.has(equipmentId)) {
+        return null;
+      }
+
+      seenEquipmentIds.add(equipmentId);
+
+      return {
+        equipmentId,
+        equipmentCode: normalizeText(
+          item?.equipmentCode || item?.assetTag || item?.code
+        ),
+        equipmentName: normalizeText(
+          item?.equipmentName || item?.name || item?.assetName
+        ),
+        category: normalizeText(item?.category),
+        brand: normalizeText(item?.brand),
+        model: normalizeText(item?.model),
+        previousLocationId: normalizeText(
+          item?.previousLocationId || item?.technicalLocationId
+        ),
+        previousLocationName: normalizeText(
+          item?.previousLocationName || item?.technicalLocationName
+        ),
+        previousLocationType: normalizeText(
+          item?.previousLocationType || item?.technicalLocationType
+        ),
+      };
+    })
+    .filter(Boolean);
+}
+
+export async function updateTechnicalAssetsLocationFromInstallation(
+  installation,
+  currentUserProfile
+) {
+  if (!installation?.id) {
+    throw new Error("Falta el ID de la instalación.");
+  }
+
+  const locationId = normalizeText(installation.locationId);
+  const locationName = normalizeText(installation.locationName);
+  const locationType = normalizeText(installation.locationType);
+  const campus = normalizeText(installation.campus);
+  const installedEquipment = normalizeInstalledEquipmentForLocationUpdate(
+    installation.installedEquipment
+  );
+
+  if (!locationId || installedEquipment.length === 0) {
+    return [];
+  }
+
+  const batch = writeBatch(db);
+  const logsRef = collection(db, TECHNICAL_ASSET_LOGS_COLLECTION);
+  const updatedAt = serverTimestamp();
+  const actorName = currentUserProfile?.name || "";
+  const actorEmail = currentUserProfile?.email || "";
+  const actorId = currentUserProfile?.uid || currentUserProfile?.id || "";
+
+  const createdLogs = installedEquipment.map((equipment) => {
+    const assetRef = doc(db, TECHNICAL_ASSETS_COLLECTION, equipment.equipmentId);
+    const logRef = doc(logsRef);
+    const previousLocationName =
+      equipment.previousLocationName || "Sin ubicación previa";
+    const nextLocationName = locationName || "Sin ubicación técnica";
+
+    batch.update(assetRef, {
+      technicalLocationId: locationId,
+      technicalLocationName: locationName,
+      technicalLocationType: locationType,
+      campus: campus || "",
+      area: locationName || "",
+      updatedAt,
+      updatedBy: actorName,
+      updatedByEmail: actorEmail,
+      updatedById: actorId,
+    });
+
+    const logPayload = {
+      assetId: equipment.equipmentId,
+      assetTag: equipment.equipmentCode || "",
+      type: "INSTALLATION_LOCATION_UPDATED",
+      title: "Equipo asignado por instalación técnica",
+      description: `El equipo fue asignado a ${nextLocationName} mediante la instalación "${
+        installation.title || "Instalación técnica"
+      }". Ubicación anterior: ${previousLocationName}.`,
+      previousStatus: "",
+      newStatus: "",
+      previousCondition: "",
+      newCondition: "",
+      previousLocationId: equipment.previousLocationId || "",
+      previousLocationName: equipment.previousLocationName || "",
+      previousLocationType: equipment.previousLocationType || "",
+      newLocationId: locationId,
+      newLocationName: locationName,
+      newLocationType: locationType,
+      installationId: installation.id,
+      installationTitle: installation.title || "",
+      checklist: [],
+      createdBy: actorName,
+      createdByEmail: actorEmail,
+      createdById: actorId,
+      createdAt: serverTimestamp(),
+    };
+
+    batch.set(logRef, logPayload);
+
+    return {
+      id: logRef.id,
+      assetId: equipment.equipmentId,
+      assetTag: equipment.equipmentCode || "",
+      previousLocationName: equipment.previousLocationName || "",
+      newLocationName: locationName,
+    };
+  });
+
+  await batch.commit();
+
+  return createdLogs;
 }
 
 export async function createTechnicalAssetMovement(

@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { consumeTechnicalSparePartsForInstallation } from "./technicalSparePartsService";
+import { updateTechnicalAssetsLocationFromInstallation } from "./technicalAssetsService";
 
 const TECHNICAL_INSTALLATIONS_COLLECTION = "technicalInstallations";
 
@@ -242,6 +243,7 @@ function buildInstallationPayload(installationData, currentUserProfile, mode = "
     usedSparePartsCount: usedSpareParts.length,
     usedSparePartsTotalQuantity,
     sparePartsConsumed: installationData?.sparePartsConsumed === true,
+    equipmentLocationsUpdated: installationData?.equipmentLocationsUpdated === true,
     checklistSections: progressSummary.checklistSections,
     totalSteps: progressSummary.totalSteps,
     completedSteps: progressSummary.completedSteps,
@@ -418,11 +420,30 @@ export async function completeTechnicalInstallation(
       )
     : [];
 
+  const shouldUpdateEquipmentLocations =
+    updatedInstallation.equipmentLocationsUpdated !== true &&
+    Boolean(updatedInstallation.locationId) &&
+    Array.isArray(updatedInstallation.installedEquipment) &&
+    updatedInstallation.installedEquipment.length > 0;
+
+  const equipmentLocationUpdates = shouldUpdateEquipmentLocations
+    ? await updateTechnicalAssetsLocationFromInstallation(
+        {
+          id: installationId,
+          ...updatedInstallation,
+        },
+        currentUserProfile
+      )
+    : [];
+
   const completionUpdate = {
     ...updatedInstallation,
     active: false,
     sparePartsConsumed:
       updatedInstallation.sparePartsConsumed === true || consumedMovements.length > 0,
+    equipmentLocationsUpdated:
+      updatedInstallation.equipmentLocationsUpdated === true ||
+      equipmentLocationUpdates.length > 0,
     completedAt: serverTimestamp(),
     completedBy: currentUserProfile?.name || "",
     completedByEmail: currentUserProfile?.email || "",
@@ -440,6 +461,21 @@ export async function completeTechnicalInstallation(
     );
   }
 
+  if (equipmentLocationUpdates.length > 0) {
+    completionUpdate.equipmentLocationsUpdatedAt = serverTimestamp();
+    completionUpdate.equipmentLocationsUpdatedBy =
+      currentUserProfile?.name || "";
+    completionUpdate.equipmentLocationsUpdatedByEmail =
+      currentUserProfile?.email || "";
+    completionUpdate.equipmentLocationsUpdatedById =
+      currentUserProfile?.uid || currentUserProfile?.id || "";
+    completionUpdate.equipmentLocationUpdatedCount =
+      equipmentLocationUpdates.length;
+    completionUpdate.equipmentLocationLogIds = equipmentLocationUpdates.map(
+      (movement) => movement.id
+    );
+  }
+
   await updateDoc(installationRef, completionUpdate);
 
   return {
@@ -448,7 +484,14 @@ export async function completeTechnicalInstallation(
     active: false,
     sparePartsConsumed:
       updatedInstallation.sparePartsConsumed === true || consumedMovements.length > 0,
+    equipmentLocationsUpdated:
+      updatedInstallation.equipmentLocationsUpdated === true ||
+      equipmentLocationUpdates.length > 0,
     sparePartMovementIds: consumedMovements.map((movement) => movement.id),
+    equipmentLocationLogIds: equipmentLocationUpdates.map(
+      (movement) => movement.id
+    ),
+    equipmentLocationUpdatedCount: equipmentLocationUpdates.length,
   };
 }
 

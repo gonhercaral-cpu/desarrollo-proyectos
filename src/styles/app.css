@@ -25198,3 +25198,80 @@ body:has(.field-mode-page) .main-content {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   SOPORTE TÉCNICO - FASE 5D UBICACIÓN DE EQUIPOS
+========================================================= */
+
+.installation-location-update-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 14px;
+  align-items: flex-start;
+  border-radius: 18px;
+  padding: 16px;
+  margin-top: 16px;
+  border: 1px solid #dbe7ff;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.installation-location-update-card > div:first-child {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.installation-location-update-card strong {
+  display: block;
+  color: #0f2442;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.installation-location-update-card p {
+  margin: 0;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.installation-location-update-card.info {
+  border-color: #bad0ff;
+  background: linear-gradient(135deg, #ffffff, #f1f6ff);
+}
+
+.installation-location-update-card.info > div:first-child {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.installation-location-update-card.success {
+  border-color: #bbf7d0;
+  background: linear-gradient(135deg, #ffffff, #f0fdf4);
+}
+
+.installation-location-update-card.success > div:first-child {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.installation-location-update-card.warning {
+  border-color: #fed7aa;
+  background: linear-gradient(135deg, #ffffff, #fff7ed);
+}
+
+.installation-location-update-card.warning > div:first-child {
+  background: #ffedd5;
+  color: #f97316;
+}
+
+@media (max-width: 700px) {
+  .installation-location-update-card {
+    grid-template-columns: 1fr;
+  }
+}
