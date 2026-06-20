@@ -43,6 +43,13 @@ import {
   restoreTechnicalInstallationTemplate,
   updateTechnicalInstallationTemplate,
 } from "../services/technicalInstallationTemplatesService";
+import {
+  cancelTechnicalInstallation,
+  completeTechnicalInstallation,
+  createTechnicalInstallation,
+  getTechnicalInstallations,
+  updateTechnicalInstallation,
+} from "../services/technicalInstallationsService";
 
 
 const HTML5_QRCODE_SCRIPT_ID = "html5-qrcode-camera-scanner";
@@ -411,6 +418,33 @@ const INSTALLATION_TEMPLATE_SAMPLE = {
   ],
 };
 
+const INSTALLATION_STATUS_OPTIONS = [
+  { value: "draft", label: "Borrador" },
+  { value: "in_progress", label: "En proceso" },
+  { value: "paused", label: "Pausada" },
+  { value: "completed", label: "Completada" },
+  { value: "cancelled", label: "Cancelada" },
+];
+
+const INSTALLATION_STATUS_FILTERS = [
+  { value: "active", label: "Activas" },
+  { value: "completed", label: "Completadas" },
+  { value: "cancelled", label: "Canceladas" },
+  { value: "todos", label: "Todas" },
+];
+
+const EMPTY_INSTALLATION_FORM = {
+  title: "",
+  templateId: "",
+  campus: "",
+  locationId: "",
+  locationName: "",
+  locationType: "",
+  responsibleName: "",
+  status: "in_progress",
+  notes: "",
+};
+
 const TECHNICAL_TABS = [
   { id: "resumen", label: "Resumen", icon: "⌂" },
   { id: "mantenimientos", label: "Mantenimientos", icon: "🛠" },
@@ -611,6 +645,18 @@ export default function TechnicalSupport() {
   const [savingInstallationTemplate, setSavingInstallationTemplate] =
     useState(false);
 
+  const [installationSubTab, setInstallationSubTab] = useState("templates");
+  const [installations, setInstallations] = useState([]);
+  const [loadingInstallations, setLoadingInstallations] = useState(true);
+  const [installationSearchTerm, setInstallationSearchTerm] = useState("");
+  const [installationStatusFilter, setInstallationStatusFilter] =
+    useState("active");
+  const [showInstallationForm, setShowInstallationForm] = useState(false);
+  const [installationForm, setInstallationForm] = useState(EMPTY_INSTALLATION_FORM);
+  const [installationFormError, setInstallationFormError] = useState("");
+  const [savingInstallation, setSavingInstallation] = useState(false);
+  const [selectedInstallation, setSelectedInstallation] = useState(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
   const [statusFilter, setStatusFilter] = useState("Todos");
@@ -803,7 +849,30 @@ export default function TechnicalSupport() {
       loadTechnicalLocations(),
       loadSpareParts(),
       loadInstallationTemplates(),
+      loadInstallations(),
     ]);
+  }
+
+  async function loadInstallations() {
+    try {
+      setLoadingInstallations(true);
+      setPageError("");
+
+      const loadedInstallations = await getTechnicalInstallations();
+
+      setInstallations(loadedInstallations);
+
+      return loadedInstallations;
+    } catch (error) {
+      console.error("No se pudieron cargar las instalaciones:", error);
+      setPageError(
+        "No se pudieron cargar las instalaciones realizadas. Revisa las reglas de Firestore o la conexión."
+      );
+
+      return [];
+    } finally {
+      setLoadingInstallations(false);
+    }
   }
 
   async function loadInstallationTemplates() {
@@ -1299,6 +1368,68 @@ export default function TechnicalSupport() {
       totalSteps,
     };
   }, [activeInstallationTemplates, inactiveInstallationTemplates]);
+
+  const filteredInstallations = useMemo(() => {
+    const normalizedSearch = installationSearchTerm.trim().toLowerCase();
+
+    return installations.filter((installation) => {
+      const status = installation.status || "in_progress";
+      const isCompleted = status === "completed";
+      const isCancelled = status === "cancelled";
+      const isActive = !isCompleted && !isCancelled && installation.deleted !== true;
+
+      const searchableText = [
+        installation.title,
+        installation.templateName,
+        installation.campus,
+        installation.locationName,
+        installation.locationType,
+        installation.responsibleName,
+        installation.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !normalizedSearch || searchableText.includes(normalizedSearch);
+      const matchesStatus =
+        installationStatusFilter === "todos" ||
+        (installationStatusFilter === "active" && isActive) ||
+        (installationStatusFilter === "completed" && isCompleted) ||
+        (installationStatusFilter === "cancelled" && isCancelled);
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [installations, installationSearchTerm, installationStatusFilter]);
+
+  const installationMetrics = useMemo(() => {
+    const active = installations.filter(
+      (installation) =>
+        installation.deleted !== true &&
+        !["completed", "cancelled"].includes(installation.status)
+    ).length;
+    const completed = installations.filter(
+      (installation) => installation.status === "completed"
+    ).length;
+    const paused = installations.filter(
+      (installation) => installation.status === "paused"
+    ).length;
+    const averageProgress = installations.length
+      ? Math.round(
+          installations.reduce(
+            (total, installation) => total + Number(installation.progress || 0),
+            0
+          ) / installations.length
+        )
+      : 0;
+
+    return {
+      active,
+      completed,
+      paused,
+      averageProgress,
+    };
+  }, [installations]);
 
   useEffect(() => {
     if (!cameraScannerOpen) {
@@ -3867,6 +3998,449 @@ function closeCompletionForm(options = {}) {
     }
   }
 
+  function getInstallationStatusLabel(status = "in_progress") {
+    return (
+      INSTALLATION_STATUS_OPTIONS.find((option) => option.value === status)?.label ||
+      "En proceso"
+    );
+  }
+
+  function getInstallationStatusClass(status = "in_progress") {
+    if (status === "completed") return "completed";
+    if (status === "cancelled") return "cancelled";
+    if (status === "paused") return "paused";
+    if (status === "draft") return "draft";
+    return "progress";
+  }
+
+  function getInstallationChecklistSections(source = {}) {
+    return INSTALLATION_TEMPLATE_SECTIONS.reduce((result, section) => {
+      const items = Array.isArray(source?.[section.key]) ? source[section.key] : [];
+
+      result[section.key] = items
+        .map((item, index) => ({
+          id:
+            item?.id ||
+            `${section.key}-${Date.now()}-${index}-${Math.random()
+              .toString(36)
+              .slice(2, 7)}`,
+          templateItemId: item?.templateItemId || item?.id || "",
+          sectionKey: item?.sectionKey || section.key,
+          label: String(item?.label || "").trim(),
+          required: item?.required !== false,
+          completed: item?.completed === true,
+          notes: String(item?.notes || ""),
+          completedAt: item?.completedAt || "",
+          completedBy: item?.completedBy || "",
+        }))
+        .filter((item) => item.label);
+
+      return result;
+    }, {});
+  }
+
+  function buildInstallationChecklistFromTemplate(template) {
+    return INSTALLATION_TEMPLATE_SECTIONS.reduce((result, section) => {
+      const items = Array.isArray(template?.[section.key]) ? template[section.key] : [];
+
+      result[section.key] = items
+        .map((item, index) => ({
+          id:
+            item?.id ||
+            `${section.key}-${Date.now()}-${index}-${Math.random()
+              .toString(36)
+              .slice(2, 7)}`,
+          templateItemId: item?.id || "",
+          sectionKey: section.key,
+          label: String(item?.label || "").trim(),
+          required: item?.required !== false,
+          completed: false,
+          notes: "",
+          completedAt: "",
+          completedBy: "",
+        }))
+        .filter((item) => item.label);
+
+      return result;
+    }, {});
+  }
+
+  function getInstallationProgressSummary(checklistSections = {}) {
+    const allItems = INSTALLATION_TEMPLATE_SECTIONS.flatMap((section) =>
+      Array.isArray(checklistSections?.[section.key])
+        ? checklistSections[section.key]
+        : []
+    );
+    const totalSteps = allItems.length;
+    const completedSteps = allItems.filter((item) => item.completed === true).length;
+    const requiredSteps = allItems.filter((item) => item.required !== false).length;
+    const requiredCompletedSteps = allItems.filter(
+      (item) => item.required !== false && item.completed === true
+    ).length;
+    const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+    return {
+      totalSteps,
+      completedSteps,
+      requiredSteps,
+      requiredCompletedSteps,
+      progress,
+      requiredPendingSteps: Math.max(requiredSteps - requiredCompletedSteps, 0),
+    };
+  }
+
+  function getInstallationTemplateById(templateId) {
+    return installationTemplates.find((template) => template.id === templateId) || null;
+  }
+
+  function cloneInstallationForm(base = EMPTY_INSTALLATION_FORM) {
+    return {
+      title: base.title || "",
+      templateId: base.templateId || "",
+      campus: base.campus || "",
+      locationId: base.locationId || "",
+      locationName: base.locationName || "",
+      locationType: base.locationType || "",
+      responsibleName: base.responsibleName || profile?.name || "Soporte Técnico",
+      status: base.status || "in_progress",
+      notes: base.notes || "",
+    };
+  }
+
+  function getSuggestedInstallationTitle(template, locationName = "") {
+    const templateName = template?.name || "Instalación técnica";
+
+    if (locationName) {
+      return `${templateName} - ${locationName}`;
+    }
+
+    return templateName;
+  }
+
+  function openInstallationForm(template = null) {
+    const selectedTemplate =
+      template ||
+      activeInstallationTemplates[0] ||
+      installationTemplates.find((item) => item.active !== false) ||
+      null;
+
+    setInstallationForm(
+      cloneInstallationForm({
+        ...EMPTY_INSTALLATION_FORM,
+        templateId: selectedTemplate?.id || "",
+        title: selectedTemplate ? getSuggestedInstallationTitle(selectedTemplate) : "",
+        responsibleName: profile?.name || "Soporte Técnico",
+      })
+    );
+    setInstallationFormError("");
+    setShowInstallationForm(true);
+    setSelectedInstallation(null);
+    setInstallationSubTab("installations");
+    setActiveTab("instalaciones");
+    scrollToTop();
+  }
+
+  function closeInstallationForm() {
+    setShowInstallationForm(false);
+    setInstallationForm(cloneInstallationForm(EMPTY_INSTALLATION_FORM));
+    setInstallationFormError("");
+  }
+
+  function handleInstallationFormChange(event) {
+    const { name, value } = event.target;
+
+    setInstallationForm((current) => {
+      const nextForm = {
+        ...current,
+        [name]: value,
+      };
+
+      if (name === "templateId") {
+        const template = getInstallationTemplateById(value);
+        if (template && (!current.title || current.title === getSuggestedInstallationTitle(getInstallationTemplateById(current.templateId)))) {
+          nextForm.title = getSuggestedInstallationTitle(template, current.locationName);
+        }
+      }
+
+      if (name === "locationId") {
+        const selectedLocation = technicalLocations.find((location) => location.id === value);
+
+        nextForm.locationName = selectedLocation?.name || "";
+        nextForm.locationType = selectedLocation?.type || "";
+        nextForm.campus = selectedLocation?.campus || current.campus || "";
+
+        const template = getInstallationTemplateById(current.templateId);
+        if (template && (!current.title || current.title === getSuggestedInstallationTitle(template))) {
+          nextForm.title = getSuggestedInstallationTitle(template, selectedLocation?.name || "");
+        }
+      }
+
+      return nextForm;
+    });
+  }
+
+  async function handleInstallationSubmit(event) {
+    event.preventDefault();
+
+    try {
+      setSavingInstallation(true);
+      setInstallationFormError("");
+      setPageError("");
+
+      const selectedTemplate = getInstallationTemplateById(installationForm.templateId);
+
+      if (!selectedTemplate) {
+        throw new Error("Selecciona una plantilla activa para crear la instalación.");
+      }
+
+      const selectedLocation = technicalLocations.find(
+        (location) => location.id === installationForm.locationId
+      );
+      const locationName = selectedLocation?.name || installationForm.locationName || "";
+      const title =
+        installationForm.title.trim() ||
+        getSuggestedInstallationTitle(selectedTemplate, locationName);
+      const checklistSections = buildInstallationChecklistFromTemplate(selectedTemplate);
+      const progressSummary = getInstallationProgressSummary(checklistSections);
+
+      const newInstallation = await createTechnicalInstallation(
+        {
+          ...installationForm,
+          title,
+          templateId: selectedTemplate.id,
+          templateName: selectedTemplate.name || "",
+          targetLocationType: selectedTemplate.targetLocationType || "",
+          equipmentCategory: selectedTemplate.equipmentCategory || "",
+          locationId: selectedLocation?.id || installationForm.locationId || "",
+          locationName,
+          locationType:
+            selectedLocation?.type ||
+            installationForm.locationType ||
+            selectedTemplate.targetLocationType ||
+            "",
+          campus: selectedLocation?.campus || installationForm.campus || "",
+          checklistSections,
+          ...progressSummary,
+        },
+        getCurrentUserProfile()
+      );
+
+      await loadInstallations();
+      setSelectedInstallation(newInstallation);
+      closeInstallationForm();
+      setInstallationSubTab("installations");
+    } catch (error) {
+      console.error("No se pudo crear la instalación:", error);
+      setInstallationFormError(
+        error?.message || "No se pudo crear la instalación. Revisa la información."
+      );
+    } finally {
+      setSavingInstallation(false);
+    }
+  }
+
+  function openInstallationDetail(installation) {
+    setSelectedInstallation({
+      ...installation,
+      checklistSections: getInstallationChecklistSections(installation.checklistSections),
+    });
+    setShowInstallationForm(false);
+    setInstallationSubTab("installations");
+    setActiveTab("instalaciones");
+    scrollToTop();
+  }
+
+  function closeInstallationDetail() {
+    setSelectedInstallation(null);
+  }
+
+  function updateSelectedInstallationItem(sectionKey, itemIndex, fieldName, value) {
+    setSelectedInstallation((current) => {
+      if (!current) return current;
+
+      const checklistSections = getInstallationChecklistSections(current.checklistSections);
+      const items = Array.isArray(checklistSections[sectionKey])
+        ? checklistSections[sectionKey]
+        : [];
+
+      checklistSections[sectionKey] = items.map((item, index) => {
+        if (index !== itemIndex) return item;
+
+        const updatedItem = {
+          ...item,
+          [fieldName]: value,
+        };
+
+        if (fieldName === "completed") {
+          updatedItem.completedAt = value ? new Date().toISOString() : "";
+          updatedItem.completedBy = value ? profile?.name || "Soporte Técnico" : "";
+        }
+
+        return updatedItem;
+      });
+
+      const progressSummary = getInstallationProgressSummary(checklistSections);
+
+      return {
+        ...current,
+        checklistSections,
+        ...progressSummary,
+      };
+    });
+  }
+
+  async function saveSelectedInstallation(nextStatus = null) {
+    if (!selectedInstallation?.id) return;
+
+    try {
+      setSavingInstallation(true);
+      setPageError("");
+
+      const checklistSections = getInstallationChecklistSections(
+        selectedInstallation.checklistSections
+      );
+      const progressSummary = getInstallationProgressSummary(checklistSections);
+      const status = nextStatus || selectedInstallation.status || "in_progress";
+
+      if (status === "completed" && progressSummary.requiredPendingSteps > 0) {
+        throw new Error(
+          `Aún faltan ${progressSummary.requiredPendingSteps} paso(s) obligatorio(s) para completar la instalación.`
+        );
+      }
+
+      let updatedInstallation;
+
+      if (status === "completed") {
+        updatedInstallation = await completeTechnicalInstallation(
+          selectedInstallation.id,
+          {
+            ...selectedInstallation,
+            status,
+            checklistSections,
+            ...progressSummary,
+          },
+          getCurrentUserProfile()
+        );
+      } else if (status === "cancelled") {
+        updatedInstallation = await cancelTechnicalInstallation(
+          selectedInstallation.id,
+          {
+            ...selectedInstallation,
+            status,
+            checklistSections,
+            ...progressSummary,
+          },
+          getCurrentUserProfile()
+        );
+      } else {
+        updatedInstallation = await updateTechnicalInstallation(
+          selectedInstallation.id,
+          {
+            ...selectedInstallation,
+            status,
+            checklistSections,
+            ...progressSummary,
+          },
+          getCurrentUserProfile()
+        );
+      }
+
+      await loadInstallations();
+      setSelectedInstallation({
+        ...selectedInstallation,
+        ...updatedInstallation,
+        checklistSections,
+      });
+    } catch (error) {
+      console.error("No se pudo guardar la instalación:", error);
+      setPageError(error?.message || "No se pudo guardar el avance de la instalación.");
+    } finally {
+      setSavingInstallation(false);
+    }
+  }
+
+  function renderInstallationChecklistEditor(installation) {
+    const checklistSections = getInstallationChecklistSections(installation?.checklistSections);
+
+    return (
+      <div className="installation-run-checklist">
+        {INSTALLATION_TEMPLATE_SECTIONS.map((section) => {
+          const items = Array.isArray(checklistSections[section.key])
+            ? checklistSections[section.key]
+            : [];
+
+          return (
+            <section className="installation-run-section" key={section.key}>
+              <div className="installation-run-section-header">
+                <span>{section.icon}</span>
+                <div>
+                  <h4>{section.title}</h4>
+                  <p>{section.description}</p>
+                </div>
+              </div>
+
+              <div className="installation-run-item-list">
+                {items.length > 0 ? (
+                  items.map((item, index) => (
+                    <article
+                      className={`installation-run-item ${item.completed ? "completed" : ""}`}
+                      key={item.id || index}
+                    >
+                      <label className="installation-run-check-row">
+                        <input
+                          type="checkbox"
+                          checked={item.completed === true}
+                          onChange={(event) =>
+                            updateSelectedInstallationItem(
+                              section.key,
+                              index,
+                              "completed",
+                              event.target.checked
+                            )
+                          }
+                          disabled={savingInstallation || installation.status === "completed" || installation.status === "cancelled"}
+                        />
+                        <span>{item.completed ? "✓" : ""}</span>
+                        <div>
+                          <strong>{item.label}</strong>
+                          <small>{item.required !== false ? "Obligatorio" : "Opcional"}</small>
+                          {item.completedAt && (
+                            <small>
+                              Completado: {formatInstallationItemDate(item.completedAt)}
+                              {item.completedBy ? ` · ${item.completedBy}` : ""}
+                            </small>
+                          )}
+                        </div>
+                      </label>
+
+                      <textarea
+                        value={item.notes || ""}
+                        onChange={(event) =>
+                          updateSelectedInstallationItem(
+                            section.key,
+                            index,
+                            "notes",
+                            event.target.value
+                          )
+                        }
+                        placeholder="Notas de este paso, si aplica..."
+                        disabled={savingInstallation || installation.status === "completed" || installation.status === "cancelled"}
+                      />
+                    </article>
+                  ))
+                ) : (
+                  <div className="installation-template-empty-section">
+                    Esta sección no tiene pasos en la plantilla usada.
+                  </div>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderInstallationTemplateSectionEditor(section) {
     const items = Array.isArray(installationTemplateForm[section.key])
       ? installationTemplateForm[section.key]
@@ -4318,6 +4892,476 @@ function closeCompletionForm(options = {}) {
             </div>
           )}
         </section>
+      </section>
+    );
+  }
+
+  function renderInstallationRunsPanel() {
+    const selectedSummary = selectedInstallation
+      ? getInstallationProgressSummary(
+          getInstallationChecklistSections(selectedInstallation.checklistSections)
+        )
+      : null;
+
+    return (
+      <section className="installation-runs-workspace">
+        <div className="installation-runs-header">
+          <div>
+            <p className="section-kicker equipment-kicker">Instalaciones reales</p>
+            <h2>Instalaciones realizadas desde plantilla</h2>
+            <p>
+              Crea instalaciones reales, carga automáticamente el checklist de la plantilla y da seguimiento paso a paso.
+            </p>
+          </div>
+
+          <div className="installation-runs-header-actions">
+            <button
+              className="visual-outline-button"
+              type="button"
+              onClick={loadInstallations}
+              disabled={loadingInstallations}
+            >
+              Actualizar
+            </button>
+            <button
+              className="visual-primary-button"
+              type="button"
+              onClick={() => openInstallationForm()}
+              disabled={activeInstallationTemplates.length === 0}
+            >
+              + Nueva instalación
+            </button>
+          </div>
+        </div>
+
+        {activeInstallationTemplates.length === 0 && (
+          <div className="technical-alert-strip installation-alert-strip">
+            <div className="technical-alert-main">
+              <span>!</span>
+              <div>
+                <strong>Primero necesitas una plantilla activa</strong>
+                <p>
+                  Crea o reactiva una plantilla para poder generar instalaciones reales con checklist guiada.
+                </p>
+              </div>
+            </div>
+            <button
+              className="visual-outline-button"
+              type="button"
+              onClick={() => setInstallationSubTab("templates")}
+            >
+              Ir a plantillas
+            </button>
+          </div>
+        )}
+
+        <div className="installation-runs-metrics-grid">
+          <article>
+            <span>Activas</span>
+            <strong>{installationMetrics.active}</strong>
+            <p>En proceso, borrador o pausadas</p>
+          </article>
+          <article className="success">
+            <span>Completadas</span>
+            <strong>{installationMetrics.completed}</strong>
+            <p>Instalaciones cerradas</p>
+          </article>
+          <article className="warning">
+            <span>Pausadas</span>
+            <strong>{installationMetrics.paused}</strong>
+            <p>Requieren seguimiento</p>
+          </article>
+          <article>
+            <span>Avance promedio</span>
+            <strong>{installationMetrics.averageProgress}%</strong>
+            <p>Promedio general</p>
+          </article>
+        </div>
+
+        {showInstallationForm && (
+          <section className="installation-run-form-panel">
+            <div className="technical-panel-header">
+              <div>
+                <h3>Nueva instalación</h3>
+                <p>
+                  Selecciona una plantilla y una ubicación. El checklist se cargará automáticamente al guardar.
+                </p>
+              </div>
+
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={closeInstallationForm}
+                disabled={savingInstallation}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {installationFormError && (
+              <div className="form-error">{installationFormError}</div>
+            )}
+
+            <form className="technical-form" onSubmit={handleInstallationSubmit}>
+              <div className="technical-form-grid">
+                <label>
+                  Plantilla
+                  <select
+                    name="templateId"
+                    value={installationForm.templateId}
+                    onChange={handleInstallationFormChange}
+                    disabled={savingInstallation}
+                  >
+                    <option value="">Selecciona una plantilla</option>
+                    {activeInstallationTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.name} · {template.targetLocationType || "Sin ubicación"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Ubicación técnica
+                  <select
+                    name="locationId"
+                    value={installationForm.locationId}
+                    onChange={handleInstallationFormChange}
+                    disabled={savingInstallation}
+                  >
+                    <option value="">Sin ubicación específica</option>
+                    {technicalLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.campus || "Sin plantel"} · {location.name || "Sin nombre"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Título
+                  <input
+                    type="text"
+                    name="title"
+                    value={installationForm.title}
+                    onChange={handleInstallationFormChange}
+                    placeholder="Ej. Computadora nueva en Salón 4"
+                    disabled={savingInstallation}
+                  />
+                </label>
+
+                <label>
+                  Plantel
+                  <select
+                    name="campus"
+                    value={installationForm.campus}
+                    onChange={handleInstallationFormChange}
+                    disabled={savingInstallation}
+                  >
+                    <option value="">Selecciona plantel</option>
+                    {CAMPUS_OPTIONS.map((campus) => (
+                      <option key={campus} value={campus}>
+                        {campus}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Responsable
+                  <input
+                    type="text"
+                    name="responsibleName"
+                    value={installationForm.responsibleName}
+                    onChange={handleInstallationFormChange}
+                    placeholder="Ej. Tony Campos"
+                    disabled={savingInstallation}
+                  />
+                </label>
+
+                <label>
+                  Estado inicial
+                  <select
+                    name="status"
+                    value={installationForm.status}
+                    onChange={handleInstallationFormChange}
+                    disabled={savingInstallation}
+                  >
+                    {INSTALLATION_STATUS_OPTIONS.filter(
+                      (status) => !["completed", "cancelled"].includes(status.value)
+                    ).map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="technical-form-full">
+                  Notas generales
+                  <textarea
+                    name="notes"
+                    value={installationForm.notes}
+                    onChange={handleInstallationFormChange}
+                    rows="3"
+                    placeholder="Notas iniciales de la instalación."
+                    disabled={savingInstallation}
+                  />
+                </label>
+              </div>
+
+              <div className="technical-form-actions">
+                <button
+                  type="button"
+                  onClick={closeInstallationForm}
+                  disabled={savingInstallation}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={savingInstallation}
+                >
+                  {savingInstallation ? "Creando..." : "Crear instalación"}
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        {selectedInstallation && selectedSummary && (
+          <section className="installation-run-detail-panel">
+            <div className="installation-run-detail-header">
+              <div>
+                <p className="section-kicker equipment-kicker">Checklist guiada</p>
+                <h3>{selectedInstallation.title || "Instalación sin título"}</h3>
+                <p>
+                  {selectedInstallation.templateName || "Sin plantilla"} · {selectedInstallation.campus || "Sin plantel"} · {selectedInstallation.locationName || "Sin ubicación"}
+                </p>
+              </div>
+
+              <div className="installation-run-detail-actions">
+                <span className={`installation-run-status ${getInstallationStatusClass(selectedInstallation.status)}`}>
+                  {getInstallationStatusLabel(selectedInstallation.status)}
+                </span>
+                <button
+                  className="visual-outline-button"
+                  type="button"
+                  onClick={closeInstallationDetail}
+                  disabled={savingInstallation}
+                >
+                  Cerrar detalle
+                </button>
+              </div>
+            </div>
+
+            <div className="installation-run-progress-card">
+              <div>
+                <span>Avance</span>
+                <strong>{selectedSummary.progress}%</strong>
+                <p>
+                  {selectedSummary.completedSteps} de {selectedSummary.totalSteps} pasos completados · {selectedSummary.requiredPendingSteps} obligatorios pendientes
+                </p>
+              </div>
+              <div className="mini-track">
+                <div
+                  className="mini-fill mini-blue"
+                  style={{ width: `${selectedSummary.progress}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="installation-run-status-row">
+              <label>
+                Estado
+                <select
+                  value={selectedInstallation.status || "in_progress"}
+                  onChange={(event) =>
+                    setSelectedInstallation((current) =>
+                      current ? { ...current, status: event.target.value } : current
+                    )
+                  }
+                  disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+                >
+                  {INSTALLATION_STATUS_OPTIONS.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {status.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Notas generales
+                <textarea
+                  value={selectedInstallation.notes || ""}
+                  onChange={(event) =>
+                    setSelectedInstallation((current) =>
+                      current ? { ...current, notes: event.target.value } : current
+                    )
+                  }
+                  disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+                />
+              </label>
+            </div>
+
+            {renderInstallationChecklistEditor(selectedInstallation)}
+
+            <div className="technical-form-actions installation-run-save-actions">
+              <button
+                type="button"
+                onClick={() => saveSelectedInstallation()}
+                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+              >
+                Guardar avance
+              </button>
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={() => saveSelectedInstallation("paused")}
+                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+              >
+                Pausar
+              </button>
+              <button
+                className="visual-primary-button"
+                type="button"
+                onClick={() => saveSelectedInstallation("completed")}
+                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+              >
+                Finalizar instalación
+              </button>
+              <button
+                className="danger-table-button"
+                type="button"
+                onClick={() => {
+                  const confirmed = window.confirm("¿Quieres cancelar esta instalación?");
+                  if (confirmed) {
+                    saveSelectedInstallation("cancelled");
+                  }
+                }}
+                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+              >
+                Cancelar instalación
+              </button>
+            </div>
+          </section>
+        )}
+
+        <section className="installation-runs-list-panel">
+          <div className="installation-runs-toolbar">
+            <div className="visual-search wide installation-run-search">
+              <span>⌕</span>
+              <input
+                type="search"
+                value={installationSearchTerm}
+                onChange={(event) => setInstallationSearchTerm(event.target.value)}
+                placeholder="Buscar por título, plantilla, plantel o responsable..."
+              />
+            </div>
+
+            <select
+              value={installationStatusFilter}
+              onChange={(event) => setInstallationStatusFilter(event.target.value)}
+            >
+              {INSTALLATION_STATUS_FILTERS.map((filter) => (
+                <option key={filter.value} value={filter.value}>
+                  {filter.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {loadingInstallations ? (
+            <div className="empty-state compact-empty-state">
+              <h3>Cargando instalaciones...</h3>
+              <p>Estamos consultando los registros guardados.</p>
+            </div>
+          ) : filteredInstallations.length > 0 ? (
+            <div className="installation-run-card-grid">
+              {filteredInstallations.map((installation) => {
+                const progress = Number(installation.progress || 0);
+                const statusClass = getInstallationStatusClass(installation.status);
+
+                return (
+                  <article className="installation-run-card" key={installation.id}>
+                    <div className="installation-run-card-top">
+                      <span className="installation-run-icon">▥</span>
+                      <div>
+                        <strong>{installation.title || "Instalación sin título"}</strong>
+                        <p>
+                          {installation.templateName || "Sin plantilla"} · {installation.locationName || "Sin ubicación"}
+                        </p>
+                      </div>
+                      <span className={`installation-run-status ${statusClass}`}>
+                        {getInstallationStatusLabel(installation.status)}
+                      </span>
+                    </div>
+
+                    <div className="installation-run-card-meta">
+                      <span><strong>Plantel</strong>{installation.campus || "Sin plantel"}</span>
+                      <span><strong>Responsable</strong>{installation.responsibleName || "Sin responsable"}</span>
+                      <span><strong>Pasos</strong>{Number(installation.completedSteps || 0)} / {Number(installation.totalSteps || 0)}</span>
+                    </div>
+
+                    <div className="installation-run-card-progress">
+                      <div>
+                        <span>Avance</span>
+                        <strong>{progress}%</strong>
+                      </div>
+                      <div className="mini-track">
+                        <div className="mini-fill mini-blue" style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="installation-run-card-footer">
+                      <span>{formatLogDate(installation.updatedAt || installation.createdAt)}</span>
+                      <button
+                        type="button"
+                        onClick={() => openInstallationDetail(installation)}
+                      >
+                        {installation.status === "completed" ? "Ver detalle" : "Continuar"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state compact-empty-state">
+              <h3>No hay instalaciones con esos filtros</h3>
+              <p>Crea una instalación nueva o cambia los filtros para ver otros registros.</p>
+            </div>
+          )}
+        </section>
+      </section>
+    );
+  }
+
+  function renderInstallationsPanel() {
+    return (
+      <section className="installations-workspace">
+        <div className="installation-subtabs">
+          <button
+            type="button"
+            className={installationSubTab === "templates" ? "active" : ""}
+            onClick={() => setInstallationSubTab("templates")}
+          >
+            Plantillas
+          </button>
+          <button
+            type="button"
+            className={installationSubTab === "installations" ? "active" : ""}
+            onClick={() => setInstallationSubTab("installations")}
+          >
+            Instalaciones realizadas
+          </button>
+        </div>
+
+        {installationSubTab === "templates"
+          ? renderInstallationTemplatesPanel()
+          : renderInstallationRunsPanel()}
       </section>
     );
   }
@@ -8402,7 +9446,7 @@ function closeCompletionForm(options = {}) {
 
       {!focusedSupportViewActive && activeTab === "recambios" && renderSparePartsPanel()}
 
-      {!focusedSupportViewActive && activeTab === "instalaciones" && renderInstallationTemplatesPanel()}
+      {!focusedSupportViewActive && activeTab === "instalaciones" && renderInstallationsPanel()}
 
       {!focusedSupportViewActive && activeTab === "equipos" && (
         <section className="technical-equipment-workspace">
@@ -9123,6 +10167,23 @@ function getMovementIcon(type = "") {
   if (normalizedType.includes("devolución")) return "↙";
   if (normalizedType.includes("baja")) return "!";
   return "•";
+}
+
+function formatInstallationItemDate(value) {
+  if (!value) {
+    return "Sin fecha";
+  }
+
+  const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Sin fecha";
+  }
+
+  return date.toLocaleString("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function formatLogDate(value) {
