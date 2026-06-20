@@ -88,6 +88,48 @@ function normalizeInstallationStatus(value) {
   return "in_progress";
 }
 
+function isClosedInstallationStatus(status) {
+  return ["completed", "cancelled"].includes(normalizeInstallationStatus(status));
+}
+
+function isAdminProfile(currentUserProfile = {}) {
+  const role = normalizeText(
+    currentUserProfile?.role || currentUserProfile?.privilege || ""
+  ).toLowerCase();
+
+  return (
+    currentUserProfile?.isAdmin === true ||
+    role === "admin" ||
+    role === "administrador" ||
+    role === "administrator" ||
+    role === "superadmin"
+  );
+}
+
+function assertCanModifyClosedInstallation(installationData, currentUserProfile) {
+  if (!isClosedInstallationStatus(installationData?.status)) {
+    return;
+  }
+
+  if (isAdminProfile(currentUserProfile)) {
+    return;
+  }
+
+  throw new Error(
+    "Esta instalación ya está cerrada y solo un administrador puede corregirla."
+  );
+}
+
+function buildAdministrativeCorrectionFields(currentUserProfile = {}) {
+  return {
+    administrativeCorrection: true,
+    administrativeCorrectedAt: serverTimestamp(),
+    administrativeCorrectedBy: currentUserProfile?.name || "",
+    administrativeCorrectedByEmail: currentUserProfile?.email || "",
+    administrativeCorrectedById: currentUserProfile?.uid || currentUserProfile?.id || "",
+  };
+}
+
 function normalizeInstalledEquipment(items = []) {
   if (!Array.isArray(items)) {
     return [];
@@ -367,11 +409,20 @@ export async function updateTechnicalInstallation(
     "update"
   );
 
-  await updateDoc(installationRef, updatedInstallation);
+  assertCanModifyClosedInstallation(updatedInstallation, currentUserProfile);
+
+  const updatePayload = {
+    ...updatedInstallation,
+    ...(isClosedInstallationStatus(updatedInstallation.status)
+      ? buildAdministrativeCorrectionFields(currentUserProfile)
+      : {}),
+  };
+
+  await updateDoc(installationRef, updatePayload);
 
   return {
     id: installationId,
-    ...updatedInstallation,
+    ...updatePayload,
   };
 }
 
@@ -560,10 +611,19 @@ export async function updateTechnicalInstallationEquipment(
     "update"
   );
 
-  await updateDoc(installationRef, updatedInstallation);
+  assertCanModifyClosedInstallation(updatedInstallation, currentUserProfile);
+
+  const updatePayload = {
+    ...updatedInstallation,
+    ...(isClosedInstallationStatus(updatedInstallation.status)
+      ? buildAdministrativeCorrectionFields(currentUserProfile)
+      : {}),
+  };
+
+  await updateDoc(installationRef, updatePayload);
 
   return {
     id: installationId,
-    ...updatedInstallation,
+    ...updatePayload,
   };
 }

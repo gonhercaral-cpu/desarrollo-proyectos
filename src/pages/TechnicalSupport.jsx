@@ -674,6 +674,8 @@ export default function TechnicalSupport() {
   const [installationEvidenceDescription, setInstallationEvidenceDescription] = useState("");
   const [uploadingInstallationEvidence, setUploadingInstallationEvidence] = useState(false);
   const [deletingInstallationEvidenceId, setDeletingInstallationEvidenceId] = useState("");
+  const [installationAdminEditEnabled, setInstallationAdminEditEnabled] =
+    useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
@@ -1918,6 +1920,58 @@ export default function TechnicalSupport() {
       ...profile,
       uid: profile?.uid || profile?.id || "",
     };
+  }
+
+  function isCurrentUserAdmin() {
+    const role = String(profile?.role || profile?.privilege || "").toLowerCase();
+
+    return (
+      profile?.isAdmin === true ||
+      role === "admin" ||
+      role === "administrador" ||
+      role === "administrator" ||
+      role === "superadmin"
+    );
+  }
+
+  function isInstallationClosed(installation) {
+    return ["completed", "cancelled"].includes(installation?.status);
+  }
+
+  function canUseInstallationAdminEdit(installation = selectedInstallation) {
+    return Boolean(installation?.id && isInstallationClosed(installation) && isCurrentUserAdmin());
+  }
+
+  function isInstallationEditable(installation = selectedInstallation) {
+    if (!installation?.id) {
+      return false;
+    }
+
+    if (!isInstallationClosed(installation)) {
+      return !savingInstallation;
+    }
+
+    return (
+      !savingInstallation &&
+      installationAdminEditEnabled === true &&
+      canUseInstallationAdminEdit(installation)
+    );
+  }
+
+  function getInstallationClosedTitle(installation) {
+    if (installation?.status === "cancelled") {
+      return "Instalación cancelada";
+    }
+
+    return "Instalación completada";
+  }
+
+  function getInstallationClosedMessage(installation) {
+    if (installation?.status === "cancelled") {
+      return "Esta instalación quedó cerrada y no puede modificarse de forma normal.";
+    }
+
+    return "Esta instalación ya fue finalizada. El checklist, equipos, recambios y notas quedan bloqueados para proteger el historial.";
   }
 
   function getNextAssetTag(category, currentAssets = assets) {
@@ -4370,6 +4424,7 @@ function closeCompletionForm(options = {}) {
     setInstallationSparePartCategoryFilter("Todas");
     setInstallationSparePartTypeFilter("Todos");
     setInstallationSparePartQuantities({});
+    setInstallationAdminEditEnabled(false);
     setInstallationSubTab("installations");
     setActiveTab("instalaciones");
     scrollToTop();
@@ -4377,6 +4432,8 @@ function closeCompletionForm(options = {}) {
 
   function closeInstallationDetail() {
     setSelectedInstallation(null);
+    setInstallationAdminEditEnabled(false);
+    resetInstallationEvidenceForm();
   }
 
   function updateSelectedInstallationItem(sectionKey, itemIndex, fieldName, value) {
@@ -4421,11 +4478,25 @@ function closeCompletionForm(options = {}) {
       setSavingInstallation(true);
       setPageError("");
 
+      const wasClosed = isInstallationClosed(selectedInstallation);
+      const adminCorrectionMode =
+        wasClosed &&
+        installationAdminEditEnabled === true &&
+        canUseInstallationAdminEdit(selectedInstallation);
+
+      if (wasClosed && !adminCorrectionMode) {
+        throw new Error(
+          "Esta instalación ya está cerrada. Solo un administrador puede activar la corrección administrativa."
+        );
+      }
+
       const checklistSections = getInstallationChecklistSections(
         selectedInstallation.checklistSections
       );
       const progressSummary = getInstallationProgressSummary(checklistSections);
-      const status = nextStatus || selectedInstallation.status || "in_progress";
+      const status = wasClosed
+        ? selectedInstallation.status
+        : nextStatus || selectedInstallation.status || "in_progress";
 
       if (status === "completed" && progressSummary.requiredPendingSteps > 0) {
         throw new Error(
@@ -4434,38 +4505,38 @@ function closeCompletionForm(options = {}) {
       }
 
       let updatedInstallation;
+      const installationPayload = {
+        ...selectedInstallation,
+        status,
+        checklistSections,
+        ...progressSummary,
+      };
 
-      if (status === "completed") {
-        updatedInstallation = await completeTechnicalInstallation(
+      if (adminCorrectionMode) {
+        updatedInstallation = await updateTechnicalInstallation(
           selectedInstallation.id,
           {
-            ...selectedInstallation,
-            status,
-            checklistSections,
-            ...progressSummary,
+            ...installationPayload,
+            administrativeCorrection: true,
           },
+          getCurrentUserProfile()
+        );
+      } else if (status === "completed") {
+        updatedInstallation = await completeTechnicalInstallation(
+          selectedInstallation.id,
+          installationPayload,
           getCurrentUserProfile()
         );
       } else if (status === "cancelled") {
         updatedInstallation = await cancelTechnicalInstallation(
           selectedInstallation.id,
-          {
-            ...selectedInstallation,
-            status,
-            checklistSections,
-            ...progressSummary,
-          },
+          installationPayload,
           getCurrentUserProfile()
         );
       } else {
         updatedInstallation = await updateTechnicalInstallation(
           selectedInstallation.id,
-          {
-            ...selectedInstallation,
-            status,
-            checklistSections,
-            ...progressSummary,
-          },
+          installationPayload,
           getCurrentUserProfile()
         );
       }
@@ -4508,6 +4579,10 @@ function closeCompletionForm(options = {}) {
           Number(updatedInstallation.videoEvidenceCount || selectedInstallation.videoEvidenceCount || 0),
         checklistSections,
       });
+
+      if (adminCorrectionMode) {
+        setInstallationAdminEditEnabled(false);
+      }
     } catch (error) {
       console.error("No se pudo guardar la instalación:", error);
       setPageError(error?.message || "No se pudo guardar el avance de la instalación.");
@@ -4515,6 +4590,7 @@ function closeCompletionForm(options = {}) {
       setSavingInstallation(false);
     }
   }
+
 
   function getInstallationEvidenceItems(installation) {
     const items = Array.isArray(installation?.evidenceItems)
@@ -4536,7 +4612,9 @@ function closeCompletionForm(options = {}) {
 
   function getInstallationEvidenceType(evidence) {
     const explicitType = String(evidence?.type || "").toLowerCase();
-    const fileType = String(evidence?.fileType || evidence?.contentType || "").toLowerCase();
+    const fileType = String(
+      evidence?.fileType || evidence?.contentType || ""
+    ).toLowerCase();
 
     if (explicitType === "video" || fileType.startsWith("video/")) {
       return "video";
@@ -4557,11 +4635,14 @@ function closeCompletionForm(options = {}) {
     }
 
     if (size >= 1024 * 1024) {
-      return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+      return `${(size / (1024 * 1024)).toFixed(
+        size >= 10 * 1024 * 1024 ? 0 : 1
+      )} MB`;
     }
 
     return `${Math.max(Math.round(size / 1024), 1)} KB`;
   }
+
 
   function resetInstallationEvidenceForm() {
     setInstallationEvidenceFiles([]);
@@ -4860,10 +4941,8 @@ function closeCompletionForm(options = {}) {
       installation?.installedEquipment
     );
     const assetOptions = getFilteredInstallationAssetOptions(installation);
-    const isLocked =
-      savingInstallation ||
-      installation?.status === "completed" ||
-      installation?.status === "cancelled";
+    const isLocked = !isInstallationEditable(installation);
+    const isAdminCorrection = isInstallationClosed(installation) && isInstallationEditable(installation);
 
     return (
       <section className="installation-equipment-panel">
@@ -4877,6 +4956,12 @@ function closeCompletionForm(options = {}) {
           </div>
           <span>{installedEquipment.length} equipo(s)</span>
         </div>
+
+        {isAdminCorrection && (
+          <div className="installation-admin-correction-note">
+            Estás editando una instalación cerrada como administrador. Si agregas equipos aquí, solo se actualizará el registro de la instalación; la ubicación real del equipo no se moverá automáticamente otra vez.
+          </div>
+        )}
 
         <div className="installation-equipment-linked-list">
           {installedEquipment.length > 0 ? (
@@ -5183,11 +5268,8 @@ function closeCompletionForm(options = {}) {
       (total, part) => total + Number(part.quantity || 0),
       0
     );
-    const isLocked =
-      savingInstallation ||
-      installation?.status === "completed" ||
-      installation?.status === "cancelled" ||
-      installation?.sparePartsConsumed === true;
+    const isLocked = !isInstallationEditable(installation);
+    const isAdminCorrection = isInstallationClosed(installation) && isInstallationEditable(installation);
 
     return (
       <section className="installation-spare-parts-panel">
@@ -5207,6 +5289,12 @@ function closeCompletionForm(options = {}) {
         {installation?.sparePartsConsumed === true && (
           <div className="installation-consumed-strip">
             Estos recambios ya fueron descontados del inventario al finalizar la instalación.
+          </div>
+        )}
+
+        {isAdminCorrection && installation?.sparePartsConsumed === true && (
+          <div className="installation-admin-correction-note warning">
+            Corrección administrativa: los cambios en esta lista no harán entradas ni salidas automáticas de inventario. Si el stock real debe cambiar, registra también el movimiento desde Recambios.
           </div>
         )}
 
@@ -5669,6 +5757,7 @@ function closeCompletionForm(options = {}) {
 
   function renderInstallationChecklistEditor(installation) {
     const checklistSections = getInstallationChecklistSections(installation?.checklistSections);
+    const isReadOnly = !isInstallationEditable(installation);
 
     return (
       <div className="installation-run-checklist">
@@ -5706,7 +5795,7 @@ function closeCompletionForm(options = {}) {
                               event.target.checked
                             )
                           }
-                          disabled={savingInstallation || installation.status === "completed" || installation.status === "cancelled"}
+                          disabled={isReadOnly}
                         />
                         <span>{item.completed ? "✓" : ""}</span>
                         <div>
@@ -5732,7 +5821,7 @@ function closeCompletionForm(options = {}) {
                           )
                         }
                         placeholder="Notas de este paso, si aplica..."
-                        disabled={savingInstallation || installation.status === "completed" || installation.status === "cancelled"}
+                        disabled={isReadOnly}
                       />
                     </article>
                   ))
@@ -6210,6 +6299,10 @@ function closeCompletionForm(options = {}) {
           getInstallationChecklistSections(selectedInstallation.checklistSections)
         )
       : null;
+    const selectedInstallationClosed = isInstallationClosed(selectedInstallation);
+    const selectedInstallationAdminCorrectionAvailable =
+      canUseInstallationAdminEdit(selectedInstallation);
+    const selectedInstallationEditable = isInstallationEditable(selectedInstallation);
 
     return (
       <section className="installation-runs-workspace">
@@ -6453,6 +6546,16 @@ function closeCompletionForm(options = {}) {
                 <span className={`installation-run-status ${getInstallationStatusClass(selectedInstallation.status)}`}>
                   {getInstallationStatusLabel(selectedInstallation.status)}
                 </span>
+                {selectedInstallationAdminCorrectionAvailable && (
+                  <button
+                    className={installationAdminEditEnabled ? "danger-table-button" : "visual-outline-button"}
+                    type="button"
+                    onClick={() => setInstallationAdminEditEnabled((current) => !current)}
+                    disabled={savingInstallation}
+                  >
+                    {installationAdminEditEnabled ? "Salir de corrección" : "Editar como admin"}
+                  </button>
+                )}
                 <button
                   className="visual-outline-button"
                   type="button"
@@ -6480,6 +6583,25 @@ function closeCompletionForm(options = {}) {
               </div>
             </div>
 
+            {selectedInstallationClosed && (
+              <section className={`installation-admin-lock-card ${installationAdminEditEnabled ? "editing" : "locked"}`}>
+                <div>
+                  <span>{installationAdminEditEnabled ? "✎" : "🔒"}</span>
+                </div>
+                <div>
+                  <strong>{installationAdminEditEnabled ? "Corrección administrativa activa" : getInstallationClosedTitle(selectedInstallation)}</strong>
+                  <p>
+                    {installationAdminEditEnabled
+                      ? "Puedes corregir datos olvidados en esta instalación. Los descuentos de recambios y movimientos de ubicación ya ejecutados no se repetirán automáticamente."
+                      : getInstallationClosedMessage(selectedInstallation)}
+                  </p>
+                  {selectedInstallationAdminCorrectionAvailable && !installationAdminEditEnabled && (
+                    <small>Como administrador, puedes activar edición especial si necesitas corregir un dato omitido.</small>
+                  )}
+                </div>
+              </section>
+            )}
+
             <div className="installation-run-status-row">
               <label>
                 Estado
@@ -6490,7 +6612,7 @@ function closeCompletionForm(options = {}) {
                       current ? { ...current, status: event.target.value } : current
                     )
                   }
-                  disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+                  disabled={savingInstallation || selectedInstallationClosed}
                 >
                   {INSTALLATION_STATUS_OPTIONS.map((status) => (
                     <option key={status.value} value={status.value}>
@@ -6509,7 +6631,7 @@ function closeCompletionForm(options = {}) {
                       current ? { ...current, notes: event.target.value } : current
                     )
                   }
-                  disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
+                  disabled={!selectedInstallationEditable}
                 />
               </label>
             </div>
@@ -6525,42 +6647,64 @@ function closeCompletionForm(options = {}) {
             {renderInstallationEvidenceManager(selectedInstallation)}
 
             <div className="technical-form-actions installation-run-save-actions">
-              <button
-                type="button"
-                onClick={() => saveSelectedInstallation()}
-                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
-              >
-                Guardar avance
-              </button>
-              <button
-                className="visual-outline-button"
-                type="button"
-                onClick={() => saveSelectedInstallation("paused")}
-                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
-              >
-                Pausar
-              </button>
-              <button
-                className="visual-primary-button"
-                type="button"
-                onClick={() => saveSelectedInstallation("completed")}
-                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
-              >
-                Finalizar instalación
-              </button>
-              <button
-                className="danger-table-button"
-                type="button"
-                onClick={() => {
-                  const confirmed = window.confirm("¿Quieres cancelar esta instalación?");
-                  if (confirmed) {
-                    saveSelectedInstallation("cancelled");
-                  }
-                }}
-                disabled={savingInstallation || selectedInstallation.status === "completed" || selectedInstallation.status === "cancelled"}
-              >
-                Cancelar instalación
-              </button>
+              {selectedInstallationClosed ? (
+                <>
+                  {selectedInstallationAdminCorrectionAvailable && installationAdminEditEnabled && (
+                    <button
+                      className="visual-primary-button"
+                      type="button"
+                      onClick={() => saveSelectedInstallation()}
+                      disabled={savingInstallation}
+                    >
+                      {savingInstallation ? "Guardando..." : "Guardar corrección administrativa"}
+                    </button>
+                  )}
+                  {selectedInstallationClosed && !installationAdminEditEnabled && (
+                    <button type="button" disabled>
+                      Instalación cerrada
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => saveSelectedInstallation()}
+                    disabled={savingInstallation}
+                  >
+                    Guardar avance
+                  </button>
+                  <button
+                    className="visual-outline-button"
+                    type="button"
+                    onClick={() => saveSelectedInstallation("paused")}
+                    disabled={savingInstallation}
+                  >
+                    Pausar
+                  </button>
+                  <button
+                    className="visual-primary-button"
+                    type="button"
+                    onClick={() => saveSelectedInstallation("completed")}
+                    disabled={savingInstallation}
+                  >
+                    Finalizar instalación
+                  </button>
+                  <button
+                    className="danger-table-button"
+                    type="button"
+                    onClick={() => {
+                      const confirmed = window.confirm("¿Quieres cancelar esta instalación?");
+                      if (confirmed) {
+                        saveSelectedInstallation("cancelled");
+                      }
+                    }}
+                    disabled={savingInstallation}
+                  >
+                    Cancelar instalación
+                  </button>
+                </>
+              )}
             </div>
           </section>
         )}

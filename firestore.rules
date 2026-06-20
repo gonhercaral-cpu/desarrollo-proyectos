@@ -2143,10 +2143,38 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    function isClosedTechnicalInstallation() {
+      return resource.data.status == "completed" || resource.data.status == "cancelled";
+    }
+
+    function isCompletedTechnicalInstallation() {
+      return resource.data.status == "completed";
+    }
+
+    function isInstallationEvidenceOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        "evidenceItems",
+        "evidenceCount",
+        "imageEvidenceCount",
+        "videoEvidenceCount",
+        "updatedAt",
+        "updatedBy",
+        "updatedByEmail",
+        "updatedById"
+      ]);
+    }
+
     match /technicalInstallations/{installationId} {
       allow read: if hasProfile();
 
-      allow create, update: if canManageTechnicalSupport();
+      allow create: if canManageTechnicalSupport();
+
+      allow update: if canManageTechnicalSupport()
+        && (
+          !isClosedTechnicalInstallation() ||
+          isAdmin() ||
+          (isCompletedTechnicalInstallation() && isInstallationEvidenceOnlyUpdate())
+        );
 
       allow delete: if isAdmin();
     }

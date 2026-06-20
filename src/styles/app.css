@@ -25576,3 +25576,110 @@ body:has(.field-mode-page) .main-content {
     flex: 1;
   }
 }
+
+/* =========================================================
+   SOPORTE TÉCNICO - BLOQUEO Y CORRECCIÓN ADMINISTRATIVA
+========================================================= */
+
+.installation-admin-lock-card,
+.installation-admin-correction-note {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 14px;
+  align-items: flex-start;
+  border-radius: 16px;
+  padding: 15px 16px;
+  margin: 14px 0;
+  border: 1px solid #dbe7ff;
+  background: linear-gradient(135deg, #f8fbff, #ffffff);
+  color: #0f2442;
+}
+
+.installation-admin-lock-card > div:first-child,
+.installation-admin-correction-note::before {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-weight: 900;
+}
+
+.installation-admin-lock-card > div:first-child span {
+  font-size: 18px;
+}
+
+.installation-admin-lock-card strong,
+.installation-admin-correction-note strong {
+  display: block;
+  color: #0f2442;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.installation-admin-lock-card p,
+.installation-admin-lock-card small,
+.installation-admin-correction-note {
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.installation-admin-lock-card small {
+  display: block;
+  margin-top: 6px;
+  color: #0f4fc4;
+  font-weight: 800;
+}
+
+.installation-admin-lock-card.locked {
+  border-color: #cbd5e1;
+  background: linear-gradient(135deg, #f8fafc, #ffffff);
+}
+
+.installation-admin-lock-card.locked > div:first-child {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.installation-admin-lock-card.editing {
+  border-color: #fed7aa;
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+}
+
+.installation-admin-lock-card.editing > div:first-child {
+  background: #ffedd5;
+  color: #f97316;
+}
+
+.installation-admin-correction-note {
+  grid-template-columns: minmax(0, 1fr);
+  border-color: #bad0ff;
+  background: #f8fbff;
+  margin: 12px 0;
+}
+
+.installation-admin-correction-note::before {
+  content: "i";
+  display: inline-grid;
+  margin-bottom: 4px;
+}
+
+.installation-admin-correction-note.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.installation-admin-correction-note.warning::before {
+  content: "!";
+  background: #ffedd5;
+  color: #f97316;
+}
+
+.installation-run-save-actions button:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
