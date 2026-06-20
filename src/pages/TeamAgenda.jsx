@@ -3,12 +3,14 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
@@ -111,6 +113,7 @@ export default function TeamAgenda() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [savingRequest, setSavingRequest] = useState(false);
   const [reviewingRequestId, setReviewingRequestId] = useState("");
+  const [deletingRequestId, setDeletingRequestId] = useState("");
   const [adminComments, setAdminComments] = useState({});
 
   const [formData, setFormData] = useState({
@@ -786,6 +789,67 @@ export default function TeamAgenda() {
     }
   }
 
+
+  async function deleteRequest(request) {
+    if (!isAdmin || !request?.id) return;
+
+    const confirmMessage =
+      request.status === "approved" && request.type === "permanentScheduleChange"
+        ? "¿Seguro que deseas eliminar esta solicitud? El horario base que ya fue aprobado no se revertirá automáticamente."
+        : request.status === "approved"
+          ? "¿Seguro que deseas eliminar esta solicitud? También se quitará el ajuste aprobado de la agenda."
+          : "¿Seguro que deseas eliminar esta solicitud? Esta acción no se puede deshacer.";
+
+    const confirmed = window.confirm(confirmMessage);
+
+    if (!confirmed) return;
+
+    setDeletingRequestId(request.id);
+    setLoadError("");
+
+    try {
+      const batch = writeBatch(db);
+
+      if (request.status === "approved" && request.type !== "permanentScheduleChange") {
+        const adjustmentsQuery = query(
+          collection(db, "scheduleAdjustments"),
+          where("sourceRequestId", "==", request.id)
+        );
+
+        const adjustmentsSnapshot = await getDocs(adjustmentsQuery);
+
+        adjustmentsSnapshot.forEach((adjustmentDoc) => {
+          batch.delete(doc(db, "scheduleAdjustments", adjustmentDoc.id));
+        });
+      }
+
+      batch.delete(doc(db, "scheduleRequests", request.id));
+
+      batch.set(doc(collection(db, "scheduleLogs")), {
+        requestId: request.id,
+        action: "deleted",
+        performedBy: currentUserId,
+        performedByName: profile?.name || profile?.email || "Administrador",
+        performedAt: serverTimestamp(),
+        details:
+          request.status === "approved" && request.type === "permanentScheduleChange"
+            ? "Solicitud eliminada por administración. El horario base aprobado no fue revertido automáticamente."
+            : request.status === "approved"
+              ? "Solicitud eliminada por administración. También se eliminó el ajuste aprobado de la agenda."
+              : "Solicitud eliminada por administración.",
+      });
+
+      await batch.commit();
+    } catch (error) {
+      console.error("No se pudo eliminar la solicitud:", error);
+      setLoadError(
+        "No se pudo eliminar la solicitud. Revisa reglas para scheduleRequests, scheduleAdjustments y scheduleLogs."
+      );
+    } finally {
+      setDeletingRequestId("");
+    }
+  }
+
   return (
     <div className="team-agenda-page">
       <div className="team-agenda-header">
@@ -1433,8 +1497,34 @@ export default function TeamAgenda() {
                           >
                             Rechazar
                           </button>
+
+                          <button
+                            type="button"
+                            className="danger subtle"
+                            disabled={deletingRequestId === request.id}
+                            onClick={() => deleteRequest(request)}
+                          >
+                            {deletingRequestId === request.id
+                              ? "Eliminando..."
+                              : "Eliminar"}
+                          </button>
                         </div>
                       </>
+                    )}
+
+                    {request.status !== "pending" && (
+                      <div className="team-agenda-request-actions">
+                        <button
+                          type="button"
+                          className="danger subtle"
+                          disabled={deletingRequestId === request.id}
+                          onClick={() => deleteRequest(request)}
+                        >
+                          {deletingRequestId === request.id
+                            ? "Eliminando..."
+                            : "Eliminar solicitud"}
+                        </button>
+                      </div>
                     )}
                   </article>
                 ))

@@ -135,7 +135,7 @@ export default function CollaboratorsAdmin() {
         return false;
       }
 
-      const userDepartmentNames = getUserDepartmentNames(user);
+      const userDepartmentNames = getUserDepartmentNames(user, departments);
       const userDepartmentIds = getUserDepartmentIds(user);
 
       const searchableText = [
@@ -214,7 +214,7 @@ export default function CollaboratorsAdmin() {
     }
   }
 
-  async function loadUsers() {
+  async function loadUsers(preferredUserId = selectedUserId) {
     setLoading(true);
     setError("");
     setMessage("");
@@ -224,8 +224,14 @@ export default function CollaboratorsAdmin() {
       setUsers(result);
 
       if (result.length > 0) {
+        const preferredUser =
+          result.find((user) => user.id === preferredUserId) ||
+          result.find((user) => user.uid === preferredUserId);
+
         const firstVisibleUser =
-          result.find((user) => user.deleted !== true) || result[0];
+          preferredUser ||
+          result.find((user) => user.deleted !== true) ||
+          result[0];
 
         selectUser(firstVisibleUser);
       }
@@ -251,12 +257,13 @@ export default function CollaboratorsAdmin() {
       departmentIds,
       departmentsSource
     );
+    const area = departmentNames[0] || user.area || "";
 
     setSelectedUserId(user.id);
     setSelectedUserDraft({
       name: user.name || "",
       email: user.email || "",
-      area: user.area || departmentNames[0] || "",
+      area,
       role: user.role || "collaborator",
       privilege: user.privilege || user.role || "collaborator",
       active: user.active !== false,
@@ -285,9 +292,10 @@ export default function CollaboratorsAdmin() {
     setSelectedUserDraft((current) => {
       if (!current) return current;
 
-      const currentIds = Array.isArray(current.departmentIds)
-        ? current.departmentIds
-        : [];
+      const currentIds = normalizeDepartmentIds(
+        current.departmentIds,
+        departments
+      );
 
       const exists = currentIds.includes(departmentId);
 
@@ -310,9 +318,10 @@ export default function CollaboratorsAdmin() {
 
   function toggleNewUserDepartment(departmentId) {
     setNewUserDraft((current) => {
-      const currentIds = Array.isArray(current.departmentIds)
-        ? current.departmentIds
-        : [];
+      const currentIds = normalizeDepartmentIds(
+        current.departmentIds,
+        departments
+      );
 
       const exists = currentIds.includes(departmentId);
 
@@ -396,6 +405,8 @@ export default function CollaboratorsAdmin() {
           result.uid,
           {
             area,
+            department: area,
+            departmentName: area,
             departmentIds,
             departmentNames,
             primaryDepartmentId,
@@ -433,9 +444,10 @@ export default function CollaboratorsAdmin() {
       return;
     }
 
-    const departmentIds = Array.isArray(selectedUserDraft.departmentIds)
-      ? selectedUserDraft.departmentIds
-      : [];
+    const departmentIds = normalizeDepartmentIds(
+      selectedUserDraft.departmentIds,
+      departments
+    );
 
     const departmentNames = getDepartmentNamesByIds(departmentIds, departments);
     const primaryDepartmentId = departmentIds[0] || "";
@@ -457,6 +469,8 @@ export default function CollaboratorsAdmin() {
           name: selectedUserDraft.name.trim(),
           email: selectedUserDraft.email.trim().toLowerCase(),
           area,
+          department: area,
+          departmentName: area,
           departmentIds,
           departmentNames,
           primaryDepartmentId,
@@ -473,7 +487,7 @@ export default function CollaboratorsAdmin() {
       }
 
       setMessage("Cambios guardados correctamente.");
-      await loadUsers();
+      await loadUsers(selectedUser.id);
     } catch (saveError) {
       console.error("No se pudieron guardar los cambios:", saveError);
       setError("No se pudieron guardar los cambios del colaborador.");
@@ -778,7 +792,7 @@ export default function CollaboratorsAdmin() {
 
                         <td>
                           <DepartmentChips
-                            departmentNames={getUserDepartmentNames(user)}
+                            departmentNames={getUserDepartmentNames(user, departments)}
                             fallbackArea={user.area}
                           />
                         </td>
@@ -1352,50 +1366,100 @@ function getAreaClass(area = "") {
   return "area-gray";
 }
 
-function getUserDepartmentIds(user) {
-  if (Array.isArray(user?.departmentIds)) {
-    return user.departmentIds.filter(Boolean);
-  }
-
-  return [];
+function normalizeComparableText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
-function getUserDepartmentNames(user) {
-  if (Array.isArray(user?.departmentNames) && user.departmentNames.length > 0) {
-    return user.departmentNames.filter(Boolean);
-  }
-
-  if (user?.area) {
-    return [user.area];
-  }
-
-  return [];
-}
-
-function getDepartmentIdsForDraft(user, departmentsSource = []) {
-  if (Array.isArray(user?.departmentIds) && user.departmentIds.length > 0) {
-    return user.departmentIds.filter(Boolean);
-  }
-
-  if (!user?.area) {
-    return [];
-  }
-
-  const matchedDepartment = departmentsSource.find(
-    (department) =>
-      String(department.name || "").toLowerCase() ===
-      String(user.area || "").toLowerCase()
-  );
-
-  return matchedDepartment ? [matchedDepartment.id] : [];
-}
-
-function getDepartmentNamesByIds(ids = [], departmentsSource = []) {
+function normalizeDepartmentIds(ids = [], departmentsSource = []) {
   if (!Array.isArray(ids)) {
     return [];
   }
 
+  const validIds = new Set(departmentsSource.map((department) => department.id));
+
   return ids
+    .filter(Boolean)
+    .filter((id) => validIds.size === 0 || validIds.has(id))
+    .filter((id, index, array) => array.indexOf(id) === index);
+}
+
+function getDepartmentByName(name = "", departmentsSource = []) {
+  const normalizedName = normalizeComparableText(name);
+
+  if (!normalizedName) {
+    return null;
+  }
+
+  return (
+    departmentsSource.find(
+      (department) => normalizeComparableText(department.name) === normalizedName
+    ) || null
+  );
+}
+
+function getUserDepartmentIds(user, departmentsSource = []) {
+  const idsFromUser = normalizeDepartmentIds(user?.departmentIds, departmentsSource);
+
+  if (idsFromUser.length > 0) {
+    return idsFromUser;
+  }
+
+  return getDepartmentIdsForDraft(user, departmentsSource);
+}
+
+function getUserDepartmentNames(user, departmentsSource = []) {
+  const ids = getUserDepartmentIds(user, departmentsSource);
+  const namesFromIds = getDepartmentNamesByIds(ids, departmentsSource);
+
+  if (namesFromIds.length > 0) {
+    return namesFromIds;
+  }
+
+  const legacyNames = [
+    ...(Array.isArray(user?.departmentNames) ? user.departmentNames : []),
+    user?.departmentName,
+    user?.department,
+    user?.area,
+  ]
+    .filter(Boolean)
+    .map((name) => String(name).trim())
+    .filter(Boolean);
+
+  return legacyNames.filter(
+    (name, index, array) =>
+      array.findIndex(
+        (item) => normalizeComparableText(item) === normalizeComparableText(name)
+      ) === index
+  );
+}
+
+function getDepartmentIdsForDraft(user, departmentsSource = []) {
+  const validIds = normalizeDepartmentIds(user?.departmentIds, departmentsSource);
+
+  if (validIds.length > 0) {
+    return validIds;
+  }
+
+  const legacyNames = [
+    ...(Array.isArray(user?.departmentNames) ? user.departmentNames : []),
+    user?.departmentName,
+    user?.department,
+    user?.area,
+  ].filter(Boolean);
+
+  const idsFromLegacyNames = legacyNames
+    .map((name) => getDepartmentByName(name, departmentsSource)?.id || "")
+    .filter(Boolean);
+
+  return normalizeDepartmentIds(idsFromLegacyNames, departmentsSource);
+}
+
+function getDepartmentNamesByIds(ids = [], departmentsSource = []) {
+  return normalizeDepartmentIds(ids, departmentsSource)
     .map((id) => {
       const department = departmentsSource.find((item) => item.id === id);
       return department?.name || "";

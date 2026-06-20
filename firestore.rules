@@ -1901,7 +1901,7 @@ service cloud.firestore {
 
       allow update: if isAdmin();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /scheduleAdjustments/{adjustmentId} {

@@ -27559,3 +27559,32 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
     grid-template-columns: 1fr;
   }
 }
+
+/* === Agenda del equipo: botón eliminar solicitudes === */
+
+.team-agenda-request-actions button.outline {
+  background: #ffffff;
+  color: #a63845;
+  border: 1px solid rgba(166, 56, 69, 0.35);
+}
+
+.team-agenda-request-actions button.outline:hover:not(:disabled) {
+  background: #fff0f0;
+  border-color: rgba(166, 56, 69, 0.55);
+}
+
+.team-agenda-request-actions button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Botón para eliminar solicitudes en Agenda del equipo */
+.team-agenda-request-actions button.subtle {
+  background: #f7e7e9;
+  color: #9b2f3d;
+  border: 1px solid rgba(166, 56, 69, 0.22);
+}
+
+.team-agenda-request-actions button.subtle:hover:not(:disabled) {
+  background: #f1d5d9;
+}

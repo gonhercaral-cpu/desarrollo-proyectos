@@ -16,11 +16,15 @@ import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
-  const userArea = normalizeText(
-    profile?.area || profile?.department || profile?.departmentName
-  );
+  const userDepartmentNames = getProfileDepartmentNames(profile);
   const canUsePrintShop =
-    isAdmin || userArea === "imprenta" || userArea === "soporte tecnico";
+    isAdmin ||
+    userDepartmentNames.some(
+      (departmentName) =>
+        departmentName === "imprenta" || departmentName === "soporte tecnico"
+    );
+
+  const canUseTechnicalSupport = canAccessTechnicalSupport(profile, isAdmin);
 
   const [page, setPage] = useState(
     isAdmin ? "executive-dashboard" : "my-projects"
@@ -37,7 +41,10 @@ export default function Dashboard() {
     const pageFromUrl = params.get("page");
     const assetIdFromUrl = params.get("assetId");
 
-    if (isAdmin && (pageFromUrl === "technical-support" || assetIdFromUrl)) {
+    if (
+      canUseTechnicalSupport &&
+      (pageFromUrl === "technical-support" || assetIdFromUrl)
+    ) {
       setSelectedProjectId(null);
       setReturnPage("technical-support");
       setPage("technical-support");
@@ -53,7 +60,7 @@ export default function Dashboard() {
       setProfileMenuOpen(false);
       setProfilePanelOpen(false);
     }
-  }, [isAdmin, canUsePrintShop]);
+  }, [canUseTechnicalSupport, canUsePrintShop]);
 
   function goToPage(nextPage) {
     setSelectedProjectId(null);
@@ -140,7 +147,7 @@ export default function Dashboard() {
       return <DepartmentsAdmin />;
     }
 
-    if (page === "technical-support" && isAdmin) {
+    if (page === "technical-support" && canUseTechnicalSupport) {
       return <TechnicalSupport />;
     }
 
@@ -346,6 +353,16 @@ export default function Dashboard() {
             </button>
           )}
 
+          {canUseTechnicalSupport && (
+            <button
+              className={isNavActive("technical-support") ? "active" : ""}
+              onClick={() => goToPage("technical-support")}
+            >
+              <span className="nav-icon">◈</span>
+              Soporte Técnico
+            </button>
+          )}
+
           {isAdmin && (
             <>
               <button
@@ -372,14 +389,6 @@ export default function Dashboard() {
               >
                 <span className="nav-icon">▤</span>
                 Departamentos
-              </button>
-
-              <button
-                className={isNavActive("technical-support") ? "active" : ""}
-                onClick={() => goToPage("technical-support")}
-              >
-                <span className="nav-icon">◈</span>
-                Soporte Técnico
               </button>
 
               <button
@@ -560,6 +569,38 @@ function normalizeText(value = "") {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+
+
+function getProfileDepartmentNames(profile) {
+  return [
+    profile?.area,
+    profile?.department,
+    profile?.departmentName,
+    profile?.position,
+    profile?.team,
+    ...(Array.isArray(profile?.departmentNames) ? profile.departmentNames : []),
+    ...(Array.isArray(profile?.departments) ? profile.departments : []),
+  ]
+    .filter(Boolean)
+    .map(normalizeText)
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index);
+}
+
+function canAccessTechnicalSupport(profile, isAdmin) {
+  if (isAdmin) {
+    return true;
+  }
+
+  const role = normalizeText(profile?.role);
+  const departmentNames = getProfileDepartmentNames(profile);
+
+  return (
+    role === "admin" ||
+    departmentNames.some((departmentName) => departmentName === "soporte tecnico")
+  );
 }
 
 function getRoleLabel(role = "") {
