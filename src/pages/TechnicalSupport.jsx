@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -28,11 +28,64 @@ import {
 } from "../services/technicalLocationsService";
 import {
   createTechnicalSparePart,
+  createTechnicalSparePartMovement,
+  generateTechnicalSparePartInternalCodeFromParts,
   deactivateTechnicalSparePart,
+  getTechnicalSparePartMovements,
   getTechnicalSpareParts,
   restoreTechnicalSparePart,
   updateTechnicalSparePart,
 } from "../services/technicalSparePartsService";
+
+
+const HTML5_QRCODE_SCRIPT_ID = "html5-qrcode-camera-scanner";
+const HTML5_QRCODE_CDN_URL = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+
+function loadHtml5QrcodeLibrary() {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("El navegador no está disponible."));
+  }
+
+  if (window.Html5Qrcode) {
+    return Promise.resolve(window.Html5Qrcode);
+  }
+
+  return new Promise((resolve, reject) => {
+    const existingScript = document.getElementById(HTML5_QRCODE_SCRIPT_ID);
+
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(window.Html5Qrcode), {
+        once: true,
+      });
+      existingScript.addEventListener(
+        "error",
+        () => reject(new Error("No se pudo cargar el lector de códigos.")),
+        { once: true }
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = HTML5_QRCODE_SCRIPT_ID;
+    script.src = HTML5_QRCODE_CDN_URL;
+    script.async = true;
+
+    script.onload = () => {
+      if (window.Html5Qrcode) {
+        resolve(window.Html5Qrcode);
+        return;
+      }
+
+      reject(new Error("El lector de códigos no quedó disponible."));
+    };
+
+    script.onerror = () => {
+      reject(new Error("No se pudo cargar el lector de códigos."));
+    };
+
+    document.body.appendChild(script);
+  });
+}
 
 const ASSET_CATEGORIES = [
   "Computadora",
@@ -130,45 +183,112 @@ const EMPTY_LOCATION_REVIEW_FORM = {
   pendingActions: "",
 };
 
+const SPARE_PART_CATEGORY_OPTIONS = [
+  "Impresoras",
+  "Computadoras",
+  "Periféricos",
+  "Cables y adaptadores",
+  "Redes",
+  "Audio / video",
+  "Energía",
+  "Herramientas",
+  "Consumibles",
+  "Otro",
+];
+
+const SPARE_PART_TYPE_OPTIONS = [
+  "Tinta",
+  "Tóner",
+  "Tambor",
+  "Cabezal",
+  "Encoder",
+  "Rodillo",
+  "Fuente de poder",
+  "Memoria RAM",
+  "Disco / SSD",
+  "Teclado",
+  "Mouse",
+  "Cable HDMI",
+  "Cable auxiliar",
+  "Adaptador",
+  "Pilas / baterías",
+  "Otro",
+];
+
+const SPARE_PART_UNIT_OPTIONS = [
+  "pieza",
+  "paquete",
+  "juego",
+  "metro",
+  "rollo",
+  "cartucho",
+  "botella",
+  "caja",
+  "Otro",
+];
+
+const SPARE_PART_STOCK_FILTERS = [
+  { value: "todos", label: "Todos" },
+  { value: "active", label: "Activos" },
+  { value: "low", label: "Bajo stock" },
+  { value: "empty", label: "Sin stock" },
+  { value: "inactive", label: "Inactivos" },
+];
+
+const EMPTY_SPARE_PART_FORM = {
+  name: "",
+  barcode: "",
+  internalCode: "",
+  category: "Impresoras",
+  categoryOther: "",
+  partType: "Tinta",
+  partTypeOther: "",
+  brand: "",
+  model: "",
+  compatibleModels: "",
+  quantity: 0,
+  minQuantity: 0,
+  unit: "pieza",
+  unitOther: "",
+  storageLocation: "",
+  status: "active",
+  notes: "",
+};
+
+const EMPTY_SPARE_PART_MOVEMENT_FORM = {
+  quantity: 1,
+  finalQuantity: 0,
+  reason: "",
+  notes: "",
+};
+
+const SPARE_PART_MOVEMENT_TYPES = {
+  entry: {
+    label: "Entrada",
+    sign: "+",
+    help: "Suma piezas al inventario.",
+  },
+  exit: {
+    label: "Salida",
+    sign: "-",
+    help: "Descuenta piezas del inventario.",
+  },
+  adjustment: {
+    label: "Ajuste",
+    sign: "=",
+    help: "Corrige la existencia final cuando hay una diferencia física.",
+  },
+};
+
 const TECHNICAL_TABS = [
   { id: "resumen", label: "Resumen", icon: "⌂" },
   { id: "mantenimientos", label: "Mantenimientos", icon: "🛠" },
   { id: "equipos", label: "Equipos", icon: "▣" },
-  { id: "recambios", label: "Recambios", icon: "▥" },
+  { id: "recambios", label: "Recambios", icon: "▤" },
   { id: "bajas", label: "Bajas", icon: "↓" },
   { id: "ubicaciones-tecnicas", label: "Ubicaciones técnicas", icon: "⌖" },
   { id: "registrar-equipo", label: "Registrar equipo", icon: "+" },
 ];
-
-const SPARE_PART_CATEGORIES = [
-  { value: "printer", label: "Impresoras" },
-  { value: "computer", label: "Computadoras" },
-  { value: "peripheral", label: "Periféricos" },
-  { value: "cable_adapter", label: "Cables y adaptadores" },
-  { value: "network", label: "Redes" },
-  { value: "audio_video", label: "Audio / video" },
-  { value: "other", label: "Otro" },
-];
-
-const SPARE_PART_TYPES = [
-  { value: "ink", label: "Tinta" },
-  { value: "toner", label: "Tóner" },
-  { value: "drum", label: "Tambor" },
-  { value: "printhead", label: "Cabezal" },
-  { value: "encoder", label: "Encoder" },
-  { value: "power_supply", label: "Fuente de poder" },
-  { value: "ram", label: "Memoria RAM" },
-  { value: "ssd_hdd", label: "Disco / SSD" },
-  { value: "keyboard", label: "Teclado" },
-  { value: "mouse", label: "Mouse" },
-  { value: "monitor_cable", label: "Cable de video" },
-  { value: "audio_cable", label: "Cable auxiliar" },
-  { value: "adapter", label: "Adaptador" },
-  { value: "battery", label: "Batería / pila" },
-  { value: "other", label: "Otro" },
-];
-
-const SPARE_PART_UNITS = ["pieza", "paquete", "juego", "metro", "caja", "otro"];
 
 const MOVEMENT_TYPES = [
   "Mantenimiento preventivo",
@@ -276,25 +396,6 @@ const EMPTY_LOCATION_FORM = {
   notes: "",
 };
 
-const EMPTY_SPARE_PART_FORM = {
-  name: "",
-  category: "printer",
-  categoryOther: "",
-  partType: "ink",
-  partTypeOther: "",
-  brand: "",
-  model: "",
-  compatibleModels: "",
-  quantity: 0,
-  minQuantity: 1,
-  unit: "pieza",
-  unitOther: "",
-  storageLocation: "",
-  status: "active",
-  active: true,
-  notes: "",
-};
-
 
 function isActiveTechnicalAsset(asset) {
   return Boolean(
@@ -320,7 +421,42 @@ export default function TechnicalSupport() {
   const [assets, setAssets] = useState([]);
   const [maintenances, setMaintenances] = useState([]);
   const [technicalLocations, setTechnicalLocations] = useState([]);
+
   const [spareParts, setSpareParts] = useState([]);
+  const [sparePartMovements, setSparePartMovements] = useState([]);
+  const [loadingSpareParts, setLoadingSpareParts] = useState(true);
+  const [loadingSparePartMovements, setLoadingSparePartMovements] =
+    useState(false);
+  const [sparePartSearchTerm, setSparePartSearchTerm] = useState("");
+  const [sparePartCategoryFilter, setSparePartCategoryFilter] =
+    useState("Todas");
+  const [sparePartTypeFilter, setSparePartTypeFilter] = useState("Todos");
+  const [sparePartStockFilter, setSparePartStockFilter] = useState("active");
+  const [showSparePartForm, setShowSparePartForm] = useState(false);
+  const [sparePartForm, setSparePartForm] = useState(EMPTY_SPARE_PART_FORM);
+  const [editingSparePartId, setEditingSparePartId] = useState(null);
+  const [sparePartFormError, setSparePartFormError] = useState("");
+  const [savingSparePart, setSavingSparePart] = useState(false);
+  const [scanMode, setScanMode] = useState("entry");
+  const [scanCode, setScanCode] = useState("");
+  const [scanError, setScanError] = useState("");
+  const [selectedScannedPart, setSelectedScannedPart] = useState(null);
+  const [sparePartMovementForm, setSparePartMovementForm] = useState(
+    EMPTY_SPARE_PART_MOVEMENT_FORM
+  );
+  const [savingSparePartMovement, setSavingSparePartMovement] = useState(false);
+  const [selectedSparePartHistory, setSelectedSparePartHistory] =
+    useState(null);
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const [cameraScannerTarget, setCameraScannerTarget] = useState("scan");
+  const [cameraScannerError, setCameraScannerError] = useState("");
+  const [cameraScannerStatus, setCameraScannerStatus] = useState("");
+  const [cameraScannerEngine, setCameraScannerEngine] = useState("native");
+  const cameraVideoRef = useRef(null);
+  const cameraReaderRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const cameraAnimationRef = useRef(null);
+  const html5ScannerRef = useRef(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
@@ -328,11 +464,6 @@ export default function TechnicalSupport() {
   const [campusFilter, setCampusFilter] = useState("Todos");
   const [areaFilter, setAreaFilter] = useState("Todas");
   const [conditionFilter, setConditionFilter] = useState("Todas");
-
-  const [sparePartSearchTerm, setSparePartSearchTerm] = useState("");
-  const [sparePartCategoryFilter, setSparePartCategoryFilter] = useState("Todas");
-  const [sparePartTypeFilter, setSparePartTypeFilter] = useState("Todos");
-  const [sparePartStockFilter, setSparePartStockFilter] = useState("active");
 
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
@@ -406,13 +537,6 @@ export default function TechnicalSupport() {
   const [locationReviews, setLocationReviews] = useState([]);
   const [loadingLocationReviews, setLoadingLocationReviews] = useState(false);
   const [locationReviewsError, setLocationReviewsError] = useState("");
-
-  const [loadingSpareParts, setLoadingSpareParts] = useState(true);
-  const [showSparePartForm, setShowSparePartForm] = useState(false);
-  const [sparePartForm, setSparePartForm] = useState(EMPTY_SPARE_PART_FORM);
-  const [sparePartFormError, setSparePartFormError] = useState("");
-  const [editingSparePartId, setEditingSparePartId] = useState(null);
-  const [savingSparePart, setSavingSparePart] = useState(false);
 
   const isEditing = Boolean(editingAssetId);
 
@@ -528,6 +652,28 @@ export default function TechnicalSupport() {
     ]);
   }
 
+  async function loadSpareParts() {
+    try {
+      setLoadingSpareParts(true);
+      setPageError("");
+
+      const loadedSpareParts = await getTechnicalSpareParts();
+
+      setSpareParts(loadedSpareParts);
+
+      return loadedSpareParts;
+    } catch (error) {
+      console.error("No se pudo cargar el inventario de recambios:", error);
+      setPageError(
+        "No se pudo cargar el inventario de recambios. Revisa las reglas de Firestore o la conexión."
+      );
+
+      return [];
+    } finally {
+      setLoadingSpareParts(false);
+    }
+  }
+
   async function loadTechnicalLocations() {
     try {
       setLoadingLocations(true);
@@ -595,28 +741,6 @@ export default function TechnicalSupport() {
       return [];
     } finally {
       setLoadingMaintenances(false);
-    }
-  }
-
-  async function loadSpareParts() {
-    try {
-      setLoadingSpareParts(true);
-      setPageError("");
-
-      const loadedSpareParts = await getTechnicalSpareParts();
-
-      setSpareParts(loadedSpareParts);
-
-      return loadedSpareParts;
-    } catch (error) {
-      console.error("No se pudo cargar el inventario de recambios:", error);
-      setPageError(
-        "No se pudo cargar el inventario de recambios. Revisa las reglas de Firestore o la conexión."
-      );
-
-      return [];
-    } finally {
-      setLoadingSpareParts(false);
     }
   }
 
@@ -762,127 +886,316 @@ export default function TechnicalSupport() {
   const campusFilterOptions = CAMPUS_FILTER_OPTIONS;
   const areaFilterOptions = getUniqueAssetValues(visibleAssets, "area");
 
-  const visibleSpareParts = useMemo(
-    () => spareParts.filter((part) => part?.deleted !== true),
-    [spareParts]
-  );
-
   const activeSpareParts = useMemo(
     () =>
-      visibleSpareParts.filter(
-        (part) => part?.active !== false && part?.status !== "inactive"
+      spareParts.filter(
+        (part) =>
+          part?.deleted !== true &&
+          part?.active !== false &&
+          part?.status !== "inactive"
       ),
-    [visibleSpareParts]
+    [spareParts]
   );
 
   const inactiveSpareParts = useMemo(
     () =>
-      visibleSpareParts.filter(
-        (part) => part?.active === false || part?.status === "inactive"
+      spareParts.filter(
+        (part) =>
+          part?.deleted === true ||
+          part?.active === false ||
+          part?.status === "inactive"
       ),
-    [visibleSpareParts]
+    [spareParts]
   );
 
   const sparePartCategoryOptions = useMemo(
     () =>
-      buildDynamicSparePartOptions(
-        SPARE_PART_CATEGORIES,
-        visibleSpareParts.map((part) => part.category),
-        "other"
+      buildMergedOptionList(
+        SPARE_PART_CATEGORY_OPTIONS,
+        spareParts.map((part) => part.category)
       ),
-    [visibleSpareParts]
+    [spareParts]
   );
 
   const sparePartTypeOptions = useMemo(
     () =>
-      buildDynamicSparePartOptions(
-        SPARE_PART_TYPES,
-        visibleSpareParts.map((part) => part.partType),
-        "other"
+      buildMergedOptionList(
+        SPARE_PART_TYPE_OPTIONS,
+        spareParts.map((part) => part.partType)
       ),
-    [visibleSpareParts]
+    [spareParts]
   );
 
   const sparePartUnitOptions = useMemo(
     () =>
-      buildDynamicSparePartUnits(
-        SPARE_PART_UNITS,
-        visibleSpareParts.map((part) => part.unit),
-        "otro"
+      buildMergedOptionList(
+        SPARE_PART_UNIT_OPTIONS,
+        spareParts.map((part) => part.unit)
       ),
-    [visibleSpareParts]
-  );
-
-  const lowStockSpareParts = useMemo(
-    () =>
-      activeSpareParts.filter((part) => {
-        const quantity = Number(part.quantity || 0);
-        const minQuantity = Number(part.minQuantity || 0);
-
-        return quantity > 0 && minQuantity > 0 && quantity <= minQuantity;
-      }),
-    [activeSpareParts]
-  );
-
-  const outOfStockSpareParts = useMemo(
-    () => activeSpareParts.filter((part) => Number(part.quantity || 0) <= 0),
-    [activeSpareParts]
+    [spareParts]
   );
 
   const filteredSpareParts = useMemo(() => {
     const normalizedSearch = sparePartSearchTerm.trim().toLowerCase();
 
-    return visibleSpareParts.filter((part) => {
-      const compatibilityText = Array.isArray(part.compatibleModels)
-        ? part.compatibleModels.join(" ")
-        : String(part.compatibleModels || "");
+    return spareParts.filter((part) => {
+      const isInactive =
+        part?.deleted === true ||
+        part?.active === false ||
+        part?.status === "inactive";
+      const quantity = Number(part.quantity || 0);
+      const minQuantity = Number(part.minQuantity || 0);
+      const isEmpty = quantity <= 0;
+      const isLowStock = quantity > 0 && minQuantity > 0 && quantity <= minQuantity;
 
       const matchesSearch =
         !normalizedSearch ||
         String(part.name || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.barcode || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.internalCode || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.category || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.partType || "").toLowerCase().includes(normalizedSearch) ||
         String(part.brand || "").toLowerCase().includes(normalizedSearch) ||
         String(part.model || "").toLowerCase().includes(normalizedSearch) ||
-        String(part.storageLocation || "").toLowerCase().includes(normalizedSearch) ||
-        String(part.notes || "").toLowerCase().includes(normalizedSearch) ||
-        compatibilityText.toLowerCase().includes(normalizedSearch);
+        String(part.compatibleModels || "").toLowerCase().includes(normalizedSearch) ||
+        (Array.isArray(part.compatibleModels) &&
+          part.compatibleModels.join(" ").toLowerCase().includes(normalizedSearch)) ||
+        String(part.storageLocation || "").toLowerCase().includes(normalizedSearch);
 
       const matchesCategory =
         sparePartCategoryFilter === "Todas" ||
         part.category === sparePartCategoryFilter;
 
       const matchesType =
-        sparePartTypeFilter === "Todos" || part.partType === sparePartTypeFilter;
-
-      const isInactive = part.active === false || part.status === "inactive";
-      const quantity = Number(part.quantity || 0);
-      const minQuantity = Number(part.minQuantity || 0);
-      const isOutOfStock = !isInactive && quantity <= 0;
-      const isLowStock =
-        !isInactive && quantity > 0 && minQuantity > 0 && quantity <= minQuantity;
+        sparePartTypeFilter === "Todos" ||
+        part.partType === sparePartTypeFilter;
 
       const matchesStock =
-        sparePartStockFilter === "all" ||
+        sparePartStockFilter === "todos" ||
         (sparePartStockFilter === "active" && !isInactive) ||
-        (sparePartStockFilter === "low_stock" && isLowStock) ||
-        (sparePartStockFilter === "out_of_stock" && isOutOfStock) ||
-        (sparePartStockFilter === "inactive" && isInactive);
+        (sparePartStockFilter === "inactive" && isInactive) ||
+        (sparePartStockFilter === "empty" && !isInactive && isEmpty) ||
+        (sparePartStockFilter === "low" && !isInactive && isLowStock);
 
       return matchesSearch && matchesCategory && matchesType && matchesStock;
     });
   }, [
-    visibleSpareParts,
+    spareParts,
     sparePartSearchTerm,
     sparePartCategoryFilter,
     sparePartTypeFilter,
     sparePartStockFilter,
   ]);
 
-  const printerSpareParts = activeSpareParts.filter(
-    (part) => part.category === "printer"
-  ).length;
-  const computerSpareParts = activeSpareParts.filter(
-    (part) => part.category === "computer"
-  ).length;
+  const sparePartMetrics = useMemo(() => {
+    const lowStock = activeSpareParts.filter((part) => {
+      const quantity = Number(part.quantity || 0);
+      const minQuantity = Number(part.minQuantity || 0);
+
+      return quantity > 0 && minQuantity > 0 && quantity <= minQuantity;
+    }).length;
+
+    const emptyStock = activeSpareParts.filter(
+      (part) => Number(part.quantity || 0) <= 0
+    ).length;
+
+    const withBarcode = activeSpareParts.filter(
+      (part) => part.barcode || part.internalCode
+    ).length;
+
+    return {
+      active: activeSpareParts.length,
+      inactive: inactiveSpareParts.length,
+      lowStock,
+      emptyStock,
+      withBarcode,
+    };
+  }, [activeSpareParts, inactiveSpareParts]);
+
+  const selectedScannedPartMovements = selectedScannedPart
+    ? sparePartMovements.filter(
+        (movement) => movement.partId === selectedScannedPart.id
+      )
+    : [];
+
+  useEffect(() => {
+    if (!cameraScannerOpen) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function startNativeBarcodeDetector() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+        },
+        audio: false,
+      });
+
+      if (cancelled) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      cameraStreamRef.current = stream;
+
+      const video = cameraVideoRef.current;
+
+      if (!video) {
+        throw new Error("No se encontró el visor de cámara.");
+      }
+
+      video.srcObject = stream;
+      video.setAttribute("playsInline", "true");
+      await video.play();
+
+      const allFormats = [
+        "aztec",
+        "code_128",
+        "code_39",
+        "code_93",
+        "codabar",
+        "data_matrix",
+        "ean_13",
+        "ean_8",
+        "itf",
+        "pdf417",
+        "qr_code",
+        "upc_a",
+        "upc_e",
+      ];
+
+      const supportedFormats =
+        typeof window.BarcodeDetector.getSupportedFormats === "function"
+          ? await window.BarcodeDetector.getSupportedFormats()
+          : allFormats;
+
+      const formats = allFormats.filter((format) =>
+        supportedFormats.includes(format)
+      );
+
+      const detector =
+        formats.length > 0
+          ? new window.BarcodeDetector({ formats })
+          : new window.BarcodeDetector();
+
+      setCameraScannerEngine("native");
+      setCameraScannerStatus(
+        "Apunta la cámara al código de barras. Se detectará automáticamente."
+      );
+
+      async function detectFrame() {
+        if (cancelled || !cameraScannerOpen) return;
+
+        try {
+          if (video.readyState >= 2) {
+            const codes = await detector.detect(video);
+
+            if (codes.length > 0) {
+              const detectedCode = String(codes[0]?.rawValue || "").trim();
+
+              if (detectedCode) {
+                handleCameraDetectedCode(detectedCode);
+                return;
+              }
+            }
+          }
+        } catch (error) {
+          console.error("No se pudo detectar el código con BarcodeDetector:", error);
+        }
+
+        cameraAnimationRef.current = window.requestAnimationFrame(detectFrame);
+      }
+
+      detectFrame();
+    }
+
+    async function startHtml5QrcodeScanner() {
+      await loadHtml5QrcodeLibrary();
+
+      if (cancelled) return;
+
+      const readerElement = cameraReaderRef.current;
+
+      if (!readerElement) {
+        throw new Error("No se encontró el lector de cámara.");
+      }
+
+      readerElement.innerHTML = "";
+
+      const scanner = new window.Html5Qrcode(readerElement.id, false);
+      html5ScannerRef.current = scanner;
+      setCameraScannerEngine("html5");
+      setCameraScannerStatus(
+        "Apunta la cámara al código. Si no lo toma al primer intento, acércalo o mejora la iluminación."
+      );
+
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const boxSize = Math.floor(minEdge * 0.72);
+
+            return { width: boxSize, height: Math.floor(boxSize * 0.55) };
+          },
+        },
+        (decodedText) => {
+          const detectedCode = String(decodedText || "").trim();
+
+          if (detectedCode) {
+            handleCameraDetectedCode(detectedCode);
+          }
+        },
+        () => {
+          // El lector emite errores mientras busca códigos; no se muestran para evitar ruido.
+        }
+      );
+    }
+
+    async function startCameraScanner() {
+      try {
+        if (!navigator?.mediaDevices?.getUserMedia) {
+          setCameraScannerError(
+            "No se pudo acceder a la cámara desde este navegador. Revisa permisos o usa un lector físico."
+          );
+          setCameraScannerStatus("");
+          return;
+        }
+
+        setCameraScannerStatus("Abriendo cámara...");
+
+        if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+          await startNativeBarcodeDetector();
+          return;
+        }
+
+        await startHtml5QrcodeScanner();
+      } catch (error) {
+        console.error("No se pudo abrir el escáner de cámara:", error);
+        setCameraScannerError(
+          "No se pudo abrir el escáner con cámara. Revisa permisos del navegador, conexión a internet o usa un lector físico."
+        );
+        setCameraScannerStatus("");
+        stopCameraScannerResources();
+      }
+    }
+
+    startCameraScanner();
+
+    return () => {
+      cancelled = true;
+      stopCameraScannerResources();
+    };
+  }, [cameraScannerOpen]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraScannerResources();
+    };
+  }, []);
 
   const filteredTechnicalLocations = useMemo(() => {
     const normalizedSearch = locationSearchTerm.trim().toLowerCase();
@@ -1141,7 +1454,6 @@ export default function TechnicalSupport() {
     closeMaintenanceForm({ returnToField: shouldReturnToField });
     closeCompletionForm({ returnToField: shouldReturnToField });
     closeQrPanel({ returnToField: shouldReturnToField });
-    closeSparePartForm();
 
     if (!shouldKeepQuickAsset) {
       closeQuickAssetPanel();
@@ -1170,7 +1482,6 @@ export default function TechnicalSupport() {
     }
 
     closeAssetForm();
-    closeSparePartForm();
 
     if (tabId === "ubicaciones-tecnicas" && !selectedLocationId && technicalLocations.length > 0) {
       setSelectedLocationId(technicalLocations[0].id);
@@ -1186,175 +1497,6 @@ export default function TechnicalSupport() {
 
     if (value.trim()) {
       setActiveTab("equipos");
-    }
-  }
-
-  function openCreateSparePartForm() {
-    closeAllTopPanels();
-    setActiveTab("recambios");
-    setEditingSparePartId(null);
-    setSparePartForm(EMPTY_SPARE_PART_FORM);
-    setSparePartFormError("");
-    setShowSparePartForm(true);
-    scrollToTop();
-  }
-
-  function openEditSparePartForm(part) {
-    if (!part?.id) return;
-
-    closeAllTopPanels();
-    setActiveTab("recambios");
-    setEditingSparePartId(part.id);
-    setSparePartForm({
-      name: part.name || "",
-      category: part.category || "other",
-      categoryOther: "",
-      partType: part.partType || "other",
-      partTypeOther: "",
-      brand: part.brand || "",
-      model: part.model || "",
-      compatibleModels: Array.isArray(part.compatibleModels)
-        ? part.compatibleModels.join("\n")
-        : String(part.compatibleModels || ""),
-      quantity: Number(part.quantity || 0),
-      minQuantity: Number(part.minQuantity || 0),
-      unit: part.unit || "pieza",
-      unitOther: "",
-      storageLocation: part.storageLocation || "",
-      status: part.status || "active",
-      active: part.active !== false,
-      notes: part.notes || "",
-    });
-    setSparePartFormError("");
-    setShowSparePartForm(true);
-    scrollToTop();
-  }
-
-  function closeSparePartForm() {
-    setShowSparePartForm(false);
-    setEditingSparePartId(null);
-    setSparePartForm(EMPTY_SPARE_PART_FORM);
-    setSparePartFormError("");
-    setSavingSparePart(false);
-  }
-
-  function handleSparePartFormChange(event) {
-    const { name, value } = event.target;
-
-    setSparePartForm((currentForm) => {
-      const nextForm = {
-        ...currentForm,
-        [name]: value,
-      };
-
-      if (name === "category" && value !== "other") {
-        nextForm.categoryOther = "";
-      }
-
-      if (name === "partType" && value !== "other") {
-        nextForm.partTypeOther = "";
-      }
-
-      if (name === "unit" && value !== "otro") {
-        nextForm.unitOther = "";
-      }
-
-      return nextForm;
-    });
-  }
-
-  function buildSparePartFormPayload() {
-    return {
-      ...sparePartForm,
-      category: resolveSparePartOptionValue(
-        sparePartForm.category,
-        sparePartForm.categoryOther,
-        SPARE_PART_CATEGORIES,
-        "other"
-      ),
-      partType: resolveSparePartOptionValue(
-        sparePartForm.partType,
-        sparePartForm.partTypeOther,
-        SPARE_PART_TYPES,
-        "other"
-      ),
-      unit: resolveSparePartUnitValue(
-        sparePartForm.unit,
-        sparePartForm.unitOther,
-        "otro"
-      ),
-    };
-  }
-
-  async function handleSaveSparePart(event) {
-    event.preventDefault();
-
-    if (!sparePartForm.name.trim()) {
-      setSparePartFormError("El nombre del recambio es obligatorio.");
-      return;
-    }
-
-    if (Number(sparePartForm.quantity) < 0 || Number(sparePartForm.minQuantity) < 0) {
-      setSparePartFormError("Las cantidades no pueden ser negativas.");
-      return;
-    }
-
-    try {
-      setSavingSparePart(true);
-      setSparePartFormError("");
-
-      const sparePartPayload = buildSparePartFormPayload();
-
-      if (editingSparePartId) {
-        await updateTechnicalSparePart(
-          editingSparePartId,
-          sparePartPayload,
-          profile
-        );
-      } else {
-        await createTechnicalSparePart(sparePartPayload, profile);
-      }
-
-      await loadSpareParts();
-      closeSparePartForm();
-      setActiveTab("recambios");
-    } catch (error) {
-      console.error("No se pudo guardar el recambio:", error);
-      setSparePartFormError(
-        error?.message || "No se pudo guardar el recambio. Revisa los datos o permisos."
-      );
-    } finally {
-      setSavingSparePart(false);
-    }
-  }
-
-  async function handleDeactivateSparePart(part) {
-    if (!part?.id) return;
-
-    const confirmed = window.confirm(
-      `¿Quieres desactivar el recambio "${part.name || "sin nombre"}"? No se borrará del historial.`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      await deactivateTechnicalSparePart(part.id, profile);
-      await loadSpareParts();
-    } catch (error) {
-      console.error("No se pudo desactivar el recambio:", error);
-      setPageError("No se pudo desactivar el recambio. Revisa los permisos de Firestore.");
-    }
-  }
-
-  async function handleRestoreSparePart(part) {
-    if (!part?.id) return;
-
-    try {
-      await restoreTechnicalSparePart(part.id, profile);
-      await loadSpareParts();
-    } catch (error) {
-      console.error("No se pudo reactivar el recambio:", error);
-      setPageError("No se pudo reactivar el recambio. Revisa los permisos de Firestore.");
     }
   }
 
@@ -2884,6 +3026,1186 @@ function closeCompletionForm(options = {}) {
     }
   }
 
+  function getSuggestedSparePartInternalCode() {
+    return generateTechnicalSparePartInternalCodeFromParts(spareParts);
+  }
+
+  function openSparePartForm(part = null) {
+    if (part) {
+      const categoryFields = getEditableOptionFields(
+        part.category,
+        SPARE_PART_CATEGORY_OPTIONS
+      );
+      const typeFields = getEditableOptionFields(
+        part.partType,
+        SPARE_PART_TYPE_OPTIONS
+      );
+      const unitFields = getEditableOptionFields(
+        part.unit,
+        SPARE_PART_UNIT_OPTIONS
+      );
+
+      setSparePartForm({
+        name: part.name || "",
+        barcode: part.barcode || "",
+        internalCode: part.internalCode || getSuggestedSparePartInternalCode(),
+        category: categoryFields.value,
+        categoryOther: categoryFields.other,
+        partType: typeFields.value,
+        partTypeOther: typeFields.other,
+        brand: part.brand || "",
+        model: part.model || "",
+        compatibleModels: Array.isArray(part.compatibleModels)
+          ? part.compatibleModels.join("\n")
+          : String(part.compatibleModels || ""),
+        quantity: Number(part.quantity || 0),
+        minQuantity: Number(part.minQuantity || 0),
+        unit: unitFields.value,
+        unitOther: unitFields.other,
+        storageLocation: part.storageLocation || "",
+        status: part.status || "active",
+        notes: part.notes || "",
+      });
+      setEditingSparePartId(part.id);
+    } else {
+      setSparePartForm({
+        ...EMPTY_SPARE_PART_FORM,
+        internalCode: getSuggestedSparePartInternalCode(),
+      });
+      setEditingSparePartId(null);
+    }
+
+    setSparePartFormError("");
+    setShowSparePartForm(true);
+    setActiveTab("recambios");
+  }
+
+  function closeSparePartForm() {
+    setShowSparePartForm(false);
+    setEditingSparePartId(null);
+    setSparePartForm(EMPTY_SPARE_PART_FORM);
+    setSparePartFormError("");
+  }
+
+  function handleSparePartFormChange(event) {
+    const { name, value } = event.target;
+
+    setSparePartForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  async function handleSparePartSubmit(event) {
+    event.preventDefault();
+
+    try {
+      setSavingSparePart(true);
+      setSparePartFormError("");
+      setPageError("");
+
+      if (editingSparePartId) {
+        await updateTechnicalSparePart(
+          editingSparePartId,
+          sparePartForm,
+          getCurrentUserProfile()
+        );
+      } else {
+        await createTechnicalSparePart(sparePartForm, getCurrentUserProfile());
+      }
+
+      await loadSpareParts();
+      closeSparePartForm();
+    } catch (error) {
+      console.error("No se pudo guardar el recambio:", error);
+      setSparePartFormError(
+        error?.message ||
+          "No se pudo guardar el recambio. Revisa la información o intenta de nuevo."
+      );
+    } finally {
+      setSavingSparePart(false);
+    }
+  }
+
+  async function handleDeactivateSparePart(part) {
+    if (!part?.id) return;
+
+    const confirmed = window.confirm(
+      `¿Quieres desactivar el recambio "${part.name || "sin nombre"}"?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setPageError("");
+      await deactivateTechnicalSparePart(part.id, getCurrentUserProfile());
+      await loadSpareParts();
+    } catch (error) {
+      console.error("No se pudo desactivar el recambio:", error);
+      setPageError("No se pudo desactivar el recambio. Revisa tus permisos.");
+    }
+  }
+
+  async function handleRestoreSparePart(part) {
+    if (!part?.id) return;
+
+    try {
+      setPageError("");
+      await restoreTechnicalSparePart(part.id, getCurrentUserProfile());
+      await loadSpareParts();
+    } catch (error) {
+      console.error("No se pudo reactivar el recambio:", error);
+      setPageError("No se pudo reactivar el recambio. Revisa tus permisos.");
+    }
+  }
+
+  function getSparePartByScanCode(code) {
+    const normalizedCode = String(code || "").trim().toLowerCase();
+
+    if (!normalizedCode) return null;
+
+    return spareParts.find((part) => {
+      const candidateCodes = [
+        part.barcode,
+        part.internalCode,
+        part.id,
+      ].map((value) => String(value || "").trim().toLowerCase());
+
+      return candidateCodes.includes(normalizedCode);
+    });
+  }
+
+  function processSparePartScanCode(code) {
+    const cleanedCode = String(code || "").trim();
+    const foundPart = getSparePartByScanCode(cleanedCode);
+
+    setScanCode(cleanedCode);
+
+    if (!foundPart) {
+      setSelectedScannedPart(null);
+      setScanError(
+        "No se encontró un recambio con ese código. Puedes registrarlo primero o revisar el código escaneado."
+      );
+      return;
+    }
+
+    if (foundPart.active === false || foundPart.status === "inactive") {
+      setSelectedScannedPart(foundPart);
+      setScanError(
+        "Este recambio está inactivo. Reactívalo antes de registrar entradas o salidas."
+      );
+      return;
+    }
+
+    setSelectedScannedPart(foundPart);
+    setSparePartMovementForm({
+      ...EMPTY_SPARE_PART_MOVEMENT_FORM,
+      finalQuantity: Number(foundPart.quantity || 0),
+    });
+    setScanError("");
+    loadSparePartMovements(foundPart);
+  }
+
+  function handleScanSubmit(event) {
+    event.preventDefault();
+    processSparePartScanCode(scanCode);
+  }
+
+  function clearScannedPart() {
+    setSelectedScannedPart(null);
+    setScanCode("");
+    setScanError("");
+    setSparePartMovementForm(EMPTY_SPARE_PART_MOVEMENT_FORM);
+  }
+
+  function stopCameraScannerResources() {
+    if (cameraAnimationRef.current) {
+      window.cancelAnimationFrame(cameraAnimationRef.current);
+      cameraAnimationRef.current = null;
+    }
+
+    if (html5ScannerRef.current) {
+      const scanner = html5ScannerRef.current;
+      html5ScannerRef.current = null;
+
+      Promise.resolve(scanner.stop?.())
+        .catch(() => {})
+        .finally(() => {
+          try {
+            scanner.clear?.();
+          } catch (error) {
+            console.error("No se pudo limpiar el lector de códigos:", error);
+          }
+        });
+    }
+
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
+
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null;
+    }
+
+    if (cameraReaderRef.current) {
+      cameraReaderRef.current.innerHTML = "";
+    }
+  }
+
+  function openCameraScanner(target = "scan") {
+    setCameraScannerTarget(target);
+    setCameraScannerEngine("native");
+    setCameraScannerError("");
+    setCameraScannerStatus("Preparando cámara...");
+    setCameraScannerOpen(true);
+  }
+
+  function closeCameraScanner() {
+    stopCameraScannerResources();
+    setCameraScannerOpen(false);
+    setCameraScannerStatus("");
+    setCameraScannerError("");
+  }
+
+  function handleCameraDetectedCode(code) {
+    const cleanedCode = String(code || "").trim();
+
+    if (!cleanedCode) return;
+
+    closeCameraScanner();
+
+    if (cameraScannerTarget === "formBarcode") {
+      setSparePartForm((current) => ({
+        ...current,
+        barcode: cleanedCode,
+      }));
+      return;
+    }
+
+    processSparePartScanCode(cleanedCode);
+  }
+
+  function handleSparePartMovementFormChange(event) {
+    const { name, value } = event.target;
+
+    setSparePartMovementForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  async function handleSparePartMovementSubmit(event) {
+    event.preventDefault();
+
+    if (!selectedScannedPart?.id) {
+      setScanError("Primero escanea o escribe el código del recambio.");
+      return;
+    }
+
+    try {
+      setSavingSparePartMovement(true);
+      setScanError("");
+      setPageError("");
+
+      await createTechnicalSparePartMovement(
+        selectedScannedPart,
+        {
+          type: scanMode,
+          quantity: sparePartMovementForm.quantity,
+          finalQuantity: sparePartMovementForm.finalQuantity,
+          reason: sparePartMovementForm.reason,
+          notes: sparePartMovementForm.notes,
+          scannedCode: scanCode,
+        },
+        getCurrentUserProfile()
+      );
+
+      const loadedSpareParts = await loadSpareParts();
+      const refreshedPart =
+        loadedSpareParts.find((part) => part.id === selectedScannedPart.id) ||
+        selectedScannedPart;
+
+      setSelectedScannedPart(refreshedPart);
+      setSparePartMovementForm({
+        ...EMPTY_SPARE_PART_MOVEMENT_FORM,
+        finalQuantity: Number(refreshedPart.quantity || 0),
+      });
+      await loadSparePartMovements(refreshedPart);
+    } catch (error) {
+      console.error("No se pudo registrar el movimiento del recambio:", error);
+      setScanError(
+        error?.message ||
+          "No se pudo registrar el movimiento. Revisa la cantidad o intenta de nuevo."
+      );
+    } finally {
+      setSavingSparePartMovement(false);
+    }
+  }
+
+  async function loadSparePartMovements(part = selectedSparePartHistory || selectedScannedPart) {
+    if (!part?.id) {
+      setSparePartMovements([]);
+      return [];
+    }
+
+    try {
+      setLoadingSparePartMovements(true);
+
+      const movements = await getTechnicalSparePartMovements(part.id);
+
+      setSparePartMovements((current) => {
+        const otherMovements = current.filter(
+          (movement) => movement.partId !== part.id
+        );
+
+        return [...movements, ...otherMovements];
+      });
+
+      return movements;
+    } catch (error) {
+      console.error("No se pudo cargar el historial del recambio:", error);
+      setScanError("No se pudo cargar el historial de movimientos.");
+      return [];
+    } finally {
+      setLoadingSparePartMovements(false);
+    }
+  }
+
+  async function openSparePartHistory(part) {
+    setSelectedSparePartHistory(part);
+    setActiveTab("recambios");
+    await loadSparePartMovements(part);
+  }
+
+  function closeSparePartHistory() {
+    setSelectedSparePartHistory(null);
+  }
+
+  function renderSparePartsPanel() {
+    return (
+      <section className="spare-parts-workspace">
+        <div className="spare-parts-header">
+          <div>
+            <p className="section-kicker equipment-kicker">Inventario de recambios</p>
+            <h2>Recambios y consumibles</h2>
+            <p>
+              Controla piezas, consumibles y accesorios con códigos de barra,
+              entradas, salidas e historial.
+            </p>
+          </div>
+
+          <div className="spare-parts-header-actions">
+            <button
+              className="visual-outline-button"
+              type="button"
+              onClick={loadSpareParts}
+              disabled={loadingSpareParts}
+            >
+              Actualizar
+            </button>
+            <button
+              className="visual-primary-button"
+              type="button"
+              onClick={() => openSparePartForm()}
+            >
+              + Registrar recambio
+            </button>
+          </div>
+        </div>
+
+        <div className="spare-parts-metrics-grid">
+          <article>
+            <span>Activos</span>
+            <strong>{sparePartMetrics.active}</strong>
+            <p>Recambios disponibles para uso</p>
+          </article>
+          <article className="warning">
+            <span>Bajo stock</span>
+            <strong>{sparePartMetrics.lowStock}</strong>
+            <p>Igual o debajo del mínimo</p>
+          </article>
+          <article className="danger">
+            <span>Sin stock</span>
+            <strong>{sparePartMetrics.emptyStock}</strong>
+            <p>Requieren reposición</p>
+          </article>
+          <article>
+            <span>Con código</span>
+            <strong>{sparePartMetrics.withBarcode}</strong>
+            <p>Listos para escaneo</p>
+          </article>
+        </div>
+
+        <section className="spare-scan-panel">
+          <div className="spare-scan-header">
+            <div>
+              <h3>Entrada / salida por escaneo</h3>
+              <p>
+                Haz clic en el campo y usa un lector físico, escribe el código,
+                o abre la cámara para escanearlo.
+              </p>
+            </div>
+
+            <div className="spare-scan-mode-tabs">
+              {Object.entries(SPARE_PART_MOVEMENT_TYPES).map(([mode, config]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={scanMode === mode ? "active" : ""}
+                  onClick={() => {
+                    setScanMode(mode);
+                    setScanError("");
+                  }}
+                >
+                  {config.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form className="spare-scan-form" onSubmit={handleScanSubmit}>
+            <label>
+              Código de barras / código interno
+              <input
+                type="text"
+                value={scanCode}
+                onChange={(event) => setScanCode(event.target.value)}
+                placeholder="Escanea o escribe el código..."
+                disabled={savingSparePartMovement}
+                autoComplete="off"
+              />
+            </label>
+
+            <div className="spare-scan-actions">
+              <button
+                className="visual-primary-button"
+                type="submit"
+                disabled={savingSparePartMovement || !scanCode.trim()}
+              >
+                Buscar
+              </button>
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={() => openCameraScanner("scan")}
+                disabled={savingSparePartMovement || cameraScannerOpen}
+              >
+                Abrir cámara
+              </button>
+            </div>
+          </form>
+
+          {scanError && <div className="form-error">{scanError}</div>}
+
+          {selectedScannedPart && (
+            <div className="spare-scan-result">
+              <div className="spare-scan-part-card">
+                <span className="spare-part-icon">▤</span>
+                <div>
+                  <strong>{selectedScannedPart.name || "Recambio sin nombre"}</strong>
+                  <p>
+                    {selectedScannedPart.category || "Sin categoría"} ·{" "}
+                    {selectedScannedPart.partType || "Sin tipo"}
+                  </p>
+                  <small>
+                    Código:{" "}
+                    {selectedScannedPart.barcode ||
+                      selectedScannedPart.internalCode ||
+                      "Sin código"}
+                  </small>
+                </div>
+                <b>
+                  {Number(selectedScannedPart.quantity || 0)}{" "}
+                  {selectedScannedPart.unit || "pieza"}
+                </b>
+              </div>
+
+              <form
+                className="spare-movement-form"
+                onSubmit={handleSparePartMovementSubmit}
+              >
+                <div className="spare-movement-current">
+                  <span>{SPARE_PART_MOVEMENT_TYPES[scanMode].help}</span>
+                  <strong>
+                    Existencia actual: {Number(selectedScannedPart.quantity || 0)}{" "}
+                    {selectedScannedPart.unit || "pieza"}
+                  </strong>
+                </div>
+
+                {scanMode === "adjustment" ? (
+                  <label>
+                    Existencia final
+                    <input
+                      type="number"
+                      min="0"
+                      name="finalQuantity"
+                      value={sparePartMovementForm.finalQuantity}
+                      onChange={handleSparePartMovementFormChange}
+                      disabled={savingSparePartMovement}
+                    />
+                  </label>
+                ) : (
+                  <label>
+                    Cantidad
+                    <input
+                      type="number"
+                      min="1"
+                      name="quantity"
+                      value={sparePartMovementForm.quantity}
+                      onChange={handleSparePartMovementFormChange}
+                      disabled={savingSparePartMovement}
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Motivo
+                  <input
+                    type="text"
+                    name="reason"
+                    value={sparePartMovementForm.reason}
+                    onChange={handleSparePartMovementFormChange}
+                    placeholder={
+                      scanMode === "entry"
+                        ? "Compra, reposición, devolución..."
+                        : scanMode === "exit"
+                        ? "Uso en mantenimiento, instalación, préstamo..."
+                        : "Conteo físico, corrección, merma..."
+                    }
+                    disabled={savingSparePartMovement}
+                  />
+                </label>
+
+                <label className="technical-form-full">
+                  Notas
+                  <textarea
+                    name="notes"
+                    value={sparePartMovementForm.notes}
+                    onChange={handleSparePartMovementFormChange}
+                    rows="2"
+                    placeholder="Detalles adicionales del movimiento."
+                    disabled={savingSparePartMovement}
+                  />
+                </label>
+
+                <div className="spare-movement-actions">
+                  <button
+                    type="button"
+                    onClick={clearScannedPart}
+                    disabled={savingSparePartMovement}
+                  >
+                    Limpiar
+                  </button>
+                  <button
+                    className="visual-primary-button"
+                    type="submit"
+                    disabled={savingSparePartMovement}
+                  >
+                    {savingSparePartMovement
+                      ? "Guardando..."
+                      : `Registrar ${SPARE_PART_MOVEMENT_TYPES[scanMode].label.toLowerCase()}`}
+                  </button>
+                </div>
+              </form>
+
+              <div className="spare-mini-history">
+                <div className="spare-mini-history-header">
+                  <strong>Últimos movimientos</strong>
+                  <button
+                    type="button"
+                    onClick={() => openSparePartHistory(selectedScannedPart)}
+                  >
+                    Ver historial completo
+                  </button>
+                </div>
+
+                {loadingSparePartMovements ? (
+                  <p>Cargando historial...</p>
+                ) : selectedScannedPartMovements.length > 0 ? (
+                  selectedScannedPartMovements.slice(0, 3).map((movement) => (
+                    <article key={movement.id}>
+                      <span className={`spare-movement-type ${movement.type}`}>
+                        {formatSpareMovementType(movement.type)}
+                      </span>
+                      <div>
+                        <strong>
+                          {formatSpareMovementQuantity(movement)}
+                        </strong>
+                        <p>{movement.reason || "Sin motivo registrado"}</p>
+                      </div>
+                      <small>{formatLogDate(movement.createdAt)}</small>
+                    </article>
+                  ))
+                ) : (
+                  <p>Este recambio todavía no tiene movimientos registrados.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {showSparePartForm && (
+          <section className="spare-part-form-panel">
+            <div className="technical-panel-header">
+              <div>
+                <h3>
+                  {editingSparePartId ? "Editar recambio" : "Registrar recambio"}
+                </h3>
+                <p>
+                  Agrega código de barras si el producto ya lo trae, o un código
+                  interno si vas a etiquetarlo tú.
+                </p>
+              </div>
+
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={closeSparePartForm}
+                disabled={savingSparePart}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {sparePartFormError && (
+              <div className="form-error">{sparePartFormError}</div>
+            )}
+
+            <form className="technical-form" onSubmit={handleSparePartSubmit}>
+              <div className="technical-form-grid">
+                <label>
+                  Nombre del recambio
+                  <input
+                    type="text"
+                    name="name"
+                    value={sparePartForm.name}
+                    onChange={handleSparePartFormChange}
+                    placeholder="Ej. Tinta Epson 544 negra"
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label>
+                  Código de barras
+                  <div className="technical-inline-input-action">
+                    <input
+                      type="text"
+                      name="barcode"
+                      value={sparePartForm.barcode}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Escanea o escribe el código del producto"
+                      disabled={savingSparePart}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => openCameraScanner("formBarcode")}
+                      disabled={savingSparePart || cameraScannerOpen}
+                    >
+                      Cámara
+                    </button>
+                  </div>
+                </label>
+
+                <label>
+                  Código interno automático
+                  <input
+                    type="text"
+                    name="internalCode"
+                    value={sparePartForm.internalCode}
+                    readOnly
+                    placeholder="Se generará automáticamente"
+                    disabled={savingSparePart}
+                  />
+                  <small className="field-helper-text">
+                    El sistema genera este código. Úsalo para imprimir etiquetas internas cuando el producto no traiga código de barras.
+                  </small>
+                </label>
+
+                <label>
+                  Categoría
+                  <select
+                    name="category"
+                    value={sparePartForm.category}
+                    onChange={handleSparePartFormChange}
+                    disabled={savingSparePart}
+                  >
+                    {sparePartCategoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {sparePartForm.category === "Otro" && (
+                  <label>
+                    Otra categoría
+                    <input
+                      type="text"
+                      name="categoryOther"
+                      value={sparePartForm.categoryOther}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Escribe la nueva categoría"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Tipo
+                  <select
+                    name="partType"
+                    value={sparePartForm.partType}
+                    onChange={handleSparePartFormChange}
+                    disabled={savingSparePart}
+                  >
+                    {sparePartTypeOptions.map((partType) => (
+                      <option key={partType} value={partType}>
+                        {partType}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {sparePartForm.partType === "Otro" && (
+                  <label>
+                    Otro tipo
+                    <input
+                      type="text"
+                      name="partTypeOther"
+                      value={sparePartForm.partTypeOther}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Escribe el nuevo tipo"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Marca
+                  <input
+                    type="text"
+                    name="brand"
+                    value={sparePartForm.brand}
+                    onChange={handleSparePartFormChange}
+                    placeholder="Ej. Epson, Brother, Kingston"
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label>
+                  Modelo
+                  <input
+                    type="text"
+                    name="model"
+                    value={sparePartForm.model}
+                    onChange={handleSparePartFormChange}
+                    placeholder="Ej. 544 Black, TN-750, DDR4"
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label>
+                  Cantidad actual
+                  <input
+                    type="number"
+                    min="0"
+                    name="quantity"
+                    value={sparePartForm.quantity}
+                    onChange={handleSparePartFormChange}
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label>
+                  Mínimo recomendado
+                  <input
+                    type="number"
+                    min="0"
+                    name="minQuantity"
+                    value={sparePartForm.minQuantity}
+                    onChange={handleSparePartFormChange}
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label>
+                  Unidad
+                  <select
+                    name="unit"
+                    value={sparePartForm.unit}
+                    onChange={handleSparePartFormChange}
+                    disabled={savingSparePart}
+                  >
+                    {sparePartUnitOptions.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {sparePartForm.unit === "Otro" && (
+                  <label>
+                    Otra unidad
+                    <input
+                      type="text"
+                      name="unitOther"
+                      value={sparePartForm.unitOther}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Ej. litro, caja, bolsa"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Ubicación de resguardo
+                  <input
+                    type="text"
+                    name="storageLocation"
+                    value={sparePartForm.storageLocation}
+                    onChange={handleSparePartFormChange}
+                    placeholder="Ej. Gabinete soporte técnico"
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label className="technical-form-full">
+                  Compatible con
+                  <textarea
+                    name="compatibleModels"
+                    value={sparePartForm.compatibleModels}
+                    onChange={handleSparePartFormChange}
+                    rows="3"
+                    placeholder="Una línea por modelo o separados por coma. Ej. Epson L3110, Epson L3150"
+                    disabled={savingSparePart}
+                  />
+                </label>
+
+                <label className="technical-form-full">
+                  Notas
+                  <textarea
+                    name="notes"
+                    value={sparePartForm.notes}
+                    onChange={handleSparePartFormChange}
+                    rows="3"
+                    placeholder="Observaciones, equivalencias, cuidados o detalles de compra."
+                    disabled={savingSparePart}
+                  />
+                </label>
+              </div>
+
+              <div className="technical-form-actions">
+                <button
+                  type="button"
+                  onClick={closeSparePartForm}
+                  disabled={savingSparePart}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={savingSparePart}
+                >
+                  {savingSparePart
+                    ? "Guardando..."
+                    : editingSparePartId
+                    ? "Guardar cambios"
+                    : "Registrar recambio"}
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+
+        <section className="spare-parts-list-panel">
+          <div className="spare-parts-toolbar">
+            <label className="visual-search spare-search">
+              <span>⌕</span>
+              <input
+                type="text"
+                value={sparePartSearchTerm}
+                onChange={(event) => setSparePartSearchTerm(event.target.value)}
+                placeholder="Buscar por nombre, código, marca, modelo..."
+              />
+            </label>
+
+            <select
+              value={sparePartCategoryFilter}
+              onChange={(event) => setSparePartCategoryFilter(event.target.value)}
+              disabled={loadingSpareParts}
+            >
+              <option value="Todas">Todas las categorías</option>
+              {sparePartCategoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sparePartTypeFilter}
+              onChange={(event) => setSparePartTypeFilter(event.target.value)}
+              disabled={loadingSpareParts}
+            >
+              <option value="Todos">Todos los tipos</option>
+              {sparePartTypeOptions.map((partType) => (
+                <option key={partType} value={partType}>
+                  {partType}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sparePartStockFilter}
+              onChange={(event) => setSparePartStockFilter(event.target.value)}
+              disabled={loadingSpareParts}
+            >
+              {SPARE_PART_STOCK_FILTERS.map((filter) => (
+                <option key={filter.value} value={filter.value}>
+                  {filter.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {loadingSpareParts ? (
+            <div className="empty-state">
+              <h3>Cargando recambios...</h3>
+              <p>Estamos consultando el inventario de piezas.</p>
+            </div>
+          ) : filteredSpareParts.length > 0 ? (
+            <div className="spare-parts-grid">
+              {filteredSpareParts.map((part) => {
+                const quantity = Number(part.quantity || 0);
+                const minQuantity = Number(part.minQuantity || 0);
+                const isInactive = part.active === false || part.status === "inactive";
+                const stockClass =
+                  quantity <= 0
+                    ? "empty"
+                    : minQuantity > 0 && quantity <= minQuantity
+                    ? "low"
+                    : "ok";
+
+                return (
+                  <article
+                    className={`spare-part-card ${isInactive ? "inactive" : ""}`}
+                    key={part.id}
+                  >
+                    <div className="spare-part-card-top">
+                      <span className="spare-part-icon">▤</span>
+                      <div>
+                        <strong>{part.name || "Recambio sin nombre"}</strong>
+                        <p>
+                          {part.category || "Sin categoría"} ·{" "}
+                          {part.partType || "Sin tipo"}
+                        </p>
+                      </div>
+                      <span className={`spare-stock-badge ${stockClass}`}>
+                        {quantity <= 0
+                          ? "Sin stock"
+                          : stockClass === "low"
+                          ? "Bajo stock"
+                          : "Stock OK"}
+                      </span>
+                    </div>
+
+                    <div className="spare-part-card-details">
+                      <p>
+                        <strong>Código:</strong>{" "}
+                        {part.barcode || part.internalCode || "Sin código"}
+                      </p>
+                      <p>
+                        <strong>Marca / modelo:</strong>{" "}
+                        {[part.brand, part.model].filter(Boolean).join(" · ") ||
+                          "Sin datos"}
+                      </p>
+                      <p>
+                        <strong>Compatible con:</strong>{" "}
+                        {formatCompatibleModels(part.compatibleModels)}
+                      </p>
+                      <p>
+                        <strong>Ubicación:</strong>{" "}
+                        {part.storageLocation || "Sin ubicación"}
+                      </p>
+                    </div>
+
+                    <div className="spare-part-stock-row">
+                      <div>
+                        <span>Disponible</span>
+                        <strong>
+                          {quantity} {part.unit || "pieza"}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Mínimo</span>
+                        <strong>
+                          {minQuantity} {part.unit || "pieza"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="spare-part-actions">
+                      <button type="button" onClick={() => openSparePartForm(part)}>
+                        Editar
+                      </button>
+                      <button type="button" onClick={() => openSparePartHistory(part)}>
+                        Historial
+                      </button>
+                      {isInactive ? (
+                        <button
+                          type="button"
+                          className="restore-table-button"
+                          onClick={() => handleRestoreSparePart(part)}
+                        >
+                          Reactivar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="danger-table-button"
+                          onClick={() => handleDeactivateSparePart(part)}
+                        >
+                          Desactivar
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <h3>No se encontraron recambios</h3>
+              <p>
+                Registra el primer recambio o ajusta los filtros de búsqueda.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {selectedSparePartHistory && (
+          <section className="spare-history-panel">
+            <div className="technical-panel-header">
+              <div>
+                <h3>Historial de {selectedSparePartHistory.name}</h3>
+                <p>
+                  Entradas, salidas y ajustes registrados para este recambio.
+                </p>
+              </div>
+
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={closeSparePartHistory}
+              >
+                Cerrar historial
+              </button>
+            </div>
+
+            {loadingSparePartMovements ? (
+              <div className="empty-state small">
+                <h3>Cargando movimientos...</h3>
+                <p>Estamos consultando la bitácora del recambio.</p>
+              </div>
+            ) : (
+              <div className="spare-history-list">
+                {sparePartMovements
+                  .filter((movement) => movement.partId === selectedSparePartHistory.id)
+                  .map((movement) => (
+                    <article key={movement.id}>
+                      <span className={`spare-movement-type ${movement.type}`}>
+                        {formatSpareMovementType(movement.type)}
+                      </span>
+                      <div>
+                        <strong>{formatSpareMovementQuantity(movement)}</strong>
+                        <p>{movement.reason || "Sin motivo registrado"}</p>
+                        {movement.notes && <small>{movement.notes}</small>}
+                      </div>
+                      <aside>
+                        <strong>
+                          {Number(movement.previousQuantity || 0)} →{" "}
+                          {Number(movement.newQuantity || 0)}
+                        </strong>
+                        <small>{formatLogDate(movement.createdAt)}</small>
+                        <small>{movement.createdBy || "Sin responsable"}</small>
+                      </aside>
+                    </article>
+                  ))}
+
+                {sparePartMovements.filter(
+                  (movement) => movement.partId === selectedSparePartHistory.id
+                ).length === 0 && (
+                  <div className="empty-state small">
+                    <h3>Sin movimientos</h3>
+                    <p>Este recambio todavía no tiene historial.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {cameraScannerOpen && (
+          <div className="modal-backdrop">
+            <section className="camera-scanner-card">
+              <div className="camera-scanner-header">
+                <div>
+                  <h3>Escanear código de barras</h3>
+                  <p>
+                    {cameraScannerTarget === "formBarcode"
+                      ? "Apunta al código del producto para guardarlo en el recambio."
+                      : "Apunta al código para localizar el recambio y registrar el movimiento."}
+                  </p>
+                </div>
+                <button type="button" onClick={closeCameraScanner}>
+                  ×
+                </button>
+              </div>
+
+              <div className={`camera-scanner-video-wrap ${cameraScannerEngine === "html5" ? "html5" : "native"}`}>
+                <video
+                  ref={cameraVideoRef}
+                  className="camera-scanner-video"
+                  muted
+                  playsInline
+                  autoPlay
+                />
+                <div
+                  id="technical-spare-parts-camera-reader"
+                  ref={cameraReaderRef}
+                  className="camera-scanner-html5-reader"
+                />
+                <div className="camera-scanner-frame" aria-hidden="true" />
+              </div>
+
+              {cameraScannerStatus && (
+                <p className="camera-scanner-status">{cameraScannerStatus}</p>
+              )}
+
+              {cameraScannerError && (
+                <div className="form-error">{cameraScannerError}</div>
+              )}
+
+              <div className="camera-scanner-actions">
+                <button
+                  className="visual-outline-button"
+                  type="button"
+                  onClick={closeCameraScanner}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+      </section>
+    );
+  }
+
   function renderFieldModePanel() {
     if (!selectedQuickAsset) return null;
 
@@ -3145,20 +4467,6 @@ function closeCompletionForm(options = {}) {
             <p>Inventario técnico actual.</p>
           </div>
           <b>Ver inventario →</b>
-        </button>
-
-        <button
-          className="technical-command-card info spare-command-card"
-          type="button"
-          onClick={() => setActiveTab("recambios")}
-        >
-          <span className="technical-command-icon">▥</span>
-          <div>
-            <strong>{lowStockSpareParts.length + outOfStockSpareParts.length}</strong>
-            <h3>Recambios por revisar</h3>
-            <p>Piezas bajo stock o agotadas.</p>
-          </div>
-          <b>Ver recambios →</b>
         </button>
 
         <button
@@ -5968,502 +7276,6 @@ function closeCompletionForm(options = {}) {
         </section>
       )}
 
-      {!focusedSupportViewActive && activeTab === "recambios" && (
-        <section className="technical-equipment-workspace spare-parts-workspace">
-          <div className="equipment-page-header">
-            <div>
-              <p className="section-kicker equipment-kicker">Inventario de recambios</p>
-              <h2>Recambios</h2>
-              <p>
-                Controla piezas, consumibles y accesorios disponibles para soporte técnico.
-                En esta primera fase puedes registrar, editar, filtrar y desactivar recambios.
-              </p>
-            </div>
-
-            <div className="equipment-header-actions">
-              <button
-                className="visual-outline-button"
-                type="button"
-                onClick={loadSpareParts}
-                disabled={loadingSpareParts}
-              >
-                Actualizar
-              </button>
-
-              <button
-                className="visual-primary-button"
-                type="button"
-                onClick={openCreateSparePartForm}
-              >
-                + Registrar recambio
-              </button>
-            </div>
-          </div>
-
-          <div className="equipment-quick-metrics spare-parts-metrics">
-            <article>
-              <span className="equipment-metric-icon">▥</span>
-              <div>
-                <strong>{activeSpareParts.length}</strong>
-                <p>Recambios activos</p>
-                <small>Disponibles en inventario</small>
-              </div>
-            </article>
-
-            <article>
-              <span className="equipment-metric-icon orange">!</span>
-              <div>
-                <strong>{lowStockSpareParts.length}</strong>
-                <p>Bajo stock</p>
-                <small>Igual o debajo del mínimo</small>
-              </div>
-            </article>
-
-            <article>
-              <span className="equipment-metric-icon gray">0</span>
-              <div>
-                <strong>{outOfStockSpareParts.length}</strong>
-                <p>Sin stock</p>
-                <small>Agotados</small>
-              </div>
-            </article>
-
-            <article>
-              <span className="equipment-metric-icon green">PC</span>
-              <div>
-                <strong>{printerSpareParts + computerSpareParts}</strong>
-                <p>Impresoras / PC</p>
-                <small>Consumibles y refacciones</small>
-              </div>
-            </article>
-          </div>
-
-          {showSparePartForm && (
-            <section className="technical-panel spare-part-form-panel">
-              <div className="technical-panel-header compact">
-                <div>
-                  <h2>{editingSparePartId ? "Editar recambio" : "Registrar recambio"}</h2>
-                  <p>
-                    Usa modelos compatibles para indicar en qué impresoras, computadoras o equipos se puede usar.
-                  </p>
-                </div>
-
-                <button
-                  className="visual-outline-button"
-                  type="button"
-                  onClick={closeSparePartForm}
-                  disabled={savingSparePart}
-                >
-                  Cerrar
-                </button>
-              </div>
-
-              {sparePartFormError && (
-                <div className="form-error">{sparePartFormError}</div>
-              )}
-
-              <form className="technical-form" onSubmit={handleSaveSparePart}>
-                <div className="technical-form-grid spare-part-form-grid">
-                  <label>
-                    Nombre del recambio *
-                    <input
-                      type="text"
-                      name="name"
-                      value={sparePartForm.name}
-                      onChange={handleSparePartFormChange}
-                      placeholder="Ej. Tinta Epson 544 negra"
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label>
-                    Categoría
-                    <select
-                      name="category"
-                      value={sparePartForm.category}
-                      onChange={handleSparePartFormChange}
-                      disabled={savingSparePart}
-                    >
-                      {sparePartCategoryOptions.map((category) => (
-                        <option key={category.value} value={category.value}>
-                          {category.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {sparePartForm.category === "other" && (
-                    <label className="spare-part-custom-field">
-                      Otra categoría
-                      <input
-                        type="text"
-                        name="categoryOther"
-                        value={sparePartForm.categoryOther}
-                        onChange={handleSparePartFormChange}
-                        placeholder="Ej. Refacciones de proyector, cafetería, telefonía"
-                        disabled={savingSparePart}
-                      />
-                      <small>Déjalo vacío para guardar el recambio como “Otro”.</small>
-                    </label>
-                  )}
-
-                  <label>
-                    Tipo
-                    <select
-                      name="partType"
-                      value={sparePartForm.partType}
-                      onChange={handleSparePartFormChange}
-                      disabled={savingSparePart}
-                    >
-                      {sparePartTypeOptions.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {sparePartForm.partType === "other" && (
-                    <label className="spare-part-custom-field">
-                      Otro tipo
-                      <input
-                        type="text"
-                        name="partTypeOther"
-                        value={sparePartForm.partTypeOther}
-                        onChange={handleSparePartFormChange}
-                        placeholder="Ej. Rodillo, fusor, lámpara, control remoto"
-                        disabled={savingSparePart}
-                      />
-                      <small>Déjalo vacío para guardar el recambio como “Otro”.</small>
-                    </label>
-                  )}
-
-                  <label>
-                    Marca
-                    <input
-                      type="text"
-                      name="brand"
-                      value={sparePartForm.brand}
-                      onChange={handleSparePartFormChange}
-                      placeholder="Ej. Epson, Brother, Kingston"
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label>
-                    Modelo
-                    <input
-                      type="text"
-                      name="model"
-                      value={sparePartForm.model}
-                      onChange={handleSparePartFormChange}
-                      placeholder="Ej. 544 Black, TN-750, DDR4 8GB"
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label>
-                    Cantidad disponible
-                    <input
-                      type="number"
-                      min="0"
-                      name="quantity"
-                      value={sparePartForm.quantity}
-                      onChange={handleSparePartFormChange}
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label>
-                    Cantidad mínima
-                    <input
-                      type="number"
-                      min="0"
-                      name="minQuantity"
-                      value={sparePartForm.minQuantity}
-                      onChange={handleSparePartFormChange}
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label>
-                    Unidad
-                    <select
-                      name="unit"
-                      value={sparePartForm.unit}
-                      onChange={handleSparePartFormChange}
-                      disabled={savingSparePart}
-                    >
-                      {sparePartUnitOptions.map((unit) => (
-                        <option key={unit.value} value={unit.value}>
-                          {unit.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {sparePartForm.unit === "otro" && (
-                    <label className="spare-part-custom-field">
-                      Otra unidad
-                      <input
-                        type="text"
-                        name="unitOther"
-                        value={sparePartForm.unitOther}
-                        onChange={handleSparePartFormChange}
-                        placeholder="Ej. litro, rollo, par, kit"
-                        disabled={savingSparePart}
-                      />
-                      <small>Déjalo vacío para guardar la unidad como “otro”.</small>
-                    </label>
-                  )}
-
-                  <label>
-                    Ubicación de resguardo
-                    <input
-                      type="text"
-                      name="storageLocation"
-                      value={sparePartForm.storageLocation}
-                      onChange={handleSparePartFormChange}
-                      placeholder="Ej. Gabinete soporte técnico"
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label>
-                    Estado
-                    <select
-                      name="status"
-                      value={sparePartForm.status}
-                      onChange={handleSparePartFormChange}
-                      disabled={savingSparePart}
-                    >
-                      <option value="active">Activo</option>
-                      <option value="inactive">Inactivo</option>
-                    </select>
-                  </label>
-
-                  <label className="technical-form-full">
-                    Compatible con
-                    <textarea
-                      name="compatibleModels"
-                      value={sparePartForm.compatibleModels}
-                      onChange={handleSparePartFormChange}
-                      rows="3"
-                      placeholder="Escribe un modelo por línea o sepáralos por coma. Ej. Epson L3110, Epson L3250"
-                      disabled={savingSparePart}
-                    />
-                  </label>
-
-                  <label className="technical-form-full">
-                    Notas
-                    <textarea
-                      name="notes"
-                      value={sparePartForm.notes}
-                      onChange={handleSparePartFormChange}
-                      rows="3"
-                      placeholder="Observaciones, restricciones o detalles importantes."
-                      disabled={savingSparePart}
-                    />
-                  </label>
-                </div>
-
-                <div className="technical-form-actions">
-                  <button
-                    type="button"
-                    onClick={closeSparePartForm}
-                    disabled={savingSparePart}
-                  >
-                    Cancelar
-                  </button>
-
-                  <button
-                    className="primary-button"
-                    type="submit"
-                    disabled={savingSparePart}
-                  >
-                    {savingSparePart
-                      ? "Guardando..."
-                      : editingSparePartId
-                      ? "Guardar cambios"
-                      : "Registrar recambio"}
-                  </button>
-                </div>
-              </form>
-            </section>
-          )}
-
-          <div className="equipment-filter-bar spare-parts-filter-bar">
-            <input
-              type="text"
-              value={sparePartSearchTerm}
-              onChange={(event) => setSparePartSearchTerm(event.target.value)}
-              placeholder="Buscar por nombre, marca, modelo o compatibilidad..."
-              disabled={loadingSpareParts}
-            />
-
-            <select
-              value={sparePartCategoryFilter}
-              onChange={(event) => setSparePartCategoryFilter(event.target.value)}
-              disabled={loadingSpareParts}
-            >
-              <option value="Todas">Todas las categorías</option>
-              {sparePartCategoryOptions.map((category) => (
-                <option key={category.value} value={category.value}>
-                  {category.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={sparePartTypeFilter}
-              onChange={(event) => setSparePartTypeFilter(event.target.value)}
-              disabled={loadingSpareParts}
-            >
-              <option value="Todos">Todos los tipos</option>
-              {sparePartTypeOptions.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={sparePartStockFilter}
-              onChange={(event) => setSparePartStockFilter(event.target.value)}
-              disabled={loadingSpareParts}
-            >
-              <option value="active">Activos</option>
-              <option value="low_stock">Bajo stock</option>
-              <option value="out_of_stock">Sin stock</option>
-              <option value="inactive">Inactivos</option>
-              <option value="all">Todos</option>
-            </select>
-
-            <button
-              className="visual-outline-button compact-filter-button"
-              type="button"
-              onClick={() => {
-                setSparePartSearchTerm("");
-                setSparePartCategoryFilter("Todas");
-                setSparePartTypeFilter("Todos");
-                setSparePartStockFilter("active");
-              }}
-              disabled={loadingSpareParts}
-            >
-              Limpiar
-            </button>
-          </div>
-
-          <div className="equipment-list-header">
-            <div>
-              <h3>Lista de recambios</h3>
-              <p>
-                Mostrando {filteredSpareParts.length} de {visibleSpareParts.length} recambios registrados.
-              </p>
-            </div>
-          </div>
-
-          {loadingSpareParts ? (
-            <div className="empty-state compact-empty-state">
-              <h3>Cargando recambios...</h3>
-              <p>Estamos consultando el inventario de piezas y consumibles.</p>
-            </div>
-          ) : filteredSpareParts.length > 0 ? (
-            <div className="spare-parts-grid">
-              {filteredSpareParts.map((part) => {
-                const stockState = getSparePartStockState(part);
-                const compatibleModels = Array.isArray(part.compatibleModels)
-                  ? part.compatibleModels
-                  : [];
-
-                return (
-                  <article
-                    className={`spare-part-card stock-${stockState.key}`}
-                    key={part.id}
-                  >
-                    <div className="spare-part-card-top">
-                      <div>
-                        <span className="asset-tag">
-                          {getSparePartTypeLabel(part.partType)}
-                        </span>
-                        <h3>{part.name || "Recambio sin nombre"}</h3>
-                      </div>
-
-                      <span className={`spare-stock-badge ${stockState.key}`}>
-                        {stockState.icon} {stockState.label}
-                      </span>
-                    </div>
-
-                    <div className="spare-stock-panel">
-                      <div>
-                        <strong>{Number(part.quantity || 0)}</strong>
-                        <span>{part.unit || "pieza"}</span>
-                      </div>
-                      <p>
-                        Mínimo recomendado: <b>{Number(part.minQuantity || 0)}</b>
-                      </p>
-                    </div>
-
-                    <div className="spare-part-meta-grid">
-                      <span>{getSparePartCategoryLabel(part.category)}</span>
-                      <span>{part.brand || "Sin marca"}</span>
-                      <span>{part.model || "Sin modelo"}</span>
-                      <span>{part.storageLocation || "Sin ubicación"}</span>
-                    </div>
-
-                    {compatibleModels.length > 0 && (
-                      <div className="spare-compatibility-list">
-                        <strong>Compatible con</strong>
-                        <div>
-                          {compatibleModels.slice(0, 5).map((model) => (
-                            <span key={`${part.id}-${model}`}>{model}</span>
-                          ))}
-                          {compatibleModels.length > 5 && (
-                            <span>+{compatibleModels.length - 5} más</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {part.notes && <p className="spare-part-notes">{part.notes}</p>}
-
-                    <div className="technical-asset-actions spare-part-actions">
-                      <button
-                        type="button"
-                        onClick={() => openEditSparePartForm(part)}
-                      >
-                        Editar
-                      </button>
-
-                      {part.active === false || part.status === "inactive" ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRestoreSparePart(part)}
-                        >
-                          Reactivar
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleDeactivateSparePart(part)}
-                        >
-                          Desactivar
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="empty-state compact-empty-state">
-              <h3>No hay recambios con esos filtros</h3>
-              <p>Registra un recambio o limpia los filtros para ver más resultados.</p>
-            </div>
-          )}
-        </section>
-      )}
-
       {!focusedSupportViewActive && activeTab === "mantenimientos" && (
         <section className="maintenance-workspace-clean">
           <div className="maintenance-clean-header">
@@ -6647,6 +7459,8 @@ function closeCompletionForm(options = {}) {
           </div>
         </section>
       )}
+
+      {!focusedSupportViewActive && activeTab === "recambios" && renderSparePartsPanel()}
 
       {!focusedSupportViewActive && activeTab === "equipos" && (
         <section className="technical-equipment-workspace">
@@ -6933,6 +7747,86 @@ function closeCompletionForm(options = {}) {
       )}
     </div>
   );
+}
+
+function buildMergedOptionList(defaultOptions, dynamicOptions = []) {
+  const normalizedDefaults = Array.isArray(defaultOptions) ? defaultOptions : [];
+  const merged = [...normalizedDefaults];
+
+  dynamicOptions
+    .map((option) => String(option || "").trim())
+    .filter(Boolean)
+    .forEach((option) => {
+      if (!merged.some((current) => current.toLowerCase() === option.toLowerCase())) {
+        merged.splice(Math.max(merged.length - 1, 0), 0, option);
+      }
+    });
+
+  if (!merged.includes("Otro")) {
+    merged.push("Otro");
+  }
+
+  return merged;
+}
+
+function getEditableOptionFields(value, defaultOptions) {
+  const normalizedValue = String(value || "").trim();
+
+  if (!normalizedValue) {
+    return {
+      value: defaultOptions[0] || "Otro",
+      other: "",
+    };
+  }
+
+  const existingOption = defaultOptions.find(
+    (option) => option.toLowerCase() === normalizedValue.toLowerCase()
+  );
+
+  if (existingOption) {
+    return {
+      value: existingOption,
+      other: "",
+    };
+  }
+
+  return {
+    value: "Otro",
+    other: normalizedValue,
+  };
+}
+
+function formatCompatibleModels(value) {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(", ") : "Sin compatibilidad registrada";
+  }
+
+  return String(value || "").trim() || "Sin compatibilidad registrada";
+}
+
+function formatSpareMovementType(type = "") {
+  const labels = {
+    entry: "Entrada",
+    exit: "Salida",
+    adjustment: "Ajuste",
+  };
+
+  return labels[type] || "Movimiento";
+}
+
+function formatSpareMovementQuantity(movement) {
+  const quantity = Number(movement?.quantity || 0);
+  const unit = movement?.unit || "pieza";
+
+  if (movement?.type === "entry") {
+    return `+${quantity} ${unit}`;
+  }
+
+  if (movement?.type === "exit") {
+    return `-${quantity} ${unit}`;
+  }
+
+  return `Existencia final: ${Number(movement?.newQuantity || 0)} ${unit}`;
 }
 
 function normalizeCampusName(campus = "") {
@@ -7477,146 +8371,6 @@ function getLocationTypeIcon(type = "") {
   if (normalizedType.includes("oficina")) return "▤";
 
   return "⌖";
-}
-
-function normalizeComparableText(value = "") {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function getOptionLabel(options, value, fallback = "Otro") {
-  const normalizedValue = normalizeComparableText(value);
-  const option = options.find(
-    (item) =>
-      normalizeComparableText(item.value) === normalizedValue ||
-      normalizeComparableText(item.label) === normalizedValue
-  );
-
-  if (option?.label) return option.label;
-
-  const customValue = String(value || "").trim();
-  return customValue && customValue !== "other" && customValue !== "otro"
-    ? customValue
-    : fallback;
-}
-
-function buildDynamicSparePartOptions(baseOptions, values = [], otherValue = "other") {
-  const knownOptionKeys = new Set(
-    baseOptions.flatMap((option) => [
-      normalizeComparableText(option.value),
-      normalizeComparableText(option.label),
-    ])
-  );
-  const customOptions = [];
-  const customKeys = new Set();
-
-  values.forEach((value) => {
-    const cleanValue = String(value || "").trim();
-    const normalizedValue = normalizeComparableText(cleanValue);
-
-    if (!cleanValue || cleanValue === otherValue || knownOptionKeys.has(normalizedValue)) {
-      return;
-    }
-
-    if (!customKeys.has(normalizedValue)) {
-      customKeys.add(normalizedValue);
-      customOptions.push({ value: cleanValue, label: cleanValue });
-    }
-  });
-
-  const regularOptions = baseOptions.filter((option) => option.value !== otherValue);
-  const otherOption = baseOptions.find((option) => option.value === otherValue);
-
-  return otherOption
-    ? [...regularOptions, ...customOptions, otherOption]
-    : [...regularOptions, ...customOptions];
-}
-
-function buildDynamicSparePartUnits(baseUnits, values = [], otherValue = "otro") {
-  const knownUnitKeys = new Set(baseUnits.map((unit) => normalizeComparableText(unit)));
-  const customUnits = [];
-  const customKeys = new Set();
-
-  values.forEach((value) => {
-    const cleanValue = String(value || "").trim();
-    const normalizedValue = normalizeComparableText(cleanValue);
-
-    if (!cleanValue || cleanValue === otherValue || knownUnitKeys.has(normalizedValue)) {
-      return;
-    }
-
-    if (!customKeys.has(normalizedValue)) {
-      customKeys.add(normalizedValue);
-      customUnits.push(cleanValue);
-    }
-  });
-
-  const regularUnits = baseUnits.filter((unit) => unit !== otherValue);
-
-  return [...regularUnits, ...customUnits, otherValue].map((unit) => ({
-    value: unit,
-    label: unit,
-  }));
-}
-
-function resolveSparePartOptionValue(selectedValue, customValue, options, otherValue = "other") {
-  if (selectedValue !== otherValue) {
-    return selectedValue || otherValue;
-  }
-
-  const cleanCustomValue = String(customValue || "").trim();
-
-  if (!cleanCustomValue) {
-    return otherValue;
-  }
-
-  const normalizedCustomValue = normalizeComparableText(cleanCustomValue);
-  const matchingOption = options.find(
-    (option) =>
-      normalizeComparableText(option.value) === normalizedCustomValue ||
-      normalizeComparableText(option.label) === normalizedCustomValue
-  );
-
-  return matchingOption?.value || cleanCustomValue;
-}
-
-function resolveSparePartUnitValue(selectedValue, customValue, otherValue = "otro") {
-  if (selectedValue !== otherValue) {
-    return selectedValue || "pieza";
-  }
-
-  return String(customValue || "").trim() || otherValue;
-}
-
-function getSparePartCategoryLabel(value = "other") {
-  return getOptionLabel(SPARE_PART_CATEGORIES, value, "Otro");
-}
-
-function getSparePartTypeLabel(value = "other") {
-  return getOptionLabel(SPARE_PART_TYPES, value, "Otro");
-}
-
-function getSparePartStockState(part) {
-  const isInactive = part?.active === false || part?.status === "inactive";
-  const quantity = Number(part?.quantity || 0);
-  const minQuantity = Number(part?.minQuantity || 0);
-
-  if (isInactive) {
-    return { key: "inactive", label: "Inactivo", icon: "○" };
-  }
-
-  if (quantity <= 0) {
-    return { key: "out", label: "Sin stock", icon: "×" };
-  }
-
-  if (minQuantity > 0 && quantity <= minQuantity) {
-    return { key: "low", label: "Bajo stock", icon: "!" };
-  }
-
-  return { key: "ok", label: "Disponible", icon: "✓" };
 }
 
 function scrollToTop() {

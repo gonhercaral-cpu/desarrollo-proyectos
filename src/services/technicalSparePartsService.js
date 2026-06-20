@@ -2,15 +2,54 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
 const TECHNICAL_SPARE_PARTS_COLLECTION = "technicalSpareParts";
+const TECHNICAL_SPARE_PART_MOVEMENTS_COLLECTION =
+  "technicalSparePartMovements";
+
+
+const INTERNAL_CODE_PREFIX = "REC";
+
+function parseTechnicalSparePartInternalCode(value) {
+  const match = String(value || "")
+    .trim()
+    .toUpperCase()
+    .match(/^REC-(\d+)$/);
+
+  if (!match) {
+    return 0;
+  }
+
+  return Number(match[1]) || 0;
+}
+
+function formatTechnicalSparePartInternalCode(numberValue) {
+  return `${INTERNAL_CODE_PREFIX}-${String(numberValue).padStart(4, "0")}`;
+}
+
+export function generateTechnicalSparePartInternalCodeFromParts(parts = []) {
+  const highestCode = parts.reduce((highest, part) => {
+    const numericCode = parseTechnicalSparePartInternalCode(part?.internalCode);
+    return Math.max(highest, numericCode);
+  }, 0);
+
+  return formatTechnicalSparePartInternalCode(highestCode + 1);
+}
+
+export async function getNextTechnicalSparePartInternalCode() {
+  const parts = await getTechnicalSpareParts();
+  return generateTechnicalSparePartInternalCodeFromParts(parts);
+}
 
 function toNumber(value, fallback = 0) {
   const numberValue = Number(value);
@@ -38,12 +77,36 @@ function normalizeTextList(value) {
 function resolveCustomValue(selectedValue, customValue, fallback) {
   const selected = String(selectedValue || "").trim();
   const custom = String(customValue || "").trim();
+  const normalizedSelected = selected.toLowerCase();
 
-  if ((selected === "other" || selected === "otro") && custom) {
-    return custom;
+  if (
+    ["other", "otro"].includes(normalizedSelected) ||
+    selected === "Otro"
+  ) {
+    return custom || "Otro";
   }
 
   return selected || fallback;
+}
+
+function buildSearchText(partData = {}) {
+  return [
+    partData.name,
+    partData.barcode,
+    partData.internalCode,
+    partData.category,
+    partData.partType,
+    partData.brand,
+    partData.model,
+    Array.isArray(partData.compatibleModels)
+      ? partData.compatibleModels.join(" ")
+      : partData.compatibleModels,
+    partData.storageLocation,
+    partData.notes,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function buildSparePartPayload(partData, currentUserProfile, mode = "create") {
@@ -53,27 +116,57 @@ function buildSparePartPayload(partData, currentUserProfile, mode = "create") {
     throw new Error("El nombre del recambio es obligatorio.");
   }
 
+  const barcode = String(partData?.barcode || "").trim();
+  const internalCode = String(partData?.internalCode || "").trim();
   const quantity = toNumber(partData?.quantity, 0);
   const minQuantity = toNumber(partData?.minQuantity, 0);
 
+  const category = resolveCustomValue(
+    partData?.category,
+    partData?.categoryOther,
+    "Otro"
+  );
+  const partType = resolveCustomValue(
+    partData?.partType,
+    partData?.partTypeOther,
+    "Otro"
+  );
+  const unit = resolveCustomValue(partData?.unit, partData?.unitOther, "pieza");
+  const compatibleModels = normalizeTextList(partData?.compatibleModels);
+
   const basePayload = {
     name,
-    category: resolveCustomValue(partData?.category, partData?.categoryOther, "other"),
-    partType: resolveCustomValue(partData?.partType, partData?.partTypeOther, "other"),
+    barcode,
+    internalCode,
+    internalCodeNumber: parseTechnicalSparePartInternalCode(internalCode),
+    category,
+    partType,
     brand: String(partData?.brand || "").trim(),
     model: String(partData?.model || "").trim(),
-    compatibleModels: normalizeTextList(partData?.compatibleModels),
+    compatibleModels,
     compatibleEquipmentIds: Array.isArray(partData?.compatibleEquipmentIds)
       ? partData.compatibleEquipmentIds
       : [],
     quantity,
     minQuantity,
-    unit: resolveCustomValue(partData?.unit, partData?.unitOther, "pieza"),
+    unit,
     storageLocation: String(partData?.storageLocation || "").trim(),
     status: partData?.status || "active",
     active: partData?.active === false ? false : partData?.status !== "inactive",
     deleted: false,
     notes: String(partData?.notes || "").trim(),
+    searchText: buildSearchText({
+      name,
+      barcode,
+      internalCode,
+      category,
+      partType,
+      brand: partData?.brand,
+      model: partData?.model,
+      compatibleModels,
+      storageLocation: partData?.storageLocation,
+      notes: partData?.notes,
+    }),
     updatedAt: serverTimestamp(),
     updatedBy: currentUserProfile?.name || "",
     updatedByEmail: currentUserProfile?.email || "",
@@ -106,8 +199,14 @@ export async function getTechnicalSpareParts() {
 
 export async function createTechnicalSparePart(partData, currentUserProfile) {
   const sparePartsRef = collection(db, TECHNICAL_SPARE_PARTS_COLLECTION);
+  const internalCode =
+    String(partData?.internalCode || "").trim() ||
+    (await getNextTechnicalSparePartInternalCode());
   const newSparePart = buildSparePartPayload(
-    partData,
+    {
+      ...partData,
+      internalCode,
+    },
     currentUserProfile,
     "create"
   );
@@ -188,4 +287,195 @@ export async function restoreTechnicalSparePart(
   });
 
   return { id: sparePartId, active: true, status: "active" };
+}
+
+export async function getTechnicalSparePartMovements(sparePartId) {
+  if (!sparePartId) {
+    throw new Error("Falta el ID del recambio.");
+  }
+
+  const movementsRef = collection(
+    db,
+    TECHNICAL_SPARE_PART_MOVEMENTS_COLLECTION
+  );
+
+  const q = query(movementsRef, where("partId", "==", sparePartId));
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs
+    .map((document) => ({
+      id: document.id,
+      ...document.data(),
+    }))
+    .sort((a, b) => {
+      const aDate = a.createdAt?.toDate?.() || new Date(0);
+      const bDate = b.createdAt?.toDate?.() || new Date(0);
+
+      return bDate - aDate;
+    });
+}
+
+export async function createTechnicalSparePartMovement(
+  sparePart,
+  movementData,
+  currentUserProfile
+) {
+  if (!sparePart?.id) {
+    throw new Error("Falta el ID del recambio.");
+  }
+
+  const movementType = movementData?.type || "entry";
+
+  if (!["entry", "exit", "adjustment"].includes(movementType)) {
+    throw new Error("Tipo de movimiento no válido.");
+  }
+
+  const requestedQuantity = toNumber(movementData?.quantity, 0);
+  const requestedFinalQuantity = toNumber(movementData?.finalQuantity, 0);
+
+  if (movementType !== "adjustment" && requestedQuantity <= 0) {
+    throw new Error("La cantidad debe ser mayor a cero.");
+  }
+
+  const sparePartRef = doc(
+    db,
+    TECHNICAL_SPARE_PARTS_COLLECTION,
+    sparePart.id
+  );
+  const movementsRef = collection(
+    db,
+    TECHNICAL_SPARE_PART_MOVEMENTS_COLLECTION
+  );
+  const movementRef = doc(movementsRef);
+
+  return runTransaction(db, async (transaction) => {
+    const sparePartSnapshot = await transaction.get(sparePartRef);
+
+    if (!sparePartSnapshot.exists()) {
+      throw new Error("El recambio ya no existe.");
+    }
+
+    const currentPart = {
+      id: sparePartSnapshot.id,
+      ...sparePartSnapshot.data(),
+    };
+
+    if (currentPart.active === false || currentPart.status === "inactive") {
+      throw new Error("Este recambio está inactivo.");
+    }
+
+    const previousQuantity = toNumber(currentPart.quantity, 0);
+    let newQuantity = previousQuantity;
+    let movementQuantity = requestedQuantity;
+
+    if (movementType === "entry") {
+      newQuantity = previousQuantity + requestedQuantity;
+    }
+
+    if (movementType === "exit") {
+      if (requestedQuantity > previousQuantity) {
+        throw new Error(
+          `No hay suficiente inventario. Disponible: ${previousQuantity}.`
+        );
+      }
+
+      newQuantity = previousQuantity - requestedQuantity;
+    }
+
+    if (movementType === "adjustment") {
+      newQuantity = requestedFinalQuantity;
+      movementQuantity = Math.abs(newQuantity - previousQuantity);
+    }
+
+    const movement = {
+      partId: currentPart.id,
+      partName: currentPart.name || sparePart.name || "",
+      barcode: currentPart.barcode || "",
+      internalCode: currentPart.internalCode || "",
+      category: currentPart.category || "",
+      partType: currentPart.partType || "",
+      unit: currentPart.unit || "pieza",
+      type: movementType,
+      quantity: movementQuantity,
+      previousQuantity,
+      newQuantity,
+      reason: String(movementData?.reason || "").trim(),
+      notes: String(movementData?.notes || "").trim(),
+      scannedCode: String(movementData?.scannedCode || "").trim(),
+      createdBy: currentUserProfile?.name || "",
+      createdByEmail: currentUserProfile?.email || "",
+      createdById: currentUserProfile?.uid || currentUserProfile?.id || "",
+      createdAt: serverTimestamp(),
+    };
+
+    transaction.update(sparePartRef, {
+      quantity: newQuantity,
+      lastMovementAt: serverTimestamp(),
+      lastMovementType: movementType,
+      lastMovementBy: currentUserProfile?.name || "",
+      updatedAt: serverTimestamp(),
+      updatedBy: currentUserProfile?.name || "",
+      updatedByEmail: currentUserProfile?.email || "",
+      updatedById: currentUserProfile?.uid || currentUserProfile?.id || "",
+    });
+
+    transaction.set(movementRef, movement);
+
+    return {
+      id: movementRef.id,
+      ...movement,
+    };
+  });
+}
+
+export async function findTechnicalSparePartByCode(code) {
+  const normalizedCode = String(code || "").trim();
+
+  if (!normalizedCode) {
+    return null;
+  }
+
+  const sparePartsRef = collection(db, TECHNICAL_SPARE_PARTS_COLLECTION);
+
+  const barcodeQuery = query(
+    sparePartsRef,
+    where("barcode", "==", normalizedCode)
+  );
+  const barcodeSnapshot = await getDocs(barcodeQuery);
+
+  if (!barcodeSnapshot.empty) {
+    const document = barcodeSnapshot.docs[0];
+
+    return {
+      id: document.id,
+      ...document.data(),
+    };
+  }
+
+  const internalCodeQuery = query(
+    sparePartsRef,
+    where("internalCode", "==", normalizedCode)
+  );
+  const internalCodeSnapshot = await getDocs(internalCodeQuery);
+
+  if (!internalCodeSnapshot.empty) {
+    const document = internalCodeSnapshot.docs[0];
+
+    return {
+      id: document.id,
+      ...document.data(),
+    };
+  }
+
+  const documentRef = doc(db, TECHNICAL_SPARE_PARTS_COLLECTION, normalizedCode);
+  const documentSnapshot = await getDoc(documentRef);
+
+  if (documentSnapshot.exists()) {
+    return {
+      id: documentSnapshot.id,
+      ...documentSnapshot.data(),
+    };
+  }
+
+  return null;
 }
