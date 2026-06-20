@@ -1573,6 +1573,179 @@ service cloud.firestore {
         && request.resource.data.locationName.size() > 0;
     }
 
+
+    function validPurchasePriority(priority) {
+      return priority in [
+        "low",
+        "normal",
+        "high",
+        "urgent"
+      ];
+    }
+
+    function validPurchaseStatus(status) {
+      return status in [
+        "pending_review",
+        "reviewing",
+        "approved",
+        "purchasing",
+        "purchased",
+        "received",
+        "delivered",
+        "rejected",
+        "cancelled"
+      ];
+    }
+
+    function canReadPurchaseRequest() {
+      return hasProfile()
+        && (
+          isAdmin() || resource.data.requestedByUid == request.auth.uid
+        );
+    }
+
+    function canReadPurchaseRequestId(requestId) {
+      return hasProfile()
+        && exists(/databases/$(database)/documents/purchaseRequests/$(requestId))
+        && (
+          isAdmin()
+          || get(/databases/$(database)/documents/purchaseRequests/$(requestId)).data.requestedByUid == request.auth.uid
+        );
+    }
+
+    function validPurchaseRequestCreate() {
+      return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "itemName",
+          "description",
+          "department",
+          "priority",
+          "quantity",
+          "suggestedLink",
+          "projectName",
+          "requesterComment",
+          "status",
+          "adminComment",
+          "rejectionReason",
+          "requestedByUid",
+          "requestedByName",
+          "requestedByEmail",
+          "createdByUid",
+          "createdByName",
+          "createdByEmail",
+          "purchasedAt",
+          "receivedAt",
+          "deliveredAt",
+          "cancelledAt",
+          "createdAt",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.itemName is string
+        && request.resource.data.itemName.size() > 0
+        && request.resource.data.itemName.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() > 0
+        && request.resource.data.description.size() <= 700
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.priority is string
+        && validPurchasePriority(request.resource.data.priority)
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 1
+        && request.resource.data.quantity <= 999
+        && request.resource.data.suggestedLink is string
+        && request.resource.data.suggestedLink.size() <= 500
+        && request.resource.data.projectName is string
+        && request.resource.data.projectName.size() <= 120
+        && request.resource.data.requesterComment is string
+        && request.resource.data.requesterComment.size() <= 500
+        && request.resource.data.status == "pending_review"
+        && request.resource.data.adminComment == ""
+        && request.resource.data.rejectionReason == ""
+        && request.resource.data.requestedByUid == request.auth.uid
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.requestedByName is string
+        && request.resource.data.requestedByEmail is string
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByEmail is string
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
+    }
+
+    function validPurchaseAdminUpdate() {
+      return isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "adminComment",
+          "rejectionReason",
+          "purchasedAt",
+          "receivedAt",
+          "deliveredAt",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.status is string
+        && validPurchaseStatus(request.resource.data.status)
+        && request.resource.data.adminComment is string
+        && request.resource.data.adminComment.size() <= 700
+        && request.resource.data.rejectionReason is string
+        && request.resource.data.rejectionReason.size() <= 700
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validPurchaseRequesterCancel() {
+      return hasProfile()
+        && resource.data.requestedByUid == request.auth.uid
+        && resource.data.status == "pending_review"
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "cancelledAt",
+          "cancelledByUid",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.status == "cancelled"
+        && request.resource.data.cancelledByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validPurchaseLogCreate(requestId) {
+      return hasProfile()
+        && canReadPurchaseRequestId(requestId)
+        && request.resource.data.keys().hasOnly([
+          "requestId",
+          "type",
+          "message",
+          "createdByUid",
+          "createdByName",
+          "createdByEmail",
+          "createdAt"
+        ])
+        && request.resource.data.requestId == requestId
+        && request.resource.data.type is string
+        && request.resource.data.type.size() > 0
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 500
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByEmail is string;
+    }
+
     match /users/{userId} {
       allow get: if signedIn() && (
         userId == request.auth.uid ||
@@ -2177,6 +2350,28 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin();
+    }
+
+
+    match /purchaseRequests/{requestId} {
+      allow get: if canReadPurchaseRequest();
+
+      allow list: if hasProfile();
+
+      allow create: if validPurchaseRequestCreate();
+
+      allow update: if validPurchaseAdminUpdate()
+        || validPurchaseRequesterCancel();
+
+      allow delete: if isAdmin();
+
+      match /logs/{logId} {
+        allow read: if canReadPurchaseRequestId(requestId);
+
+        allow create: if validPurchaseLogCreate(requestId);
+
+        allow update, delete: if false;
+      }
     }
 
     match /projectInternalNotes/{noteId} {

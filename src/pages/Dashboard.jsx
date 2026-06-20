@@ -10,6 +10,7 @@ import ExecutiveDashboard from "./ExecutiveDashboard";
 import CollaboratorsAdmin from "./CollaboratorsAdmin";
 import TechnicalSupport from "./TechnicalSupport";
 import PrintShop from "./printshop";
+import PurchaseRequests from "./PurchaseRequests";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
@@ -78,6 +79,8 @@ export default function Dashboard() {
       setReturnPage("technical-support");
     } else if (page === "print-shop") {
       setReturnPage("print-shop");
+    } else if (page === "purchase-requests") {
+      setReturnPage("purchase-requests");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -140,6 +143,10 @@ export default function Dashboard() {
 
     if (page === "print-shop" && canUsePrintShop) {
       return <PrintShop />;
+    }
+
+    if (page === "purchase-requests") {
+      return <PurchaseRequests />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -255,6 +262,10 @@ export default function Dashboard() {
       return page === "print-shop";
     }
 
+    if (navPage === "purchase-requests") {
+      return page === "purchase-requests";
+    }
+
     return page === navPage;
   }
 
@@ -296,6 +307,14 @@ export default function Dashboard() {
           >
             <span className="nav-icon">▱</span>
             Mis proyectos
+          </button>
+
+          <button
+            className={isNavActive("purchase-requests") ? "active" : ""}
+            onClick={() => goToPage("purchase-requests")}
+          >
+            <span className="nav-icon">🛒</span>
+            Solicitudes de compra
           </button>
 
           {canUsePrintShop && (
