@@ -61,6 +61,11 @@ const AUTO_APPROVAL_REASON_KEYS = [
   "theocraticEvent",
 ];
 
+const WORKLOAD_HOURS_LIMITS = {
+  low: 30,
+  high: 44,
+};
+
 const REQUEST_STATUS_LABELS = {
   pending: "Pendiente",
   approved: "Aprobada",
@@ -1698,6 +1703,8 @@ function AgendaInsights({ insights }) {
           title="Horas por colaborador"
           items={insights.hoursByPerson}
           valueFormatter={formatHours}
+          toneResolver={getWorkloadTone}
+          helperText={`Rojo: más de ${WORKLOAD_HOURS_LIMITS.high} h · Verde: ${WORKLOAD_HOURS_LIMITS.low}-${WORKLOAD_HOURS_LIMITS.high} h · Amarillo: menos de ${WORKLOAD_HOURS_LIMITS.low} h`}
           emptyText="Todavía no hay horas programadas."
         />
 
@@ -1721,12 +1728,20 @@ function InsightCard({ title, value, detail }) {
   );
 }
 
-function BarChart({ title, items, valueFormatter = (value) => value, emptyText }) {
+function BarChart({
+  title,
+  items,
+  valueFormatter = (value) => value,
+  toneResolver = () => "default",
+  helperText = "",
+  emptyText,
+}) {
   const maxValue = Math.max(...items.map((item) => item.value), 0);
 
   return (
     <article className="agenda-chart-card">
       <h4>{title}</h4>
+      {helperText && <p className="agenda-chart-help">{helperText}</p>}
 
       {items.length === 0 || maxValue === 0 ? (
         <div className="team-agenda-empty compact">{emptyText}</div>
@@ -1734,6 +1749,7 @@ function BarChart({ title, items, valueFormatter = (value) => value, emptyText }
         <div className="agenda-chart-list">
           {items.map((item) => {
             const width = maxValue > 0 ? Math.max((item.value / maxValue) * 100, 7) : 0;
+            const tone = toneResolver(item.value, item);
 
             return (
               <div key={item.key || item.label} className="agenda-chart-row">
@@ -1741,7 +1757,7 @@ function BarChart({ title, items, valueFormatter = (value) => value, emptyText }
 
                 <div className="agenda-chart-bar-track">
                   <div
-                    className="agenda-chart-bar"
+                    className={`agenda-chart-bar ${tone}`}
                     style={{ width: `${width}%` }}
                   />
                 </div>
@@ -2449,6 +2465,13 @@ function getTopItem(items) {
   const sorted = [...items].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
 
   return sorted[0] || null;
+}
+
+function getWorkloadTone(hours) {
+  if (hours > WORKLOAD_HOURS_LIMITS.high) return "too-high";
+  if (hours < WORKLOAD_HOURS_LIMITS.low) return "low";
+
+  return "normal";
 }
 
 function formatHours(value) {

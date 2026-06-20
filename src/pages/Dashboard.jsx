@@ -15,6 +15,49 @@ import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
+const DASHBOARD_STORAGE_KEYS = {
+  page: "dp.dashboard.activePage",
+  returnPage: "dp.dashboard.returnPage",
+  selectedProjectId: "dp.dashboard.selectedProjectId",
+};
+
+function getStoredDashboardValue(key, fallback = "") {
+  if (typeof window === "undefined") return fallback;
+
+  const value = window.localStorage.getItem(key);
+  return value || fallback;
+}
+
+function setStoredDashboardValue(key, value) {
+  if (typeof window === "undefined") return;
+
+  if (value === null || value === undefined || value === "") {
+    window.localStorage.removeItem(key);
+    return;
+  }
+
+  window.localStorage.setItem(key, value);
+}
+
+function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
+  const defaultPage = isAdmin ? "executive-dashboard" : "my-projects";
+  const adminOnlyPages = new Set([
+    "executive-dashboard",
+    "all-projects",
+    "project-history",
+    "create-project",
+    "collaborators-admin",
+    "departments-admin",
+  ]);
+
+  if (!page) return defaultPage;
+  if (adminOnlyPages.has(page) && !isAdmin) return defaultPage;
+  if (page === "print-shop" && !canUsePrintShop) return defaultPage;
+  if (page === "technical-support" && !canUseTechnicalSupport) return defaultPage;
+
+  return page;
+}
+
 export default function Dashboard() {
   const { profile, logout, isAdmin } = useAuth();
   const userDepartmentNames = getProfileDepartmentNames(profile);
@@ -27,15 +70,52 @@ export default function Dashboard() {
 
   const canUseTechnicalSupport = canAccessTechnicalSupport(profile, isAdmin);
 
-  const [page, setPage] = useState(
-    isAdmin ? "executive-dashboard" : "my-projects"
+  const defaultDashboardPage = isAdmin ? "executive-dashboard" : "my-projects";
+  const defaultReturnPage = isAdmin ? "all-projects" : "my-projects";
+
+  const [page, setPageState] = useState(() =>
+    getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, defaultDashboardPage)
   );
-  const [selectedProjectId, setSelectedProjectId] = useState(null);
-  const [returnPage, setReturnPage] = useState(
-    isAdmin ? "all-projects" : "my-projects"
+  const [selectedProjectId, setSelectedProjectIdState] = useState(() =>
+    getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.selectedProjectId, "")
+  );
+  const [returnPage, setReturnPageState] = useState(() =>
+    getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.returnPage, defaultReturnPage)
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+
+  function setPage(nextPage) {
+    setPageState(nextPage);
+    setStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, nextPage);
+  }
+
+  function setSelectedProjectId(projectId) {
+    const nextProjectId = projectId || "";
+    setSelectedProjectIdState(nextProjectId);
+    setStoredDashboardValue(DASHBOARD_STORAGE_KEYS.selectedProjectId, nextProjectId);
+  }
+
+  function setReturnPage(nextReturnPage) {
+    const fallbackReturnPage = isAdmin ? "all-projects" : "my-projects";
+    const safeReturnPage = nextReturnPage || fallbackReturnPage;
+    setReturnPageState(safeReturnPage);
+    setStoredDashboardValue(DASHBOARD_STORAGE_KEYS.returnPage, safeReturnPage);
+  }
+
+  useEffect(() => {
+    const safePage = getSafeDashboardPage(page, {
+      isAdmin,
+      canUsePrintShop,
+      canUseTechnicalSupport,
+    });
+
+    if (safePage !== page) {
+      setSelectedProjectId(null);
+      setReturnPage(safePage);
+      setPage(safePage);
+    }
+  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -64,11 +144,21 @@ export default function Dashboard() {
   }, [canUseTechnicalSupport, canUsePrintShop]);
 
   function goToPage(nextPage) {
+    const safePage = getSafeDashboardPage(nextPage, {
+      isAdmin,
+      canUsePrintShop,
+      canUseTechnicalSupport,
+    });
+
     setSelectedProjectId(null);
-    setPage(nextPage);
-    setReturnPage(nextPage);
+    setPage(safePage);
+    setReturnPage(safePage);
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
+  }
+
+  function goToHomeDashboard() {
+    goToPage(isAdmin ? "executive-dashboard" : "my-projects");
   }
 
   function openProject(projectId) {
@@ -124,6 +214,9 @@ export default function Dashboard() {
 
   function handleLogout() {
     setProfileMenuOpen(false);
+    Object.values(DASHBOARD_STORAGE_KEYS).forEach((storageKey) =>
+      setStoredDashboardValue(storageKey, "")
+    );
     logout();
   }
 
@@ -139,7 +232,7 @@ export default function Dashboard() {
     }
 
     if (page === "executive-dashboard" && isAdmin) {
-      return <ExecutiveDashboard onOpenProject={openProject} />;
+      return <ExecutiveDashboard onOpenProject={openProject} onOpenModule={goToPage} />;
     }
 
     if (page === "collaborators-admin" && isAdmin) {
@@ -302,11 +395,18 @@ export default function Dashboard() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand-panel">
-          <img
-            src="/active-logo.png"
-            alt="Active English School"
-            className="sidebar-logo"
-          />
+          <button
+            type="button"
+            className="sidebar-logo-button"
+            onClick={goToHomeDashboard}
+            title={isAdmin ? "Volver al Dashboard ejecutivo" : "Volver a Mis proyectos"}
+          >
+            <img
+              src="/active-logo.png"
+              alt="Active English School"
+              className="sidebar-logo"
+            />
+          </button>
 
           <h1>Active English School</h1>
 

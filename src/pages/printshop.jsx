@@ -7914,56 +7914,15 @@ function DashboardView({
         </div>
       </section>
 
-      <section className="printshop-bottom-grid enhanced-bottom">
-        <Panel title="Ruta de desarrollo" icon="▥" actionLabel="Plan activo">
-          <div className="printshop-roadmap-list">
-            <RoadmapItem
-              number="1"
-              title="Interfaz principal"
-              description="Dashboard profesional para visualizar operación, inventario y alertas."
-              active
-            />
-            <RoadmapItem
-              number="2"
-              title="Catálogo de productos"
-              description="Registrar productos reales y usarlos como base de lotes y solicitudes."
-              active
-            />
-            <RoadmapItem
-              number="3"
-              title="Inventario terminado"
-              description="Controlar libros producidos, mínimos, ideales y alertas de reposición."
-              active
-            />
-            <RoadmapItem
-              number="4"
-              title="Lotes de producción"
-              description="Producir libros para inventario y registrar entradas automáticas."
-              active
-            />
-            <RoadmapItem
-              number="5"
-              title="Certificados automáticos"
-              description="Folio, firma precargada, QR de validación y versión digital."
-            />
-          </div>
-        </Panel>
-
-        <Panel title="Siguiente función sugerida" icon="→" actionLabel="Etapa 3">
-          <div className="printshop-next-feature-card">
-            <span>☑</span>
-            <div>
-              <strong>Checklist de calidad para lotes</strong>
-              <p>
-                Después de crear lotes, lo ideal será validar impresión, corte,
-                encuadernado y conteo antes de ingresar al inventario.
-              </p>
-              <button type="button" className="visual-outline-button" onClick={onOpenBatches}>
-                Abrir lotes de producción
-              </button>
-            </div>
-          </div>
-        </Panel>
+      <section className="printshop-focus-footer">
+        <div>
+          <strong>Vista enfocada activa</strong>
+          <p>
+            El módulo queda centrado en solicitudes, producción, inventario,
+            insumos y certificados. Se retiraron las funciones sugeridas para
+            evitar saturación visual.
+          </p>
+        </div>
       </section>
     </>
   );
