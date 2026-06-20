@@ -4,6 +4,7 @@ import {
   doc,
   getDocs,
   orderBy,
+  where,
   query,
   serverTimestamp,
   updateDoc,
@@ -273,6 +274,50 @@ function buildInstallationPayload(installationData, currentUserProfile, mode = "
 export async function getTechnicalInstallations() {
   const installationsRef = collection(db, TECHNICAL_INSTALLATIONS_COLLECTION);
   const q = query(installationsRef, orderBy("createdAt", "desc"));
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((document) => ({
+    id: document.id,
+    ...document.data(),
+  }));
+}
+
+
+
+export async function getTechnicalInstallationsByEquipment(assetId) {
+  const normalizedAssetId = String(assetId || "").trim();
+
+  if (!normalizedAssetId) {
+    throw new Error("Falta el ID del equipo.");
+  }
+
+  const installationsRef = collection(db, TECHNICAL_INSTALLATIONS_COLLECTION);
+  const q = query(
+    installationsRef,
+    where("installedEquipmentIds", "array-contains", normalizedAssetId),
+    orderBy("createdAt", "desc")
+  );
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((document) => ({
+    id: document.id,
+    ...document.data(),
+  }));
+}
+
+export async function getTechnicalInstallationsByLocation(locationId) {
+  const normalizedLocationId = String(locationId || "").trim();
+
+  if (!normalizedLocationId) {
+    throw new Error("Falta el ID de la ubicación técnica.");
+  }
+
+  const installationsRef = collection(db, TECHNICAL_INSTALLATIONS_COLLECTION);
+  const q = query(
+    installationsRef,
+    where("locationId", "==", normalizedLocationId),
+    orderBy("createdAt", "desc")
+  );
   const snapshot = await getDocs(q);
 
   return snapshot.docs.map((document) => ({

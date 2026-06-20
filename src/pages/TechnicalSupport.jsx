@@ -1780,6 +1780,71 @@ export default function TechnicalSupport() {
     selectedQuickPendingMaintenances.length > 0
       ? selectedQuickPendingMaintenances[0]
       : null;
+  const selectedQuickAssetInstallations = useMemo(() => {
+    if (!selectedQuickAsset?.id) {
+      return [];
+    }
+
+    return installations
+      .filter((installation) => installation.deleted !== true)
+      .filter((installation) => {
+        if (Array.isArray(installation.installedEquipmentIds)) {
+          return installation.installedEquipmentIds.includes(selectedQuickAsset.id);
+        }
+
+        if (Array.isArray(installation.installedEquipment)) {
+          return installation.installedEquipment.some((equipment) =>
+            [equipment?.equipmentId, equipment?.assetId, equipment?.id].includes(
+              selectedQuickAsset.id
+            )
+          );
+        }
+
+        return false;
+      })
+      .sort((firstInstallation, secondInstallation) => {
+        const firstDate = toDateFromFirestoreOrString(
+          firstInstallation.completedAt ||
+            firstInstallation.updatedAt ||
+            firstInstallation.createdAt ||
+            firstInstallation.startedAt
+        );
+        const secondDate = toDateFromFirestoreOrString(
+          secondInstallation.completedAt ||
+            secondInstallation.updatedAt ||
+            secondInstallation.createdAt ||
+            secondInstallation.startedAt
+        );
+
+        return (secondDate?.getTime?.() || 0) - (firstDate?.getTime?.() || 0);
+      });
+  }, [installations, selectedQuickAsset?.id]);
+
+  const selectedLocationInstallations = useMemo(() => {
+    if (!selectedTechnicalLocation?.id) {
+      return [];
+    }
+
+    return installations
+      .filter((installation) => installation.deleted !== true)
+      .filter((installation) => installation.locationId === selectedTechnicalLocation.id)
+      .sort((firstInstallation, secondInstallation) => {
+        const firstDate = toDateFromFirestoreOrString(
+          firstInstallation.completedAt ||
+            firstInstallation.updatedAt ||
+            firstInstallation.createdAt ||
+            firstInstallation.startedAt
+        );
+        const secondDate = toDateFromFirestoreOrString(
+          secondInstallation.completedAt ||
+            secondInstallation.updatedAt ||
+            secondInstallation.createdAt ||
+            secondInstallation.startedAt
+        );
+
+        return (secondDate?.getTime?.() || 0) - (firstDate?.getTime?.() || 0);
+      });
+  }, [installations, selectedTechnicalLocation?.id]);
   const fieldModeRequested = openedFromQr && isMobileViewport;
   const fieldActionModeActive = fieldActionMode && isMobileViewport;
   const focusedSubActionActive = Boolean(
@@ -5103,6 +5168,95 @@ function closeCompletionForm(options = {}) {
       </section>
     );
   }
+  function renderRelatedInstallationCards(relatedInstallations, emptyTitle, emptyDescription) {
+    const items = Array.isArray(relatedInstallations) ? relatedInstallations : [];
+
+    if (items.length === 0) {
+      return (
+        <div className="empty-state small">
+          <h3>{emptyTitle}</h3>
+          <p>{emptyDescription}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="related-installations-list">
+        {items.slice(0, 5).map((installation) => {
+          const statusClass = getInstallationStatusClass(installation.status);
+          const installedEquipmentCount =
+            Number(installation.installedEquipmentCount) ||
+            (Array.isArray(installation.installedEquipment)
+              ? installation.installedEquipment.length
+              : 0);
+          const usedSparePartsTotalQuantity =
+            Number(installation.usedSparePartsTotalQuantity) ||
+            (Array.isArray(installation.usedSpareParts)
+              ? installation.usedSpareParts.reduce(
+                  (total, part) => total + Number(part.quantity || 0),
+                  0
+                )
+              : 0);
+
+          return (
+            <article className="related-installation-card" key={installation.id}>
+              <div className="related-installation-top">
+                <div>
+                  <span className={`installation-run-status ${statusClass}`}>
+                    {getInstallationStatusLabel(installation.status)}
+                  </span>
+                  <h4>{installation.title || "Instalación sin título"}</h4>
+                  <p>
+                    {installation.campus || "Sin plantel"} · {installation.locationName || "Sin ubicación"}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="visual-outline-button related-installation-button"
+                  onClick={() => openInstallationDetail(installation)}
+                >
+                  Ver instalación
+                </button>
+              </div>
+
+              <div className="related-installation-meta">
+                <span>
+                  <small>Plantilla</small>
+                  <strong>{installation.templateName || "Sin plantilla"}</strong>
+                </span>
+                <span>
+                  <small>Responsable</small>
+                  <strong>{installation.responsibleName || "Sin responsable"}</strong>
+                </span>
+                <span>
+                  <small>Avance</small>
+                  <strong>{Number(installation.progress || 0)}%</strong>
+                </span>
+                <span>
+                  <small>Fecha</small>
+                  <strong>
+                    {formatLogDate(
+                      installation.completedAt || installation.updatedAt || installation.createdAt
+                    )}
+                  </strong>
+                </span>
+              </div>
+
+              <div className="related-installation-foot">
+                <span>{installedEquipmentCount} equipo(s)</span>
+                <span>{usedSparePartsTotalQuantity} recambio(s)</span>
+                {installation.sparePartsConsumed === true && (
+                  <span>Recambios descontados</span>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderInstallationChecklistEditor(installation) {
     const checklistSections = getInstallationChecklistSections(installation?.checklistSections);
 
@@ -7444,6 +7598,22 @@ function closeCompletionForm(options = {}) {
                   Imprimir etiqueta QR
                 </button>
               </div>
+
+              <section className="technical-related-installations-card">
+                <div className="location-section-title">
+                  <div>
+                    <h3>Instalaciones relacionadas</h3>
+                    <p>Procesos de instalación donde este equipo fue vinculado.</p>
+                  </div>
+                  <span>{selectedQuickAssetInstallations.length}</span>
+                </div>
+
+                {renderRelatedInstallationCards(
+                  selectedQuickAssetInstallations,
+                  "Sin instalaciones relacionadas",
+                  "Cuando este equipo se agregue a una instalación, aparecerá aquí."
+                )}
+              </section>
             </div>
 
             <aside className="technical-quick-maintenance-card">
@@ -9536,6 +9706,22 @@ function closeCompletionForm(options = {}) {
                           Cuando guardes una revisión técnica aparecerá aquí.
                         </p>
                       </div>
+                    )}
+                  </section>
+
+                  <section className="location-installations-card">
+                    <div className="location-section-title">
+                      <div>
+                        <h3>Instalaciones realizadas</h3>
+                        <p>Procesos de instalación asociados a esta ubicación técnica.</p>
+                      </div>
+                      <span>{selectedLocationInstallations.length}</span>
+                    </div>
+
+                    {renderRelatedInstallationCards(
+                      selectedLocationInstallations,
+                      "Sin instalaciones en esta ubicación",
+                      "Cuando una instalación use esta ubicación técnica, aparecerá aquí."
                     )}
                   </section>
 
