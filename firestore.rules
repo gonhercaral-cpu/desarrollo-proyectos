@@ -2135,6 +2135,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /technicalInstallationTemplates/{templateId} {
+      allow read: if hasProfile();
+
+      allow create, update: if canManageTechnicalSupport();
+
+      allow delete: if isAdmin();
+    }
+
     match /projectInternalNotes/{noteId} {
       allow read: if isAdmin();
 

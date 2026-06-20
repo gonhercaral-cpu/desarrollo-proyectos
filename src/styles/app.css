@@ -23614,3 +23614,516 @@ body:has(.field-mode-page) .main-content {
     width: 100%;
   }
 }
+
+
+/* =========================================================
+   SOPORTE TÉCNICO - PLANTILLAS DE INSTALACIÓN
+========================================================= */
+
+.installation-templates-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.installation-templates-header,
+.spare-parts-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.installation-templates-header h2,
+.installation-template-form-panel h3,
+.installation-templates-list-panel h3 {
+  margin: 0;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+}
+
+.installation-templates-header p,
+.installation-template-form-panel p,
+.installation-templates-list-panel p {
+  margin: 6px 0 0;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.installation-templates-header-actions,
+.installation-template-form-actions-top {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.installation-templates-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.installation-templates-metrics-grid article {
+  position: relative;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.installation-templates-metrics-grid article::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  background: #0f4fc4;
+}
+
+.installation-templates-metrics-grid article.warning::after {
+  background: #d99a00;
+}
+
+.installation-templates-metrics-grid article.muted::after {
+  background: #94a3b8;
+}
+
+.installation-templates-metrics-grid span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.installation-templates-metrics-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.installation-templates-metrics-grid p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.installation-template-form-panel,
+.installation-templates-list-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+  padding: 22px;
+}
+
+.installation-template-active-toggle {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 12px 14px;
+}
+
+.installation-template-active-toggle > span {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.installation-template-active-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 0;
+  color: #344256;
+  font-size: 13px;
+}
+
+.installation-template-active-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #0f4fc4;
+}
+
+.installation-template-sections-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.installation-template-section {
+  border: 1px solid #dbe7ff;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: 16px;
+}
+
+.installation-template-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.installation-template-section-header > div {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.installation-template-section-header > div > span {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.installation-template-section-header h4 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.installation-template-section-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.installation-template-section-header button,
+.installation-template-empty-section button {
+  border: 1px solid #b9cdfa;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f4fc4;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.installation-template-item-list {
+  display: grid;
+  gap: 10px;
+}
+
+.installation-template-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 138px 96px;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.installation-template-item-row input[type="text"] {
+  width: 100%;
+  border: 1px solid #dbe3ef;
+  border-radius: 11px;
+  padding: 11px 12px;
+  color: #0f172a;
+}
+
+.installation-required-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  margin: 0 !important;
+  color: #344256 !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+.installation-required-toggle input {
+  width: 17px;
+  height: 17px;
+  accent-color: #16a34a;
+}
+
+.installation-template-empty-section {
+  border: 1px dashed #bad0ff;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 14px;
+  color: #64748b;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.installation-template-summary-box {
+  display: grid;
+  grid-template-columns: 150px 150px minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: #f8fbff;
+  padding: 14px;
+}
+
+.installation-template-summary-box div {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.installation-template-summary-box span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 5px;
+}
+
+.installation-template-summary-box strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.installation-templates-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 220px 170px;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.installation-templates-toolbar select {
+  height: 46px;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.installation-template-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.installation-template-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  padding: 16px;
+  transition: 0.18s ease;
+}
+
+.installation-template-card:hover {
+  border-color: #b9cdfa;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.installation-template-card.inactive {
+  background: #f8fafc;
+  opacity: 0.86;
+}
+
+.installation-template-card-top {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.installation-template-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0f4fc4, #1e3a8a);
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.installation-template-card-top strong {
+  display: block;
+  color: #0f172a;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.installation-template-card-top p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.installation-template-status {
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.installation-template-status.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.installation-template-status.inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.installation-template-description {
+  margin: 0;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.installation-template-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.installation-template-card-metrics div {
+  border: 1px solid #edf1f7;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.installation-template-card-metrics span {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  min-height: 24px;
+}
+
+.installation-template-card-metrics strong {
+  display: block;
+  color: #0f4fc4;
+  font-size: 20px;
+  margin-top: 4px;
+}
+
+.installation-template-card-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #e5eaf2;
+}
+
+.installation-template-card-footer > span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.installation-template-card-footer > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.installation-template-card-footer button {
+  border: 1px solid #dbe7ff;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0f4fc4;
+  padding: 8px 11px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+@media (max-width: 1200px) {
+  .installation-templates-metrics-grid,
+  .installation-template-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .installation-templates-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .installation-template-search {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 850px) {
+  .installation-templates-header,
+  .spare-parts-header,
+  .installation-template-section-header,
+  .installation-template-card-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .installation-templates-header-actions,
+  .installation-template-form-actions-top,
+  .installation-template-card-footer > div {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .installation-template-item-row,
+  .installation-template-summary-box,
+  .installation-templates-toolbar,
+  .installation-template-card-top {
+    grid-template-columns: 1fr;
+  }
+
+  .installation-template-card-grid,
+  .installation-templates-metrics-grid,
+  .installation-template-card-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .installation-template-empty-section {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* =========================================================
+   SOPORTE TÉCNICO - PLANTILLAS DE INSTALACIÓN: OPCIONES PERSONALIZADAS
+========================================================= */
+
+.installation-template-custom-field small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.installation-template-custom-field input {
+  background: #fbfdff;
+}
