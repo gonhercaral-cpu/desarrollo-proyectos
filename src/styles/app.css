@@ -24835,3 +24835,226 @@ body:has(.field-mode-page) .main-content {
     width: 100%;
   }
 }
+
+/* =========================================================
+   SOPORTE TÉCNICO - INSTALACIONES: RECAMBIOS USADOS
+========================================================= */
+
+.installation-spare-parts-panel {
+  margin-top: 18px;
+  border: 1px solid #ccfbf1;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff, #f0fdfa);
+  padding: 18px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.installation-spare-parts-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #d9f8ef;
+  margin-bottom: 14px;
+}
+
+.installation-spare-parts-header h4 {
+  margin: 4px 0 5px;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.installation-spare-parts-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.installation-spare-parts-header > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 128px;
+  border-radius: 999px;
+  background: #ccfbf1;
+  color: #0f766e;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.installation-consumed-strip {
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  background: #ecfdf3;
+  color: #166534;
+  padding: 11px 13px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.installation-spare-parts-used-list,
+.installation-spare-parts-options {
+  display: grid;
+  gap: 10px;
+}
+
+.installation-spare-part-used-card,
+.installation-spare-part-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 13px;
+}
+
+.installation-spare-part-used-card strong,
+.installation-spare-part-option strong {
+  display: block;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.installation-spare-part-used-card p,
+.installation-spare-part-option p {
+  margin: 4px 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.installation-spare-part-used-card small,
+.installation-spare-part-option small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.installation-spare-parts-selector {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #d9f8ef;
+}
+
+.installation-spare-parts-selector-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.installation-spare-parts-selector-header h5 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.installation-spare-parts-selector-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.installation-spare-parts-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(170px, 0.6fr) minmax(170px, 0.6fr);
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.installation-spare-parts-filters select {
+  min-height: 46px;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.installation-spare-parts-search {
+  width: 100%;
+}
+
+.installation-spare-part-option-actions {
+  display: grid;
+  grid-template-columns: 76px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.installation-spare-part-option-actions input {
+  height: 40px;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  padding: 0 10px;
+  text-align: center;
+  font-weight: 900;
+}
+
+.installation-spare-part-option-actions button,
+.installation-spare-part-used-card button {
+  border: 1px solid #dbe7ff;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f4fc4;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.installation-spare-part-option-actions button:disabled,
+.installation-spare-part-used-card button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.installation-spare-parts-empty {
+  border: 1px dashed #99f6e4;
+  border-radius: 16px;
+  background: #f0fdfa;
+  color: #64748b;
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.installation-run-card-meta {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .installation-spare-parts-filters,
+  .installation-run-card-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .installation-spare-parts-header,
+  .installation-spare-part-used-card,
+  .installation-spare-part-option,
+  .installation-spare-parts-filters,
+  .installation-spare-part-option-actions,
+  .installation-run-card-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .installation-spare-parts-header > span,
+  .installation-spare-part-used-card button,
+  .installation-spare-part-option-actions button {
+    width: 100%;
+  }
+}

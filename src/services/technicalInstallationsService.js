@@ -9,6 +9,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { consumeTechnicalSparePartsForInstallation } from "./technicalSparePartsService";
 
 const TECHNICAL_INSTALLATIONS_COLLECTION = "technicalInstallations";
 
@@ -141,6 +142,48 @@ function normalizeInstalledEquipment(items = []) {
 }
 
 
+function normalizeUsedSparePartsForInstallation(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const seenParts = new Map();
+
+  items.forEach((item) => {
+    const partId = normalizeText(item?.partId || item?.id);
+    const quantity = Math.max(Number(item?.quantity || 0), 0);
+
+    if (!partId || quantity <= 0) {
+      return;
+    }
+
+    const existing = seenParts.get(partId);
+
+    if (existing) {
+      existing.quantity += quantity;
+      return;
+    }
+
+    seenParts.set(partId, {
+      partId,
+      partName: normalizeText(item?.partName || item?.name),
+      barcode: normalizeText(item?.barcode),
+      internalCode: normalizeText(item?.internalCode),
+      category: normalizeText(item?.category),
+      partType: normalizeText(item?.partType),
+      unit: normalizeText(item?.unit) || "pieza",
+      quantity,
+      availableAtSelection: Math.max(Number(item?.availableAtSelection || 0), 0),
+      notes: normalizeText(item?.notes),
+      addedAt: normalizeText(item?.addedAt),
+      addedBy: normalizeText(item?.addedBy),
+    });
+  });
+
+  return Array.from(seenParts.values());
+}
+
+
 function buildInstallationPayload(installationData, currentUserProfile, mode = "create") {
   const title = normalizeText(installationData?.title);
 
@@ -166,6 +209,13 @@ function buildInstallationPayload(installationData, currentUserProfile, mode = "
   const installedEquipment = normalizeInstalledEquipment(
     installationData?.installedEquipment
   );
+  const usedSpareParts = normalizeUsedSparePartsForInstallation(
+    installationData?.usedSpareParts
+  );
+  const usedSparePartsTotalQuantity = usedSpareParts.reduce(
+    (total, part) => total + Number(part.quantity || 0),
+    0
+  );
 
   const basePayload = {
     title,
@@ -186,6 +236,11 @@ function buildInstallationPayload(installationData, currentUserProfile, mode = "
     installedEquipment,
     installedEquipmentIds: installedEquipment.map((item) => item.equipmentId),
     installedEquipmentCount: installedEquipment.length,
+    usedSpareParts,
+    usedSparePartIds: usedSpareParts.map((item) => item.partId),
+    usedSparePartsCount: usedSpareParts.length,
+    usedSparePartsTotalQuantity,
+    sparePartsConsumed: installationData?.sparePartsConsumed === true,
     checklistSections: progressSummary.checklistSections,
     totalSteps: progressSummary.totalSteps,
     completedSteps: progressSummary.completedSteps,
@@ -303,19 +358,52 @@ export async function completeTechnicalInstallation(
     installationId
   );
 
-  await updateDoc(installationRef, {
+  const shouldConsumeSpareParts =
+    updatedInstallation.sparePartsConsumed !== true &&
+    Array.isArray(updatedInstallation.usedSpareParts) &&
+    updatedInstallation.usedSpareParts.length > 0;
+
+  const consumedMovements = shouldConsumeSpareParts
+    ? await consumeTechnicalSparePartsForInstallation(
+        {
+          id: installationId,
+          ...updatedInstallation,
+        },
+        currentUserProfile
+      )
+    : [];
+
+  const completionUpdate = {
     ...updatedInstallation,
     active: false,
+    sparePartsConsumed:
+      updatedInstallation.sparePartsConsumed === true || consumedMovements.length > 0,
     completedAt: serverTimestamp(),
     completedBy: currentUserProfile?.name || "",
     completedByEmail: currentUserProfile?.email || "",
     completedById: currentUserProfile?.uid || currentUserProfile?.id || "",
-  });
+  };
+
+  if (consumedMovements.length > 0) {
+    completionUpdate.sparePartsConsumedAt = serverTimestamp();
+    completionUpdate.sparePartsConsumedBy = currentUserProfile?.name || "";
+    completionUpdate.sparePartsConsumedByEmail = currentUserProfile?.email || "";
+    completionUpdate.sparePartsConsumedById =
+      currentUserProfile?.uid || currentUserProfile?.id || "";
+    completionUpdate.sparePartMovementIds = consumedMovements.map(
+      (movement) => movement.id
+    );
+  }
+
+  await updateDoc(installationRef, completionUpdate);
 
   return {
     id: installationId,
     ...updatedInstallation,
     active: false,
+    sparePartsConsumed:
+      updatedInstallation.sparePartsConsumed === true || consumedMovements.length > 0,
+    sparePartMovementIds: consumedMovements.map((movement) => movement.id),
   };
 }
 

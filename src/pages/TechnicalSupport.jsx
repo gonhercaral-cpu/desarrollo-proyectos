@@ -444,6 +444,8 @@ const EMPTY_INSTALLATION_FORM = {
   status: "in_progress",
   notes: "",
   installedEquipment: [],
+  usedSpareParts: [],
+  sparePartsConsumed: false,
 };
 
 const TECHNICAL_TABS = [
@@ -660,6 +662,10 @@ export default function TechnicalSupport() {
   const [installationAssetSearchTerm, setInstallationAssetSearchTerm] = useState("");
   const [installationAssetCampusFilter, setInstallationAssetCampusFilter] = useState("Todos");
   const [installationAssetCategoryFilter, setInstallationAssetCategoryFilter] = useState("Todas");
+  const [installationSparePartSearchTerm, setInstallationSparePartSearchTerm] = useState("");
+  const [installationSparePartCategoryFilter, setInstallationSparePartCategoryFilter] = useState("Todas");
+  const [installationSparePartTypeFilter, setInstallationSparePartTypeFilter] = useState("Todos");
+  const [installationSparePartQuantities, setInstallationSparePartQuantities] = useState({});
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
@@ -1397,6 +1403,15 @@ export default function TechnicalSupport() {
               equipment.category,
               equipment.brand,
               equipment.model,
+            ])
+          : []),
+        ...(Array.isArray(installation.usedSpareParts)
+          ? installation.usedSpareParts.flatMap((part) => [
+              part.partName,
+              part.internalCode,
+              part.barcode,
+              part.category,
+              part.partType,
             ])
           : []),
       ]
@@ -4120,6 +4135,10 @@ function closeCompletionForm(options = {}) {
       installedEquipment: normalizeInstalledEquipmentForInstallation(
         base.installedEquipment || []
       ),
+      usedSpareParts: normalizeUsedSparePartsForInstallation(
+        base.usedSpareParts || []
+      ),
+      sparePartsConsumed: base.sparePartsConsumed === true,
     };
   }
 
@@ -4236,6 +4255,8 @@ function closeCompletionForm(options = {}) {
             "",
           campus: selectedLocation?.campus || installationForm.campus || "",
           installedEquipment: [],
+          usedSpareParts: [],
+          sparePartsConsumed: false,
           checklistSections,
           ...progressSummary,
         },
@@ -4262,12 +4283,20 @@ function closeCompletionForm(options = {}) {
       installedEquipment: normalizeInstalledEquipmentForInstallation(
         installation.installedEquipment || []
       ),
+      usedSpareParts: normalizeUsedSparePartsForInstallation(
+        installation.usedSpareParts || []
+      ),
+      sparePartsConsumed: installation.sparePartsConsumed === true,
       checklistSections: getInstallationChecklistSections(installation.checklistSections),
     });
     setShowInstallationForm(false);
     setInstallationAssetSearchTerm("");
     setInstallationAssetCampusFilter("Todos");
     setInstallationAssetCategoryFilter("Todas");
+    setInstallationSparePartSearchTerm("");
+    setInstallationSparePartCategoryFilter("Todas");
+    setInstallationSparePartTypeFilter("Todos");
+    setInstallationSparePartQuantities({});
     setInstallationSubTab("installations");
     setActiveTab("instalaciones");
     scrollToTop();
@@ -4369,12 +4398,21 @@ function closeCompletionForm(options = {}) {
       }
 
       await loadInstallations();
+      if (status === "completed") {
+        await loadSpareParts();
+      }
       setSelectedInstallation({
         ...selectedInstallation,
         ...updatedInstallation,
         installedEquipment: normalizeInstalledEquipmentForInstallation(
           updatedInstallation.installedEquipment || selectedInstallation.installedEquipment || []
         ),
+        usedSpareParts: normalizeUsedSparePartsForInstallation(
+          updatedInstallation.usedSpareParts || selectedInstallation.usedSpareParts || []
+        ),
+        sparePartsConsumed:
+          updatedInstallation.sparePartsConsumed === true ||
+          selectedInstallation.sparePartsConsumed === true,
         checklistSections,
       });
     } catch (error) {
@@ -4714,6 +4752,357 @@ function closeCompletionForm(options = {}) {
     );
   }
 
+
+
+  function normalizeUsedSparePartsForInstallation(items = []) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    const seenPartIds = new Map();
+
+    items.forEach((item) => {
+      const partId = String(item?.partId || item?.id || "").trim();
+      const quantity = Math.max(Number(item?.quantity || 0), 0);
+
+      if (!partId || quantity <= 0) {
+        return;
+      }
+
+      const existing = seenPartIds.get(partId);
+
+      if (existing) {
+        existing.quantity += quantity;
+        return;
+      }
+
+      seenPartIds.set(partId, {
+        partId,
+        partName: String(item?.partName || item?.name || "").trim(),
+        barcode: String(item?.barcode || "").trim(),
+        internalCode: String(item?.internalCode || "").trim(),
+        category: String(item?.category || "").trim(),
+        partType: String(item?.partType || "").trim(),
+        unit: String(item?.unit || "pieza").trim() || "pieza",
+        quantity,
+        availableAtSelection: Math.max(Number(item?.availableAtSelection || 0), 0),
+        notes: String(item?.notes || "").trim(),
+        addedAt: String(item?.addedAt || "").trim(),
+        addedBy: String(item?.addedBy || "").trim(),
+      });
+    });
+
+    return Array.from(seenPartIds.values());
+  }
+
+  function buildInstallationSparePartSnapshot(part, quantity = 1) {
+    return {
+      partId: part.id,
+      partName: part.name || "",
+      barcode: part.barcode || "",
+      internalCode: part.internalCode || "",
+      category: part.category || "",
+      partType: part.partType || "",
+      unit: part.unit || "pieza",
+      quantity: Math.max(Number(quantity || 1), 1),
+      availableAtSelection: Number(part.quantity || 0),
+      notes: "",
+      addedAt: new Date().toISOString(),
+      addedBy: profile?.name || "Soporte Técnico",
+    };
+  }
+
+  function getInstallationSparePartSearchText(item = {}) {
+    return [
+      item.partName || item.name,
+      item.internalCode,
+      item.barcode,
+      item.category,
+      item.partType,
+      item.brand,
+      item.model,
+      item.storageLocation,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function getFilteredInstallationSparePartOptions(installation) {
+    const linkedIds = new Set(
+      normalizeUsedSparePartsForInstallation(installation?.usedSpareParts).map(
+        (part) => part.partId
+      )
+    );
+    const normalizedSearch = installationSparePartSearchTerm.trim().toLowerCase();
+
+    return activeSpareParts.filter((part) => {
+      if (linkedIds.has(part.id)) return false;
+
+      const quantity = Number(part.quantity || 0);
+      if (quantity <= 0) return false;
+
+      const partSearchText = getInstallationSparePartSearchText(part);
+      const matchesSearch = !normalizedSearch || partSearchText.includes(normalizedSearch);
+      const matchesCategory =
+        installationSparePartCategoryFilter === "Todas" ||
+        part.category === installationSparePartCategoryFilter;
+      const matchesType =
+        installationSparePartTypeFilter === "Todos" ||
+        part.partType === installationSparePartTypeFilter;
+
+      return matchesSearch && matchesCategory && matchesType;
+    });
+  }
+
+  function getInstallationSparePartQuantity(partId) {
+    return Math.max(Number(installationSparePartQuantities[partId] || 1), 1);
+  }
+
+  function updateInstallationSparePartQuantity(partId, quantity) {
+    const nextQuantity = Math.max(Number(quantity || 1), 1);
+    setInstallationSparePartQuantities((current) => ({
+      ...current,
+      [partId]: nextQuantity,
+    }));
+  }
+
+  function addSparePartToSelectedInstallation(part) {
+    if (!part?.id) return;
+
+    setSelectedInstallation((current) => {
+      if (!current) return current;
+
+      const usedSpareParts = normalizeUsedSparePartsForInstallation(
+        current.usedSpareParts
+      );
+      const alreadyLinked = usedSpareParts.some(
+        (usedPart) => usedPart.partId === part.id
+      );
+
+      if (alreadyLinked) return current;
+
+      const requestedQuantity = getInstallationSparePartQuantity(part.id);
+      const availableQuantity = Number(part.quantity || 0);
+
+      if (requestedQuantity > availableQuantity) {
+        setPageError(
+          `No puedes agregar ${requestedQuantity} de ${part.name}. Disponible: ${availableQuantity}.`
+        );
+        return current;
+      }
+
+      const nextUsedSpareParts = [
+        ...usedSpareParts,
+        buildInstallationSparePartSnapshot(part, requestedQuantity),
+      ];
+
+      setPageError("");
+
+      return {
+        ...current,
+        usedSpareParts: nextUsedSpareParts,
+        usedSparePartsCount: nextUsedSpareParts.length,
+        usedSparePartsTotalQuantity: nextUsedSpareParts.reduce(
+          (total, item) => total + Number(item.quantity || 0),
+          0
+        ),
+      };
+    });
+  }
+
+  function removeSparePartFromSelectedInstallation(partId) {
+    setSelectedInstallation((current) => {
+      if (!current) return current;
+
+      const nextUsedSpareParts = normalizeUsedSparePartsForInstallation(
+        current.usedSpareParts
+      ).filter((part) => part.partId !== partId);
+
+      return {
+        ...current,
+        usedSpareParts: nextUsedSpareParts,
+        usedSparePartsCount: nextUsedSpareParts.length,
+        usedSparePartsTotalQuantity: nextUsedSpareParts.reduce(
+          (total, item) => total + Number(item.quantity || 0),
+          0
+        ),
+      };
+    });
+  }
+
+  function renderInstallationSparePartsManager(installation) {
+    const usedSpareParts = normalizeUsedSparePartsForInstallation(
+      installation?.usedSpareParts
+    );
+    const sparePartOptions = getFilteredInstallationSparePartOptions(installation);
+    const totalQuantity = usedSpareParts.reduce(
+      (total, part) => total + Number(part.quantity || 0),
+      0
+    );
+    const isLocked =
+      savingInstallation ||
+      installation?.status === "completed" ||
+      installation?.status === "cancelled" ||
+      installation?.sparePartsConsumed === true;
+
+    return (
+      <section className="installation-spare-parts-panel">
+        <div className="installation-spare-parts-header">
+          <div>
+            <p className="section-kicker equipment-kicker">Recambios usados</p>
+            <h4>Piezas y consumibles de esta instalación</h4>
+            <p>
+              Agrega cables, adaptadores, tintas, memorias u otras piezas. Se descontarán del inventario al finalizar la instalación.
+            </p>
+          </div>
+          <span>
+            {usedSpareParts.length} tipo(s) · {totalQuantity} pieza(s)
+          </span>
+        </div>
+
+        {installation?.sparePartsConsumed === true && (
+          <div className="installation-consumed-strip">
+            Estos recambios ya fueron descontados del inventario al finalizar la instalación.
+          </div>
+        )}
+
+        <div className="installation-spare-parts-used-list">
+          {usedSpareParts.length > 0 ? (
+            usedSpareParts.map((part) => (
+              <article className="installation-spare-part-used-card" key={part.partId}>
+                <div>
+                  <strong>
+                    {part.internalCode || part.barcode || "Sin código"} · {part.partName || "Recambio sin nombre"}
+                  </strong>
+                  <p>
+                    {part.category || "Sin categoría"}
+                    {part.partType ? ` · ${part.partType}` : ""}
+                  </p>
+                  <small>
+                    Cantidad: {part.quantity} {part.unit || "pieza"}
+                    {part.availableAtSelection
+                      ? ` · Disponible al seleccionar: ${part.availableAtSelection}`
+                      : ""}
+                  </small>
+                </div>
+                <button
+                  className="danger-table-button"
+                  type="button"
+                  onClick={() => removeSparePartFromSelectedInstallation(part.partId)}
+                  disabled={isLocked}
+                >
+                  Quitar
+                </button>
+              </article>
+            ))
+          ) : (
+            <div className="installation-spare-parts-empty">
+              Todavía no hay recambios vinculados a esta instalación.
+            </div>
+          )}
+        </div>
+
+        <div className="installation-spare-parts-selector">
+          <div className="installation-spare-parts-selector-header">
+            <div>
+              <h5>Agregar recambio disponible</h5>
+              <p>Busca por código, nombre, categoría, tipo, marca, modelo o ubicación de resguardo.</p>
+            </div>
+          </div>
+
+          <div className="installation-spare-parts-filters">
+            <div className="visual-search wide installation-spare-parts-search">
+              <span>⌕</span>
+              <input
+                type="search"
+                value={installationSparePartSearchTerm}
+                onChange={(event) => setInstallationSparePartSearchTerm(event.target.value)}
+                placeholder="Buscar recambio..."
+                disabled={isLocked}
+              />
+            </div>
+
+            <select
+              value={installationSparePartCategoryFilter}
+              onChange={(event) => setInstallationSparePartCategoryFilter(event.target.value)}
+              disabled={isLocked}
+            >
+              <option value="Todas">Todas las categorías</option>
+              {sparePartCategoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={installationSparePartTypeFilter}
+              onChange={(event) => setInstallationSparePartTypeFilter(event.target.value)}
+              disabled={isLocked}
+            >
+              <option value="Todos">Todos los tipos</option>
+              {sparePartTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {sparePartOptions.length > 0 ? (
+            <div className="installation-spare-parts-options">
+              {sparePartOptions.slice(0, 12).map((part) => {
+                const requestedQuantity = getInstallationSparePartQuantity(part.id);
+                const availableQuantity = Number(part.quantity || 0);
+
+                return (
+                  <article className="installation-spare-part-option" key={part.id}>
+                    <div>
+                      <strong>
+                        {part.internalCode || part.barcode || "Sin código"} · {part.name || "Recambio sin nombre"}
+                      </strong>
+                      <p>
+                        {part.category || "Sin categoría"} · {part.partType || "Sin tipo"}
+                      </p>
+                      <small>
+                        Disponible: {availableQuantity} {part.unit || "pieza"}
+                        {part.storageLocation ? ` · ${part.storageLocation}` : ""}
+                      </small>
+                    </div>
+
+                    <div className="installation-spare-part-option-actions">
+                      <input
+                        type="number"
+                        min="1"
+                        max={availableQuantity || 1}
+                        value={requestedQuantity}
+                        onChange={(event) =>
+                          updateInstallationSparePartQuantity(part.id, event.target.value)
+                        }
+                        disabled={isLocked}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => addSparePartToSelectedInstallation(part)}
+                        disabled={isLocked || requestedQuantity > availableQuantity}
+                      >
+                        Agregar
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="installation-spare-parts-empty">
+              No hay recambios disponibles con esos filtros o todos ya están vinculados.
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
   function renderInstallationChecklistEditor(installation) {
     const checklistSections = getInstallationChecklistSections(installation?.checklistSections);
 
@@ -5565,6 +5954,8 @@ function closeCompletionForm(options = {}) {
 
             {renderInstalledEquipmentManager(selectedInstallation)}
 
+            {renderInstallationSparePartsManager(selectedInstallation)}
+
             <div className="technical-form-actions installation-run-save-actions">
               <button
                 type="button"
@@ -5661,6 +6052,7 @@ function closeCompletionForm(options = {}) {
                       <span><strong>Responsable</strong>{installation.responsibleName || "Sin responsable"}</span>
                       <span><strong>Pasos</strong>{Number(installation.completedSteps || 0)} / {Number(installation.totalSteps || 0)}</span>
                       <span><strong>Equipos</strong>{Number(installation.installedEquipmentCount || installation.installedEquipment?.length || 0)}</span>
+                      <span><strong>Recambios</strong>{Number(installation.usedSparePartsTotalQuantity || 0)}</span>
                     </div>
 
                     <div className="installation-run-card-progress">

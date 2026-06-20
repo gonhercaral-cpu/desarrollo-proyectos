@@ -326,7 +326,7 @@ export async function createTechnicalSparePartMovement(
 
   const movementType = movementData?.type || "entry";
 
-  if (!["entry", "exit", "adjustment"].includes(movementType)) {
+  if (!["entry", "exit", "adjustment", "used_in_installation"].includes(movementType)) {
     throw new Error("Tipo de movimiento no válido.");
   }
 
@@ -372,7 +372,7 @@ export async function createTechnicalSparePartMovement(
       newQuantity = previousQuantity + requestedQuantity;
     }
 
-    if (movementType === "exit") {
+    if (["exit", "used_in_installation"].includes(movementType)) {
       if (requestedQuantity > previousQuantity) {
         throw new Error(
           `No hay suficiente inventario. Disponible: ${previousQuantity}.`
@@ -425,6 +425,166 @@ export async function createTechnicalSparePartMovement(
       id: movementRef.id,
       ...movement,
     };
+  });
+}
+
+
+
+function normalizeInstallationUsedSpareParts(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const groupedParts = new Map();
+
+  items.forEach((item) => {
+    const partId = String(item?.partId || item?.id || "").trim();
+    const quantity = toNumber(item?.quantity, 0);
+
+    if (!partId || quantity <= 0) {
+      return;
+    }
+
+    const existing = groupedParts.get(partId);
+
+    if (existing) {
+      existing.quantity += quantity;
+      return;
+    }
+
+    groupedParts.set(partId, {
+      partId,
+      partName: String(item?.partName || item?.name || "").trim(),
+      barcode: String(item?.barcode || "").trim(),
+      internalCode: String(item?.internalCode || "").trim(),
+      category: String(item?.category || "").trim(),
+      partType: String(item?.partType || "").trim(),
+      unit: String(item?.unit || "pieza").trim() || "pieza",
+      quantity,
+      availableAtSelection: toNumber(item?.availableAtSelection, 0),
+      notes: String(item?.notes || "").trim(),
+    });
+  });
+
+  return Array.from(groupedParts.values());
+}
+
+export async function consumeTechnicalSparePartsForInstallation(
+  installationData,
+  currentUserProfile
+) {
+  const installationId = String(installationData?.id || "").trim();
+  const installationTitle = String(
+    installationData?.title || "Instalación técnica"
+  ).trim();
+  const usedSpareParts = normalizeInstallationUsedSpareParts(
+    installationData?.usedSpareParts
+  );
+
+  if (!installationId) {
+    throw new Error("Falta el ID de la instalación para descontar recambios.");
+  }
+
+  if (installationData?.sparePartsConsumed === true || usedSpareParts.length === 0) {
+    return [];
+  }
+
+  const movementsRef = collection(
+    db,
+    TECHNICAL_SPARE_PART_MOVEMENTS_COLLECTION
+  );
+
+  return runTransaction(db, async (transaction) => {
+    const partSnapshots = [];
+
+    for (const usedPart of usedSpareParts) {
+      const partRef = doc(db, TECHNICAL_SPARE_PARTS_COLLECTION, usedPart.partId);
+      const partSnapshot = await transaction.get(partRef);
+
+      if (!partSnapshot.exists()) {
+        throw new Error(
+          `El recambio "${usedPart.partName || usedPart.partId}" ya no existe.`
+        );
+      }
+
+      const currentPart = {
+        id: partSnapshot.id,
+        ref: partRef,
+        ...partSnapshot.data(),
+      };
+
+      if (currentPart.active === false || currentPart.status === "inactive") {
+        throw new Error(
+          `El recambio "${currentPart.name || usedPart.partName}" está inactivo.`
+        );
+      }
+
+      const previousQuantity = toNumber(currentPart.quantity, 0);
+      const requestedQuantity = toNumber(usedPart.quantity, 0);
+
+      if (requestedQuantity <= 0) {
+        throw new Error(
+          `La cantidad del recambio "${currentPart.name || usedPart.partName}" debe ser mayor a cero.`
+        );
+      }
+
+      if (requestedQuantity > previousQuantity) {
+        throw new Error(
+          `No hay suficiente inventario de "${currentPart.name || usedPart.partName}". Disponible: ${previousQuantity}, requerido: ${requestedQuantity}.`
+        );
+      }
+
+      partSnapshots.push({
+        usedPart,
+        currentPart,
+        previousQuantity,
+        requestedQuantity,
+        newQuantity: previousQuantity - requestedQuantity,
+      });
+    }
+
+    const createdMovements = [];
+
+    for (const item of partSnapshots) {
+      const movementRef = doc(movementsRef);
+      const movement = {
+        partId: item.currentPart.id,
+        partName: item.currentPart.name || item.usedPart.partName || "",
+        barcode: item.currentPart.barcode || item.usedPart.barcode || "",
+        internalCode: item.currentPart.internalCode || item.usedPart.internalCode || "",
+        category: item.currentPart.category || item.usedPart.category || "",
+        partType: item.currentPart.partType || item.usedPart.partType || "",
+        unit: item.currentPart.unit || item.usedPart.unit || "pieza",
+        type: "used_in_installation",
+        quantity: item.requestedQuantity,
+        previousQuantity: item.previousQuantity,
+        newQuantity: item.newQuantity,
+        reason: `Usado en instalación: ${installationTitle}`,
+        notes: item.usedPart.notes || "",
+        installationId,
+        installationTitle,
+        createdBy: currentUserProfile?.name || "",
+        createdByEmail: currentUserProfile?.email || "",
+        createdById: currentUserProfile?.uid || currentUserProfile?.id || "",
+        createdAt: serverTimestamp(),
+      };
+
+      transaction.update(item.currentPart.ref, {
+        quantity: item.newQuantity,
+        lastMovementAt: serverTimestamp(),
+        lastMovementType: "used_in_installation",
+        lastMovementBy: currentUserProfile?.name || "",
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUserProfile?.name || "",
+        updatedByEmail: currentUserProfile?.email || "",
+        updatedById: currentUserProfile?.uid || currentUserProfile?.id || "",
+      });
+
+      transaction.set(movementRef, movement);
+      createdMovements.push({ id: movementRef.id, ...movement });
+    }
+
+    return createdMovements;
   });
 }
 
