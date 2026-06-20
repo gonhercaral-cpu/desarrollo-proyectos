@@ -1427,6 +1427,56 @@ service cloud.firestore {
         && printRequestExists(request.resource.data.requestId);
     }
 
+
+
+    function validCertificateRequestCampus(campus) {
+      return campus in [
+        "Plaza Estrella",
+        "Plaza Bugambilias",
+        "Plaza Aranjuez",
+        "Online"
+      ];
+    }
+
+    function validCertificateRequestCreate() {
+      return request.resource.data.keys().hasOnly([
+        "folio",
+        "campus",
+        "academicDirector",
+        "requestedDeliveryDate",
+        "certificateType",
+        "courseLevel",
+        "notes",
+        "students",
+        "status",
+        "statusLabel",
+        "publicTrackingEnabled",
+        "createdAt",
+        "updatedAt",
+        "createdBy"
+      ])
+      && request.resource.data.folio is string
+      && request.resource.data.folio.size() > 0
+      && request.resource.data.campus is string
+      && validCertificateRequestCampus(request.resource.data.campus)
+      && request.resource.data.academicDirector is string
+      && request.resource.data.academicDirector.size() > 0
+      && request.resource.data.requestedDeliveryDate is string
+      && request.resource.data.certificateType == "Certificado"
+      && request.resource.data.courseLevel is string
+      && request.resource.data.courseLevel.size() > 0
+      && request.resource.data.notes is string
+      && request.resource.data.students is list
+      && request.resource.data.students.size() > 0
+      && request.resource.data.students.size() <= 100
+      && request.resource.data.status == "received"
+      && request.resource.data.statusLabel == "Solicitud recibida"
+      && request.resource.data.publicTrackingEnabled == true
+      && request.resource.data.createdAt is timestamp
+      && request.resource.data.updatedAt is timestamp
+      && request.resource.data.createdBy == "public-form";
+    }
+
     function validPrintshopLogData() {
       return request.resource.data.type is string
         && request.resource.data.type.size() > 0
@@ -1713,18 +1763,264 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /printRequests/{requestId} {
-      allow read: if canAccessPrintshop();
 
-      allow create: if isAdmin()
-        && validPrintRequestData()
-        && request.resource.data.createdByUid == request.auth.uid;
+
+    function validPublicPrintRequestCreate() {
+      return request.resource.data.keys().hasOnly([
+        "folio",
+        "productId",
+        "productName",
+        "requestType",
+        "requesterName",
+        "requesterArea",
+        "campus",
+        "responsibleUid",
+        "responsibleName",
+        "responsibleEmail",
+        "priority",
+        "requestedQuantity",
+        "deliveredQuantity",
+        "deliveryType",
+        "status",
+        "requestDate",
+        "dueDate",
+        "requestedDeliveryDate",
+        "certificateIssueDate",
+        "certificateTemplateId",
+        "certificateTemplateName",
+        "certificateTemplateLevel",
+        "certificateTemplateProgramName",
+        "certificateTemplateAudience",
+        "certificateTemplateBodyText",
+        "certificateTemplateBodySegments",
+        "certificateTemplateCustomTexts",
+        "certificateTemplateCustomImages",
+        "certificateTemplateImageUrl",
+        "certificateTemplateImageDataUrl",
+        "certificateTemplateStoragePath",
+        "certificateTemplatePositions",
+        "notes",
+        "level",
+        "group",
+        "teacherName",
+        "schedule",
+        "printedQuantity",
+        "digitalQuantity",
+        "principalSignerId",
+        "principalSignerName",
+        "principalSignerRole",
+        "principalSignatureUrl",
+        "teacherSignerId",
+        "teacherSignerName",
+        "teacherSignerRole",
+        "teacherSignatureUrl",
+        "students",
+        "publicTrackingEnabled",
+        "publicRequestSource",
+        "academicDirector",
+        "certificateDirectorName",
+        "courseLevel",
+        "statusLabel",
+        "createdAt",
+        "updatedAt",
+        "createdBy",
+        "createdByUid",
+        "createdByName",
+        "createdByEmail",
+        "updatedByUid",
+        "updatedByName",
+        "updatedByEmail"
+      ])
+      && request.resource.data.folio is string
+      && request.resource.data.folio.size() > 0
+      && request.resource.data.productId == ""
+      && request.resource.data.productName == "Certificado"
+      && request.resource.data.requestType == "Certificado"
+      && request.resource.data.requesterName is string
+      && request.resource.data.requesterName.size() > 0
+      && request.resource.data.requesterArea == "Dirección Académica"
+      && request.resource.data.campus in [
+        "Plaza Estrella",
+        "Plaza Bugambilias",
+        "Plaza Aranjuez",
+        "Online"
+      ]
+      && request.resource.data.responsibleUid == ""
+      && request.resource.data.responsibleName == ""
+      && request.resource.data.responsibleEmail == ""
+      && request.resource.data.priority == "Normal"
+      && request.resource.data.requestedQuantity is number
+      && request.resource.data.requestedQuantity > 0
+      && request.resource.data.requestedQuantity <= 100
+      && request.resource.data.deliveredQuantity == 0
+      && request.resource.data.deliveryType in [
+        "Impresa",
+        "Digital",
+        "Ambas"
+      ]
+      && request.resource.data.status == "Solicitud recibida"
+      && request.resource.data.requestDate is string
+      && request.resource.data.dueDate is string
+      && request.resource.data.requestedDeliveryDate is string
+      && request.resource.data.notes is string
+      && request.resource.data.level in [
+        "No aplica",
+        "A1",
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "Otro"
+      ]
+      && request.resource.data.group is string
+      && request.resource.data.group.size() > 0
+      && request.resource.data.teacherName == ""
+      && request.resource.data.schedule == ""
+      && request.resource.data.printedQuantity is number
+      && request.resource.data.printedQuantity >= 0
+      && request.resource.data.digitalQuantity is number
+      && request.resource.data.digitalQuantity >= 0
+      && request.resource.data.printedQuantity + request.resource.data.digitalQuantity == request.resource.data.requestedQuantity
+      && request.resource.data.students is list
+      && request.resource.data.students.size() == request.resource.data.requestedQuantity
+      && request.resource.data.principalSignerName is string
+      && request.resource.data.principalSignerName.size() > 0
+      && request.resource.data.principalSignerRole == "Director"
+      && request.resource.data.certificateDirectorName is string
+      && request.resource.data.certificateDirectorName == request.resource.data.principalSignerName
+      && request.resource.data.academicDirector == request.resource.data.principalSignerName
+      && request.resource.data.publicTrackingEnabled == true
+      && request.resource.data.publicRequestSource == "certificate-public-form"
+      && request.resource.data.createdBy == "public-certificate-form"
+      && request.resource.data.createdByUid == "public-form"
+      && request.resource.data.updatedByUid == "public-form";
+    }
+
+    function isPublicCertificateRequestEditable() {
+      return resource.data.publicTrackingEnabled == true
+        && resource.data.publicRequestSource == "certificate-public-form"
+        && resource.data.status in [
+          "Solicitud recibida",
+          "Datos incompletos",
+          "En revisión",
+          "Aprobada"
+        ];
+    }
+
+    function validPublicPrintRequestUpdate() {
+      return isPublicCertificateRequestEditable()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "requesterName",
+          "campus",
+          "dueDate",
+          "requestedDeliveryDate",
+          "notes",
+          "requestedQuantity",
+          "printedQuantity",
+          "digitalQuantity",
+          "deliveryType",
+          "students",
+          "level",
+          "group",
+          "courseLevel",
+          "academicDirector",
+          "certificateDirectorName",
+          "principalSignerName",
+          "principalSignerRole",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.publicTrackingEnabled == true
+        && request.resource.data.publicRequestSource == "certificate-public-form"
+        && request.resource.data.productName == "Certificado"
+        && request.resource.data.requestType == "Certificado"
+        && request.resource.data.requesterName is string
+        && request.resource.data.requesterName.size() > 0
+        && request.resource.data.requesterArea == "Dirección Académica"
+        && request.resource.data.campus in [
+          "Plaza Estrella",
+          "Plaza Bugambilias",
+          "Plaza Aranjuez",
+          "Online"
+        ]
+        && request.resource.data.dueDate is string
+        && request.resource.data.requestedDeliveryDate is string
+        && request.resource.data.notes is string
+        && request.resource.data.requestedQuantity is number
+        && request.resource.data.requestedQuantity > 0
+        && request.resource.data.requestedQuantity <= 100
+        && request.resource.data.printedQuantity is number
+        && request.resource.data.printedQuantity >= 0
+        && request.resource.data.digitalQuantity is number
+        && request.resource.data.digitalQuantity >= 0
+        && request.resource.data.printedQuantity + request.resource.data.digitalQuantity == request.resource.data.requestedQuantity
+        && request.resource.data.deliveryType in [
+          "Impresa",
+          "Digital",
+          "Ambas"
+        ]
+        && request.resource.data.students is list
+        && request.resource.data.students.size() == request.resource.data.requestedQuantity
+        && request.resource.data.level in [
+          "No aplica",
+          "A1",
+          "A2",
+          "B1",
+          "B2",
+          "C1",
+          "Otro"
+        ]
+        && request.resource.data.group is string
+        && request.resource.data.group.size() > 0
+        && request.resource.data.courseLevel is string
+        && request.resource.data.courseLevel.size() > 0
+        && request.resource.data.principalSignerName is string
+        && request.resource.data.principalSignerName.size() > 0
+        && request.resource.data.principalSignerRole == "Director"
+        && request.resource.data.certificateDirectorName == request.resource.data.principalSignerName
+        && request.resource.data.academicDirector == request.resource.data.principalSignerName
+        && request.resource.data.updatedByUid == "public-form"
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByName.size() > 0;
+    }
+
+
+
+    match /certificateRequests/{requestId} {
+      allow create: if validCertificateRequestCreate();
+
+      allow get: if resource.data.publicTrackingEnabled == true
+        || canAccessPrintshop();
+
+      allow list: if canAccessPrintshop();
+
+      allow update: if canAccessPrintshop();
+
+      allow delete: if false;
+    }
+
+    match /printRequests/{requestId} {
+      allow get: if canAccessPrintshop()
+        || resource.data.publicTrackingEnabled == true;
+
+      allow list: if canAccessPrintshop();
+
+      allow create: if (
+          isAdmin()
+          && validPrintRequestData()
+          && request.resource.data.createdByUid == request.auth.uid
+        )
+        || validPublicPrintRequestCreate();
 
       allow update: if (
           isAdmin()
           && validPrintRequestData()
         )
-        || responsiblePrintRequestUpdate();
+        || responsiblePrintRequestUpdate()
+        || validPublicPrintRequestUpdate();
 
       allow delete: if false;
     }

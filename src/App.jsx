@@ -1,28 +1,23 @@
+import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
+
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import CertificateValidation from "./pages/CertificateValidation";
+import PublicCertificateRequest from "./pages/PublicCertificateRequest";
+import PublicCertificateStatus from "./pages/PublicCertificateStatus";
+
 import "./styles/app.css";
 
-function getCertificateValidationCodeFromPath() {
-  if (typeof window === "undefined") return "";
+function CertificateValidationRoute() {
+  const params = useParams();
+  const validationCode = decodeURIComponent((params["*"] || "").replace(/\/+$/, ""));
 
-  const path = window.location.pathname || "";
-  const marker = "/validar-certificado/";
-  const markerIndex = path.indexOf(marker);
-
-  if (markerIndex < 0) return "";
-
-  return decodeURIComponent(path.slice(markerIndex + marker.length).replace(/\/+$/, ""));
+  return <CertificateValidation validationCode={validationCode} />;
 }
 
-export default function App() {
+function ProtectedSystem() {
   const { firebaseUser, profile, loading } = useAuth();
-  const certificateValidationCode = getCertificateValidationCodeFromPath();
-
-  if (certificateValidationCode) {
-    return <CertificateValidation validationCode={certificateValidationCode} />;
-  }
 
   if (loading) {
     return (
@@ -57,4 +52,29 @@ export default function App() {
   }
 
   return <Dashboard />;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/solicitar-certificados"
+          element={<PublicCertificateRequest />}
+        />
+
+        <Route
+          path="/certificados/seguimiento/:requestId"
+          element={<PublicCertificateStatus />}
+        />
+
+        <Route
+          path="/validar-certificado/*"
+          element={<CertificateValidationRoute />}
+        />
+
+        <Route path="/*" element={<ProtectedSystem />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
