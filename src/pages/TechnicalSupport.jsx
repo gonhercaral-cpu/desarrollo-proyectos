@@ -443,6 +443,7 @@ const EMPTY_INSTALLATION_FORM = {
   responsibleName: "",
   status: "in_progress",
   notes: "",
+  installedEquipment: [],
 };
 
 const TECHNICAL_TABS = [
@@ -656,6 +657,9 @@ export default function TechnicalSupport() {
   const [installationFormError, setInstallationFormError] = useState("");
   const [savingInstallation, setSavingInstallation] = useState(false);
   const [selectedInstallation, setSelectedInstallation] = useState(null);
+  const [installationAssetSearchTerm, setInstallationAssetSearchTerm] = useState("");
+  const [installationAssetCampusFilter, setInstallationAssetCampusFilter] = useState("Todos");
+  const [installationAssetCategoryFilter, setInstallationAssetCategoryFilter] = useState("Todas");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
@@ -1386,6 +1390,15 @@ export default function TechnicalSupport() {
         installation.locationType,
         installation.responsibleName,
         installation.notes,
+        ...(Array.isArray(installation.installedEquipment)
+          ? installation.installedEquipment.flatMap((equipment) => [
+              equipment.equipmentCode,
+              equipment.equipmentName,
+              equipment.category,
+              equipment.brand,
+              equipment.model,
+            ])
+          : []),
       ]
         .filter(Boolean)
         .join(" ")
@@ -4104,6 +4117,9 @@ function closeCompletionForm(options = {}) {
       responsibleName: base.responsibleName || profile?.name || "Soporte Técnico",
       status: base.status || "in_progress",
       notes: base.notes || "",
+      installedEquipment: normalizeInstalledEquipmentForInstallation(
+        base.installedEquipment || []
+      ),
     };
   }
 
@@ -4219,6 +4235,7 @@ function closeCompletionForm(options = {}) {
             selectedTemplate.targetLocationType ||
             "",
           campus: selectedLocation?.campus || installationForm.campus || "",
+          installedEquipment: [],
           checklistSections,
           ...progressSummary,
         },
@@ -4242,9 +4259,15 @@ function closeCompletionForm(options = {}) {
   function openInstallationDetail(installation) {
     setSelectedInstallation({
       ...installation,
+      installedEquipment: normalizeInstalledEquipmentForInstallation(
+        installation.installedEquipment || []
+      ),
       checklistSections: getInstallationChecklistSections(installation.checklistSections),
     });
     setShowInstallationForm(false);
+    setInstallationAssetSearchTerm("");
+    setInstallationAssetCampusFilter("Todos");
+    setInstallationAssetCategoryFilter("Todas");
     setInstallationSubTab("installations");
     setActiveTab("instalaciones");
     scrollToTop();
@@ -4349,6 +4372,9 @@ function closeCompletionForm(options = {}) {
       setSelectedInstallation({
         ...selectedInstallation,
         ...updatedInstallation,
+        installedEquipment: normalizeInstalledEquipmentForInstallation(
+          updatedInstallation.installedEquipment || selectedInstallation.installedEquipment || []
+        ),
         checklistSections,
       });
     } catch (error) {
@@ -4357,6 +4383,335 @@ function closeCompletionForm(options = {}) {
     } finally {
       setSavingInstallation(false);
     }
+  }
+
+  function normalizeInstalledEquipmentForInstallation(items = []) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    const seenIds = new Set();
+
+    return items
+      .map((item) => {
+        const equipmentId = String(
+          item?.equipmentId || item?.assetId || item?.id || ""
+        ).trim();
+
+        if (!equipmentId || seenIds.has(equipmentId)) {
+          return null;
+        }
+
+        seenIds.add(equipmentId);
+
+        return {
+          equipmentId,
+          equipmentCode: String(
+            item?.equipmentCode || item?.assetTag || item?.code || ""
+          ).trim(),
+          equipmentName: String(
+            item?.equipmentName || item?.name || item?.assetName || ""
+          ).trim(),
+          category: String(item?.category || "").trim(),
+          brand: String(item?.brand || "").trim(),
+          model: String(item?.model || "").trim(),
+          serialNumber: String(item?.serialNumber || "").trim(),
+          campus: String(item?.campus || "").trim(),
+          area: String(item?.area || "").trim(),
+          status: String(item?.status || "").trim(),
+          condition: String(item?.condition || "").trim(),
+          previousLocationId: String(
+            item?.previousLocationId || item?.technicalLocationId || ""
+          ).trim(),
+          previousLocationName: String(
+            item?.previousLocationName || item?.technicalLocationName || ""
+          ).trim(),
+          previousLocationType: String(
+            item?.previousLocationType || item?.technicalLocationType || ""
+          ).trim(),
+          assignedLocationId: String(item?.assignedLocationId || "").trim(),
+          assignedLocationName: String(item?.assignedLocationName || "").trim(),
+          assignedLocationType: String(item?.assignedLocationType || "").trim(),
+          addedAt: String(item?.addedAt || "").trim(),
+          addedBy: String(item?.addedBy || "").trim(),
+          notes: String(item?.notes || "").trim(),
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function buildInstallationEquipmentSnapshot(asset, installation = selectedInstallation) {
+    const selectedLocation = technicalLocations.find(
+      (location) => location.id === (installation?.locationId || "")
+    );
+
+    return {
+      equipmentId: asset.id,
+      equipmentCode: asset.assetTag || "",
+      equipmentName: asset.name || "",
+      category: asset.category || "",
+      brand: asset.brand || "",
+      model: asset.model || "",
+      serialNumber: asset.serialNumber || "",
+      campus: asset.campus || "",
+      area: asset.area || "",
+      status: asset.status || "",
+      condition: asset.condition || "",
+      previousLocationId: asset.technicalLocationId || "",
+      previousLocationName: asset.technicalLocationName || "",
+      previousLocationType: asset.technicalLocationType || "",
+      assignedLocationId: installation?.locationId || selectedLocation?.id || "",
+      assignedLocationName:
+        installation?.locationName || selectedLocation?.name || "",
+      assignedLocationType:
+        installation?.locationType || selectedLocation?.type || "",
+      addedAt: new Date().toISOString(),
+      addedBy: profile?.name || "Soporte Técnico",
+      notes: "",
+    };
+  }
+
+  function getInstallationEquipmentSearchText(item = {}) {
+    return [
+      item.equipmentCode,
+      item.equipmentName,
+      item.category,
+      item.brand,
+      item.model,
+      item.serialNumber,
+      item.campus,
+      item.area,
+      item.status,
+      item.condition,
+      item.previousLocationName,
+      item.assignedLocationName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function getFilteredInstallationAssetOptions(installation) {
+    const linkedIds = new Set(
+      normalizeInstalledEquipmentForInstallation(installation?.installedEquipment).map(
+        (equipment) => equipment.equipmentId
+      )
+    );
+    const normalizedSearch = installationAssetSearchTerm.trim().toLowerCase();
+
+    return visibleAssets.filter((asset) => {
+      if (linkedIds.has(asset.id)) return false;
+
+      const assetSearchText = getInstallationEquipmentSearchText({
+        equipmentCode: asset.assetTag,
+        equipmentName: asset.name,
+        category: asset.category,
+        brand: asset.brand,
+        model: asset.model,
+        serialNumber: asset.serialNumber,
+        campus: asset.campus,
+        area: asset.area,
+        status: asset.status,
+        condition: asset.condition,
+        previousLocationName: asset.technicalLocationName,
+      });
+
+      const matchesSearch =
+        !normalizedSearch || assetSearchText.includes(normalizedSearch);
+      const matchesCampus =
+        installationAssetCampusFilter === "Todos" ||
+        normalizeCampusName(asset.campus) === installationAssetCampusFilter ||
+        asset.campus === installationAssetCampusFilter;
+      const matchesCategory =
+        installationAssetCategoryFilter === "Todas" ||
+        asset.category === installationAssetCategoryFilter;
+
+      return matchesSearch && matchesCampus && matchesCategory;
+    });
+  }
+
+  function addAssetToSelectedInstallation(asset) {
+    if (!asset?.id) return;
+
+    setSelectedInstallation((current) => {
+      if (!current) return current;
+
+      const installedEquipment = normalizeInstalledEquipmentForInstallation(
+        current.installedEquipment
+      );
+      const alreadyLinked = installedEquipment.some(
+        (equipment) => equipment.equipmentId === asset.id
+      );
+
+      if (alreadyLinked) return current;
+
+      const nextInstalledEquipment = [
+        ...installedEquipment,
+        buildInstallationEquipmentSnapshot(asset, current),
+      ];
+
+      return {
+        ...current,
+        installedEquipment: nextInstalledEquipment,
+        installedEquipmentCount: nextInstalledEquipment.length,
+      };
+    });
+  }
+
+  function removeAssetFromSelectedInstallation(equipmentId) {
+    setSelectedInstallation((current) => {
+      if (!current) return current;
+
+      const nextInstalledEquipment = normalizeInstalledEquipmentForInstallation(
+        current.installedEquipment
+      ).filter((equipment) => equipment.equipmentId !== equipmentId);
+
+      return {
+        ...current,
+        installedEquipment: nextInstalledEquipment,
+        installedEquipmentCount: nextInstalledEquipment.length,
+      };
+    });
+  }
+
+  function renderInstalledEquipmentManager(installation) {
+    const installedEquipment = normalizeInstalledEquipmentForInstallation(
+      installation?.installedEquipment
+    );
+    const assetOptions = getFilteredInstallationAssetOptions(installation);
+    const isLocked =
+      savingInstallation ||
+      installation?.status === "completed" ||
+      installation?.status === "cancelled";
+
+    return (
+      <section className="installation-equipment-panel">
+        <div className="installation-equipment-header">
+          <div>
+            <p className="section-kicker equipment-kicker">Equipos instalados</p>
+            <h4>Equipos vinculados a esta instalación</h4>
+            <p>
+              Selecciona del inventario técnico los equipos que quedaron incluidos en esta instalación.
+            </p>
+          </div>
+          <span>{installedEquipment.length} equipo(s)</span>
+        </div>
+
+        <div className="installation-equipment-linked-list">
+          {installedEquipment.length > 0 ? (
+            installedEquipment.map((equipment) => (
+              <article className="installation-equipment-linked-card" key={equipment.equipmentId}>
+                <div>
+                  <strong>
+                    {equipment.equipmentCode || "Sin código"} · {equipment.equipmentName || "Equipo sin nombre"}
+                  </strong>
+                  <p>
+                    {equipment.category || "Sin categoría"}
+                    {equipment.brand ? ` · ${equipment.brand}` : ""}
+                    {equipment.model ? ` ${equipment.model}` : ""}
+                  </p>
+                  <small>
+                    Ubicación previa: {equipment.previousLocationName || "Sin ubicación previa"} · Destino: {equipment.assignedLocationName || installation?.locationName || "Sin destino"}
+                  </small>
+                </div>
+                <button
+                  className="danger-table-button"
+                  type="button"
+                  onClick={() => removeAssetFromSelectedInstallation(equipment.equipmentId)}
+                  disabled={isLocked}
+                >
+                  Quitar
+                </button>
+              </article>
+            ))
+          ) : (
+            <div className="installation-equipment-empty">
+              Todavía no hay equipos vinculados a esta instalación.
+            </div>
+          )}
+        </div>
+
+        <div className="installation-equipment-selector">
+          <div className="installation-equipment-selector-header">
+            <div>
+              <h5>Agregar equipo del inventario</h5>
+              <p>Busca por código, nombre, categoría, marca, modelo o ubicación actual.</p>
+            </div>
+          </div>
+
+          <div className="installation-equipment-filters">
+            <div className="visual-search wide installation-equipment-search">
+              <span>⌕</span>
+              <input
+                type="search"
+                value={installationAssetSearchTerm}
+                onChange={(event) => setInstallationAssetSearchTerm(event.target.value)}
+                placeholder="Buscar equipo técnico..."
+                disabled={isLocked}
+              />
+            </div>
+
+            <select
+              value={installationAssetCampusFilter}
+              onChange={(event) => setInstallationAssetCampusFilter(event.target.value)}
+              disabled={isLocked}
+            >
+              <option value="Todos">Todos los planteles</option>
+              {campusFilterOptions.map((campus) => (
+                <option key={campus} value={campus}>
+                  {campus}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={installationAssetCategoryFilter}
+              onChange={(event) => setInstallationAssetCategoryFilter(event.target.value)}
+              disabled={isLocked}
+            >
+              <option value="Todas">Todas las categorías</option>
+              {ASSET_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {assetOptions.length > 0 ? (
+            <div className="installation-equipment-options">
+              {assetOptions.slice(0, 12).map((asset) => (
+                <article className="installation-equipment-option" key={asset.id}>
+                  <div>
+                    <strong>
+                      {asset.assetTag || "Sin código"} · {asset.name || "Equipo sin nombre"}
+                    </strong>
+                    <p>
+                      {asset.category || "Sin categoría"} · {asset.campus || "Sin plantel"}
+                    </p>
+                    <small>
+                      {asset.technicalLocationName || asset.area || "Sin ubicación actual"}
+                      {asset.status ? ` · ${asset.status}` : ""}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => addAssetToSelectedInstallation(asset)}
+                    disabled={isLocked}
+                  >
+                    Agregar
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="installation-equipment-empty">
+              No hay equipos disponibles con esos filtros o todos ya están vinculados.
+            </div>
+          )}
+        </div>
+      </section>
+    );
   }
 
   function renderInstallationChecklistEditor(installation) {
@@ -5208,6 +5563,8 @@ function closeCompletionForm(options = {}) {
 
             {renderInstallationChecklistEditor(selectedInstallation)}
 
+            {renderInstalledEquipmentManager(selectedInstallation)}
+
             <div className="technical-form-actions installation-run-save-actions">
               <button
                 type="button"
@@ -5303,6 +5660,7 @@ function closeCompletionForm(options = {}) {
                       <span><strong>Plantel</strong>{installation.campus || "Sin plantel"}</span>
                       <span><strong>Responsable</strong>{installation.responsibleName || "Sin responsable"}</span>
                       <span><strong>Pasos</strong>{Number(installation.completedSteps || 0)} / {Number(installation.totalSteps || 0)}</span>
+                      <span><strong>Equipos</strong>{Number(installation.installedEquipmentCount || installation.installedEquipment?.length || 0)}</span>
                     </div>
 
                     <div className="installation-run-card-progress">

@@ -85,6 +85,62 @@ function normalizeInstallationStatus(value) {
   return "in_progress";
 }
 
+function normalizeInstalledEquipment(items = []) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  const seenEquipmentIds = new Set();
+
+  return items
+    .map((item) => {
+      const equipmentId = normalizeText(
+        item?.equipmentId || item?.assetId || item?.id
+      );
+
+      if (!equipmentId || seenEquipmentIds.has(equipmentId)) {
+        return null;
+      }
+
+      seenEquipmentIds.add(equipmentId);
+
+      return {
+        equipmentId,
+        equipmentCode: normalizeText(
+          item?.equipmentCode || item?.assetTag || item?.code
+        ),
+        equipmentName: normalizeText(
+          item?.equipmentName || item?.name || item?.assetName
+        ),
+        category: normalizeText(item?.category),
+        brand: normalizeText(item?.brand),
+        model: normalizeText(item?.model),
+        serialNumber: normalizeText(item?.serialNumber),
+        campus: normalizeText(item?.campus),
+        area: normalizeText(item?.area),
+        status: normalizeText(item?.status),
+        condition: normalizeText(item?.condition),
+        previousLocationId: normalizeText(
+          item?.previousLocationId || item?.technicalLocationId
+        ),
+        previousLocationName: normalizeText(
+          item?.previousLocationName || item?.technicalLocationName
+        ),
+        previousLocationType: normalizeText(
+          item?.previousLocationType || item?.technicalLocationType
+        ),
+        assignedLocationId: normalizeText(item?.assignedLocationId),
+        assignedLocationName: normalizeText(item?.assignedLocationName),
+        assignedLocationType: normalizeText(item?.assignedLocationType),
+        addedAt: normalizeText(item?.addedAt),
+        addedBy: normalizeText(item?.addedBy),
+        notes: normalizeText(item?.notes),
+      };
+    })
+    .filter(Boolean);
+}
+
+
 function buildInstallationPayload(installationData, currentUserProfile, mode = "create") {
   const title = normalizeText(installationData?.title);
 
@@ -107,6 +163,9 @@ function buildInstallationPayload(installationData, currentUserProfile, mode = "
   }
 
   const status = normalizeInstallationStatus(installationData?.status);
+  const installedEquipment = normalizeInstalledEquipment(
+    installationData?.installedEquipment
+  );
 
   const basePayload = {
     title,
@@ -124,6 +183,9 @@ function buildInstallationPayload(installationData, currentUserProfile, mode = "
     active: !["completed", "cancelled"].includes(status),
     deleted: false,
     notes: normalizeText(installationData?.notes),
+    installedEquipment,
+    installedEquipmentIds: installedEquipment.map((item) => item.equipmentId),
+    installedEquipmentCount: installedEquipment.length,
     checklistSections: progressSummary.checklistSections,
     totalSteps: progressSummary.totalSteps,
     completedSteps: progressSummary.completedSteps,
@@ -294,5 +356,38 @@ export async function cancelTechnicalInstallation(
     id: installationId,
     ...updatedInstallation,
     active: false,
+  };
+}
+
+
+export async function updateTechnicalInstallationEquipment(
+  installationId,
+  installationData,
+  installedEquipment,
+  currentUserProfile
+) {
+  if (!installationId) {
+    throw new Error("Falta el ID de la instalación.");
+  }
+
+  const installationRef = doc(
+    db,
+    TECHNICAL_INSTALLATIONS_COLLECTION,
+    installationId
+  );
+  const updatedInstallation = buildInstallationPayload(
+    {
+      ...installationData,
+      installedEquipment,
+    },
+    currentUserProfile,
+    "update"
+  );
+
+  await updateDoc(installationRef, updatedInstallation);
+
+  return {
+    id: installationId,
+    ...updatedInstallation,
   };
 }

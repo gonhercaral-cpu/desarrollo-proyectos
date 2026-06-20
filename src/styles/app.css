@@ -24640,3 +24640,198 @@ body:has(.field-mode-page) .main-content {
     grid-template-columns: 20px 28px minmax(0, 1fr);
   }
 }
+
+/* =========================================================
+   SOPORTE TÉCNICO - INSTALACIONES: EQUIPOS VINCULADOS
+========================================================= */
+
+.installation-equipment-panel {
+  margin-top: 18px;
+  border: 1px solid #dbe7ff;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  padding: 18px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.installation-equipment-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e5eaf2;
+  margin-bottom: 14px;
+}
+
+.installation-equipment-header h4 {
+  margin: 4px 0 5px;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.installation-equipment-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.installation-equipment-header > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.installation-equipment-linked-list,
+.installation-equipment-options {
+  display: grid;
+  gap: 10px;
+}
+
+.installation-equipment-linked-card,
+.installation-equipment-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 13px;
+}
+
+.installation-equipment-linked-card strong,
+.installation-equipment-option strong {
+  display: block;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.installation-equipment-linked-card p,
+.installation-equipment-option p {
+  margin: 4px 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.installation-equipment-linked-card small,
+.installation-equipment-option small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.installation-equipment-linked-card button,
+.installation-equipment-option button {
+  border: 1px solid #dbe7ff;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f4fc4;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.installation-equipment-linked-card button:disabled,
+.installation-equipment-option button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.installation-equipment-selector {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5eaf2;
+}
+
+.installation-equipment-selector-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.installation-equipment-selector-header h5 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.installation-equipment-selector-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.installation-equipment-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(170px, 0.6fr) minmax(170px, 0.6fr);
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.installation-equipment-filters select {
+  min-height: 46px;
+  border: 1px solid #d9e2ef;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 0 12px;
+  font-weight: 800;
+}
+
+.installation-equipment-search {
+  width: 100%;
+}
+
+.installation-equipment-empty {
+  border: 1px dashed #cbd7e6;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.installation-run-card-meta {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .installation-equipment-filters,
+  .installation-run-card-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .installation-equipment-header,
+  .installation-equipment-linked-card,
+  .installation-equipment-option,
+  .installation-equipment-filters,
+  .installation-run-card-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .installation-equipment-header > span,
+  .installation-equipment-linked-card button,
+  .installation-equipment-option button {
+    width: 100%;
+  }
+}
