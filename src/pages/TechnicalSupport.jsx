@@ -26,6 +26,13 @@ import {
   updateTechnicalLocation,
   updateTechnicalLocationChecklist,
 } from "../services/technicalLocationsService";
+import {
+  createTechnicalSparePart,
+  deactivateTechnicalSparePart,
+  getTechnicalSpareParts,
+  restoreTechnicalSparePart,
+  updateTechnicalSparePart,
+} from "../services/technicalSparePartsService";
 
 const ASSET_CATEGORIES = [
   "Computadora",
@@ -127,10 +134,41 @@ const TECHNICAL_TABS = [
   { id: "resumen", label: "Resumen", icon: "⌂" },
   { id: "mantenimientos", label: "Mantenimientos", icon: "🛠" },
   { id: "equipos", label: "Equipos", icon: "▣" },
+  { id: "recambios", label: "Recambios", icon: "▥" },
   { id: "bajas", label: "Bajas", icon: "↓" },
   { id: "ubicaciones-tecnicas", label: "Ubicaciones técnicas", icon: "⌖" },
   { id: "registrar-equipo", label: "Registrar equipo", icon: "+" },
 ];
+
+const SPARE_PART_CATEGORIES = [
+  { value: "printer", label: "Impresoras" },
+  { value: "computer", label: "Computadoras" },
+  { value: "peripheral", label: "Periféricos" },
+  { value: "cable_adapter", label: "Cables y adaptadores" },
+  { value: "network", label: "Redes" },
+  { value: "audio_video", label: "Audio / video" },
+  { value: "other", label: "Otro" },
+];
+
+const SPARE_PART_TYPES = [
+  { value: "ink", label: "Tinta" },
+  { value: "toner", label: "Tóner" },
+  { value: "drum", label: "Tambor" },
+  { value: "printhead", label: "Cabezal" },
+  { value: "encoder", label: "Encoder" },
+  { value: "power_supply", label: "Fuente de poder" },
+  { value: "ram", label: "Memoria RAM" },
+  { value: "ssd_hdd", label: "Disco / SSD" },
+  { value: "keyboard", label: "Teclado" },
+  { value: "mouse", label: "Mouse" },
+  { value: "monitor_cable", label: "Cable de video" },
+  { value: "audio_cable", label: "Cable auxiliar" },
+  { value: "adapter", label: "Adaptador" },
+  { value: "battery", label: "Batería / pila" },
+  { value: "other", label: "Otro" },
+];
+
+const SPARE_PART_UNITS = ["pieza", "paquete", "juego", "metro", "caja", "otro"];
 
 const MOVEMENT_TYPES = [
   "Mantenimiento preventivo",
@@ -238,6 +276,25 @@ const EMPTY_LOCATION_FORM = {
   notes: "",
 };
 
+const EMPTY_SPARE_PART_FORM = {
+  name: "",
+  category: "printer",
+  categoryOther: "",
+  partType: "ink",
+  partTypeOther: "",
+  brand: "",
+  model: "",
+  compatibleModels: "",
+  quantity: 0,
+  minQuantity: 1,
+  unit: "pieza",
+  unitOther: "",
+  storageLocation: "",
+  status: "active",
+  active: true,
+  notes: "",
+};
+
 
 function isActiveTechnicalAsset(asset) {
   return Boolean(
@@ -263,6 +320,7 @@ export default function TechnicalSupport() {
   const [assets, setAssets] = useState([]);
   const [maintenances, setMaintenances] = useState([]);
   const [technicalLocations, setTechnicalLocations] = useState([]);
+  const [spareParts, setSpareParts] = useState([]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
@@ -270,6 +328,11 @@ export default function TechnicalSupport() {
   const [campusFilter, setCampusFilter] = useState("Todos");
   const [areaFilter, setAreaFilter] = useState("Todas");
   const [conditionFilter, setConditionFilter] = useState("Todas");
+
+  const [sparePartSearchTerm, setSparePartSearchTerm] = useState("");
+  const [sparePartCategoryFilter, setSparePartCategoryFilter] = useState("Todas");
+  const [sparePartTypeFilter, setSparePartTypeFilter] = useState("Todos");
+  const [sparePartStockFilter, setSparePartStockFilter] = useState("active");
 
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetForm, setAssetForm] = useState(EMPTY_ASSET_FORM);
@@ -343,6 +406,13 @@ export default function TechnicalSupport() {
   const [locationReviews, setLocationReviews] = useState([]);
   const [loadingLocationReviews, setLoadingLocationReviews] = useState(false);
   const [locationReviewsError, setLocationReviewsError] = useState("");
+
+  const [loadingSpareParts, setLoadingSpareParts] = useState(true);
+  const [showSparePartForm, setShowSparePartForm] = useState(false);
+  const [sparePartForm, setSparePartForm] = useState(EMPTY_SPARE_PART_FORM);
+  const [sparePartFormError, setSparePartFormError] = useState("");
+  const [editingSparePartId, setEditingSparePartId] = useState(null);
+  const [savingSparePart, setSavingSparePart] = useState(false);
 
   const isEditing = Boolean(editingAssetId);
 
@@ -450,7 +520,12 @@ export default function TechnicalSupport() {
   }, [selectedQuickAsset]);
 
   async function loadInitialData() {
-    await Promise.all([loadAssets(), loadMaintenances(), loadTechnicalLocations()]);
+    await Promise.all([
+      loadAssets(),
+      loadMaintenances(),
+      loadTechnicalLocations(),
+      loadSpareParts(),
+    ]);
   }
 
   async function loadTechnicalLocations() {
@@ -520,6 +595,28 @@ export default function TechnicalSupport() {
       return [];
     } finally {
       setLoadingMaintenances(false);
+    }
+  }
+
+  async function loadSpareParts() {
+    try {
+      setLoadingSpareParts(true);
+      setPageError("");
+
+      const loadedSpareParts = await getTechnicalSpareParts();
+
+      setSpareParts(loadedSpareParts);
+
+      return loadedSpareParts;
+    } catch (error) {
+      console.error("No se pudo cargar el inventario de recambios:", error);
+      setPageError(
+        "No se pudo cargar el inventario de recambios. Revisa las reglas de Firestore o la conexión."
+      );
+
+      return [];
+    } finally {
+      setLoadingSpareParts(false);
     }
   }
 
@@ -664,6 +761,128 @@ export default function TechnicalSupport() {
   const assetsWithQr = visibleAssets.filter((asset) => Boolean(asset.id)).length;
   const campusFilterOptions = CAMPUS_FILTER_OPTIONS;
   const areaFilterOptions = getUniqueAssetValues(visibleAssets, "area");
+
+  const visibleSpareParts = useMemo(
+    () => spareParts.filter((part) => part?.deleted !== true),
+    [spareParts]
+  );
+
+  const activeSpareParts = useMemo(
+    () =>
+      visibleSpareParts.filter(
+        (part) => part?.active !== false && part?.status !== "inactive"
+      ),
+    [visibleSpareParts]
+  );
+
+  const inactiveSpareParts = useMemo(
+    () =>
+      visibleSpareParts.filter(
+        (part) => part?.active === false || part?.status === "inactive"
+      ),
+    [visibleSpareParts]
+  );
+
+  const sparePartCategoryOptions = useMemo(
+    () =>
+      buildDynamicSparePartOptions(
+        SPARE_PART_CATEGORIES,
+        visibleSpareParts.map((part) => part.category),
+        "other"
+      ),
+    [visibleSpareParts]
+  );
+
+  const sparePartTypeOptions = useMemo(
+    () =>
+      buildDynamicSparePartOptions(
+        SPARE_PART_TYPES,
+        visibleSpareParts.map((part) => part.partType),
+        "other"
+      ),
+    [visibleSpareParts]
+  );
+
+  const sparePartUnitOptions = useMemo(
+    () =>
+      buildDynamicSparePartUnits(
+        SPARE_PART_UNITS,
+        visibleSpareParts.map((part) => part.unit),
+        "otro"
+      ),
+    [visibleSpareParts]
+  );
+
+  const lowStockSpareParts = useMemo(
+    () =>
+      activeSpareParts.filter((part) => {
+        const quantity = Number(part.quantity || 0);
+        const minQuantity = Number(part.minQuantity || 0);
+
+        return quantity > 0 && minQuantity > 0 && quantity <= minQuantity;
+      }),
+    [activeSpareParts]
+  );
+
+  const outOfStockSpareParts = useMemo(
+    () => activeSpareParts.filter((part) => Number(part.quantity || 0) <= 0),
+    [activeSpareParts]
+  );
+
+  const filteredSpareParts = useMemo(() => {
+    const normalizedSearch = sparePartSearchTerm.trim().toLowerCase();
+
+    return visibleSpareParts.filter((part) => {
+      const compatibilityText = Array.isArray(part.compatibleModels)
+        ? part.compatibleModels.join(" ")
+        : String(part.compatibleModels || "");
+
+      const matchesSearch =
+        !normalizedSearch ||
+        String(part.name || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.brand || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.model || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.storageLocation || "").toLowerCase().includes(normalizedSearch) ||
+        String(part.notes || "").toLowerCase().includes(normalizedSearch) ||
+        compatibilityText.toLowerCase().includes(normalizedSearch);
+
+      const matchesCategory =
+        sparePartCategoryFilter === "Todas" ||
+        part.category === sparePartCategoryFilter;
+
+      const matchesType =
+        sparePartTypeFilter === "Todos" || part.partType === sparePartTypeFilter;
+
+      const isInactive = part.active === false || part.status === "inactive";
+      const quantity = Number(part.quantity || 0);
+      const minQuantity = Number(part.minQuantity || 0);
+      const isOutOfStock = !isInactive && quantity <= 0;
+      const isLowStock =
+        !isInactive && quantity > 0 && minQuantity > 0 && quantity <= minQuantity;
+
+      const matchesStock =
+        sparePartStockFilter === "all" ||
+        (sparePartStockFilter === "active" && !isInactive) ||
+        (sparePartStockFilter === "low_stock" && isLowStock) ||
+        (sparePartStockFilter === "out_of_stock" && isOutOfStock) ||
+        (sparePartStockFilter === "inactive" && isInactive);
+
+      return matchesSearch && matchesCategory && matchesType && matchesStock;
+    });
+  }, [
+    visibleSpareParts,
+    sparePartSearchTerm,
+    sparePartCategoryFilter,
+    sparePartTypeFilter,
+    sparePartStockFilter,
+  ]);
+
+  const printerSpareParts = activeSpareParts.filter(
+    (part) => part.category === "printer"
+  ).length;
+  const computerSpareParts = activeSpareParts.filter(
+    (part) => part.category === "computer"
+  ).length;
 
   const filteredTechnicalLocations = useMemo(() => {
     const normalizedSearch = locationSearchTerm.trim().toLowerCase();
@@ -922,6 +1141,7 @@ export default function TechnicalSupport() {
     closeMaintenanceForm({ returnToField: shouldReturnToField });
     closeCompletionForm({ returnToField: shouldReturnToField });
     closeQrPanel({ returnToField: shouldReturnToField });
+    closeSparePartForm();
 
     if (!shouldKeepQuickAsset) {
       closeQuickAssetPanel();
@@ -950,6 +1170,7 @@ export default function TechnicalSupport() {
     }
 
     closeAssetForm();
+    closeSparePartForm();
 
     if (tabId === "ubicaciones-tecnicas" && !selectedLocationId && technicalLocations.length > 0) {
       setSelectedLocationId(technicalLocations[0].id);
@@ -965,6 +1186,175 @@ export default function TechnicalSupport() {
 
     if (value.trim()) {
       setActiveTab("equipos");
+    }
+  }
+
+  function openCreateSparePartForm() {
+    closeAllTopPanels();
+    setActiveTab("recambios");
+    setEditingSparePartId(null);
+    setSparePartForm(EMPTY_SPARE_PART_FORM);
+    setSparePartFormError("");
+    setShowSparePartForm(true);
+    scrollToTop();
+  }
+
+  function openEditSparePartForm(part) {
+    if (!part?.id) return;
+
+    closeAllTopPanels();
+    setActiveTab("recambios");
+    setEditingSparePartId(part.id);
+    setSparePartForm({
+      name: part.name || "",
+      category: part.category || "other",
+      categoryOther: "",
+      partType: part.partType || "other",
+      partTypeOther: "",
+      brand: part.brand || "",
+      model: part.model || "",
+      compatibleModels: Array.isArray(part.compatibleModels)
+        ? part.compatibleModels.join("\n")
+        : String(part.compatibleModels || ""),
+      quantity: Number(part.quantity || 0),
+      minQuantity: Number(part.minQuantity || 0),
+      unit: part.unit || "pieza",
+      unitOther: "",
+      storageLocation: part.storageLocation || "",
+      status: part.status || "active",
+      active: part.active !== false,
+      notes: part.notes || "",
+    });
+    setSparePartFormError("");
+    setShowSparePartForm(true);
+    scrollToTop();
+  }
+
+  function closeSparePartForm() {
+    setShowSparePartForm(false);
+    setEditingSparePartId(null);
+    setSparePartForm(EMPTY_SPARE_PART_FORM);
+    setSparePartFormError("");
+    setSavingSparePart(false);
+  }
+
+  function handleSparePartFormChange(event) {
+    const { name, value } = event.target;
+
+    setSparePartForm((currentForm) => {
+      const nextForm = {
+        ...currentForm,
+        [name]: value,
+      };
+
+      if (name === "category" && value !== "other") {
+        nextForm.categoryOther = "";
+      }
+
+      if (name === "partType" && value !== "other") {
+        nextForm.partTypeOther = "";
+      }
+
+      if (name === "unit" && value !== "otro") {
+        nextForm.unitOther = "";
+      }
+
+      return nextForm;
+    });
+  }
+
+  function buildSparePartFormPayload() {
+    return {
+      ...sparePartForm,
+      category: resolveSparePartOptionValue(
+        sparePartForm.category,
+        sparePartForm.categoryOther,
+        SPARE_PART_CATEGORIES,
+        "other"
+      ),
+      partType: resolveSparePartOptionValue(
+        sparePartForm.partType,
+        sparePartForm.partTypeOther,
+        SPARE_PART_TYPES,
+        "other"
+      ),
+      unit: resolveSparePartUnitValue(
+        sparePartForm.unit,
+        sparePartForm.unitOther,
+        "otro"
+      ),
+    };
+  }
+
+  async function handleSaveSparePart(event) {
+    event.preventDefault();
+
+    if (!sparePartForm.name.trim()) {
+      setSparePartFormError("El nombre del recambio es obligatorio.");
+      return;
+    }
+
+    if (Number(sparePartForm.quantity) < 0 || Number(sparePartForm.minQuantity) < 0) {
+      setSparePartFormError("Las cantidades no pueden ser negativas.");
+      return;
+    }
+
+    try {
+      setSavingSparePart(true);
+      setSparePartFormError("");
+
+      const sparePartPayload = buildSparePartFormPayload();
+
+      if (editingSparePartId) {
+        await updateTechnicalSparePart(
+          editingSparePartId,
+          sparePartPayload,
+          profile
+        );
+      } else {
+        await createTechnicalSparePart(sparePartPayload, profile);
+      }
+
+      await loadSpareParts();
+      closeSparePartForm();
+      setActiveTab("recambios");
+    } catch (error) {
+      console.error("No se pudo guardar el recambio:", error);
+      setSparePartFormError(
+        error?.message || "No se pudo guardar el recambio. Revisa los datos o permisos."
+      );
+    } finally {
+      setSavingSparePart(false);
+    }
+  }
+
+  async function handleDeactivateSparePart(part) {
+    if (!part?.id) return;
+
+    const confirmed = window.confirm(
+      `¿Quieres desactivar el recambio "${part.name || "sin nombre"}"? No se borrará del historial.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await deactivateTechnicalSparePart(part.id, profile);
+      await loadSpareParts();
+    } catch (error) {
+      console.error("No se pudo desactivar el recambio:", error);
+      setPageError("No se pudo desactivar el recambio. Revisa los permisos de Firestore.");
+    }
+  }
+
+  async function handleRestoreSparePart(part) {
+    if (!part?.id) return;
+
+    try {
+      await restoreTechnicalSparePart(part.id, profile);
+      await loadSpareParts();
+    } catch (error) {
+      console.error("No se pudo reactivar el recambio:", error);
+      setPageError("No se pudo reactivar el recambio. Revisa los permisos de Firestore.");
     }
   }
 
@@ -2755,6 +3145,20 @@ function closeCompletionForm(options = {}) {
             <p>Inventario técnico actual.</p>
           </div>
           <b>Ver inventario →</b>
+        </button>
+
+        <button
+          className="technical-command-card info spare-command-card"
+          type="button"
+          onClick={() => setActiveTab("recambios")}
+        >
+          <span className="technical-command-icon">▥</span>
+          <div>
+            <strong>{lowStockSpareParts.length + outOfStockSpareParts.length}</strong>
+            <h3>Recambios por revisar</h3>
+            <p>Piezas bajo stock o agotadas.</p>
+          </div>
+          <b>Ver recambios →</b>
         </button>
 
         <button
@@ -5564,6 +5968,502 @@ function closeCompletionForm(options = {}) {
         </section>
       )}
 
+      {!focusedSupportViewActive && activeTab === "recambios" && (
+        <section className="technical-equipment-workspace spare-parts-workspace">
+          <div className="equipment-page-header">
+            <div>
+              <p className="section-kicker equipment-kicker">Inventario de recambios</p>
+              <h2>Recambios</h2>
+              <p>
+                Controla piezas, consumibles y accesorios disponibles para soporte técnico.
+                En esta primera fase puedes registrar, editar, filtrar y desactivar recambios.
+              </p>
+            </div>
+
+            <div className="equipment-header-actions">
+              <button
+                className="visual-outline-button"
+                type="button"
+                onClick={loadSpareParts}
+                disabled={loadingSpareParts}
+              >
+                Actualizar
+              </button>
+
+              <button
+                className="visual-primary-button"
+                type="button"
+                onClick={openCreateSparePartForm}
+              >
+                + Registrar recambio
+              </button>
+            </div>
+          </div>
+
+          <div className="equipment-quick-metrics spare-parts-metrics">
+            <article>
+              <span className="equipment-metric-icon">▥</span>
+              <div>
+                <strong>{activeSpareParts.length}</strong>
+                <p>Recambios activos</p>
+                <small>Disponibles en inventario</small>
+              </div>
+            </article>
+
+            <article>
+              <span className="equipment-metric-icon orange">!</span>
+              <div>
+                <strong>{lowStockSpareParts.length}</strong>
+                <p>Bajo stock</p>
+                <small>Igual o debajo del mínimo</small>
+              </div>
+            </article>
+
+            <article>
+              <span className="equipment-metric-icon gray">0</span>
+              <div>
+                <strong>{outOfStockSpareParts.length}</strong>
+                <p>Sin stock</p>
+                <small>Agotados</small>
+              </div>
+            </article>
+
+            <article>
+              <span className="equipment-metric-icon green">PC</span>
+              <div>
+                <strong>{printerSpareParts + computerSpareParts}</strong>
+                <p>Impresoras / PC</p>
+                <small>Consumibles y refacciones</small>
+              </div>
+            </article>
+          </div>
+
+          {showSparePartForm && (
+            <section className="technical-panel spare-part-form-panel">
+              <div className="technical-panel-header compact">
+                <div>
+                  <h2>{editingSparePartId ? "Editar recambio" : "Registrar recambio"}</h2>
+                  <p>
+                    Usa modelos compatibles para indicar en qué impresoras, computadoras o equipos se puede usar.
+                  </p>
+                </div>
+
+                <button
+                  className="visual-outline-button"
+                  type="button"
+                  onClick={closeSparePartForm}
+                  disabled={savingSparePart}
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              {sparePartFormError && (
+                <div className="form-error">{sparePartFormError}</div>
+              )}
+
+              <form className="technical-form" onSubmit={handleSaveSparePart}>
+                <div className="technical-form-grid spare-part-form-grid">
+                  <label>
+                    Nombre del recambio *
+                    <input
+                      type="text"
+                      name="name"
+                      value={sparePartForm.name}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Ej. Tinta Epson 544 negra"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label>
+                    Categoría
+                    <select
+                      name="category"
+                      value={sparePartForm.category}
+                      onChange={handleSparePartFormChange}
+                      disabled={savingSparePart}
+                    >
+                      {sparePartCategoryOptions.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {sparePartForm.category === "other" && (
+                    <label className="spare-part-custom-field">
+                      Otra categoría
+                      <input
+                        type="text"
+                        name="categoryOther"
+                        value={sparePartForm.categoryOther}
+                        onChange={handleSparePartFormChange}
+                        placeholder="Ej. Refacciones de proyector, cafetería, telefonía"
+                        disabled={savingSparePart}
+                      />
+                      <small>Déjalo vacío para guardar el recambio como “Otro”.</small>
+                    </label>
+                  )}
+
+                  <label>
+                    Tipo
+                    <select
+                      name="partType"
+                      value={sparePartForm.partType}
+                      onChange={handleSparePartFormChange}
+                      disabled={savingSparePart}
+                    >
+                      {sparePartTypeOptions.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {sparePartForm.partType === "other" && (
+                    <label className="spare-part-custom-field">
+                      Otro tipo
+                      <input
+                        type="text"
+                        name="partTypeOther"
+                        value={sparePartForm.partTypeOther}
+                        onChange={handleSparePartFormChange}
+                        placeholder="Ej. Rodillo, fusor, lámpara, control remoto"
+                        disabled={savingSparePart}
+                      />
+                      <small>Déjalo vacío para guardar el recambio como “Otro”.</small>
+                    </label>
+                  )}
+
+                  <label>
+                    Marca
+                    <input
+                      type="text"
+                      name="brand"
+                      value={sparePartForm.brand}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Ej. Epson, Brother, Kingston"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label>
+                    Modelo
+                    <input
+                      type="text"
+                      name="model"
+                      value={sparePartForm.model}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Ej. 544 Black, TN-750, DDR4 8GB"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label>
+                    Cantidad disponible
+                    <input
+                      type="number"
+                      min="0"
+                      name="quantity"
+                      value={sparePartForm.quantity}
+                      onChange={handleSparePartFormChange}
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label>
+                    Cantidad mínima
+                    <input
+                      type="number"
+                      min="0"
+                      name="minQuantity"
+                      value={sparePartForm.minQuantity}
+                      onChange={handleSparePartFormChange}
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label>
+                    Unidad
+                    <select
+                      name="unit"
+                      value={sparePartForm.unit}
+                      onChange={handleSparePartFormChange}
+                      disabled={savingSparePart}
+                    >
+                      {sparePartUnitOptions.map((unit) => (
+                        <option key={unit.value} value={unit.value}>
+                          {unit.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {sparePartForm.unit === "otro" && (
+                    <label className="spare-part-custom-field">
+                      Otra unidad
+                      <input
+                        type="text"
+                        name="unitOther"
+                        value={sparePartForm.unitOther}
+                        onChange={handleSparePartFormChange}
+                        placeholder="Ej. litro, rollo, par, kit"
+                        disabled={savingSparePart}
+                      />
+                      <small>Déjalo vacío para guardar la unidad como “otro”.</small>
+                    </label>
+                  )}
+
+                  <label>
+                    Ubicación de resguardo
+                    <input
+                      type="text"
+                      name="storageLocation"
+                      value={sparePartForm.storageLocation}
+                      onChange={handleSparePartFormChange}
+                      placeholder="Ej. Gabinete soporte técnico"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label>
+                    Estado
+                    <select
+                      name="status"
+                      value={sparePartForm.status}
+                      onChange={handleSparePartFormChange}
+                      disabled={savingSparePart}
+                    >
+                      <option value="active">Activo</option>
+                      <option value="inactive">Inactivo</option>
+                    </select>
+                  </label>
+
+                  <label className="technical-form-full">
+                    Compatible con
+                    <textarea
+                      name="compatibleModels"
+                      value={sparePartForm.compatibleModels}
+                      onChange={handleSparePartFormChange}
+                      rows="3"
+                      placeholder="Escribe un modelo por línea o sepáralos por coma. Ej. Epson L3110, Epson L3250"
+                      disabled={savingSparePart}
+                    />
+                  </label>
+
+                  <label className="technical-form-full">
+                    Notas
+                    <textarea
+                      name="notes"
+                      value={sparePartForm.notes}
+                      onChange={handleSparePartFormChange}
+                      rows="3"
+                      placeholder="Observaciones, restricciones o detalles importantes."
+                      disabled={savingSparePart}
+                    />
+                  </label>
+                </div>
+
+                <div className="technical-form-actions">
+                  <button
+                    type="button"
+                    onClick={closeSparePartForm}
+                    disabled={savingSparePart}
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    disabled={savingSparePart}
+                  >
+                    {savingSparePart
+                      ? "Guardando..."
+                      : editingSparePartId
+                      ? "Guardar cambios"
+                      : "Registrar recambio"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
+
+          <div className="equipment-filter-bar spare-parts-filter-bar">
+            <input
+              type="text"
+              value={sparePartSearchTerm}
+              onChange={(event) => setSparePartSearchTerm(event.target.value)}
+              placeholder="Buscar por nombre, marca, modelo o compatibilidad..."
+              disabled={loadingSpareParts}
+            />
+
+            <select
+              value={sparePartCategoryFilter}
+              onChange={(event) => setSparePartCategoryFilter(event.target.value)}
+              disabled={loadingSpareParts}
+            >
+              <option value="Todas">Todas las categorías</option>
+              {sparePartCategoryOptions.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sparePartTypeFilter}
+              onChange={(event) => setSparePartTypeFilter(event.target.value)}
+              disabled={loadingSpareParts}
+            >
+              <option value="Todos">Todos los tipos</option>
+              {sparePartTypeOptions.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={sparePartStockFilter}
+              onChange={(event) => setSparePartStockFilter(event.target.value)}
+              disabled={loadingSpareParts}
+            >
+              <option value="active">Activos</option>
+              <option value="low_stock">Bajo stock</option>
+              <option value="out_of_stock">Sin stock</option>
+              <option value="inactive">Inactivos</option>
+              <option value="all">Todos</option>
+            </select>
+
+            <button
+              className="visual-outline-button compact-filter-button"
+              type="button"
+              onClick={() => {
+                setSparePartSearchTerm("");
+                setSparePartCategoryFilter("Todas");
+                setSparePartTypeFilter("Todos");
+                setSparePartStockFilter("active");
+              }}
+              disabled={loadingSpareParts}
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="equipment-list-header">
+            <div>
+              <h3>Lista de recambios</h3>
+              <p>
+                Mostrando {filteredSpareParts.length} de {visibleSpareParts.length} recambios registrados.
+              </p>
+            </div>
+          </div>
+
+          {loadingSpareParts ? (
+            <div className="empty-state compact-empty-state">
+              <h3>Cargando recambios...</h3>
+              <p>Estamos consultando el inventario de piezas y consumibles.</p>
+            </div>
+          ) : filteredSpareParts.length > 0 ? (
+            <div className="spare-parts-grid">
+              {filteredSpareParts.map((part) => {
+                const stockState = getSparePartStockState(part);
+                const compatibleModels = Array.isArray(part.compatibleModels)
+                  ? part.compatibleModels
+                  : [];
+
+                return (
+                  <article
+                    className={`spare-part-card stock-${stockState.key}`}
+                    key={part.id}
+                  >
+                    <div className="spare-part-card-top">
+                      <div>
+                        <span className="asset-tag">
+                          {getSparePartTypeLabel(part.partType)}
+                        </span>
+                        <h3>{part.name || "Recambio sin nombre"}</h3>
+                      </div>
+
+                      <span className={`spare-stock-badge ${stockState.key}`}>
+                        {stockState.icon} {stockState.label}
+                      </span>
+                    </div>
+
+                    <div className="spare-stock-panel">
+                      <div>
+                        <strong>{Number(part.quantity || 0)}</strong>
+                        <span>{part.unit || "pieza"}</span>
+                      </div>
+                      <p>
+                        Mínimo recomendado: <b>{Number(part.minQuantity || 0)}</b>
+                      </p>
+                    </div>
+
+                    <div className="spare-part-meta-grid">
+                      <span>{getSparePartCategoryLabel(part.category)}</span>
+                      <span>{part.brand || "Sin marca"}</span>
+                      <span>{part.model || "Sin modelo"}</span>
+                      <span>{part.storageLocation || "Sin ubicación"}</span>
+                    </div>
+
+                    {compatibleModels.length > 0 && (
+                      <div className="spare-compatibility-list">
+                        <strong>Compatible con</strong>
+                        <div>
+                          {compatibleModels.slice(0, 5).map((model) => (
+                            <span key={`${part.id}-${model}`}>{model}</span>
+                          ))}
+                          {compatibleModels.length > 5 && (
+                            <span>+{compatibleModels.length - 5} más</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {part.notes && <p className="spare-part-notes">{part.notes}</p>}
+
+                    <div className="technical-asset-actions spare-part-actions">
+                      <button
+                        type="button"
+                        onClick={() => openEditSparePartForm(part)}
+                      >
+                        Editar
+                      </button>
+
+                      {part.active === false || part.status === "inactive" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreSparePart(part)}
+                        >
+                          Reactivar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleDeactivateSparePart(part)}
+                        >
+                          Desactivar
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state compact-empty-state">
+              <h3>No hay recambios con esos filtros</h3>
+              <p>Registra un recambio o limpia los filtros para ver más resultados.</p>
+            </div>
+          )}
+        </section>
+      )}
+
       {!focusedSupportViewActive && activeTab === "mantenimientos" && (
         <section className="maintenance-workspace-clean">
           <div className="maintenance-clean-header">
@@ -6577,6 +7477,146 @@ function getLocationTypeIcon(type = "") {
   if (normalizedType.includes("oficina")) return "▤";
 
   return "⌖";
+}
+
+function normalizeComparableText(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function getOptionLabel(options, value, fallback = "Otro") {
+  const normalizedValue = normalizeComparableText(value);
+  const option = options.find(
+    (item) =>
+      normalizeComparableText(item.value) === normalizedValue ||
+      normalizeComparableText(item.label) === normalizedValue
+  );
+
+  if (option?.label) return option.label;
+
+  const customValue = String(value || "").trim();
+  return customValue && customValue !== "other" && customValue !== "otro"
+    ? customValue
+    : fallback;
+}
+
+function buildDynamicSparePartOptions(baseOptions, values = [], otherValue = "other") {
+  const knownOptionKeys = new Set(
+    baseOptions.flatMap((option) => [
+      normalizeComparableText(option.value),
+      normalizeComparableText(option.label),
+    ])
+  );
+  const customOptions = [];
+  const customKeys = new Set();
+
+  values.forEach((value) => {
+    const cleanValue = String(value || "").trim();
+    const normalizedValue = normalizeComparableText(cleanValue);
+
+    if (!cleanValue || cleanValue === otherValue || knownOptionKeys.has(normalizedValue)) {
+      return;
+    }
+
+    if (!customKeys.has(normalizedValue)) {
+      customKeys.add(normalizedValue);
+      customOptions.push({ value: cleanValue, label: cleanValue });
+    }
+  });
+
+  const regularOptions = baseOptions.filter((option) => option.value !== otherValue);
+  const otherOption = baseOptions.find((option) => option.value === otherValue);
+
+  return otherOption
+    ? [...regularOptions, ...customOptions, otherOption]
+    : [...regularOptions, ...customOptions];
+}
+
+function buildDynamicSparePartUnits(baseUnits, values = [], otherValue = "otro") {
+  const knownUnitKeys = new Set(baseUnits.map((unit) => normalizeComparableText(unit)));
+  const customUnits = [];
+  const customKeys = new Set();
+
+  values.forEach((value) => {
+    const cleanValue = String(value || "").trim();
+    const normalizedValue = normalizeComparableText(cleanValue);
+
+    if (!cleanValue || cleanValue === otherValue || knownUnitKeys.has(normalizedValue)) {
+      return;
+    }
+
+    if (!customKeys.has(normalizedValue)) {
+      customKeys.add(normalizedValue);
+      customUnits.push(cleanValue);
+    }
+  });
+
+  const regularUnits = baseUnits.filter((unit) => unit !== otherValue);
+
+  return [...regularUnits, ...customUnits, otherValue].map((unit) => ({
+    value: unit,
+    label: unit,
+  }));
+}
+
+function resolveSparePartOptionValue(selectedValue, customValue, options, otherValue = "other") {
+  if (selectedValue !== otherValue) {
+    return selectedValue || otherValue;
+  }
+
+  const cleanCustomValue = String(customValue || "").trim();
+
+  if (!cleanCustomValue) {
+    return otherValue;
+  }
+
+  const normalizedCustomValue = normalizeComparableText(cleanCustomValue);
+  const matchingOption = options.find(
+    (option) =>
+      normalizeComparableText(option.value) === normalizedCustomValue ||
+      normalizeComparableText(option.label) === normalizedCustomValue
+  );
+
+  return matchingOption?.value || cleanCustomValue;
+}
+
+function resolveSparePartUnitValue(selectedValue, customValue, otherValue = "otro") {
+  if (selectedValue !== otherValue) {
+    return selectedValue || "pieza";
+  }
+
+  return String(customValue || "").trim() || otherValue;
+}
+
+function getSparePartCategoryLabel(value = "other") {
+  return getOptionLabel(SPARE_PART_CATEGORIES, value, "Otro");
+}
+
+function getSparePartTypeLabel(value = "other") {
+  return getOptionLabel(SPARE_PART_TYPES, value, "Otro");
+}
+
+function getSparePartStockState(part) {
+  const isInactive = part?.active === false || part?.status === "inactive";
+  const quantity = Number(part?.quantity || 0);
+  const minQuantity = Number(part?.minQuantity || 0);
+
+  if (isInactive) {
+    return { key: "inactive", label: "Inactivo", icon: "○" };
+  }
+
+  if (quantity <= 0) {
+    return { key: "out", label: "Sin stock", icon: "×" };
+  }
+
+  if (minQuantity > 0 && quantity <= minQuantity) {
+    return { key: "low", label: "Bajo stock", icon: "!" };
+  }
+
+  return { key: "ok", label: "Disponible", icon: "✓" };
 }
 
 function scrollToTop() {

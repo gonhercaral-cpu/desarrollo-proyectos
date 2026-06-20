@@ -1540,6 +1540,45 @@ service cloud.firestore {
         && request.resource.data.type.size() > 0;
     }
 
+    function validTechnicalSparePartCreate() {
+      return canManageTechnicalSupport()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.category is string
+        && request.resource.data.category.size() > 0
+        && request.resource.data.partType is string
+        && request.resource.data.partType.size() > 0
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= 0
+        && request.resource.data.minQuantity is number
+        && request.resource.data.minQuantity >= 0;
+    }
+
+    function validTechnicalSparePartUpdate() {
+      return canManageTechnicalSupport()
+        && (
+          !("name" in request.resource.data) ||
+          (
+            request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+          )
+        )
+        && (
+          !("quantity" in request.resource.data) ||
+          (
+            request.resource.data.quantity is number
+            && request.resource.data.quantity >= 0
+          )
+        )
+        && (
+          !("minQuantity" in request.resource.data) ||
+          (
+            request.resource.data.minQuantity is number
+            && request.resource.data.minQuantity >= 0
+          )
+        );
+    }
+
     function validTechnicalLocationUpdate() {
       return canManageTechnicalSupport()
         && (
@@ -2071,6 +2110,16 @@ service cloud.firestore {
         || responsiblePrintRequestUpdate()
         || validPublicPrintRequestUpdate()
         || validPrintshopSoftDeleteUpdate();
+
+      allow delete: if false;
+    }
+
+    match /technicalSpareParts/{partId} {
+      allow read: if hasProfile();
+
+      allow create: if validTechnicalSparePartCreate();
+
+      allow update: if validTechnicalSparePartUpdate();
 
       allow delete: if false;
     }

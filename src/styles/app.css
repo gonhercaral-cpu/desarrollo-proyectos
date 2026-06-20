@@ -22798,3 +22798,326 @@ body:has(.field-mode-page) .main-content {
     max-height: 70px;
   }
 }
+
+/* =========================================================
+   SOPORTE TÉCNICO - INVENTARIO DE RECAMBIOS
+========================================================= */
+
+.spare-parts-workspace {
+  gap: 18px;
+}
+
+.spare-command-card .technical-command-icon {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.spare-parts-metrics .equipment-metric-icon.green {
+  font-size: 13px;
+}
+
+.spare-part-form-panel {
+  border-left: 5px solid #0f4fc4;
+  background:
+    radial-gradient(circle at 95% 12%, rgba(15, 79, 196, 0.08), transparent 28%),
+    linear-gradient(180deg, #ffffff, #fbfdff);
+}
+
+.spare-part-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.spare-part-custom-field {
+  position: relative;
+  border: 1px dashed #bad0ff;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.spare-part-custom-field input {
+  margin-top: 7px;
+}
+
+.spare-part-custom-field small {
+  display: block;
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.spare-parts-filter-bar {
+  grid-template-columns: minmax(260px, 1.4fr) repeat(3, minmax(150px, 0.7fr)) auto;
+}
+
+.spare-parts-filter-bar input {
+  height: 44px;
+  min-height: 44px;
+  border: 1px solid #dbe3ef;
+  border-radius: 13px;
+  background: #fbfdff;
+  color: #0f2442;
+  padding: 0 13px;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+}
+
+.spare-parts-filter-bar input:focus {
+  border-color: #0f4fc4;
+  box-shadow: 0 0 0 3px rgba(15, 79, 196, 0.11);
+}
+
+.spare-parts-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.spare-part-card {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  min-height: 300px;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.spare-part-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: #0f4fc4;
+}
+
+.spare-part-card.stock-low::after {
+  background: #f97316;
+}
+
+.spare-part-card.stock-out::after {
+  background: #ed1c24;
+}
+
+.spare-part-card.stock-inactive {
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+  opacity: 0.82;
+}
+
+.spare-part-card.stock-inactive::after {
+  background: #94a3b8;
+}
+
+.spare-part-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.spare-part-card-top h3 {
+  margin: 8px 0 0;
+  color: #0f2442;
+  font-size: 17px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.spare-stock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 96px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.spare-stock-badge.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.spare-stock-badge.low {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.spare-stock-badge.out {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.spare-stock-badge.inactive {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.spare-stock-panel {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid #e5eaf2;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.spare-stock-panel div {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  min-height: 76px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #dbe7ff;
+}
+
+.spare-stock-panel strong {
+  display: block;
+  color: #0f4fc4;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.spare-stock-panel span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.spare-stock-panel p {
+  margin: 0;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.spare-stock-panel b {
+  color: #0f2442;
+}
+
+.spare-part-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.spare-part-meta-grid span {
+  min-width: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.spare-compatibility-list {
+  display: grid;
+  gap: 8px;
+}
+
+.spare-compatibility-list strong {
+  color: #0f2442;
+  font-size: 12px;
+}
+
+.spare-compatibility-list div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.spare-compatibility-list span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.spare-part-notes {
+  margin: 0;
+  padding: 12px;
+  border-radius: 15px;
+  background: #f8fafc;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.spare-part-actions {
+  margin-top: auto;
+}
+
+.spare-part-actions button:last-child {
+  color: #b42318;
+}
+
+.spare-part-card.stock-inactive .spare-part-actions button:last-child {
+  color: #027a48;
+}
+
+@media (max-width: 1450px) {
+  .spare-parts-grid {
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
+  }
+
+  .spare-parts-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .spare-parts-filter-bar input {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1100px) {
+  .spare-part-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .spare-parts-grid {
+    grid-template-columns: repeat(2, minmax(230px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .spare-part-form-grid,
+  .spare-parts-filter-bar,
+  .spare-parts-grid,
+  .spare-stock-panel,
+  .spare-part-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .spare-parts-filter-bar input {
+    grid-column: auto;
+  }
+
+  .spare-stock-badge {
+    min-width: auto;
+  }
+
+  .spare-part-card-top {
+    flex-direction: column;
+  }
+}
