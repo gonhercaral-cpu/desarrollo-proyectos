@@ -32,6 +32,59 @@ service cloud.firestore {
       return hasProfile() && role() == "admin";
     }
 
+
+    function validAutoApprovalReason(reason) {
+      return reason in ["assembly", "specialMeeting", "theocraticEvent"];
+    }
+
+    function scheduleRequestPath(requestId) {
+      return /databases/$(database)/documents/scheduleRequests/$(requestId);
+    }
+
+    function isOwnScheduleRequest() {
+      return hasProfile()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    function validScheduleRequestCreate() {
+      return hasProfile()
+        && request.resource.data.userId == request.auth.uid
+        && (
+          request.resource.data.status == "pending"
+          || (
+            request.resource.data.status == "approved"
+            && request.resource.data.autoApproved == true
+            && validAutoApprovalReason(request.resource.data.autoApprovalReason)
+          )
+        );
+    }
+
+    function validAutoScheduleAdjustmentCreate() {
+      return hasProfile()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.sourceRequestId is string
+        && request.resource.data.autoApproved == true
+        && validAutoApprovalReason(request.resource.data.autoApprovalReason)
+        && exists(scheduleRequestPath(request.resource.data.sourceRequestId))
+        && get(scheduleRequestPath(request.resource.data.sourceRequestId)).data.userId == request.auth.uid
+        && get(scheduleRequestPath(request.resource.data.sourceRequestId)).data.status == "approved"
+        && get(scheduleRequestPath(request.resource.data.sourceRequestId)).data.autoApproved == true
+        && get(scheduleRequestPath(request.resource.data.sourceRequestId)).data.autoApprovalReason == request.resource.data.autoApprovalReason;
+    }
+
+    function validAutoScheduleLogCreate() {
+      return hasProfile()
+        && request.resource.data.action == "autoApproved"
+        && request.resource.data.requestId is string
+        && request.resource.data.autoApproved == true
+        && validAutoApprovalReason(request.resource.data.autoApprovalReason)
+        && exists(scheduleRequestPath(request.resource.data.requestId))
+        && get(scheduleRequestPath(request.resource.data.requestId)).data.userId == request.auth.uid
+        && get(scheduleRequestPath(request.resource.data.requestId)).data.status == "approved"
+        && get(scheduleRequestPath(request.resource.data.requestId)).data.autoApproved == true
+        && get(scheduleRequestPath(request.resource.data.requestId)).data.autoApprovalReason == request.resource.data.autoApprovalReason;
+    }
+
     function isRequester() {
       return hasProfile() && role() == "requester";
     }
@@ -1841,11 +1894,10 @@ service cloud.firestore {
 
 
     match /scheduleRequests/{requestId} {
-      allow get, list: if isAdmin();
+      allow read: if isAdmin()
+        || isOwnScheduleRequest();
 
-      allow create: if hasProfile()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == "pending";
+      allow create: if validScheduleRequestCreate();
 
       allow update: if isAdmin();
 
@@ -1855,13 +1907,17 @@ service cloud.firestore {
     match /scheduleAdjustments/{adjustmentId} {
       allow read: if hasProfile();
 
-      allow create, update, delete: if isAdmin();
+      allow create: if isAdmin()
+        || validAutoScheduleAdjustmentCreate();
+
+      allow update, delete: if isAdmin();
     }
 
     match /scheduleLogs/{logId} {
       allow read: if isAdmin();
 
-      allow create: if isAdmin();
+      allow create: if isAdmin()
+        || validAutoScheduleLogCreate();
 
       allow update, delete: if false;
     }

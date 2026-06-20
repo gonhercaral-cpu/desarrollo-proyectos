@@ -39,10 +39,25 @@ const REQUEST_TYPES = {
   permission: "Permiso",
   absence: "Ausencia",
   scheduleChange: "Cambio de horario",
+  permanentScheduleChange: "Cambio permanente de horario base",
+  temporarySwap: "Cambio temporal de día",
   dayOff: "Descanso solicitado",
   lateArrival: "Entrada tarde",
   earlyLeave: "Salida temprano",
 };
+
+const AUTO_APPROVAL_REASONS = {
+  standard: "Revisión normal",
+  assembly: "Asamblea",
+  specialMeeting: "Reunión especial",
+  theocraticEvent: "Evento teocrático",
+};
+
+const AUTO_APPROVAL_REASON_KEYS = [
+  "assembly",
+  "specialMeeting",
+  "theocraticEvent",
+];
 
 const REQUEST_STATUS_LABELS = {
   pending: "Pendiente",
@@ -53,6 +68,27 @@ const REQUEST_STATUS_LABELS = {
 
 const PRIVATE_REQUEST_MESSAGE =
   "Tu solicitud fue registrada. Administración la revisará. Los demás colaboradores no pueden ver los detalles de esta solicitud.";
+
+const AUTO_APPROVED_REQUEST_MESSAGE =
+  "Tu solicitud fue aprobada automáticamente por tratarse de un motivo autorizado. El ajuste ya se refleja en la agenda del equipo.";
+
+const DEFAULT_PERMANENT_CHANGE_DAYS = DAYS.reduce((map, day) => {
+  map[day.key] = {
+    selected: false,
+    isRestDay: false,
+    startTime: "09:00",
+    endTime: "17:00",
+  };
+
+  return map;
+}, {});
+
+function getDefaultPermanentChangeDays() {
+  return DAYS.reduce((map, day) => {
+    map[day.key] = { ...DEFAULT_PERMANENT_CHANGE_DAYS[day.key] };
+    return map;
+  }, {});
+}
 
 export default function TeamAgenda() {
   const { profile, isAdmin } = useAuth();
@@ -79,10 +115,15 @@ export default function TeamAgenda() {
 
   const [formData, setFormData] = useState({
     type: "permission",
+    autoApprovalReason: "standard",
     startDate: "",
     endDate: "",
     requestedStartTime: "",
     requestedEndTime: "",
+    replacementDate: "",
+    replacementStartTime: "",
+    replacementEndTime: "",
+    permanentChanges: getDefaultPermanentChangeDays(),
     reason: "",
   });
 
@@ -178,7 +219,7 @@ export default function TeamAgenda() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!currentUserId) {
       setRequests([]);
       setLoadingRequests(false);
       return undefined;
@@ -187,10 +228,13 @@ export default function TeamAgenda() {
     setLoadingRequests(true);
     setLoadError("");
 
-    const requestsQuery = query(
-      collection(db, "scheduleRequests"),
-      where("status", "in", ["pending", "approved", "rejected"])
-    );
+    const requestsCollection = collection(db, "scheduleRequests");
+    const requestsQuery = isAdmin
+      ? query(
+          requestsCollection,
+          where("status", "in", ["pending", "approved", "rejected", "cancelled"])
+        )
+      : query(requestsCollection, where("userId", "==", currentUserId));
 
     const unsubscribe = onSnapshot(
       requestsQuery,
@@ -208,14 +252,16 @@ export default function TeamAgenda() {
       (error) => {
         console.error("No se pudieron cargar las solicitudes:", error);
         setLoadError(
-          "No se pudieron cargar las solicitudes. Revisa las reglas de Firestore para la colección scheduleRequests."
+          isAdmin
+            ? "No se pudieron cargar las solicitudes. Revisa las reglas de Firestore para la colección scheduleRequests."
+            : "No se pudieron cargar tus solicitudes. Revisa las reglas de Firestore para scheduleRequests."
         );
         setLoadingRequests(false);
       }
     );
 
     return () => unsubscribe();
-  }, [isAdmin]);
+  }, [currentUserId, isAdmin]);
 
   useEffect(() => {
     if (!scheduleForm.userId && teamUsers.length > 0) {
@@ -296,20 +342,53 @@ export default function TeamAgenda() {
           ["absence", "permission", "dayOff"].includes(adjustment.publicStatus) &&
           isDateInRangeValue(todayDate, adjustment.startDate, adjustment.endDate)
       ).length,
-      pending: isAdmin
-        ? requests.filter((request) => request.status === "pending").length
-        : "—",
+      pending: requests.filter((request) => request.status === "pending").length,
     };
   }, [isAdmin, requests, scheduleAdjustments, team]);
 
-  function handleChange(event) {
-    const { name, value } = event.target;
+  const agendaInsights = useMemo(
+    () =>
+      buildAgendaInsights({
+        team,
+        requests,
+        scheduleAdjustments,
+      }),
+    [requests, scheduleAdjustments, team]
+  );
 
+  function handleChange(event) {
+    const { name, value, type, checked } = event.target;
+
+    setRequestMessage("");
+
+    setFormData((current) => {
+      const nextValue = type === "checkbox" ? checked : value;
+      const nextData = {
+        ...current,
+        [name]: nextValue,
+      };
+
+      if (name === "type" && nextValue === "permanentScheduleChange") {
+        nextData.autoApprovalReason = "standard";
+      }
+
+      return nextData;
+    });
+  }
+
+  function handlePermanentDayChange(dayKey, field, value) {
     setRequestMessage("");
 
     setFormData((current) => ({
       ...current,
-      [name]: value,
+      permanentChanges: {
+        ...(current.permanentChanges || getDefaultPermanentChangeDays()),
+        [dayKey]: {
+          ...((current.permanentChanges || getDefaultPermanentChangeDays())[dayKey] ||
+            DEFAULT_PERMANENT_CHANGE_DAYS[dayKey]),
+          [field]: value,
+        },
+      },
     }));
   }
 
@@ -358,6 +437,53 @@ export default function TeamAgenda() {
       return;
     }
 
+    if (formData.type === "temporarySwap") {
+      if (formData.replacementDate === formData.startDate) {
+        setRequestMessage(
+          "Selecciona un día de reposición diferente al día que no podrás asistir."
+        );
+        return;
+      }
+
+      if (
+        !formData.replacementDate ||
+        !formData.replacementStartTime ||
+        !formData.replacementEndTime
+      ) {
+        setRequestMessage(
+          "Para un cambio temporal de día agrega la fecha de reposición y su horario."
+        );
+        return;
+      }
+    }
+
+    if (formData.type === "permanentScheduleChange") {
+      const selectedPermanentChanges = getSelectedPermanentChanges(formData);
+
+      if (selectedPermanentChanges.length === 0) {
+        setRequestMessage("Selecciona al menos un día de la semana para modificar.");
+        return;
+      }
+
+      if (isAutoApprovalReason(formData.autoApprovalReason)) {
+        setRequestMessage(
+          "Los cambios permanentes al horario base siempre requieren aprobación administrativa."
+        );
+        return;
+      }
+
+      const invalidPermanentChange = selectedPermanentChanges.find(
+        (change) => !change.isRestDay && (!change.startTime || !change.endTime)
+      );
+
+      if (invalidPermanentChange) {
+        setRequestMessage(
+          `Para ${getDayLabel(invalidPermanentChange.dayOfWeek)} agrega la nueva hora de entrada y salida, o marca el día como descanso.`
+        );
+        return;
+      }
+    }
+
     if (requiresRequestedSchedule(formData.type)) {
       if (!formData.requestedStartTime || !formData.requestedEndTime) {
         setRequestMessage(
@@ -372,10 +498,29 @@ export default function TeamAgenda() {
 
     try {
       const requestStartDay = getDayKeyFromDateValue(formData.startDate);
-      const originalSchedule = scheduleMap[getScheduleKey(currentUserId, requestStartDay)];
+      const selectedPermanentChanges = getSelectedPermanentChanges(formData);
+      const baseScheduleDay =
+        formData.type === "permanentScheduleChange" && selectedPermanentChanges[0]
+          ? selectedPermanentChanges[0].dayOfWeek
+          : requestStartDay;
+      const originalSchedule = scheduleMap[getScheduleKey(currentUserId, baseScheduleDay)];
+      const permanentOriginalSchedule =
+        formData.type === "permanentScheduleChange"
+          ? getPermanentOriginalScheduleLabel({
+              userId: currentUserId,
+              changes: selectedPermanentChanges,
+              scheduleMap,
+            })
+          : getOriginalScheduleLabel(originalSchedule);
       const selectedUser = teamUsers.find((user) => user.id === currentUserId);
+      const autoApproved =
+        formData.type !== "permanentScheduleChange" &&
+        isAutoApprovalReason(formData.autoApprovalReason);
+      const autoAdminComment = autoApproved
+        ? getAutoApprovalAdminComment(formData.autoApprovalReason)
+        : "";
 
-      await addDoc(collection(db, "scheduleRequests"), {
+      const requestPayload = {
         userId: currentUserId,
         userName:
           profile?.name || selectedUser?.name || profile?.email || "Usuario sin nombre",
@@ -386,34 +531,102 @@ export default function TeamAgenda() {
           selectedUser?.area ||
           "Sin área",
         type: formData.type,
-        status: "pending",
+        status: autoApproved ? "approved" : "pending",
+        autoApprovalReason: formData.autoApprovalReason || "standard",
+        autoApproved,
         startDate: formData.startDate,
         endDate: formData.endDate || formData.startDate,
         originalStartTime: originalSchedule?.startTime || "",
         originalEndTime: originalSchedule?.endTime || "",
-        originalSchedule: getOriginalScheduleLabel(originalSchedule),
-        requestedStartTime: formData.requestedStartTime || "",
-        requestedEndTime: formData.requestedEndTime || "",
-        requestedSchedule: getRequestedScheduleLabel(formData),
+        originalSchedule: permanentOriginalSchedule,
+        requestedStartTime:
+          formData.type === "permanentScheduleChange"
+            ? selectedPermanentChanges[0]?.startTime || ""
+            : formData.requestedStartTime || "",
+        requestedEndTime:
+          formData.type === "permanentScheduleChange"
+            ? selectedPermanentChanges[0]?.endTime || ""
+            : formData.requestedEndTime || "",
+        replacementDate: formData.replacementDate || "",
+        replacementStartTime: formData.replacementStartTime || "",
+        replacementEndTime: formData.replacementEndTime || "",
+        replacementSchedule: getReplacementScheduleLabel(formData),
+        permanentChanges: selectedPermanentChanges,
+        permanentDayOfWeek: selectedPermanentChanges[0]?.dayOfWeek || "",
+        permanentIsRestDay: selectedPermanentChanges[0]?.isRestDay || false,
+        requestedSchedule: getRequestedScheduleLabel({
+          ...formData,
+          permanentChanges: selectedPermanentChanges,
+        }),
         reason: formData.reason.trim(),
-        adminComment: "",
-        reviewedAt: null,
-        reviewedBy: null,
-        reviewedByName: null,
+        adminComment: autoAdminComment,
+        reviewedAt: autoApproved ? serverTimestamp() : null,
+        reviewedBy: autoApproved ? "system-auto" : null,
+        reviewedByName: autoApproved ? "Aprobación automática" : null,
         requestedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      const requestRef = await addDoc(
+        collection(db, "scheduleRequests"),
+        requestPayload
+      );
+
+      if (autoApproved) {
+        const approvedRequest = {
+          id: requestRef.id,
+          ...requestPayload,
+        };
+
+        const adjustmentPayloads = buildAdjustmentPayloads({
+          request: approvedRequest,
+          profile: { name: "Aprobación automática" },
+          currentUserId: "system-auto",
+        });
+
+        await Promise.all(
+          adjustmentPayloads.map((adjustment) =>
+            setDoc(
+              doc(db, "scheduleAdjustments", adjustment.id),
+              {
+                ...adjustment.payload,
+                autoApproved: true,
+                autoApprovalReason: formData.autoApprovalReason,
+              }
+            )
+          )
+        );
+
+        await addDoc(collection(db, "scheduleLogs"), {
+          requestId: requestRef.id,
+          action: "autoApproved",
+          performedBy: "system-auto",
+          performedByName: "Aprobación automática",
+          performedAt: serverTimestamp(),
+          details: autoAdminComment,
+          autoApproved: true,
+          autoApprovalReason: formData.autoApprovalReason,
+          adminComment: autoAdminComment,
+        });
+      }
 
       setFormData({
         type: "permission",
+        autoApprovalReason: "standard",
         startDate: "",
         endDate: "",
         requestedStartTime: "",
         requestedEndTime: "",
+        replacementDate: "",
+        replacementStartTime: "",
+        replacementEndTime: "",
+        permanentChanges: getDefaultPermanentChangeDays(),
         reason: "",
       });
 
-      setRequestMessage(PRIVATE_REQUEST_MESSAGE);
+      setRequestMessage(
+        autoApproved ? AUTO_APPROVED_REQUEST_MESSAGE : PRIVATE_REQUEST_MESSAGE
+      );
     } catch (error) {
       console.error("No se pudo registrar la solicitud:", error);
       setRequestMessage(
@@ -510,10 +723,38 @@ export default function TeamAgenda() {
       });
 
       if (nextStatus === "approved") {
-        await setDoc(
-          doc(db, "scheduleAdjustments", request.id),
-          buildAdjustmentPayload({ request, profile, currentUserId })
-        );
+        if (request.type === "permanentScheduleChange") {
+          const permanentSchedules = buildPermanentSchedulePayloads({
+            request,
+            teamUsers,
+            scheduleMap,
+          });
+
+          await Promise.all(
+            permanentSchedules.map((permanentSchedule) =>
+              setDoc(
+                doc(db, "workSchedules", permanentSchedule.id),
+                permanentSchedule.payload,
+                { merge: true }
+              )
+            )
+          );
+        } else {
+          const adjustmentPayloads = buildAdjustmentPayloads({
+            request,
+            profile,
+            currentUserId,
+          });
+
+          await Promise.all(
+            adjustmentPayloads.map((adjustment) =>
+              setDoc(
+                doc(db, "scheduleAdjustments", adjustment.id),
+                adjustment.payload
+              )
+            )
+          );
+        }
       }
 
       await addDoc(collection(db, "scheduleLogs"), {
@@ -524,7 +765,9 @@ export default function TeamAgenda() {
         performedAt: serverTimestamp(),
         details:
           nextStatus === "approved"
-            ? "Solicitud aprobada por administración."
+            ? request.type === "permanentScheduleChange"
+              ? "Cambio permanente de horario base aprobado por administración."
+              : "Solicitud aprobada por administración."
             : "Solicitud rechazada por administración.",
         adminComment,
       });
@@ -551,8 +794,8 @@ export default function TeamAgenda() {
           <h2>Agenda del equipo</h2>
           <p>
             Consulta los horarios del equipo completo, ausencias, permisos y
-            cambios aprobados. Los detalles de las solicitudes solo los puede ver
-            administración.
+            cambios aprobados. Cada colaborador puede consultar el historial de
+            sus propias solicitudes y comentarios administrativos.
           </p>
         </div>
 
@@ -594,11 +837,13 @@ export default function TeamAgenda() {
           detail={
             isAdmin
               ? "Solicitudes por revisar"
-              : "Solo administración puede revisar solicitudes"
+              : "Tus solicitudes pendientes"
           }
           tone="yellow"
         />
       </section>
+
+      {isAdmin && <AgendaInsights insights={agendaInsights} />}
 
       <section className="team-agenda-card">
         <div className="team-agenda-section-header">
@@ -775,8 +1020,16 @@ export default function TeamAgenda() {
         </section>
       )}
 
-      <div className="team-agenda-bottom-grid">
-        <section className="team-agenda-card">
+      <div
+        className={`team-agenda-bottom-grid ${
+          formData.type === "permanentScheduleChange" ? "permanent-mode" : ""
+        }`}
+      >
+        <section
+          className={`team-agenda-card ${
+            formData.type === "permanentScheduleChange" ? "team-agenda-card-wide" : ""
+          }`}
+        >
           <div className="team-agenda-section-header">
             <div>
               <h3>Solicitar cambio</h3>
@@ -799,9 +1052,43 @@ export default function TeamAgenda() {
               </select>
             </label>
 
+            <label>
+              Motivo de autorización
+              <select
+                name="autoApprovalReason"
+                value={formData.autoApprovalReason}
+                onChange={handleChange}
+                disabled={formData.type === "permanentScheduleChange"}
+              >
+                {Object.entries(AUTO_APPROVAL_REASONS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {formData.type !== "permanentScheduleChange" &&
+              isAutoApprovalReason(formData.autoApprovalReason) && (
+                <p className="team-agenda-auto-approval-note">
+                  Esta solicitud se aprobará automáticamente por tratarse de un
+                  motivo autorizado. El ajuste se reflejará en la agenda sin
+                  modificar el horario permanente.
+                </p>
+              )}
+
+            {formData.type === "permanentScheduleChange" && (
+              <p className="team-agenda-auto-approval-note warning">
+                Este tipo de solicitud siempre requiere aprobación administrativa
+                porque modifica el horario base.
+              </p>
+            )}
+
             <div className="team-agenda-form-row">
               <label>
-                Fecha inicial
+                {formData.type === "permanentScheduleChange"
+                  ? "Fecha desde la que aplica"
+                  : "Fecha inicial"}
                 <input
                   type="date"
                   name="startDate"
@@ -811,38 +1098,193 @@ export default function TeamAgenda() {
                 />
               </label>
 
-              <label>
-                Fecha final
-                <input
-                  type="date"
-                  name="endDate"
-                  value={formData.endDate}
-                  onChange={handleChange}
-                />
-              </label>
+              {formData.type !== "permanentScheduleChange" && (
+                <label>
+                  Fecha final
+                  <input
+                    type="date"
+                    name="endDate"
+                    value={formData.endDate}
+                    onChange={handleChange}
+                  />
+                </label>
+              )}
             </div>
 
-            <div className="team-agenda-form-row">
-              <label>
-                Nueva entrada
-                <input
-                  type="time"
-                  name="requestedStartTime"
-                  value={formData.requestedStartTime}
-                  onChange={handleChange}
-                />
-              </label>
+            {formData.type === "temporarySwap" && (
+              <div className="team-agenda-swap-box">
+                <strong>Cambio temporal de día</strong>
+                <p>
+                  Usa esta opción cuando no puedas asistir un día de esta semana
+                  y quieras reponerlo en otro día sin modificar tu horario
+                  permanente.
+                </p>
 
-              <label>
-                Nueva salida
-                <input
-                  type="time"
-                  name="requestedEndTime"
-                  value={formData.requestedEndTime}
-                  onChange={handleChange}
-                />
-              </label>
-            </div>
+                <div className="team-agenda-form-row">
+                  <label>
+                    Día que vas a reponer
+                    <input
+                      type="date"
+                      name="replacementDate"
+                      value={formData.replacementDate}
+                      onChange={handleChange}
+                      required={formData.type === "temporarySwap"}
+                    />
+                  </label>
+
+                  <label>
+                    Entrada de reposición
+                    <input
+                      type="time"
+                      name="replacementStartTime"
+                      value={formData.replacementStartTime}
+                      onChange={handleChange}
+                      required={formData.type === "temporarySwap"}
+                    />
+                  </label>
+                </div>
+
+                <div className="team-agenda-form-row">
+                  <label>
+                    Salida de reposición
+                    <input
+                      type="time"
+                      name="replacementEndTime"
+                      value={formData.replacementEndTime}
+                      onChange={handleChange}
+                      required={formData.type === "temporarySwap"}
+                    />
+                  </label>
+
+                  <div className="team-agenda-swap-note">
+                    El día inicial quedará como no disponible y el día de
+                    reposición aparecerá como horario temporal aprobado.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {formData.type === "permanentScheduleChange" && (
+              <div className="team-agenda-swap-box permanent-schedule-box team-agenda-permanent-change-box">
+                <strong>Cambio permanente de horario base</strong>
+                <p>
+                  Usa esta opción cuando quieras modificar tu horario regular.
+                  Requiere aprobación administrativa y, al aprobarse, actualizará
+                  los horarios siguientes sin afectar los ajustes temporales ya
+                  registrados.
+                </p>
+
+                <div className="team-agenda-permanent-days-grid permanent-week-grid">
+                  {DAYS.map((day) => {
+                    const dayChange =
+                      formData.permanentChanges?.[day.key] ||
+                      DEFAULT_PERMANENT_CHANGE_DAYS[day.key];
+
+                    return (
+                      <div
+                        key={day.key}
+                        className={`team-agenda-permanent-day-card permanent-day-card ${dayChange.selected ? "selected" : ""}`}
+                      >
+                        <label className="team-agenda-permanent-day-header permanent-day-check">
+                          <input
+                            type="checkbox"
+                            checked={dayChange.selected}
+                            onChange={(event) =>
+                              handlePermanentDayChange(
+                                day.key,
+                                "selected",
+                                event.target.checked
+                              )
+                            }
+                          />
+                          <span>{day.label}</span>
+                        </label>
+
+                        <label className="team-agenda-permanent-day-rest team-agenda-checkbox-label permanent-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={dayChange.isRestDay}
+                            disabled={!dayChange.selected}
+                            onChange={(event) =>
+                              handlePermanentDayChange(
+                                day.key,
+                                "isRestDay",
+                                event.target.checked
+                              )
+                            }
+                          />
+                          Descanso fijo
+                        </label>
+
+                        <div className="team-agenda-permanent-day-fields permanent-day-times">
+                          <label>
+                            Entrada
+                            <input
+                              type="time"
+                              value={dayChange.startTime}
+                              disabled={!dayChange.selected || dayChange.isRestDay}
+                              onChange={(event) =>
+                                handlePermanentDayChange(
+                                  day.key,
+                                  "startTime",
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label>
+                            Salida
+                            <input
+                              type="time"
+                              value={dayChange.endTime}
+                              disabled={!dayChange.selected || dayChange.isRestDay}
+                              onChange={(event) =>
+                                handlePermanentDayChange(
+                                  day.key,
+                                  "endTime",
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="team-agenda-swap-note">
+                  Selecciona uno o varios días. Este cambio no se autoaprueba.
+                  Cuando administración lo apruebe, se actualizarán solo los días
+                  seleccionados del horario base para las siguientes semanas.
+                </div>
+              </div>
+            )}
+
+            {formData.type !== "temporarySwap" && formData.type !== "permanentScheduleChange" && (
+              <div className="team-agenda-form-row">
+                <label>
+                  Nueva entrada
+                  <input
+                    type="time"
+                    name="requestedStartTime"
+                    value={formData.requestedStartTime}
+                    onChange={handleChange}
+                  />
+                </label>
+
+                <label>
+                  Nueva salida
+                  <input
+                    type="time"
+                    name="requestedEndTime"
+                    value={formData.requestedEndTime}
+                    onChange={handleChange}
+                  />
+                </label>
+              </div>
+            )}
 
             <label>
               Motivo
@@ -919,6 +1361,27 @@ export default function TeamAgenda() {
                         <b>Solicitado:</b> {request.requestedSchedule}
                       </span>
 
+                      {request.type === "temporarySwap" && request.replacementSchedule && (
+                        <span>
+                          <b>Reposición:</b> {request.replacementSchedule}
+                        </span>
+                      )}
+
+                      {request.type === "permanentScheduleChange" && (
+                        <span>
+                          <b>Días base a modificar:</b>{" "}
+                          {getPermanentChangesShortLabel(request)}
+                        </span>
+                      )}
+
+                      {request.autoApprovalReason &&
+                        request.autoApprovalReason !== "standard" && (
+                          <span>
+                            <b>Motivo autorizado:</b>{" "}
+                            {getAutoApprovalReasonLabel(request.autoApprovalReason)}
+                          </span>
+                        )}
+
                       {request.reviewedByName && (
                         <span>
                           <b>Revisó:</b> {request.reviewedByName}
@@ -979,8 +1442,227 @@ export default function TeamAgenda() {
             </div>
           </section>
         )}
+
+        {!isAdmin && (
+          <section className="team-agenda-card">
+            <div className="team-agenda-section-header">
+              <div>
+                <h3>Mis solicitudes</h3>
+                <p>
+                  Consulta el historial de tus solicitudes y los comentarios que
+                  deje administración al aprobar o rechazar.
+                </p>
+              </div>
+            </div>
+
+            <div className="team-agenda-request-list">
+              {loadingRequests ? (
+                <div className="team-agenda-empty">Cargando tus solicitudes...</div>
+              ) : requests.length === 0 ? (
+                <div className="team-agenda-empty">
+                  Todavía no tienes solicitudes registradas.
+                </div>
+              ) : (
+                requests.map((request) => (
+                  <article key={request.id} className="team-agenda-request-card">
+                    <div className="team-agenda-request-top">
+                      <div>
+                        <strong>{REQUEST_TYPES[request.type]}</strong>
+                        <span>Solicitud registrada por ti</span>
+                      </div>
+
+                      <StatusBadge status={request.status} />
+                    </div>
+
+                    <div className="team-agenda-request-info">
+                      <span>
+                        <b>Fecha:</b> {formatDate(request.startDate)}
+                        {request.endDate && request.endDate !== request.startDate
+                          ? ` - ${formatDate(request.endDate)}`
+                          : ""}
+                      </span>
+
+                      <span>
+                        <b>Horario actual:</b> {request.originalSchedule}
+                      </span>
+
+                      <span>
+                        <b>Solicitado:</b> {request.requestedSchedule}
+                      </span>
+
+                      {request.type === "temporarySwap" && request.replacementSchedule && (
+                        <span>
+                          <b>Reposición:</b> {request.replacementSchedule}
+                        </span>
+                      )}
+
+                      {request.type === "permanentScheduleChange" && (
+                        <span>
+                          <b>Días base a modificar:</b>{" "}
+                          {getPermanentChangesShortLabel(request)}
+                        </span>
+                      )}
+
+                      {request.autoApprovalReason &&
+                        request.autoApprovalReason !== "standard" && (
+                          <span>
+                            <b>Motivo autorizado:</b>{" "}
+                            {getAutoApprovalReasonLabel(request.autoApprovalReason)}
+                          </span>
+                        )}
+
+                      {request.reviewedByName && (
+                        <span>
+                          <b>Revisó:</b> {request.reviewedByName}
+                        </span>
+                      )}
+                    </div>
+
+                    <p>{request.reason}</p>
+
+                    {request.adminComment ? (
+                      <p className="team-agenda-admin-comment">
+                        <b>Comentario administrativo:</b> {request.adminComment}
+                      </p>
+                    ) : (
+                      request.status !== "pending" && (
+                        <p className="team-agenda-admin-comment muted">
+                          Sin comentario administrativo.
+                        </p>
+                      )
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </div>
+  );
+}
+
+function AgendaInsights({ insights }) {
+  return (
+    <section className="team-agenda-card agenda-insights-card">
+      <div className="team-agenda-section-header">
+        <div>
+          <h3>Indicadores de agenda</h3>
+          <p>
+            Resumen administrativo de cobertura, horas programadas y patrones de
+            solicitudes.
+          </p>
+        </div>
+      </div>
+
+      <div className="agenda-insights-grid">
+        <InsightCard
+          title="Día con mayor cobertura"
+          value={insights.busiestDay?.label || "Sin datos"}
+          detail={
+            insights.busiestDay
+              ? `${insights.busiestDay.value} colaboradores programados`
+              : "Configura horarios para calcularlo"
+          }
+        />
+
+        <InsightCard
+          title="Más horas semanales"
+          value={insights.topHoursPerson?.label || "Sin datos"}
+          detail={
+            insights.topHoursPerson
+              ? `${formatHours(insights.topHoursPerson.value)} programadas`
+              : "Sin horarios suficientes"
+          }
+        />
+
+        <InsightCard
+          title="Más ausencias / permisos"
+          value={insights.topAbsencePerson?.label || "Sin datos"}
+          detail={
+            insights.topAbsencePerson
+              ? `${insights.topAbsencePerson.value} ajustes aprobados`
+              : "Sin ausencias aprobadas"
+          }
+        />
+
+        <InsightCard
+          title="Más cambios solicitados"
+          value={insights.topChangePerson?.label || "Sin datos"}
+          detail={
+            insights.topChangePerson
+              ? `${insights.topChangePerson.value} solicitudes de cambio`
+              : "Sin cambios registrados"
+          }
+        />
+      </div>
+
+      <div className="agenda-charts-grid">
+        <BarChart
+          title="Cobertura por día"
+          items={insights.coverageByDay}
+          emptyText="Todavía no hay horarios programados."
+        />
+
+        <BarChart
+          title="Horas por colaborador"
+          items={insights.hoursByPerson}
+          valueFormatter={formatHours}
+          emptyText="Todavía no hay horas programadas."
+        />
+
+        <BarChart
+          title="Solicitudes por tipo"
+          items={insights.requestsByType}
+          emptyText="Todavía no hay solicitudes registradas."
+        />
+      </div>
+    </section>
+  );
+}
+
+function InsightCard({ title, value, detail }) {
+  return (
+    <article className="agenda-insight-mini-card">
+      <span>{title}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+function BarChart({ title, items, valueFormatter = (value) => value, emptyText }) {
+  const maxValue = Math.max(...items.map((item) => item.value), 0);
+
+  return (
+    <article className="agenda-chart-card">
+      <h4>{title}</h4>
+
+      {items.length === 0 || maxValue === 0 ? (
+        <div className="team-agenda-empty compact">{emptyText}</div>
+      ) : (
+        <div className="agenda-chart-list">
+          {items.map((item) => {
+            const width = maxValue > 0 ? Math.max((item.value / maxValue) * 100, 7) : 0;
+
+            return (
+              <div key={item.key || item.label} className="agenda-chart-row">
+                <span>{item.label}</span>
+
+                <div className="agenda-chart-bar-track">
+                  <div
+                    className="agenda-chart-bar"
+                    style={{ width: `${width}%` }}
+                  />
+                </div>
+
+                <strong>{valueFormatter(item.value)}</strong>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -1128,24 +1810,53 @@ function buildAdjustmentSchedule(adjustment) {
   };
 }
 
-function buildAdjustmentPayload({ request, profile, currentUserId }) {
-  const publicStatus = getPublicStatusFromRequestType(request.type);
-  const isAvailabilityBlock = ["permission", "absence", "dayOff"].includes(
-    publicStatus
-  );
+function buildPermanentSchedulePayloads({ request, teamUsers, scheduleMap }) {
+  const selectedUser = teamUsers.find((user) => user.id === request.userId);
+  const changes = getRequestPermanentChanges(request);
 
-  return {
+  return changes.map((change) => {
+    const dayOfWeek = change.dayOfWeek;
+    const scheduleId = getScheduleKey(request.userId, dayOfWeek);
+    const existingSchedule = scheduleMap[scheduleId];
+
+    const payload = {
+      userId: request.userId,
+      userName: request.userName || selectedUser?.name || "Usuario sin nombre",
+      userEmail: request.userEmail || selectedUser?.email || "",
+      area: request.userArea || selectedUser?.area || "Sin área",
+      role: selectedUser?.role || "collaborator",
+      dayOfWeek,
+      startTime: change.isRestDay ? "" : change.startTime || "",
+      endTime: change.isRestDay ? "" : change.endTime || "",
+      isRestDay: change.isRestDay || false,
+      isActive: true,
+      sourceRequestId: request.id,
+      effectiveFromDate: request.startDate || "",
+      updatedAt: serverTimestamp(),
+    };
+
+    if (!existingSchedule) {
+      payload.createdAt = serverTimestamp();
+    }
+
+    return {
+      id: scheduleId,
+      payload,
+    };
+  });
+}
+
+function buildAdjustmentPayloads({ request, profile, currentUserId }) {
+  if (request.type === "permanentScheduleChange") {
+    return [];
+  }
+
+  const basePayload = {
     userId: request.userId,
     userName: request.userName || "Usuario sin nombre",
     userEmail: request.userEmail || "",
     userArea: request.userArea || "Sin área",
     type: request.type,
-    publicStatus,
-    startDate: request.startDate,
-    endDate: request.endDate || request.startDate,
-    startTime: isAvailabilityBlock ? "" : request.requestedStartTime || "",
-    endTime: isAvailabilityBlock ? "" : request.requestedEndTime || "",
-    displayLabel: getPublicAdjustmentLabel(publicStatus),
     sourceRequestId: request.id,
     isActive: true,
     approvedBy: currentUserId,
@@ -1153,6 +1864,71 @@ function buildAdjustmentPayload({ request, profile, currentUserId }) {
     approvedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
+
+  if (request.type === "temporarySwap") {
+    return [
+      {
+        id: `${request.id}_original`,
+        payload: {
+          ...basePayload,
+          publicStatus: "dayOff",
+          startDate: request.startDate,
+          endDate: request.startDate,
+          startTime: "",
+          endTime: "",
+          displayLabel: "Día cambiado aprobado",
+          replacementDate: request.replacementDate || "",
+          replacementStartTime: request.replacementStartTime || "",
+          replacementEndTime: request.replacementEndTime || "",
+        },
+      },
+      {
+        id: `${request.id}_replacement`,
+        payload: {
+          ...basePayload,
+          publicStatus: "temporarySwap",
+          startDate: request.replacementDate || request.startDate,
+          endDate: request.replacementDate || request.startDate,
+          startTime: request.replacementStartTime || "",
+          endTime: request.replacementEndTime || "",
+          displayLabel: "Reposición aprobada",
+          originalDate: request.startDate,
+        },
+      },
+    ];
+  }
+
+  const publicStatus = getPublicStatusFromRequestType(request.type);
+  const isAvailabilityBlock = ["permission", "absence", "dayOff"].includes(
+    publicStatus
+  );
+
+  return [
+    {
+      id: request.id,
+      payload: {
+        ...basePayload,
+        publicStatus,
+        startDate: request.startDate,
+        endDate: request.endDate || request.startDate,
+        startTime: isAvailabilityBlock ? "" : request.requestedStartTime || "",
+        endTime: isAvailabilityBlock ? "" : request.requestedEndTime || "",
+        displayLabel: getPublicAdjustmentLabel(publicStatus),
+      },
+    },
+  ];
+}
+
+function isAutoApprovalReason(reason) {
+  return AUTO_APPROVAL_REASON_KEYS.includes(reason);
+}
+
+function getAutoApprovalReasonLabel(reason) {
+  return AUTO_APPROVAL_REASONS[reason] || AUTO_APPROVAL_REASONS.standard;
+}
+
+function getAutoApprovalAdminComment(reason) {
+  return `Solicitud aprobada automáticamente por motivo autorizado: ${getAutoApprovalReasonLabel(reason)}.`;
 }
 
 function getPublicStatusFromRequestType(type) {
@@ -1161,6 +1937,7 @@ function getPublicStatusFromRequestType(type) {
   if (type === "dayOff") return "dayOff";
   if (type === "lateArrival") return "lateArrival";
   if (type === "earlyLeave") return "earlyLeave";
+  if (type === "temporarySwap") return "temporarySwap";
 
   return "scheduleChange";
 }
@@ -1171,6 +1948,7 @@ function getPublicAdjustmentLabel(publicStatus) {
     absence: "Ausencia aprobada",
     dayOff: "Descanso aprobado",
     scheduleChange: "Cambio aprobado",
+    temporarySwap: "Reposición aprobada",
     lateArrival: "Entrada tarde aprobada",
     earlyLeave: "Salida temprano aprobada",
   };
@@ -1178,12 +1956,117 @@ function getPublicAdjustmentLabel(publicStatus) {
   return labels[publicStatus] || "Cambio aprobado";
 }
 
+function getSelectedPermanentChanges(data) {
+  const changes = data?.permanentChanges || {};
+
+  if (Array.isArray(changes)) {
+    return changes
+      .filter((change) => change?.dayOfWeek)
+      .map((change) => ({
+        dayOfWeek: change.dayOfWeek,
+        isRestDay: Boolean(change.isRestDay),
+        startTime: change.isRestDay ? "" : change.startTime || "",
+        endTime: change.isRestDay ? "" : change.endTime || "",
+      }));
+  }
+
+  return DAYS.filter((day) => changes[day.key]?.selected).map((day) => ({
+    dayOfWeek: day.key,
+    isRestDay: Boolean(changes[day.key]?.isRestDay),
+    startTime: changes[day.key]?.isRestDay ? "" : changes[day.key]?.startTime || "",
+    endTime: changes[day.key]?.isRestDay ? "" : changes[day.key]?.endTime || "",
+  }));
+}
+
+function getRequestPermanentChanges(request) {
+  if (Array.isArray(request?.permanentChanges) && request.permanentChanges.length > 0) {
+    return getSelectedPermanentChanges(request);
+  }
+
+  if (request?.permanentDayOfWeek) {
+    return [
+      {
+        dayOfWeek: request.permanentDayOfWeek,
+        isRestDay: Boolean(request.permanentIsRestDay),
+        startTime: request.permanentIsRestDay ? "" : request.requestedStartTime || "",
+        endTime: request.permanentIsRestDay ? "" : request.requestedEndTime || "",
+      },
+    ];
+  }
+
+  return [];
+}
+
+function getPermanentOriginalScheduleLabel({ userId, changes, scheduleMap }) {
+  if (!changes.length) return "Sin horario asignado";
+
+  return changes
+    .map((change) => {
+      const originalSchedule = scheduleMap[getScheduleKey(userId, change.dayOfWeek)];
+      return `${getDayLabel(change.dayOfWeek)}: ${getOriginalScheduleLabel(originalSchedule)}`;
+    })
+    .join(" · ");
+}
+
+function getPermanentChangesShortLabel(request) {
+  const changes = getRequestPermanentChanges(request);
+
+  if (changes.length === 0) return "Sin días seleccionados";
+
+  return changes.map((change) => getDayLabel(change.dayOfWeek)).join(", ");
+}
+
 function getRequestedScheduleLabel(data) {
+  if (data.type === "permanentScheduleChange") {
+    const changes = Array.isArray(data.permanentChanges)
+      ? data.permanentChanges
+      : getSelectedPermanentChanges(data);
+
+    if (changes.length === 0) {
+      return "Cambio permanente de horario base";
+    }
+
+    return changes
+      .map((change) => {
+        const dayLabel = getDayLabel(change.dayOfWeek);
+
+        if (change.isRestDay) {
+          return `${dayLabel}: descanso fijo`;
+        }
+
+        if (change.startTime && change.endTime) {
+          return `${dayLabel}: ${change.startTime} - ${change.endTime}`;
+        }
+
+        return `${dayLabel}: nuevo horario base`;
+      })
+      .join(" · ");
+  }
+
+  if (data.type === "temporarySwap") {
+    return `No asistir el ${formatDate(data.startDate)} y reponer en otra fecha`;
+  }
+
   if (data.requestedStartTime && data.requestedEndTime) {
     return `${data.requestedStartTime} - ${data.requestedEndTime}`;
   }
 
   return REQUEST_TYPES[data.type] || "Solicitud";
+}
+
+function getReplacementScheduleLabel(data) {
+  if (data.type !== "temporarySwap") return "";
+
+  const dateLabel = data.replacementDate
+    ? formatDate(data.replacementDate)
+    : "fecha por definir";
+
+  const timeLabel =
+    data.replacementStartTime && data.replacementEndTime
+      ? `${data.replacementStartTime} - ${data.replacementEndTime}`
+      : "horario por definir";
+
+  return `${dateLabel}, ${timeLabel}`;
 }
 
 function getOriginalScheduleLabel(schedule) {
@@ -1295,6 +2178,11 @@ function getDayKeyFromDate(date) {
   return keys[date.getDay()];
 }
 
+function getDayLabel(dayKey) {
+  const day = DAYS.find((item) => item.key === dayKey);
+  return day?.label || "Día no definido";
+}
+
 function isNowBetween(startTime, endTime) {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -1358,6 +2246,127 @@ function isDateInRangeValue(dateValue, startDate, endDate) {
   const end = endDate || startDate;
 
   return dateValue >= start && dateValue <= end;
+}
+
+function buildAgendaInsights({ team, requests, scheduleAdjustments }) {
+  const coverageByDay = DAYS.map((day) => {
+    const value = team.filter((person) =>
+      isWorkingSchedule(person.schedules?.[day.key])
+    ).length;
+
+    return {
+      key: day.key,
+      label: day.label,
+      value,
+    };
+  });
+
+  const hoursByPerson = team
+    .map((person) => {
+      const value = DAYS.reduce((total, day) => {
+        const schedule = person.schedules?.[day.key];
+
+        if (!isWorkingSchedule(schedule)) return total;
+
+        return total + getScheduleHours(schedule);
+      }, 0);
+
+      return {
+        key: person.id,
+        label: person.name,
+        value,
+      };
+    })
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const absenceCounts = countByUser(
+    scheduleAdjustments.filter((adjustment) =>
+      ["permission", "absence", "dayOff"].includes(
+        adjustment.publicStatus || adjustment.type
+      )
+    )
+  );
+
+  const changeCounts = countByUser(
+    requests.filter((request) =>
+      ["scheduleChange", "permanentScheduleChange", "temporarySwap", "lateArrival", "earlyLeave"].includes(request.type)
+    )
+  );
+
+  const requestsByType = Object.entries(REQUEST_TYPES)
+    .map(([type, label]) => ({
+      key: type,
+      label,
+      value: requests.filter((request) => request.type === type).length,
+    }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  return {
+    coverageByDay,
+    hoursByPerson,
+    requestsByType,
+    busiestDay: getTopItem(coverageByDay),
+    topHoursPerson: getTopItem(hoursByPerson),
+    topAbsencePerson: getTopItem(absenceCounts),
+    topChangePerson: getTopItem(changeCounts),
+  };
+}
+
+function isWorkingSchedule(schedule) {
+  if (!schedule) return false;
+
+  return ["normal", "active", "approved"].includes(schedule.status)
+    && Boolean(schedule.start)
+    && Boolean(schedule.end);
+}
+
+function getScheduleHours(schedule) {
+  const startMinutes = timeToMinutes(schedule.start);
+  const endMinutes = timeToMinutes(schedule.end);
+
+  if (startMinutes === null || endMinutes === null) return 0;
+
+  if (endMinutes >= startMinutes) {
+    return (endMinutes - startMinutes) / 60;
+  }
+
+  return (24 * 60 - startMinutes + endMinutes) / 60;
+}
+
+function countByUser(items) {
+  const counts = new Map();
+
+  items.forEach((item) => {
+    const userId = item.userId || item.id || item.userName;
+    if (!userId) return;
+
+    const current = counts.get(userId) || {
+      key: userId,
+      label: item.userName || item.name || "Usuario sin nombre",
+      value: 0,
+    };
+
+    current.value += 1;
+    counts.set(userId, current);
+  });
+
+  return [...counts.values()].sort((a, b) => b.value - a.value);
+}
+
+function getTopItem(items) {
+  const sorted = [...items].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
+
+  return sorted[0] || null;
+}
+
+function formatHours(value) {
+  if (!value) return "0 h";
+
+  const rounded = Math.round(value * 10) / 10;
+
+  return `${rounded} h`;
 }
 
 function getRequestSortValue(request) {
