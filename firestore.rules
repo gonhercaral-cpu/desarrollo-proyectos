@@ -1477,6 +1477,31 @@ service cloud.firestore {
       && request.resource.data.createdBy == "public-form";
     }
 
+    function validPrintshopSoftDeleteUpdate() {
+      return isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "active",
+          "deleted",
+          "deletedAt",
+          "deletedByUid",
+          "deletedByName",
+          "deletedByEmail",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.deleted == true
+        && request.resource.data.active == false
+        && request.resource.data.deletedByUid == request.auth.uid
+        && request.resource.data.deletedByName is string
+        && request.resource.data.deletedByEmail is string
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
+    }
+
+
     function validPrintshopLogData() {
       return request.resource.data.type is string
         && request.resource.data.type.size() > 0
@@ -1637,8 +1662,14 @@ service cloud.firestore {
     match /printProducts/{productId} {
       allow read: if canAccessPrintshop();
 
-      allow create, update: if isAdmin()
+      allow create: if isAdmin()
         && validPrintProductData();
+
+      allow update: if (
+          isAdmin()
+          && validPrintProductData()
+        )
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -1654,7 +1685,8 @@ service cloud.firestore {
           isAdmin()
           && validPrintFinishedInventoryData()
         )
-        || responsibleInventoryEntryUpdate();
+        || responsibleInventoryEntryUpdate()
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -1682,7 +1714,8 @@ service cloud.firestore {
           isAdmin()
           && validPrintSupplyItemData()
         )
-        || validSupplyStockMovementUpdate();
+        || validSupplyStockMovementUpdate()
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -1709,7 +1742,8 @@ service cloud.firestore {
         )
         || responsibleProductionBatchUpdate()
         || auditorQualityBatchUpdate()
-        || responsibleInventoryBatchApplyUpdate();
+        || responsibleInventoryBatchApplyUpdate()
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -1718,8 +1752,14 @@ service cloud.firestore {
     match /certificateSigners/{signerId} {
       allow read: if canAccessPrintshop();
 
-      allow create, update: if isAdmin()
+      allow create: if isAdmin()
         && validCertificateSignerData();
+
+      allow update: if (
+          isAdmin()
+          && validCertificateSignerData()
+        )
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -1727,8 +1767,14 @@ service cloud.firestore {
     match /certificateTemplates/{templateId} {
       allow read: if canAccessPrintshop();
 
-      allow create, update: if isAdmin()
+      allow create: if isAdmin()
         && validCertificateTemplateData();
+
+      allow update: if (
+          isAdmin()
+          && validCertificateTemplateData()
+        )
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -1739,8 +1785,11 @@ service cloud.firestore {
       allow create: if canManageGeneratedCertificateRequest(request.resource.data.requestId)
         && validGeneratedCertificateData();
 
-      allow update: if canManageGeneratedCertificateRequest(resource.data.requestId)
-        && validGeneratedCertificateData();
+      allow update: if (
+          canManageGeneratedCertificateRequest(resource.data.requestId)
+          && validGeneratedCertificateData()
+        )
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }
@@ -2020,7 +2069,8 @@ service cloud.firestore {
           && validPrintRequestData()
         )
         || responsiblePrintRequestUpdate()
-        || validPublicPrintRequestUpdate();
+        || validPublicPrintRequestUpdate()
+        || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
     }

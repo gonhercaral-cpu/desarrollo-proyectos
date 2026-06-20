@@ -2471,10 +2471,12 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       productsQuery,
       (snapshot) => {
-        const nextProducts = snapshot.docs.map((productDoc) => ({
-          id: productDoc.id,
-          ...productDoc.data(),
-        }));
+        const nextProducts = snapshot.docs
+          .map((productDoc) => ({
+            id: productDoc.id,
+            ...productDoc.data(),
+          }))
+          .filter((product) => product.deleted !== true);
 
         setProducts(nextProducts);
         setLoadingProducts(false);
@@ -2503,10 +2505,12 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       inventoryQuery,
       (snapshot) => {
-        const nextInventory = snapshot.docs.map((inventoryDoc) => ({
-          id: inventoryDoc.id,
-          ...inventoryDoc.data(),
-        }));
+        const nextInventory = snapshot.docs
+          .map((inventoryDoc) => ({
+            id: inventoryDoc.id,
+            ...inventoryDoc.data(),
+          }))
+          .filter((item) => item.deleted !== true);
 
         setInventoryItems(nextInventory);
         setLoadingInventory(false);
@@ -2562,12 +2566,14 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       suppliesQuery,
       (snapshot) => {
-        const nextSupplies = snapshot.docs.map((supplyDoc) =>
-          normalizeSupplyItem({
-            id: supplyDoc.id,
-            ...supplyDoc.data(),
-          })
-        );
+        const nextSupplies = snapshot.docs
+          .map((supplyDoc) =>
+            normalizeSupplyItem({
+              id: supplyDoc.id,
+              ...supplyDoc.data(),
+            })
+          )
+          .filter((item) => item.deleted !== true);
 
         setSupplyItems(nextSupplies);
         setLoadingSupplies(false);
@@ -2622,10 +2628,12 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       batchesQuery,
       (snapshot) => {
-        const nextBatches = snapshot.docs.map((batchDoc) => ({
-          id: batchDoc.id,
-          ...batchDoc.data(),
-        }));
+        const nextBatches = snapshot.docs
+          .map((batchDoc) => ({
+            id: batchDoc.id,
+            ...batchDoc.data(),
+          }))
+          .filter((batch) => batch.deleted !== true);
 
         setProductionBatches(nextBatches);
         setLoadingBatches(false);
@@ -2654,10 +2662,12 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       requestsQuery,
       (snapshot) => {
-        const nextRequests = snapshot.docs.map((requestDoc) => ({
-          id: requestDoc.id,
-          ...requestDoc.data(),
-        }));
+        const nextRequests = snapshot.docs
+          .map((requestDoc) => ({
+            id: requestDoc.id,
+            ...requestDoc.data(),
+          }))
+          .filter((request) => request.deleted !== true);
 
         setPrintRequests(nextRequests);
         setLoadingRequests(false);
@@ -2686,12 +2696,14 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       signersQuery,
       (snapshot) => {
-        const nextSigners = snapshot.docs.map((signerDoc) =>
-          normalizeCertificateSigner({
-            id: signerDoc.id,
-            ...signerDoc.data(),
-          })
-        );
+        const nextSigners = snapshot.docs
+          .map((signerDoc) =>
+            normalizeCertificateSigner({
+              id: signerDoc.id,
+              ...signerDoc.data(),
+            })
+          )
+          .filter((signer) => signer.deleted !== true);
 
         setCertificateSigners(nextSigners);
         setLoadingSigners(false);
@@ -2718,12 +2730,14 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       templatesQuery,
       (snapshot) => {
-        const nextTemplates = snapshot.docs.map((templateDoc) =>
-          normalizeCertificateTemplate({
-            id: templateDoc.id,
-            ...templateDoc.data(),
-          })
-        );
+        const nextTemplates = snapshot.docs
+          .map((templateDoc) =>
+            normalizeCertificateTemplate({
+              id: templateDoc.id,
+              ...templateDoc.data(),
+            })
+          )
+          .filter((template) => template.deleted !== true);
 
         setCertificateTemplates(nextTemplates);
         setLoadingTemplates(false);
@@ -2750,12 +2764,14 @@ export default function PrintShop() {
     const unsubscribe = onSnapshot(
       certificatesQuery,
       (snapshot) => {
-        const nextCertificates = snapshot.docs.map((certificateDoc) =>
-          normalizeGeneratedCertificate({
-            id: certificateDoc.id,
-            ...certificateDoc.data(),
-          })
-        );
+        const nextCertificates = snapshot.docs
+          .map((certificateDoc) =>
+            normalizeGeneratedCertificate({
+              id: certificateDoc.id,
+              ...certificateDoc.data(),
+            })
+          )
+          .filter((certificate) => certificate.deleted !== true);
 
         setGeneratedCertificates(nextCertificates);
         setLoadingGeneratedCertificates(false);
@@ -3201,6 +3217,72 @@ export default function PrintShop() {
       });
     } catch (error) {
       console.error("No se pudo registrar la bitácora de imprenta:", error);
+    }
+  }
+
+  async function softDeletePrintshopRecord(collectionName, record, options = {}) {
+    if (!isAdmin || !record?.id) return;
+
+    const auditUser = getAuditUser();
+    const label =
+      options.label ||
+      record.folio ||
+      record.name ||
+      record.productName ||
+      record.studentName ||
+      record.templateName ||
+      "registro";
+
+    const confirmed = window.confirm(
+      `¿Eliminar este registro de ${options.sectionLabel || "Imprenta"}?\n\n${label}\n\nNo se borrará físicamente de Firestore; solo dejará de aparecer en el sistema.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await updateDoc(doc(db, collectionName, record.id), {
+        active: false,
+        deleted: true,
+        deletedAt: serverTimestamp(),
+        deletedByUid: auditUser.uid,
+        deletedByName: auditUser.name,
+        deletedByEmail: auditUser.email,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+
+      if (collectionName === "printProducts" && selectedProductId === record.id) resetProductForm();
+      if (collectionName === "printSupplyItems" && selectedSupplyId === record.id) resetSupplyForm();
+      if (collectionName === "printProductionBatches" && selectedBatchId === record.id) resetBatchForm();
+      if (collectionName === "printRequests" && selectedRequestId === record.id) resetRequestForm();
+      if (collectionName === "certificateTemplates" && selectedTemplateId === record.id) resetTemplateForm();
+      if (collectionName === "certificateSigners" && selectedSignerId === record.id) resetSignerForm();
+
+      await createPrintshopLog({
+        type: "DELETE",
+        module: options.module || "general",
+        title: `Registro eliminado: ${label}`,
+        description: `El registro se ocultó del módulo de Imprenta mediante eliminación lógica.`,
+        referenceType: collectionName,
+        referenceId: record.id,
+        requestId: collectionName === "printRequests" ? record.id : record.requestId || "",
+        requestFolio: record.requestFolio || record.folio || "",
+        certificateId: collectionName === "generatedCertificates" ? record.id : "",
+        certificateFolio: record.certificateFolio || record.folio || "",
+        validationCode: record.validationCode || "",
+        studentName: record.studentName || "",
+        batchId: collectionName === "printProductionBatches" ? record.id : record.batchId || "",
+        batchFolio: record.batchFolio || record.folio || "",
+        productId: record.productId || (collectionName === "printProducts" ? record.id : ""),
+        productName: record.productName || record.name || "",
+        campus: record.campus || "",
+        level: record.level || "",
+      });
+    } catch (error) {
+      console.error("No se pudo eliminar el registro de Imprenta:", error);
+      alert("No se pudo eliminar el registro. Revisa las reglas de Firestore o intenta de nuevo.");
     }
   }
 
@@ -6556,6 +6638,11 @@ export default function PrintShop() {
           onResetForm={resetProductForm}
           onToggleStatus={toggleProductStatus}
           onSeedBaseProducts={seedBaseProducts}
+          onSoftDeleteProduct={(product) => softDeletePrintshopRecord("printProducts", product, {
+            module: "catalog",
+            sectionLabel: "Catálogo de productos",
+            label: product.name,
+          })}
         />
       ) : activeSection === "inventory" ? (
         <FinishedInventoryView
@@ -6581,6 +6668,11 @@ export default function PrintShop() {
           onRegisterMovement={registerInventoryMovement}
           onPrepareMovement={prepareMovement}
           onResetInventoryForm={resetInventoryForm}
+          onSoftDeleteInventoryItem={(item) => softDeletePrintshopRecord("printFinishedInventory", item, {
+            module: "inventory",
+            sectionLabel: "Inventario terminado",
+            label: item.productName,
+          })}
         />
       ) : activeSection === "supplies" ? (
         <SupplyInventoryView
@@ -6616,6 +6708,11 @@ export default function PrintShop() {
           onSupplyMovementInputChange={handleSupplyMovementInputChange}
           onSupplyMovementNumberInputChange={handleSupplyMovementNumberInputChange}
           onRegisterSupplyMovement={registerSupplyMovement}
+          onSoftDeleteSupplyItem={(item) => softDeletePrintshopRecord("printSupplyItems", item, {
+            module: "supplies",
+            sectionLabel: "Insumos",
+            label: item.name,
+          })}
         />
       ) : activeSection === "requests" ? (
         <PrintRequestsView
@@ -6669,6 +6766,11 @@ export default function PrintShop() {
           onGenerateAllStudentFolios={generateAllStudentFolios}
           onRegisterGeneratedCertificate={registerGeneratedCertificate}
           onLogPrintshopAction={createPrintshopLog}
+          onSoftDeleteRequest={(request) => softDeletePrintshopRecord("printRequests", request, {
+            module: "requests",
+            sectionLabel: "Solicitudes",
+            label: request.folio || getRequestProductLabel(request),
+          })}
         />
       ) : activeSection === "certificates" ? (
         <GeneratedCertificatesView
@@ -6695,6 +6797,11 @@ export default function PrintShop() {
           onCancelCertificate={(certificate) => updateGeneratedCertificateStatus(certificate, "Cancelado")}
           onOpenRequest={openRequestFromGeneratedCertificate}
           onReprintCertificate={reprintGeneratedCertificate}
+          onSoftDeleteCertificate={(certificate) => softDeletePrintshopRecord("generatedCertificates", certificate, {
+            module: "certificates",
+            sectionLabel: "Historial de certificados",
+            label: certificate.folio || certificate.studentName,
+          })}
         />
       ) : activeSection === "logs" ? (
         <PrintshopLogsView
@@ -6743,6 +6850,11 @@ export default function PrintShop() {
           onSelectTemplate={selectTemplate}
           onResetTemplateForm={resetTemplateForm}
           onToggleTemplateStatus={toggleTemplateStatus}
+          onSoftDeleteTemplate={(template) => softDeletePrintshopRecord("certificateTemplates", template, {
+            module: "templates",
+            sectionLabel: "Plantillas",
+            label: template.name,
+          })}
         />
       ) : activeSection === "signers" && isAdmin ? (
         <CertificateSignersView
@@ -6762,6 +6874,11 @@ export default function PrintShop() {
           onSelectSigner={selectSigner}
           onResetSignerForm={resetSignerForm}
           onToggleSignerStatus={toggleSignerStatus}
+          onSoftDeleteSigner={(signer) => softDeletePrintshopRecord("certificateSigners", signer, {
+            module: "signers",
+            sectionLabel: "Firmas",
+            label: signer.name,
+          })}
         />
       ) : (
         <ProductionBatchesView
@@ -6798,6 +6915,11 @@ export default function PrintShop() {
           onSendBatchToInventory={sendBatchToInventory}
           onPrepareBatchSupplyMovement={prepareBatchSupplyMovement}
           onOpenInventory={() => setActiveSection("inventory")}
+          onSoftDeleteBatch={(batch) => softDeletePrintshopRecord("printProductionBatches", batch, {
+            module: "batches",
+            sectionLabel: "Lotes de producción",
+            label: batch.folio || batch.productName,
+          })}
         />
       )}
     </div>
@@ -6974,6 +7096,7 @@ function GeneratedCertificatesView({
   onCancelCertificate,
   onOpenRequest,
   onReprintCertificate,
+  onSoftDeleteCertificate,
 }) {
   const stats = useMemo(() => {
     const generated = filteredCertificates.filter((certificate) => certificate.status === "Generado").length;
@@ -7250,6 +7373,16 @@ function GeneratedCertificatesView({
                           >
                             Cancelar
                           </button>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              className="danger-table-button"
+                              disabled={updating}
+                              onClick={() => onSoftDeleteCertificate(certificate)}
+                            >
+                              Eliminar
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -7871,6 +8004,7 @@ function ProductionBatchesView({
   onSendBatchToInventory,
   onPrepareBatchSupplyMovement,
   onOpenInventory,
+  onSoftDeleteBatch,
 }) {
   const activeBatches = productionBatches.filter((batch) => batch.status !== "Cancelado");
   const selectedRole = isAdmin
@@ -8098,6 +8232,15 @@ function ProductionBatchesView({
                               >
                                 {closingBatchId === batch.id ? "Ingresando..." : "Ingresar"}
                               </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="danger-table-button"
+                                  onClick={() => onSoftDeleteBatch(batch)}
+                                >
+                                  Eliminar
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -8542,6 +8685,7 @@ function FinishedInventoryView({
   onRegisterMovement,
   onPrepareMovement,
   onResetInventoryForm,
+  onSoftDeleteInventoryItem,
 }) {
   const latestMovements = inventoryMovements.slice(0, 8);
 
@@ -8633,6 +8777,15 @@ function FinishedInventoryView({
                               <button type="button" onClick={() => onPrepareMovement(item, "Salida")}>
                                 Salida
                               </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="danger-table-button"
+                                  onClick={() => onSoftDeleteInventoryItem(item)}
+                                >
+                                  Eliminar
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -8946,6 +9099,7 @@ function SupplyInventoryView({
   onSupplyMovementInputChange,
   onSupplyMovementNumberInputChange,
   onRegisterSupplyMovement,
+  onSoftDeleteSupplyItem,
 }) {
   const latestMovements = supplyMovements.slice(0, 10);
   const selectedMovementSupply =
@@ -9618,6 +9772,13 @@ function SupplyInventoryView({
                                   >
                                     {item.active === false ? "Activar" : "Desactivar"}
                                   </button>
+                                  <button
+                                    type="button"
+                                    className="danger-table-button"
+                                    onClick={() => onSoftDeleteSupplyItem(item)}
+                                  >
+                                    Eliminar
+                                  </button>
                                 </>
                               )}
                             </div>
@@ -10002,7 +10163,7 @@ function SupplyInventoryView({
                 <span>Insumo</span>
                 <select name="supplyId" value={supplyMovementForm.supplyId} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
                   <option value="">Seleccionar insumo</option>
-                  {supplyItems.filter((item) => item.active !== false).map((item) => (
+                  {supplyItems.filter((item) => item.active !== false && item.deleted !== true).map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name} · {item.currentStock} {item.stockUnit}
                     </option>
@@ -10168,6 +10329,7 @@ function PrintRequestsView({
   onGenerateAllStudentFolios,
   onRegisterGeneratedCertificate,
   onLogPrintshopAction,
+  onSoftDeleteRequest,
 }) {
   const requestProducts = products.filter(
     (product) => product.active !== false && product.category !== "Libro"
@@ -10345,6 +10507,15 @@ function PrintRequestsView({
                               <button type="button" onClick={() => onSelectRequest(request)}>
                                 Abrir
                               </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="danger-table-button"
+                                  onClick={() => onSoftDeleteRequest(request)}
+                                >
+                                  Eliminar
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -12581,6 +12752,7 @@ function CertificateTemplatesView({
   onSelectTemplate,
   onResetTemplateForm,
   onToggleTemplateStatus,
+  onSoftDeleteTemplate,
 }) {
   const [selectedEditorElement, setSelectedEditorElement] = useState("studentName");
   const activeTemplates = templates.filter((template) => template.active !== false);
@@ -12742,6 +12914,13 @@ function CertificateTemplatesView({
                           onClick={() => onToggleTemplateStatus(template)}
                         >
                           {template.active === false ? "Activar" : "Desactivar"}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-table-button"
+                          onClick={() => onSoftDeleteTemplate(template)}
+                        >
+                          Eliminar
                         </button>
                       </div>
                     </div>
@@ -13564,6 +13743,7 @@ function CertificateSignersView({
   onSelectSigner,
   onResetSignerForm,
   onToggleSignerStatus,
+  onSoftDeleteSigner,
 }) {
   const principalCount = signers.filter((signer) => signer.type === "Principal" && signer.active !== false).length;
   const teacherCount = signers.filter((signer) => signer.type === "Teacher" && signer.active !== false).length;
@@ -13621,9 +13801,18 @@ function CertificateSignersView({
                     <div className="table-actions">
                       <button type="button" onClick={() => onSelectSigner(signer)}>Editar</button>
                       {isAdmin && (
-                        <button type="button" onClick={() => onToggleSignerStatus(signer)}>
-                          {signer.active === false ? "Activar" : "Desactivar"}
-                        </button>
+                        <>
+                          <button type="button" onClick={() => onToggleSignerStatus(signer)}>
+                            {signer.active === false ? "Activar" : "Desactivar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-table-button"
+                            onClick={() => onSoftDeleteSigner(signer)}
+                          >
+                            Eliminar
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -13745,6 +13934,7 @@ function ProductCatalogView({
   onResetForm,
   onToggleStatus,
   onSeedBaseProducts,
+  onSoftDeleteProduct,
 }) {
   return (
     <section className="printshop-catalog-page">
@@ -13907,6 +14097,15 @@ function ProductCatalogView({
                             <button type="button" onClick={() => onToggleStatus(product)}>
                               {product.active === false ? "Activar" : "Desactivar"}
                             </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className="danger-table-button"
+                                onClick={() => onSoftDeleteProduct(product)}
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -14070,7 +14269,7 @@ function ProductCatalogView({
                       onChange={onInputChange}
                     >
                       <option value="">Seleccionar insumo</option>
-                      {supplyItems.filter((item) => item.active !== false).map((item) => (
+                      {supplyItems.filter((item) => item.active !== false && item.deleted !== true).map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name} · {item.stockUnit}
                         </option>
