@@ -61,6 +61,10 @@ service firebase.storage {
         || isTechnicalSupportUser();
     }
 
+    function canAccessTechnicalSupport() {
+      return isAdmin() || isTechnicalSupportUser();
+    }
+
     function projectPath(projectId) {
       return /databases/(default)/documents/projects/$(projectId);
     }
@@ -125,6 +129,16 @@ service firebase.storage {
       return request.resource.size < 25 * 1024 * 1024;
     }
 
+    function validTechnicalInstallationEvidenceFile() {
+      return (
+          request.resource.contentType.matches('image/(jpeg|png|webp)')
+          && request.resource.size < 10 * 1024 * 1024
+        ) || (
+          request.resource.contentType in ['video/mp4', 'video/quicktime', 'video/webm']
+          && request.resource.size < 100 * 1024 * 1024
+        );
+    }
+
     function validSignatureImage() {
       return request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(png|jpeg|webp)');
@@ -138,6 +152,23 @@ service firebase.storage {
     function validGeneratedCertificatePdf() {
       return request.resource.size < 20 * 1024 * 1024
         && request.resource.contentType == "application/pdf";
+    }
+
+    /*
+      Evidencias de instalaciones técnicas:
+      technical-installations/{installationId}/evidence/{userUid}/{fileName}
+    */
+    match /technical-installations/{installationId}/evidence/{userUid}/{fileName} {
+      allow read: if hasProfile();
+
+      allow create: if signedIn()
+        && canAccessTechnicalSupport()
+        && request.auth.uid == userUid
+        && validTechnicalInstallationEvidenceFile();
+
+      allow update: if false;
+
+      allow delete: if signedIn() && canAccessTechnicalSupport();
     }
 
     /*

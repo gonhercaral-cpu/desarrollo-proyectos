@@ -50,6 +50,10 @@ import {
   getTechnicalInstallations,
   updateTechnicalInstallation,
 } from "../services/technicalInstallationsService";
+import {
+  deleteTechnicalInstallationEvidence,
+  uploadTechnicalInstallationEvidence,
+} from "../services/technicalInstallationEvidenceService";
 
 
 const HTML5_QRCODE_SCRIPT_ID = "html5-qrcode-camera-scanner";
@@ -666,6 +670,10 @@ export default function TechnicalSupport() {
   const [installationSparePartCategoryFilter, setInstallationSparePartCategoryFilter] = useState("Todas");
   const [installationSparePartTypeFilter, setInstallationSparePartTypeFilter] = useState("Todos");
   const [installationSparePartQuantities, setInstallationSparePartQuantities] = useState({});
+  const [installationEvidenceFiles, setInstallationEvidenceFiles] = useState([]);
+  const [installationEvidenceDescription, setInstallationEvidenceDescription] = useState("");
+  const [uploadingInstallationEvidence, setUploadingInstallationEvidence] = useState(false);
+  const [deletingInstallationEvidenceId, setDeletingInstallationEvidenceId] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("Todas");
@@ -4488,6 +4496,16 @@ function closeCompletionForm(options = {}) {
           updatedInstallation.equipmentLocationLogIds ||
           selectedInstallation.equipmentLocationLogIds ||
           [],
+        evidenceItems:
+          updatedInstallation.evidenceItems ||
+          selectedInstallation.evidenceItems ||
+          [],
+        evidenceCount:
+          Number(updatedInstallation.evidenceCount || selectedInstallation.evidenceCount || 0),
+        imageEvidenceCount:
+          Number(updatedInstallation.imageEvidenceCount || selectedInstallation.imageEvidenceCount || 0),
+        videoEvidenceCount:
+          Number(updatedInstallation.videoEvidenceCount || selectedInstallation.videoEvidenceCount || 0),
         checklistSections,
       });
     } catch (error) {
@@ -4495,6 +4513,156 @@ function closeCompletionForm(options = {}) {
       setPageError(error?.message || "No se pudo guardar el avance de la instalación.");
     } finally {
       setSavingInstallation(false);
+    }
+  }
+
+  function getInstallationEvidenceItems(installation) {
+    const items = Array.isArray(installation?.evidenceItems)
+      ? installation.evidenceItems
+      : [];
+
+    return [...items].sort((firstItem, secondItem) => {
+      const firstDate = new Date(
+        firstItem?.createdAt || firstItem?.uploadedAt || 0
+      ).getTime();
+      const secondDate = new Date(
+        secondItem?.createdAt || secondItem?.uploadedAt || 0
+      ).getTime();
+
+      return (Number.isNaN(secondDate) ? 0 : secondDate) -
+        (Number.isNaN(firstDate) ? 0 : firstDate);
+    });
+  }
+
+  function getInstallationEvidenceType(evidence) {
+    const explicitType = String(evidence?.type || "").toLowerCase();
+    const fileType = String(evidence?.fileType || evidence?.contentType || "").toLowerCase();
+
+    if (explicitType === "video" || fileType.startsWith("video/")) {
+      return "video";
+    }
+
+    return "image";
+  }
+
+  function getInstallationEvidenceTypeLabel(evidence) {
+    return getInstallationEvidenceType(evidence) === "video" ? "Video" : "Foto";
+  }
+
+  function formatInstallationEvidenceFileSize(bytes = 0) {
+    const size = Number(bytes || 0);
+
+    if (!size || Number.isNaN(size)) {
+      return "Tamaño no registrado";
+    }
+
+    if (size >= 1024 * 1024) {
+      return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+    }
+
+    return `${Math.max(Math.round(size / 1024), 1)} KB`;
+  }
+
+  function resetInstallationEvidenceForm() {
+    setInstallationEvidenceFiles([]);
+    setInstallationEvidenceDescription("");
+  }
+
+  function handleInstallationEvidenceFileChange(event) {
+    const selectedFiles = Array.from(event.target.files || []);
+    setInstallationEvidenceFiles(selectedFiles);
+    event.target.value = "";
+  }
+
+  async function handleInstallationEvidenceUpload(event) {
+    event.preventDefault();
+
+    if (!selectedInstallation?.id) {
+      setPageError("Selecciona una instalación antes de subir evidencias.");
+      return;
+    }
+
+    if (selectedInstallation.status === "cancelled") {
+      setPageError("No se pueden agregar evidencias a una instalación cancelada.");
+      return;
+    }
+
+    if (installationEvidenceFiles.length === 0) {
+      setPageError("Selecciona al menos una foto o video para subir.");
+      return;
+    }
+
+    try {
+      setUploadingInstallationEvidence(true);
+      setPageError("");
+
+      const updatedEvidenceData = await uploadTechnicalInstallationEvidence(
+        selectedInstallation,
+        installationEvidenceFiles,
+        installationEvidenceDescription,
+        getCurrentUserProfile()
+      );
+
+      const nextInstallation = {
+        ...selectedInstallation,
+        ...updatedEvidenceData,
+      };
+
+      setSelectedInstallation(nextInstallation);
+      setInstallations((currentInstallations) =>
+        currentInstallations.map((installation) =>
+          installation.id === selectedInstallation.id
+            ? { ...installation, ...updatedEvidenceData }
+            : installation
+        )
+      );
+      resetInstallationEvidenceForm();
+    } catch (error) {
+      console.error("No se pudo subir la evidencia de instalación:", error);
+      setPageError(error?.message || "No se pudo subir la evidencia de instalación.");
+    } finally {
+      setUploadingInstallationEvidence(false);
+    }
+  }
+
+  async function handleDeleteInstallationEvidence(evidenceItem) {
+    if (!selectedInstallation?.id || !evidenceItem?.id) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "¿Quieres eliminar esta evidencia de la instalación?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingInstallationEvidenceId(evidenceItem.id);
+      setPageError("");
+
+      const updatedEvidenceData = await deleteTechnicalInstallationEvidence(
+        selectedInstallation,
+        evidenceItem,
+        getCurrentUserProfile()
+      );
+
+      setSelectedInstallation((current) =>
+        current ? { ...current, ...updatedEvidenceData } : current
+      );
+      setInstallations((currentInstallations) =>
+        currentInstallations.map((installation) =>
+          installation.id === selectedInstallation.id
+            ? { ...installation, ...updatedEvidenceData }
+            : installation
+        )
+      );
+    } catch (error) {
+      console.error("No se pudo eliminar la evidencia de instalación:", error);
+      setPageError(error?.message || "No se pudo eliminar la evidencia de instalación.");
+    } finally {
+      setDeletingInstallationEvidenceId("");
     }
   }
 
@@ -5175,6 +5343,156 @@ function closeCompletionForm(options = {}) {
             </div>
           )}
         </div>
+      </section>
+    );
+  }
+
+  function renderInstallationEvidenceManager(installation) {
+    const evidenceItems = getInstallationEvidenceItems(installation);
+    const isCancelled = installation?.status === "cancelled";
+    const selectedFilesTotalSize = installationEvidenceFiles.reduce(
+      (total, file) => total + Number(file.size || 0),
+      0
+    );
+
+    return (
+      <section className="installation-evidence-panel">
+        <div className="installation-evidence-header">
+          <div>
+            <p className="section-kicker equipment-kicker">Evidencias</p>
+            <h3>Fotos y videos de la instalación</h3>
+            <p>
+              Guarda evidencia visual del equipo instalado, cableado, pruebas finales o cualquier detalle importante.
+            </p>
+          </div>
+          <span className="installation-evidence-counter">
+            {evidenceItems.length} archivo(s)
+          </span>
+        </div>
+
+        <form className="installation-evidence-uploader" onSubmit={handleInstallationEvidenceUpload}>
+          <label className="installation-evidence-dropzone">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm"
+              multiple
+              onChange={handleInstallationEvidenceFileChange}
+              disabled={uploadingInstallationEvidence || isCancelled}
+            />
+            <span>▣</span>
+            <strong>Seleccionar fotos o videos</strong>
+            <p>JPG, PNG, WEBP, MP4, MOV o WEBM</p>
+          </label>
+
+          <div className="installation-evidence-form-side">
+            <label>
+              Descripción general
+              <textarea
+                value={installationEvidenceDescription}
+                onChange={(event) => setInstallationEvidenceDescription(event.target.value)}
+                placeholder="Ej. Foto final del equipo instalado y prueba de audio funcionando."
+                rows="3"
+                disabled={uploadingInstallationEvidence || isCancelled}
+              />
+            </label>
+
+            {installationEvidenceFiles.length > 0 && (
+              <div className="installation-evidence-selected-files">
+                <strong>
+                  {installationEvidenceFiles.length} archivo(s) seleccionado(s) · {formatInstallationEvidenceFileSize(selectedFilesTotalSize)}
+                </strong>
+                {installationEvidenceFiles.map((file) => (
+                  <span key={`${file.name}-${file.size}-${file.lastModified}`}>
+                    {file.name} · {formatInstallationEvidenceFileSize(file.size)}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="installation-evidence-actions">
+              <button
+                type="button"
+                onClick={resetInstallationEvidenceForm}
+                disabled={uploadingInstallationEvidence || installationEvidenceFiles.length === 0}
+              >
+                Limpiar
+              </button>
+              <button
+                className="visual-primary-button"
+                type="submit"
+                disabled={uploadingInstallationEvidence || isCancelled || installationEvidenceFiles.length === 0}
+              >
+                {uploadingInstallationEvidence ? "Subiendo..." : "Subir evidencia"}
+              </button>
+            </div>
+
+            {isCancelled && (
+              <p className="installation-evidence-note">
+                Esta instalación está cancelada; las evidencias solo pueden consultarse.
+              </p>
+            )}
+          </div>
+        </form>
+
+        {evidenceItems.length > 0 ? (
+          <div className="installation-evidence-gallery">
+            {evidenceItems.map((evidenceItem) => {
+              const evidenceType = getInstallationEvidenceType(evidenceItem);
+              const evidenceUrl = evidenceItem.downloadUrl || evidenceItem.url || "";
+
+              return (
+                <article className="installation-evidence-card" key={evidenceItem.id}>
+                  <div className="installation-evidence-preview">
+                    {evidenceType === "video" ? (
+                      evidenceUrl ? (
+                        <video src={evidenceUrl} controls preload="metadata" />
+                      ) : (
+                        <div className="installation-evidence-placeholder">VIDEO</div>
+                      )
+                    ) : evidenceUrl ? (
+                      <img src={evidenceUrl} alt={evidenceItem.fileName || "Evidencia de instalación"} />
+                    ) : (
+                      <div className="installation-evidence-placeholder">FOTO</div>
+                    )}
+                    <span className={`installation-evidence-type ${evidenceType}`}>
+                      {getInstallationEvidenceTypeLabel(evidenceItem)}
+                    </span>
+                  </div>
+
+                  <div className="installation-evidence-content">
+                    <strong>{evidenceItem.fileName || "Evidencia sin nombre"}</strong>
+                    <p>{evidenceItem.description || "Sin descripción."}</p>
+                    <small>
+                      Subido por {evidenceItem.uploadedByName || "Soporte Técnico"} · {formatInstallationItemDate(evidenceItem.createdAt || evidenceItem.uploadedAt)}
+                    </small>
+                    <small>{formatInstallationEvidenceFileSize(evidenceItem.fileSize)}</small>
+                  </div>
+
+                  <div className="installation-evidence-card-actions">
+                    {evidenceUrl && (
+                      <a href={evidenceUrl} target="_blank" rel="noreferrer">
+                        Abrir
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className="danger-table-button"
+                      onClick={() => handleDeleteInstallationEvidence(evidenceItem)}
+                      disabled={deletingInstallationEvidenceId === evidenceItem.id}
+                    >
+                      {deletingInstallationEvidenceId === evidenceItem.id ? "Eliminando..." : "Eliminar"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="installation-evidence-empty">
+            <strong>Sin evidencias registradas</strong>
+            <p>Sube fotos o videos para documentar cómo quedó la instalación.</p>
+          </div>
+        )}
       </section>
     );
   }
@@ -6203,6 +6521,8 @@ function closeCompletionForm(options = {}) {
             {renderInstallationSparePartsManager(selectedInstallation)}
 
             {renderInstallationEquipmentLocationNotice(selectedInstallation)}
+
+            {renderInstallationEvidenceManager(selectedInstallation)}
 
             <div className="technical-form-actions installation-run-save-actions">
               <button
