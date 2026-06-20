@@ -129,6 +129,33 @@ service firebase.storage {
       return request.resource.size < 25 * 1024 * 1024;
     }
 
+
+
+    function ideaDocumentPath(ideaId) {
+      return /databases/(default)/documents/ideas/$(ideaId);
+    }
+
+    function ideaDocumentExists(ideaId) {
+      return firestore.exists(ideaDocumentPath(ideaId));
+    }
+
+    function ideaDocumentData(ideaId) {
+      return firestore.get(ideaDocumentPath(ideaId)).data;
+    }
+
+    function canReadIdeaEvidence(ideaId) {
+      return hasProfile()
+        && ideaDocumentExists(ideaId)
+        && (
+          isAdmin()
+          || ideaDocumentData(ideaId).createdByUid == request.auth.uid
+        );
+    }
+
+    function validIdeaEvidenceFile() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
     function validTechnicalInstallationEvidenceFile() {
       return (
           request.resource.contentType.matches('image/(jpeg|png|webp)')
@@ -257,6 +284,26 @@ service firebase.storage {
       allow create, update: if signedIn()
         && canAccessPrintshop()
         && validGeneratedCertificatePdf();
+
+      allow delete: if isAdmin();
+    }
+
+
+
+    /*
+      Evidencias de ideas:
+      ideas/{userUid}/{ideaId}/evidence/{fileName}
+    */
+    match /ideas/{userUid}/{ideaId}/evidence/{fileName} {
+      allow read: if canReadIdeaEvidence(ideaId);
+
+      allow create: if signedIn()
+        && hasProfile()
+        && request.auth.uid == userUid
+        && canReadIdeaEvidence(ideaId)
+        && validIdeaEvidenceFile();
+
+      allow update: if false;
 
       allow delete: if isAdmin();
     }

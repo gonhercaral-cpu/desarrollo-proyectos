@@ -1799,6 +1799,193 @@ service cloud.firestore {
         && request.resource.data.createdByEmail is string;
     }
 
+
+
+    function validIdeaStatus(status) {
+      return status in [
+        "nueva",
+        "en_revision",
+        "necesita_mas_informacion",
+        "aprobada",
+        "en_pausa",
+        "descartada",
+        "convertida_en_proyecto"
+      ];
+    }
+
+    function validIdeaPriority(priority) {
+      return priority in [
+        "baja",
+        "media",
+        "alta",
+        "urgente"
+      ];
+    }
+
+    function validIdeaImpact(impact) {
+      return impact in [
+        "bajo",
+        "medio",
+        "alto",
+        "muy_alto"
+      ];
+    }
+
+    function ideaPath(ideaId) {
+      return /databases/$(database)/documents/ideas/$(ideaId);
+    }
+
+    function canReadIdea() {
+      return hasProfile()
+        && (
+          isAdmin()
+          || resource.data.createdByUid == request.auth.uid
+        );
+    }
+
+    function canReadIdeaId(ideaId) {
+      return hasProfile()
+        && exists(ideaPath(ideaId))
+        && (
+          isAdmin()
+          || get(ideaPath(ideaId)).data.createdByUid == request.auth.uid
+        );
+    }
+
+    function validIdeaCreate() {
+      return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "title",
+          "area",
+          "currentProblem",
+          "proposedIdea",
+          "implementationSuggestion",
+          "expectedBenefit",
+          "priority",
+          "impact",
+          "status",
+          "evidenceFiles",
+          "evidenceCount",
+          "createdByUid",
+          "createdByName",
+          "createdByEmail",
+          "createdAt",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail",
+          "reviewedAt",
+          "reviewedByUid",
+          "reviewedByName",
+          "reviewedByEmail",
+          "convertedProjectId"
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 140
+        && request.resource.data.area is string
+        && request.resource.data.area.size() > 0
+        && request.resource.data.area.size() <= 80
+        && request.resource.data.currentProblem is string
+        && request.resource.data.currentProblem.size() > 0
+        && request.resource.data.currentProblem.size() <= 900
+        && request.resource.data.proposedIdea is string
+        && request.resource.data.proposedIdea.size() > 0
+        && request.resource.data.proposedIdea.size() <= 900
+        && request.resource.data.implementationSuggestion is string
+        && request.resource.data.implementationSuggestion.size() <= 900
+        && request.resource.data.expectedBenefit is string
+        && request.resource.data.expectedBenefit.size() > 0
+        && request.resource.data.expectedBenefit.size() <= 700
+        && request.resource.data.priority is string
+        && validIdeaPriority(request.resource.data.priority)
+        && request.resource.data.impact is string
+        && validIdeaImpact(request.resource.data.impact)
+        && request.resource.data.status == "nueva"
+        && request.resource.data.evidenceFiles is list
+        && request.resource.data.evidenceFiles.size() == 0
+        && request.resource.data.evidenceCount == 0
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByEmail is string
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedByUid == ""
+        && request.resource.data.reviewedByName == ""
+        && request.resource.data.reviewedByEmail == ""
+        && request.resource.data.convertedProjectId == null;
+    }
+
+    function validIdeaCreatorEvidenceUpdate() {
+      return hasProfile()
+        && resource.data.createdByUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "evidenceFiles",
+          "evidenceCount",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.evidenceFiles is list
+        && request.resource.data.evidenceCount is number
+        && request.resource.data.evidenceCount >= resource.data.evidenceCount
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validIdeaAdminUpdate() {
+      return isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "status",
+          "reviewedAt",
+          "reviewedByUid",
+          "reviewedByName",
+          "reviewedByEmail",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.status is string
+        && validIdeaStatus(request.resource.data.status)
+        && request.resource.data.reviewedByUid == request.auth.uid
+        && request.resource.data.reviewedByName is string
+        && request.resource.data.reviewedByEmail is string
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string
+        && request.resource.data.reviewedAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validIdeaAdminCommentCreate(ideaId) {
+      return isAdmin()
+        && canReadIdeaId(ideaId)
+        && request.resource.data.keys().hasOnly([
+          "ideaId",
+          "comment",
+          "createdByUid",
+          "createdByName",
+          "createdByEmail",
+          "createdAt"
+        ])
+        && request.resource.data.ideaId == ideaId
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() > 0
+        && request.resource.data.comment.size() <= 700
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByName is string
+        && request.resource.data.createdByEmail is string
+        && request.resource.data.createdAt is timestamp;
+    }
+
     match /users/{userId} {
       allow get: if signedIn() && (
         userId == request.auth.uid ||
@@ -2443,6 +2630,27 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+
+
+
+    match /ideas/{ideaId} {
+      allow get, list: if canReadIdea();
+
+      allow create: if validIdeaCreate();
+
+      allow update: if validIdeaAdminUpdate()
+        || validIdeaCreatorEvidenceUpdate();
+
+      allow delete: if isAdmin();
+
+      match /comments/{commentId} {
+        allow read: if canReadIdeaId(ideaId);
+
+        allow create: if validIdeaAdminCommentCreate(ideaId);
+
+        allow update, delete: if false;
+      }
+    }
 
     match /purchaseRequests/{requestId} {
       allow get: if canReadPurchaseRequest();

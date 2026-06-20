@@ -12,6 +12,7 @@ import TechnicalSupport from "./TechnicalSupport";
 import PrintShop from "./printshop";
 import PurchaseRequests from "./PurchaseRequests";
 import TeamAgenda from "./TeamAgenda";
+import IdeasIncubator from "./IdeasIncubator";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 
 export default function Dashboard() {
@@ -91,6 +92,8 @@ export default function Dashboard() {
       setReturnPage("purchase-requests");
     } else if (page === "team-agenda") {
       setReturnPage("team-agenda");
+    } else if (page === "ideas-incubator") {
+      setReturnPage("ideas-incubator");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -161,6 +164,10 @@ export default function Dashboard() {
 
     if (page === "team-agenda") {
       return <TeamAgenda />;
+    }
+
+    if (page === "ideas-incubator") {
+      return <IdeasIncubator />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -284,6 +291,10 @@ export default function Dashboard() {
       return page === "team-agenda";
     }
 
+    if (navPage === "ideas-incubator") {
+      return page === "ideas-incubator";
+    }
+
     return page === navPage;
   }
 
@@ -341,6 +352,14 @@ export default function Dashboard() {
           >
             <span className="nav-icon">🛒</span>
             Solicitudes de compra
+          </button>
+
+          <button
+            className={isNavActive("ideas-incubator") ? "active" : ""}
+            onClick={() => goToPage("ideas-incubator")}
+          >
+            <span className="nav-icon">✦</span>
+            Incubadora de ideas
           </button>
 
           {canUsePrintShop && (
