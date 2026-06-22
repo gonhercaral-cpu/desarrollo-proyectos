@@ -286,6 +286,7 @@ export default function Dashboard() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const unreadMessagesCount = useUnreadInternalMessagesCount(profile);
 
   useDashboardPresence(profile, page);
 
@@ -617,7 +618,11 @@ export default function Dashboard() {
     isAdmin,
     canUsePrintShop,
     canUseTechnicalSupport,
-  });
+  }).map((item) =>
+    item.page === "internal-messages"
+      ? { ...item, badgeCount: unreadMessagesCount }
+      : item
+  );
   const mobilePrimaryItems = getMobilePrimaryNavigationItems(navigationItems, {
     isAdmin,
     canUsePrintShop,
@@ -691,7 +696,12 @@ export default function Dashboard() {
             onClick={() => goToPage("internal-messages")}
           >
             <span className="nav-icon"><DashboardNavIcon name="messages" /></span>
-            Mensajes
+            <span className="sidebar-nav-label">Mensajes</span>
+            {unreadMessagesCount > 0 && (
+              <span className="nav-unread-badge" aria-label={`${unreadMessagesCount} mensajes no leídos`}>
+                {formatUnreadBadgeCount(unreadMessagesCount)}
+              </span>
+            )}
           </button>
 
           <button
@@ -2294,7 +2304,14 @@ function InternalMessages({ profile }) {
       <div className="visual-page-header messages-hero chat-hero">
         <div>
           <span className="visual-page-kicker">Comunicación interna</span>
-          <h1>Mensajes</h1>
+          <div className="messages-title-row">
+            <h1>Mensajes</h1>
+            {unreadCount > 0 && (
+              <span className="messages-title-unread-badge">
+                {unreadCount} sin leer
+              </span>
+            )}
+          </div>
           <p>
             Conversa con colaboradores en hilos tipo chat, revisa el historial y deja mensajes aunque no estén conectados.
           </p>
@@ -2396,6 +2413,11 @@ function InternalMessages({ profile }) {
                       </p>
                       <div className="chat-conversation-meta">
                         <span>{conversation.messages.length} mensaje(s)</span>
+                        {conversation.unreadCount > 0 && (
+                          <span className="chat-new-message-tag">
+                            {conversation.unreadCount} nuevo(s)
+                          </span>
+                        )}
                         {conversation.lastMessage?.attachments?.length > 0 && <span>Adjuntos</span>}
                       </div>
                     </div>
@@ -2556,6 +2578,46 @@ function getInternalMessageParticipant(message, currentUserId) {
 }
 
 
+
+function useUnreadInternalMessagesCount(profile) {
+  const currentUserId = getCurrentUserId(profile);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setUnreadCount(0);
+      return undefined;
+    }
+
+    const unreadQuery = query(
+      collection(db, "internalMessages"),
+      where("toUserId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      unreadQuery,
+      (snapshot) => {
+        const nextUnreadCount = snapshot.docs.filter((messageDoc) => {
+          const data = messageDoc.data();
+          return data.read !== true;
+        }).length;
+
+        setUnreadCount(nextUnreadCount);
+      },
+      (error) => {
+        console.error("No se pudo cargar el contador de mensajes no leídos:", error);
+        setUnreadCount(0);
+      }
+    );
+  }, [currentUserId]);
+
+  return unreadCount;
+}
+
+function formatUnreadBadgeCount(count) {
+  const numericCount = Number(count) || 0;
+  return numericCount > 99 ? "99+" : String(numericCount);
+}
 
 function useDashboardPresence(profile, currentPage) {
   const currentUserId = getCurrentUserId(profile);
@@ -2785,10 +2847,17 @@ function MobileBottomNavigation({ primaryItems, allItems, isNavActive, onNavigat
         <button
           key={item.page}
           type="button"
-          className={isNavActive(item.page) ? "active" : ""}
+          className={`${isNavActive(item.page) ? "active" : ""} ${item.badgeCount > 0 ? "has-unread" : ""}`}
           onClick={() => onNavigate(item.page)}
         >
-          <DashboardNavIcon name={item.icon} />
+          <span className="mobile-nav-icon-wrap">
+            <DashboardNavIcon name={item.icon} />
+            {item.badgeCount > 0 && (
+              <span className="mobile-nav-unread-badge">
+                {formatUnreadBadgeCount(item.badgeCount)}
+              </span>
+            )}
+          </span>
           <span>{item.mobileLabel || item.label}</span>
         </button>
       ))}
@@ -2850,6 +2919,11 @@ function MobileModuleDrawer({
                 <DashboardNavIcon name={item.icon} />
               </span>
               <span>{item.label}</span>
+              {item.badgeCount > 0 && (
+                <span className="mobile-drawer-badge">
+                  {formatUnreadBadgeCount(item.badgeCount)}
+                </span>
+              )}
             </button>
           ))}
         </div>
