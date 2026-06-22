@@ -446,7 +446,17 @@ export default function Dashboard() {
     }
 
     if (page === "workspace-dashboard") {
-      return <WorkspaceDashboard profile={profile} isAdmin={isAdmin} />;
+      return (
+        <WorkspaceDashboard
+          profile={profile}
+          isAdmin={isAdmin}
+          unreadDirectMessagesCount={unreadDirectMessagesCount}
+          unreadDepartmentMessagesCount={unreadDepartmentMessagesCount}
+          unreadMessagesCount={unreadMessagesCount}
+          unreadAnnouncementsCount={unreadAnnouncementsCount}
+          onOpenModule={goToPage}
+        />
+      );
     }
 
     if (page === "internal-messages") {
@@ -871,7 +881,15 @@ export default function Dashboard() {
 
 
 
-function WorkspaceDashboard({ profile, isAdmin }) {
+function WorkspaceDashboard({
+  profile,
+  isAdmin,
+  unreadDirectMessagesCount = 0,
+  unreadDepartmentMessagesCount = 0,
+  unreadMessagesCount = 0,
+  unreadAnnouncementsCount = 0,
+  onOpenModule = () => {},
+}) {
   const currentUserId = getCurrentUserId(profile);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementReceipts, setAnnouncementReceipts] = useState({});
@@ -903,6 +921,7 @@ function WorkspaceDashboard({ profile, isAdmin }) {
   const [activeCollaborators, setActiveCollaborators] = useState([]);
   const [noteSearchTerm, setNoteSearchTerm] = useState("");
   const [noteFilter, setNoteFilter] = useState("all");
+  const communicationActivity = useWorkspaceCommunicationActivity(profile, isAdmin);
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -1392,6 +1411,26 @@ function WorkspaceDashboard({ profile, isAdmin }) {
       filter: noteFilter,
     })
   );
+  const unreadDirectActivityMessages = communicationActivity.directMessages
+    .filter((message) => message.fromUserId !== currentUserId && message.read !== true)
+    .slice(0, 6);
+  const unreadDepartmentActivityMessages = communicationActivity.departmentMessages
+    .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
+    .slice(0, 6);
+  const unreadAnnouncementItems = activeAnnouncements
+    .filter((announcement) => !announcementReceipts[announcement.id]?.length)
+    .slice(0, 6);
+  const pendingNoteItems = notes
+    .filter((note) => !note.completed)
+    .slice(0, 6);
+  const activityItems = buildWorkspaceActivityItems({
+    directMessages: unreadDirectActivityMessages,
+    departmentMessages: unreadDepartmentActivityMessages,
+    announcements: unreadAnnouncementItems,
+    notes: pendingNoteItems,
+  });
+  const totalWorkspacePendingItems =
+    Number(unreadMessagesCount || 0) + Number(unreadAnnouncements || 0) + Number(pendingNotes || 0);
 
   return (
     <div className="workspace-dashboard-page">
@@ -1434,8 +1473,21 @@ function WorkspaceDashboard({ profile, isAdmin }) {
         </div>
       </div>
 
+      <WorkspaceNoticeCenter
+        unreadDirectMessagesCount={unreadDirectMessagesCount}
+        unreadDepartmentMessagesCount={unreadDepartmentMessagesCount}
+        unreadAnnouncementsCount={unreadAnnouncements}
+        pendingNotesCount={pendingNotes}
+        totalPendingCount={totalWorkspacePendingItems}
+        activityItems={activityItems}
+        onOpenMessages={() => onOpenModule("internal-messages")}
+        onOpenAnnouncements={() => scrollToWorkspaceSection("workspace-announcements-section")}
+        onOpenNotes={() => scrollToWorkspaceSection("workspace-notes-section")}
+        onOpenProjects={() => onOpenModule("my-projects")}
+      />
+
       <div className="workspace-dashboard-grid">
-        <section className="workspace-card announcements-card board-visual-card">
+        <section id="workspace-announcements-section" className="workspace-card announcements-card board-visual-card">
           <div className="workspace-card-header workspace-card-header-visual">
             <div>
               <span className="workspace-card-kicker">Comunicación interna</span>
@@ -1691,7 +1743,7 @@ function WorkspaceDashboard({ profile, isAdmin }) {
           </div>
         </section>
 
-        <section className="workspace-card notes-card board-visual-card">
+        <section id="workspace-notes-section" className="workspace-card notes-card board-visual-card">
           <div className="workspace-card-header workspace-card-header-visual">
             <div>
               <span className="workspace-card-kicker">Espacio privado</span>
@@ -1866,6 +1918,118 @@ function WorkspaceDashboard({ profile, isAdmin }) {
     </div>
   );
 }
+
+
+function WorkspaceNoticeCenter({
+  unreadDirectMessagesCount,
+  unreadDepartmentMessagesCount,
+  unreadAnnouncementsCount,
+  pendingNotesCount,
+  totalPendingCount,
+  activityItems,
+  onOpenMessages,
+  onOpenAnnouncements,
+  onOpenNotes,
+  onOpenProjects,
+}) {
+  const hasActivity = activityItems.length > 0;
+
+  return (
+    <section className="workspace-notice-center">
+      <div className="notice-center-hero">
+        <div>
+          <span className="notice-center-kicker">Centro de avisos</span>
+          <h2>{totalPendingCount > 0 ? "Tienes actividad pendiente" : "Todo al día por ahora"}</h2>
+          <p>
+            Revisa desde aquí tus mensajes nuevos, anuncios por confirmar, chats por departamento y notas personales pendientes.
+          </p>
+        </div>
+        <div className={`notice-center-total ${totalPendingCount > 0 ? "has-pending" : "clear"}`}>
+          <strong>{formatUnreadBadgeCount(totalPendingCount)}</strong>
+          <span>{totalPendingCount === 1 ? "pendiente" : "pendientes"}</span>
+        </div>
+      </div>
+
+      <div className="notice-center-grid">
+        <button type="button" className="notice-center-card message-card" onClick={onOpenMessages}>
+          <span className="notice-card-icon">💬</span>
+          <div>
+            <strong>{formatUnreadBadgeCount(unreadDirectMessagesCount)}</strong>
+            <h3>Mensajes nuevos</h3>
+            <p>Conversaciones individuales sin leer.</p>
+          </div>
+          <b>Ver mensajes</b>
+        </button>
+
+        <button type="button" className="notice-center-card department-card" onClick={onOpenMessages}>
+          <span className="notice-card-icon">👥</span>
+          <div>
+            <strong>{formatUnreadBadgeCount(unreadDepartmentMessagesCount)}</strong>
+            <h3>Chats de departamento</h3>
+            <p>Mensajes grupales pendientes.</p>
+          </div>
+          <b>Ver chats</b>
+        </button>
+
+        <button type="button" className="notice-center-card announcement-card" onClick={onOpenAnnouncements}>
+          <span className="notice-card-icon">📣</span>
+          <div>
+            <strong>{formatUnreadBadgeCount(unreadAnnouncementsCount)}</strong>
+            <h3>Anuncios pendientes</h3>
+            <p>Avisos que faltan por confirmar.</p>
+          </div>
+          <b>Ver tablero</b>
+        </button>
+
+        <button type="button" className="notice-center-card notes-card-mini" onClick={onOpenNotes}>
+          <span className="notice-card-icon">📝</span>
+          <div>
+            <strong>{formatUnreadBadgeCount(pendingNotesCount)}</strong>
+            <h3>Notas pendientes</h3>
+            <p>Recordatorios personales activos.</p>
+          </div>
+          <b>Ver notas</b>
+        </button>
+      </div>
+
+      <div className="notice-center-activity-card">
+        <div className="notice-center-activity-header">
+          <div>
+            <span>Actividad reciente</span>
+            <h3>Lo más importante para revisar</h3>
+          </div>
+          <button type="button" onClick={onOpenProjects}>Ver mis proyectos</button>
+        </div>
+
+        {hasActivity ? (
+          <div className="notice-activity-list">
+            {activityItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`notice-activity-item ${item.tone}`}
+                onClick={item.action === "messages" ? onOpenMessages : item.action === "announcements" ? onOpenAnnouncements : onOpenNotes}
+              >
+                <span>{item.icon}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.description}</p>
+                </div>
+                <small>{item.timeLabel}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="notice-center-empty">
+            <strong>No hay avisos pendientes</strong>
+            <p>Cuando lleguen mensajes, anuncios o recordatorios pendientes, aparecerán en esta sección.</p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 
 
 function AnnouncementAdminDashboard({
@@ -3942,6 +4106,142 @@ function useUnreadAnnouncementsCount(profile) {
 
   return announcementIds.filter((announcementId) => readStateByAnnouncement[announcementId] !== true).length;
 }
+
+
+function useWorkspaceCommunicationActivity(profile, isAdmin = false) {
+  const currentUserId = getCurrentUserId(profile);
+  const [directMessages, setDirectMessages] = useState([]);
+  const [departmentMessages, setDepartmentMessages] = useState([]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setDirectMessages([]);
+      return undefined;
+    }
+
+    const directMessagesQuery = query(
+      collection(db, "internalMessages"),
+      where("toUserId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      directMessagesQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+          }))
+          .sort(sortByCreatedAtDesc)
+          .slice(0, 20);
+
+        setDirectMessages(nextMessages);
+      },
+      (error) => {
+        console.error("No se pudo cargar la actividad reciente de mensajes:", error);
+        setDirectMessages([]);
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setDepartmentMessages([]);
+      return undefined;
+    }
+
+    const departmentMessagesRef = collection(db, "departmentMessages");
+    const departmentMessagesQuery = isAdmin
+      ? departmentMessagesRef
+      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
+
+    return onSnapshot(
+      departmentMessagesQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+            readBy: messageDoc.data()?.readBy || {},
+          }))
+          .sort(sortByCreatedAtDesc)
+          .slice(0, 30);
+
+        setDepartmentMessages(nextMessages);
+      },
+      (error) => {
+        console.error("No se pudo cargar la actividad reciente de departamentos:", error);
+        setDepartmentMessages([]);
+      }
+    );
+  }, [currentUserId, isAdmin]);
+
+  return { directMessages, departmentMessages };
+}
+
+function buildWorkspaceActivityItems({ directMessages, departmentMessages, announcements, notes }) {
+  const directItems = (directMessages || []).map((message) => ({
+    id: `direct-${message.id}`,
+    icon: "💬",
+    tone: "message",
+    action: "messages",
+    dateValue: message.createdAt,
+    title: `${message.fromUserName || "Un colaborador"} te envió un mensaje`,
+    description: message.message || "Mensaje con archivo adjunto.",
+    timeLabel: formatDateTime(message.createdAt),
+  }));
+
+  const departmentItems = (departmentMessages || []).map((message) => ({
+    id: `department-${message.id}`,
+    icon: "👥",
+    tone: "department",
+    action: "messages",
+    dateValue: message.createdAt,
+    title: `Nuevo mensaje en ${message.departmentName || "Departamento"}`,
+    description: `${message.fromUserName || "Un colaborador"}: ${message.message || "Archivo adjunto"}`,
+    timeLabel: formatDateTime(message.createdAt),
+  }));
+
+  const announcementItems = (announcements || []).map((announcement) => ({
+    id: `announcement-${announcement.id}`,
+    icon: announcement.priority === "important" ? "📢" : "📣",
+    tone: "announcement",
+    action: "announcements",
+    dateValue: announcement.createdAt,
+    title: `Anuncio pendiente: ${announcement.title || "Sin título"}`,
+    description: announcement.message || "Confirma que ya viste este anuncio.",
+    timeLabel: formatDateTime(announcement.createdAt),
+  }));
+
+  const noteItems = (notes || []).map((note) => ({
+    id: `note-${note.id}`,
+    icon: note.pinned ? "📌" : "📝",
+    tone: "note",
+    action: "notes",
+    dateValue: note.updatedAt || note.createdAt,
+    title: `Nota pendiente: ${note.title || "Nota personal"}`,
+    description: note.content || "Recordatorio personal pendiente.",
+    timeLabel: formatDateTime(note.updatedAt || note.createdAt),
+  }));
+
+  return [...directItems, ...departmentItems, ...announcementItems, ...noteItems]
+    .sort((a, b) => getMillisFromFirestoreDate(b.dateValue) - getMillisFromFirestoreDate(a.dateValue))
+    .slice(0, 8);
+}
+
+function scrollToWorkspaceSection(sectionId) {
+  if (typeof window === "undefined" || !sectionId) return;
+
+  window.requestAnimationFrame(() => {
+    const section = document.getElementById(sectionId);
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+}
+
 
 function useUnreadInternalMessagesCount(profile) {
   const currentUserId = getCurrentUserId(profile);
