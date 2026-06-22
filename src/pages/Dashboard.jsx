@@ -895,6 +895,10 @@ function WorkspaceDashboard({ profile, isAdmin }) {
   const [noteSaving, setNoteSaving] = useState(false);
   const [announcementSearchTerm, setAnnouncementSearchTerm] = useState("");
   const [announcementFilter, setAnnouncementFilter] = useState("all");
+  const [adminAnnouncementSearchTerm, setAdminAnnouncementSearchTerm] = useState("");
+  const [adminAnnouncementFilter, setAdminAnnouncementFilter] = useState("all");
+  const [selectedAdminAnnouncementId, setSelectedAdminAnnouncementId] = useState("");
+  const [activeCollaborators, setActiveCollaborators] = useState([]);
   const [noteSearchTerm, setNoteSearchTerm] = useState("");
   const [noteFilter, setNoteFilter] = useState("all");
 
@@ -912,9 +916,9 @@ function WorkspaceDashboard({ profile, isAdmin }) {
             ...announcementDoc.data(),
             attachments: normalizeStoredAttachments(announcementDoc.data()?.attachments),
           }))
-          .filter((announcement) => announcement.active !== false)
+          .filter((announcement) => isAdmin || isAnnouncementActive(announcement))
           .sort(sortByCreatedAtDesc)
-          .slice(0, 12);
+          .slice(0, isAdmin ? 80 : 12);
 
         setAnnouncements(nextAnnouncements);
         setAnnouncementError("");
@@ -924,7 +928,7 @@ function WorkspaceDashboard({ profile, isAdmin }) {
         setAnnouncementError("No se pudieron cargar los anuncios.");
       }
     );
-  }, [currentUserId]);
+  }, [currentUserId, isAdmin]);
 
   useEffect(() => {
     if (!currentUserId || announcements.length === 0) {
@@ -972,6 +976,29 @@ function WorkspaceDashboard({ profile, isAdmin }) {
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [announcements, currentUserId, isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin || !currentUserId) {
+      setActiveCollaborators([]);
+      return undefined;
+    }
+
+    return onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const nextCollaborators = snapshot.docs
+          .map((userDoc) => normalizeUserProfileForAnnouncements(userDoc.id, userDoc.data()))
+          .filter(isActiveUserForAnnouncementTracking)
+          .sort(sortUserProfilesByName);
+
+        setActiveCollaborators(nextCollaborators);
+      },
+      (error) => {
+        console.error("No se pudieron cargar colaboradores para anuncios:", error);
+        setActiveCollaborators([]);
+      }
+    );
+  }, [isAdmin, currentUserId]);
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -1179,6 +1206,26 @@ function WorkspaceDashboard({ profile, isAdmin }) {
     }
   }
 
+  async function handleRestoreAnnouncement(announcementId) {
+    if (!isAdmin) return;
+
+    try {
+      await updateDoc(doc(db, "announcements", announcementId), {
+        active: true,
+        archivedAt: null,
+        restoredAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: currentUserId,
+        updatedByName: profile?.name || "Usuario",
+        updatedByEmail: profile?.email || "",
+      });
+      setAnnouncementStatus("Anuncio restaurado.");
+    } catch (error) {
+      console.error("No se pudo restaurar el anuncio:", error);
+      setAnnouncementError("No se pudo restaurar el anuncio.");
+    }
+  }
+
   async function handleDeleteAnnouncement(announcement) {
     if (!isAdmin) return;
 
@@ -1308,15 +1355,28 @@ function WorkspaceDashboard({ profile, isAdmin }) {
     }
   }
 
-  const unreadAnnouncements = announcements.filter(
+  const activeAnnouncements = announcements.filter(isAnnouncementActive);
+  const archivedAnnouncements = announcements.filter((announcement) => !isAnnouncementActive(announcement));
+  const unreadAnnouncements = activeAnnouncements.filter(
     (announcement) => !announcementReceipts[announcement.id]?.length
   ).length;
   const pendingNotes = notes.filter((note) => !note.completed).length;
-  const importantAnnouncements = announcements.filter(
+  const importantAnnouncements = activeAnnouncements.filter(
     (announcement) => announcement.priority === "important"
   ).length;
+  const adminAnnouncementStats = announcements.map((announcement) => ({
+    announcement,
+    stats: getAnnouncementConfirmationStats(
+      announcement,
+      announcementReceipts[announcement.id] || [],
+      activeCollaborators
+    ),
+  }));
+  const adminTotalPendingConfirmations = adminAnnouncementStats
+    .filter(({ announcement }) => isAnnouncementActive(announcement))
+    .reduce((total, item) => total + item.stats.pendingCount, 0);
   const notesWithAttachments = notes.filter((note) => Array.isArray(note.attachments) && note.attachments.length > 0).length;
-  const filteredAnnouncements = announcements.filter((announcement) =>
+  const filteredAnnouncements = activeAnnouncements.filter((announcement) =>
     matchesAnnouncementBoardFilters(announcement, {
       searchTerm: announcementSearchTerm,
       filter: announcementFilter,
@@ -1351,7 +1411,7 @@ function WorkspaceDashboard({ profile, isAdmin }) {
         <div className="workspace-dashboard-summary workspace-summary-grid">
           <div className="workspace-summary-card highlight-blue">
             <span className="summary-icon">📣</span>
-            <strong>{announcements.length}</strong>
+            <strong>{activeAnnouncements.length}</strong>
             <small>Anuncios activos</small>
           </div>
           <div className="workspace-summary-card highlight-orange">
@@ -1361,8 +1421,8 @@ function WorkspaceDashboard({ profile, isAdmin }) {
           </div>
           <div className="workspace-summary-card highlight-green">
             <span className="summary-icon">✅</span>
-            <strong>{unreadAnnouncements}</strong>
-            <small>Por confirmar</small>
+            <strong>{isAdmin ? adminTotalPendingConfirmations : unreadAnnouncements}</strong>
+            <small>{isAdmin ? "Confirmaciones pendientes" : "Por confirmar"}</small>
           </div>
           <div className="workspace-summary-card highlight-yellow">
             <span className="summary-icon">📝</span>
@@ -1382,7 +1442,7 @@ function WorkspaceDashboard({ profile, isAdmin }) {
                 Aquí se publican avisos importantes para el equipo. Puedes adjuntar imágenes, audios, documentos y videos.
               </p>
             </div>
-            <div className="workspace-card-side-badge announcement-side-badge">{announcements.length} activos</div>
+            <div className="workspace-card-side-badge announcement-side-badge">{activeAnnouncements.length} activos</div>
           </div>
 
           {isAdmin && (
@@ -1471,6 +1531,26 @@ function WorkspaceDashboard({ profile, isAdmin }) {
           {announcementError && <div className="workspace-error-box">{announcementError}</div>}
           {announcementStatus && <div className="workspace-success-box">{announcementStatus}</div>}
 
+          {isAdmin && (
+            <AnnouncementAdminDashboard
+              announcements={announcements}
+              activeAnnouncements={activeAnnouncements}
+              archivedAnnouncements={archivedAnnouncements}
+              activeCollaborators={activeCollaborators}
+              announcementReceipts={announcementReceipts}
+              filter={adminAnnouncementFilter}
+              onFilterChange={setAdminAnnouncementFilter}
+              searchTerm={adminAnnouncementSearchTerm}
+              onSearchTermChange={setAdminAnnouncementSearchTerm}
+              selectedAnnouncementId={selectedAdminAnnouncementId}
+              onSelectAnnouncement={setSelectedAdminAnnouncementId}
+              onEdit={handleEditAnnouncement}
+              onArchive={handleArchiveAnnouncement}
+              onRestore={handleRestoreAnnouncement}
+              onDelete={handleDeleteAnnouncement}
+            />
+          )}
+
           <div className="board-search-toolbar">
             <label className="board-search-input">
               <span>Buscar anuncios</span>
@@ -1495,12 +1575,12 @@ function WorkspaceDashboard({ profile, isAdmin }) {
             </div>
 
             <small>
-              Mostrando {filteredAnnouncements.length} de {announcements.length} anuncio(s).
+              Mostrando {filteredAnnouncements.length} de {activeAnnouncements.length} anuncio(s) activo(s).
             </small>
           </div>
 
           <div className="announcement-list visual-announcement-list">
-            {announcements.length === 0 ? (
+            {activeAnnouncements.length === 0 ? (
               <div className="workspace-empty-state board-empty-state">
                 <strong>No hay anuncios activos</strong>
                 <p>Cuando se publique un anuncio, aparecerá aquí.</p>
@@ -1785,6 +1865,254 @@ function WorkspaceDashboard({ profile, isAdmin }) {
   );
 }
 
+
+function AnnouncementAdminDashboard({
+  announcements,
+  activeAnnouncements,
+  archivedAnnouncements,
+  activeCollaborators,
+  announcementReceipts,
+  filter,
+  onFilterChange,
+  searchTerm,
+  onSearchTermChange,
+  selectedAnnouncementId,
+  onSelectAnnouncement,
+  onEdit,
+  onArchive,
+  onRestore,
+  onDelete,
+}) {
+  const announcementStats = announcements.map((announcement) => ({
+    announcement,
+    stats: getAnnouncementConfirmationStats(
+      announcement,
+      announcementReceipts[announcement.id] || [],
+      activeCollaborators
+    ),
+  }));
+  const filteredStats = announcementStats.filter(({ announcement, stats }) =>
+    matchesAdminAnnouncementFilters(announcement, stats, { filter, searchTerm })
+  );
+  const selectedItem =
+    announcementStats.find(({ announcement }) => announcement.id === selectedAnnouncementId) ||
+    filteredStats[0] ||
+    null;
+  const importantCount = announcements.filter((announcement) => announcement.priority === "important").length;
+  const withAttachmentsCount = announcements.filter(hasBoardAttachments).length;
+  const pendingConfirmations = announcementStats
+    .filter(({ announcement }) => isAnnouncementActive(announcement))
+    .reduce((total, item) => total + item.stats.pendingCount, 0);
+
+  return (
+    <section className="announcement-admin-dashboard">
+      <div className="announcement-admin-dashboard-header">
+        <div>
+          <span>Panel administrativo</span>
+          <h4>Seguimiento de anuncios</h4>
+          <p>
+            Revisa anuncios activos y archivados, confirma quién ya los leyó y detecta quién falta por confirmar.
+          </p>
+        </div>
+        <div className="announcement-admin-total-badge">
+          {activeCollaborators.length} colaborador(es) activos
+        </div>
+      </div>
+
+      <div className="announcement-admin-metrics">
+        <div>
+          <span>Activos</span>
+          <strong>{activeAnnouncements.length}</strong>
+        </div>
+        <div>
+          <span>Archivados</span>
+          <strong>{archivedAnnouncements.length}</strong>
+        </div>
+        <div>
+          <span>Importantes</span>
+          <strong>{importantCount}</strong>
+        </div>
+        <div>
+          <span>Con archivos</span>
+          <strong>{withAttachmentsCount}</strong>
+        </div>
+        <div className="pending">
+          <span>Pendientes totales</span>
+          <strong>{pendingConfirmations}</strong>
+        </div>
+      </div>
+
+      <div className="announcement-admin-toolbar">
+        <label className="board-search-input announcement-admin-search">
+          <span>Buscar en panel admin</span>
+          <input
+            value={searchTerm}
+            onChange={(event) => onSearchTermChange(event.target.value)}
+            placeholder="Buscar por título, mensaje, autor o archivo..."
+          />
+        </label>
+
+        <div className="board-filter-pills announcement-admin-filters" aria-label="Filtros administrativos de anuncios">
+          {ADMIN_ANNOUNCEMENT_FILTER_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={filter === option.value ? "active" : ""}
+              onClick={() => onFilterChange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="announcement-admin-layout">
+        <div className="announcement-admin-table-wrap">
+          <table className="announcement-admin-table">
+            <thead>
+              <tr>
+                <th>Anuncio</th>
+                <th>Estado</th>
+                <th>Prioridad</th>
+                <th>Lectura</th>
+                <th>Faltan</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredStats.length === 0 ? (
+                <tr>
+                  <td colSpan="6">
+                    <div className="announcement-admin-empty">No hay anuncios con este filtro.</div>
+                  </td>
+                </tr>
+              ) : (
+                filteredStats.map(({ announcement, stats }) => {
+                  const active = isAnnouncementActive(announcement);
+                  const isSelected = selectedItem?.announcement?.id === announcement.id;
+
+                  return (
+                    <tr key={announcement.id} className={isSelected ? "selected" : ""}>
+                      <td>
+                        <button
+                          type="button"
+                          className="announcement-admin-title-button"
+                          onClick={() => onSelectAnnouncement(announcement.id)}
+                        >
+                          <strong>{announcement.title || "Anuncio sin título"}</strong>
+                          <span>{formatDateTime(announcement.createdAt)} · {announcement.createdByName || "Administración"}</span>
+                        </button>
+                      </td>
+                      <td>
+                        <span className={`admin-status-pill ${active ? "active" : "archived"}`}>
+                          {active ? "Activo" : "Archivado"}
+                        </span>
+                      </td>
+                      <td>{announcement.priority === "important" ? "Importante" : "Normal"}</td>
+                      <td>
+                        <div className="admin-read-progress">
+                          <strong>{stats.readCount} / {stats.totalCount}</strong>
+                          <span>{stats.readPercentage}%</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={stats.pendingCount > 0 ? "admin-pending-number" : "admin-complete-number"}>
+                          {stats.pendingCount}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="announcement-admin-row-actions">
+                          <button type="button" onClick={() => onSelectAnnouncement(announcement.id)}>
+                            Ver
+                          </button>
+                          <button type="button" onClick={() => onEdit(announcement)}>
+                            Editar
+                          </button>
+                          {active ? (
+                            <button type="button" onClick={() => onArchive(announcement.id)}>
+                              Archivar
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => onRestore(announcement.id)}>
+                              Restaurar
+                            </button>
+                          )}
+                          <button type="button" className="danger" onClick={() => onDelete(announcement)}>
+                            Eliminar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <aside className="announcement-admin-detail">
+          {selectedItem ? (
+            <>
+              <div className="announcement-admin-detail-top">
+                <span className={`admin-status-pill ${isAnnouncementActive(selectedItem.announcement) ? "active" : "archived"}`}>
+                  {isAnnouncementActive(selectedItem.announcement) ? "Activo" : "Archivado"}
+                </span>
+                <h5>{selectedItem.announcement.title || "Anuncio sin título"}</h5>
+                <p>{selectedItem.announcement.message || "Sin mensaje."}</p>
+              </div>
+
+              <div className="announcement-admin-detail-stats">
+                <div>
+                  <span>Leídos</span>
+                  <strong>{selectedItem.stats.readCount}</strong>
+                </div>
+                <div>
+                  <span>Faltan</span>
+                  <strong>{selectedItem.stats.pendingCount}</strong>
+                </div>
+                <div>
+                  <span>Avance</span>
+                  <strong>{selectedItem.stats.readPercentage}%</strong>
+                </div>
+              </div>
+
+              <div className="announcement-admin-people-grid">
+                <div>
+                  <strong>Ya confirmaron</strong>
+                  {selectedItem.stats.readers.length === 0 ? (
+                    <p>Aún nadie ha confirmado este anuncio.</p>
+                  ) : (
+                    selectedItem.stats.readers.map((person) => (
+                      <span key={person.id} className="reader-person-chip">
+                        ✓ {person.name || person.email || "Usuario"}
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                <div>
+                  <strong>Faltan por confirmar</strong>
+                  {selectedItem.stats.missing.length === 0 ? (
+                    <p>Todos los colaboradores activos ya confirmaron.</p>
+                  ) : (
+                    selectedItem.stats.missing.map((person) => (
+                      <span key={person.id} className="missing-person-chip">
+                        • {person.name || person.email || "Usuario"}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="announcement-admin-empty">Selecciona un anuncio para ver el detalle.</div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function NoteColorPicker({ value, onChange }) {
   return (
     <div className="note-color-picker">
@@ -1925,6 +2253,16 @@ const ANNOUNCEMENT_FILTER_OPTIONS = [
   { value: "read", label: "Leídos" },
   { value: "important", label: "Importantes" },
   { value: "attachments", label: "Con archivos" },
+];
+
+const ADMIN_ANNOUNCEMENT_FILTER_OPTIONS = [
+  { value: "all", label: "Todos" },
+  { value: "active", label: "Activos" },
+  { value: "archived", label: "Archivados" },
+  { value: "important", label: "Importantes" },
+  { value: "attachments", label: "Con archivos" },
+  { value: "pending", label: "Con pendientes" },
+  { value: "completed", label: "Leídos por todos" },
 ];
 
 const NOTE_FILTER_OPTIONS = [
@@ -2133,6 +2471,91 @@ function textIncludesSearchTerm(value, searchTerm) {
 
 function hasBoardAttachments(item) {
   return Array.isArray(item?.attachments) && item.attachments.length > 0;
+}
+
+
+function isAnnouncementActive(announcement) {
+  return announcement?.active !== false;
+}
+
+function normalizeUserProfileForAnnouncements(id, data = {}) {
+  return {
+    id,
+    uid: data.uid || data.userId || id,
+    name: data.name || data.displayName || data.fullName || data.email || "Usuario",
+    email: data.email || "",
+    role: data.role || "collaborator",
+    active: data.active,
+    status: data.status || "active",
+  };
+}
+
+function isActiveUserForAnnouncementTracking(user) {
+  return Boolean(user?.id)
+    && user.active !== false
+    && user.status !== "inactive"
+    && user.status !== "deleted";
+}
+
+function sortUserProfilesByName(a, b) {
+  return String(a.name || a.email || "").localeCompare(String(b.name || b.email || ""), "es");
+}
+
+function getAnnouncementConfirmationStats(announcement, receipts = [], activeCollaborators = []) {
+  const receiptUserIds = new Set(
+    receipts
+      .map((receipt) => receipt.userId || receipt.id || "")
+      .filter(Boolean)
+  );
+  const receiptEmails = new Set(
+    receipts
+      .map((receipt) => String(receipt.userEmail || "").toLowerCase())
+      .filter(Boolean)
+  );
+  const readers = activeCollaborators.filter((user) =>
+    receiptUserIds.has(user.id) ||
+    receiptUserIds.has(user.uid) ||
+    (user.email && receiptEmails.has(String(user.email).toLowerCase()))
+  );
+  const missing = activeCollaborators.filter((user) =>
+    !receiptUserIds.has(user.id) &&
+    !receiptUserIds.has(user.uid) &&
+    !(user.email && receiptEmails.has(String(user.email).toLowerCase()))
+  );
+  const totalCount = activeCollaborators.length;
+  const readCount = readers.length;
+  const pendingCount = Math.max(totalCount - readCount, 0);
+  const readPercentage = totalCount ? Math.round((readCount / totalCount) * 100) : 0;
+
+  return {
+    totalCount,
+    readCount,
+    pendingCount,
+    readPercentage,
+    readers,
+    missing,
+  };
+}
+
+function matchesAdminAnnouncementFilters(announcement, stats, { filter, searchTerm }) {
+  if (filter === "active" && !isAnnouncementActive(announcement)) return false;
+  if (filter === "archived" && isAnnouncementActive(announcement)) return false;
+  if (filter === "important" && announcement.priority !== "important") return false;
+  if (filter === "attachments" && !hasBoardAttachments(announcement)) return false;
+  if (filter === "pending" && stats.pendingCount <= 0) return false;
+  if (filter === "completed" && (stats.totalCount === 0 || stats.pendingCount > 0)) return false;
+
+  const searchableText = [
+    announcement.title,
+    announcement.message,
+    announcement.createdByName,
+    announcement.createdByEmail,
+    announcement.priority,
+    isAnnouncementActive(announcement) ? "activo" : "archivado",
+    getSearchableAttachmentText(announcement.attachments),
+  ].join(" ");
+
+  return textIncludesSearchTerm(searchableText, searchTerm);
 }
 
 function matchesAnnouncementBoardFilters(announcement, { searchTerm, filter, receipts, currentUserId }) {
