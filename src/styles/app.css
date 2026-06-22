@@ -40099,3 +40099,234 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
     max-width: 100%;
   }
 }
+
+/* =========================================================
+   AJUSTE RESUMEN EJECUTIVO: EVITAR QUE LAS TARJETAS REBASEN EL MENÚ
+========================================================= */
+
+@media (min-width: 1200px) {
+  .main-content {
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+
+  .admin-dashboard-proposal {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .admin-executive-hero {
+    margin-bottom: 14px;
+    padding: 20px 24px;
+    min-height: auto;
+  }
+
+  .admin-executive-hero h2 {
+    font-size: 28px;
+    margin-bottom: 4px;
+  }
+
+  .admin-executive-hero p {
+    font-size: 14px;
+  }
+
+  .admin-kpi-grid {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .admin-kpi-card {
+    min-height: 128px;
+    padding: 18px;
+  }
+
+  .admin-kpi-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .admin-kpi-copy small {
+    font-size: 13px;
+  }
+
+  .admin-kpi-copy strong {
+    font-size: 34px;
+    margin-bottom: 8px;
+  }
+
+  .admin-dashboard-grid {
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .admin-panel-card {
+    padding: 18px;
+  }
+
+  .admin-panel-header {
+    margin-bottom: 12px;
+  }
+
+  .admin-panel-header h3 {
+    font-size: 18px;
+  }
+
+  .admin-list-stack,
+  .admin-activity-list,
+  .approval-list {
+    gap: 9px;
+  }
+
+  .admin-priority-row,
+  .admin-activity-row,
+  .approval-row {
+    min-height: auto;
+    padding: 10px 11px;
+  }
+
+  .admin-row-icon,
+  .admin-activity-dot,
+  .approval-row > span:first-child {
+    width: 36px;
+    height: 36px;
+  }
+
+  .status-panel,
+  .actions-panel {
+    min-height: 260px;
+  }
+
+  .status-summary-layout {
+    margin-top: 0;
+    gap: 20px;
+  }
+
+  .status-donut {
+    width: 160px;
+    height: 160px;
+  }
+
+  .status-donut strong {
+    font-size: 32px;
+  }
+
+  .status-donut span {
+    font-size: 14px;
+    margin-top: 4px;
+  }
+
+  .status-legend-list {
+    gap: 10px;
+  }
+
+  .status-legend-row span,
+  .status-legend-row small {
+    font-size: 14px;
+  }
+
+  .status-legend-row strong {
+    font-size: 15px;
+  }
+
+  .next-actions-list-redesign {
+    gap: 12px;
+  }
+
+  .next-action-card {
+    min-height: 86px;
+    padding: 13px;
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .next-action-date {
+    width: 52px;
+    height: 58px;
+  }
+
+  .next-action-date strong {
+    font-size: 22px;
+  }
+
+  .next-action-card strong {
+    font-size: 14px;
+  }
+
+  .next-action-card small {
+    font-size: 13px;
+  }
+
+  .next-action-card em {
+    font-size: 12px;
+  }
+}
+
+@media (min-width: 1451px) {
+  .admin-dashboard-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(360px, 0.95fr);
+  }
+}
+
+/* =========================================================
+   AJUSTE SCROLL: SOLO MOSTRAR BARRAS CUANDO REALMENTE SE NECESITEN
+========================================================= */
+
+html,
+body,
+#root {
+  overflow-x: hidden;
+}
+
+body {
+  overflow-y: auto;
+}
+
+.sidebar,
+.main-content,
+.mobile-module-drawer,
+.messages-list,
+.chat-conversation-list,
+.chat-thread-messages,
+.topbar-search-results,
+.notifications-dropdown,
+.profile-dropdown,
+.create-user-modal {
+  scrollbar-gutter: auto;
+}
+
+@media (min-width: 1051px) {
+  .app-shell:has(.admin-dashboard-proposal) {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-shell:has(.admin-dashboard-proposal) .main-content {
+    height: 100dvh;
+    min-height: 0;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-shell:has(.admin-dashboard-proposal) .admin-dashboard-proposal {
+    min-height: calc(100dvh - 82px);
+    padding-top: 24px;
+    padding-bottom: 22px;
+  }
+
+  .app-shell:has(.admin-dashboard-proposal) .admin-executive-hero {
+    margin-bottom: 12px;
+  }
+
+  .app-shell:has(.admin-dashboard-proposal) .admin-kpi-grid {
+    margin-bottom: 12px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .app-shell:has(.admin-dashboard-proposal) .main-content {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
