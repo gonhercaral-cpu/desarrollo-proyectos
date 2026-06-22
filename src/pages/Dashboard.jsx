@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -24,6 +25,7 @@ import PrintShop from "./printshop";
 import PurchaseRequests from "./PurchaseRequests";
 import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
+import BugReports from "./BugReports";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -104,6 +106,20 @@ function renderDashboardNavIconPath(name) {
           <path d="M9 18h6" />
           <path d="M10 21h4" />
           <path d="M8 14.5a6 6 0 1 1 8 0c-.9.8-1.3 1.6-1.3 2.5H9.3c0-.9-.4-1.7-1.3-2.5z" />
+        </>
+      );
+    case "bugReports":
+      return (
+        <>
+          <path d="M8.2 8.2a5.4 5.4 0 0 1 7.6 0" />
+          <path d="M9 4.5 7.6 3" />
+          <path d="M15 4.5 16.4 3" />
+          <rect x="7" y="7" width="10" height="13" rx="5" />
+          <path d="M4 11h3" />
+          <path d="M17 11h3" />
+          <path d="M4.5 17H7" />
+          <path d="M17 17h2.5" />
+          <path d="M12 10v7" />
         </>
       );
     case "print":
@@ -191,33 +207,52 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
   const items = [];
 
   if (isAdmin) {
-    items.push({ page: "executive-dashboard", label: "Dashboard ejecutivo", mobileLabel: "Ejecutivo", icon: "dashboard" });
+    items.push({ page: "executive-dashboard", label: "Dashboard ejecutivo", mobileLabel: "Ejecutivo", icon: "dashboard", section: "featured" });
+  } else {
+    items.push({ page: "workspace-dashboard", label: "Mi panel", mobileLabel: "Mi panel", icon: "dashboard", section: "featured" });
   }
 
-  items.push({ page: "workspace-dashboard", label: "Tablero", mobileLabel: "Inicio", icon: "dashboard" });
-  items.push({ page: "internal-messages", label: "Mensajes", mobileLabel: "Mensajes", icon: "messages" });
-  items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects" });
-  items.push({ page: "team-agenda", label: "Agenda del equipo", mobileLabel: "Agenda", icon: "calendar" });
-  items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase" });
-  items.push({ page: "ideas-incubator", label: "Incubadora de ideas", mobileLabel: "Ideas", icon: "ideas" });
+  items.push({ page: "workspace-dashboard", label: "Tablero", mobileLabel: "Inicio", icon: "dashboard", section: "General" });
+  items.push({ page: "internal-messages", label: "Mensajes", mobileLabel: "Mensajes", icon: "messages", section: "General" });
+  items.push({ page: "team-agenda", label: "Agenda del equipo", mobileLabel: "Agenda", icon: "calendar", section: "General" });
+  items.push({ page: "ideas-incubator", label: "Incubadora de ideas", mobileLabel: "Ideas", icon: "ideas", section: "General" });
+
+  items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects", section: "Operación" });
 
   if (canUsePrintShop) {
-    items.push({ page: "print-shop", label: "Imprenta", mobileLabel: "Imprenta", icon: "print" });
+    items.push({ page: "print-shop", label: "Imprenta", mobileLabel: "Imprenta", icon: "print", section: "Operación" });
   }
 
   if (canUseTechnicalSupport) {
-    items.push({ page: "technical-support", label: "Soporte Técnico", mobileLabel: "Soporte", icon: "technical" });
+    items.push({ page: "technical-support", label: "Soporte técnico", mobileLabel: "Soporte", icon: "technical", section: "Operación" });
+  }
+
+  if (!isAdmin) {
+    items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Operación" });
   }
 
   if (isAdmin) {
-    items.push({ page: "all-projects", label: "Todos los proyectos", mobileLabel: "Todos", icon: "allProjects" });
-    items.push({ page: "collaborators-admin", label: "Colaboradores", mobileLabel: "Equipo", icon: "collaborators" });
-    items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments" });
-    items.push({ page: "project-history", label: "Historial", mobileLabel: "Historial", icon: "history" });
-    items.push({ page: "create-project", label: "Alta de proyecto", mobileLabel: "Alta", icon: "create" });
+    items.push({ page: "create-project", label: "Alta de proyecto", mobileLabel: "Alta", icon: "create", section: "Operación" });
+    items.push({ page: "all-projects", label: "Todos los proyectos", mobileLabel: "Todos", icon: "allProjects", section: "Administración" });
+    items.push({ page: "project-history", label: "Historial de proyectos", mobileLabel: "Historial", icon: "history", section: "Administración" });
+    items.push({ page: "collaborators-admin", label: "Colaboradores", mobileLabel: "Equipo", icon: "collaborators", section: "Administración" });
+    items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
+    items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Administración" });
+    items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Administración" });
   }
 
   return items;
+}
+
+function getDashboardNavigationGroups(items = []) {
+  const sectionLabels = ["General", "Operación", "Administración"];
+
+  return sectionLabels
+    .map((section) => ({
+      section,
+      items: items.filter((item) => item.section === section),
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 function getMobilePrimaryNavigationItems(items, { isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
@@ -255,6 +290,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
   if (adminOnlyPages.has(page) && !isAdmin) return defaultPage;
   if (page === "print-shop" && !canUsePrintShop) return defaultPage;
   if (page === "technical-support" && !canUseTechnicalSupport) return defaultPage;
+  if (page === "notifications-center") return "notifications-center";
 
   return page;
 }
@@ -284,8 +320,10 @@ export default function Dashboard() {
     getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.returnPage, defaultReturnPage)
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const unreadDirectMessagesCount = useUnreadInternalMessagesCount(profile);
   const unreadDepartmentMessagesCount = useUnreadDepartmentMessagesCount(profile, isAdmin);
   const unreadMessagesCount = unreadDirectMessagesCount + unreadDepartmentMessagesCount;
@@ -362,6 +400,7 @@ export default function Dashboard() {
     setPage(safePage);
     setReturnPage(safePage);
     setProfileMenuOpen(false);
+    setNotificationPanelOpen(false);
     setProfilePanelOpen(false);
     setMobileMenuOpen(false);
   }
@@ -395,6 +434,8 @@ export default function Dashboard() {
       setReturnPage("team-agenda");
     } else if (page === "ideas-incubator") {
       setReturnPage("ideas-incubator");
+    } else if (page === "bug-reports") {
+      setReturnPage("bug-reports");
     } else {
       setReturnPage(isAdmin ? "all-projects" : "my-projects");
     }
@@ -424,6 +465,7 @@ export default function Dashboard() {
   function handleViewProfile() {
     setProfilePanelOpen(true);
     setProfileMenuOpen(false);
+    setNotificationPanelOpen(false);
   }
 
   function handleLogout() {
@@ -463,6 +505,18 @@ export default function Dashboard() {
       return <InternalMessages profile={profile} isAdmin={isAdmin} />;
     }
 
+    if (page === "notifications-center") {
+      return (
+        <NotificationsCenter
+          profile={profile}
+          isAdmin={isAdmin}
+          unreadMessagesCount={unreadMessagesCount}
+          unreadAnnouncementsCount={unreadAnnouncementsCount}
+          onOpenModule={goToPage}
+        />
+      );
+    }
+
     if (page === "executive-dashboard" && isAdmin) {
       return <ExecutiveDashboard onOpenProject={openProject} onOpenModule={goToPage} />;
     }
@@ -493,6 +547,10 @@ export default function Dashboard() {
 
     if (page === "ideas-incubator") {
       return <IdeasIncubator />;
+    }
+
+    if (page === "bug-reports") {
+      return <BugReports />;
     }
 
     if (page === "create-project" && isAdmin) {
@@ -624,6 +682,14 @@ export default function Dashboard() {
       return page === "ideas-incubator";
     }
 
+    if (navPage === "bug-reports") {
+      return page === "bug-reports";
+    }
+
+    if (navPage === "notifications-center") {
+      return page === "notifications-center";
+    }
+
     return page === navPage;
   }
 
@@ -650,9 +716,11 @@ export default function Dashboard() {
   const activeNavigationItem =
     navigationItems.find((item) => isNavActive(item.page)) ||
     navigationItems[0];
+  const featuredNavigationItem = navigationItems.find((item) => item.section === "featured");
+  const groupedNavigationItems = getDashboardNavigationGroups(navigationItems);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <MobileAppHeader
         profile={profile}
         title={activeNavigationItem?.label || "Desarrollo de Proyectos"}
@@ -691,153 +759,72 @@ export default function Dashboard() {
           </h2>
         </div>
 
-        <nav className="sidebar-nav">
-          {isAdmin && (
+        <button
+          type="button"
+          className="sidebar-collapse-button"
+          onClick={() => setSidebarCollapsed((current) => !current)}
+          title={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
+          aria-label={sidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
+        >
+          {sidebarCollapsed ? "›" : "‹"}
+        </button>
+
+        <nav className="sidebar-nav redesigned-sidebar-nav">
+          {featuredNavigationItem && (
             <button
-              className={isNavActive("executive-dashboard") ? "active" : ""}
-              onClick={() => goToPage("executive-dashboard")}
+              type="button"
+              className={`sidebar-featured-item ${isNavActive(featuredNavigationItem.page) ? "active" : ""}`}
+              onClick={() => goToPage(featuredNavigationItem.page)}
             >
-              <span className="nav-icon"><DashboardNavIcon name="dashboard" /></span>
-              Dashboard ejecutivo
+              <span className="nav-icon"><DashboardNavIcon name={featuredNavigationItem.icon} /></span>
+              <span className="sidebar-nav-label">{featuredNavigationItem.label}</span>
+              {featuredNavigationItem.badgeCount > 0 && (
+                <span className="nav-unread-badge">
+                  {formatUnreadBadgeCount(featuredNavigationItem.badgeCount)}
+                </span>
+              )}
             </button>
           )}
 
-          <button
-            className={isNavActive("workspace-dashboard") ? "active" : ""}
-            onClick={() => goToPage("workspace-dashboard")}
-          >
-            <span className="nav-icon"><DashboardNavIcon name="dashboard" /></span>
-            <span className="sidebar-nav-label">Tablero</span>
-            {unreadAnnouncementsCount > 0 && (
-              <span
-                className="nav-unread-badge nav-announcement-badge"
-                aria-label={`${unreadAnnouncementsCount} anuncios pendientes de confirmar`}
-              >
-                {formatUnreadBadgeCount(unreadAnnouncementsCount)}
-              </span>
-            )}
-          </button>
+          {groupedNavigationItems.map((group) => (
+            <div className="sidebar-nav-group" key={group.section}>
+              <span className="sidebar-section-title">{group.section.toUpperCase()}</span>
 
-          <button
-            className={isNavActive("internal-messages") ? "active" : ""}
-            onClick={() => goToPage("internal-messages")}
-          >
-            <span className="nav-icon"><DashboardNavIcon name="messages" /></span>
-            <span className="sidebar-nav-label">Mensajes</span>
-            {unreadMessagesCount > 0 && (
-              <span className="nav-unread-badge" aria-label={`${unreadMessagesCount} mensajes no leídos`}>
-                {formatUnreadBadgeCount(unreadMessagesCount)}
-              </span>
-            )}
-          </button>
-
-          <button
-            className={isNavActive("my-projects") ? "active" : ""}
-            onClick={() => goToPage("my-projects")}
-          >
-            <span className="nav-icon"><DashboardNavIcon name="myProjects" /></span>
-            Mis proyectos
-          </button>
-
-          <button
-            className={isNavActive("team-agenda") ? "active" : ""}
-            onClick={() => goToPage("team-agenda")}
-          >
-            <span className="nav-icon"><DashboardNavIcon name="calendar" /></span>
-            Agenda del equipo
-          </button>
-
-          <button
-            className={isNavActive("purchase-requests") ? "active" : ""}
-            onClick={() => goToPage("purchase-requests")}
-          >
-            <span className="nav-icon"><DashboardNavIcon name="purchase" /></span>
-            Solicitudes de compra
-          </button>
-
-          <button
-            className={isNavActive("ideas-incubator") ? "active" : ""}
-            onClick={() => goToPage("ideas-incubator")}
-          >
-            <span className="nav-icon"><DashboardNavIcon name="ideas" /></span>
-            Incubadora de ideas
-          </button>
-
-          {canUsePrintShop && (
-            <button
-              className={isNavActive("print-shop") ? "active" : ""}
-              onClick={() => goToPage("print-shop")}
-            >
-              <span className="nav-icon"><DashboardNavIcon name="print" /></span>
-              Imprenta
-            </button>
-          )}
-
-          {canUseTechnicalSupport && (
-            <button
-              className={isNavActive("technical-support") ? "active" : ""}
-              onClick={() => goToPage("technical-support")}
-            >
-              <span className="nav-icon"><DashboardNavIcon name="technical" /></span>
-              Soporte Técnico
-            </button>
-          )}
-
-          {isAdmin && (
-            <>
-              <button
-                className={isNavActive("all-projects") ? "active" : ""}
-                onClick={() => goToPage("all-projects")}
-              >
-                <span className="nav-icon"><DashboardNavIcon name="allProjects" /></span>
-                Todos los proyectos
-              </button>
-
-              <button
-                className={
-                  isNavActive("collaborators-admin") ? "active" : ""
-                }
-                onClick={() => goToPage("collaborators-admin")}
-              >
-                <span className="nav-icon"><DashboardNavIcon name="collaborators" /></span>
-                Colaboradores
-              </button>
-
-              <button
-                className={isNavActive("departments-admin") ? "active" : ""}
-                onClick={() => goToPage("departments-admin")}
-              >
-                <span className="nav-icon"><DashboardNavIcon name="departments" /></span>
-                Departamentos
-              </button>
-
-              <button
-                className={isNavActive("project-history") ? "active" : ""}
-                onClick={() => goToPage("project-history")}
-              >
-                <span className="nav-icon"><DashboardNavIcon name="history" /></span>
-                Historial
-              </button>
-
-              <button
-                className={isNavActive("create-project") ? "active" : ""}
-                onClick={() => goToPage("create-project")}
-              >
-                <span className="nav-icon"><DashboardNavIcon name="create" /></span>
-                Alta de proyecto
-              </button>
-            </>
-          )}
+              {group.items.map((item) => (
+                <button
+                  key={item.page}
+                  type="button"
+                  className={isNavActive(item.page) ? "active" : ""}
+                  onClick={() => goToPage(item.page)}
+                >
+                  <span className="nav-icon"><DashboardNavIcon name={item.icon} /></span>
+                  <span className="sidebar-nav-label">{item.label}</span>
+                  {item.badgeCount > 0 && (
+                    <span
+                      className={`nav-unread-badge ${item.page === "workspace-dashboard" ? "nav-announcement-badge" : ""}`}
+                      aria-label={`${item.badgeCount} pendientes`}
+                    >
+                      {formatUnreadBadgeCount(item.badgeCount)}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="sidebar-footer-icon">▥</div>
-
-          <div>
-            <strong>Desarrollo de Proyectos</strong>
-            <span>Área administrativa</span>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="sidebar-help-card"
+          onClick={() => goToPage("technical-support")}
+        >
+          <span className="sidebar-footer-icon"><DashboardNavIcon name="technical" /></span>
+          <span>
+            <strong>¿Necesitas ayuda?</strong>
+            <small>Soporte técnico disponible</small>
+          </span>
+          <b>›</b>
+        </button>
       </aside>
 
       <MobileModuleDrawer
@@ -856,10 +843,17 @@ export default function Dashboard() {
         <TopProfileBar
           profile={profile}
           isAdmin={isAdmin}
+          activeTitle={isAdmin ? "Desarrollo de Proyectos" : "Mi panel"}
+          unreadMessagesCount={unreadMessagesCount}
+          unreadAnnouncementsCount={unreadAnnouncementsCount}
           profileMenuOpen={profileMenuOpen}
           setProfileMenuOpen={setProfileMenuOpen}
+          notificationPanelOpen={notificationPanelOpen}
+          setNotificationPanelOpen={setNotificationPanelOpen}
           onViewProfile={handleViewProfile}
           onLogout={handleLogout}
+          onOpenModule={goToPage}
+          onOpenProject={openProject}
         />
 
         {renderPage()}
@@ -4641,57 +4635,661 @@ function MobileModuleDrawer({
   );
 }
 
+
+function NotificationsCenter({
+  profile,
+  isAdmin,
+  unreadMessagesCount = 0,
+  unreadAnnouncementsCount = 0,
+  onOpenModule,
+}) {
+  const [marking, setMarking] = useState(false);
+  const [status, setStatus] = useState("");
+  const notifications = buildQuickNotifications({
+    isAdmin,
+    unreadMessagesCount,
+    unreadAnnouncementsCount,
+  });
+  const totalUnread = Number(unreadMessagesCount || 0) + Number(unreadAnnouncementsCount || 0);
+
+  async function handleMarkAllRead() {
+    setMarking(true);
+    setStatus("");
+
+    try {
+      await markAllDashboardNotificationsRead({ profile, isAdmin });
+      setStatus("Todas las notificaciones pendientes se marcaron como leídas.");
+    } catch (error) {
+      console.error("No se pudieron marcar las notificaciones:", error);
+      setStatus("No se pudieron marcar todas las notificaciones como leídas.");
+    } finally {
+      setMarking(false);
+    }
+  }
+
+  return (
+    <section className="notifications-center-page">
+      <div className="notifications-center-hero">
+        <div>
+          <h2>Notificaciones</h2>
+          <p>Consulta avisos prioritarios, mensajes pendientes y recordatorios importantes del sistema.</p>
+        </div>
+
+        <button
+          type="button"
+          className="visual-primary-button"
+          onClick={handleMarkAllRead}
+          disabled={marking || totalUnread === 0}
+        >
+          {marking ? "Marcando..." : "Marcar todas como leídas"}
+        </button>
+      </div>
+
+      {status && <div className="message-box">{status}</div>}
+
+      <div className="notifications-center-grid">
+        <article className="notifications-center-summary-card unread">
+          <span>Sin leer</span>
+          <strong>{formatUnreadBadgeCount(totalUnread)}</strong>
+          <p>Mensajes y anuncios pendientes.</p>
+        </article>
+
+        <article className="notifications-center-summary-card">
+          <span>Mensajes</span>
+          <strong>{formatUnreadBadgeCount(unreadMessagesCount)}</strong>
+          <p>Conversaciones pendientes.</p>
+        </article>
+
+        <article className="notifications-center-summary-card">
+          <span>Anuncios</span>
+          <strong>{formatUnreadBadgeCount(unreadAnnouncementsCount)}</strong>
+          <p>Comunicados por confirmar.</p>
+        </article>
+      </div>
+
+      <div className="notifications-center-list-card">
+        <div className="admin-panel-header">
+          <h3>Prioritarias</h3>
+          <button type="button" onClick={() => onOpenModule?.("internal-messages")}>Abrir mensajes</button>
+        </div>
+
+        <div className="notifications-center-list">
+          {notifications.map((notification) => (
+            <button
+              type="button"
+              key={notification.key}
+              className="notifications-center-item"
+              onClick={() => onOpenModule?.(notification.route || "workspace-dashboard")}
+            >
+              <span className={`notification-icon notification-${notification.tone}`}>
+                {notification.icon}
+              </span>
+              <span>
+                <strong>{notification.title}</strong>
+                <small>{notification.detail}</small>
+              </span>
+              <em>{notification.time}</em>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TopProfileBar({
   profile,
   isAdmin,
+  activeTitle = "Desarrollo de Proyectos",
+  unreadMessagesCount = 0,
+  unreadAnnouncementsCount = 0,
   profileMenuOpen,
   setProfileMenuOpen,
+  notificationPanelOpen,
+  setNotificationPanelOpen,
   onViewProfile,
   onLogout,
+  onOpenModule,
+  onOpenProject,
 }) {
+  const notificationCount = unreadMessagesCount + unreadAnnouncementsCount;
+  const safeNotificationCount = notificationCount;
+  const notifications = buildQuickNotifications({
+    isAdmin,
+    unreadMessagesCount,
+    unreadAnnouncementsCount,
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [markingNotifications, setMarkingNotifications] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState("");
+
+  useEffect(() => {
+    const cleanSearchTerm = searchTerm.trim();
+
+    if (cleanSearchTerm.length < 2) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+
+    searchDashboardItems({
+      term: cleanSearchTerm,
+      isAdmin,
+      profile,
+    })
+      .then((results) => {
+        if (!cancelled) {
+          setSearchResults(results);
+        }
+      })
+      .catch((error) => {
+        console.error("No se pudo ejecutar la búsqueda del tablero:", error);
+        if (!cancelled) {
+          setSearchResults([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSearchLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchTerm, isAdmin, profile]);
+
+  function toggleNotifications() {
+    setNotificationPanelOpen((current) => !current);
+    setProfileMenuOpen(false);
+    setNotificationStatus("");
+  }
+
+  function toggleProfile() {
+    setProfileMenuOpen((current) => !current);
+    setNotificationPanelOpen(false);
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    setMarkingNotifications(true);
+    setNotificationStatus("");
+
+    try {
+      await markAllDashboardNotificationsRead({ profile, isAdmin });
+      setNotificationStatus("Notificaciones marcadas como leídas.");
+    } catch (error) {
+      console.error("No se pudieron marcar las notificaciones como leídas:", error);
+      setNotificationStatus("No se pudieron marcar todas como leídas.");
+    } finally {
+      setMarkingNotifications(false);
+    }
+  }
+
+  function handleSelectSearchResult(result) {
+    if (result.type === "project" && result.id) {
+      onOpenProject?.(result.id);
+    } else if (result.route) {
+      onOpenModule?.(result.route);
+    }
+
+    setSearchTerm("");
+    setSearchResults([]);
+    setProfileMenuOpen(false);
+    setNotificationPanelOpen(false);
+  }
+
   return (
-    <div className="top-profile-bar">
-      <div className="top-profile-spacer" />
+    <div className="top-profile-bar redesigned-topbar">
+      <div className="topbar-title-area">
+        <strong>{activeTitle}</strong>
+      </div>
 
-      <div className="profile-menu-wrapper">
-        <button
-          type="button"
-          className="profile-circle-button"
-          onClick={() => setProfileMenuOpen((current) => !current)}
-        >
-          <span>{getInitials(profile?.name)}</span>
-        </button>
+      <div className="topbar-search-wrapper">
+        <label className="topbar-search" aria-label="Buscar">
+          <span>⌕</span>
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder={isAdmin ? "Buscar proyectos, tareas, personas..." : "Buscar proyectos, tareas, mensajes..."}
+          />
+        </label>
 
-        {profileMenuOpen && (
-          <div className="profile-dropdown">
-            <div className="profile-dropdown-header">
-              <div className="profile-dropdown-avatar">
-                {getInitials(profile?.name)}
-              </div>
-
-              <div>
-                <strong>{profile?.name || "Usuario sin perfil"}</strong>
-                <span>{profile?.email || "Sin correo registrado"}</span>
-              </div>
+        {searchTerm.trim().length >= 2 && (
+          <div className="topbar-search-results">
+            <div className="topbar-search-results-header">
+              <strong>Resultados</strong>
+              {searchLoading && <span>Buscando...</span>}
             </div>
 
-            <div className="profile-dropdown-info">
-              <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
-              <span>{profile?.area || "Sin área"}</span>
-            </div>
+            {!searchLoading && searchResults.length === 0 && (
+              <p className="topbar-search-empty">No se encontraron coincidencias.</p>
+            )}
 
-            <button type="button" onClick={onViewProfile}>
-              Ver mi perfil
-            </button>
-
-            <button type="button" className="profile-logout" onClick={onLogout}>
-              Cerrar sesión
-            </button>
+            {searchResults.map((result) => (
+              <button
+                type="button"
+                key={`${result.type}-${result.id || result.route || result.title}`}
+                className="topbar-search-result"
+                onClick={() => handleSelectSearchResult(result)}
+              >
+                <span className={`topbar-search-result-icon topbar-search-${result.tone || "blue"}`}>
+                  {result.icon || "⌕"}
+                </span>
+                <span>
+                  <strong>{result.title}</strong>
+                  <small>{result.description}</small>
+                </span>
+              </button>
+            ))}
           </div>
         )}
       </div>
+
+      <div className="topbar-actions">
+        <div className="notification-menu-wrapper">
+          <button
+            type="button"
+            className="notification-bell-button"
+            onClick={toggleNotifications}
+            aria-label="Ver notificaciones"
+          >
+            <span>♢</span>
+            <span className="notification-bell-icon">🔔</span>
+            {safeNotificationCount > 0 && (
+              <b>{formatUnreadBadgeCount(safeNotificationCount)}</b>
+            )}
+          </button>
+
+          {notificationPanelOpen && (
+            <div className="notifications-dropdown">
+              <div className="notifications-header">
+                <strong>Notificaciones</strong>
+                <button
+                  type="button"
+                  onClick={handleMarkAllNotificationsRead}
+                  disabled={markingNotifications || safeNotificationCount === 0}
+                >
+                  {markingNotifications ? "Marcando..." : "Marcar todas como leídas"}
+                </button>
+              </div>
+
+              {notificationStatus && (
+                <div className="notifications-status-message">{notificationStatus}</div>
+              )}
+
+              <div className="notifications-list">
+                {notifications.map((notification) => (
+                  <button
+                    type="button"
+                    key={notification.key}
+                    className="notification-item"
+                    onClick={() => {
+                      if (notification.route) onOpenModule?.(notification.route);
+                      setNotificationPanelOpen(false);
+                    }}
+                  >
+                    <span className={`notification-icon notification-${notification.tone}`}>
+                      {notification.icon}
+                    </span>
+                    <span className="notification-copy">
+                      <strong>{notification.title}</strong>
+                      <small>{notification.detail}</small>
+                    </span>
+                    <span className="notification-time">{notification.time}</span>
+                    <i className={`notification-dot notification-dot-${notification.tone}`} />
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="notifications-footer-link"
+                onClick={() => {
+                  onOpenModule?.("notifications-center");
+                  setNotificationPanelOpen(false);
+                }}
+              >
+                Ver todas las notificaciones
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="profile-menu-wrapper topbar-profile-wrapper">
+          <button
+            type="button"
+            className="profile-chip-button"
+            onClick={toggleProfile}
+          >
+            <span className="profile-chip-avatar">{getInitials(profile?.name)}</span>
+            <strong>{profile?.name || "Usuario"}</strong>
+            <em>⌄</em>
+          </button>
+
+          {profileMenuOpen && (
+            <div className="profile-dropdown">
+              <div className="profile-dropdown-header">
+                <div className="profile-dropdown-avatar">
+                  {getInitials(profile?.name)}
+                </div>
+
+                <div>
+                  <strong>{profile?.name || "Usuario sin perfil"}</strong>
+                  <span>{profile?.email || "Sin correo registrado"}</span>
+                </div>
+              </div>
+
+              <div className="profile-dropdown-info">
+                <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
+                <span>{profile?.area || "Sin área"}</span>
+              </div>
+
+              <button type="button" onClick={onViewProfile}>
+                Ver mi perfil
+              </button>
+
+              <button type="button" className="profile-logout" onClick={onLogout}>
+                Cerrar sesión
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
+}
+
+
+async function searchDashboardItems({ term, isAdmin, profile }) {
+  const normalizedTerm = normalizeText(term);
+  if (!normalizedTerm) return [];
+
+  const currentUserId = getCurrentUserId(profile);
+  const results = [];
+
+  const moduleResults = getDashboardSearchableModules(isAdmin).filter((item) =>
+    [item.title, item.description].some((value) => normalizeText(value).includes(normalizedTerm))
+  );
+
+  results.push(...moduleResults);
+
+  const projects = await getSafeCollectionItems("projects");
+  projects
+    .filter((project) => {
+      if (project.deleted === true) return false;
+
+      if (!isAdmin) {
+        const allowedUserIds = [
+          project.ownerId,
+          project.createdByUid,
+          project.responsibleUid,
+          project.responsibleId,
+          ...(Array.isArray(project.collaboratorIds) ? project.collaboratorIds : []),
+          ...(Array.isArray(project.responsibleIds) ? project.responsibleIds : []),
+        ].filter(Boolean);
+
+        if (currentUserId && allowedUserIds.length > 0 && !allowedUserIds.includes(currentUserId)) {
+          return false;
+        }
+      }
+
+      return [
+        project.name,
+        project.title,
+        project.projectName,
+        project.code,
+        project.area,
+        project.departmentName,
+        project.description,
+        project.status,
+      ].some((value) => normalizeText(value).includes(normalizedTerm));
+    })
+    .slice(0, 8)
+    .forEach((project) => {
+      results.push({
+        type: "project",
+        id: project.id,
+        title: project.name || project.title || project.projectName || "Proyecto sin título",
+        description: `${project.code ? `${project.code} · ` : ""}${project.area || project.departmentName || "Proyecto"}`,
+        icon: "▣",
+        tone: "blue",
+      });
+    });
+
+  if (isAdmin) {
+    const users = await getSafeCollectionItems("users");
+    users
+      .filter((user) => user.deleted !== true)
+      .filter((user) =>
+        [user.name, user.email, user.area, ...(Array.isArray(user.departmentNames) ? user.departmentNames : [])].some((value) =>
+          normalizeText(value).includes(normalizedTerm)
+        )
+      )
+      .slice(0, 5)
+      .forEach((user) => {
+        results.push({
+          type: "user",
+          id: user.id,
+          route: "collaborators-admin",
+          title: user.name || user.email || "Colaborador",
+          description: user.email || user.area || "Perfil de colaborador",
+          icon: "👥",
+          tone: "green",
+        });
+      });
+  }
+
+  const messages = await getSafeCollectionItems("internalMessages");
+  messages
+    .filter((message) => {
+      if (!isAdmin && currentUserId) {
+        return message.fromUserId === currentUserId || message.toUserId === currentUserId;
+      }
+      return true;
+    })
+    .filter((message) =>
+      [message.message, message.fromUserName, message.toUserName, message.fromUserEmail, message.toUserEmail].some((value) =>
+        normalizeText(value).includes(normalizedTerm)
+      )
+    )
+    .slice(0, 4)
+    .forEach((message) => {
+      results.push({
+        type: "message",
+        id: message.id,
+        route: "internal-messages",
+        title: "Mensaje interno",
+        description: message.message || "Abrir módulo de mensajes",
+        icon: "💬",
+        tone: "gold",
+      });
+    });
+
+  return results.slice(0, 10);
+}
+
+function getDashboardSearchableModules(isAdmin) {
+  const baseModules = [
+    { type: "module", route: "workspace-dashboard", title: "Tablero", description: "Anuncios, notas y actividad general", icon: "▦", tone: "blue" },
+    { type: "module", route: "internal-messages", title: "Mensajes", description: "Conversaciones internas y mensajes por departamento", icon: "💬", tone: "gold" },
+    { type: "module", route: "team-agenda", title: "Agenda del equipo", description: "Horarios, solicitudes y próximas acciones", icon: "📅", tone: "green" },
+    { type: "module", route: "ideas-incubator", title: "Incubadora de ideas", description: "Registro y seguimiento de ideas nuevas", icon: "💡", tone: "gold" },
+    { type: "module", route: "my-projects", title: "Mis proyectos", description: "Proyectos asignados o en colaboración", icon: "▣", tone: "blue" },
+    { type: "module", route: "print-shop", title: "Imprenta", description: "Solicitudes, producción e inventario de imprenta", icon: "🖨", tone: "blue" },
+    { type: "module", route: "technical-support", title: "Soporte técnico", description: "Inventario técnico, mantenimientos y reportes", icon: "🛠", tone: "green" },
+    { type: "module", route: "bug-reports", title: "Reporte de errores", description: "Registro y seguimiento de incidencias del sistema", icon: "🐞", tone: "red" },
+  ];
+
+  if (!isAdmin) return baseModules;
+
+  return [
+    { type: "module", route: "executive-dashboard", title: "Dashboard ejecutivo", description: "Resumen general de proyectos y operación", icon: "▦", tone: "blue" },
+    ...baseModules,
+    { type: "module", route: "create-project", title: "Alta de proyecto", description: "Registrar un nuevo proyecto", icon: "+", tone: "green" },
+    { type: "module", route: "all-projects", title: "Todos los proyectos", description: "Listado completo y control administrativo", icon: "☰", tone: "blue" },
+    { type: "module", route: "project-history", title: "Historial de proyectos", description: "Proyectos terminados o eliminados", icon: "↶", tone: "gold" },
+    { type: "module", route: "collaborators-admin", title: "Colaboradores", description: "Gestión de usuarios y permisos", icon: "👥", tone: "green" },
+    { type: "module", route: "departments-admin", title: "Departamentos", description: "Gestión de departamentos y áreas", icon: "▦", tone: "blue" },
+    { type: "module", route: "purchase-requests", title: "Solicitudes de compra", description: "Solicitudes y aprobaciones administrativas", icon: "🛒", tone: "gold" },
+  ];
+}
+
+async function getSafeCollectionItems(collectionName) {
+  try {
+    const snapshot = await getDocs(collection(db, collectionName));
+    return snapshot.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }));
+  } catch (error) {
+    if (error?.code !== "permission-denied") {
+      console.warn(`No se pudo buscar en ${collectionName}:`, error);
+    }
+    return [];
+  }
+}
+
+async function markAllDashboardNotificationsRead({ profile, isAdmin }) {
+  const currentUserId = getCurrentUserId(profile);
+  if (!currentUserId) return;
+
+  const announcements = await getSafeCollectionItems("announcements");
+  const activeAnnouncements = announcements.filter((announcement) => announcement.active !== false);
+
+  await Promise.all(
+    activeAnnouncements.map((announcement) =>
+      setDoc(
+        doc(db, "announcements", announcement.id, "reads", currentUserId),
+        {
+          announcementId: announcement.id,
+          userId: currentUserId,
+          userName: profile?.name || "Usuario",
+          userEmail: profile?.email || "",
+          readAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    )
+  );
+
+  const directMessagesSnapshot = await getDocs(
+    query(collection(db, "internalMessages"), where("toUserId", "==", currentUserId))
+  );
+
+  await Promise.all(
+    directMessagesSnapshot.docs
+      .filter((messageDoc) => messageDoc.data()?.read !== true)
+      .map((messageDoc) =>
+        updateDoc(doc(db, "internalMessages", messageDoc.id), {
+          read: true,
+          readAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      )
+  );
+
+  const departmentMessagesRef = collection(db, "departmentMessages");
+  const departmentMessagesQuery = isAdmin
+    ? departmentMessagesRef
+    : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
+
+  const departmentMessagesSnapshot = await getDocs(departmentMessagesQuery);
+
+  await Promise.all(
+    departmentMessagesSnapshot.docs
+      .filter((messageDoc) => isUnreadDepartmentMessage({ id: messageDoc.id, ...messageDoc.data() }, currentUserId))
+      .map((messageDoc) =>
+        updateDoc(doc(db, "departmentMessages", messageDoc.id), {
+          [`readBy.${currentUserId}`]: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      )
+  );
+}
+
+function buildQuickNotifications({ isAdmin, unreadMessagesCount, unreadAnnouncementsCount }) {
+  if (isAdmin) {
+    return [
+      {
+        key: "approval",
+        tone: "red",
+        icon: "!",
+        title: "Aprobación urgente",
+        detail: "Hay proyectos y solicitudes que requieren revisión administrativa.",
+        time: "Hace 10 min",
+        route: "all-projects",
+      },
+      {
+        key: "overdue",
+        tone: "gold",
+        icon: "◷",
+        title: "Tareas vencidas",
+        detail: "Revisa pendientes y fechas límite de proyectos activos.",
+        time: "Hace 1 h",
+        route: "all-projects",
+      },
+      {
+        key: "technical",
+        tone: "blue",
+        icon: "⌁",
+        title: "Incidente técnico",
+        detail: "Se reportó una incidencia en soporte técnico.",
+        time: "Hace 2 h",
+        route: "technical-support",
+      },
+      {
+        key: "collaborator",
+        tone: "green",
+        icon: "✓",
+        title: "Nuevo colaborador",
+        detail: "Consulta actividad reciente del equipo.",
+        time: "Hace 3 h",
+        route: "collaborators-admin",
+      },
+    ];
+  }
+
+  return [
+    {
+      key: "task",
+      tone: "red",
+      icon: "□",
+      title: "Nueva tarea asignada",
+      detail: "Tienes actividades pendientes en tus proyectos.",
+      time: "Hace 10 min",
+      route: "my-projects",
+    },
+    {
+      key: "message",
+      tone: "blue",
+      icon: "☰",
+      title: "Comentario en proyecto",
+      detail: unreadMessagesCount > 0 ? `${unreadMessagesCount} mensaje(s) sin leer.` : "Hay comentarios recientes por revisar.",
+      time: "Hace 30 min",
+      route: "internal-messages",
+    },
+    {
+      key: "agenda",
+      tone: "gold",
+      icon: "◷",
+      title: "Recordatorio de agenda",
+      detail: unreadAnnouncementsCount > 0 ? `${unreadAnnouncementsCount} anuncio(s) pendiente(s).` : "Revisa tus próximos eventos del equipo.",
+      time: "Hace 1 h",
+      route: "team-agenda",
+    },
+    {
+      key: "support",
+      tone: "green",
+      icon: "✓",
+      title: "Actualización de soporte técnico",
+      detail: "Consulta el estado de tus reportes o tickets.",
+      time: "Hace 2 h",
+      route: "technical-support",
+    },
+  ];
 }
 
 function ProfilePage({ profile, isAdmin, onClose }) {

@@ -209,6 +209,16 @@ service firebase.storage {
         );
     }
 
+    function validBugReportEvidenceFile() {
+      return (
+          request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
+          && request.resource.size < 15 * 1024 * 1024
+        ) || (
+          request.resource.contentType in ['video/mp4', 'video/quicktime', 'video/webm']
+          && request.resource.size < 120 * 1024 * 1024
+        );
+    }
+
 
     function departmentMessagePath(messageId) {
       return /databases/(default)/documents/departmentMessages/$(messageId);
@@ -419,6 +429,28 @@ service firebase.storage {
       allow delete: if isAdmin();
     }
 
+
+
+    /*
+      Evidencias de reportes de errores:
+      bugReports/{userUid}/{reportId}/{fileName}
+    */
+    match /bugReports/{userUid}/{reportId}/{fileName} {
+      allow read: if signedIn()
+        && hasProfile()
+        && (isAdmin() || request.auth.uid == userUid);
+
+      allow create: if signedIn()
+        && hasProfile()
+        && request.auth.uid == userUid
+        && validBugReportEvidenceFile();
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && hasProfile()
+        && (isAdmin() || request.auth.uid == userUid);
+    }
 
 
     /*

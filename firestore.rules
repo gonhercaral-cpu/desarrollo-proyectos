@@ -557,6 +557,47 @@ service cloud.firestore {
         && request.resource.data.createdByUid == request.auth.uid;
     }
 
+    function validBugReportPriority(priority) {
+      return priority in ["baja", "media", "alta", "critica"];
+    }
+
+    function validBugReportStatus(status) {
+      return status in [
+        "nuevo",
+        "en_revision",
+        "en_proceso",
+        "resuelto",
+        "no_reproducible",
+        "cerrado"
+      ];
+    }
+
+    function canReadBugReport() {
+      return isAdmin()
+        || (
+          hasProfile()
+          && resource.data.reporterUid == request.auth.uid
+        );
+    }
+
+    function validBugReportCreate() {
+      return hasProfile()
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 140
+        && request.resource.data.module is string
+        && request.resource.data.module.size() > 0
+        && request.resource.data.description is string
+        && request.resource.data.description.size() > 0
+        && request.resource.data.priority is string
+        && validBugReportPriority(request.resource.data.priority)
+        && request.resource.data.status == "nuevo"
+        && request.resource.data.evidenceFiles is list
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
 
     function validPrintProductData() {
       return request.resource.data.name is string
@@ -2791,6 +2832,19 @@ service cloud.firestore {
           isAdmin() ||
           (isCompletedTechnicalInstallation() && isInstallationEvidenceOnlyUpdate())
         );
+
+      allow delete: if isAdmin();
+    }
+
+
+    match /bugReports/{reportId} {
+      allow get, list: if canReadBugReport();
+
+      allow create: if validBugReportCreate();
+
+      allow update: if isAdmin()
+        && request.resource.data.status is string
+        && validBugReportStatus(request.resource.data.status);
 
       allow delete: if isAdmin();
     }

@@ -146,11 +146,11 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
 
   const metrics = dashboardData?.metrics || EMPTY_DASHBOARD_DATA.metrics;
   const projects = dashboardData?.projects || EMPTY_DASHBOARD_DATA.projects;
-  const workloadByResponsible = dashboardData?.workloadByResponsible || [];
-  const workloadByArea = dashboardData?.workloadByArea || [];
   const recentLogs = dashboardData?.recentLogs || [];
   const alerts = dashboardData?.alerts || [];
   const modules = dashboardData?.modules || EMPTY_MODULE_DATA;
+
+  const moduleSummary = useMemo(() => buildModuleSummary(modules), [modules]);
 
   const averageProgress = useMemo(() => {
     const activeProjects = projects.active || [];
@@ -161,52 +161,6 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
 
     return getAverageAutomaticProgress(activeProjects);
   }, [projects.active]);
-
-  const moduleSummary = useMemo(() => buildModuleSummary(modules), [modules]);
-
-  const attentionItems = useMemo(
-    () =>
-      buildAttentionItems({
-        metrics,
-        projects,
-        moduleSummary,
-        alerts,
-      }),
-    [metrics, projects, moduleSummary, alerts]
-  );
-
-  const enhancedWorkloadByResponsible = useMemo(() => {
-    return workloadByResponsible.map((item) => {
-      const responsibleProjects = (projects.active || []).filter(
-        (project) =>
-          (project.assignedToName || "Sin responsable") === item.responsible
-      );
-
-      return {
-        ...item,
-        averageProgress:
-          responsibleProjects.length > 0
-            ? getAverageAutomaticProgress(responsibleProjects)
-            : Number(item.averageProgress || 0),
-      };
-    });
-  }, [workloadByResponsible, projects.active]);
-
-  const enhancedWorkloadByArea = useMemo(() => {
-    return workloadByArea.map((item) => {
-      const areaProjects = (projects.active || []).filter(
-        (project) => getProjectDepartmentName(project) === item.area
-      );
-
-      return {
-        ...item,
-        averageProgress:
-          areaProjects.length > 0
-            ? getAverageAutomaticProgress(areaProjects)
-            : Number(item.averageProgress || 0),
-      };
-    });
-  }, [workloadByArea, projects.active]);
 
   const dueSoonProjects = useMemo(() => {
     const activeProjects = projects.active || [];
@@ -225,13 +179,81 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
       .slice(0, 6);
   }, [projects.active]);
 
+  const attentionItems = useMemo(
+    () =>
+      buildAttentionItems({
+        metrics,
+        projects,
+        moduleSummary,
+        alerts,
+      }),
+    [metrics, projects, moduleSummary, alerts]
+  );
+
+  const purchaseRequestsToReview = useMemo(() => {
+    return (modules.purchaseRequests || [])
+      .filter((request) => ["pending_review", "reviewing", "pending", "Pendiente"].includes(request.status))
+      .slice(0, 2);
+  }, [modules.purchaseRequests]);
+
+  const kpiCards = [
+    {
+      key: "active",
+      tone: "blue",
+      icon: "projects",
+      label: "Proyectos activos",
+      value: metrics.active || 0,
+      trend: `${Math.max(0, dueSoonProjects.length)} próximos a vencer`,
+      direction: "up",
+    },
+    {
+      key: "pending",
+      tone: "gold",
+      icon: "clock",
+      label: "Pendientes",
+      value:
+        (metrics.overdue || 0) +
+        moduleSummary.purchases.pending +
+        moduleSummary.agenda.pending +
+        moduleSummary.technical.dueSoon,
+      trend: "requieren atención",
+      direction: "up",
+    },
+    {
+      key: "review",
+      tone: "blue-alt",
+      icon: "review",
+      label: "En revisión",
+      value: metrics.review || 0,
+      trend: "por validar",
+      direction: "down",
+    },
+    {
+      key: "completed",
+      tone: "green",
+      icon: "status",
+      label: "Completados",
+      value: metrics.finishedThisMonth || projects.recentlyClosed?.length || 0,
+      trend: "este mes",
+      direction: "up",
+    },
+  ];
+
+  const projectStatusData = [
+    { key: "active", label: "Activos", value: metrics.active || 0, tone: "teal" },
+    { key: "pending", label: "Pendientes", value: Math.max(metrics.overdue || 0, dueSoonProjects.length), tone: "gold" },
+    { key: "review", label: "En revisión", value: metrics.review || 0, tone: "blue" },
+    { key: "completed", label: "Completados", value: metrics.finishedThisMonth || projects.recentlyClosed?.length || 0, tone: "green" },
+  ];
+
+  const projectStatusTotal = projectStatusData.reduce((sum, item) => sum + item.value, 0) || 1;
+
   function formatLastUpdated(date) {
     if (!date) return "Sin actualizar";
 
     return date.toLocaleString("es-MX", {
       day: "2-digit",
-      month: "long",
-      year: "numeric",
+      month: "short",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -239,390 +261,243 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
 
   if (loading) {
     return (
-      <div className="executive-dashboard executive-dashboard-redesign">
-        <div className="dashboard-loading-card">
-          Cargando centro ejecutivo...
-        </div>
+      <div className="executive-dashboard admin-dashboard-proposal">
+        <div className="dashboard-loading-card">Cargando resumen ejecutivo...</div>
       </div>
     );
   }
 
   return (
-    <div className="executive-dashboard executive-dashboard-redesign">
-      <div className="executive-command-center">
-        <div className="executive-command-copy">
-          <span>Centro de control</span>
-          <h2>Dashboard Ejecutivo</h2>
-          <p>
-            Vista limpia de lo que requiere atención en proyectos, imprenta,
-            soporte técnico, agenda del equipo, compras e ideas nuevas.
-          </p>
+    <div className="executive-dashboard admin-dashboard-proposal">
+      <section className="admin-executive-hero">
+        <div>
+          <h2>Resumen ejecutivo</h2>
+          <p>Vista general del estado de los proyectos y actividades clave.</p>
         </div>
 
-        <div className="executive-command-actions">
-          <span className="last-updated">
-            ◷ Última actualización: {formatLastUpdated(lastUpdated)}
-          </span>
-
-          <button className="dashboard-refresh-button" onClick={loadDashboard}>
-            ↻ Actualizar
-          </button>
+        <div className="admin-executive-actions">
+          <span>Actualizado: {formatLastUpdated(lastUpdated)}</span>
+          <button type="button" onClick={loadDashboard}>↻ Actualizar</button>
         </div>
-      </div>
+      </section>
 
       {message && <div className="message-box">{message}</div>}
 
-      <section className="executive-overview-grid">
-        <ExecutiveHeroCard
-          title="Salud operativa"
-          value={`${averageProgress}%`}
-          detail={`${metrics.active || 0} proyectos activos · ${metrics.review || 0} por revisar`}
-          progress={averageProgress}
-          tone={getHealthTone({ overdue: metrics.overdue, averageProgress })}
-        />
-
-        <div className="executive-focus-stack">
-          <MiniMetric
-            label="Atrasados"
-            value={metrics.overdue || 0}
-            tone="red"
-            detail="Proyectos vencidos"
-          />
-          <MiniMetric
-            label="Compras"
-            value={moduleSummary.purchases.pending}
-            tone="gold"
-            detail="Pendientes de revisión"
-          />
-          <MiniMetric
-            label="Agenda"
-            value={moduleSummary.agenda.pending}
-            tone="blue"
-            detail="Solicitudes pendientes"
-          />
-          <MiniMetric
-            label="Soporte"
-            value={moduleSummary.technical.dueSoon}
-            tone="orange"
-            detail="Mantenimientos próximos/vencidos"
-          />
-        </div>
+      <section className="admin-kpi-grid">
+        {kpiCards.map((card) => (
+          <button
+            type="button"
+            key={card.key}
+            className={`admin-kpi-card admin-kpi-${card.tone}`}
+            onClick={() => {
+              if (card.key === "active" || card.key === "review") onOpenModule?.("all-projects");
+              if (card.key === "pending") onOpenModule?.("all-projects");
+              if (card.key === "completed") onOpenModule?.("project-history");
+            }}
+          >
+            <span className="admin-kpi-icon"><ExecutiveIcon name={card.icon} /></span>
+            <span className="admin-kpi-copy">
+              <small>{card.label}</small>
+              <strong>{card.value}</strong>
+              <em className={card.direction === "down" ? "is-down" : "is-up"}>
+                {card.direction === "down" ? "↓" : "↑"} {card.trend}
+              </em>
+            </span>
+          </button>
+        ))}
       </section>
 
-      <section className="executive-module-grid">
-        <ModulePulseCard
-          icon="projects"
-          title="Proyectos"
-          tone="blue"
-          mainValue={metrics.active || 0}
-          mainLabel="activos"
-          details={[
-            `${metrics.overdue || 0} atrasados`,
-            `${metrics.review || 0} por revisar`,
-          ]}
-          onClick={() => onOpenModule?.("all-projects")}
-        />
+      <section className="admin-dashboard-grid">
+        <article className="admin-panel-card priorities-panel">
+          <PanelHeader title="Prioridades de hoy" action="Ver todas" onAction={() => onOpenModule?.("all-projects")} />
 
-        <ModulePulseCard
-          icon="calendar"
-          title="Agenda del equipo"
-          tone="green"
-          mainValue={moduleSummary.agenda.activeToday}
-          mainLabel="programados hoy"
-          details={[
-            `${moduleSummary.agenda.pending} pendientes`,
-            `${moduleSummary.agenda.absencesToday} ausencias/permisos hoy`,
-          ]}
-          onClick={() => onOpenModule?.("team-agenda")}
-        />
-
-        <ModulePulseCard
-          icon="purchase"
-          title="Solicitudes de compra"
-          tone="gold"
-          mainValue={moduleSummary.purchases.pending}
-          mainLabel="por revisar"
-          details={[
-            `${moduleSummary.purchases.urgent} urgentes`,
-            `${moduleSummary.purchases.open} abiertas`,
-          ]}
-          onClick={() => onOpenModule?.("purchase-requests")}
-        />
-
-        <ModulePulseCard
-          icon="print"
-          title="Imprenta"
-          tone="purple"
-          mainValue={moduleSummary.printshop.activeRequests}
-          mainLabel="solicitudes activas"
-          details={[
-            `${moduleSummary.printshop.activeBatches} lotes activos`,
-            `${moduleSummary.printshop.lowStock} alertas de inventario`,
-          ]}
-          onClick={() => onOpenModule?.("print-shop")}
-        />
-
-        <ModulePulseCard
-          icon="technical"
-          title="Soporte técnico"
-          tone="orange"
-          mainValue={moduleSummary.technical.dueSoon}
-          mainLabel="mantenimientos a cuidar"
-          details={[
-            `${moduleSummary.technical.assets} equipos`,
-            `${moduleSummary.technical.activeInstallations} instalaciones activas`,
-          ]}
-          onClick={() => onOpenModule?.("technical-support")}
-        />
-
-        <ModulePulseCard
-          icon="ideas"
-          title="Ideas nuevas"
-          tone="teal"
-          mainValue={moduleSummary.ideas.pending}
-          mainLabel="sin revisar"
-          details={[
-            `${moduleSummary.ideas.total} ideas registradas`,
-            `${moduleSummary.ideas.recent} recientes`,
-          ]}
-          onClick={() => onOpenModule?.("ideas-incubator")}
-        />
-      </section>
-
-      <div className="executive-control-layout executive-control-layout-compact">
-        <div className="executive-left-stack">
-        <section className="visual-card executive-attention-card">
-          <SectionTitle
-            color="red"
-            icon="alert"
-            title="Hoy requiere atención"
-            count={attentionItems.length}
-          />
-
-          {attentionItems.length === 0 ? (
-            <EmptyState text="No hay alertas críticas por atender en este momento." />
-          ) : (
-            <div className="executive-attention-list">
-              {attentionItems.map((item) => (
-                <AttentionItem
-                  key={item.key}
-                  item={item}
-                  onOpenModule={onOpenModule}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-
-          <div className="dashboard-grid executive-tables-grid executive-tables-grid-inline">
-        <section className="visual-card">
-          <SectionTitle color="blue" icon="collaborator" title="Carga por colaborador" />
-
-          {enhancedWorkloadByResponsible.length === 0 ? (
-            <EmptyState text="No hay proyectos activos asignados." />
-          ) : (
-            <div className="visual-table-wrap">
-              <table className="visual-table compact-executive-table">
-                <thead>
-                  <tr>
-                    <th>Colaborador</th>
-                    <th>Activos</th>
-                    <th>Atrasados</th>
-                    <th>Revisión</th>
-                    <th>Avance</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {enhancedWorkloadByResponsible.slice(0, 8).map((item) => (
-                    <tr key={item.responsible}>
-                      <td>
-                        <div className="collaborator-cell">
-                          <span className="avatar-mini">
-                            {getInitials(item.responsible)}
-                          </span>
-
-                          {item.responsible}
-                        </div>
-                      </td>
-
-                      <td>
-                        <Badge color="blue">{item.active}</Badge>
-                      </td>
-
-                      <td>
-                        <Badge color={item.overdue > 0 ? "red" : "green"}>
-                          {item.overdue}
-                        </Badge>
-                      </td>
-
-                      <td>
-                        <Badge color="gold">{item.review}</Badge>
-                      </td>
-
-                      <td>
-                        <div className="area-progress">
-                          <strong>{item.averageProgress}%</strong>
-
-                          <div className="area-progress-track">
-                            <div
-                              className="area-progress-fill"
-                              style={{
-                                width: `${item.averageProgress}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="visual-card">
-          <SectionTitle color="blue" icon="department" title="Carga por departamento" />
-
-          {enhancedWorkloadByArea.length === 0 ? (
-            <EmptyState text="No hay proyectos activos por departamento." />
-          ) : (
-            <div className="visual-table-wrap">
-              <table className="visual-table compact-executive-table">
-                <thead>
-                  <tr>
-                    <th>Departamento</th>
-                    <th>Activos</th>
-                    <th>Atrasados</th>
-                    <th>Avance</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {enhancedWorkloadByArea.slice(0, 8).map((item) => (
-                    <tr key={item.area}>
-                      <td>{item.area}</td>
-
-                      <td>
-                        <Badge color="blue">{item.active}</Badge>
-                      </td>
-
-                      <td>
-                        <Badge color={item.overdue > 0 ? "red" : "green"}>
-                          {item.overdue}
-                        </Badge>
-                      </td>
-
-                      <td>
-                        <div className="area-progress">
-                          <strong>{item.averageProgress}%</strong>
-
-                          <div className="area-progress-track">
-                            <div
-                              className="area-progress-fill"
-                              style={{
-                                width: `${item.averageProgress}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        </div>
-
-        <aside className="executive-side-stack executive-side-stack-compact">
-          <section className="visual-card compact-executive-card executive-project-focus-card">
-            <SectionTitle
-              color="blue"
-              icon="projects"
-              title="Proyectos que cuidar"
-              count={(projects.overdue?.length || 0) + (projects.review?.length || 0) + dueSoonProjects.length}
-            />
-
-            <div className="executive-project-groups">
-              <ProjectGroupPreview
-                title="Atrasados"
-                tone="red"
-                icon="clock"
-                emptyText="No hay proyectos atrasados."
-                items={(projects.overdue || []).slice(0, 3)}
-                badgeColor="red"
-                getBadge={renderDaysLabel}
-                onOpenProject={onOpenProject}
-              />
-
-              <ProjectGroupPreview
-                title="Por revisión"
-                tone="gold"
-                icon="review"
-                emptyText="No hay proyectos listos para revisión."
-                items={(projects.review || []).slice(0, 3)}
-                badgeColor="gold"
-                getBadge={() => "Por revisar"}
-                onOpenProject={onOpenProject}
-              />
-
-              <ProjectGroupPreview
-                title="Próximas entregas"
-                tone="green"
-                icon="delivery"
-                emptyText="No hay entregas próximas en 7 días."
-                items={dueSoonProjects.slice(0, 3)}
-                badgeColor="green"
-                getBadge={renderDaysLabel}
-                onOpenProject={onOpenProject}
-              />
-            </div>
-          </section>
-
-        </aside>
-      </div>
-
-      <section className="visual-card compact-executive-card executive-recent-card executive-wide-recent-card">
-            <SectionTitle color="orange" icon="activity" title="Actividad reciente" />
-
-            {recentLogs.length === 0 ? (
-              <EmptyState text="Todavía no hay actividad registrada en la bitácora." />
+          <div className="admin-list-stack">
+            {attentionItems.length === 0 ? (
+              <EmptyState text="No hay prioridades críticas por atender." />
             ) : (
-              <div className="recent-project-list formal-log-list executive-log-list">
-                {recentLogs.slice(0, 5).map((log) => (
-                  <div className="recent-project-item formal-log-row" key={log.id}>
-                    <span className="recent-icon">
-                      <ExecutiveIcon name={getLogIcon(log.type)} />
-                    </span>
-
-                    <div className="formal-log-content">
-                      <b>{log.title || "Movimiento registrado"}</b>
-                      <p>{log.description || "Sin descripción."}</p>
-
-                      <div className="recent-project-meta">
-                        <Badge color={getLogBadgeColor(log.type)}>
-                          {formatLogType(log.type)}
-                        </Badge>
-
-                        <small>
-                          {log.userName || "Usuario"} · {formatDate(log.createdAt)}
-                        </small>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              attentionItems.slice(0, 3).map((item) => (
+                <button
+                  type="button"
+                  key={item.key}
+                  className="admin-priority-row"
+                  onClick={() => item.route && onOpenModule?.(item.route)}
+                >
+                  <span className={`admin-row-icon admin-row-${item.tone}`}><ExecutiveIcon name={item.icon} /></span>
+                  <span>
+                    <strong>{item.title}</strong>
+                    <small>{item.detail}</small>
+                  </span>
+                  <b className={`admin-pill admin-pill-${item.tone}`}>{item.tone === "red" ? "Urgente" : item.tone === "gold" ? "Hoy" : "Revisar"}</b>
+                </button>
+              ))
             )}
-          </section>
+          </div>
+        </article>
 
-      </div>
+        <article className="admin-panel-card activity-panel">
+          <PanelHeader title="Actividad reciente" action="Ver todo" onAction={() => onOpenModule?.("all-projects")} />
+
+          <div className="admin-activity-list">
+            {recentLogs.length === 0 ? (
+              <EmptyState text="Todavía no hay actividad registrada." />
+            ) : (
+              recentLogs.slice(0, 4).map((log) => (
+                <div className="admin-activity-row" key={log.id}>
+                  <span className={`admin-activity-dot admin-activity-${getLogBadgeColor(log.type)}`}>
+                    <ExecutiveIcon name={getLogIcon(log.type)} />
+                  </span>
+                  <span>
+                    <strong>{log.title || "Movimiento registrado"}</strong>
+                    <small>{log.description || "Sin descripción."}</small>
+                  </span>
+                  <em>{formatRelativeDate(log.createdAt)}</em>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="admin-panel-card status-panel">
+          <PanelHeader title="Proyectos por estado" action="Ver reporte" onAction={() => onOpenModule?.("all-projects")} />
+
+          <div className="status-summary-layout">
+            <div className="status-donut" style={buildDonutStyle(projectStatusData)}>
+              <strong>{projectStatusData.reduce((sum, item) => sum + item.value, 0)}</strong>
+              <span>Proyectos</span>
+            </div>
+
+            <div className="status-legend-list">
+              {projectStatusData.map((item) => {
+                const percentage = Math.round((item.value / projectStatusTotal) * 100);
+
+                return (
+                  <div className="status-legend-row" key={item.key}>
+                    <i className={`legend-dot legend-${item.tone}`} />
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <small>{percentage}%</small>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </article>
+
+        <article className="admin-panel-card approvals-panel">
+          <PanelHeader title="Solicitudes por aprobar" action="Ver todas" onAction={() => onOpenModule?.("purchase-requests")} />
+
+          <div className="approval-list">
+            {purchaseRequestsToReview.length === 0 ? (
+              <EmptyState text="No hay solicitudes de compra pendientes." />
+            ) : (
+              purchaseRequestsToReview.map((request) => (
+                <button
+                  type="button"
+                  className="approval-row"
+                  key={request.id}
+                  onClick={() => onOpenModule?.("purchase-requests")}
+                >
+                  <span><ExecutiveIcon name="purchase" /></span>
+                  <span>
+                    <strong>{request.title || request.itemName || "Solicitud de compra"}</strong>
+                    <small>Solicitado por: {request.requestedByName || request.createdByName || "Sin nombre"}</small>
+                  </span>
+                  <em>{formatRelativeDate(request.createdAt)}</em>
+                  <b>Revisar</b>
+                </button>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="admin-panel-card actions-panel">
+          <PanelHeader title="Próximas acciones" action="Ver calendario" onAction={() => onOpenModule?.("team-agenda")} />
+
+          <div className="next-actions-list-redesign">
+            {(dueSoonProjects.length > 0 ? dueSoonProjects.slice(0, 3) : (projects.active || []).slice(0, 3)).map((project) => {
+              const dateParts = getActionDateParts(project.deadline);
+
+              return (
+                <button
+                  type="button"
+                  className="next-action-card"
+                  key={project.id}
+                  onClick={() => onOpenProject?.(project.id)}
+                >
+                  <span className="next-action-date">
+                    <small>{dateParts.month}</small>
+                    <strong>{dateParts.day}</strong>
+                  </span>
+                  <span>
+                    <strong>{project.title || "Proyecto sin título"}</strong>
+                    <small>Proyecto: {getProjectDepartmentName(project)}</small>
+                    <em>{project.assignedToName || "Sin responsable"}</em>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </article>
+      </section>
     </div>
   );
+}
+
+function PanelHeader({ title, action, onAction }) {
+  return (
+    <div className="admin-panel-header">
+      <h3>{title}</h3>
+      {action && (
+        <button type="button" onClick={onAction}>{action}</button>
+      )}
+    </div>
+  );
+}
+
+function buildDonutStyle(items = []) {
+  const colors = {
+    teal: "#0ea5b7",
+    gold: "#f59e0b",
+    blue: "#2563eb",
+    green: "#22c55e",
+  };
+  const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0) || 1;
+  let current = 0;
+  const segments = items.map((item) => {
+    const start = current;
+    const end = current + (Number(item.value || 0) / total) * 100;
+    current = end;
+    return `${colors[item.tone] || "#2563eb"} ${start}% ${end}%`;
+  });
+
+  return {
+    background: `radial-gradient(circle, white 0 49%, transparent 50%), conic-gradient(${segments.join(", ")})`,
+  };
+}
+
+function getActionDateParts(value) {
+  const millis = getMillisFromFirestoreDate(value);
+  const date = millis ? new Date(millis) : new Date();
+
+  return {
+    month: date.toLocaleDateString("es-MX", { month: "short" }).replace(".", "").toUpperCase(),
+    day: date.toLocaleDateString("es-MX", { day: "2-digit" }),
+  };
+}
+
+function formatRelativeDate(value) {
+  const millis = getMillisFromFirestoreDate(value);
+
+  if (!millis) return "Reciente";
+
+  const diff = Math.max(0, Date.now() - millis);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < hour) return `Hace ${Math.max(1, Math.round(diff / minute))} min`;
+  if (diff < day) return `Hace ${Math.max(1, Math.round(diff / hour))} h`;
+  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short" }).format(new Date(millis));
 }
 
 async function getModuleDashboardData() {
@@ -648,7 +523,10 @@ async function loadCollectionSafe(collectionName) {
       ...itemDoc.data(),
     }));
   } catch (error) {
-    console.warn(`No se pudo cargar ${collectionName}:`, error);
+    if (error?.code !== "permission-denied") {
+      console.warn(`No se pudo cargar ${collectionName}:`, error);
+    }
+
     return [];
   }
 }
@@ -1327,6 +1205,38 @@ function EmptyState({ icon = "▯", text }) {
 
 function Badge({ color, children }) {
   return <span className={`visual-badge badge-${color}`}>{children}</span>;
+}
+
+function getMillisFromFirestoreDate(value) {
+  if (!value) return null;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const normalizedValue = value.includes("T") ? value : `${value}T00:00:00`;
+    const parsed = new Date(normalizedValue).getTime();
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  if (value instanceof Date) {
+    const millis = value.getTime();
+    return Number.isNaN(millis) ? null : millis;
+  }
+
+  if (typeof value?.toDate === "function") {
+    const date = value.toDate();
+    const millis = date?.getTime?.();
+    return Number.isNaN(millis) ? null : millis;
+  }
+
+  if (typeof value?.seconds === "number") {
+    return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000);
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function parseDate(value) {
