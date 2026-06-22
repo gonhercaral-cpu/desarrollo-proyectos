@@ -251,6 +251,28 @@ service firebase.storage {
     }
 
     /*
+      Adjuntos privados de mensajes internos:
+      dashboard/internalMessages/{fromUid}/{toUid}/{messageId}/{fileName}
+
+      Solo el remitente y destinatario pueden leerlos.
+      Solo el remitente puede subirlos o eliminarlos.
+    */
+    match /dashboard/internalMessages/{fromUid}/{toUid}/{messageId}/{fileName} {
+      allow read: if signedIn()
+        && hasProfile()
+        && (request.auth.uid == fromUid || request.auth.uid == toUid);
+
+      allow create, update: if signedIn()
+        && hasProfile()
+        && request.auth.uid == fromUid
+        && validDashboardAttachmentFile();
+
+      allow delete: if signedIn()
+        && hasProfile()
+        && request.auth.uid == fromUid;
+    }
+
+    /*
       Evidencias de instalaciones técnicas:
       technical-installations/{installationId}/evidence/{userUid}/{fileName}
     */

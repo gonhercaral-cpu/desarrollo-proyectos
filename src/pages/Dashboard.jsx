@@ -165,6 +165,14 @@ function renderDashboardNavIconPath(name) {
           <path d="M8 12h8" />
         </>
       );
+    case "messages":
+      return (
+        <>
+          <path d="M4 5.5h16v10.5H8l-4 3.5V5.5z" />
+          <path d="M8 9h8" />
+          <path d="M8 12.5h5.5" />
+        </>
+      );
     case "more":
       return (
         <>
@@ -187,6 +195,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
   }
 
   items.push({ page: "workspace-dashboard", label: "Tablero", mobileLabel: "Inicio", icon: "dashboard" });
+  items.push({ page: "internal-messages", label: "Mensajes", mobileLabel: "Mensajes", icon: "messages" });
   items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects" });
   items.push({ page: "team-agenda", label: "Agenda del equipo", mobileLabel: "Agenda", icon: "calendar" });
   items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase" });
@@ -213,8 +222,8 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
 
 function getMobilePrimaryNavigationItems(items, { isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
   const preferredPages = isAdmin
-    ? ["executive-dashboard", "workspace-dashboard", "my-projects", "team-agenda"]
-    : ["workspace-dashboard", "my-projects", "team-agenda", "purchase-requests"];
+    ? ["executive-dashboard", "workspace-dashboard", "internal-messages", "my-projects"]
+    : ["workspace-dashboard", "internal-messages", "my-projects", "team-agenda"];
 
   const preferred = preferredPages
     .map((pageName) => items.find((item) => item.page === pageName))
@@ -432,6 +441,10 @@ export default function Dashboard() {
 
     if (page === "workspace-dashboard") {
       return <WorkspaceDashboard profile={profile} isAdmin={isAdmin} />;
+    }
+
+    if (page === "internal-messages") {
+      return <InternalMessages profile={profile} />;
     }
 
     if (page === "executive-dashboard" && isAdmin) {
@@ -669,6 +682,14 @@ export default function Dashboard() {
           >
             <span className="nav-icon"><DashboardNavIcon name="dashboard" /></span>
             Tablero
+          </button>
+
+          <button
+            className={isNavActive("internal-messages") ? "active" : ""}
+            onClick={() => goToPage("internal-messages")}
+          >
+            <span className="nav-icon"><DashboardNavIcon name="messages" /></span>
+            Mensajes
           </button>
 
           <button
@@ -1960,6 +1981,478 @@ function normalizeNoteColor(color) {
   const normalized = String(color || "yellow").toLowerCase();
   return NOTE_COLOR_OPTIONS.some((option) => option.value === normalized) ? normalized : "yellow";
 }
+
+
+function InternalMessages({ profile }) {
+  const currentUserId = getCurrentUserId(profile);
+  const [collaborators, setCollaborators] = useState([]);
+  const [inboxMessages, setInboxMessages] = useState([]);
+  const [sentMessages, setSentMessages] = useState([]);
+  const [activeTab, setActiveTab] = useState("inbox");
+  const [selectedMessageId, setSelectedMessageId] = useState("");
+  const [composeOpen, setComposeOpen] = useState(true);
+  const [messageForm, setMessageForm] = useState({
+    toUserId: "",
+    subject: "",
+    message: "",
+  });
+  const [messageAttachments, setMessageAttachments] = useState([]);
+  const [messageStatus, setMessageStatus] = useState("");
+  const [messageError, setMessageError] = useState("");
+  const [messageSaving, setMessageSaving] = useState(false);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    return onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const nextCollaborators = snapshot.docs
+          .map((userDoc) => ({ id: userDoc.id, ...userDoc.data() }))
+          .filter((user) => user.id !== currentUserId)
+          .filter((user) => user.active !== false && user.deleted !== true)
+          .filter((user) => user.email || user.name)
+          .sort((a, b) => String(a.name || a.email || "").localeCompare(String(b.name || b.email || ""), "es"));
+
+        setCollaborators(nextCollaborators);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los colaboradores:", error);
+        setMessageError("No se pudo cargar la lista de colaboradores.");
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const inboxQuery = query(
+      collection(db, "internalMessages"),
+      where("toUserId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      inboxQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+          }))
+          .sort(sortByCreatedAtDesc);
+
+        setInboxMessages(nextMessages);
+      },
+      (error) => {
+        console.error("No se pudo cargar la bandeja de entrada:", error);
+        setMessageError("No se pudo cargar la bandeja de entrada.");
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const sentQuery = query(
+      collection(db, "internalMessages"),
+      where("fromUserId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      sentQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+          }))
+          .sort(sortByCreatedAtDesc);
+
+        setSentMessages(nextMessages);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los mensajes enviados:", error);
+        setMessageError("No se pudieron cargar los mensajes enviados.");
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    return () => revokeDraftAttachmentPreviews(messageAttachments);
+  }, []);
+
+  const visibleMessages = activeTab === "sent" ? sentMessages : inboxMessages;
+  const unreadCount = inboxMessages.filter((message) => !message.read).length;
+  const selectedMessage =
+    visibleMessages.find((message) => message.id === selectedMessageId) ||
+    visibleMessages[0] ||
+    null;
+
+  useEffect(() => {
+    if (selectedMessage?.id) {
+      setSelectedMessageId(selectedMessage.id);
+    } else {
+      setSelectedMessageId("");
+    }
+  }, [activeTab, visibleMessages.length]);
+
+  function resetMessageComposer() {
+    revokeDraftAttachmentPreviews(messageAttachments);
+    setMessageForm({ toUserId: "", subject: "", message: "" });
+    setMessageAttachments([]);
+  }
+
+  function handleMessageFileSelection(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+
+    const validation = validateBoardFiles(files, messageAttachments.length);
+    if (!validation.valid) {
+      setMessageError(validation.message);
+      return;
+    }
+
+    setMessageAttachments((current) => [
+      ...current,
+      ...files.map(createDraftAttachment),
+    ]);
+    setMessageError("");
+  }
+
+  function handleRemoveMessageAttachment(attachmentId) {
+    setMessageAttachments((current) => {
+      const next = current.filter((attachment) => attachment.id !== attachmentId);
+      const removed = current.find((attachment) => attachment.id === attachmentId);
+      if (removed?.previewUrl) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+      return next;
+    });
+  }
+
+  async function handleMessageSubmit(event) {
+    event.preventDefault();
+    setMessageStatus("");
+    setMessageError("");
+
+    const recipient = collaborators.find((user) => user.id === messageForm.toUserId);
+    const cleanSubject = messageForm.subject.trim();
+    const cleanMessage = messageForm.message.trim();
+
+    if (!recipient) {
+      setMessageError("Selecciona a quién enviar el mensaje.");
+      return;
+    }
+
+    if (!cleanSubject || !cleanMessage) {
+      setMessageError("Escribe el asunto y el mensaje.");
+      return;
+    }
+
+    setMessageSaving(true);
+
+    try {
+      const messageId = doc(collection(db, "internalMessages")).id;
+      const attachments = await uploadBoardAttachments(messageAttachments, {
+        folder: `dashboard/internalMessages/${currentUserId}/${recipient.id}/${messageId}`,
+        ownerUid: currentUserId,
+      });
+
+      await setDoc(doc(db, "internalMessages", messageId), {
+        fromUserId: currentUserId,
+        fromUserName: profile?.name || "Usuario",
+        fromUserEmail: profile?.email || "",
+        toUserId: recipient.id,
+        toUserName: recipient.name || recipient.email || "Usuario",
+        toUserEmail: recipient.email || "",
+        subject: cleanSubject,
+        message: cleanMessage,
+        attachments,
+        read: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setMessageStatus("Mensaje enviado.");
+      setActiveTab("sent");
+      setSelectedMessageId(messageId);
+      resetMessageComposer();
+      setComposeOpen(false);
+    } catch (error) {
+      console.error("No se pudo enviar el mensaje:", error);
+      setMessageError("No se pudo enviar el mensaje.");
+    } finally {
+      setMessageSaving(false);
+    }
+  }
+
+  async function markMessageAsRead(message) {
+    if (!message?.id || message.toUserId !== currentUserId || message.read) return;
+
+    try {
+      await updateDoc(doc(db, "internalMessages", message.id), {
+        read: true,
+        readAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("No se pudo marcar el mensaje como leído:", error);
+      setMessageError("No se pudo marcar el mensaje como leído.");
+    }
+  }
+
+  function handleSelectMessage(message) {
+    setSelectedMessageId(message.id);
+    if (activeTab === "inbox") {
+      markMessageAsRead(message);
+    }
+  }
+
+  function handleReplyToMessage(message) {
+    const replySubject = String(message.subject || "").startsWith("Re:")
+      ? message.subject
+      : `Re: ${message.subject || "Mensaje"}`;
+
+    setMessageForm({
+      toUserId: message.fromUserId,
+      subject: replySubject,
+      message: "",
+    });
+    setMessageAttachments([]);
+    setComposeOpen(true);
+    setMessageStatus("");
+    setMessageError("");
+  }
+
+  return (
+    <div className="internal-messages-page">
+      <div className="visual-page-header messages-hero">
+        <div>
+          <span className="visual-page-kicker">Comunicación interna</span>
+          <h1>Mensajes</h1>
+          <p>
+            Envía mensajes a otros colaboradores, deja avisos aunque no estén conectados y revisa tus conversaciones internas.
+          </p>
+        </div>
+
+        <div className="messages-summary-grid">
+          <div className="messages-summary-card unread">
+            <span>✉️</span>
+            <strong>{unreadCount}</strong>
+            <small>No leídos</small>
+          </div>
+          <div className="messages-summary-card inbox">
+            <span>📥</span>
+            <strong>{inboxMessages.length}</strong>
+            <small>Recibidos</small>
+          </div>
+          <div className="messages-summary-card sent">
+            <span>📤</span>
+            <strong>{sentMessages.length}</strong>
+            <small>Enviados</small>
+          </div>
+        </div>
+      </div>
+
+      {messageError && <div className="workspace-error-box">{messageError}</div>}
+      {messageStatus && <div className="workspace-success-box">{messageStatus}</div>}
+
+      <div className="messages-layout">
+        <section className="messages-compose-panel workspace-card">
+          <div className="messages-panel-header">
+            <div>
+              <span>Nuevo mensaje</span>
+              <h3>Enviar a colaborador</h3>
+            </div>
+            <button type="button" onClick={() => setComposeOpen((current) => !current)}>
+              {composeOpen ? "Ocultar" : "Redactar"}
+            </button>
+          </div>
+
+          {composeOpen && (
+            <form className="messages-compose-form" onSubmit={handleMessageSubmit}>
+              <label>
+                <span>Para</span>
+                <select
+                  value={messageForm.toUserId}
+                  onChange={(event) =>
+                    setMessageForm((current) => ({ ...current, toUserId: event.target.value }))
+                  }
+                >
+                  <option value="">Selecciona un colaborador</option>
+                  {collaborators.map((collaborator) => (
+                    <option key={collaborator.id} value={collaborator.id}>
+                      {collaborator.name || collaborator.email || "Usuario"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Asunto</span>
+                <input
+                  value={messageForm.subject}
+                  onChange={(event) =>
+                    setMessageForm((current) => ({ ...current, subject: event.target.value }))
+                  }
+                  placeholder="Ej. Revisión pendiente"
+                  maxLength={120}
+                />
+              </label>
+
+              <label>
+                <span>Mensaje</span>
+                <textarea
+                  value={messageForm.message}
+                  onChange={(event) =>
+                    setMessageForm((current) => ({ ...current, message: event.target.value }))
+                  }
+                  placeholder="Escribe tu mensaje..."
+                  maxLength={1200}
+                />
+              </label>
+
+              <AttachmentPicker
+                title="Archivos adjuntos"
+                helper="Puedes adjuntar imágenes, documentos, audio o video. Máximo 6 archivos."
+                onChange={handleMessageFileSelection}
+              />
+
+              <AttachmentDraftList
+                items={messageAttachments}
+                onRemove={handleRemoveMessageAttachment}
+              />
+
+              <div className="workspace-form-actions">
+                <button type="button" className="workspace-soft-button" onClick={resetMessageComposer}>
+                  Limpiar
+                </button>
+                <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
+                  {messageSaving ? "Enviando..." : "Enviar mensaje"}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+
+        <section className="messages-inbox-panel workspace-card">
+          <div className="messages-tabs">
+            <button
+              type="button"
+              className={activeTab === "inbox" ? "active" : ""}
+              onClick={() => setActiveTab("inbox")}
+            >
+              Bandeja de entrada
+              {unreadCount > 0 && <span>{unreadCount}</span>}
+            </button>
+            <button
+              type="button"
+              className={activeTab === "sent" ? "active" : ""}
+              onClick={() => setActiveTab("sent")}
+            >
+              Enviados
+            </button>
+          </div>
+
+          <div className="messages-content-grid">
+            <div className="messages-list">
+              {visibleMessages.length === 0 ? (
+                <div className="workspace-empty-state messages-empty-state">
+                  <strong>{activeTab === "sent" ? "No has enviado mensajes" : "No tienes mensajes"}</strong>
+                  <p>Los mensajes aparecerán aquí cuando existan.</p>
+                </div>
+              ) : (
+                visibleMessages.map((message) => (
+                  <button
+                    key={message.id}
+                    type="button"
+                    className={`message-list-item ${selectedMessage?.id === message.id ? "active" : ""} ${!message.read && activeTab === "inbox" ? "unread" : ""}`}
+                    onClick={() => handleSelectMessage(message)}
+                  >
+                    <div className="message-list-avatar">
+                      {getInitials(activeTab === "sent" ? message.toUserName : message.fromUserName)}
+                    </div>
+                    <div>
+                      <div className="message-list-topline">
+                        <strong>{activeTab === "sent" ? message.toUserName : message.fromUserName}</strong>
+                        <small>{formatDateTime(message.createdAt)}</small>
+                      </div>
+                      <span>{message.subject || "Sin asunto"}</span>
+                      <p>{message.message}</p>
+                      {message.attachments?.length > 0 && (
+                        <em>{message.attachments.length} archivo(s) adjunto(s)</em>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="message-detail-panel">
+              {!selectedMessage ? (
+                <div className="workspace-empty-state messages-empty-state">
+                  <strong>Selecciona un mensaje</strong>
+                  <p>Aquí podrás ver el contenido completo.</p>
+                </div>
+              ) : (
+                <article className="message-detail-card">
+                  <div className="message-detail-top">
+                    <div>
+                      <span className={selectedMessage.read || activeTab === "sent" ? "read-status read" : "read-status unread"}>
+                        {activeTab === "sent"
+                          ? selectedMessage.read
+                            ? "Leído por destinatario"
+                            : "Pendiente de lectura"
+                          : selectedMessage.read
+                          ? "Leído"
+                          : "No leído"}
+                      </span>
+                      <h3>{selectedMessage.subject || "Sin asunto"}</h3>
+                    </div>
+                    <small>{formatDateTime(selectedMessage.createdAt)}</small>
+                  </div>
+
+                  <div className="message-address-box">
+                    <div>
+                      <span>De</span>
+                      <strong>{selectedMessage.fromUserName || "Usuario"}</strong>
+                      <small>{selectedMessage.fromUserEmail || "Sin correo"}</small>
+                    </div>
+                    <div>
+                      <span>Para</span>
+                      <strong>{selectedMessage.toUserName || "Usuario"}</strong>
+                      <small>{selectedMessage.toUserEmail || "Sin correo"}</small>
+                    </div>
+                  </div>
+
+                  <p className="message-detail-body">{selectedMessage.message}</p>
+
+                  <AttachmentGallery attachments={selectedMessage.attachments} />
+
+                  <div className="message-detail-actions">
+                    {activeTab === "inbox" && !selectedMessage.read && (
+                      <button type="button" onClick={() => markMessageAsRead(selectedMessage)}>
+                        Marcar como leído
+                      </button>
+                    )}
+                    {activeTab === "inbox" && (
+                      <button type="button" onClick={() => handleReplyToMessage(selectedMessage)}>
+                        Responder
+                      </button>
+                    )}
+                  </div>
+                </article>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 
 function getCurrentUserId(profile) {
   return (

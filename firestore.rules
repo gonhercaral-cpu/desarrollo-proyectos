@@ -1894,6 +1894,71 @@ service cloud.firestore {
             && request.resource.data.attachments.size() <= 6));
     }
 
+
+    function canReadInternalMessage() {
+      return hasProfile()
+        && (
+          resource.data.fromUserId == request.auth.uid
+          || resource.data.toUserId == request.auth.uid
+        );
+    }
+
+    function validInternalMessageCreate() {
+      return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "fromUserId",
+          "fromUserName",
+          "fromUserEmail",
+          "toUserId",
+          "toUserName",
+          "toUserEmail",
+          "subject",
+          "message",
+          "attachments",
+          "read",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.toUserId is string
+        && request.resource.data.toUserId.size() > 0
+        && request.resource.data.toUserId != request.auth.uid
+        && request.resource.data.fromUserName is string
+        && request.resource.data.fromUserName.size() <= 120
+        && request.resource.data.fromUserEmail is string
+        && request.resource.data.fromUserEmail.size() <= 180
+        && request.resource.data.toUserName is string
+        && request.resource.data.toUserName.size() <= 120
+        && request.resource.data.toUserEmail is string
+        && request.resource.data.toUserEmail.size() <= 180
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.subject.size() <= 120
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 1200
+        && request.resource.data.attachments is list
+        && request.resource.data.attachments.size() <= 6
+        && request.resource.data.read == false
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validInternalMessageReadUpdate() {
+      return hasProfile()
+        && resource.data.toUserId == request.auth.uid
+        && request.resource.data.fromUserId == resource.data.fromUserId
+        && request.resource.data.toUserId == resource.data.toUserId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "read",
+          "readAt",
+          "updatedAt"
+        ])
+        && request.resource.data.read == true
+        && request.resource.data.readAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
     match /announcements/{announcementId} {
       allow read: if hasProfile();
 
@@ -1921,6 +1986,16 @@ service cloud.firestore {
 
       allow delete: if hasProfile()
         && resource.data.userId == request.auth.uid;
+    }
+
+    match /internalMessages/{messageId} {
+      allow get, list: if canReadInternalMessage();
+
+      allow create: if validInternalMessageCreate();
+
+      allow update: if validInternalMessageReadUpdate();
+
+      allow delete: if false;
     }
 
     match /users/{userId} {
