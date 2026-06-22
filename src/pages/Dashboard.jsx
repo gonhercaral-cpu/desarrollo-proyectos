@@ -287,6 +287,8 @@ export default function Dashboard() {
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  useDashboardPresence(profile, page);
+
   function setPage(nextPage) {
     setPageState(nextPage);
     setStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, nextPage);
@@ -1986,6 +1988,8 @@ function normalizeNoteColor(color) {
 function InternalMessages({ profile }) {
   const currentUserId = getCurrentUserId(profile);
   const [collaborators, setCollaborators] = useState([]);
+  const [presenceByUserId, setPresenceByUserId] = useState({});
+  const [presenceNow, setPresenceNow] = useState(Date.now());
   const [inboxMessages, setInboxMessages] = useState([]);
   const [sentMessages, setSentMessages] = useState([]);
   const [selectedConversationId, setSelectedConversationId] = useState("");
@@ -2022,6 +2026,32 @@ function InternalMessages({ profile }) {
       }
     );
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    return onSnapshot(
+      collection(db, "userPresence"),
+      (snapshot) => {
+        const nextPresence = {};
+        snapshot.docs.forEach((presenceDoc) => {
+          nextPresence[presenceDoc.id] = {
+            id: presenceDoc.id,
+            ...presenceDoc.data(),
+          };
+        });
+        setPresenceByUserId(nextPresence);
+      },
+      (error) => {
+        console.error("No se pudo cargar la presencia de colaboradores:", error);
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setPresenceNow(Date.now()), 30000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -2101,6 +2131,10 @@ function InternalMessages({ profile }) {
         email: selectedConversation.participantEmail,
       }
     : collaborators.find((user) => user.id === messageForm.toUserId) || null;
+  const selectedPresenceStatus = getPresenceStatus(
+    selectedRecipient ? presenceByUserId[selectedRecipient.id] : null,
+    presenceNow
+  );
 
   useEffect(() => {
     if (!selectedConversation && conversations[0]?.participantId) {
@@ -2334,35 +2368,43 @@ function InternalMessages({ profile }) {
                 <p>Inicia una conversación con algún colaborador.</p>
               </div>
             ) : (
-              conversations.map((conversation) => (
-                <button
-                  key={conversation.participantId}
-                  type="button"
-                  className={`chat-conversation-item ${selectedConversation?.participantId === conversation.participantId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
-                  onClick={() => handleSelectConversation(conversation)}
-                >
-                  <div className="chat-conversation-avatar">
-                    {getInitials(conversation.participantName)}
-                  </div>
-                  <div className="chat-conversation-main">
-                    <div className="chat-conversation-topline">
-                      <strong>{conversation.participantName}</strong>
-                      <small>{formatDateTime(conversation.lastMessage?.createdAt)}</small>
+              conversations.map((conversation) => {
+                const presenceStatus = getPresenceStatus(
+                  presenceByUserId[conversation.participantId],
+                  presenceNow
+                );
+
+                return (
+                  <button
+                    key={conversation.participantId}
+                    type="button"
+                    className={`chat-conversation-item ${selectedConversation?.participantId === conversation.participantId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
+                    onClick={() => handleSelectConversation(conversation)}
+                  >
+                    <div className={`chat-conversation-avatar presence-avatar ${presenceStatus.online ? "online" : "offline"}`}>
+                      {getInitials(conversation.participantName)}
                     </div>
-                    <p>
-                      {conversation.lastMessage?.fromUserId === currentUserId ? "Tú: " : ""}
-                      {conversation.lastMessage?.message || "Archivo adjunto"}
-                    </p>
-                    <div className="chat-conversation-meta">
-                      <span>{conversation.messages.length} mensaje(s)</span>
-                      {conversation.lastMessage?.attachments?.length > 0 && <span>Adjuntos</span>}
+                    <div className="chat-conversation-main">
+                      <div className="chat-conversation-topline">
+                        <strong>{conversation.participantName}</strong>
+                        <small>{formatDateTime(conversation.lastMessage?.createdAt)}</small>
+                      </div>
+                      <PresenceBadge status={presenceStatus} compact />
+                      <p>
+                        {conversation.lastMessage?.fromUserId === currentUserId ? "Tú: " : ""}
+                        {conversation.lastMessage?.message || "Archivo adjunto"}
+                      </p>
+                      <div className="chat-conversation-meta">
+                        <span>{conversation.messages.length} mensaje(s)</span>
+                        {conversation.lastMessage?.attachments?.length > 0 && <span>Adjuntos</span>}
+                      </div>
                     </div>
-                  </div>
-                  {conversation.unreadCount > 0 && (
-                    <span className="chat-unread-pill">{conversation.unreadCount}</span>
-                  )}
-                </button>
-              ))
+                    {conversation.unreadCount > 0 && (
+                      <span className="chat-unread-pill">{conversation.unreadCount}</span>
+                    )}
+                  </button>
+                );
+              })
             )}
           </div>
         </aside>
@@ -2376,11 +2418,12 @@ function InternalMessages({ profile }) {
           ) : (
             <>
               <div className="chat-thread-header">
-                <div className="chat-thread-avatar">{getInitials(selectedRecipient.name)}</div>
+                <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.online ? "online" : "offline"}`}>{getInitials(selectedRecipient.name)}</div>
                 <div>
                   <span>Conversación con</span>
                   <h3>{selectedRecipient.name || selectedRecipient.email || "Usuario"}</h3>
                   <small>{selectedRecipient.email || "Sin correo registrado"}</small>
+                  <PresenceBadge status={selectedPresenceStatus} />
                 </div>
               </div>
 
@@ -2512,6 +2555,125 @@ function getInternalMessageParticipant(message, currentUserId) {
   };
 }
 
+
+
+function useDashboardPresence(profile, currentPage) {
+  const currentUserId = getCurrentUserId(profile);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const presenceRef = doc(db, "userPresence", currentUserId);
+    const userName = profile?.name || auth.currentUser?.displayName || "Usuario";
+    const userEmail = profile?.email || auth.currentUser?.email || "";
+
+    const writePresence = (isOnline = true) => {
+      return setDoc(
+        presenceRef,
+        {
+          userId: currentUserId,
+          userName,
+          userEmail,
+          isOnline,
+          currentPage: currentPage || "dashboard",
+          lastSeen: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch((error) => {
+        console.warn("No se pudo actualizar la presencia del usuario:", error);
+      });
+    };
+
+    writePresence(true);
+
+    const heartbeatId = window.setInterval(() => {
+      writePresence(document.visibilityState !== "hidden");
+    }, 45000);
+
+    const handleVisibilityChange = () => {
+      writePresence(document.visibilityState !== "hidden");
+    };
+    const handleFocus = () => writePresence(true);
+    const handleOnline = () => writePresence(true);
+    const handleBeforeUnload = () => {
+      writePresence(false);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.clearInterval(heartbeatId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      writePresence(false);
+    };
+  }, [currentUserId, profile?.name, profile?.email, currentPage]);
+}
+
+function PresenceBadge({ status, compact = false }) {
+  return (
+    <span className={`presence-badge ${status.online ? "online" : "offline"} ${compact ? "compact" : ""}`}>
+      <span className="presence-dot" />
+      {status.label}
+    </span>
+  );
+}
+
+function getPresenceStatus(presence, now = Date.now()) {
+  const lastSeenMillis = getMillisFromFirestoreDate(presence?.lastSeen || presence?.updatedAt);
+  const onlineWindow = 2 * 60 * 1000;
+  const online = Boolean(presence?.isOnline) && lastSeenMillis > 0 && now - lastSeenMillis <= onlineWindow;
+
+  if (online) {
+    return {
+      online: true,
+      label: "En línea",
+    };
+  }
+
+  if (lastSeenMillis) {
+    return {
+      online: false,
+      label: `Última vez ${formatRelativePresenceTime(lastSeenMillis, now)}`,
+    };
+  }
+
+  return {
+    online: false,
+    label: "Sin actividad reciente",
+  };
+}
+
+function formatRelativePresenceTime(millis, now = Date.now()) {
+  const diff = Math.max(0, now - millis);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < minute) return "ahora";
+  if (diff < hour) {
+    const minutes = Math.max(1, Math.floor(diff / minute));
+    return `hace ${minutes} min`;
+  }
+  if (diff < day) {
+    const hours = Math.max(1, Math.floor(diff / hour));
+    return `hace ${hours} h`;
+  }
+  if (diff < day * 2) return "ayer";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(millis));
+}
 
 function getCurrentUserId(profile) {
   return (

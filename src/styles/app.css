@@ -36253,3 +36253,89 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
     width: 100%;
   }
 }
+
+/* =========================================================
+   CHAT - PRESENCIA EN LÍNEA / ÚLTIMA CONEXIÓN
+========================================================= */
+
+.presence-avatar {
+  position: relative;
+}
+
+.presence-avatar::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+.presence-avatar.online::after {
+  background: #16a34a;
+}
+
+.presence-avatar.offline::after {
+  background: #94a3b8;
+}
+
+.presence-badge {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.presence-badge.compact {
+  margin: 4px 0 2px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.presence-badge.online {
+  background: #ecfdf3;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.presence-badge.offline {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.chat-conversation-item .presence-badge {
+  justify-self: start;
+}
+
+.chat-thread-header .presence-badge {
+  margin-top: 8px;
+}
+
+@media (max-width: 760px) {
+  .presence-badge {
+    white-space: normal;
+  }
+}

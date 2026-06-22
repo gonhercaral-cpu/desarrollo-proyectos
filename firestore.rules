@@ -1959,6 +1959,30 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+    function validUserPresenceWrite(userId) {
+      return hasProfile()
+        && userId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          "userId",
+          "userName",
+          "userEmail",
+          "isOnline",
+          "lastSeen",
+          "currentPage",
+          "updatedAt"
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userName is string
+        && request.resource.data.userName.size() <= 120
+        && request.resource.data.userEmail is string
+        && request.resource.data.userEmail.size() <= 180
+        && request.resource.data.isOnline is bool
+        && request.resource.data.currentPage is string
+        && request.resource.data.currentPage.size() <= 80
+        && request.resource.data.lastSeen is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
     match /announcements/{announcementId} {
       allow read: if hasProfile();
 
@@ -1986,6 +2010,14 @@ service cloud.firestore {
 
       allow delete: if hasProfile()
         && resource.data.userId == request.auth.uid;
+    }
+
+    match /userPresence/{userId} {
+      allow get, list: if hasProfile();
+
+      allow create, update: if validUserPresenceWrite(userId);
+
+      allow delete: if false;
     }
 
     match /internalMessages/{messageId} {
