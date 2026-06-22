@@ -36489,3 +36489,88 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
     gap: 8px;
   }
 }
+
+/* =========================================================
+   TABLERO - NOTIFICACIONES DE ANUNCIOS PENDIENTES
+========================================================= */
+
+.nav-announcement-badge {
+  background: linear-gradient(135deg, #f97316, #ed1c24);
+}
+
+.announcement-pending-strip {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fff7ed, #fff1f1);
+  color: #9a3412;
+  padding: 9px 13px;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 12px 24px rgba(249, 115, 22, 0.10);
+}
+
+.announcement-pending-strip span {
+  width: 25px;
+  height: 25px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffedd5;
+}
+
+.visual-announcement-item.pending-read {
+  border-color: #fed7aa !important;
+  background:
+    radial-gradient(circle at 94% 12%, rgba(249, 115, 22, 0.11), transparent 28%),
+    linear-gradient(180deg, #ffffff, #fffaf4) !important;
+  box-shadow: 0 18px 38px rgba(249, 115, 22, 0.11);
+}
+
+.visual-announcement-item.pending-read::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f97316, #ed1c24);
+}
+
+.visual-announcement-item.pending-read .announcement-ribbon {
+  background: #ffedd5;
+}
+
+.announcement-unread-tag {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  padding: 6px 9px;
+  margin-left: 7px;
+  font-size: 11px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+@media (max-width: 760px) {
+  .announcement-pending-strip {
+    width: 100%;
+    border-radius: 16px;
+    align-items: flex-start;
+  }
+
+  .announcement-unread-tag {
+    margin-left: 0;
+    margin-top: 6px;
+  }
+}

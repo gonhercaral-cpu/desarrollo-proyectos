@@ -287,6 +287,7 @@ export default function Dashboard() {
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const unreadMessagesCount = useUnreadInternalMessagesCount(profile);
+  const unreadAnnouncementsCount = useUnreadAnnouncementsCount(profile);
 
   useDashboardPresence(profile, page);
 
@@ -618,11 +619,17 @@ export default function Dashboard() {
     isAdmin,
     canUsePrintShop,
     canUseTechnicalSupport,
-  }).map((item) =>
-    item.page === "internal-messages"
-      ? { ...item, badgeCount: unreadMessagesCount }
-      : item
-  );
+  }).map((item) => {
+    if (item.page === "workspace-dashboard") {
+      return { ...item, badgeCount: unreadAnnouncementsCount };
+    }
+
+    if (item.page === "internal-messages") {
+      return { ...item, badgeCount: unreadMessagesCount };
+    }
+
+    return item;
+  });
   const mobilePrimaryItems = getMobilePrimaryNavigationItems(navigationItems, {
     isAdmin,
     canUsePrintShop,
@@ -688,7 +695,15 @@ export default function Dashboard() {
             onClick={() => goToPage("workspace-dashboard")}
           >
             <span className="nav-icon"><DashboardNavIcon name="dashboard" /></span>
-            Tablero
+            <span className="sidebar-nav-label">Tablero</span>
+            {unreadAnnouncementsCount > 0 && (
+              <span
+                className="nav-unread-badge nav-announcement-badge"
+                aria-label={`${unreadAnnouncementsCount} anuncios pendientes de confirmar`}
+              >
+                {formatUnreadBadgeCount(unreadAnnouncementsCount)}
+              </span>
+            )}
           </button>
 
           <button
@@ -1307,6 +1322,12 @@ function WorkspaceDashboard({ profile, isAdmin }) {
           <p>
             Consulta anuncios importantes, confirma su lectura y administra tus notas personales privadas.
           </p>
+          {unreadAnnouncements > 0 && (
+            <div className="announcement-pending-strip">
+              <span>📣</span>
+              <strong>{unreadAnnouncements} anuncio(s) pendiente(s) de confirmar</strong>
+            </div>
+          )}
         </div>
 
         <div className="workspace-dashboard-summary workspace-summary-grid">
@@ -1450,7 +1471,7 @@ function WorkspaceDashboard({ profile, isAdmin }) {
                     key={announcement.id}
                     className={`announcement-item visual-announcement-item ${
                       announcement.priority === "important" ? "important" : ""
-                    }`}
+                    } ${currentUserHasRead ? "" : "pending-read"}`}
                   >
                     <div className="announcement-ribbon">
                       <span>{announcement.priority === "important" ? "📢" : "📌"}</span>
@@ -1461,6 +1482,9 @@ function WorkspaceDashboard({ profile, isAdmin }) {
                         <span className="announcement-badge">
                           {announcement.priority === "important" ? "Importante" : "Normal"}
                         </span>
+                        {!currentUserHasRead && (
+                          <span className="announcement-unread-tag">Pendiente de confirmar</span>
+                        )}
                         <h4>{announcement.title || "Anuncio sin título"}</h4>
                       </div>
 
@@ -2578,6 +2602,81 @@ function getInternalMessageParticipant(message, currentUserId) {
 }
 
 
+
+
+function useUnreadAnnouncementsCount(profile) {
+  const currentUserId = getCurrentUserId(profile);
+  const [announcementIds, setAnnouncementIds] = useState([]);
+  const [readStateByAnnouncement, setReadStateByAnnouncement] = useState({});
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setAnnouncementIds([]);
+      setReadStateByAnnouncement({});
+      return undefined;
+    }
+
+    const announcementsQuery = query(collection(db, "announcements"));
+
+    return onSnapshot(
+      announcementsQuery,
+      (snapshot) => {
+        const nextIds = snapshot.docs
+          .map((announcementDoc) => ({ id: announcementDoc.id, ...announcementDoc.data() }))
+          .filter((announcement) => announcement.active !== false)
+          .sort(sortByCreatedAtDesc)
+          .map((announcement) => announcement.id);
+
+        setAnnouncementIds(nextIds);
+        setReadStateByAnnouncement((current) => {
+          const nextState = {};
+          nextIds.forEach((announcementId) => {
+            if (Object.prototype.hasOwnProperty.call(current, announcementId)) {
+              nextState[announcementId] = current[announcementId];
+            }
+          });
+          return nextState;
+        });
+      },
+      (error) => {
+        console.error("No se pudo cargar el contador de anuncios pendientes:", error);
+        setAnnouncementIds([]);
+        setReadStateByAnnouncement({});
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || announcementIds.length === 0) {
+      return undefined;
+    }
+
+    const unsubscribers = announcementIds.map((announcementId) =>
+      onSnapshot(
+        doc(db, "announcements", announcementId, "reads", currentUserId),
+        (snapshot) => {
+          setReadStateByAnnouncement((current) => ({
+            ...current,
+            [announcementId]: snapshot.exists(),
+          }));
+        },
+        (error) => {
+          console.error("No se pudo cargar una confirmación de anuncio:", error);
+          setReadStateByAnnouncement((current) => ({
+            ...current,
+            [announcementId]: false,
+          }));
+        }
+      )
+    );
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [announcementIds, currentUserId]);
+
+  if (!currentUserId || announcementIds.length === 0) return 0;
+
+  return announcementIds.filter((announcementId) => readStateByAnnouncement[announcementId] !== true).length;
+}
 
 function useUnreadInternalMessagesCount(profile) {
   const currentUserId = getCurrentUserId(profile);
