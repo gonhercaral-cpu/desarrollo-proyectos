@@ -893,6 +893,10 @@ function WorkspaceDashboard({ profile, isAdmin }) {
   const [noteStatus, setNoteStatus] = useState("");
   const [noteError, setNoteError] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const [announcementSearchTerm, setAnnouncementSearchTerm] = useState("");
+  const [announcementFilter, setAnnouncementFilter] = useState("all");
+  const [noteSearchTerm, setNoteSearchTerm] = useState("");
+  const [noteFilter, setNoteFilter] = useState("all");
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -1312,6 +1316,20 @@ function WorkspaceDashboard({ profile, isAdmin }) {
     (announcement) => announcement.priority === "important"
   ).length;
   const notesWithAttachments = notes.filter((note) => Array.isArray(note.attachments) && note.attachments.length > 0).length;
+  const filteredAnnouncements = announcements.filter((announcement) =>
+    matchesAnnouncementBoardFilters(announcement, {
+      searchTerm: announcementSearchTerm,
+      filter: announcementFilter,
+      receipts: announcementReceipts[announcement.id] || [],
+      currentUserId,
+    })
+  );
+  const filteredNotes = notes.filter((note) =>
+    matchesPersonalNoteFilters(note, {
+      searchTerm: noteSearchTerm,
+      filter: noteFilter,
+    })
+  );
 
   return (
     <div className="workspace-dashboard-page">
@@ -1453,14 +1471,47 @@ function WorkspaceDashboard({ profile, isAdmin }) {
           {announcementError && <div className="workspace-error-box">{announcementError}</div>}
           {announcementStatus && <div className="workspace-success-box">{announcementStatus}</div>}
 
+          <div className="board-search-toolbar">
+            <label className="board-search-input">
+              <span>Buscar anuncios</span>
+              <input
+                value={announcementSearchTerm}
+                onChange={(event) => setAnnouncementSearchTerm(event.target.value)}
+                placeholder="Buscar por título, mensaje, autor o archivo..."
+              />
+            </label>
+
+            <div className="board-filter-pills" aria-label="Filtros de anuncios">
+              {ANNOUNCEMENT_FILTER_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={announcementFilter === option.value ? "active" : ""}
+                  onClick={() => setAnnouncementFilter(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            <small>
+              Mostrando {filteredAnnouncements.length} de {announcements.length} anuncio(s).
+            </small>
+          </div>
+
           <div className="announcement-list visual-announcement-list">
             {announcements.length === 0 ? (
               <div className="workspace-empty-state board-empty-state">
                 <strong>No hay anuncios activos</strong>
                 <p>Cuando se publique un anuncio, aparecerá aquí.</p>
               </div>
+            ) : filteredAnnouncements.length === 0 ? (
+              <div className="workspace-empty-state board-empty-state">
+                <strong>No hay anuncios que coincidan</strong>
+                <p>Ajusta la búsqueda o cambia el filtro seleccionado.</p>
+              </div>
             ) : (
-              announcements.map((announcement) => {
+              filteredAnnouncements.map((announcement) => {
                 const receipts = announcementReceipts[announcement.id] || [];
                 const currentUserHasRead = receipts.some(
                   (receipt) => receipt.userId === currentUserId || receipt.id === currentUserId
@@ -1644,14 +1695,47 @@ function WorkspaceDashboard({ profile, isAdmin }) {
           {noteError && <div className="workspace-error-box">{noteError}</div>}
           {noteStatus && <div className="workspace-success-box">{noteStatus}</div>}
 
+          <div className="board-search-toolbar notes-search-toolbar">
+            <label className="board-search-input">
+              <span>Buscar notas</span>
+              <input
+                value={noteSearchTerm}
+                onChange={(event) => setNoteSearchTerm(event.target.value)}
+                placeholder="Buscar por título, contenido o archivo..."
+              />
+            </label>
+
+            <div className="board-filter-pills" aria-label="Filtros de notas personales">
+              {NOTE_FILTER_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={noteFilter === option.value ? "active" : ""}
+                  onClick={() => setNoteFilter(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            <small>
+              Mostrando {filteredNotes.length} de {notes.length} nota(s).
+            </small>
+          </div>
+
           <div className="personal-notes-list visual-notes-grid">
             {notes.length === 0 ? (
               <div className="workspace-empty-state postit-empty board-empty-state">
                 <strong>No tienes notas personales</strong>
                 <p>Agrega recordatorios rápidos para tenerlos a la mano.</p>
               </div>
+            ) : filteredNotes.length === 0 ? (
+              <div className="workspace-empty-state postit-empty board-empty-state">
+                <strong>No hay notas que coincidan</strong>
+                <p>Ajusta la búsqueda o cambia el filtro seleccionado.</p>
+              </div>
             ) : (
-              notes.map((note) => (
+              filteredNotes.map((note) => (
                 <article
                   key={note.id}
                   className={`personal-note-item visual-note-item note-color-${normalizeNoteColor(note.color)} ${note.completed ? "completed" : ""}`}
@@ -1833,6 +1917,22 @@ const NOTE_COLOR_OPTIONS = [
   { value: "green", label: "verde", className: "swatch-green" },
   { value: "pink", label: "rosa", className: "swatch-pink" },
   { value: "purple", label: "morado", className: "swatch-purple" },
+];
+
+const ANNOUNCEMENT_FILTER_OPTIONS = [
+  { value: "all", label: "Todos" },
+  { value: "pending", label: "Pendientes" },
+  { value: "read", label: "Leídos" },
+  { value: "important", label: "Importantes" },
+  { value: "attachments", label: "Con archivos" },
+];
+
+const NOTE_FILTER_OPTIONS = [
+  { value: "all", label: "Todas" },
+  { value: "pinned", label: "Fijadas" },
+  { value: "pending", label: "Pendientes" },
+  { value: "completed", label: "Completadas" },
+  { value: "attachments", label: "Con archivos" },
 ];
 
 function normalizeStoredAttachments(value) {
@@ -2018,6 +2118,93 @@ function normalizeNoteColor(color) {
   return NOTE_COLOR_OPTIONS.some((option) => option.value === normalized) ? normalized : "yellow";
 }
 
+function getSearchableAttachmentText(attachments = []) {
+  if (!Array.isArray(attachments)) return "";
+  return attachments
+    .map((attachment) => [attachment.name, attachment.type, attachment.contentType].filter(Boolean).join(" "))
+    .join(" ");
+}
+
+function textIncludesSearchTerm(value, searchTerm) {
+  const normalizedSearch = normalizeText(searchTerm);
+  if (!normalizedSearch) return true;
+  return normalizeText(value).includes(normalizedSearch);
+}
+
+function hasBoardAttachments(item) {
+  return Array.isArray(item?.attachments) && item.attachments.length > 0;
+}
+
+function matchesAnnouncementBoardFilters(announcement, { searchTerm, filter, receipts, currentUserId }) {
+  const hasRead = (receipts || []).some(
+    (receipt) => receipt.userId === currentUserId || receipt.id === currentUserId
+  );
+
+  if (filter === "pending" && hasRead) return false;
+  if (filter === "read" && !hasRead) return false;
+  if (filter === "important" && announcement.priority !== "important") return false;
+  if (filter === "attachments" && !hasBoardAttachments(announcement)) return false;
+
+  const searchableText = [
+    announcement.title,
+    announcement.message,
+    announcement.createdByName,
+    announcement.createdByEmail,
+    getSearchableAttachmentText(announcement.attachments),
+  ].join(" ");
+
+  return textIncludesSearchTerm(searchableText, searchTerm);
+}
+
+function matchesPersonalNoteFilters(note, { searchTerm, filter }) {
+  if (filter === "pinned" && !note.pinned) return false;
+  if (filter === "pending" && note.completed) return false;
+  if (filter === "completed" && !note.completed) return false;
+  if (filter === "attachments" && !hasBoardAttachments(note)) return false;
+
+  const searchableText = [
+    note.title,
+    note.content,
+    note.color,
+    getSearchableAttachmentText(note.attachments),
+  ].join(" ");
+
+  return textIncludesSearchTerm(searchableText, searchTerm);
+}
+
+function matchesConversationSearch(conversation, searchTerm) {
+  const searchableText = [
+    conversation.participantName,
+    conversation.participantEmail,
+    conversation.lastMessage?.message,
+    conversation.messages
+      .map((message) => [
+        message.subject,
+        message.message,
+        message.fromUserName,
+        message.toUserName,
+        getSearchableAttachmentText(message.attachments),
+      ].join(" "))
+      .join(" "),
+  ].join(" ");
+
+  return textIncludesSearchTerm(searchableText, searchTerm);
+}
+
+function matchesMessageSearch(message, searchTerm) {
+  const searchableText = [
+    message.subject,
+    message.message,
+    message.fromUserName,
+    message.toUserName,
+    message.fromUserEmail,
+    message.toUserEmail,
+    getSearchableAttachmentText(message.attachments),
+  ].join(" ");
+
+  return textIncludesSearchTerm(searchableText, searchTerm);
+}
+
 
 function InternalMessages({ profile }) {
   const currentUserId = getCurrentUserId(profile);
@@ -2036,6 +2223,8 @@ function InternalMessages({ profile }) {
   const [messageStatus, setMessageStatus] = useState("");
   const [messageError, setMessageError] = useState("");
   const [messageSaving, setMessageSaving] = useState(false);
+  const [conversationSearchTerm, setConversationSearchTerm] = useState("");
+  const [threadSearchTerm, setThreadSearchTerm] = useState("");
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -2149,13 +2338,20 @@ function InternalMessages({ profile }) {
 
   const allMessages = [...inboxMessages, ...sentMessages].sort(sortByCreatedAtDesc);
   const conversations = buildInternalConversations(allMessages, collaborators, currentUserId);
+  const filteredConversations = conversations.filter((conversation) =>
+    matchesConversationSearch(conversation, conversationSearchTerm)
+  );
   const selectedConversation =
-    conversations.find((conversation) => conversation.participantId === selectedConversationId) ||
-    conversations[0] ||
+    filteredConversations.find((conversation) => conversation.participantId === selectedConversationId) ||
+    filteredConversations[0] ||
     null;
   const selectedMessages = selectedConversation
-    ? selectedConversation.messages.slice().sort(sortByCreatedAtAsc)
+    ? selectedConversation.messages
+        .slice()
+        .sort(sortByCreatedAtAsc)
+        .filter((message) => matchesMessageSearch(message, threadSearchTerm))
     : [];
+  const selectedConversationTotalMessages = selectedConversation?.messages.length || 0;
   const unreadCount = inboxMessages.filter((message) => !message.read).length;
   const totalMessages = allMessages.length;
   const selectedRecipient = selectedConversation
@@ -2171,10 +2367,10 @@ function InternalMessages({ profile }) {
   );
 
   useEffect(() => {
-    if (!selectedConversation && conversations[0]?.participantId) {
-      setSelectedConversationId(conversations[0].participantId);
+    if (!selectedConversation && filteredConversations[0]?.participantId) {
+      setSelectedConversationId(filteredConversations[0].participantId);
     }
-  }, [conversations.length, selectedConversation?.participantId]);
+  }, [filteredConversations.length, selectedConversation?.participantId]);
 
   useEffect(() => {
     if (!selectedConversation) return;
@@ -2226,6 +2422,7 @@ function InternalMessages({ profile }) {
     if (!userId) return;
     setSelectedConversationId(userId);
     setMessageForm({ toUserId: userId, message: "" });
+    setThreadSearchTerm("");
     setNewConversationOpen(false);
     setMessageStatus("");
     setMessageError("");
@@ -2318,6 +2515,7 @@ function InternalMessages({ profile }) {
   function handleSelectConversation(conversation) {
     setSelectedConversationId(conversation.participantId);
     setMessageForm({ toUserId: conversation.participantId, message: "" });
+    setThreadSearchTerm("");
     setMessageStatus("");
     setMessageError("");
     markConversationMessagesAsRead(conversation.messages);
@@ -2402,14 +2600,33 @@ function InternalMessages({ profile }) {
             </div>
           )}
 
+          <div className="chat-search-box">
+            <label>
+              <span>Buscar conversaciones</span>
+              <input
+                value={conversationSearchTerm}
+                onChange={(event) => setConversationSearchTerm(event.target.value)}
+                placeholder="Nombre, correo, mensaje o adjunto..."
+              />
+            </label>
+            <small>
+              {filteredConversations.length} de {conversations.length} conversación(es)
+            </small>
+          </div>
+
           <div className="chat-conversation-list">
             {conversations.length === 0 ? (
               <div className="workspace-empty-state messages-empty-state compact">
                 <strong>No hay conversaciones</strong>
                 <p>Inicia una conversación con algún colaborador.</p>
               </div>
+            ) : filteredConversations.length === 0 ? (
+              <div className="workspace-empty-state messages-empty-state compact">
+                <strong>No hay coincidencias</strong>
+                <p>Prueba con otro nombre, mensaje o archivo.</p>
+              </div>
             ) : (
-              conversations.map((conversation) => {
+              filteredConversations.map((conversation) => {
                 const presenceStatus = getPresenceStatus(
                   presenceByUserId[conversation.participantId],
                   presenceNow
@@ -2473,9 +2690,25 @@ function InternalMessages({ profile }) {
                 </div>
               </div>
 
+              <div className="chat-thread-search-box">
+                <label>
+                  <span>Buscar en esta conversación</span>
+                  <input
+                    value={threadSearchTerm}
+                    onChange={(event) => setThreadSearchTerm(event.target.value)}
+                    placeholder="Buscar mensaje, remitente o archivo..."
+                  />
+                </label>
+                <small>
+                  Mostrando {selectedMessages.length} de {selectedConversationTotalMessages} mensaje(s)
+                </small>
+              </div>
+
               <div className="chat-thread-messages">
-                {selectedMessages.length === 0 ? (
+                {selectedConversationTotalMessages === 0 ? (
                   <div className="chat-date-separator">Todavía no hay mensajes en esta conversación.</div>
+                ) : selectedMessages.length === 0 ? (
+                  <div className="chat-date-separator">No hay mensajes que coincidan con tu búsqueda.</div>
                 ) : (
                   selectedMessages.map((message) => {
                     const outgoing = message.fromUserId === currentUserId;
