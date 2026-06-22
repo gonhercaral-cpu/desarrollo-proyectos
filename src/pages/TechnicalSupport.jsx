@@ -517,6 +517,7 @@ const EMPTY_ASSET_FORM = {
   assetTag: "",
   name: "",
   category: "Computadora",
+  categoryOther: "",
   brand: "",
   model: "",
   serialNumber: "",
@@ -841,7 +842,18 @@ export default function TechnicalSupport() {
   const [loadingAssets, setLoadingAssets] = useState(true);
   const [loadingMaintenances, setLoadingMaintenances] = useState(true);
   const [loadingLocations, setLoadingLocations] = useState(true);
-  const [activeTab, setActiveTab] = useState("resumen");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") {
+      return "resumen";
+    }
+
+    const storedTab = localStorage.getItem("technicalSupportActiveTab");
+    const canRestoreTab = TECHNICAL_TABS.some(
+      (tab) => tab.id === storedTab && storedTab !== "registrar-equipo"
+    );
+
+    return canRestoreTab ? storedTab : "resumen";
+  });
   const [selectedQrAsset, setSelectedQrAsset] = useState(null);
   const [qrPrintMode, setQrPrintMode] = useState("single");
   const [selectedQuickAsset, setSelectedQuickAsset] = useState(null);
@@ -928,6 +940,12 @@ export default function TechnicalSupport() {
       cleanPrintModeClasses();
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && activeTab !== "registrar-equipo") {
+      localStorage.setItem("technicalSupportActiveTab", activeTab);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (qrAssetHandled || visibleAssets.length === 0) return;
@@ -1276,6 +1294,14 @@ export default function TechnicalSupport() {
   const assetsWithQr = visibleAssets.filter((asset) => Boolean(asset.id)).length;
   const campusFilterOptions = CAMPUS_FILTER_OPTIONS;
   const areaFilterOptions = getUniqueAssetValues(visibleAssets, "area");
+  const assetCategoryOptions = useMemo(
+    () =>
+      buildMergedOptionList(
+        ASSET_CATEGORIES,
+        assets.map((asset) => asset.category)
+      ),
+    [assets]
+  );
 
   const activeSpareParts = useMemo(
     () =>
@@ -2364,8 +2390,16 @@ export default function TechnicalSupport() {
       .replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
   }
 
+  function getResolvedAssetCategory(form = assetForm) {
+    if (form.category === "Otro") {
+      return String(form.categoryOther || "").trim() || "Otro";
+    }
+
+    return form.category || "Equipo";
+  }
+
   function generateAssetName(form = assetForm) {
-    const category = form.category || "Equipo";
+    const category = getResolvedAssetCategory(form);
     const location =
       formatAssetLocationText(form.assignedTo) || formatAssetLocationText(form.area);
 
@@ -2385,6 +2419,10 @@ export default function TechnicalSupport() {
     }
 
     setActiveTab(tabId);
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("technicalSupportActiveTab", tabId);
+    }
   }
 
   function handleGlobalSearchChange(event) {
@@ -2622,11 +2660,16 @@ export default function TechnicalSupport() {
 
     const existingCampus = normalizeCampusName(asset.campus || "");
     const isKnownCampus = CAMPUS_FILTER_OPTIONS.includes(existingCampus);
+    const categoryFields = getEditableOptionFields(
+      asset.category,
+      assetCategoryOptions
+    );
 
     setAssetForm({
       assetTag: asset.assetTag || "",
       name: asset.name || "",
-      category: asset.category || "Computadora",
+      category: categoryFields.value || "Computadora",
+      categoryOther: categoryFields.other || "",
       brand: asset.brand || "",
       model: asset.model || "",
       serialNumber: asset.serialNumber || "",
@@ -2669,7 +2712,11 @@ export default function TechnicalSupport() {
 
     if (name === "category") {
       setAssetForm((current) => {
-        const nextAsset = { ...current, category: value };
+        const nextAsset = {
+          ...current,
+          category: value,
+          categoryOther: value === "Otro" ? current.categoryOther : "",
+        };
 
         return {
           ...nextAsset,
@@ -2844,6 +2891,8 @@ export default function TechnicalSupport() {
 
     const cleanedAsset = {
       ...assetForm,
+      category: getResolvedAssetCategory(assetForm),
+      categoryOther: "",
       assetTag: generatedAssetTag.trim(),
       name: generatedAssetName.trim(),
       brand: assetForm.brand.trim(),
@@ -4342,6 +4391,9 @@ function closeCompletionForm(options = {}) {
 
     setInstallationTemplateFormError("");
     setShowInstallationTemplateForm(true);
+    setShowInstallationForm(false);
+    setSelectedInstallation(null);
+    setInstallationSubTab("templates");
     setActiveTab("instalaciones");
     scrollToTop();
   }
@@ -4625,6 +4677,8 @@ function closeCompletionForm(options = {}) {
     );
     setInstallationFormError("");
     setShowInstallationForm(true);
+    setShowInstallationTemplateForm(false);
+    setEditingInstallationTemplateId(null);
     setSelectedInstallation(null);
     setInstallationSubTab("installations");
     setActiveTab("instalaciones");
@@ -4746,6 +4800,8 @@ function closeCompletionForm(options = {}) {
       checklistSections: getInstallationChecklistSections(installation.checklistSections),
     });
     setShowInstallationForm(false);
+    setShowInstallationTemplateForm(false);
+    setEditingInstallationTemplateId(null);
     setInstallationAssetSearchTerm("");
     setInstallationAssetCampusFilter("Todos");
     setInstallationAssetCategoryFilter("Todas");
@@ -5379,7 +5435,7 @@ function closeCompletionForm(options = {}) {
               disabled={isLocked}
             >
               <option value="Todas">Todas las categorías</option>
-              {ASSET_CATEGORIES.map((category) => (
+              {assetCategoryOptions.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>
@@ -6271,7 +6327,7 @@ function closeCompletionForm(options = {}) {
 
   function renderInstallationTemplatesPanel() {
     return (
-      <section className="installation-templates-workspace">
+      <section className={`installation-templates-workspace ${showInstallationTemplateForm ? "installation-template-focused-action" : ""}`}>
         <div className="installation-templates-header">
           <div>
             <p className="section-kicker equipment-kicker">Procesos de instalación</p>
@@ -6648,7 +6704,7 @@ function closeCompletionForm(options = {}) {
     const selectedInstallationEditable = isInstallationEditable(selectedInstallation);
 
     return (
-      <section className="installation-runs-workspace">
+      <section className={`installation-runs-workspace ${showInstallationForm || selectedInstallation ? "installation-focused-action" : ""}`}>
         <div className="installation-runs-header">
           <div>
             <p className="section-kicker equipment-kicker">Instalaciones reales</p>
@@ -7317,7 +7373,7 @@ function closeCompletionForm(options = {}) {
 
   function renderInstallationsPanel() {
     return (
-      <section className="installations-workspace">
+      <section className={`installations-workspace ${showInstallationTemplateForm || showInstallationForm || selectedInstallation ? "installations-focused-shell" : ""}`}>
         <div className="installation-subtabs">
           <button
             type="button"
@@ -7344,7 +7400,7 @@ function closeCompletionForm(options = {}) {
 
   function renderSparePartsPanel() {
     return (
-      <section className="spare-parts-workspace">
+      <section className={`spare-parts-workspace ${showSparePartForm ? "spare-part-focused-action" : ""}`}>
         <div className="spare-parts-header">
           <div>
             <p className="section-kicker equipment-kicker">Inventario de recambios</p>
@@ -8385,8 +8441,8 @@ function closeCompletionForm(options = {}) {
         </div>
       )}
 
-      {!focusedSupportViewActive && (
-      <section className="technical-command-grid" aria-label="Indicadores principales de soporte técnico">
+      {!focusedSupportViewActive && activeTab === "resumen" && (
+      <section className="technical-command-grid technical-command-grid-v4" aria-label="Indicadores principales de soporte técnico">
         <button
           className="technical-command-card danger"
           type="button"
@@ -8447,7 +8503,7 @@ function closeCompletionForm(options = {}) {
         <button
           className="technical-command-card info"
           type="button"
-          onClick={() => setActiveTab("mantenimientos")}
+          onClick={() => setActiveTab("ubicaciones-tecnicas")}
         >
           <span className="technical-command-icon">⌖</span>
           <div>
@@ -8912,151 +8968,298 @@ function closeCompletionForm(options = {}) {
       )}
 
       {!focusedSupportViewActive && activeTab === "resumen" && (
-        <section className="technical-overview-layout">
-          <div className="technical-overview-main">
-            <section className="technical-panel technical-compact-panel">
+        <section className="technical-control-center-v4">
+          <div className="technical-attention-board-v4">
+            <section className="technical-panel technical-focus-today-v4">
               <div className="technical-panel-header compact">
                 <div>
-                  <h2>Mantenimientos recientes</h2>
-                  <p>Los casos que Soporte Técnico debe atender primero.</p>
+                  <h2>Hoy requiere atención</h2>
+                  <p>Lo más importante del módulo en una sola vista.</p>
                 </div>
+                <span className="technical-focus-pill-v4">
+                  {overdueMaintenances.length + todayMaintenances.length + pendingLocationReviews.length + sparePartMetrics.lowStock}
+                </span>
+              </div>
+
+              <div className="technical-attention-list-v4">
                 <button
-                  className="visual-outline-button"
+                  className={`technical-attention-item-v4 danger ${overdueMaintenances.length === 0 ? "calm" : ""}`}
                   type="button"
                   onClick={() => setActiveTab("mantenimientos")}
                 >
-                  Ver todo
+                  <span>⚠</span>
+                  <div>
+                    <strong>{overdueMaintenances.length}</strong>
+                    <p>Mantenimientos vencidos</p>
+                    <small>{overdueMaintenances.length > 0 ? "Atender primero" : "Sin vencidos"}</small>
+                  </div>
+                </button>
+
+                <button
+                  className={`technical-attention-item-v4 warning ${todayMaintenances.length === 0 ? "calm" : ""}`}
+                  type="button"
+                  onClick={() => setActiveTab("mantenimientos")}
+                >
+                  <span>📅</span>
+                  <div>
+                    <strong>{todayMaintenances.length}</strong>
+                    <p>Vencen hoy</p>
+                    <small>{weekMaintenances.length} próximos esta semana</small>
+                  </div>
+                </button>
+
+                <button
+                  className={`technical-attention-item-v4 purple ${pendingLocationReviews.length === 0 ? "calm" : ""}`}
+                  type="button"
+                  onClick={() => setActiveTab("ubicaciones-tecnicas")}
+                >
+                  <span>⌖</span>
+                  <div>
+                    <strong>{pendingLocationReviews.length}</strong>
+                    <p>Revisiones de ubicación</p>
+                    <small>{overdueLocationReviews.length} vencidas</small>
+                  </div>
+                </button>
+
+                <button
+                  className={`technical-attention-item-v4 gold ${sparePartMetrics.lowStock === 0 ? "calm" : ""}`}
+                  type="button"
+                  onClick={() => setActiveTab("recambios")}
+                >
+                  <span>▤</span>
+                  <div>
+                    <strong>{sparePartMetrics.lowStock}</strong>
+                    <p>Recambios bajo stock</p>
+                    <small>{sparePartMetrics.emptyStock} sin existencia</small>
+                  </div>
                 </button>
               </div>
-
-              {recentMaintenances.length > 0 ? (
-                <div className="technical-mini-list">
-                  {recentMaintenances.map((maintenance) => {
-                    const urgency = getMaintenanceUrgency(maintenance.nextDate);
-
-                    return (
-                      <article
-                        className={`technical-mini-item urgency-${urgency.level}`}
-                        key={maintenance.id}
-                      >
-                        <span className="technical-mini-icon">{urgency.icon}</span>
-                        <div>
-                          <strong>{maintenance.title}</strong>
-                          <p>
-                            {maintenance.assetName || "Equipo sin nombre"} · {maintenance.assetTag}
-                          </p>
-                        </div>
-                        <div className="technical-mini-date">
-                          <b>{urgency.label}</b>
-                          <small>{formatMaintenanceDate(maintenance.nextDate)}</small>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state small">
-                  <h3>Sin mantenimientos pendientes</h3>
-                  <p>Cuando haya trabajos programados aparecerán aquí.</p>
-                </div>
-              )}
             </section>
 
-            <section className="technical-panel technical-compact-panel">
+            <section className="technical-panel technical-workspace-launcher-v4">
               <div className="technical-panel-header compact">
                 <div>
-                  <h2>Últimos equipos registrados</h2>
-                  <p>Vista rápida del inventario sin saturar la pantalla.</p>
+                  <h2>Áreas de trabajo</h2>
+                  <p>Entra directo a la vista enfocada que necesitas.</p>
                 </div>
-                <button
-                  className="visual-outline-button"
-                  type="button"
-                  onClick={() => setActiveTab("equipos")}
-                >
-                  Ver inventario
-                </button>
               </div>
 
-              {recentAssets.length > 0 ? (
-                <div className="technical-preview-table">
-                  <div className="technical-preview-head">
-                    <span>Código</span>
-                    <span>Equipo</span>
-                    <span>Ubicación</span>
-                  </div>
-                  {recentAssets.map((asset) => (
-                    <div className="technical-preview-row" key={asset.id}>
-                      <strong>{asset.assetTag || "Sin código"}</strong>
-                      <span>{asset.name || "Sin nombre"}</span>
-                      <span>{asset.assignedTo || asset.area || "Sin ubicación"}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-state small">
-                  <h3>Sin equipos registrados</h3>
-                  <p>Registra el primer equipo para iniciar el inventario.</p>
-                </div>
-              )}
+              <div className="technical-workspace-grid-v4">
+                <button type="button" onClick={() => setActiveTab("equipos")}>
+                  <span className="blue">▣</span>
+                  <strong>Inventario</strong>
+                  <small>{totalAssets} equipos · {activeAssets} activos</small>
+                </button>
+
+                <button type="button" onClick={() => setActiveTab("mantenimientos")}>
+                  <span className="red">🛠</span>
+                  <strong>Mantenimientos</strong>
+                  <small>{pendingMaintenances.length} pendientes</small>
+                </button>
+
+                <button type="button" onClick={() => setActiveTab("ubicaciones-tecnicas")}>
+                  <span className="purple">⌖</span>
+                  <strong>Ubicaciones</strong>
+                  <small>{technicalLocations.length} registradas</small>
+                </button>
+
+                <button type="button" onClick={() => setActiveTab("recambios")}>
+                  <span className="gold">▤</span>
+                  <strong>Recambios</strong>
+                  <small>{sparePartMetrics.active} activos</small>
+                </button>
+
+                <button type="button" onClick={() => setActiveTab("instalaciones")}>
+                  <span className="green">▥</span>
+                  <strong>Instalaciones</strong>
+                  <small>{installationMetrics.active} en proceso</small>
+                </button>
+
+                <button type="button" onClick={() => setActiveTab("bajas")}>
+                  <span className="gray">↓</span>
+                  <strong>Bajas</strong>
+                  <small>{inactiveAssets} equipos</small>
+                </button>
+              </div>
             </section>
           </div>
 
-          <aside className="technical-overview-side">
-            <section className="technical-panel technical-calendar-panel">
-              <div className="technical-panel-header compact">
-                <div>
-                  <h2>Calendario de mantenimientos</h2>
-                  <p>Próximos trabajos que Soporte Técnico debe atender.</p>
+          <div className="technical-overview-layout technical-overview-layout-v4">
+            <div className="technical-overview-main">
+              <section className="technical-panel technical-compact-panel technical-priority-panel-v4">
+                <div className="technical-panel-header compact">
+                  <div>
+                    <h2>Prioridad técnica</h2>
+                    <p>Casos ordenados para trabajar sin revisar todo el módulo.</p>
+                  </div>
+                  <button
+                    className="visual-outline-button"
+                    type="button"
+                    onClick={() => setActiveTab("mantenimientos")}
+                  >
+                    Ver mantenimiento
+                  </button>
                 </div>
+
+                {recentMaintenances.length > 0 ? (
+                  <div className="technical-mini-list technical-priority-list-v4">
+                    {recentMaintenances.map((maintenance) => {
+                      const urgency = getMaintenanceUrgency(maintenance.nextDate);
+
+                      return (
+                        <article
+                          className={`technical-mini-item urgency-${urgency.level}`}
+                          key={maintenance.id}
+                        >
+                          <span className="technical-mini-icon">{urgency.icon}</span>
+                          <div>
+                            <strong>{maintenance.title}</strong>
+                            <p>
+                              {maintenance.assetName || "Equipo sin nombre"} · {maintenance.assetTag}
+                            </p>
+                          </div>
+                          <div className="technical-mini-date">
+                            <b>{urgency.label}</b>
+                            <small>{formatMaintenanceDate(maintenance.nextDate)}</small>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-state small">
+                    <h3>Sin mantenimientos pendientes</h3>
+                    <p>Cuando haya trabajos programados aparecerán aquí.</p>
+                  </div>
+                )}
+              </section>
+
+              <section className="technical-panel technical-compact-panel technical-inventory-snapshot-v4">
+                <div className="technical-panel-header compact">
+                  <div>
+                    <h2>Inventario reciente</h2>
+                    <p>Últimos equipos registrados, sin abrir el inventario completo.</p>
+                  </div>
+                  <button
+                    className="visual-outline-button"
+                    type="button"
+                    onClick={() => setActiveTab("equipos")}
+                  >
+                    Ver inventario
+                  </button>
+                </div>
+
+                {recentAssets.length > 0 ? (
+                  <div className="technical-preview-table technical-preview-table-v4">
+                    <div className="technical-preview-head">
+                      <span>Código</span>
+                      <span>Equipo</span>
+                      <span>Ubicación</span>
+                    </div>
+                    {recentAssets.slice(0, 4).map((asset) => (
+                      <button
+                        className="technical-preview-row technical-preview-button-v4"
+                        type="button"
+                        key={asset.id}
+                        onClick={() => openQuickAssetPanel(asset)}
+                      >
+                        <strong>{asset.assetTag || "Sin código"}</strong>
+                        <span>{asset.name || "Sin nombre"}</span>
+                        <span>{asset.assignedTo || asset.area || "Sin ubicación"}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state small">
+                    <h3>Sin equipos registrados</h3>
+                    <p>Registra el primer equipo para iniciar el inventario.</p>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <aside className="technical-overview-side">
+              <section className="technical-panel technical-health-card-v4">
+                <div className="technical-panel-header compact">
+                  <div>
+                    <h2>Estado del módulo</h2>
+                    <p>Lectura rápida del sistema técnico.</p>
+                  </div>
+                </div>
+
+                <div className="technical-health-grid-v4">
+                  <article>
+                    <span className="ok">●</span>
+                    <strong>{activeAssets}</strong>
+                    <small>equipos activos</small>
+                  </article>
+                  <article>
+                    <span className="warning">●</span>
+                    <strong>{maintenanceAssets}</strong>
+                    <small>en revisión</small>
+                  </article>
+                  <article>
+                    <span className="danger">●</span>
+                    <strong>{locationsNeedingAttention}</strong>
+                    <small>ubicaciones con alerta</small>
+                  </article>
+                  <article>
+                    <span className="info">●</span>
+                    <strong>{installationMetrics.averageProgress}%</strong>
+                    <small>avance instalaciones</small>
+                  </article>
+                </div>
+              </section>
+
+              <section className="technical-panel technical-calendar-panel technical-calendar-panel-v4">
+                <div className="technical-panel-header compact">
+                  <div>
+                    <h2>Calendario próximo</h2>
+                    <p>Mantenimientos programados.</p>
+                  </div>
+                </div>
+
+                {calendarMaintenances.length > 0 ? (
+                  <div className="technical-calendar-list">
+                    {calendarMaintenances.map((maintenance) => {
+                      const urgency = getMaintenanceUrgency(maintenance.nextDate);
+
+                      return (
+                        <article
+                          className={`technical-calendar-card urgency-${urgency.level}`}
+                          key={maintenance.id}
+                        >
+                          <span className="technical-calendar-icon">{urgency.icon}</span>
+                          <div>
+                            <strong>{maintenance.assetName || maintenance.title}</strong>
+                            <p>{maintenance.assetTag || "Sin código"}</p>
+                            <small>{maintenance.title}</small>
+                          </div>
+                          <div className="technical-calendar-date">
+                            <b>{urgency.label}</b>
+                            <span>{formatMaintenanceDate(maintenance.nextDate)}</span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-state small">
+                    <h3>Sin mantenimientos próximos</h3>
+                    <p>Cuando haya revisiones programadas aparecerán aquí.</p>
+                  </div>
+                )}
+
                 <button
-                  className="visual-outline-button"
+                  className="technical-calendar-footer"
                   type="button"
                   onClick={() => setActiveTab("mantenimientos")}
                 >
-                  Ver calendario
+                  Ver todos los mantenimientos →
                 </button>
-              </div>
-
-              {calendarMaintenances.length > 0 ? (
-                <div className="technical-calendar-list">
-                  {calendarMaintenances.map((maintenance) => {
-                    const urgency = getMaintenanceUrgency(maintenance.nextDate);
-
-                    return (
-                      <article
-                        className={`technical-calendar-card urgency-${urgency.level}`}
-                        key={maintenance.id}
-                      >
-                        <span className="technical-calendar-icon">{urgency.icon}</span>
-                        <div>
-                          <strong>{maintenance.assetName || maintenance.title}</strong>
-                          <p>{maintenance.assetTag || "Sin código"}</p>
-                          <small>{maintenance.title}</small>
-                        </div>
-                        <div className="technical-calendar-date">
-                          <b>{urgency.label}</b>
-                          <span>{formatMaintenanceDate(maintenance.nextDate)}</span>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="empty-state small">
-                  <h3>Sin mantenimientos próximos</h3>
-                  <p>Cuando haya revisiones programadas aparecerán aquí.</p>
-                </div>
-              )}
-
-              <button
-                className="technical-calendar-footer"
-                type="button"
-                onClick={() => setActiveTab("mantenimientos")}
-              >
-                Ver todos los mantenimientos →
-              </button>
-            </section>
-          </aside>
+              </section>
+            </aside>
+          </div>
         </section>
       )}
 
@@ -10044,7 +10247,8 @@ function closeCompletionForm(options = {}) {
             </div>
           </div>
 
-          <div className="technical-location-metrics">
+          {!showLocationForm && !showChecklistEditor && !showLocationReviewForm && (
+            <div className="technical-location-metrics">
             <article>
               <span className="equipment-metric-icon purple">⌖</span>
               <div>
@@ -10080,7 +10284,8 @@ function closeCompletionForm(options = {}) {
                 <small>Solo equipos vigentes</small>
               </div>
             </article>
-          </div>
+            </div>
+          )}
 
           {showLocationForm && (
             <section className="technical-panel location-form-panel">
@@ -10243,7 +10448,327 @@ function closeCompletionForm(options = {}) {
             </section>
           )}
 
-          <div className="technical-location-layout">
+
+          {showChecklistEditor && selectedTechnicalLocation && (
+            <section className="technical-panel location-form-panel location-focused-panel location-checklist-focused-panel">
+              <div className="technical-panel-header focused-location-header">
+                <div>
+                  <p className="section-kicker equipment-kicker">Vista enfocada</p>
+                  <h2>Editar checklist técnico</h2>
+                  <p>
+                    Estás editando únicamente el checklist de {selectedTechnicalLocation.name}.
+                    La lista de ubicaciones queda oculta para evitar confusión visual.
+                  </p>
+                </div>
+
+                <button
+                  className="visual-outline-button"
+                  type="button"
+                  onClick={closeChecklistEditor}
+                  disabled={savingChecklist}
+                >
+                  ← Regresar a ubicaciones
+                </button>
+              </div>
+
+<form
+            className="location-checklist-editor"
+            onSubmit={handleSaveChecklistTemplate}
+          >
+            <div className="location-editor-header">
+              <div>
+                <h4>Editar checklist de {selectedTechnicalLocation.name}</h4>
+                <p>
+                  Agrega, elimina o cambia los elementos que el técnico debe revisar.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="visual-outline-button"
+                onClick={addChecklistEditorItem}
+                disabled={savingChecklist}
+              >
+                + Agregar elemento
+              </button>
+            </div>
+
+            {checklistEditorError && (
+              <div className="form-error">{checklistEditorError}</div>
+            )}
+
+            <div className="location-checklist-edit-list">
+              {checklistEditorItems.map((item, index) => (
+                <article className="location-checklist-edit-row" key={`edit-${index}`}>
+                  <div className="checklist-order-controls">
+                    <button
+                      type="button"
+                      onClick={() => moveChecklistEditorItem(index, index - 1)}
+                      disabled={savingChecklist || index === 0}
+                      title="Subir"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveChecklistEditorItem(index, index + 1)}
+                      disabled={
+                        savingChecklist || index === checklistEditorItems.length - 1
+                      }
+                      title="Bajar"
+                    >
+                      ↓
+                    </button>
+                  </div>
+
+                  <label className="checklist-position-select">
+                    Posición
+                    <select
+                      value={index}
+                      onChange={(event) =>
+                        moveChecklistEditorItem(index, Number(event.target.value))
+                      }
+                      disabled={savingChecklist}
+                    >
+                      {checklistEditorItems.map((_, positionIndex) => (
+                        <option key={positionIndex} value={positionIndex}>
+                          {positionIndex + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <input
+                    type="text"
+                    value={item.label}
+                    onChange={(event) =>
+                      handleChecklistEditorItemChange(
+                        index,
+                        "label",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Nombre del elemento"
+                    disabled={savingChecklist}
+                  />
+
+                  <label className="location-required-toggle">
+                    <input
+                      type="checkbox"
+                      checked={item.required !== false}
+                      onChange={(event) =>
+                        handleChecklistEditorItemChange(
+                          index,
+                          "required",
+                          event.target.checked
+                        )
+                      }
+                      disabled={savingChecklist}
+                    />
+                    Obligatorio
+                  </label>
+
+                  <button
+                    type="button"
+                    className="location-remove-button"
+                    onClick={() => removeChecklistEditorItem(index)}
+                    disabled={savingChecklist || checklistEditorItems.length <= 1}
+                  >
+                    Eliminar
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            <div className="technical-form-actions">
+              <button
+                type="button"
+                onClick={closeChecklistEditor}
+                disabled={savingChecklist}
+              >
+                Regresar
+              </button>
+
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={savingChecklist}
+              >
+                {savingChecklist ? "Guardando..." : "Guardar checklist"}
+              </button>
+            </div>
+          </form>
+            </section>
+          )}
+
+          {showLocationReviewForm && selectedTechnicalLocation && (
+            <section className="technical-panel location-form-panel location-focused-panel location-review-focused-panel">
+              <div className="technical-panel-header focused-location-header">
+                <div>
+                  <p className="section-kicker equipment-kicker">Vista enfocada</p>
+                  <h2>Iniciar revisión técnica</h2>
+                  <p>
+                    Revisión de {selectedTechnicalLocation.name}. Marca los elementos encontrados
+                    y guarda el resultado sin distracciones de otras tarjetas.
+                  </p>
+                </div>
+
+                <button
+                  className="visual-outline-button"
+                  type="button"
+                  onClick={closeLocationReviewForm}
+                  disabled={savingLocationReview}
+                >
+                  ← Regresar a ubicaciones
+                </button>
+              </div>
+
+<form
+            className="location-review-form"
+            onSubmit={handleSaveLocationReview}
+          >
+            <div className="location-editor-header">
+              <div>
+                <h4>Revisión técnica de {selectedTechnicalLocation.name}</h4>
+                <p>
+                  Marca si cada elemento está presente, su estado y cualquier detalle.
+                </p>
+              </div>
+
+              <select
+                name="generalStatus"
+                value={locationReviewForm.generalStatus}
+                onChange={handleLocationReviewFormChange}
+                disabled={savingLocationReview}
+              >
+                <option value="Correcto">Resultado general: Correcto</option>
+                <option value="Requiere atención">
+                  Resultado general: Requiere atención
+                </option>
+                <option value="Pendiente">Resultado general: Pendiente</option>
+              </select>
+            </div>
+
+            {locationReviewError && (
+              <div className="form-error">{locationReviewError}</div>
+            )}
+
+            <div className="location-review-list">
+              {locationReviewItems.map((item, index) => (
+                <article className="location-review-row" key={`review-${index}`}>
+                  <div className="location-review-row-main">
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{item.label}</strong>
+                      <small>
+                        {item.required ? "Obligatorio" : "Opcional"}
+                      </small>
+                    </div>
+                  </div>
+
+                  <label className="location-present-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(item.present)}
+                      onChange={(event) =>
+                        handleLocationReviewItemChange(
+                          index,
+                          "present",
+                          event.target.checked
+                        )
+                      }
+                      disabled={savingLocationReview}
+                    />
+                    Presente
+                  </label>
+
+                  <select
+                    value={item.status}
+                    onChange={(event) =>
+                      handleLocationReviewItemChange(
+                        index,
+                        "status",
+                        event.target.value
+                      )
+                    }
+                    disabled={savingLocationReview || !item.present}
+                  >
+                    {LOCATION_REVIEW_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+
+                  <textarea
+                    value={item.note}
+                    onChange={(event) =>
+                      handleLocationReviewItemChange(
+                        index,
+                        "note",
+                        event.target.value
+                      )
+                    }
+                    placeholder={
+                      item.present
+                        ? "Observación opcional..."
+                        : "Explica qué falta o qué se encontró..."
+                    }
+                    disabled={savingLocationReview}
+                  />
+                </article>
+              ))}
+            </div>
+
+            <div className="location-review-notes-grid">
+              <label>
+                Observaciones generales
+                <textarea
+                  name="observations"
+                  value={locationReviewForm.observations}
+                  onChange={handleLocationReviewFormChange}
+                  placeholder="Ej. Mouse con falla en clic izquierdo."
+                  disabled={savingLocationReview}
+                />
+              </label>
+
+              <label>
+                Acciones pendientes
+                <textarea
+                  name="pendingActions"
+                  value={locationReviewForm.pendingActions}
+                  onChange={handleLocationReviewFormChange}
+                  placeholder="Ej. Reponer lámpara 2 y cambiar mouse."
+                  disabled={savingLocationReview}
+                />
+              </label>
+            </div>
+
+            <div className="technical-form-actions">
+              <button
+                type="button"
+                onClick={closeLocationReviewForm}
+                disabled={savingLocationReview}
+              >
+                Regresar
+              </button>
+
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={savingLocationReview}
+              >
+                {savingLocationReview
+                  ? "Guardando revisión..."
+                  : "Guardar revisión técnica"}
+              </button>
+            </div>
+          </form>
+            </section>
+          )}
+
+          {!showLocationForm && !showChecklistEditor && !showLocationReviewForm && (
+            <div className="technical-location-layout">
             <section className="technical-panel technical-location-list-panel">
               <div className="technical-panel-header compact">
                 <div>
@@ -10406,7 +10931,9 @@ function closeCompletionForm(options = {}) {
                     </button>
                   </div>
 
-                  <section className="location-checklist-card">
+                  <div className="location-detail-grid location-detail-grid-balanced">
+                    <div className="location-detail-column location-detail-column-left">
+                  <section className="location-checklist-card location-grid-card location-grid-card-checklist">
                     <div className="location-section-title with-actions">
                       <div>
                         <h3>Checklist técnico base</h3>
@@ -10728,7 +11255,28 @@ function closeCompletionForm(options = {}) {
                     </div>
                   </section>
 
-                  <section className="location-reviews-card">
+
+                  <section className="location-installations-card location-grid-card location-grid-card-installations">
+                    <div className="location-section-title">
+                      <div>
+                        <h3>Instalaciones realizadas</h3>
+                        <p>Procesos de instalación asociados a esta ubicación técnica.</p>
+                      </div>
+                      <span>{selectedLocationInstallations.length}</span>
+                    </div>
+
+                    {renderRelatedInstallationCards(
+                      selectedLocationInstallations,
+                      "Sin instalaciones en esta ubicación",
+                      "Cuando una instalación use esta ubicación técnica, aparecerá aquí."
+                    )}
+                  </section>
+
+
+                    </div>
+
+                    <div className="location-detail-column location-detail-column-right">
+                  <section className="location-reviews-card location-grid-card location-grid-card-history">
                     <div className="location-section-title">
                       <div>
                         <h3>Historial de revisiones</h3>
@@ -10781,23 +11329,8 @@ function closeCompletionForm(options = {}) {
                     )}
                   </section>
 
-                  <section className="location-installations-card">
-                    <div className="location-section-title">
-                      <div>
-                        <h3>Instalaciones realizadas</h3>
-                        <p>Procesos de instalación asociados a esta ubicación técnica.</p>
-                      </div>
-                      <span>{selectedLocationInstallations.length}</span>
-                    </div>
 
-                    {renderRelatedInstallationCards(
-                      selectedLocationInstallations,
-                      "Sin instalaciones en esta ubicación",
-                      "Cuando una instalación use esta ubicación técnica, aparecerá aquí."
-                    )}
-                  </section>
-
-                  <section className="location-assets-card">
+                  <section className="location-assets-card location-grid-card location-grid-card-assets">
                     <div className="location-section-title">
                       <h3>Equipos asignados</h3>
                       <span>{selectedLocationAssets.length}</span>
@@ -10858,7 +11391,8 @@ function closeCompletionForm(options = {}) {
                     )}
                   </section>
 
-                  <section className="location-maintenance-card">
+
+                  <section className="location-maintenance-card location-grid-card location-grid-card-maintenance">
                     <div className="location-section-title">
                       <h3>Mantenimientos de esta ubicación</h3>
                       <span>{selectedLocationPendingMaintenances.length}</span>
@@ -10891,6 +11425,9 @@ function closeCompletionForm(options = {}) {
                       </div>
                     )}
                   </section>
+
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div className="empty-state small">
@@ -10899,7 +11436,8 @@ function closeCompletionForm(options = {}) {
                 </div>
               )}
             </aside>
-          </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -10937,13 +11475,30 @@ function closeCompletionForm(options = {}) {
                     onChange={handleAssetFormChange}
                     disabled={savingAsset}
                   >
-                    {ASSET_CATEGORIES.map((category) => (
+                    {assetCategoryOptions.map((category) => (
                       <option key={category} value={category}>
                         {category}
                       </option>
                     ))}
                   </select>
                 </label>
+
+                {assetForm.category === "Otro" && (
+                  <label>
+                    Otra categoría
+                    <input
+                      type="text"
+                      name="categoryOther"
+                      value={assetForm.categoryOther}
+                      onChange={handleAssetFormChange}
+                      placeholder="Ej. Micrófono, lámpara, control de audio..."
+                      disabled={savingAsset}
+                    />
+                    <small className="field-helper-text">
+                      Si escribes un nombre aquí, quedará guardado como categoría y aparecerá disponible en futuros registros.
+                    </small>
+                  </label>
+                )}
 
                 <label>
                   Plantel
@@ -11431,22 +11986,7 @@ function closeCompletionForm(options = {}) {
                 </button>
               </section>
 
-              <section className="maintenance-clean-card compact">
-                <div className="maintenance-clean-card-header vertical">
-                  <div>
-                    <h3>Cómo usar esta pantalla</h3>
-                    <p>
-                      Aquí solo se atienden trabajos. La programación automática nace desde el equipo y su frecuencia.
-                    </p>
-                  </div>
-                </div>
 
-                <div className="maintenance-guidance-list">
-                  <p><strong>Iniciar mantenimiento</strong> abre el checklist y registra el trabajo.</p>
-                  <p><strong>Programar mantenimiento</strong> queda dentro de la ficha del equipo, solo para ajustes.</p>
-                  <p><strong>Movimiento</strong> queda para préstamos, bajas, reparaciones o cambios puntuales.</p>
-                </div>
-              </section>
             </aside>
           </div>
         </section>
@@ -11546,7 +12086,7 @@ function closeCompletionForm(options = {}) {
               disabled={loadingAssets}
             >
               <option value="Todas">Todas las categorías</option>
-              {ASSET_CATEGORIES.map((category) => (
+              {assetCategoryOptions.map((category) => (
                 <option key={category} value={category}>
                   {category}
                 </option>

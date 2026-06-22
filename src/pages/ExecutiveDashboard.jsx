@@ -311,7 +311,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
 
       <section className="executive-module-grid">
         <ModulePulseCard
-          icon="▦"
+          icon="projects"
           title="Proyectos"
           tone="blue"
           mainValue={metrics.active || 0}
@@ -324,7 +324,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         />
 
         <ModulePulseCard
-          icon="🗓️"
+          icon="calendar"
           title="Agenda del equipo"
           tone="green"
           mainValue={moduleSummary.agenda.activeToday}
@@ -337,7 +337,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         />
 
         <ModulePulseCard
-          icon="🛒"
+          icon="purchase"
           title="Solicitudes de compra"
           tone="gold"
           mainValue={moduleSummary.purchases.pending}
@@ -350,7 +350,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         />
 
         <ModulePulseCard
-          icon="▣"
+          icon="print"
           title="Imprenta"
           tone="purple"
           mainValue={moduleSummary.printshop.activeRequests}
@@ -363,7 +363,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         />
 
         <ModulePulseCard
-          icon="◈"
+          icon="technical"
           title="Soporte técnico"
           tone="orange"
           mainValue={moduleSummary.technical.dueSoon}
@@ -376,7 +376,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         />
 
         <ModulePulseCard
-          icon="✦"
+          icon="ideas"
           title="Ideas nuevas"
           tone="teal"
           mainValue={moduleSummary.ideas.pending}
@@ -389,147 +389,35 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         />
       </section>
 
-      <section className="visual-card executive-attention-card">
-        <SectionTitle
-          color="red"
-          icon="⚑"
-          title="Hoy requiere atención"
-          count={attentionItems.length}
-        />
-
-        {attentionItems.length === 0 ? (
-          <EmptyState text="No hay alertas críticas por atender en este momento." />
-        ) : (
-          <div className="executive-attention-list">
-            {attentionItems.map((item) => (
-              <AttentionItem key={item.key} item={item} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <div className="dashboard-grid">
-        <section className="visual-card compact-executive-card">
+      <div className="executive-control-layout executive-control-layout-compact">
+        <div className="executive-left-stack">
+        <section className="visual-card executive-attention-card">
           <SectionTitle
             color="red"
-            icon="◷"
-            title="Proyectos atrasados"
-            count={projects.overdue?.length || 0}
+            icon="alert"
+            title="Hoy requiere atención"
+            count={attentionItems.length}
           />
 
-          {!projects.overdue || projects.overdue.length === 0 ? (
-            <EmptyState text="No hay proyectos atrasados." />
+          {attentionItems.length === 0 ? (
+            <EmptyState text="No hay alertas críticas por atender en este momento." />
           ) : (
-            <div className="project-card-list compact-projects-stack">
-              {projects.overdue.slice(0, 4).map((project) => (
-                <ProjectMiniCard
-                  key={project.id}
-                  project={project}
-                  icon="▧"
-                  color="red"
-                  badge={renderDaysLabel(project)}
-                  badgeColor="red"
-                  onClick={() => onOpenProject(project.id)}
+            <div className="executive-attention-list">
+              {attentionItems.map((item) => (
+                <AttentionItem
+                  key={item.key}
+                  item={item}
+                  onOpenModule={onOpenModule}
                 />
               ))}
             </div>
           )}
         </section>
 
-        <section className="visual-card compact-executive-card">
-          <SectionTitle
-            color="gold"
-            icon="⌕"
-            title="Listos para revisión"
-            count={projects.review?.length || 0}
-          />
 
-          {!projects.review || projects.review.length === 0 ? (
-            <EmptyState
-              icon="▯⌕"
-              text="No hay proyectos listos para revisión."
-            />
-          ) : (
-            <div className="project-card-list compact-projects-stack">
-              {projects.review.slice(0, 4).map((project) => (
-                <ProjectMiniCard
-                  key={project.id}
-                  project={project}
-                  icon="⌕"
-                  color="gold"
-                  badge="Por revisar"
-                  badgeColor="gold"
-                  onClick={() => onOpenProject(project.id)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="dashboard-grid">
-        <section className="visual-card compact-executive-card">
-          <SectionTitle
-            color="green"
-            icon="▣"
-            title="Próximas entregas"
-            count={dueSoonProjects.length}
-          />
-
-          {dueSoonProjects.length === 0 ? (
-            <EmptyState text="No hay entregas próximas en los siguientes 7 días." />
-          ) : (
-            <div className="project-card-list compact-projects-stack">
-              {dueSoonProjects.map((project) => (
-                <ProjectMiniCard
-                  key={project.id}
-                  project={project}
-                  icon="▣"
-                  color="green"
-                  badge={renderDaysLabel(project)}
-                  badgeColor="green"
-                  onClick={() => onOpenProject(project.id)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="visual-card compact-executive-card">
-          <SectionTitle color="orange" icon="▤" title="Actividad reciente" />
-
-          {recentLogs.length === 0 ? (
-            <EmptyState text="Todavía no hay actividad registrada en la bitácora." />
-          ) : (
-            <div className="recent-project-list formal-log-list">
-              {recentLogs.slice(0, 6).map((log) => (
-                <div className="recent-project-item formal-log-row" key={log.id}>
-                  <span className="recent-icon">{getLogIcon(log.type)}</span>
-
-                  <div className="formal-log-content">
-                    <b>{log.title || "Movimiento registrado"}</b>
-                    <p>{log.description || "Sin descripción."}</p>
-
-                    <div className="recent-project-meta">
-                      <Badge color={getLogBadgeColor(log.type)}>
-                        {formatLogType(log.type)}
-                      </Badge>
-
-                      <small>
-                        {log.userName || "Usuario"} · {formatDate(log.createdAt)}
-                      </small>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="dashboard-grid executive-tables-grid">
+          <div className="dashboard-grid executive-tables-grid executive-tables-grid-inline">
         <section className="visual-card">
-          <SectionTitle color="blue" icon="👥" title="Carga por colaborador" />
+          <SectionTitle color="blue" icon="collaborator" title="Carga por colaborador" />
 
           {enhancedWorkloadByResponsible.length === 0 ? (
             <EmptyState text="No hay proyectos activos asignados." />
@@ -596,7 +484,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
         </section>
 
         <section className="visual-card">
-          <SectionTitle color="blue" icon="▦" title="Carga por departamento" />
+          <SectionTitle color="blue" icon="department" title="Carga por departamento" />
 
           {enhancedWorkloadByArea.length === 0 ? (
             <EmptyState text="No hay proyectos activos por departamento." />
@@ -648,6 +536,90 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
             </div>
           )}
         </section>
+
+        </div>
+
+        <aside className="executive-side-stack executive-side-stack-compact">
+          <section className="visual-card compact-executive-card executive-project-focus-card">
+            <SectionTitle
+              color="blue"
+              icon="projects"
+              title="Proyectos que cuidar"
+              count={(projects.overdue?.length || 0) + (projects.review?.length || 0) + dueSoonProjects.length}
+            />
+
+            <div className="executive-project-groups">
+              <ProjectGroupPreview
+                title="Atrasados"
+                tone="red"
+                icon="clock"
+                emptyText="No hay proyectos atrasados."
+                items={(projects.overdue || []).slice(0, 3)}
+                badgeColor="red"
+                getBadge={renderDaysLabel}
+                onOpenProject={onOpenProject}
+              />
+
+              <ProjectGroupPreview
+                title="Por revisión"
+                tone="gold"
+                icon="review"
+                emptyText="No hay proyectos listos para revisión."
+                items={(projects.review || []).slice(0, 3)}
+                badgeColor="gold"
+                getBadge={() => "Por revisar"}
+                onOpenProject={onOpenProject}
+              />
+
+              <ProjectGroupPreview
+                title="Próximas entregas"
+                tone="green"
+                icon="delivery"
+                emptyText="No hay entregas próximas en 7 días."
+                items={dueSoonProjects.slice(0, 3)}
+                badgeColor="green"
+                getBadge={renderDaysLabel}
+                onOpenProject={onOpenProject}
+              />
+            </div>
+          </section>
+
+        </aside>
+      </div>
+
+      <section className="visual-card compact-executive-card executive-recent-card executive-wide-recent-card">
+            <SectionTitle color="orange" icon="activity" title="Actividad reciente" />
+
+            {recentLogs.length === 0 ? (
+              <EmptyState text="Todavía no hay actividad registrada en la bitácora." />
+            ) : (
+              <div className="recent-project-list formal-log-list executive-log-list">
+                {recentLogs.slice(0, 5).map((log) => (
+                  <div className="recent-project-item formal-log-row" key={log.id}>
+                    <span className="recent-icon">
+                      <ExecutiveIcon name={getLogIcon(log.type)} />
+                    </span>
+
+                    <div className="formal-log-content">
+                      <b>{log.title || "Movimiento registrado"}</b>
+                      <p>{log.description || "Sin descripción."}</p>
+
+                      <div className="recent-project-meta">
+                        <Badge color={getLogBadgeColor(log.type)}>
+                          {formatLogType(log.type)}
+                        </Badge>
+
+                        <small>
+                          {log.userName || "Usuario"} · {formatDate(log.createdAt)}
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
       </div>
     </div>
   );
@@ -810,8 +782,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if ((metrics.overdue || 0) > 0) {
     items.push({
       key: "projects-overdue",
-      icon: "◷",
+      icon: "clock",
       tone: "red",
+      route: "all-projects",
       title: `${metrics.overdue} proyecto(s) atrasado(s)`,
       detail: "Conviene revisar fechas límite, responsables y bloqueos.",
     });
@@ -820,8 +793,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if ((projects.review || []).length > 0) {
     items.push({
       key: "projects-review",
-      icon: "⌕",
+      icon: "review",
       tone: "gold",
+      route: "all-projects",
       title: `${projects.review.length} proyecto(s) listos para revisión`,
       detail: "Hay entregables esperando cierre o retroalimentación administrativa.",
     });
@@ -830,8 +804,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if (moduleSummary.purchases.pending > 0) {
     items.push({
       key: "purchase-pending",
-      icon: "🛒",
+      icon: "purchase",
       tone: "gold",
+      route: "purchase-requests",
       title: `${moduleSummary.purchases.pending} solicitud(es) de compra pendientes`,
       detail: `${moduleSummary.purchases.urgent} marcada(s) como alta prioridad o urgente.`,
     });
@@ -840,8 +815,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if (moduleSummary.technical.dueSoon > 0) {
     items.push({
       key: "technical-due",
-      icon: "◈",
+      icon: "technical",
       tone: "orange",
+      route: "technical-support",
       title: `${moduleSummary.technical.dueSoon} mantenimiento(s) próximos o vencidos`,
       detail: "Soporte técnico requiere seguimiento para evitar acumulación.",
     });
@@ -850,8 +826,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if (moduleSummary.agenda.pending > 0) {
     items.push({
       key: "agenda-pending",
-      icon: "🗓️",
+      icon: "calendar",
       tone: "blue",
+      route: "team-agenda",
       title: `${moduleSummary.agenda.pending} solicitud(es) de agenda pendientes`,
       detail: "Cambios de horario, permisos o ausencias por revisar.",
     });
@@ -860,8 +837,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if (moduleSummary.printshop.lowStock > 0) {
     items.push({
       key: "print-low-stock",
-      icon: "▣",
+      icon: "print",
       tone: "purple",
+      route: "print-shop",
       title: `${moduleSummary.printshop.lowStock} alerta(s) de inventario en imprenta`,
       detail: "Revisa insumos o productos debajo del mínimo configurado.",
     });
@@ -870,8 +848,9 @@ function buildAttentionItems({ metrics, projects, moduleSummary, alerts }) {
   if (moduleSummary.ideas.pending > 0) {
     items.push({
       key: "ideas-pending",
-      icon: "✦",
+      icon: "ideas",
       tone: "teal",
+      route: "ideas-incubator",
       title: `${moduleSummary.ideas.pending} idea(s) nuevas sin revisar`,
       detail: "Hay propuestas pendientes de valoración inicial.",
     });
@@ -901,6 +880,229 @@ function getAverageAutomaticProgress(projects = []) {
   );
 
   return Math.round(total / projects.length);
+}
+
+function ExecutiveIcon({ name }) {
+  const iconName = name || "dashboard";
+
+  return (
+    <svg className="executive-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {renderExecutiveIconPath(iconName)}
+    </svg>
+  );
+}
+
+function renderExecutiveIconPath(name) {
+  switch (name) {
+    case "dashboard":
+      return (
+        <>
+          <rect x="3" y="3" width="7" height="7" rx="2" />
+          <rect x="14" y="3" width="7" height="7" rx="2" />
+          <rect x="3" y="14" width="7" height="7" rx="2" />
+          <rect x="14" y="14" width="7" height="7" rx="2" />
+        </>
+      );
+    case "projects":
+      return (
+        <>
+          <path d="M4 6.5h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17.5h10" />
+          <circle cx="5" cy="6.5" r="1" />
+          <circle cx="5" cy="12" r="1" />
+          <circle cx="5" cy="17.5" r="1" />
+        </>
+      );
+    case "calendar":
+      return (
+        <>
+          <rect x="3" y="5" width="18" height="16" rx="3" />
+          <path d="M8 3v4" />
+          <path d="M16 3v4" />
+          <path d="M3 10h18" />
+          <path d="M8 14h3" />
+          <path d="M14 14h2" />
+          <path d="M8 17h2" />
+        </>
+      );
+    case "purchase":
+      return (
+        <>
+          <path d="M4 5h2l2.1 9.2a2 2 0 0 0 2 1.6h6.9a2 2 0 0 0 1.9-1.4L21 8H7" />
+          <circle cx="10" cy="20" r="1.4" />
+          <circle cx="17" cy="20" r="1.4" />
+        </>
+      );
+    case "print":
+      return (
+        <>
+          <path d="M7 8V4h10v4" />
+          <rect x="6" y="14" width="12" height="7" rx="1.5" />
+          <rect x="4" y="8" width="16" height="9" rx="2" />
+          <path d="M8 17h8" />
+          <path d="M8 19h5" />
+          <circle cx="17" cy="11.5" r="1" />
+        </>
+      );
+    case "technical":
+      return (
+        <>
+          <path d="M14.5 5.5l4 4" />
+          <path d="M4 20l6.5-6.5" />
+          <path d="M12.5 3.5l8 8-2.5 2.5-8-8z" />
+          <path d="M8 16l-2 2" />
+        </>
+      );
+    case "ideas":
+      return (
+        <>
+          <path d="M9 18h6" />
+          <path d="M10 21h4" />
+          <path d="M8 14.5a6 6 0 1 1 8 0c-.9.8-1.3 1.6-1.3 2.5H9.3c0-.9-.4-1.7-1.3-2.5z" />
+        </>
+      );
+    case "alert":
+      return (
+        <>
+          <path d="M12 4l9 16H3z" />
+          <path d="M12 9v5" />
+          <path d="M12 17h.01" />
+        </>
+      );
+    case "review":
+      return (
+        <>
+          <circle cx="11" cy="11" r="6" />
+          <path d="M16 16l4 4" />
+          <path d="M8.5 11l1.8 1.8 3.4-3.6" />
+        </>
+      );
+    case "clock":
+      return (
+        <>
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7v5l3.2 2" />
+        </>
+      );
+    case "delivery":
+      return (
+        <>
+          <rect x="3" y="6" width="12" height="10" rx="2" />
+          <path d="M15 10h3l3 3v3h-6" />
+          <circle cx="7" cy="18" r="2" />
+          <circle cx="17" cy="18" r="2" />
+        </>
+      );
+    case "activity":
+      return (
+        <>
+          <path d="M4 13h4l2-6 4 10 2-4h4" />
+          <path d="M4 20h16" />
+        </>
+      );
+    case "collaborator":
+      return (
+        <>
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+          <circle cx="17" cy="9" r="2.4" />
+          <path d="M15.5 15.5a4.5 4.5 0 0 1 5 4.5" />
+        </>
+      );
+    case "department":
+      return (
+        <>
+          <rect x="4" y="4" width="7" height="7" rx="2" />
+          <rect x="13" y="4" width="7" height="7" rx="2" />
+          <rect x="4" y="13" width="7" height="7" rx="2" />
+          <rect x="13" y="13" width="7" height="7" rx="2" />
+        </>
+      );
+    case "status":
+      return (
+        <>
+          <path d="M5 12l4 4L19 6" />
+          <circle cx="12" cy="12" r="9" />
+        </>
+      );
+    case "progress":
+      return (
+        <>
+          <path d="M4 19V5" />
+          <path d="M4 19h16" />
+          <rect x="7" y="12" width="3" height="4" rx="1" />
+          <rect x="12" y="9" width="3" height="7" rx="1" />
+          <rect x="17" y="6" width="3" height="10" rx="1" />
+        </>
+      );
+    case "upload":
+      return (
+        <>
+          <path d="M12 16V4" />
+          <path d="M7 9l5-5 5 5" />
+          <path d="M5 20h14" />
+        </>
+      );
+    case "comment":
+      return (
+        <>
+          <path d="M5 5h14v10H8l-3 3z" />
+          <path d="M8 9h8" />
+          <path d="M8 12h5" />
+        </>
+      );
+    case "trash":
+      return (
+        <>
+          <path d="M5 7h14" />
+          <path d="M9 7V5h6v2" />
+          <path d="M8 10v8" />
+          <path d="M12 10v8" />
+          <path d="M16 10v8" />
+          <path d="M7 7l1 14h8l1-14" />
+        </>
+      );
+    case "restore":
+      return (
+        <>
+          <path d="M7 7h7a6 6 0 1 1-5.2 9" />
+          <path d="M7 7V3" />
+          <path d="M7 7H3" />
+        </>
+      );
+    case "edit":
+      return (
+        <>
+          <path d="M4 20h4l10.5-10.5-4-4L4 16z" />
+          <path d="M13.5 6.5l4 4" />
+        </>
+      );
+    case "plus":
+      return (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v8" />
+          <path d="M8 12h8" />
+        </>
+      );
+    case "note":
+      return (
+        <>
+          <path d="M6 4h9l3 3v13H6z" />
+          <path d="M15 4v4h4" />
+          <path d="M9 12h6" />
+          <path d="M9 16h5" />
+        </>
+      );
+    default:
+      return (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v4l3 2" />
+        </>
+      );
+  }
 }
 
 function ExecutiveHeroCard({ title, value, detail, progress, tone }) {
@@ -939,7 +1141,9 @@ function ModulePulseCard({ icon, title, tone, mainValue, mainLabel, details, onC
       className={`module-pulse-card ${tone}`}
       onClick={onClick}
     >
-      <span className="module-pulse-icon">{icon}</span>
+      <span className="module-pulse-icon">
+        <ExecutiveIcon name={icon} />
+      </span>
       <div>
         <h3>{title}</h3>
         <strong>{mainValue}</strong>
@@ -954,22 +1158,40 @@ function ModulePulseCard({ icon, title, tone, mainValue, mainLabel, details, onC
   );
 }
 
-function AttentionItem({ item }) {
-  return (
-    <article className={`executive-attention-item ${item.tone}`}>
-      <span>{item.icon}</span>
+function AttentionItem({ item, onOpenModule }) {
+  const content = (
+    <>
+      <span>
+        <ExecutiveIcon name={item.icon} />
+      </span>
       <div>
         <strong>{item.title}</strong>
         <p>{item.detail}</p>
       </div>
-    </article>
+    </>
   );
+
+  if (item.route) {
+    return (
+      <button
+        type="button"
+        className={`executive-attention-item clickable ${item.tone}`}
+        onClick={() => onOpenModule?.(item.route)}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <article className={`executive-attention-item ${item.tone}`}>{content}</article>;
 }
 
 function SectionTitle({ color, icon, title, count }) {
   return (
-    <div className="section-title-row">
-      <div className={`section-title-icon section-title-${color}`}>{icon}</div>
+    <div className="section-title-row executive-section-title">
+      <div className={`section-title-icon section-title-${color}`}>
+        <ExecutiveIcon name={icon} />
+      </div>
 
       <h3>{title}</h3>
 
@@ -980,13 +1202,74 @@ function SectionTitle({ color, icon, title, count }) {
   );
 }
 
+function ProjectGroupPreview({
+  title,
+  tone,
+  icon,
+  emptyText,
+  items,
+  badgeColor,
+  getBadge,
+  onOpenProject,
+}) {
+  return (
+    <div className={`executive-project-group ${tone}`}>
+      <div className="executive-project-group-header">
+        <span>
+          <ExecutiveIcon name={icon} />
+        </span>
+        <strong>{title}</strong>
+        <small>{items.length}</small>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="executive-project-empty">{emptyText}</p>
+      ) : (
+        <div className="executive-project-row-list">
+          {items.map((project) => (
+            <ProjectCompactRow
+              key={project.id}
+              project={project}
+              badge={getBadge(project)}
+              badgeColor={badgeColor}
+              onClick={() => onOpenProject(project.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectCompactRow({ project, badge, badgeColor, onClick }) {
+  const automaticProgress = calculateAutomaticProgress(project);
+
+  return (
+    <button type="button" className="executive-project-row" onClick={onClick}>
+      <div>
+        <strong>{project.title || "Proyecto sin título"}</strong>
+        <span>
+          {project.assignedToName || "Sin responsable"} · {getProjectDepartmentName(project)}
+        </span>
+      </div>
+
+      <div className="executive-project-row-status">
+        <small>{automaticProgress}%</small>
+        <Badge color={badgeColor}>{badge}</Badge>
+      </div>
+    </button>
+  );
+}
+
 function ProjectMiniCard({ project, icon, color, badge, badgeColor, onClick }) {
   const automaticProgress = calculateAutomaticProgress(project);
   const progressLabel = getProgressLabel(automaticProgress);
 
   return (
     <button className="project-mini-card" onClick={onClick}>
-      <span className={`project-mini-icon project-mini-${color}`}>{icon}</span>
+      <span className={`project-mini-icon project-mini-${color}`}>
+        <ExecutiveIcon name={icon} />
+      </span>
 
       <div className="project-mini-content">
         <strong>{project.title}</strong>
@@ -1207,35 +1490,35 @@ function getProjectDepartmentName(project) {
 }
 
 function getAlertIcon(alert) {
-  if (alert.level === "danger") return "⚠";
-  if (alert.type === "review") return "⌕";
-  if (alert.type === "highPriority") return "⚑";
-  if (alert.type === "stale") return "◷";
-  if (alert.type === "noEvidence") return "▯";
+  if (alert.level === "danger") return "alert";
+  if (alert.type === "review") return "review";
+  if (alert.type === "highPriority") return "alert";
+  if (alert.type === "stale") return "clock";
+  if (alert.type === "noEvidence") return "note";
 
-  return "✓";
+  return "status";
 }
 
 function getLogIcon(type) {
-  if (type === "PROJECT_CREATED") return "＋";
-  if (type === "PROJECT_UPDATED") return "✎";
-  if (type === "STATUS_CHANGED") return "↻";
-  if (type === "PROGRESS_CHANGED") return "◔";
-  if (type === "EVIDENCE_UPLOADED") return "⇧";
-  if (type === "COMMENT_ADDED") return "☰";
-  if (type === "ADVANCE_ADDED") return "▣";
-  if (type === "ADVANCE_COMMENT_ADDED") return "☰";
-  if (type === "REVIEW_REQUESTED") return "⌕";
-  if (type === "CORRECTIONS_REQUESTED") return "✎";
-  if (type === "PROJECT_APPROVED") return "✓";
-  if (type === "PROJECT_FINISHED") return "✓";
-  if (type === "PROJECT_CANCELLED") return "⨯";
-  if (type === "PROJECT_DELETED") return "🗑";
-  if (type === "PROJECT_RESTORED") return "↺";
-  if (type === "INTERNAL_NOTE_UPDATED") return "▤";
-  if (type === "INTERNAL_NOTE_ADDED") return "▤";
+  if (type === "PROJECT_CREATED") return "plus";
+  if (type === "PROJECT_UPDATED") return "edit";
+  if (type === "STATUS_CHANGED") return "status";
+  if (type === "PROGRESS_CHANGED") return "progress";
+  if (type === "EVIDENCE_UPLOADED") return "upload";
+  if (type === "COMMENT_ADDED") return "comment";
+  if (type === "ADVANCE_ADDED") return "activity";
+  if (type === "ADVANCE_COMMENT_ADDED") return "comment";
+  if (type === "REVIEW_REQUESTED") return "review";
+  if (type === "CORRECTIONS_REQUESTED") return "edit";
+  if (type === "PROJECT_APPROVED") return "status";
+  if (type === "PROJECT_FINISHED") return "status";
+  if (type === "PROJECT_CANCELLED") return "alert";
+  if (type === "PROJECT_DELETED") return "trash";
+  if (type === "PROJECT_RESTORED") return "restore";
+  if (type === "INTERNAL_NOTE_UPDATED") return "note";
+  if (type === "INTERNAL_NOTE_ADDED") return "note";
 
-  return "•";
+  return "activity";
 }
 
 function getLogBadgeColor(type) {

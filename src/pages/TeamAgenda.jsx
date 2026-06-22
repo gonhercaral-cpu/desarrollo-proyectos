@@ -61,11 +61,6 @@ const AUTO_APPROVAL_REASON_KEYS = [
   "theocraticEvent",
 ];
 
-const WORKLOAD_HOURS_LIMITS = {
-  low: 30,
-  high: 44,
-};
-
 const REQUEST_STATUS_LABELS = {
   pending: "Pendiente",
   approved: "Aprobada",
@@ -106,11 +101,14 @@ export default function TeamAgenda() {
   const [workSchedules, setWorkSchedules] = useState([]);
   const [scheduleAdjustments, setScheduleAdjustments] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [attendanceLocations, setAttendanceLocations] = useState([]);
+  const [workSessions, setWorkSessions] = useState([]);
 
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingSchedules, setLoadingSchedules] = useState(true);
   const [loadingAdjustments, setLoadingAdjustments] = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
 
   const [loadError, setLoadError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
@@ -120,6 +118,7 @@ export default function TeamAgenda() {
   const [reviewingRequestId, setReviewingRequestId] = useState("");
   const [deletingRequestId, setDeletingRequestId] = useState("");
   const [adminComments, setAdminComments] = useState({});
+  const [attendanceMessage, setAttendanceMessage] = useState("");
 
   const [formData, setFormData] = useState({
     type: "permission",
@@ -141,6 +140,13 @@ export default function TeamAgenda() {
     startTime: "09:00",
     endTime: "17:00",
     isRestDay: false,
+  });
+
+  const [locationForm, setLocationForm] = useState({
+    name: "",
+    latitude: "",
+    longitude: "",
+    allowedRadiusMeters: "150",
   });
 
   useEffect(() => {
@@ -272,6 +278,82 @@ export default function TeamAgenda() {
   }, [currentUserId, isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      setAttendanceLocations([]);
+      return undefined;
+    }
+
+    const unsubscribe = onSnapshot(
+      collection(db, "attendanceLocations"),
+      (snapshot) => {
+        const locations = snapshot.docs
+          .map((locationDoc) => ({
+            id: locationDoc.id,
+            ...locationDoc.data(),
+          }))
+          .sort((a, b) =>
+            String(a.name || "").localeCompare(String(b.name || ""), "es")
+          );
+
+        setAttendanceLocations(locations);
+      },
+      (error) => {
+        console.error("No se pudieron cargar las sedes de asistencia:", error);
+        setLoadError(
+          "No se pudieron cargar las sedes autorizadas. Revisa reglas para attendanceLocations."
+        );
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setWorkSessions([]);
+      setLoadingAttendance(false);
+      return undefined;
+    }
+
+    const weekStart = currentWeek[0]?.dateValue || getDateValue(new Date());
+    const weekEnd = currentWeek[6]?.dateValue || getDateValue(new Date());
+
+    setLoadingAttendance(true);
+
+    const sessionsQuery = query(
+      collection(db, "workSessions"),
+      where("date", ">=", weekStart)
+    );
+
+    const unsubscribe = onSnapshot(
+      sessionsQuery,
+      (snapshot) => {
+        const sessions = snapshot.docs
+          .map((sessionDoc) => ({
+            id: sessionDoc.id,
+            ...sessionDoc.data(),
+          }))
+          .filter((session) => !session.date || session.date <= weekEnd)
+          .sort((a, b) =>
+            String(a.userName || "").localeCompare(String(b.userName || ""), "es")
+          );
+
+        setWorkSessions(sessions);
+        setLoadingAttendance(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los registros de asistencia:", error);
+        setLoadError(
+          "No se pudieron cargar los registros de asistencia. Revisa reglas para workSessions."
+        );
+        setLoadingAttendance(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentWeek, isAdmin]);
+
+  useEffect(() => {
     if (!scheduleForm.userId && teamUsers.length > 0) {
       setScheduleForm((current) => ({
         ...current,
@@ -364,6 +446,17 @@ export default function TeamAgenda() {
     [requests, scheduleAdjustments, team]
   );
 
+  const attendanceInsights = useMemo(
+    () =>
+      buildAttendanceInsights({
+        team,
+        workSessions,
+        attendanceLocations,
+        currentWeek,
+      }),
+    [attendanceLocations, currentWeek, team, workSessions]
+  );
+
   function handleChange(event) {
     const { name, value, type, checked } = event.target;
 
@@ -430,6 +523,120 @@ export default function TeamAgenda() {
       ...current,
       [requestId]: value,
     }));
+  }
+
+  function handleLocationFormChange(event) {
+    const { name, value } = event.target;
+
+    setAttendanceMessage("");
+    setLocationForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  function handleUseCurrentAdminLocation() {
+    setAttendanceMessage("");
+
+    if (!navigator.geolocation) {
+      setAttendanceMessage("Este navegador no permite obtener ubicación.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocationForm((current) => ({
+          ...current,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }));
+        setAttendanceMessage("Ubicación actual cargada en el formulario.");
+      },
+      (error) => {
+        console.error("No se pudo obtener la ubicación del administrador:", error);
+        setAttendanceMessage(
+          "No se pudo obtener tu ubicación. Puedes escribir latitud y longitud manualmente."
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      }
+    );
+  }
+
+  async function handleSaveAttendanceLocation(event) {
+    event.preventDefault();
+
+    if (!isAdmin) return;
+
+    const latitude = Number(locationForm.latitude);
+    const longitude = Number(locationForm.longitude);
+    const allowedRadiusMeters = Number(locationForm.allowedRadiusMeters || 150);
+
+    if (!locationForm.name.trim()) {
+      setAttendanceMessage("Agrega el nombre de la sede.");
+      return;
+    }
+
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      setAttendanceMessage("Agrega latitud y longitud válidas.");
+      return;
+    }
+
+    if (Number.isNaN(allowedRadiusMeters) || allowedRadiusMeters <= 0) {
+      setAttendanceMessage("Agrega un radio permitido válido.");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "attendanceLocations"), {
+        name: locationForm.name.trim(),
+        latitude,
+        longitude,
+        allowedRadiusMeters,
+        isActive: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setLocationForm({
+        name: "",
+        latitude: "",
+        longitude: "",
+        allowedRadiusMeters: "150",
+      });
+      setAttendanceMessage("Sede autorizada guardada correctamente.");
+    } catch (error) {
+      console.error("No se pudo guardar la sede autorizada:", error);
+      setAttendanceMessage(
+        "No se pudo guardar la sede. Revisa reglas para attendanceLocations."
+      );
+    }
+  }
+
+  async function handleDeactivateAttendanceLocation(locationId) {
+    if (!isAdmin || !locationId) return;
+
+    const confirmed = window.confirm(
+      "¿Quieres desactivar esta sede para el registro automático de jornada?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await updateDoc(doc(db, "attendanceLocations", locationId), {
+        isActive: false,
+        updatedAt: serverTimestamp(),
+      });
+      setAttendanceMessage("Sede desactivada correctamente.");
+    } catch (error) {
+      console.error("No se pudo desactivar la sede:", error);
+      setAttendanceMessage(
+        "No se pudo desactivar la sede. Revisa reglas para attendanceLocations."
+      );
+    }
   }
 
   async function handleSubmit(event) {
@@ -913,6 +1120,20 @@ export default function TeamAgenda() {
       </section>
 
       {isAdmin && <AgendaInsights insights={agendaInsights} />}
+
+      {isAdmin && (
+        <AttendanceControlPanel
+          insights={attendanceInsights}
+          locations={attendanceLocations}
+          loading={loadingAttendance}
+          message={attendanceMessage}
+          locationForm={locationForm}
+          onLocationFormChange={handleLocationFormChange}
+          onUseCurrentLocation={handleUseCurrentAdminLocation}
+          onSaveLocation={handleSaveAttendanceLocation}
+          onDeactivateLocation={handleDeactivateAttendanceLocation}
+        />
+      )}
 
       <section className="team-agenda-card">
         <div className="team-agenda-section-header">
@@ -1637,6 +1858,221 @@ export default function TeamAgenda() {
   );
 }
 
+function AttendanceControlPanel({
+  insights,
+  locations,
+  loading,
+  message,
+  locationForm,
+  onLocationFormChange,
+  onUseCurrentLocation,
+  onSaveLocation,
+  onDeactivateLocation,
+}) {
+  return (
+    <section className="team-agenda-card attendance-admin-card">
+      <div className="team-agenda-section-header">
+        <div>
+          <h3>Control de asistencia</h3>
+          <p>
+            Registro automático por inicio de sesión y ubicación. Esta información
+            solo se muestra a administradores.
+          </p>
+        </div>
+      </div>
+
+      <div className="attendance-metrics-grid">
+        <InsightCard
+          title="Horas esperadas hoy"
+          value={formatMinutesAsHours(insights.expectedMinutesToday)}
+          detail="Según la agenda vigente"
+        />
+        <InsightCard
+          title="Horas reales registradas"
+          value={formatMinutesAsHours(insights.realMinutesToday)}
+          detail="Con inicio válido en sede"
+        />
+        <InsightCard
+          title="Sin registro"
+          value={insights.missingCount}
+          detail="Personas con horario hoy"
+        />
+        <InsightCard
+          title="Alertas"
+          value={insights.alerts.length}
+          detail="Tardanza, inactividad, fuera de sede o falta de registro"
+        />
+      </div>
+
+      {message && <div className="team-agenda-info-alert">{message}</div>}
+
+      <div className="attendance-layout-grid">
+        <div className="attendance-panel-block">
+          <h4>Asistencia de hoy</h4>
+          {loading ? (
+            <div className="team-agenda-empty">Cargando asistencia...</div>
+          ) : insights.rows.length === 0 ? (
+            <div className="team-agenda-empty">
+              No hay colaboradores con horario para comparar hoy.
+            </div>
+          ) : (
+            <div className="attendance-table-wrap">
+              <table className="attendance-table">
+                <thead>
+                  <tr>
+                    <th>Colaborador</th>
+                    <th>Esperado</th>
+                    <th>Entrada real</th>
+                    <th>Sede</th>
+                    <th>Horas reales</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {insights.rows.map((row) => (
+                    <tr key={row.userId}>
+                      <td>
+                        <strong>{row.userName}</strong>
+                        <span>{row.area}</span>
+                      </td>
+                      <td>{row.expectedLabel}</td>
+                      <td>{row.checkInLabel}</td>
+                      <td>{row.locationLabel}</td>
+                      <td>{formatMinutesAsHours(row.realMinutes)}</td>
+                      <td>
+                        <span className={`attendance-status ${row.statusTone}`}>
+                          {row.statusLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="attendance-panel-block">
+          <h4>Alertas por persona</h4>
+          {insights.alerts.length === 0 ? (
+            <div className="team-agenda-empty">Sin alertas por ahora.</div>
+          ) : (
+            <div className="attendance-alert-list">
+              {insights.alerts.map((alert) => (
+                <article key={`${alert.userId}-${alert.type}`} className="attendance-alert-card">
+                  <strong>{alert.userName}</strong>
+                  <span>{alert.message}</span>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="attendance-location-admin">
+        <div className="attendance-panel-block">
+          <h4>Sedes autorizadas</h4>
+          <p>
+            El sistema solo contabiliza la jornada cuando el inicio de sesión se
+            valida dentro del radio permitido de una sede activa.
+          </p>
+
+          {locations.filter((location) => location.isActive !== false).length === 0 ? (
+            <div className="team-agenda-empty">
+              No hay sedes autorizadas configuradas. Mientras no existan, ningún
+              inicio de sesión se contabilizará como jornada válida.
+            </div>
+          ) : (
+            <div className="attendance-location-list">
+              {locations
+                .filter((location) => location.isActive !== false)
+                .map((location) => (
+                  <article key={location.id} className="attendance-location-card">
+                    <div>
+                      <strong>{location.name}</strong>
+                      <span>
+                        Radio: {location.allowedRadiusMeters || 150} m · {Number(location.latitude).toFixed(5)}, {Number(location.longitude).toFixed(5)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="team-agenda-danger-link"
+                      onClick={() => onDeactivateLocation(location.id)}
+                    >
+                      Desactivar
+                    </button>
+                  </article>
+                ))}
+            </div>
+          )}
+        </div>
+
+        <form className="attendance-location-form" onSubmit={onSaveLocation}>
+          <h4>Agregar sede</h4>
+          <label>
+            Nombre de la sede
+            <input
+              type="text"
+              name="name"
+              value={locationForm.name}
+              onChange={onLocationFormChange}
+              placeholder="Ej. Plaza Estrella"
+              required
+            />
+          </label>
+
+          <div className="team-agenda-form-row">
+            <label>
+              Latitud
+              <input
+                type="number"
+                name="latitude"
+                value={locationForm.latitude}
+                onChange={onLocationFormChange}
+                step="any"
+                required
+              />
+            </label>
+            <label>
+              Longitud
+              <input
+                type="number"
+                name="longitude"
+                value={locationForm.longitude}
+                onChange={onLocationFormChange}
+                step="any"
+                required
+              />
+            </label>
+          </div>
+
+          <label>
+            Radio permitido en metros
+            <input
+              type="number"
+              name="allowedRadiusMeters"
+              value={locationForm.allowedRadiusMeters}
+              onChange={onLocationFormChange}
+              min="20"
+              step="1"
+              required
+            />
+          </label>
+
+          <div className="attendance-location-actions">
+            <button type="button" onClick={onUseCurrentLocation}>
+              Usar mi ubicación actual
+            </button>
+            <button type="submit" className="team-agenda-primary-button">
+              Guardar sede
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  );
+}
+
 function AgendaInsights({ insights }) {
   return (
     <section className="team-agenda-card agenda-insights-card">
@@ -1703,8 +2139,6 @@ function AgendaInsights({ insights }) {
           title="Horas por colaborador"
           items={insights.hoursByPerson}
           valueFormatter={formatHours}
-          toneResolver={getWorkloadTone}
-          helperText={`Rojo: más de ${WORKLOAD_HOURS_LIMITS.high} h · Verde: ${WORKLOAD_HOURS_LIMITS.low}-${WORKLOAD_HOURS_LIMITS.high} h · Amarillo: menos de ${WORKLOAD_HOURS_LIMITS.low} h`}
           emptyText="Todavía no hay horas programadas."
         />
 
@@ -1728,20 +2162,12 @@ function InsightCard({ title, value, detail }) {
   );
 }
 
-function BarChart({
-  title,
-  items,
-  valueFormatter = (value) => value,
-  toneResolver = () => "default",
-  helperText = "",
-  emptyText,
-}) {
+function BarChart({ title, items, valueFormatter = (value) => value, emptyText }) {
   const maxValue = Math.max(...items.map((item) => item.value), 0);
 
   return (
     <article className="agenda-chart-card">
       <h4>{title}</h4>
-      {helperText && <p className="agenda-chart-help">{helperText}</p>}
 
       {items.length === 0 || maxValue === 0 ? (
         <div className="team-agenda-empty compact">{emptyText}</div>
@@ -1749,7 +2175,6 @@ function BarChart({
         <div className="agenda-chart-list">
           {items.map((item) => {
             const width = maxValue > 0 ? Math.max((item.value / maxValue) * 100, 7) : 0;
-            const tone = toneResolver(item.value, item);
 
             return (
               <div key={item.key || item.label} className="agenda-chart-row">
@@ -1757,7 +2182,7 @@ function BarChart({
 
                 <div className="agenda-chart-bar-track">
                   <div
-                    className={`agenda-chart-bar ${tone}`}
+                    className="agenda-chart-bar"
                     style={{ width: `${width}%` }}
                   />
                 </div>
@@ -2354,6 +2779,248 @@ function isDateInRangeValue(dateValue, startDate, endDate) {
   return dateValue >= start && dateValue <= end;
 }
 
+function buildAttendanceInsights({ team, workSessions, attendanceLocations, currentWeek }) {
+  const today = new Date();
+  const todayDate = getDateValue(today);
+  const todayKey = getTodayKey();
+  const activeLocations = attendanceLocations.filter(
+    (location) => location.isActive !== false
+  );
+
+  const todaySessionsByUser = workSessions.reduce((map, session) => {
+    if (session.date !== todayDate || !session.userId) return map;
+
+    const current = map[session.userId];
+    const currentValue = current?.checkInMillis || current?.attemptedAtMillis || 0;
+    const nextValue = session.checkInMillis || session.attemptedAtMillis || 0;
+
+    if (!current || nextValue >= currentValue) {
+      map[session.userId] = session;
+    }
+
+    return map;
+  }, {});
+
+  const rows = team
+    .map((person) => {
+      const schedule = person.schedules?.[todayKey];
+      const expectedMinutes = getScheduleExpectedMinutes(schedule);
+      const hasExpectedSchedule = expectedMinutes > 0;
+      const session = todaySessionsByUser[person.id] || todaySessionsByUser[person.uid];
+      const realMinutes = getSessionWorkedMinutes(session);
+      const status = getAttendanceRowStatus({ session, hasExpectedSchedule });
+
+      return {
+        userId: person.id,
+        userName: person.name,
+        area: person.area || "Sin área",
+        expectedMinutes,
+        realMinutes,
+        expectedLabel: hasExpectedSchedule
+          ? `${formatTime(schedule.start)} - ${formatTime(schedule.end)}`
+          : getNoExpectedScheduleLabel(schedule),
+        checkInLabel: getSessionCheckInLabel(session),
+        locationLabel: getSessionLocationLabel(session),
+        statusLabel: status.label,
+        statusTone: status.tone,
+        alertMessage: status.alertMessage,
+        alertType: status.alertType,
+        shouldAlert: status.shouldAlert && hasExpectedSchedule,
+      };
+    })
+    .filter((row) => row.expectedMinutes > 0 || row.realMinutes > 0 || row.statusTone !== "muted");
+
+  const alerts = rows
+    .filter((row) => row.shouldAlert)
+    .map((row) => ({
+      userId: row.userId,
+      userName: row.userName,
+      type: row.alertType,
+      message: row.alertMessage,
+    }));
+
+  return {
+    todayDate,
+    activeLocationCount: activeLocations.length,
+    expectedMinutesToday: rows.reduce((sum, row) => sum + row.expectedMinutes, 0),
+    realMinutesToday: rows.reduce((sum, row) => sum + row.realMinutes, 0),
+    missingCount: rows.filter((row) => row.statusTone === "danger" && row.alertType === "missing").length,
+    lateCount: rows.filter((row) => row.alertType === "late").length,
+    outsideLocationCount: rows.filter((row) => row.alertType === "outsideLocation").length,
+    rows,
+    alerts,
+  };
+}
+
+function getScheduleExpectedMinutes(schedule) {
+  if (!schedule || !schedule.start || !schedule.end) return 0;
+
+  if (["rest", "unset", "absence", "permission", "dayOff"].includes(schedule.status)) {
+    return 0;
+  }
+
+  const start = timeToMinutes(schedule.start);
+  const end = timeToMinutes(schedule.end);
+
+  if (start === null || end === null) return 0;
+
+  if (end >= start) return end - start;
+
+  return 24 * 60 - start + end;
+}
+
+function getNoExpectedScheduleLabel(schedule) {
+  if (!schedule) return "Sin horario";
+
+  if (schedule.status === "rest") return "Descanso";
+  if (schedule.status === "permission") return "Permiso aprobado";
+  if (schedule.status === "absence") return "Ausencia aprobada";
+  if (schedule.status === "dayOff") return "Descanso aprobado";
+
+  return "Sin horario";
+}
+
+function getSessionWorkedMinutes(session) {
+  if (!session || !session.isCountedAsWorkTime || !session.checkInMillis) {
+    return 0;
+  }
+
+  const endMillis =
+    session.checkOutMillis ||
+    session.effectiveEndMillis ||
+    session.lastSeenMillis ||
+    Date.now();
+
+  const diffMinutes = Math.max(0, Math.round((endMillis - session.checkInMillis) / 60000));
+
+  return diffMinutes;
+}
+
+function getAttendanceRowStatus({ session, hasExpectedSchedule }) {
+  if (!hasExpectedSchedule && !session) {
+    return {
+      label: "Sin horario",
+      tone: "muted",
+      shouldAlert: false,
+    };
+  }
+
+  if (!session) {
+    return {
+      label: "Sin registro",
+      tone: "danger",
+      shouldAlert: true,
+      alertType: "missing",
+      alertMessage: "Tiene horario hoy, pero no hay inicio válido de jornada.",
+    };
+  }
+
+  if (!session.isCountedAsWorkTime) {
+    const labels = {
+      outsideLocation: "Fuera de sede",
+      locationUnavailable: "Sin ubicación",
+      locationDenied: "Ubicación negada",
+      noLocationsConfigured: "Sin sedes configuradas",
+      noSchedule: "Sin horario programado",
+    };
+
+    const alertMessages = {
+      outsideLocation: "Inició sesión fuera del radio autorizado; no se contabilizó jornada.",
+      locationUnavailable: "No se pudo validar ubicación; no se contabilizó jornada.",
+      locationDenied: "No autorizó ubicación; no se contabilizó jornada.",
+      noLocationsConfigured: "No hay sedes autorizadas configuradas para contabilizar jornada.",
+      noSchedule: "Inició sesión en sede, pero no tenía horario programado hoy.",
+    };
+
+    const alertType = session.locationStatus || session.status || "notCounted";
+
+    return {
+      label: labels[alertType] || "No contabilizado",
+      tone: alertType === "noSchedule" ? "warning" : "danger",
+      shouldAlert: alertType !== "noSchedule",
+      alertType,
+      alertMessage: alertMessages[alertType] || "La jornada no se contabilizó.",
+    };
+  }
+
+  if (
+    session.isIdle ||
+    session.countingStatus === "inactive" ||
+    session.effectiveEndReason === "idle"
+  ) {
+    const idleLimit = session.idleLimitMinutes || 45;
+    const endLabel = session.effectiveEndMillis
+      ? formatTimeFromMillis(session.effectiveEndMillis)
+      : "la última actividad real";
+
+    return {
+      label: "Detenida por inactividad",
+      tone: "warning",
+      shouldAlert: true,
+      alertType: "idle",
+      alertMessage: `La jornada se detuvo por más de ${idleLimit} minutos sin actividad. El tiempo se contabilizó hasta ${endLabel}.`,
+    };
+  }
+
+  if ((session.minutesLate || 0) > 0) {
+    return {
+      label: `Tarde ${session.minutesLate} min`,
+      tone: "warning",
+      shouldAlert: true,
+      alertType: "late",
+      alertMessage: `Inició ${session.minutesLate} minutos después de su hora programada.`,
+    };
+  }
+
+  return {
+    label: session.countingStatus === "closed" ? "Jornada cerrada" : "A tiempo",
+    tone: "success",
+    shouldAlert: false,
+  };
+}
+
+function getSessionCheckInLabel(session) {
+  if (!session) return "Sin registro";
+
+  return session.checkInTimeText || session.attemptedTimeText || "Registrado";
+}
+
+function getSessionLocationLabel(session) {
+  if (!session) return "—";
+
+  if (session.locationName) {
+    const distance = Number(session.distanceMeters);
+    return Number.isFinite(distance)
+      ? `${session.locationName} (${Math.round(distance)} m)`
+      : session.locationName;
+  }
+
+  const labels = {
+    outsideLocation: "Fuera de sede",
+    locationUnavailable: "Ubicación no disponible",
+    locationDenied: "Ubicación negada",
+    noLocationsConfigured: "Sin sedes configuradas",
+  };
+
+  return labels[session.locationStatus] || "—";
+}
+
+function formatTimeFromMillis(value) {
+  if (!value) return "";
+
+  return new Date(value).toLocaleTimeString("es-MX", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatMinutesAsHours(minutes = 0) {
+  if (!minutes) return "0 h";
+
+  const rounded = Math.round((minutes / 60) * 10) / 10;
+  return `${rounded} h`;
+}
+
 function buildAgendaInsights({ team, requests, scheduleAdjustments }) {
   const coverageByDay = DAYS.map((day) => {
     const value = team.filter((person) =>
@@ -2465,13 +3132,6 @@ function getTopItem(items) {
   const sorted = [...items].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
 
   return sorted[0] || null;
-}
-
-function getWorkloadTone(hours) {
-  if (hours > WORKLOAD_HOURS_LIMITS.high) return "too-high";
-  if (hours < WORKLOAD_HOURS_LIMITS.low) return "low";
-
-  return "normal";
 }
 
 function formatHours(value) {

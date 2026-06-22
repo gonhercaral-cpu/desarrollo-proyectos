@@ -122,6 +122,90 @@ function normalizeText(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function PurchaseModuleIcon({ name }) {
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  };
+
+  const paths = {
+    overview: (
+      <>
+        <rect x="4" y="4" width="7" height="7" rx="2" {...common} />
+        <rect x="13" y="4" width="7" height="7" rx="2" {...common} />
+        <rect x="4" y="13" width="7" height="7" rx="2" {...common} />
+        <rect x="13" y="13" width="7" height="7" rx="2" {...common} />
+      </>
+    ),
+    request: (
+      <>
+        <path d="M7 3h7l4 4v14H7z" {...common} />
+        <path d="M14 3v5h5" {...common} />
+        <path d="M9.5 12h7" {...common} />
+        <path d="M9.5 16h5" {...common} />
+      </>
+    ),
+    list: (
+      <>
+        <path d="M8 6h12" {...common} />
+        <path d="M8 12h12" {...common} />
+        <path d="M8 18h12" {...common} />
+        <path d="M4 6h.01" {...common} />
+        <path d="M4 12h.01" {...common} />
+        <path d="M4 18h.01" {...common} />
+      </>
+    ),
+    check: (
+      <>
+        <path d="M20 7 10 17l-5-5" {...common} />
+      </>
+    ),
+    alert: (
+      <>
+        <path d="M12 3 2.5 20h19z" {...common} />
+        <path d="M12 9v4" {...common} />
+        <path d="M12 17h.01" {...common} />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="8" {...common} />
+        <path d="M12 8v5l3 2" {...common} />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4 7h16" {...common} />
+        <path d="M10 11v6" {...common} />
+        <path d="M14 11v6" {...common} />
+        <path d="M6 7l1 14h10l1-14" {...common} />
+        <path d="M9 7V4h6v3" {...common} />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" {...common} />
+        <path d="m20 20-3.5-3.5" {...common} />
+      </>
+    ),
+    back: (
+      <>
+        <path d="m11 6-6 6 6 6" {...common} />
+        <path d="M5 12h14" {...common} />
+      </>
+    ),
+  };
+
+  return (
+    <span className={`purchase-svg-icon purchase-svg-icon-${name || "overview"}`} aria-hidden="true">
+      <svg viewBox="0 0 24 24">{paths[name] || paths.overview}</svg>
+    </span>
+  );
+}
+
 export default function PurchaseRequests() {
   const { firebaseUser, profile } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -133,7 +217,7 @@ export default function PurchaseRequests() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [focusedView, setFocusedView] = useState("list");
   const [form, setForm] = useState(INITIAL_FORM);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -183,7 +267,8 @@ export default function PurchaseRequests() {
   }, [firebaseUser?.uid, isAdmin, profile]);
 
   const selectedRequest = useMemo(() => {
-    return requests.find((request) => request.id === selectedRequestId) || requests[0] || null;
+    if (!selectedRequestId) return null;
+    return requests.find((request) => request.id === selectedRequestId) || null;
   }, [requests, selectedRequestId]);
 
   useEffect(() => {
@@ -227,9 +312,10 @@ export default function PurchaseRequests() {
       ["reviewing", "approved", "purchasing", "purchased"].includes(request.status)
     ).length;
     const delivered = requests.filter((request) => request.status === "delivered").length;
+    const rejected = requests.filter((request) => request.status === "rejected").length;
     const urgent = requests.filter((request) => request.priority === "urgent").length;
 
-    return { total, pending, inProcess, delivered, urgent };
+    return { total, pending, inProcess, delivered, rejected, urgent };
   }, [requests]);
 
   const filteredRequests = useMemo(() => {
@@ -254,6 +340,14 @@ export default function PurchaseRequests() {
     });
   }, [priorityFilter, requests, searchTerm, statusFilter]);
 
+  const attentionRequests = useMemo(() => {
+    return requests
+      .filter((request) =>
+        request.status === "pending_review" || request.priority === "urgent" || request.status === "reviewing"
+      )
+      .slice(0, 4);
+  }, [requests]);
+
   async function addLog(requestId, type, messageText) {
     await addDoc(collection(db, "purchaseRequests", requestId, "logs"), {
       requestId,
@@ -268,6 +362,27 @@ export default function PurchaseRequests() {
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function openCreateView() {
+    setFocusedView("create");
+    setSelectedRequestId(null);
+    setMessage("");
+    setError("");
+  }
+
+  function openDetailView(request) {
+    if (!request?.id) return;
+    setSelectedRequestId(request.id);
+    setFocusedView("detail");
+    setMessage("");
+    setError("");
+  }
+
+  function backToList() {
+    setFocusedView("list");
+    setMessage("");
+    setError("");
   }
 
   async function handleCreateRequest(event) {
@@ -340,8 +455,8 @@ export default function PurchaseRequests() {
         ...INITIAL_FORM,
         department: profile?.area || INITIAL_FORM.department,
       });
-      setShowForm(false);
       setSelectedRequestId(requestRef.id);
+      setFocusedView("detail");
       setMessage("Solicitud de compra registrada correctamente.");
     } catch (createError) {
       console.error("No se pudo crear la solicitud de compra:", createError);
@@ -468,7 +583,8 @@ export default function PurchaseRequests() {
       await deleteDoc(doc(db, "purchaseRequests", request.id));
 
       setRequests((current) => current.filter((item) => item.id !== request.id));
-      setSelectedRequestId((currentId) => (currentId === request.id ? null : currentId));
+      setSelectedRequestId(null);
+      setFocusedView("list");
       setMessage("Solicitud eliminada correctamente.");
     } catch (deleteError) {
       console.error("No se pudo eliminar la solicitud:", deleteError);
@@ -479,205 +595,421 @@ export default function PurchaseRequests() {
     }
   }
 
-  return (
-    <section className="purchase-requests-page visual-page">
-      <div className="visual-page-header purchase-page-header">
+  const renderCreateView = () => (
+    <div className="purchase-focused-view">
+      <button type="button" className="purchase-back-button" onClick={backToList}>
+        <PurchaseModuleIcon name="back" />
+        Regresar a solicitudes
+      </button>
+
+      <div className="purchase-focused-header">
         <div>
-          <span className="breadcrumb-line">Desarrollo de Proyectos / Compras</span>
+          <span className="purchase-focused-kicker">Vista enfocada</span>
+          <h2>Nueva solicitud de compra</h2>
+          <p>Registra solo la información necesaria para que Administración pueda revisar, aprobar y dar seguimiento.</p>
+        </div>
+        <PurchaseModuleIcon name="request" />
+      </div>
+
+      <div className="purchase-focused-card purchase-create-focused-card">
+        <form className="purchase-focused-form" onSubmit={handleCreateRequest}>
+          <label className="visual-field">
+            <span>¿Qué necesitas? <b>*</b></span>
+            <input
+              type="text"
+              value={form.itemName}
+              onChange={(event) => updateForm("itemName", event.target.value)}
+              placeholder="Ej. Mouse inalámbrico, cable HDMI, no break..."
+              maxLength={120}
+            />
+          </label>
+
+          <label className="visual-field">
+            <span>Cantidad <b>*</b></span>
+            <input
+              type="number"
+              min="1"
+              value={form.quantity}
+              onChange={(event) => updateForm("quantity", event.target.value)}
+            />
+          </label>
+
+          <label className="visual-field full">
+            <span>Descripción / justificación <b>*</b></span>
+            <textarea
+              value={form.description}
+              onChange={(event) => updateForm("description", event.target.value)}
+              placeholder="Explica para qué se necesita, dónde se usará y cualquier detalle importante."
+              maxLength={700}
+            />
+          </label>
+
+          <label className="visual-field">
+            <span>Área / departamento</span>
+            <select
+              value={form.department}
+              onChange={(event) => updateForm("department", event.target.value)}
+            >
+              {DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="visual-field">
+            <span>Prioridad</span>
+            <select value={form.priority} onChange={(event) => updateForm("priority", event.target.value)}>
+              {PRIORITIES.map((priority) => (
+                <option key={priority.value} value={priority.value}>
+                  {priority.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="visual-field">
+            <span>Link sugerido</span>
+            <input
+              type="url"
+              value={form.suggestedLink}
+              onChange={(event) => updateForm("suggestedLink", event.target.value)}
+              placeholder="https://..."
+            />
+          </label>
+
+          <label className="visual-field">
+            <span>Proyecto relacionado</span>
+            <input
+              type="text"
+              value={form.projectName}
+              onChange={(event) => updateForm("projectName", event.target.value)}
+              placeholder="Opcional"
+              maxLength={120}
+            />
+          </label>
+
+          <label className="visual-field full">
+            <span>Comentario adicional</span>
+            <textarea
+              value={form.requesterComment}
+              onChange={(event) => updateForm("requesterComment", event.target.value)}
+              placeholder="Opcional: marca, modelo, medidas, color, proveedor, etc."
+              maxLength={500}
+            />
+          </label>
+
+          <div className="purchase-focused-actions">
+            <button type="button" className="visual-outline-button" onClick={backToList} disabled={saving}>
+              Cancelar
+            </button>
+
+            <button type="submit" className="visual-primary-button" disabled={saving}>
+              {saving ? "Guardando..." : "Registrar solicitud"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
+  const renderDetailView = () => {
+    if (!selectedRequest) {
+      return (
+        <div className="purchase-focused-view">
+          <button type="button" className="purchase-back-button" onClick={backToList}>
+            <PurchaseModuleIcon name="back" />
+            Regresar a solicitudes
+          </button>
+          <div className="purchase-focused-card">
+            <div className="empty-state small">
+              <p>La solicitud seleccionada ya no está disponible.</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const status = statusConfig(selectedRequest.status);
+    const priority = priorityConfig(selectedRequest.priority);
+    const canCancel =
+      selectedRequest.status === "pending_review" && selectedRequest.requestedByUid === firebaseUser?.uid;
+
+    return (
+      <div className="purchase-focused-view">
+        <button type="button" className="purchase-back-button" onClick={backToList}>
+          <PurchaseModuleIcon name="back" />
+          Regresar a solicitudes
+        </button>
+
+        <div className="purchase-focused-header purchase-detail-focused-header">
+          <div className="purchase-focused-title-group">
+            <div className="purchase-detail-avatar">{getInitials(selectedRequest.itemName)}</div>
+            <div>
+              <span className="purchase-focused-kicker">Detalle de solicitud</span>
+              <h2>{selectedRequest.itemName}</h2>
+              <p>{selectedRequest.quantity || 1} pieza(s) · {selectedRequest.department || "Sin área"}</p>
+            </div>
+          </div>
+
+          <div className="purchase-detail-badges focused">
+            <span className={`purchase-badge tone-${status.tone}`}>{status.label}</span>
+            <span className={`purchase-badge tone-${priority.tone}`}>Prioridad {priority.label}</span>
+          </div>
+        </div>
+
+        <div className={`purchase-focused-detail-layout ${isAdmin ? "admin" : ""}`}>
+          <div className="purchase-focused-card purchase-detail-main-card">
+            <div className="purchase-detail-grid wide">
+              <div>
+                <span>Cantidad</span>
+                <strong>{selectedRequest.quantity || 1}</strong>
+              </div>
+              <div>
+                <span>Solicitante</span>
+                <strong>{selectedRequest.requestedByName || "Usuario"}</strong>
+              </div>
+              <div>
+                <span>Fecha de solicitud</span>
+                <strong>{formatDate(selectedRequest.createdAt)}</strong>
+              </div>
+              <div>
+                <span>Última actualización</span>
+                <strong>{formatDate(selectedRequest.updatedAt)}</strong>
+              </div>
+            </div>
+
+            <div className="purchase-detail-section first">
+              <strong>Descripción</strong>
+              <p>{selectedRequest.description}</p>
+            </div>
+
+            {selectedRequest.projectName && (
+              <div className="purchase-detail-section">
+                <strong>Proyecto relacionado</strong>
+                <p>{selectedRequest.projectName}</p>
+              </div>
+            )}
+
+            {selectedRequest.requesterComment && (
+              <div className="purchase-detail-section">
+                <strong>Comentario del solicitante</strong>
+                <p>{selectedRequest.requesterComment}</p>
+              </div>
+            )}
+
+            {selectedRequest.suggestedLink && (
+              <div className="purchase-detail-section">
+                <strong>Link sugerido</strong>
+                <a href={selectedRequest.suggestedLink} target="_blank" rel="noreferrer">
+                  Abrir enlace sugerido
+                </a>
+              </div>
+            )}
+
+            {selectedRequest.adminComment && !isAdmin && (
+              <div className="purchase-detail-section purchase-admin-note">
+                <strong>Comentario administrativo</strong>
+                <p>{selectedRequest.adminComment}</p>
+              </div>
+            )}
+
+            {selectedRequest.rejectionReason && !isAdmin && (
+              <div className="purchase-detail-section purchase-rejection-note">
+                <strong>Motivo</strong>
+                <p>{selectedRequest.rejectionReason}</p>
+              </div>
+            )}
+
+            {canCancel && (
+              <div className="purchase-inline-warning">
+                <div>
+                  <strong>Solicitud pendiente</strong>
+                  <p>Puedes cancelarla mientras todavía no ha sido revisada.</p>
+                </div>
+                <button
+                  type="button"
+                  className="visual-outline-button danger-outline-button"
+                  onClick={() => handleCancelRequest(selectedRequest)}
+                >
+                  Cancelar solicitud
+                </button>
+              </div>
+            )}
+          </div>
+
+          {isAdmin && (
+            <div className="purchase-focused-card purchase-admin-focused-card">
+              <div className="purchase-card-heading">
+                <PurchaseModuleIcon name="check" />
+                <div>
+                  <h3>Actualizar solicitud</h3>
+                  <p>Cambia el estado visible para el solicitante.</p>
+                </div>
+              </div>
+
+              <label className="visual-field">
+                <span>Estado</span>
+                <select value={adminStatus} onChange={(event) => setAdminStatus(event.target.value)}>
+                  {PURCHASE_STATUSES.filter((item) => item.value !== "cancelled").map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="visual-field">
+                <span>Comentario administrativo</span>
+                <textarea
+                  value={adminComment}
+                  onChange={(event) => setAdminComment(event.target.value)}
+                  placeholder="Ej. Se comprará junto con otros accesorios esta semana."
+                />
+              </label>
+
+              {adminStatus === "rejected" && (
+                <label className="visual-field">
+                  <span>Motivo de rechazo</span>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(event) => setRejectionReason(event.target.value)}
+                    placeholder="Explica brevemente por qué no se realizará la compra."
+                  />
+                </label>
+              )}
+
+              <button
+                type="button"
+                className="visual-primary-button"
+                onClick={handleAdminUpdate}
+                disabled={updatingStatus}
+              >
+                {updatingStatus ? "Actualizando..." : "Guardar avance"}
+              </button>
+
+              <div className="purchase-delete-zone compact">
+                <div>
+                  <strong>Eliminar solicitud</strong>
+                  <p>Solo para registros duplicados, pruebas o capturas por error.</p>
+                </div>
+                <button
+                  type="button"
+                  className="danger-table-button purchase-delete-button"
+                  onClick={() => handleDeleteRequest(selectedRequest)}
+                  disabled={deletingRequestId === selectedRequest.id}
+                >
+                  {deletingRequestId === selectedRequest.id ? "Eliminando..." : "Eliminar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="purchase-focused-card purchase-log-focused-card">
+            <div className="purchase-card-heading compact-heading">
+              <PurchaseModuleIcon name="clock" />
+              <div>
+                <h3>Bitácora</h3>
+                <p>Movimientos registrados automáticamente.</p>
+              </div>
+            </div>
+
+            {logsLoading ? (
+              <div className="purchase-log-empty">Cargando bitácora...</div>
+            ) : logs.length === 0 ? (
+              <div className="purchase-log-empty">Sin movimientos registrados.</div>
+            ) : (
+              <div className="purchase-log-list focused-log-list">
+                {logs.map((log) => (
+                  <div key={log.id} className="purchase-log-item">
+                    <span />
+                    <div>
+                      <strong>{log.message}</strong>
+                      <small>
+                        {log.createdByName || "Usuario"} · {formatDate(log.createdAt)}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderListView = () => (
+    <>
+      <div className="purchase-hero-card">
+        <div className="purchase-hero-content">
+          <span>Centro de compras</span>
           <h2>Solicitudes de compra</h2>
           <p>
-            Registra necesidades de compra, revisa el avance y conserva una bitácora
-            de cada cambio.
+            Revisa necesidades pendientes, da seguimiento administrativo y conserva una bitácora clara de cada solicitud.
           </p>
         </div>
 
-        <div className="visual-page-actions">
-          <button
-            type="button"
-            className="visual-primary-button"
-            onClick={() => {
-              setShowForm((current) => !current);
-              setMessage("");
-              setError("");
-            }}
-          >
-            {showForm ? "Cerrar formulario" : "+ Nueva solicitud"}
+        <div className="purchase-hero-actions">
+          <div className="purchase-hero-search">
+            <PurchaseModuleIcon name="search" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Buscar solicitud, área o solicitante"
+            />
+          </div>
+
+          <button type="button" className="purchase-hero-button" onClick={openCreateView}>
+            <PurchaseModuleIcon name="request" />
+            Nueva solicitud
           </button>
         </div>
       </div>
 
-      {message && <div className="message-box">{message}</div>}
-      {error && <div className="error-box">{error}</div>}
-
-      <div className="purchase-metrics-grid">
-        <div className="simple-metric purchase-total-metric">
-          <div className="simple-metric-icon">Σ</div>
+      <div className="purchase-compact-metrics">
+        <div className="purchase-compact-metric total">
+          <PurchaseModuleIcon name="list" />
           <div>
             <strong>{metrics.total}</strong>
-            <h4>{isAdmin ? "Todas las solicitudes" : "Mis solicitudes"}</h4>
-            <p>Registros visibles para tu usuario.</p>
+            <span>{isAdmin ? "Todas" : "Mías"}</span>
           </div>
         </div>
-
-        <div className="simple-metric simple-gold">
-          <div className="simple-metric-icon">!</div>
+        <div className="purchase-compact-metric pending">
+          <PurchaseModuleIcon name="alert" />
           <div>
             <strong>{metrics.pending}</strong>
-            <h4>Pendientes</h4>
-            <p>Esperando revisión inicial.</p>
+            <span>Pendientes</span>
           </div>
         </div>
-
-        <div className="simple-metric simple-purple">
-          <div className="simple-metric-icon">↻</div>
+        <div className="purchase-compact-metric process">
+          <PurchaseModuleIcon name="clock" />
           <div>
             <strong>{metrics.inProcess}</strong>
-            <h4>En proceso</h4>
-            <p>Aprobadas, comprándose o en camino.</p>
+            <span>En proceso</span>
           </div>
         </div>
-
-        <div className="simple-metric simple-green">
-          <div className="simple-metric-icon">✓</div>
+        <div className="purchase-compact-metric delivered">
+          <PurchaseModuleIcon name="check" />
           <div>
             <strong>{metrics.delivered}</strong>
-            <h4>Entregadas</h4>
-            <p>Compra cerrada y entregada.</p>
+            <span>Entregadas</span>
           </div>
         </div>
-
-        <div className="simple-metric simple-red">
-          <div className="simple-metric-icon">↑</div>
+        <div className="purchase-compact-metric urgent">
+          <PurchaseModuleIcon name="alert" />
           <div>
             <strong>{metrics.urgent}</strong>
-            <h4>Urgentes</h4>
-            <p>Marcadas con prioridad urgente.</p>
+            <span>Urgentes</span>
           </div>
         </div>
       </div>
 
-      {showForm && (
-        <div className="card purchase-form-card">
-          <div className="section-title-row">
-            <span className="section-title-icon section-title-blue">+</span>
-            <div>
-              <h3>Nueva solicitud de compra</h3>
-              <p>Incluye detalles suficientes para evaluar y comprar correctamente.</p>
-            </div>
-          </div>
-
-          <form className="purchase-form" onSubmit={handleCreateRequest}>
-            <label className="visual-field">
-              <span>¿Qué necesitas? <b>*</b></span>
-              <input
-                type="text"
-                value={form.itemName}
-                onChange={(event) => updateForm("itemName", event.target.value)}
-                placeholder="Ej. Mouse inalámbrico, cable HDMI, no break..."
-                maxLength={120}
-              />
-            </label>
-
-            <label className="visual-field">
-              <span>Cantidad <b>*</b></span>
-              <input
-                type="number"
-                min="1"
-                value={form.quantity}
-                onChange={(event) => updateForm("quantity", event.target.value)}
-              />
-            </label>
-
-            <label className="visual-field full">
-              <span>Descripción / justificación <b>*</b></span>
-              <textarea
-                value={form.description}
-                onChange={(event) => updateForm("description", event.target.value)}
-                placeholder="Explica para qué se necesita, dónde se usará y cualquier detalle importante."
-                maxLength={700}
-              />
-            </label>
-
-            <label className="visual-field">
-              <span>Área / departamento</span>
-              <select
-                value={form.department}
-                onChange={(event) => updateForm("department", event.target.value)}
-              >
-                {DEPARTMENTS.map((department) => (
-                  <option key={department} value={department}>
-                    {department}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="visual-field">
-              <span>Prioridad</span>
-              <select
-                value={form.priority}
-                onChange={(event) => updateForm("priority", event.target.value)}
-              >
-                {PRIORITIES.map((priority) => (
-                  <option key={priority.value} value={priority.value}>
-                    {priority.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="visual-field">
-              <span>Link sugerido</span>
-              <input
-                type="url"
-                value={form.suggestedLink}
-                onChange={(event) => updateForm("suggestedLink", event.target.value)}
-                placeholder="https://..."
-              />
-            </label>
-
-            <label className="visual-field">
-              <span>Proyecto relacionado</span>
-              <input
-                type="text"
-                value={form.projectName}
-                onChange={(event) => updateForm("projectName", event.target.value)}
-                placeholder="Opcional"
-                maxLength={120}
-              />
-            </label>
-
-            <label className="visual-field full">
-              <span>Comentario adicional</span>
-              <textarea
-                value={form.requesterComment}
-                onChange={(event) => updateForm("requesterComment", event.target.value)}
-                placeholder="Opcional: marca, modelo, medidas, color, proveedor, etc."
-                maxLength={500}
-              />
-            </label>
-
-            <div className="purchase-form-actions">
-              <button
-                type="button"
-                className="visual-outline-button"
-                onClick={() => setShowForm(false)}
-                disabled={saving}
-              >
-                Cancelar
-              </button>
-
-              <button type="submit" className="visual-primary-button" disabled={saving}>
-                {saving ? "Guardando..." : "Registrar solicitud"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="purchase-layout">
-        <div className="card purchase-list-card">
-          <div className="purchase-toolbar">
+      <div className="purchase-workspace-grid">
+        <div className="purchase-panel-card purchase-list-panel-card">
+          <div className="purchase-panel-header">
             <div>
               <h3>{isAdmin ? "Todas las solicitudes" : "Mis solicitudes"}</h3>
               <p>
@@ -687,17 +1019,7 @@ export default function PurchaseRequests() {
               </p>
             </div>
 
-            <div className="purchase-filters">
-              <div className="visual-search purchase-search">
-                <span>⌕</span>
-                <input
-                  type="search"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Buscar solicitud"
-                />
-              </div>
-
+            <div className="purchase-compact-filters">
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                 <option value="all">Todos los estados</option>
                 {PURCHASE_STATUSES.map((status) => (
@@ -707,10 +1029,7 @@ export default function PurchaseRequests() {
                 ))}
               </select>
 
-              <select
-                value={priorityFilter}
-                onChange={(event) => setPriorityFilter(event.target.value)}
-              >
+              <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
                 <option value="all">Todas las prioridades</option>
                 {PRIORITIES.map((priority) => (
                   <option key={priority.value} value={priority.value}>
@@ -731,248 +1050,128 @@ export default function PurchaseRequests() {
               <p>No hay solicitudes con los filtros actuales.</p>
             </div>
           ) : (
-            <div className="purchase-request-list">
+            <div className="purchase-request-list modern-list">
               {filteredRequests.map((request) => {
                 const status = statusConfig(request.status);
                 const priority = priorityConfig(request.priority);
-                const selected = selectedRequest?.id === request.id;
                 const canCancel =
                   request.status === "pending_review" && request.requestedByUid === firebaseUser?.uid;
 
                 return (
-                  <button
-                    key={request.id}
-                    type="button"
-                    className={`purchase-request-card ${selected ? "selected" : ""}`}
-                    onClick={() => setSelectedRequestId(request.id)}
-                  >
-                    <div className="purchase-request-icon">{getInitials(request.itemName)}</div>
+                  <article key={request.id} className="purchase-modern-row">
+                    <button type="button" className="purchase-modern-main" onClick={() => openDetailView(request)}>
+                      <div className="purchase-request-icon">{getInitials(request.itemName)}</div>
 
-                    <div className="purchase-request-content">
-                      <div className="purchase-request-title-row">
-                        <div>
-                          <h4>{request.itemName}</h4>
-                          <span>
-                            {request.quantity || 1} pieza(s) · {request.department || "Sin área"}
-                          </span>
+                      <div className="purchase-request-content">
+                        <div className="purchase-request-title-row">
+                          <div>
+                            <h4>{request.itemName}</h4>
+                            <span>
+                              {request.quantity || 1} pieza(s) · {request.department || "Sin área"}
+                            </span>
+                          </div>
+
+                          <div className="purchase-request-badges">
+                            <span className={`purchase-badge tone-${status.tone}`}>{status.label}</span>
+                            <span className={`purchase-badge tone-${priority.tone}`}>{priority.label}</span>
+                          </div>
                         </div>
 
-                        <div className="purchase-request-badges">
-                          <span className={`purchase-badge tone-${status.tone}`}>{status.label}</span>
-                          <span className={`purchase-badge tone-${priority.tone}`}>{priority.label}</span>
+                        <p>{request.description}</p>
+
+                        <div className="purchase-request-meta">
+                          <span>Solicitó: {request.requestedByName || "Usuario"}</span>
+                          <span>Fecha: {formatDate(request.createdAt)}</span>
+                          {request.projectName && <span>Proyecto: {request.projectName}</span>}
                         </div>
                       </div>
+                    </button>
 
-                      <p>{request.description}</p>
-
-                      <div className="purchase-request-meta">
-                        <span>Solicitó: {request.requestedByName || "Usuario"}</span>
-                        <span>Fecha: {formatDate(request.createdAt)}</span>
-                        {request.projectName && <span>Proyecto: {request.projectName}</span>}
-                      </div>
-
+                    <div className="purchase-row-actions">
+                      <button type="button" className="visual-detail-button" onClick={() => openDetailView(request)}>
+                        Ver detalle
+                      </button>
                       {canCancel && (
-                        <div className="purchase-card-actions" onClick={(event) => event.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="visual-outline-button danger-outline-button"
-                            onClick={() => handleCancelRequest(request)}
-                          >
-                            Cancelar solicitud
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          className="visual-outline-button danger-outline-button"
+                          onClick={() => handleCancelRequest(request)}
+                        >
+                          Cancelar
+                        </button>
                       )}
                     </div>
-                  </button>
+                  </article>
                 );
               })}
             </div>
           )}
         </div>
 
-        <aside className="purchase-detail-panel">
-          {selectedRequest ? (
-            <div className="card purchase-detail-card">
-              <div className="purchase-detail-header">
-                <div className="purchase-detail-avatar">{getInitials(selectedRequest.itemName)}</div>
-                <div>
-                  <span className="breadcrumb-line">Detalle de solicitud</span>
-                  <h3>{selectedRequest.itemName}</h3>
-                  <p>{selectedRequest.department || "Sin área"}</p>
-                </div>
+        <aside className="purchase-side-summary">
+          <div className="purchase-panel-card purchase-attention-card">
+            <div className="purchase-card-heading">
+              <PurchaseModuleIcon name="alert" />
+              <div>
+                <h3>Requiere atención</h3>
+                <p>Pendientes, urgentes o en revisión.</p>
               </div>
+            </div>
 
-              <div className="purchase-detail-badges">
-                <span className={`purchase-badge tone-${statusConfig(selectedRequest.status).tone}`}>
-                  {statusConfig(selectedRequest.status).label}
-                </span>
-                <span className={`purchase-badge tone-${priorityConfig(selectedRequest.priority).tone}`}>
-                  Prioridad {priorityConfig(selectedRequest.priority).label}
-                </span>
-              </div>
-
-              <div className="purchase-detail-grid">
-                <div>
-                  <span>Cantidad</span>
-                  <strong>{selectedRequest.quantity || 1}</strong>
-                </div>
-                <div>
-                  <span>Solicitante</span>
-                  <strong>{selectedRequest.requestedByName || "Usuario"}</strong>
-                </div>
-                <div>
-                  <span>Fecha de solicitud</span>
-                  <strong>{formatDate(selectedRequest.createdAt)}</strong>
-                </div>
-                <div>
-                  <span>Última actualización</span>
-                  <strong>{formatDate(selectedRequest.updatedAt)}</strong>
-                </div>
-              </div>
-
-              <div className="purchase-detail-section">
-                <strong>Descripción</strong>
-                <p>{selectedRequest.description}</p>
-              </div>
-
-              {selectedRequest.requesterComment && (
-                <div className="purchase-detail-section">
-                  <strong>Comentario del solicitante</strong>
-                  <p>{selectedRequest.requesterComment}</p>
-                </div>
-              )}
-
-              {selectedRequest.suggestedLink && (
-                <div className="purchase-detail-section">
-                  <strong>Link sugerido</strong>
-                  <a href={selectedRequest.suggestedLink} target="_blank" rel="noreferrer">
-                    Abrir enlace sugerido
-                  </a>
-                </div>
-              )}
-
-              {selectedRequest.adminComment && !isAdmin && (
-                <div className="purchase-detail-section purchase-admin-note">
-                  <strong>Comentario administrativo</strong>
-                  <p>{selectedRequest.adminComment}</p>
-                </div>
-              )}
-
-              {selectedRequest.rejectionReason && !isAdmin && (
-                <div className="purchase-detail-section purchase-rejection-note">
-                  <strong>Motivo</strong>
-                  <p>{selectedRequest.rejectionReason}</p>
-                </div>
-              )}
-
-              {isAdmin && (
-                <div className="purchase-admin-panel">
-                  <div className="section-title-row no-border no-margin">
-                    <span className="section-title-icon section-title-purple">⚙</span>
-                    <div>
-                      <h3>Control administrativo</h3>
-                      <p>Cambia el estado visible para el solicitante.</p>
-                    </div>
-                  </div>
-
-                  <label className="visual-field">
-                    <span>Estado</span>
-                    <select value={adminStatus} onChange={(event) => setAdminStatus(event.target.value)}>
-                      {PURCHASE_STATUSES.filter((status) => status.value !== "cancelled").map(
-                        (status) => (
-                          <option key={status.value} value={status.value}>
-                            {status.label}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </label>
-
-                  <label className="visual-field">
-                    <span>Comentario administrativo</span>
-                    <textarea
-                      value={adminComment}
-                      onChange={(event) => setAdminComment(event.target.value)}
-                      placeholder="Ej. Se comprará junto con otros accesorios esta semana."
-                    />
-                  </label>
-
-                  {adminStatus === "rejected" && (
-                    <label className="visual-field">
-                      <span>Motivo de rechazo</span>
-                      <textarea
-                        value={rejectionReason}
-                        onChange={(event) => setRejectionReason(event.target.value)}
-                        placeholder="Explica brevemente por qué no se realizará la compra."
-                      />
-                    </label>
-                  )}
-
-                  <button
-                    type="button"
-                    className="visual-primary-button"
-                    onClick={handleAdminUpdate}
-                    disabled={updatingStatus}
-                  >
-                    {updatingStatus ? "Actualizando..." : "Guardar avance"}
+            {attentionRequests.length === 0 ? (
+              <div className="purchase-side-empty">No hay solicitudes críticas por ahora.</div>
+            ) : (
+              <div className="purchase-attention-list">
+                {attentionRequests.map((request) => (
+                  <button key={request.id} type="button" onClick={() => openDetailView(request)}>
+                    <strong>{request.itemName}</strong>
+                    <span>{statusConfig(request.status).label} · {priorityConfig(request.priority).label}</span>
                   </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-                  <div className="purchase-delete-zone">
-                    <strong>Eliminar solicitud</strong>
-                    <p>
-                      Usa esta opción solo para registros duplicados, pruebas o solicitudes capturadas por error.
-                    </p>
-                    <button
-                      type="button"
-                      className="danger-table-button purchase-delete-button"
-                      onClick={() => handleDeleteRequest(selectedRequest)}
-                      disabled={deletingRequestId === selectedRequest.id}
-                    >
-                      {deletingRequestId === selectedRequest.id ? "Eliminando..." : "Eliminar solicitud"}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="purchase-log-section">
-                <div className="section-title-row no-border no-margin">
-                  <span className="section-title-icon section-title-blue">◷</span>
-                  <div>
-                    <h3>Bitácora</h3>
-                    <p>Registro automático de movimientos.</p>
-                  </div>
-                </div>
-
-                {logsLoading ? (
-                  <div className="purchase-log-empty">Cargando bitácora...</div>
-                ) : logs.length === 0 ? (
-                  <div className="purchase-log-empty">Sin movimientos registrados.</div>
-                ) : (
-                  <div className="purchase-log-list">
-                    {logs.map((log) => (
-                      <div key={log.id} className="purchase-log-item">
-                        <span />
-                        <div>
-                          <strong>{log.message}</strong>
-                          <small>
-                            {log.createdByName || "Usuario"} · {formatDate(log.createdAt)}
-                          </small>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+          <div className="purchase-panel-card purchase-status-summary-card">
+            <div className="purchase-card-heading compact-heading">
+              <PurchaseModuleIcon name="overview" />
+              <div>
+                <h3>Resumen rápido</h3>
+                <p>Distribución general.</p>
               </div>
             </div>
-          ) : (
-            <div className="card purchase-detail-card">
-              <div className="empty-state small">
-                <p>Selecciona una solicitud para ver el detalle.</p>
+            <div className="purchase-status-bars">
+              <div>
+                <span>Pendientes</span>
+                <strong>{metrics.pending}</strong>
+              </div>
+              <div>
+                <span>En proceso</span>
+                <strong>{metrics.inProcess}</strong>
+              </div>
+              <div>
+                <span>Rechazadas</span>
+                <strong>{metrics.rejected}</strong>
+              </div>
+              <div>
+                <span>Entregadas</span>
+                <strong>{metrics.delivered}</strong>
               </div>
             </div>
-          )}
+          </div>
         </aside>
       </div>
+    </>
+  );
+
+  return (
+    <section className="purchase-requests-page purchase-redesign visual-page">
+      {message && <div className="message-box">{message}</div>}
+      {error && <div className="error-box">{error}</div>}
+
+      {focusedView === "create" && renderCreateView()}
+      {focusedView === "detail" && renderDetailView()}
+      {focusedView === "list" && renderListView()}
     </section>
   );
 }

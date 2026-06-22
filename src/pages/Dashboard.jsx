@@ -1,4 +1,15 @@
 import { useEffect, useState } from "react";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import CreateProject from "./CreateProject";
 import MyProjects from "./MyProjects";
@@ -14,6 +25,8 @@ import PurchaseRequests from "./PurchaseRequests";
 import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
+import { auth, db, storage } from "../services/firebase";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 const DASHBOARD_STORAGE_KEYS = {
   page: "dp.dashboard.activePage",
@@ -39,8 +52,187 @@ function setStoredDashboardValue(key, value) {
   window.localStorage.setItem(key, value);
 }
 
+
+function DashboardNavIcon({ name }) {
+  return (
+    <svg className="nav-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {renderDashboardNavIconPath(name)}
+    </svg>
+  );
+}
+
+function renderDashboardNavIconPath(name) {
+  switch (name) {
+    case "dashboard":
+      return (
+        <>
+          <rect x="3" y="3" width="7" height="7" rx="2" />
+          <rect x="14" y="3" width="7" height="7" rx="2" />
+          <rect x="3" y="14" width="7" height="7" rx="2" />
+          <rect x="14" y="14" width="7" height="7" rx="2" />
+        </>
+      );
+    case "myProjects":
+      return (
+        <>
+          <path d="M5 5h14v14H5z" />
+          <path d="M8 9h8" />
+          <path d="M8 13h6" />
+          <path d="M8 17h4" />
+        </>
+      );
+    case "calendar":
+      return (
+        <>
+          <rect x="3" y="5" width="18" height="16" rx="3" />
+          <path d="M8 3v4" />
+          <path d="M16 3v4" />
+          <path d="M3 10h18" />
+        </>
+      );
+    case "purchase":
+      return (
+        <>
+          <path d="M4 5h2l2.1 9.2a2 2 0 0 0 2 1.6h6.9a2 2 0 0 0 1.9-1.4L21 8H7" />
+          <circle cx="10" cy="20" r="1.4" />
+          <circle cx="17" cy="20" r="1.4" />
+        </>
+      );
+    case "ideas":
+      return (
+        <>
+          <path d="M9 18h6" />
+          <path d="M10 21h4" />
+          <path d="M8 14.5a6 6 0 1 1 8 0c-.9.8-1.3 1.6-1.3 2.5H9.3c0-.9-.4-1.7-1.3-2.5z" />
+        </>
+      );
+    case "print":
+      return (
+        <>
+          <path d="M7 8V4h10v4" />
+          <rect x="6" y="14" width="12" height="7" rx="1.5" />
+          <rect x="4" y="8" width="16" height="9" rx="2" />
+          <circle cx="17" cy="11.5" r="1" />
+        </>
+      );
+    case "technical":
+      return (
+        <>
+          <path d="M14.5 5.5l4 4" />
+          <path d="M4 20l6.5-6.5" />
+          <path d="M12.5 3.5l8 8-2.5 2.5-8-8z" />
+        </>
+      );
+    case "allProjects":
+      return (
+        <>
+          <path d="M4 6.5h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17.5h12" />
+        </>
+      );
+    case "collaborators":
+      return (
+        <>
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+          <circle cx="17" cy="9" r="2.4" />
+          <path d="M15.5 15.5a4.5 4.5 0 0 1 5 4.5" />
+        </>
+      );
+    case "departments":
+      return (
+        <>
+          <rect x="4" y="4" width="7" height="7" rx="2" />
+          <rect x="13" y="4" width="7" height="7" rx="2" />
+          <rect x="4" y="13" width="7" height="7" rx="2" />
+          <rect x="13" y="13" width="7" height="7" rx="2" />
+        </>
+      );
+    case "history":
+      return (
+        <>
+          <path d="M7 7h7a6 6 0 1 1-5.2 9" />
+          <path d="M7 7V3" />
+          <path d="M7 7H3" />
+        </>
+      );
+    case "create":
+      return (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v8" />
+          <path d="M8 12h8" />
+        </>
+      );
+    case "more":
+      return (
+        <>
+          <circle cx="5" cy="12" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="19" cy="12" r="1.8" />
+        </>
+      );
+    default:
+      return <circle cx="12" cy="12" r="8" />;
+  }
+}
+
+
+function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
+  const items = [];
+
+  if (isAdmin) {
+    items.push({ page: "executive-dashboard", label: "Dashboard ejecutivo", mobileLabel: "Ejecutivo", icon: "dashboard" });
+  }
+
+  items.push({ page: "workspace-dashboard", label: "Tablero", mobileLabel: "Inicio", icon: "dashboard" });
+  items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects" });
+  items.push({ page: "team-agenda", label: "Agenda del equipo", mobileLabel: "Agenda", icon: "calendar" });
+  items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase" });
+  items.push({ page: "ideas-incubator", label: "Incubadora de ideas", mobileLabel: "Ideas", icon: "ideas" });
+
+  if (canUsePrintShop) {
+    items.push({ page: "print-shop", label: "Imprenta", mobileLabel: "Imprenta", icon: "print" });
+  }
+
+  if (canUseTechnicalSupport) {
+    items.push({ page: "technical-support", label: "Soporte Técnico", mobileLabel: "Soporte", icon: "technical" });
+  }
+
+  if (isAdmin) {
+    items.push({ page: "all-projects", label: "Todos los proyectos", mobileLabel: "Todos", icon: "allProjects" });
+    items.push({ page: "collaborators-admin", label: "Colaboradores", mobileLabel: "Equipo", icon: "collaborators" });
+    items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments" });
+    items.push({ page: "project-history", label: "Historial", mobileLabel: "Historial", icon: "history" });
+    items.push({ page: "create-project", label: "Alta de proyecto", mobileLabel: "Alta", icon: "create" });
+  }
+
+  return items;
+}
+
+function getMobilePrimaryNavigationItems(items, { isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
+  const preferredPages = isAdmin
+    ? ["executive-dashboard", "workspace-dashboard", "my-projects", "team-agenda"]
+    : ["workspace-dashboard", "my-projects", "team-agenda", "purchase-requests"];
+
+  const preferred = preferredPages
+    .map((pageName) => items.find((item) => item.page === pageName))
+    .filter(Boolean);
+
+  if (preferred.length >= 4) {
+    return preferred.slice(0, 4);
+  }
+
+  const fallback = items.filter(
+    (item) => !preferred.some((preferredItem) => preferredItem.page === item.page)
+  );
+
+  return [...preferred, ...fallback].slice(0, 4);
+}
+
 function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
-  const defaultPage = isAdmin ? "executive-dashboard" : "my-projects";
+  const defaultPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const adminOnlyPages = new Set([
     "executive-dashboard",
     "all-projects",
@@ -70,8 +262,8 @@ export default function Dashboard() {
 
   const canUseTechnicalSupport = canAccessTechnicalSupport(profile, isAdmin);
 
-  const defaultDashboardPage = isAdmin ? "executive-dashboard" : "my-projects";
-  const defaultReturnPage = isAdmin ? "all-projects" : "my-projects";
+  const defaultDashboardPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
+  const defaultReturnPage = isAdmin ? "all-projects" : "workspace-dashboard";
 
   const [page, setPageState] = useState(() =>
     getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, defaultDashboardPage)
@@ -84,6 +276,7 @@ export default function Dashboard() {
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   function setPage(nextPage) {
     setPageState(nextPage);
@@ -155,10 +348,11 @@ export default function Dashboard() {
     setReturnPage(safePage);
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
+    setMobileMenuOpen(false);
   }
 
   function goToHomeDashboard() {
-    goToPage(isAdmin ? "executive-dashboard" : "my-projects");
+    goToPage(isAdmin ? "executive-dashboard" : "workspace-dashboard");
   }
 
   function openProject(projectId) {
@@ -170,6 +364,8 @@ export default function Dashboard() {
       setReturnPage("my-projects");
     } else if (page === "executive-dashboard") {
       setReturnPage("executive-dashboard");
+    } else if (page === "workspace-dashboard") {
+      setReturnPage("workspace-dashboard");
     } else if (page === "collaborators-admin") {
       setReturnPage("collaborators-admin");
     } else if (page === "departments-admin") {
@@ -191,6 +387,7 @@ export default function Dashboard() {
     setPage("project-detail");
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
+    setMobileMenuOpen(false);
   }
 
   function editProject(projectId) {
@@ -198,6 +395,7 @@ export default function Dashboard() {
     setPage("edit-project");
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
+    setMobileMenuOpen(false);
   }
 
   function backToProjects() {
@@ -205,6 +403,7 @@ export default function Dashboard() {
     setPage(returnPage || (isAdmin ? "all-projects" : "my-projects"));
     setProfileMenuOpen(false);
     setProfilePanelOpen(false);
+    setMobileMenuOpen(false);
   }
 
   function handleViewProfile() {
@@ -229,6 +428,10 @@ export default function Dashboard() {
           onClose={() => setProfilePanelOpen(false)}
         />
       );
+    }
+
+    if (page === "workspace-dashboard") {
+      return <WorkspaceDashboard profile={profile} isAdmin={isAdmin} />;
     }
 
     if (page === "executive-dashboard" && isAdmin) {
@@ -328,6 +531,10 @@ export default function Dashboard() {
   }
 
   function isNavActive(navPage) {
+    if (navPage === "workspace-dashboard") {
+      return page === "workspace-dashboard";
+    }
+
     if (navPage === "all-projects") {
       return (
         page === "all-projects" ||
@@ -391,8 +598,34 @@ export default function Dashboard() {
     return page === navPage;
   }
 
+  const navigationItems = getDashboardNavigationItems({
+    isAdmin,
+    canUsePrintShop,
+    canUseTechnicalSupport,
+  });
+  const mobilePrimaryItems = getMobilePrimaryNavigationItems(navigationItems, {
+    isAdmin,
+    canUsePrintShop,
+    canUseTechnicalSupport,
+  });
+  const activeNavigationItem =
+    navigationItems.find((item) => isNavActive(item.page)) ||
+    navigationItems[0];
+
   return (
     <div className="app-shell">
+      <MobileAppHeader
+        profile={profile}
+        title={activeNavigationItem?.label || "Desarrollo de Proyectos"}
+        subtitle={isAdmin ? "Panel administrador" : "Mi espacio de trabajo"}
+        onHome={goToHomeDashboard}
+        onOpenMenu={() => {
+          setMobileMenuOpen(true);
+          setProfileMenuOpen(false);
+        }}
+        onOpenProfile={handleViewProfile}
+      />
+
       <aside className="sidebar">
         <div className="sidebar-brand-panel">
           <button
@@ -425,16 +658,24 @@ export default function Dashboard() {
               className={isNavActive("executive-dashboard") ? "active" : ""}
               onClick={() => goToPage("executive-dashboard")}
             >
-              <span className="nav-icon">▦</span>
+              <span className="nav-icon"><DashboardNavIcon name="dashboard" /></span>
               Dashboard ejecutivo
             </button>
           )}
 
           <button
+            className={isNavActive("workspace-dashboard") ? "active" : ""}
+            onClick={() => goToPage("workspace-dashboard")}
+          >
+            <span className="nav-icon"><DashboardNavIcon name="dashboard" /></span>
+            Tablero
+          </button>
+
+          <button
             className={isNavActive("my-projects") ? "active" : ""}
             onClick={() => goToPage("my-projects")}
           >
-            <span className="nav-icon">▱</span>
+            <span className="nav-icon"><DashboardNavIcon name="myProjects" /></span>
             Mis proyectos
           </button>
 
@@ -442,7 +683,7 @@ export default function Dashboard() {
             className={isNavActive("team-agenda") ? "active" : ""}
             onClick={() => goToPage("team-agenda")}
           >
-            <span className="nav-icon">🗓️</span>
+            <span className="nav-icon"><DashboardNavIcon name="calendar" /></span>
             Agenda del equipo
           </button>
 
@@ -450,7 +691,7 @@ export default function Dashboard() {
             className={isNavActive("purchase-requests") ? "active" : ""}
             onClick={() => goToPage("purchase-requests")}
           >
-            <span className="nav-icon">🛒</span>
+            <span className="nav-icon"><DashboardNavIcon name="purchase" /></span>
             Solicitudes de compra
           </button>
 
@@ -458,7 +699,7 @@ export default function Dashboard() {
             className={isNavActive("ideas-incubator") ? "active" : ""}
             onClick={() => goToPage("ideas-incubator")}
           >
-            <span className="nav-icon">✦</span>
+            <span className="nav-icon"><DashboardNavIcon name="ideas" /></span>
             Incubadora de ideas
           </button>
 
@@ -467,7 +708,7 @@ export default function Dashboard() {
               className={isNavActive("print-shop") ? "active" : ""}
               onClick={() => goToPage("print-shop")}
             >
-              <span className="nav-icon">▣</span>
+              <span className="nav-icon"><DashboardNavIcon name="print" /></span>
               Imprenta
             </button>
           )}
@@ -477,7 +718,7 @@ export default function Dashboard() {
               className={isNavActive("technical-support") ? "active" : ""}
               onClick={() => goToPage("technical-support")}
             >
-              <span className="nav-icon">◈</span>
+              <span className="nav-icon"><DashboardNavIcon name="technical" /></span>
               Soporte Técnico
             </button>
           )}
@@ -488,7 +729,7 @@ export default function Dashboard() {
                 className={isNavActive("all-projects") ? "active" : ""}
                 onClick={() => goToPage("all-projects")}
               >
-                <span className="nav-icon">☰</span>
+                <span className="nav-icon"><DashboardNavIcon name="allProjects" /></span>
                 Todos los proyectos
               </button>
 
@@ -498,7 +739,7 @@ export default function Dashboard() {
                 }
                 onClick={() => goToPage("collaborators-admin")}
               >
-                <span className="nav-icon">☷</span>
+                <span className="nav-icon"><DashboardNavIcon name="collaborators" /></span>
                 Colaboradores
               </button>
 
@@ -506,7 +747,7 @@ export default function Dashboard() {
                 className={isNavActive("departments-admin") ? "active" : ""}
                 onClick={() => goToPage("departments-admin")}
               >
-                <span className="nav-icon">▤</span>
+                <span className="nav-icon"><DashboardNavIcon name="departments" /></span>
                 Departamentos
               </button>
 
@@ -514,7 +755,7 @@ export default function Dashboard() {
                 className={isNavActive("project-history") ? "active" : ""}
                 onClick={() => goToPage("project-history")}
               >
-                <span className="nav-icon">◴</span>
+                <span className="nav-icon"><DashboardNavIcon name="history" /></span>
                 Historial
               </button>
 
@@ -522,7 +763,7 @@ export default function Dashboard() {
                 className={isNavActive("create-project") ? "active" : ""}
                 onClick={() => goToPage("create-project")}
               >
-                <span className="nav-icon">＋</span>
+                <span className="nav-icon"><DashboardNavIcon name="create" /></span>
                 Alta de proyecto
               </button>
             </>
@@ -539,6 +780,18 @@ export default function Dashboard() {
         </div>
       </aside>
 
+      <MobileModuleDrawer
+        open={mobileMenuOpen}
+        items={navigationItems}
+        isAdmin={isAdmin}
+        profile={profile}
+        isNavActive={isNavActive}
+        onNavigate={goToPage}
+        onClose={() => setMobileMenuOpen(false)}
+        onViewProfile={handleViewProfile}
+        onLogout={handleLogout}
+      />
+
       <main className="main-content">
         <TopProfileBar
           profile={profile}
@@ -551,6 +804,1347 @@ export default function Dashboard() {
 
         {renderPage()}
       </main>
+
+      <MobileBottomNavigation
+        primaryItems={mobilePrimaryItems}
+        allItems={navigationItems}
+        isNavActive={isNavActive}
+        onNavigate={goToPage}
+        onOpenMore={() => {
+          setMobileMenuOpen(true);
+          setProfileMenuOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
+
+
+function WorkspaceDashboard({ profile, isAdmin }) {
+  const currentUserId = getCurrentUserId(profile);
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementReceipts, setAnnouncementReceipts] = useState({});
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: "",
+    message: "",
+    priority: "normal",
+  });
+  const [announcementAttachments, setAnnouncementAttachments] = useState([]);
+  const [originalAnnouncementAttachments, setOriginalAnnouncementAttachments] = useState([]);
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState("");
+  const [announcementStatus, setAnnouncementStatus] = useState("");
+  const [announcementError, setAnnouncementError] = useState("");
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+
+  const [notes, setNotes] = useState([]);
+  const [noteForm, setNoteForm] = useState({ title: "", content: "", pinned: false, color: "yellow" });
+  const [noteAttachments, setNoteAttachments] = useState([]);
+  const [originalNoteAttachments, setOriginalNoteAttachments] = useState([]);
+  const [editingNoteId, setEditingNoteId] = useState("");
+  const [noteStatus, setNoteStatus] = useState("");
+  const [noteError, setNoteError] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const announcementsQuery = query(collection(db, "announcements"));
+
+    return onSnapshot(
+      announcementsQuery,
+      (snapshot) => {
+        const nextAnnouncements = snapshot.docs
+          .map((announcementDoc) => ({
+            id: announcementDoc.id,
+            ...announcementDoc.data(),
+            attachments: normalizeStoredAttachments(announcementDoc.data()?.attachments),
+          }))
+          .filter((announcement) => announcement.active !== false)
+          .sort(sortByCreatedAtDesc)
+          .slice(0, 12);
+
+        setAnnouncements(nextAnnouncements);
+        setAnnouncementError("");
+      },
+      (error) => {
+        console.error("No se pudieron cargar los anuncios:", error);
+        setAnnouncementError("No se pudieron cargar los anuncios.");
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || announcements.length === 0) {
+      setAnnouncementReceipts({});
+      return undefined;
+    }
+
+    const unsubscribers = announcements.map((announcement) => {
+      const readsPath = ["announcements", announcement.id, "reads"];
+
+      if (isAdmin) {
+        return onSnapshot(
+          collection(db, ...readsPath),
+          (snapshot) => {
+            const receipts = snapshot.docs
+              .map((receiptDoc) => ({ id: receiptDoc.id, ...receiptDoc.data() }))
+              .sort(sortByReadAtDesc);
+
+            setAnnouncementReceipts((current) => ({
+              ...current,
+              [announcement.id]: receipts,
+            }));
+          },
+          (error) => {
+            console.error("No se pudieron cargar confirmaciones:", error);
+          }
+        );
+      }
+
+      return onSnapshot(
+        doc(db, ...readsPath, currentUserId),
+        (snapshot) => {
+          setAnnouncementReceipts((current) => ({
+            ...current,
+            [announcement.id]: snapshot.exists()
+              ? [{ id: snapshot.id, ...snapshot.data() }]
+              : [],
+          }));
+        },
+        (error) => {
+          console.error("No se pudo cargar tu confirmación de lectura:", error);
+        }
+      );
+    });
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [announcements, currentUserId, isAdmin]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const notesQuery = query(
+      collection(db, "personalNotes"),
+      where("userId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      notesQuery,
+      (snapshot) => {
+        const nextNotes = snapshot.docs
+          .map((noteDoc) => ({
+            id: noteDoc.id,
+            ...noteDoc.data(),
+            attachments: normalizeStoredAttachments(noteDoc.data()?.attachments),
+          }))
+          .sort(sortPersonalNotes);
+
+        setNotes(nextNotes);
+        setNoteError("");
+      },
+      (error) => {
+        console.error("No se pudieron cargar tus notas personales:", error);
+        setNoteError("No se pudieron cargar tus notas personales.");
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    return () => {
+      revokeDraftAttachmentPreviews(announcementAttachments);
+      revokeDraftAttachmentPreviews(noteAttachments);
+    };
+  }, []);
+
+  function resetAnnouncementEditor() {
+    revokeDraftAttachmentPreviews(announcementAttachments);
+    setAnnouncementForm({ title: "", message: "", priority: "normal" });
+    setAnnouncementAttachments([]);
+    setOriginalAnnouncementAttachments([]);
+    setEditingAnnouncementId("");
+  }
+
+  function resetNoteEditor() {
+    revokeDraftAttachmentPreviews(noteAttachments);
+    setNoteForm({ title: "", content: "", pinned: false, color: "yellow" });
+    setNoteAttachments([]);
+    setOriginalNoteAttachments([]);
+    setEditingNoteId("");
+  }
+
+  function handleAnnouncementFileSelection(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+
+    const validation = validateBoardFiles(files, announcementAttachments.length);
+    if (!validation.valid) {
+      setAnnouncementError(validation.message);
+      return;
+    }
+
+    setAnnouncementAttachments((current) => [
+      ...current,
+      ...files.map(createDraftAttachment),
+    ]);
+    setAnnouncementError("");
+  }
+
+  function handleNoteFileSelection(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+
+    const validation = validateBoardFiles(files, noteAttachments.length);
+    if (!validation.valid) {
+      setNoteError(validation.message);
+      return;
+    }
+
+    setNoteAttachments((current) => [
+      ...current,
+      ...files.map(createDraftAttachment),
+    ]);
+    setNoteError("");
+  }
+
+  function handleRemoveAnnouncementAttachment(attachmentId) {
+    setAnnouncementAttachments((current) => {
+      const next = current.filter((attachment) => attachment.id !== attachmentId);
+      const removed = current.find((attachment) => attachment.id === attachmentId);
+      if (removed?.previewUrl) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+      return next;
+    });
+  }
+
+  function handleRemoveNoteAttachment(attachmentId) {
+    setNoteAttachments((current) => {
+      const next = current.filter((attachment) => attachment.id !== attachmentId);
+      const removed = current.find((attachment) => attachment.id === attachmentId);
+      if (removed?.previewUrl) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+      return next;
+    });
+  }
+
+  async function handleAnnouncementSubmit(event) {
+    event.preventDefault();
+    setAnnouncementStatus("");
+    setAnnouncementError("");
+
+    if (!isAdmin) return;
+
+    const cleanTitle = announcementForm.title.trim();
+    const cleanMessage = announcementForm.message.trim();
+
+    if (!cleanTitle || !cleanMessage) {
+      setAnnouncementError("Escribe el título y el mensaje del anuncio.");
+      return;
+    }
+
+    setAnnouncementSaving(true);
+
+    try {
+      const announcementId = editingAnnouncementId || doc(collection(db, "announcements")).id;
+      const attachments = await uploadBoardAttachments(announcementAttachments, {
+        folder: `dashboard/announcements/${announcementId}`,
+        ownerUid: currentUserId,
+      });
+      const removedAttachments = getRemovedAttachments(
+        originalAnnouncementAttachments,
+        announcementAttachments
+      );
+
+      const payload = {
+        title: cleanTitle,
+        message: cleanMessage,
+        priority: announcementForm.priority === "important" ? "important" : "normal",
+        attachments,
+        updatedAt: serverTimestamp(),
+        updatedByUid: currentUserId,
+        updatedByName: profile?.name || "Usuario",
+        updatedByEmail: profile?.email || "",
+      };
+
+      if (editingAnnouncementId) {
+        await updateDoc(doc(db, "announcements", editingAnnouncementId), payload);
+        setAnnouncementStatus("Anuncio actualizado.");
+      } else {
+        await setDoc(doc(db, "announcements", announcementId), {
+          ...payload,
+          active: true,
+          createdAt: serverTimestamp(),
+          createdByUid: currentUserId,
+          createdByName: profile?.name || "Usuario",
+          createdByEmail: profile?.email || "",
+        });
+        setAnnouncementStatus("Anuncio publicado.");
+      }
+
+      await deleteStoredAttachments(removedAttachments);
+      resetAnnouncementEditor();
+    } catch (error) {
+      console.error("No se pudo guardar el anuncio:", error);
+      setAnnouncementError("No se pudo guardar el anuncio.");
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  }
+
+  function handleEditAnnouncement(announcement) {
+    resetAnnouncementEditor();
+    const existingAttachments = normalizeStoredAttachments(announcement.attachments).map(markStoredAttachment);
+    setEditingAnnouncementId(announcement.id);
+    setOriginalAnnouncementAttachments(existingAttachments);
+    setAnnouncementAttachments(existingAttachments);
+    setAnnouncementForm({
+      title: announcement.title || "",
+      message: announcement.message || "",
+      priority: announcement.priority === "important" ? "important" : "normal",
+    });
+    setAnnouncementStatus("");
+    setAnnouncementError("");
+  }
+
+  async function handleArchiveAnnouncement(announcementId) {
+    if (!isAdmin) return;
+
+    try {
+      await updateDoc(doc(db, "announcements", announcementId), {
+        active: false,
+        archivedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: currentUserId,
+        updatedByName: profile?.name || "Usuario",
+        updatedByEmail: profile?.email || "",
+      });
+      setAnnouncementStatus("Anuncio archivado.");
+    } catch (error) {
+      console.error("No se pudo archivar el anuncio:", error);
+      setAnnouncementError("No se pudo archivar el anuncio.");
+    }
+  }
+
+  async function handleDeleteAnnouncement(announcement) {
+    if (!isAdmin) return;
+
+    try {
+      await deleteDoc(doc(db, "announcements", announcement.id));
+      await deleteStoredAttachments(announcement.attachments || []);
+      setAnnouncementStatus("Anuncio eliminado.");
+    } catch (error) {
+      console.error("No se pudo eliminar el anuncio:", error);
+      setAnnouncementError("No se pudo eliminar el anuncio.");
+    }
+  }
+
+  async function handleMarkAnnouncementRead(announcementId) {
+    if (!currentUserId) return;
+
+    try {
+      await setDoc(
+        doc(db, "announcements", announcementId, "reads", currentUserId),
+        {
+          announcementId,
+          userId: currentUserId,
+          userName: profile?.name || "Usuario",
+          userEmail: profile?.email || "",
+          readAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error("No se pudo marcar el anuncio como leído:", error);
+      setAnnouncementError("No se pudo marcar el anuncio como leído.");
+    }
+  }
+
+  async function handleNoteSubmit(event) {
+    event.preventDefault();
+    setNoteStatus("");
+    setNoteError("");
+
+    const cleanTitle = noteForm.title.trim();
+    const cleanContent = noteForm.content.trim();
+
+    if (!cleanTitle && !cleanContent && noteAttachments.length === 0) {
+      setNoteError("Escribe una nota o agrega un archivo.");
+      return;
+    }
+
+    setNoteSaving(true);
+
+    try {
+      const noteId = editingNoteId || doc(collection(db, "personalNotes")).id;
+      const attachments = await uploadBoardAttachments(noteAttachments, {
+        folder: `dashboard/personalNotes/${currentUserId}/${noteId}`,
+        ownerUid: currentUserId,
+      });
+      const removedAttachments = getRemovedAttachments(originalNoteAttachments, noteAttachments);
+
+      const payload = {
+        userId: currentUserId,
+        title: cleanTitle || "Nota personal",
+        content: cleanContent,
+        color: normalizeNoteColor(noteForm.color),
+        attachments,
+        pinned: Boolean(noteForm.pinned),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingNoteId) {
+        await updateDoc(doc(db, "personalNotes", editingNoteId), payload);
+        setNoteStatus("Nota actualizada.");
+      } else {
+        await setDoc(doc(db, "personalNotes", noteId), {
+          ...payload,
+          completed: false,
+          createdAt: serverTimestamp(),
+        });
+        setNoteStatus("Nota guardada.");
+      }
+
+      await deleteStoredAttachments(removedAttachments);
+      resetNoteEditor();
+    } catch (error) {
+      console.error("No se pudo guardar tu nota:", error);
+      setNoteError("No se pudo guardar tu nota.");
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
+  function handleEditNote(note) {
+    resetNoteEditor();
+    const existingAttachments = normalizeStoredAttachments(note.attachments).map(markStoredAttachment);
+    setEditingNoteId(note.id);
+    setOriginalNoteAttachments(existingAttachments);
+    setNoteAttachments(existingAttachments);
+    setNoteForm({
+      title: note.title || "",
+      content: note.content || "",
+      pinned: Boolean(note.pinned),
+      color: normalizeNoteColor(note.color),
+    });
+    setNoteStatus("");
+    setNoteError("");
+  }
+
+  async function handleToggleNote(note, field) {
+    try {
+      await updateDoc(doc(db, "personalNotes", note.id), {
+        [field]: !Boolean(note[field]),
+        updatedAt: serverTimestamp(),
+        userId: currentUserId,
+      });
+    } catch (error) {
+      console.error("No se pudo actualizar tu nota:", error);
+      setNoteError("No se pudo actualizar la nota.");
+    }
+  }
+
+  async function handleDeleteNote(note) {
+    try {
+      await deleteDoc(doc(db, "personalNotes", note.id));
+      await deleteStoredAttachments(note.attachments || []);
+      setNoteStatus("Nota eliminada.");
+    } catch (error) {
+      console.error("No se pudo eliminar tu nota:", error);
+      setNoteError("No se pudo eliminar la nota.");
+    }
+  }
+
+  const unreadAnnouncements = announcements.filter(
+    (announcement) => !announcementReceipts[announcement.id]?.length
+  ).length;
+  const pendingNotes = notes.filter((note) => !note.completed).length;
+  const importantAnnouncements = announcements.filter(
+    (announcement) => announcement.priority === "important"
+  ).length;
+  const notesWithAttachments = notes.filter((note) => Array.isArray(note.attachments) && note.attachments.length > 0).length;
+
+  return (
+    <div className="workspace-dashboard-page">
+      <div className="visual-page-header workspace-dashboard-header workspace-board-header">
+        <div>
+          <span className="visual-page-kicker">Centro de trabajo</span>
+          <h1>Tablero general</h1>
+          <p>
+            Consulta anuncios importantes, confirma su lectura y administra tus notas personales privadas.
+          </p>
+        </div>
+
+        <div className="workspace-dashboard-summary workspace-summary-grid">
+          <div className="workspace-summary-card highlight-blue">
+            <span className="summary-icon">📣</span>
+            <strong>{announcements.length}</strong>
+            <small>Anuncios activos</small>
+          </div>
+          <div className="workspace-summary-card highlight-orange">
+            <span className="summary-icon">⚠️</span>
+            <strong>{importantAnnouncements}</strong>
+            <small>Importantes</small>
+          </div>
+          <div className="workspace-summary-card highlight-green">
+            <span className="summary-icon">✅</span>
+            <strong>{unreadAnnouncements}</strong>
+            <small>Por confirmar</small>
+          </div>
+          <div className="workspace-summary-card highlight-yellow">
+            <span className="summary-icon">📝</span>
+            <strong>{pendingNotes}</strong>
+            <small>Notas pendientes</small>
+          </div>
+        </div>
+      </div>
+
+      <div className="workspace-dashboard-grid">
+        <section className="workspace-card announcements-card board-visual-card">
+          <div className="workspace-card-header workspace-card-header-visual">
+            <div>
+              <span className="workspace-card-kicker">Comunicación interna</span>
+              <h3>Tablero de anuncios</h3>
+              <p>
+                Aquí se publican avisos importantes para el equipo. Puedes adjuntar imágenes, audios, documentos y videos.
+              </p>
+            </div>
+            <div className="workspace-card-side-badge announcement-side-badge">{announcements.length} activos</div>
+          </div>
+
+          {isAdmin && (
+            <form className="announcement-form board-form-visual" onSubmit={handleAnnouncementSubmit}>
+              <div className="announcement-form-grid">
+                <label>
+                  <span>Título del anuncio</span>
+                  <input
+                    value={announcementForm.title}
+                    onChange={(event) =>
+                      setAnnouncementForm((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                    placeholder="Ej. Aviso general"
+                    maxLength={90}
+                  />
+                </label>
+
+                <label>
+                  <span>Prioridad</span>
+                  <select
+                    value={announcementForm.priority}
+                    onChange={(event) =>
+                      setAnnouncementForm((current) => ({
+                        ...current,
+                        priority: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="important">Importante</option>
+                  </select>
+                </label>
+              </div>
+
+              <label>
+                <span>Mensaje</span>
+                <textarea
+                  value={announcementForm.message}
+                  onChange={(event) =>
+                    setAnnouncementForm((current) => ({
+                      ...current,
+                      message: event.target.value,
+                    }))
+                  }
+                  placeholder="Escribe el aviso que verán los colaboradores..."
+                  maxLength={900}
+                />
+              </label>
+
+              <AttachmentPicker
+                title="Archivos adjuntos"
+                helper="Puedes subir imágenes, documentos, audio o video. Máximo 6 archivos por anuncio."
+                onChange={handleAnnouncementFileSelection}
+              />
+
+              <AttachmentDraftList
+                items={announcementAttachments}
+                onRemove={handleRemoveAnnouncementAttachment}
+              />
+
+              <div className="workspace-form-actions">
+                {editingAnnouncementId && (
+                  <button
+                    type="button"
+                    className="workspace-soft-button"
+                    onClick={resetAnnouncementEditor}
+                  >
+                    Cancelar edición
+                  </button>
+                )}
+
+                <button type="submit" className="workspace-primary-button" disabled={announcementSaving}>
+                  {announcementSaving
+                    ? "Guardando..."
+                    : editingAnnouncementId
+                    ? "Guardar cambios"
+                    : "Publicar anuncio"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {announcementError && <div className="workspace-error-box">{announcementError}</div>}
+          {announcementStatus && <div className="workspace-success-box">{announcementStatus}</div>}
+
+          <div className="announcement-list visual-announcement-list">
+            {announcements.length === 0 ? (
+              <div className="workspace-empty-state board-empty-state">
+                <strong>No hay anuncios activos</strong>
+                <p>Cuando se publique un anuncio, aparecerá aquí.</p>
+              </div>
+            ) : (
+              announcements.map((announcement) => {
+                const receipts = announcementReceipts[announcement.id] || [];
+                const currentUserHasRead = receipts.some(
+                  (receipt) => receipt.userId === currentUserId || receipt.id === currentUserId
+                );
+
+                return (
+                  <article
+                    key={announcement.id}
+                    className={`announcement-item visual-announcement-item ${
+                      announcement.priority === "important" ? "important" : ""
+                    }`}
+                  >
+                    <div className="announcement-ribbon">
+                      <span>{announcement.priority === "important" ? "📢" : "📌"}</span>
+                    </div>
+
+                    <div className="announcement-item-top">
+                      <div>
+                        <span className="announcement-badge">
+                          {announcement.priority === "important" ? "Importante" : "Normal"}
+                        </span>
+                        <h4>{announcement.title || "Anuncio sin título"}</h4>
+                      </div>
+
+                      <small>{formatDateTime(announcement.createdAt)}</small>
+                    </div>
+
+                    <p>{announcement.message}</p>
+
+                    <AttachmentGallery attachments={announcement.attachments} />
+
+                    <div className="announcement-meta-row">
+                      <span>Publicado por {announcement.createdByName || "Administración"}</span>
+
+                      {currentUserHasRead ? (
+                        <span className="read-confirmation-badge">✓ Leído</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="mark-read-button"
+                          onClick={() => handleMarkAnnouncementRead(announcement.id)}
+                        >
+                          Marcar leído / visto
+                        </button>
+                      )}
+                    </div>
+
+                    {isAdmin && (
+                      <div className="announcement-admin-panel">
+                        <details>
+                          <summary>
+                            Confirmaciones de lectura: {receipts.length}
+                          </summary>
+
+                          {receipts.length === 0 ? (
+                            <p>Aún no hay confirmaciones para este anuncio.</p>
+                          ) : (
+                            <div className="announcement-readers-list">
+                              {receipts.map((receipt) => (
+                                <div key={receipt.id}>
+                                  <strong>{receipt.userName || "Usuario"}</strong>
+                                  <span>
+                                    {receipt.userEmail || "Sin correo"} · {formatDateTime(receipt.readAt)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </details>
+
+                        <div className="announcement-admin-actions">
+                          <button type="button" onClick={() => handleEditAnnouncement(announcement)}>
+                            Editar
+                          </button>
+                          <button type="button" onClick={() => handleArchiveAnnouncement(announcement.id)}>
+                            Archivar
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => handleDeleteAnnouncement(announcement)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        <section className="workspace-card notes-card board-visual-card">
+          <div className="workspace-card-header workspace-card-header-visual">
+            <div>
+              <span className="workspace-card-kicker">Espacio privado</span>
+              <h3>Mis notas personales</h3>
+              <p>
+                Tus notas funcionan como post-it digitales: privadas, visuales y con archivos adjuntos.
+              </p>
+            </div>
+            <div className="workspace-card-side-badge note-side-badge">{notesWithAttachments} con archivos</div>
+          </div>
+
+          <form className="personal-note-form board-form-visual" onSubmit={handleNoteSubmit}>
+            <label>
+              <span>Título</span>
+              <input
+                value={noteForm.title}
+                onChange={(event) =>
+                  setNoteForm((current) => ({ ...current, title: event.target.value }))
+                }
+                placeholder="Ej. Recordatorio"
+                maxLength={80}
+              />
+            </label>
+
+            <label>
+              <span>Nota</span>
+              <textarea
+                value={noteForm.content}
+                onChange={(event) =>
+                  setNoteForm((current) => ({ ...current, content: event.target.value }))
+                }
+                placeholder="Escribe una nota rápida tipo post-it..."
+                maxLength={700}
+              />
+            </label>
+
+            <div className="note-form-toolbar">
+              <label className="note-pin-row">
+                <input
+                  type="checkbox"
+                  checked={noteForm.pinned}
+                  onChange={(event) =>
+                    setNoteForm((current) => ({ ...current, pinned: event.target.checked }))
+                  }
+                />
+                <span>Fijar arriba</span>
+              </label>
+
+              <NoteColorPicker
+                value={noteForm.color}
+                onChange={(value) => setNoteForm((current) => ({ ...current, color: value }))}
+              />
+            </div>
+
+            <AttachmentPicker
+              title="Archivos adjuntos"
+              helper="Adjunta imágenes, audio, video o documentos. Máximo 6 archivos por nota."
+              onChange={handleNoteFileSelection}
+            />
+
+            <AttachmentDraftList
+              items={noteAttachments}
+              onRemove={handleRemoveNoteAttachment}
+            />
+
+            <div className="workspace-form-actions">
+              {editingNoteId && (
+                <button
+                  type="button"
+                  className="workspace-soft-button"
+                  onClick={resetNoteEditor}
+                >
+                  Cancelar edición
+                </button>
+              )}
+
+              <button type="submit" className="workspace-primary-button" disabled={noteSaving}>
+                {noteSaving ? "Guardando..." : editingNoteId ? "Guardar nota" : "Agregar nota"}
+              </button>
+            </div>
+          </form>
+
+          {noteError && <div className="workspace-error-box">{noteError}</div>}
+          {noteStatus && <div className="workspace-success-box">{noteStatus}</div>}
+
+          <div className="personal-notes-list visual-notes-grid">
+            {notes.length === 0 ? (
+              <div className="workspace-empty-state postit-empty board-empty-state">
+                <strong>No tienes notas personales</strong>
+                <p>Agrega recordatorios rápidos para tenerlos a la mano.</p>
+              </div>
+            ) : (
+              notes.map((note) => (
+                <article
+                  key={note.id}
+                  className={`personal-note-item visual-note-item note-color-${normalizeNoteColor(note.color)} ${note.completed ? "completed" : ""}`}
+                >
+                  <div className="note-postit-pin" />
+
+                  <div className="personal-note-top">
+                    <div>
+                      <div className="note-top-badges">
+                        {note.pinned && <span className="pin-badge">Fijada</span>}
+                        {note.completed && <span className="pin-badge completed-badge">Completada</span>}
+                      </div>
+                      <h4>{note.title || "Nota personal"}</h4>
+                    </div>
+                    <small>{formatDateTime(note.updatedAt || note.createdAt)}</small>
+                  </div>
+
+                  <p>{note.content || "Sin contenido adicional."}</p>
+
+                  <AttachmentGallery attachments={note.attachments} compact />
+
+                  <div className="personal-note-actions">
+                    <button type="button" onClick={() => handleToggleNote(note, "completed")}>
+                      {note.completed ? "Marcar pendiente" : "Completar"}
+                    </button>
+                    <button type="button" onClick={() => handleToggleNote(note, "pinned")}>
+                      {note.pinned ? "Quitar fijado" : "Fijar"}
+                    </button>
+                    <button type="button" onClick={() => handleEditNote(note)}>
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => handleDeleteNote(note)}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function NoteColorPicker({ value, onChange }) {
+  return (
+    <div className="note-color-picker">
+      <span>Color</span>
+      <div className="note-color-options">
+        {NOTE_COLOR_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={`note-color-swatch ${value === option.value ? "active" : ""} ${option.className}`}
+            onClick={() => onChange(option.value)}
+            title={option.label}
+            aria-label={`Seleccionar color ${option.label}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AttachmentPicker({ title, helper, onChange }) {
+  return (
+    <div className="attachment-picker">
+      <div className="attachment-picker-top">
+        <strong>{title}</strong>
+        <span>{helper}</span>
+      </div>
+      <label className="attachment-picker-dropzone">
+        <input
+          type="file"
+          multiple
+          accept={BOARD_ATTACHMENT_ACCEPT}
+          onChange={onChange}
+        />
+        <div>
+          <span className="dropzone-icon">📎</span>
+          <strong>Seleccionar archivos</strong>
+          <p>Formatos permitidos: imagen, audio, video y documentos comunes.</p>
+        </div>
+      </label>
+    </div>
+  );
+}
+
+function AttachmentDraftList({ items, onRemove }) {
+  if (!items.length) return null;
+
+  return (
+    <div className="attachment-draft-list">
+      {items.map((attachment) => {
+        const type = getAttachmentType(attachment.contentType, attachment.name);
+        return (
+          <div key={attachment.id} className={`attachment-draft-chip type-${type}`}>
+            <div>
+              <strong>{attachment.name || "Archivo"}</strong>
+              <span>{getAttachmentTypeLabel(type)} · {formatFileSize(attachment.size)}</span>
+            </div>
+            <button type="button" onClick={() => onRemove(attachment.id)}>
+              Quitar
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AttachmentGallery({ attachments, compact = false }) {
+  if (!Array.isArray(attachments) || attachments.length === 0) return null;
+
+  return (
+    <div className={`attachment-gallery ${compact ? "compact" : ""}`}>
+      {attachments.map((attachment) => {
+        const type = getAttachmentType(attachment.contentType, attachment.name);
+        return (
+          <article key={attachment.path || attachment.url || attachment.name} className={`attachment-card type-${type}`}>
+            {type === "image" ? (
+              <a href={attachment.url} target="_blank" rel="noreferrer" className="attachment-image-link">
+                <img src={attachment.url} alt={attachment.name || "Adjunto"} />
+              </a>
+            ) : type === "video" ? (
+              <video src={attachment.url} controls preload="metadata" />
+            ) : type === "audio" ? (
+              <div className="attachment-audio-box">
+                <span className="attachment-kind-icon">🎧</span>
+                <audio src={attachment.url} controls preload="metadata" />
+              </div>
+            ) : (
+              <div className="attachment-document-box">
+                <span className="attachment-kind-icon">📄</span>
+                <div>
+                  <strong>{attachment.name || "Documento"}</strong>
+                  <span>{formatFileSize(attachment.size)}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="attachment-card-footer">
+              <span>{attachment.name || "Archivo"}</span>
+              <a href={attachment.url} target="_blank" rel="noreferrer">
+                Abrir
+              </a>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+const BOARD_ATTACHMENT_ACCEPT = [
+  "image/*",
+  "video/*",
+  "audio/*",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".txt",
+  ".csv",
+  ".zip",
+].join(",");
+
+const NOTE_COLOR_OPTIONS = [
+  { value: "yellow", label: "amarillo", className: "swatch-yellow" },
+  { value: "blue", label: "azul", className: "swatch-blue" },
+  { value: "green", label: "verde", className: "swatch-green" },
+  { value: "pink", label: "rosa", className: "swatch-pink" },
+  { value: "purple", label: "morado", className: "swatch-purple" },
+];
+
+function normalizeStoredAttachments(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((attachment) => attachment && typeof attachment === "object")
+    .map((attachment, index) => ({
+      id: attachment.id || attachment.path || attachment.url || `stored-${index}`,
+      name: attachment.name || "Archivo",
+      url: attachment.url || "",
+      path: attachment.path || "",
+      contentType: attachment.contentType || "",
+      size: Number(attachment.size) || 0,
+      type: attachment.type || getAttachmentType(attachment.contentType, attachment.name),
+      status: "stored",
+    }))
+    .filter((attachment) => attachment.url || attachment.path);
+}
+
+function markStoredAttachment(attachment) {
+  return {
+    ...attachment,
+    status: "stored",
+  };
+}
+
+function createDraftAttachment(file) {
+  return {
+    id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    name: file.name,
+    size: file.size || 0,
+    contentType: file.type || guessContentTypeFromName(file.name),
+    type: getAttachmentType(file.type, file.name),
+    file,
+    previewUrl: file.type?.startsWith("image/") ? URL.createObjectURL(file) : "",
+    status: "draft",
+  };
+}
+
+function revokeDraftAttachmentPreviews(items) {
+  if (!Array.isArray(items)) return;
+  items.forEach((item) => {
+    if (item?.previewUrl) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+  });
+}
+
+function validateBoardFiles(files, currentCount = 0) {
+  if (!files.length) {
+    return { valid: true, message: "" };
+  }
+
+  const total = currentCount + files.length;
+  if (total > 6) {
+    return { valid: false, message: "Solo puedes adjuntar hasta 6 archivos por elemento." };
+  }
+
+  for (const file of files) {
+    const type = getAttachmentType(file.type, file.name);
+    const maxSize = type === "video" ? 80 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return {
+        valid: false,
+        message:
+          type === "video"
+            ? `El video "${file.name}" supera el límite de 80 MB.`
+            : `El archivo "${file.name}" supera el límite de 25 MB.`,
+      };
+    }
+  }
+
+  return { valid: true, message: "" };
+}
+
+async function uploadBoardAttachments(items, { folder, ownerUid }) {
+  const retained = items
+    .filter((item) => item.status !== "draft")
+    .map((item) => ({
+      name: item.name || "Archivo",
+      url: item.url || "",
+      path: item.path || "",
+      contentType: item.contentType || "",
+      size: Number(item.size) || 0,
+      type: item.type || getAttachmentType(item.contentType, item.name),
+    }));
+
+  const drafts = items.filter((item) => item.status === "draft" && item.file);
+
+  const uploaded = await Promise.all(
+    drafts.map(async (item, index) => {
+      const safeName = sanitizeStorageFileName(item.name || `archivo-${index + 1}`);
+      const storagePath = `${folder}/${Date.now()}-${index + 1}-${safeName}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, item.file, {
+        contentType: item.contentType || undefined,
+        customMetadata: {
+          uploadedBy: ownerUid || "",
+          originalName: item.name || safeName,
+        },
+      });
+      const url = await getDownloadURL(storageRef);
+      return {
+        name: item.name || safeName,
+        url,
+        path: storagePath,
+        contentType: item.contentType || "",
+        size: Number(item.size) || 0,
+        type: item.type || getAttachmentType(item.contentType, item.name),
+      };
+    })
+  );
+
+  return [...retained, ...uploaded];
+}
+
+function getRemovedAttachments(originalItems, currentItems) {
+  const currentKeys = new Set(
+    currentItems
+      .filter((item) => item.status !== "draft")
+      .map((item) => item.path || item.url || item.id)
+  );
+
+  return (originalItems || []).filter((item) => {
+    const key = item.path || item.url || item.id;
+    return key && !currentKeys.has(key);
+  });
+}
+
+async function deleteStoredAttachments(attachments) {
+  if (!Array.isArray(attachments) || attachments.length === 0) return;
+
+  await Promise.all(
+    attachments.map(async (attachment) => {
+      if (!attachment?.path) return;
+      try {
+        await deleteObject(ref(storage, attachment.path));
+      } catch (error) {
+        console.warn("No se pudo eliminar un archivo adjunto:", attachment.path, error);
+      }
+    })
+  );
+}
+
+function getAttachmentType(contentType, fileName = "") {
+  const lowerType = String(contentType || "").toLowerCase();
+  const lowerName = String(fileName || "").toLowerCase();
+
+  if (lowerType.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(lowerName)) return "image";
+  if (lowerType.startsWith("video/") || /\.(mp4|mov|avi|mkv|webm)$/i.test(lowerName)) return "video";
+  if (lowerType.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac)$/i.test(lowerName)) return "audio";
+  return "document";
+}
+
+function getAttachmentTypeLabel(type) {
+  if (type === "image") return "Imagen";
+  if (type === "video") return "Video";
+  if (type === "audio") return "Audio";
+  return "Documento";
+}
+
+function guessContentTypeFromName(fileName = "") {
+  const type = getAttachmentType("", fileName);
+  if (type === "image") return "image/*";
+  if (type === "video") return "video/*";
+  if (type === "audio") return "audio/*";
+  return "application/octet-stream";
+}
+
+function sanitizeStorageFileName(fileName = "archivo") {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+function formatFileSize(bytes) {
+  const numeric = Number(bytes) || 0;
+  if (numeric < 1024) return `${numeric} B`;
+  if (numeric < 1024 * 1024) return `${(numeric / 1024).toFixed(1)} KB`;
+  return `${(numeric / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalizeNoteColor(color) {
+  const normalized = String(color || "yellow").toLowerCase();
+  return NOTE_COLOR_OPTIONS.some((option) => option.value === normalized) ? normalized : "yellow";
+}
+
+function getCurrentUserId(profile) {
+  return (
+    auth.currentUser?.uid ||
+    profile?.uid ||
+    profile?.id ||
+    profile?.userId ||
+    profile?.authUid ||
+    ""
+  );
+}
+
+function getMillisFromFirestoreDate(value) {
+  if (!value) return 0;
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") return new Date(value).getTime() || 0;
+  return 0;
+}
+
+function sortByCreatedAtDesc(a, b) {
+  return getMillisFromFirestoreDate(b.createdAt) - getMillisFromFirestoreDate(a.createdAt);
+}
+
+function sortByReadAtDesc(a, b) {
+  return getMillisFromFirestoreDate(b.readAt) - getMillisFromFirestoreDate(a.readAt);
+}
+
+function sortPersonalNotes(a, b) {
+  if (Boolean(a.completed) !== Boolean(b.completed)) {
+    return a.completed ? 1 : -1;
+  }
+
+  if (Boolean(a.pinned) !== Boolean(b.pinned)) {
+    return a.pinned ? -1 : 1;
+  }
+
+  const bDate = getMillisFromFirestoreDate(b.updatedAt || b.createdAt);
+  const aDate = getMillisFromFirestoreDate(a.updatedAt || a.createdAt);
+
+  return bDate - aDate;
+}
+
+function formatDateTime(value) {
+  const millis = getMillisFromFirestoreDate(value);
+
+  if (!millis) return "Fecha pendiente";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(millis));
+}
+
+function MobileAppHeader({ profile, title, subtitle, onHome, onOpenMenu, onOpenProfile }) {
+  return (
+    <header className="mobile-app-header">
+      <button
+        type="button"
+        className="mobile-header-logo-button"
+        onClick={onHome}
+        aria-label="Volver al inicio"
+      >
+        <img src="/active-logo.png" alt="Active English School" />
+      </button>
+
+      <div className="mobile-header-title">
+        <span>{subtitle}</span>
+        <strong>{title}</strong>
+      </div>
+
+      <div className="mobile-header-actions">
+        <button
+          type="button"
+          className="mobile-header-menu-button"
+          onClick={onOpenMenu}
+          aria-label="Abrir menú"
+        >
+          ☰
+        </button>
+
+        <button
+          type="button"
+          className="mobile-header-avatar-button"
+          onClick={onOpenProfile}
+          aria-label="Ver mi perfil"
+        >
+          {getInitials(profile?.name)}
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function MobileBottomNavigation({ primaryItems, allItems, isNavActive, onNavigate, onOpenMore }) {
+  const primaryPageSet = new Set(primaryItems.map((item) => item.page));
+  const moreIsActive = allItems.some((item) => !primaryPageSet.has(item.page) && isNavActive(item.page));
+
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Navegación principal móvil">
+      {primaryItems.map((item) => (
+        <button
+          key={item.page}
+          type="button"
+          className={isNavActive(item.page) ? "active" : ""}
+          onClick={() => onNavigate(item.page)}
+        >
+          <DashboardNavIcon name={item.icon} />
+          <span>{item.mobileLabel || item.label}</span>
+        </button>
+      ))}
+
+      <button
+        type="button"
+        className={moreIsActive ? "active" : ""}
+        onClick={onOpenMore}
+      >
+        <DashboardNavIcon name="more" />
+        <span>Más</span>
+      </button>
+    </nav>
+  );
+}
+
+function MobileModuleDrawer({
+  open,
+  items,
+  isAdmin,
+  profile,
+  isNavActive,
+  onNavigate,
+  onClose,
+  onViewProfile,
+  onLogout,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="mobile-module-drawer-layer">
+      <button
+        type="button"
+        className="mobile-module-backdrop"
+        onClick={onClose}
+        aria-label="Cerrar menú"
+      />
+
+      <section className="mobile-module-drawer" aria-label="Menú de módulos">
+        <div className="mobile-drawer-handle" />
+
+        <div className="mobile-drawer-profile">
+          <div className="mobile-drawer-avatar">{getInitials(profile?.name)}</div>
+          <div>
+            <strong>{profile?.name || "Usuario"}</strong>
+            <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
+          </div>
+        </div>
+
+        <div className="mobile-drawer-list">
+          {items.map((item) => (
+            <button
+              key={item.page}
+              type="button"
+              className={isNavActive(item.page) ? "active" : ""}
+              onClick={() => onNavigate(item.page)}
+            >
+              <span className="mobile-drawer-icon">
+                <DashboardNavIcon name={item.icon} />
+              </span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="mobile-drawer-actions">
+          <button type="button" onClick={onViewProfile}>
+            Ver mi perfil
+          </button>
+          <button type="button" className="danger" onClick={onLogout}>
+            Cerrar sesión
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

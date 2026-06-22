@@ -6449,10 +6449,9 @@ export default function PrintShop() {
       <section className="printshop-topbar">
         <div>
           <p className="section-kicker printshop-kicker">Módulo operativo</p>
-          <h1>Módulo de Imprenta</h1>
+          <h1>Imprenta</h1>
           <p>
-            Control de producción, solicitudes, inventario de libros, insumos y
-            generación de certificados con folio y QR de validación.
+            Control de solicitudes, producción, inventario terminado e insumos para el trabajo diario de imprenta.
           </p>
         </div>
 
@@ -7455,45 +7454,53 @@ function DashboardView({
     })
     .slice(0, 5);
 
-  const dashboardMetrics = metrics.map((metric) => {
-    if (metric.label === "Solicitudes pendientes") {
-      return {
-        ...metric,
-        value: String(requestStats.pending),
-        helper: requestStats.pending === 1 ? "Trabajo por atender" : "Trabajos por atender",
-      };
-    }
+  const dashboardMetrics = metrics
+    .map((metric) => {
+      if (metric.label === "Solicitudes pendientes") {
+        return {
+          ...metric,
+          value: String(requestStats.pending),
+          helper: requestStats.pending === 1 ? "Trabajo por atender" : "Trabajos por atender",
+        };
+      }
 
-    if (metric.label === "Listos para entrega") {
-      return {
-        ...metric,
-        value: String(requestStats.ready),
-        helper: requestStats.ready === 1 ? "Solicitud lista" : "Solicitudes listas",
-      };
-    }
+      if (metric.label === "Listos para entrega") {
+        return {
+          ...metric,
+          value: String(requestStats.ready),
+          helper: requestStats.ready === 1 ? "Solicitud lista" : "Solicitudes listas",
+        };
+      }
 
-    if (metric.label === "Libros con stock bajo") {
-      return {
-        ...metric,
-        value: String(inventoryStats.lowStock),
-        helper:
-          inventoryStats.lowStock === 1
-            ? "Libro bajo mínimo"
-            : "Libros bajo mínimo",
-      };
-    }
+      if (metric.label === "Libros con stock bajo") {
+        return {
+          ...metric,
+          value: String(inventoryStats.lowStock),
+          helper:
+            inventoryStats.lowStock === 1
+              ? "Libro bajo mínimo"
+              : "Libros bajo mínimo",
+        };
+      }
 
-    if (metric.label === "Lotes activos") {
-      return {
-        ...metric,
-        value: String(batchStats.active),
-        helper: batchStats.active === 1 ? "Producción en curso" : "Producciones en curso",
-      };
-    }
+      if (metric.label === "Lotes activos") {
+        return {
+          ...metric,
+          value: String(batchStats.active),
+          helper: batchStats.active === 1 ? "Producción en curso" : "Producciones en curso",
+        };
+      }
 
-    return metric;
-  });
-
+      return metric;
+    })
+    .filter((metric) =>
+      [
+        "Solicitudes pendientes",
+        "Lotes activos",
+        "Libros con stock bajo",
+        "Listos para entrega",
+      ].includes(metric.label)
+    );
 
   const dashboardRequests = printRequests.length
     ? printRequests.slice(0, 4).map((request) => ({
@@ -7517,417 +7524,132 @@ function DashboardView({
       }))
     : batches;
 
-  const operationalCards = [
-    {
-      icon: "▤",
-      title: "Solicitudes especiales",
-      value: `${requestStats.pending} activas`,
-      description: "Certificados, volantes y viniles con fechas próximas.",
-      tone: "blue",
-    },
-    {
-      icon: "▧",
-      title: "Producción para inventario",
-      value: `${batchStats.active} lotes`,
-      description: "Libros en impresión, encuadernado o revisión de calidad.",
-      tone: "teal",
-    },
-    {
-      icon: "◎",
-      title: "Certificados profesionales",
-      value: "Folio + QR",
-      description: "Base preparada para documentos digitales e impresos.",
-      tone: "purple",
-    },
-    {
-      icon: "!",
-      title: "Insumos por revisar",
-      value: "4 alertas",
-      description: "Papel, opalina y tintas debajo del mínimo sugerido.",
-      tone: "red",
-    },
-  ];
-
-  const workflowSteps = [
-    {
-      number: "01",
-      title: "Recibir solicitud",
-      description: "Trabajos solicitados por dirección, recepción, administración o maestros.",
-    },
-    {
-      number: "02",
-      title: "Producir o generar",
-      description: "Impresión física, lote de libros o certificado digital automático.",
-    },
-    {
-      number: "03",
-      title: "Revisión de calidad",
-      description: "Validación de nombres, cortes, encuadernado, folio, firma y QR.",
-    },
-    {
-      number: "04",
-      title: "Entregar y registrar",
-      description: "Salida física o digital con evidencia y control de inventario.",
-    },
-  ];
-
   return (
     <>
-      <section className="printshop-dashboard-hero">
-        <div className="printshop-hero-content">
-          <p className="section-kicker printshop-hero-kicker">Centro operativo</p>
-          <h2>Producción, solicitudes e inventario en un solo lugar</h2>
-          <p>
-            Esta pantalla será el punto de control de Imprenta: trabajos solicitados,
-            lotes de libros, certificados con folio, insumos críticos y entregas pendientes.
-          </p>
-
-          <div className="printshop-hero-badges">
-            <span>{productStats.active} productos activos</span>
-            <span>{productStats.books} libros configurados</span>
-            <span>{productStats.generatedDocuments} documentos generados</span>
-          </div>
-
-          <div className="printshop-hero-actions">
-            <button type="button" className="visual-primary-button" onClick={onOpenCatalog}>
-              Administrar catálogo
-            </button>
-            <button type="button" className="visual-outline-button">
-              Ver flujo de producción
-            </button>
-          </div>
-        </div>
-
-        <div className="printshop-hero-visual" aria-hidden="true">
-          <div className="printshop-hero-printer">
-            <div className="printer-top" />
-            <div className="printer-body">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className="printer-paper">
-              <b>CERT</b>
-              <small>Folio + QR</small>
-            </div>
-          </div>
-
-          <div className="printshop-hero-floating-card one">
-            <strong>LOTE</strong>
-            <span>Journey A1 · 75%</span>
-          </div>
-
-          <div className="printshop-hero-floating-card two">
-            <strong>QR</strong>
-            <span>Validación activa</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="printshop-metrics-grid printshop-metrics-enhanced">
+      <section className="printshop-metrics-grid printshop-metrics-enhanced printshop-dashboard-compact-metrics">
         {dashboardMetrics.map((metric) => (
           <MetricCard key={metric.label} metric={metric} />
         ))}
       </section>
 
-      <section className="printshop-operational-grid">
-        {operationalCards.map((card) => (
-          <article className={`printshop-operational-card ${card.tone}`} key={card.title}>
-            <div>{card.icon}</div>
-            <span>{card.title}</span>
-            <strong>{card.value}</strong>
-            <p>{card.description}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="printshop-action-grid printshop-action-grid-enhanced">
-        <ActionCard
-          icon="＋"
-          title="Nueva solicitud"
-          description="Registrar certificados, diplomas, volantes, viniles o materiales internos."
-          onClick={onOpenRequests}
-        />
-        <ActionCard
-          icon="▧"
-          title="Nuevo lote"
-          description="Crear producción interna de libros para inventario terminado."
-          onClick={onOpenBatches}
-        />
-        <ActionCard
-          icon="◎"
-          title="Generar certificados"
-          description="Preparar documentos con folio, firma precargada y QR de validación."
-        />
-        <ActionCard
-          icon="▤"
-          title="Catálogo de productos"
-          description={`${productStats.active} productos activos registrados para imprenta.`}
-          onClick={onOpenCatalog}
-        />
-      </section>
-
-      <section className="printshop-dashboard-layout-enhanced">
-        <div className="printshop-dashboard-main-enhanced">
-          <Panel title="Tablero de trabajo" icon="▦" actionLabel="Vista operativa">
-            <div className="printshop-workboard-grid">
-              <div className="printshop-workboard-column">
-                <div className="printshop-mini-heading">
-                  <span>▤</span>
-                  <div>
-                    <strong>Solicitudes recientes</strong>
-                    <p>Trabajos pedidos por áreas o planteles.</p>
-                  </div>
-                </div>
-
-                <div className="printshop-request-card-list">
-                  {dashboardRequests.map((request) => (
-                    <article className="printshop-request-card" key={request.folio}>
-                      <div>
-                        <strong>{request.product}</strong>
-                        <span>{request.folio} · {request.requester}</span>
-                      </div>
-                      <div>
-                        <StatusBadge tone={request.statusTone}>{request.status}</StatusBadge>
-                        <small>{request.delivery}</small>
-                      </div>
-                    </article>
-                  ))}
+      <section className="printshop-dashboard-compact-layout">
+        <Panel title="Trabajo actual" icon="▦" actionLabel="Resumen operativo">
+          <div className="printshop-workboard-grid compact-home">
+            <div className="printshop-workboard-column">
+              <div className="printshop-mini-heading">
+                <span>▤</span>
+                <div>
+                  <strong>Solicitudes recientes</strong>
+                  <p>Trabajos pedidos por áreas o planteles.</p>
                 </div>
               </div>
 
-              <div className="printshop-workboard-column">
-                <div className="printshop-mini-heading">
-                  <span>▧</span>
-                  <div>
-                    <strong>Lotes de producción</strong>
-                    <p>Producción interna para mantener inventario.</p>
-                  </div>
-                </div>
-
-                <div className="printshop-batch-card-list">
-                  {dashboardBatches.map((batch) => (
-                    <article className="printshop-batch-card" key={batch.folio}>
-                      <div className="printshop-batch-card-top">
-                        <div>
-                          <strong>{batch.product}</strong>
-                          <span>{batch.folio}</span>
-                        </div>
-                        <StatusBadge tone={batch.statusTone}>{batch.status}</StatusBadge>
-                      </div>
-                      <ProgressBar value={batch.progress} tone={batch.statusTone} />
-                      <small>{batch.quantity}</small>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel title="Flujo recomendado de Imprenta" icon="▥" actionLabel="Proceso base">
-            <div className="printshop-workflow-track">
-              {workflowSteps.map((step) => (
-                <article className="printshop-workflow-step" key={step.number}>
-                  <span>{step.number}</span>
-                  <strong>{step.title}</strong>
-                  <p>{step.description}</p>
-                </article>
-              ))}
-            </div>
-          </Panel>
-        </div>
-
-        <aside className="printshop-dashboard-side-enhanced">
-          <Panel title="Inventario de productos terminados" icon="▣" actionLabel={`${inventoryStats.total} libros`}>
-            <div className="finished-inventory-list enhanced">
-              {inventoryItems.length === 0 ? (
-                <div className="printshop-small-empty">
-                  <strong>Inventario pendiente</strong>
-                  <span>Configura los libros terminados desde la pestaña Inventario.</span>
-                </div>
-              ) : lowInventoryItems.length === 0 ? (
-                inventoryItems.slice(0, 3).map((item) => {
-                  const status = getInventoryStatus(item);
-
-                  return (
-                    <div className="finished-inventory-row" key={item.id}>
-                      <div>
-                        <strong>{item.productName}</strong>
-                        <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
-                      </div>
-                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+              <div className="printshop-request-card-list">
+                {dashboardRequests.map((request) => (
+                  <button
+                    type="button"
+                    className="printshop-request-card home-clickable-card"
+                    key={request.folio}
+                    onClick={onOpenRequests}
+                  >
+                    <div>
+                      <strong>{request.product}</strong>
+                      <span>{request.folio} · {request.requester}</span>
                     </div>
-                  );
-                })
-              ) : (
-                lowInventoryItems.map((item) => {
-                  const status = getInventoryStatus(item);
-
-                  return (
-                    <div className="finished-inventory-row" key={item.id}>
-                      <div>
-                        <strong>{item.productName}</strong>
-                        <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
-                      </div>
-                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                    <div>
+                      <StatusBadge tone={request.statusTone}>{request.status}</StatusBadge>
+                      <small>{request.delivery}</small>
                     </div>
-                  );
-                })
-              )}
-            </div>
-            <button
-              type="button"
-              className="visual-outline-button printshop-full-button"
-              onClick={onOpenInventory}
-            >
-              Administrar inventario
-            </button>
-          </Panel>
-
-          <Panel title="Catálogo de productos" icon="▤" actionLabel="Base real">
-            <div className="printshop-catalog-summary-card enhanced">
-              <div>
-                <strong>{productStats.total}</strong>
-                <span>Productos registrados</span>
-              </div>
-              <div>
-                <strong>{productStats.books}</strong>
-                <span>Libros</span>
-              </div>
-              <div>
-                <strong>{productStats.generatedDocuments}</strong>
-                <span>Documentos generados</span>
+                  </button>
+                ))}
               </div>
             </div>
-            <button
-              type="button"
-              className="visual-outline-button printshop-full-button"
-              onClick={onOpenCatalog}
-            >
-              Administrar catálogo
-            </button>
-          </Panel>
 
-          <Panel title="Insumos críticos" icon="!" actionLabel="Alertas">
-            <div className="critical-supplies-list compact">
-              {criticalSupplies.map((supply) => (
-                <div className="critical-supply-row" key={`${supply.name}-${supply.spec}`}>
-                  <div className={`critical-supply-icon ${supply.tone}`}>{supply.icon}</div>
-                  <div className="critical-supply-info">
-                    <strong>{supply.name}</strong>
-                    <span>{supply.spec} · {supply.available}</span>
-                  </div>
-                  <StatusBadge tone={supply.tone}>{supply.status}</StatusBadge>
-                </div>
-              ))}
-            </div>
-          </Panel>
-        </aside>
-      </section>
-
-      <section className="printshop-certificate-feature">
-        <div className="printshop-certificate-feature-copy">
-          <p className="section-kicker printshop-kicker">Certificados y diplomas</p>
-          <h2>Generación automática con folio y QR de validación</h2>
-          <p>
-            Esta sección quedará preparada para capturar nivel, grupo, maestro,
-            horario, lista de alumnos, entrega impresa o digital, firma precargada
-            y validación profesional por código QR.
-          </p>
-
-          <div className="printshop-certificate-feature-stats">
-            <div>
-              <strong>12</strong>
-              <span>Impresos</span>
-            </div>
-            <div>
-              <strong>6</strong>
-              <span>Digitales</span>
-            </div>
-            <div>
-              <strong>18</strong>
-              <span>Total del grupo</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="certificate-card-preview enhanced-preview">
-          <div className="certificate-border">
-            <div className="certificate-logo">AES</div>
-            <small>Active English School</small>
-            <h3>CERTIFICADO</h3>
-            <p>Otorgado a</p>
-            <strong>Juan Pérez García</strong>
-            <span>
-              Por haber concluido satisfactoriamente el nivel A2 del programa académico correspondiente.
-            </span>
-            <div className="certificate-signature">Samantha Rodríguez</div>
-            <div className="certificate-footer">
-              <div>
-                <small>Folio</small>
-                <b>CERT-2026-000123</b>
-              </div>
-              <div>
-                <small>QR de validación</small>
-                <div className="qr-placeholder">
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
+            <div className="printshop-workboard-column">
+              <div className="printshop-mini-heading">
+                <span>▧</span>
+                <div>
+                  <strong>Lotes de producción</strong>
+                  <p>Producción interna para mantener inventario.</p>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
 
-        <div className="certificate-students-card enhanced-students">
-          <div className="mini-section-header no-margin">
-            <div>
-              <span>☑</span>
-              <h3>Lista de alumnos</h3>
-            </div>
-          </div>
-
-          <div className="certificate-students-list">
-            {certificateStudents.map((student) => (
-              <div className="certificate-student-row" key={student.name}>
-                <strong>{student.name}</strong>
-                <StatusBadge
-                  tone={
-                    student.delivery === "Digital"
-                      ? "blue"
-                      : student.delivery === "Ambos"
-                        ? "purple"
-                        : "green"
-                  }
-                >
-                  {student.delivery}
-                </StatusBadge>
+              <div className="printshop-batch-card-list">
+                {dashboardBatches.map((batch) => (
+                  <button
+                    type="button"
+                    className="printshop-batch-card home-clickable-card"
+                    key={batch.folio}
+                    onClick={onOpenBatches}
+                  >
+                    <div className="printshop-batch-card-top">
+                      <div>
+                        <strong>{batch.product}</strong>
+                        <span>{batch.folio}</span>
+                      </div>
+                      <StatusBadge tone={batch.statusTone}>{batch.status}</StatusBadge>
+                    </div>
+                    <ProgressBar value={batch.progress} tone={batch.statusTone} />
+                    <small>{batch.quantity}</small>
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </Panel>
 
-      <section className="printshop-focus-footer">
-        <div>
-          <strong>Vista enfocada activa</strong>
-          <p>
-            El módulo queda centrado en solicitudes, producción, inventario,
-            insumos y certificados. Se retiraron las funciones sugeridas para
-            evitar saturación visual.
-          </p>
-        </div>
+        <Panel title="Inventario que requiere atención" icon="▣" actionLabel={`${inventoryStats.total} productos`}>
+          <div className="finished-inventory-list enhanced compact-home-inventory">
+            {inventoryItems.length === 0 ? (
+              <div className="printshop-small-empty">
+                <strong>Inventario pendiente</strong>
+                <span>Configura los libros terminados desde la pestaña Inventario.</span>
+              </div>
+            ) : lowInventoryItems.length === 0 ? (
+              inventoryItems.slice(0, 4).map((item) => {
+                const status = getInventoryStatus(item);
+
+                return (
+                  <button
+                    type="button"
+                    className="finished-inventory-row home-clickable-card"
+                    key={item.id}
+                    onClick={onOpenInventory}
+                  >
+                    <div>
+                      <strong>{item.productName}</strong>
+                      <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
+                    </div>
+                    <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                  </button>
+                );
+              })
+            ) : (
+              lowInventoryItems.map((item) => {
+                const status = getInventoryStatus(item);
+
+                return (
+                  <button
+                    type="button"
+                    className="finished-inventory-row home-clickable-card"
+                    key={item.id}
+                    onClick={onOpenInventory}
+                  >
+                    <div>
+                      <strong>{item.productName}</strong>
+                      <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
+                    </div>
+                    <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </Panel>
       </section>
     </>
   );
 }
-
 
 function ProductionBatchesView({
   inventoryProducts,
@@ -7991,6 +7713,22 @@ function ProductionBatchesView({
     ? getBatchSupplyConsumptionSummary(selectedBatch, supplyMovements, supplyItems, inventoryProducts)
     : null;
 
+  const [batchFocusOpen, setBatchFocusOpen] = useState(false);
+
+  function openBatchFocus(batch = null) {
+    if (batch) {
+      onSelectBatch(batch);
+    } else {
+      onResetBatchForm();
+    }
+    setBatchFocusOpen(true);
+  }
+
+  function closeBatchFocus() {
+    onResetBatchForm();
+    setBatchFocusOpen(false);
+  }
+
   function openBatchDetails(batch) {
     onSelectBatch(batch);
 
@@ -8009,7 +7747,7 @@ function ProductionBatchesView({
     <section className="printshop-batches-page">
       <div className="printshop-catalog-hero batches-hero">
         <div>
-          <p className="section-kicker printshop-kicker">Etapa 4</p>
+          <p className="section-kicker printshop-kicker">Producción</p>
           <h2>Lotes de producción</h2>
           <p>
             Registra producciones internas de libros, controla su avance y, al aprobarlos,
@@ -8021,6 +7759,12 @@ function ProductionBatchesView({
           <strong>{batchStats.active}</strong>
           <span>Lotes activos</span>
         </div>
+
+        {canCreateBatch && (
+          <button type="button" className="visual-primary-button" onClick={() => openBatchFocus()}>
+            + Nuevo lote
+          </button>
+        )}
       </div>
 
       <div className="printshop-catalog-metrics">
@@ -8074,7 +7818,7 @@ function ProductionBatchesView({
       {batchesError && <div className="form-error">{batchesError}</div>}
       {usersError && <div className="form-error">{usersError}</div>}
 
-      <div className="printshop-batches-layout">
+      <div className={`printshop-batches-layout ${batchFocusOpen ? "printshop-focused-layout" : ""}`}>
         <div className="printshop-batches-main">
           <Panel title="Lotes registrados" icon="▧" actionLabel={`${activeBatches.length} visibles`}>
             {loadingBatches ? (
@@ -8169,7 +7913,7 @@ function ProductionBatchesView({
                               <button type="button" onClick={() => openBatchDetails(batch)}>
                                 Ver detalles
                               </button>
-                              <button type="button" onClick={() => onSelectBatch(batch)}>
+                              <button type="button" onClick={() => openBatchFocus(batch)}>
                                 Editar
                               </button>
                               <button
@@ -8363,6 +8107,15 @@ function ProductionBatchesView({
         </div>
 
         <aside className="printshop-batches-side">
+          {batchFocusOpen && (
+            <div className="printshop-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeBatchFocus}>
+                ← Regresar a lotes
+              </button>
+              <span>{selectedBatch ? "Vista enfocada de edición" : "Vista enfocada de alta"}</span>
+            </div>
+          )}
+
           <Panel
             title={selectedBatch ? "Editar lote" : "Nuevo lote"}
             icon={selectedBatch ? "✎" : "＋"}
@@ -8646,13 +8399,34 @@ function FinishedInventoryView({
   onResetInventoryForm,
   onSoftDeleteInventoryItem,
 }) {
+  const [inventoryCreateFocus, setInventoryCreateFocus] = useState(false);
+  const [inventoryMovementFocus, setInventoryMovementFocus] = useState(false);
+
+  function openInventoryCreateFocus() {
+    onResetInventoryForm();
+    setInventoryMovementFocus(false);
+    setInventoryCreateFocus(true);
+  }
+
+  function openInventoryMovementFocus(item, type) {
+    onPrepareMovement(item, type);
+    setInventoryCreateFocus(false);
+    setInventoryMovementFocus(true);
+  }
+
+  function closeInventoryFocus() {
+    onResetInventoryForm();
+    setInventoryCreateFocus(false);
+    setInventoryMovementFocus(false);
+  }
+
   const latestMovements = inventoryMovements.slice(0, 8);
 
   return (
     <section className="printshop-inventory-page">
       <div className="printshop-catalog-hero inventory-hero">
         <div>
-          <p className="section-kicker printshop-kicker">Etapa 3</p>
+          <p className="section-kicker printshop-kicker">Inventario terminado</p>
           <h2>Inventario de productos terminados</h2>
           <p>
             Controla libros ya producidos, existencias actuales, mínimos, ideales,
@@ -8664,6 +8438,12 @@ function FinishedInventoryView({
           <strong>{inventoryStats.totalStock}</strong>
           <span>Unidades disponibles</span>
         </div>
+
+        {isAdmin && (
+          <button type="button" className="visual-primary-button" onClick={openInventoryCreateFocus}>
+            + Crear inventario
+          </button>
+        )}
       </div>
 
       <div className="printshop-catalog-metrics">
@@ -8676,7 +8456,7 @@ function FinishedInventoryView({
 
       {inventoryError && <div className="form-error">{inventoryError}</div>}
 
-      <div className="printshop-inventory-layout">
+      <div className={`printshop-inventory-layout ${inventoryCreateFocus ? "printshop-focused-layout focus-create" : inventoryMovementFocus ? "printshop-focused-layout focus-movement" : ""}`}>
         <div className="printshop-inventory-main">
           <Panel title="Existencias actuales" icon="▣" actionLabel={`${inventoryItems.length} productos`}>
             {loadingInventory ? (
@@ -8730,10 +8510,10 @@ function FinishedInventoryView({
                           </td>
                           <td>
                             <div className="printshop-product-actions">
-                              <button type="button" onClick={() => onPrepareMovement(item, "Entrada")}>
+                              <button type="button" onClick={() => openInventoryMovementFocus(item, "Entrada")}>
                                 Entrada
                               </button>
-                              <button type="button" onClick={() => onPrepareMovement(item, "Salida")}>
+                              <button type="button" onClick={() => openInventoryMovementFocus(item, "Salida")}>
                                 Salida
                               </button>
                               {isAdmin && (
@@ -8787,6 +8567,16 @@ function FinishedInventoryView({
         </div>
 
         <aside className="printshop-inventory-side">
+          {(inventoryCreateFocus || inventoryMovementFocus) && (
+            <div className="printshop-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeInventoryFocus}>
+                ← Regresar al inventario
+              </button>
+              <span>{inventoryMovementFocus ? "Vista enfocada de movimiento" : "Vista enfocada de alta"}</span>
+            </div>
+          )}
+
+          {inventoryCreateFocus && (
           <Panel title="Crear inventario" icon="＋" actionLabel="Desde catálogo">
             <form className="printshop-product-form" onSubmit={onCreateInventoryItem}>
               <label className="full">
@@ -8880,7 +8670,9 @@ function FinishedInventoryView({
               )}
             </form>
           </Panel>
+          )}
 
+          {inventoryMovementFocus && (
           <div id="printshop-movement-panel">
             <Panel title="Registrar movimiento" icon="↕" actionLabel="Entrada / salida">
               <form className="printshop-product-form" onSubmit={onRegisterMovement}>
@@ -8962,6 +8754,7 @@ function FinishedInventoryView({
               </form>
             </Panel>
           </div>
+          )}
         </aside>
       </div>
     </section>
@@ -9072,6 +8865,33 @@ function SupplyInventoryView({
   );
   const selectedRelatedBatch =
     activeProductionBatches.find((batch) => batch.id === supplyMovementForm.relatedId) || null;
+
+  const [supplyFormFocus, setSupplyFormFocus] = useState(false);
+  const [supplyMovementFocus, setSupplyMovementFocus] = useState(false);
+
+  function openSupplyFormFocus(item = null) {
+    if (item) {
+      onSelectSupply(item);
+    } else {
+      onResetSupplyForm();
+    }
+    setSupplyMovementFocus(false);
+    setSupplyFormFocus(true);
+  }
+
+  function openSupplyMovementFocus(item = null, type = "Salida") {
+    if (item) {
+      onPrepareSupplyMovement(item, type);
+    }
+    setSupplyFormFocus(false);
+    setSupplyMovementFocus(true);
+  }
+
+  function closeSupplyFocus() {
+    onResetSupplyForm();
+    setSupplyFormFocus(false);
+    setSupplyMovementFocus(false);
+  }
 
   function setRelatedProductionBatch(batchId) {
     const matchedBatch = activeProductionBatches.find((batch) => batch.id === batchId) || null;
@@ -9369,6 +9189,17 @@ function SupplyInventoryView({
           <strong>{supplyStats.total}</strong>
           <span>Insumos activos</span>
         </div>
+
+        <div className="printshop-hero-actions compact-actions">
+          {isAdmin && (
+            <button type="button" className="visual-primary-button" onClick={() => openSupplyFormFocus()}>
+              + Nuevo insumo
+            </button>
+          )}
+          <button type="button" className="visual-outline-button" onClick={() => openSupplyMovementFocus()}>
+            Registrar movimiento
+          </button>
+        </div>
       </div>
 
       <div className="printshop-catalog-metrics supplies-metrics">
@@ -9381,7 +9212,7 @@ function SupplyInventoryView({
 
       {suppliesError && <div className="form-error">{suppliesError}</div>}
 
-      <div className="printshop-supplies-layout">
+      <div className={`printshop-supplies-layout ${supplyFormFocus ? "printshop-focused-layout focus-supply" : supplyMovementFocus ? "printshop-focused-layout focus-movement" : ""}`}>
         <div className="printshop-supplies-main">
           <Panel title="Escaneo rápido" icon="▦" actionLabel="Cámara / código">
             <div className="supply-barcode-scanner">
@@ -9710,18 +9541,18 @@ function SupplyInventoryView({
                           </td>
                           <td>
                             <div className="table-actions supply-actions">
-                              <button type="button" onClick={() => onPrepareSupplyMovement(item, "Entrada")}>
+                              <button type="button" onClick={() => openSupplyMovementFocus(item, "Entrada")}>
                                 Entrada
                               </button>
-                              <button type="button" onClick={() => onPrepareSupplyMovement(item, "Salida")}>
+                              <button type="button" onClick={() => openSupplyMovementFocus(item, "Salida")}>
                                 Salida
                               </button>
-                              <button type="button" onClick={() => onPrepareSupplyMovement(item, "Merma")}>
+                              <button type="button" onClick={() => openSupplyMovementFocus(item, "Merma")}>
                                 Merma
                               </button>
                               {isAdmin && (
                                 <>
-                                  <button type="button" onClick={() => onSelectSupply(item)}>
+                                  <button type="button" onClick={() => openSupplyFormFocus(item)}>
                                     Editar
                                   </button>
                                   <button
@@ -9806,6 +9637,16 @@ function SupplyInventoryView({
         </div>
 
         <aside className="printshop-supplies-side">
+          {(supplyFormFocus || supplyMovementFocus) && (
+            <div className="printshop-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeSupplyFocus}>
+                ← Regresar a insumos
+              </button>
+              <span>{supplyMovementFocus ? "Vista enfocada de movimiento" : selectedSupplyId ? "Vista enfocada de edición" : "Vista enfocada de alta"}</span>
+            </div>
+          )}
+
+          {supplyFormFocus && (
           <Panel
             title={selectedSupplyId ? "Editar insumo" : "Nuevo insumo"}
             icon="＋"
@@ -10115,7 +9956,9 @@ function SupplyInventoryView({
               )}
             </form>
           </Panel>
+          )}
 
+          {supplyMovementFocus && (
           <Panel title="Registrar movimiento" icon="↕" actionLabel="Entrada / salida">
             <form className="printshop-product-form supply-movement-form" onSubmit={onRegisterSupplyMovement}>
               <label className="full">
@@ -10230,6 +10073,7 @@ function SupplyInventoryView({
               </div>
             </form>
           </Panel>
+          )}
         </aside>
       </div>
     </section>
@@ -10307,6 +10151,22 @@ function PrintRequestsView({
   const canCreateRequest = isAdmin;
   const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
 
+  const [requestFocusOpen, setRequestFocusOpen] = useState(false);
+
+  function openRequestFocus(request = null) {
+    if (request) {
+      onSelectRequest(request);
+    } else {
+      onResetRequestForm();
+    }
+    setRequestFocusOpen(true);
+  }
+
+  function closeRequestFocus() {
+    onResetRequestForm();
+    setRequestFocusOpen(false);
+  }
+
   const requestMetricCards = [
     {
       tone: "blue",
@@ -10351,6 +10211,12 @@ function PrintRequestsView({
             otros materiales solicitados a Imprenta.
           </p>
         </div>
+
+        {canCreateRequest && (
+          <button type="button" className="visual-primary-button" onClick={() => openRequestFocus()}>
+            + Nueva solicitud
+          </button>
+        )}
       </div>
 
       <div className="catalog-metrics-grid request-metrics-grid">
@@ -10365,7 +10231,7 @@ function PrintRequestsView({
         ))}
       </div>
 
-      <div className="printshop-batches-layout request-layout">
+      <div className={`printshop-batches-layout request-layout ${requestFocusOpen ? "printshop-focused-layout" : ""} ${requestFocusOpen && selectedRequest ? "request-has-detail" : requestFocusOpen ? "request-new" : ""}`}>
         <div className="printshop-batches-main">
           <Panel title="Solicitudes registradas" icon="▤" actionLabel={`${filteredRequests.length} visibles`}>
             <div className="catalog-toolbar request-toolbar">
@@ -10463,7 +10329,7 @@ function PrintRequestsView({
                           <td>{getRequestDueLabel(request)}</td>
                           <td>
                             <div className="table-actions">
-                              <button type="button" onClick={() => onSelectRequest(request)}>
+                              <button type="button" onClick={() => openRequestFocus(request)}>
                                 Abrir
                               </button>
                               {isAdmin && (
@@ -10488,6 +10354,15 @@ function PrintRequestsView({
         </div>
 
         <aside className="printshop-batches-side">
+          {requestFocusOpen && (
+            <div className="printshop-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeRequestFocus}>
+                ← Regresar a solicitudes
+              </button>
+              <span>{selectedRequest ? "Vista enfocada de seguimiento" : "Vista enfocada de alta"}</span>
+            </div>
+          )}
+
           {selectedRequest && (
             <RequestDetailCard
               request={selectedRequest}
@@ -12714,6 +12589,23 @@ function CertificateTemplatesView({
   onSoftDeleteTemplate,
 }) {
   const [selectedEditorElement, setSelectedEditorElement] = useState("studentName");
+  const [templateFocusOpen, setTemplateFocusOpen] = useState(false);
+
+  function openTemplateFocus(template = null) {
+    if (template) {
+      onSelectTemplate(template);
+    } else {
+      onResetTemplateForm();
+    }
+    setTemplateFocusOpen(true);
+  }
+
+  function closeTemplateFocus() {
+    onResetTemplateForm();
+    setTemplateFocusOpen(false);
+    setSelectedEditorElement("studentName");
+  }
+
   const activeTemplates = templates.filter((template) => template.active !== false);
   const adultTemplates = activeTemplates.filter((template) => template.audience === "Adultos");
   const kidsTemplates = activeTemplates.filter((template) => template.audience === "Kids");
@@ -12808,6 +12700,12 @@ function CertificateTemplatesView({
             del alumno, fecha, firmas, folio, QR y textos personalizados.
           </p>
         </div>
+
+        {isAdmin && (
+          <button type="button" className="visual-primary-button" onClick={() => openTemplateFocus()}>
+            + Nueva plantilla
+          </button>
+        )}
       </div>
 
       <div className="catalog-metrics-grid template-metrics-grid">
@@ -12817,7 +12715,7 @@ function CertificateTemplatesView({
         <CatalogMetric tone="orange" icon="K" label="Kids" value={kidsTemplates.length} />
       </div>
 
-      <div className="printshop-batches-layout template-admin-layout">
+      <div className={`printshop-batches-layout template-admin-layout ${templateFocusOpen ? "printshop-focused-layout" : ""}`}>
         <div className="printshop-batches-main">
           <Panel title="Plantillas registradas" icon="▧" actionLabel={`${templates.length} plantillas`}>
             {loadingTemplates ? (
@@ -12864,7 +12762,7 @@ function CertificateTemplatesView({
                       </div>
                       {template.notes && <small>{template.notes}</small>}
                       <div className="table-actions">
-                        <button type="button" onClick={() => onSelectTemplate(template)}>
+                        <button type="button" onClick={() => openTemplateFocus(template)}>
                           Editar
                         </button>
                         <button
@@ -13126,6 +13024,15 @@ function CertificateTemplatesView({
         </div>
 
         <aside className="printshop-batches-side">
+          {templateFocusOpen && (
+            <div className="printshop-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeTemplateFocus}>
+                ← Regresar a plantillas
+              </button>
+              <span>{selectedTemplateId ? "Vista enfocada de edición" : "Vista enfocada de alta"}</span>
+            </div>
+          )}
+
           <Panel
             title={selectedTemplateId ? "Editar plantilla" : "Nueva plantilla"}
             icon={selectedTemplateId ? "✎" : "＋"}
@@ -13706,6 +13613,22 @@ function CertificateSignersView({
 }) {
   const principalCount = signers.filter((signer) => signer.type === "Principal" && signer.active !== false).length;
   const teacherCount = signers.filter((signer) => signer.type === "Teacher" && signer.active !== false).length;
+  const [signerFocusOpen, setSignerFocusOpen] = useState(false);
+
+  function openSignerFocus(signer = null) {
+    if (signer) {
+      onSelectSigner(signer);
+    } else {
+      onResetSignerForm();
+    }
+    setSignerFocusOpen(true);
+  }
+
+  function closeSignerFocus() {
+    onResetSignerForm();
+    setSignerFocusOpen(false);
+  }
+
 
   return (
     <section className="printshop-signers-section">
@@ -13717,6 +13640,12 @@ function CertificateSignersView({
             Administra directores, principales y teachers con su firma digital para que los certificados se generen con datos reales.
           </p>
         </div>
+
+        {isAdmin && (
+          <button type="button" className="visual-primary-button" onClick={() => openSignerFocus()}>
+            + Nuevo firmante
+          </button>
+        )}
       </div>
 
       <div className="catalog-metrics-grid signers-metrics-grid">
@@ -13725,7 +13654,7 @@ function CertificateSignersView({
         <CatalogMetric tone="teal" icon="◎" label="Teachers activos" value={teacherCount} />
       </div>
 
-      <div className="printshop-signers-layout">
+      <div className={`printshop-signers-layout ${signerFocusOpen ? "printshop-focused-layout" : ""}`}>
         <Panel title="Firmantes registrados" icon="✒" actionLabel={`${signers.length} registros`}>
           {loadingSigners ? (
             <div className="empty-state small"><div>◌</div><p>Cargando firmas...</p></div>
@@ -13758,7 +13687,7 @@ function CertificateSignersView({
                       {signer.active === false ? "Inactivo" : "Activo"}
                     </StatusBadge>
                     <div className="table-actions">
-                      <button type="button" onClick={() => onSelectSigner(signer)}>Editar</button>
+                      <button type="button" onClick={() => openSignerFocus(signer)}>Editar</button>
                       {isAdmin && (
                         <>
                           <button type="button" onClick={() => onToggleSignerStatus(signer)}>
@@ -13780,6 +13709,15 @@ function CertificateSignersView({
             </div>
           )}
         </Panel>
+
+        {signerFocusOpen && (
+          <div className="printshop-focused-header">
+            <button type="button" className="visual-outline-button" onClick={closeSignerFocus}>
+              ← Regresar a firmas
+            </button>
+            <span>{selectedSigner ? "Vista enfocada de edición" : "Vista enfocada de alta"}</span>
+          </div>
+        )}
 
         <Panel
           title={selectedSigner ? "Editar firmante" : "Nuevo firmante"}
@@ -13895,11 +13833,27 @@ function ProductCatalogView({
   onSeedBaseProducts,
   onSoftDeleteProduct,
 }) {
+  const [productFocusOpen, setProductFocusOpen] = useState(false);
+
+  function openProductFocus(product = null) {
+    if (product) {
+      onSelectProduct(product);
+    } else {
+      onResetForm();
+    }
+    setProductFocusOpen(true);
+  }
+
+  function closeProductFocus() {
+    onResetForm();
+    setProductFocusOpen(false);
+  }
+
   return (
     <section className="printshop-catalog-page">
       <div className="printshop-catalog-hero">
         <div>
-          <p className="section-kicker printshop-kicker">Etapa 2</p>
+          <p className="section-kicker printshop-kicker">Catálogo</p>
           <h2>Catálogo de productos</h2>
           <p>
             Registra libros, certificados, diplomas, volantes, viniles y
@@ -13935,7 +13889,7 @@ function ProductCatalogView({
 
       {productsError && <div className="form-error">{productsError}</div>}
 
-      <div className="printshop-catalog-layout">
+      <div className={`printshop-catalog-layout ${productFocusOpen ? "printshop-focused-layout" : ""}`}>
         <div className="printshop-catalog-main">
           <Panel title="Productos registrados" icon="▤" actionLabel={`${filteredProducts.length} visibles`}>
             <div className="printshop-catalog-toolbar">
@@ -13986,6 +13940,16 @@ function ProductCatalogView({
                   <option>Todos</option>
                 </select>
               </label>
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="visual-primary-button printshop-toolbar-action"
+                  onClick={() => openProductFocus()}
+                >
+                  + Nuevo producto
+                </button>
+              )}
             </div>
 
             {loadingProducts ? (
@@ -14050,7 +14014,7 @@ function ProductCatalogView({
                         </td>
                         <td>
                           <div className="printshop-product-actions">
-                            <button type="button" onClick={() => onSelectProduct(product)}>
+                            <button type="button" onClick={() => openProductFocus(product)}>
                               Editar
                             </button>
                             <button type="button" onClick={() => onToggleStatus(product)}>
@@ -14082,6 +14046,15 @@ function ProductCatalogView({
             icon={selectedProduct ? "✎" : "＋"}
             actionLabel={selectedProduct ? "Editando" : "Alta"}
           >
+            {productFocusOpen && (
+              <div className="printshop-focused-header">
+                <button type="button" className="visual-outline-button" onClick={closeProductFocus}>
+                  ← Regresar al catálogo
+                </button>
+                <span>{selectedProduct ? "Vista enfocada de edición" : "Vista enfocada de alta"}</span>
+              </div>
+            )}
+
             <form className="printshop-product-form" onSubmit={onSaveProduct}>
               <label className="full">
                 <span>Nombre del producto</span>

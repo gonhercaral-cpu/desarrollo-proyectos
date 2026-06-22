@@ -181,6 +181,75 @@ service firebase.storage {
         && request.resource.contentType == "application/pdf";
     }
 
+
+    function isAllowedDashboardAttachmentType() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType.matches('audio/.*')
+        || request.resource.contentType.matches('video/.*')
+        || request.resource.contentType == "application/pdf"
+        || request.resource.contentType == "text/plain"
+        || request.resource.contentType == "text/csv"
+        || request.resource.contentType == "application/zip"
+        || request.resource.contentType == "application/msword"
+        || request.resource.contentType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        || request.resource.contentType == "application/vnd.ms-excel"
+        || request.resource.contentType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        || request.resource.contentType == "application/vnd.ms-powerpoint"
+        || request.resource.contentType == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        || request.resource.contentType == "application/octet-stream";
+    }
+
+    function validDashboardAttachmentFile() {
+      return isAllowedDashboardAttachmentType()
+        && (
+          (request.resource.contentType.matches('video/.*')
+            && request.resource.size < 80 * 1024 * 1024)
+          || (!request.resource.contentType.matches('video/.*')
+            && request.resource.size < 25 * 1024 * 1024)
+        );
+    }
+
+
+
+    /*
+      Adjuntos del tablero general de anuncios:
+      dashboard/announcements/{announcementId}/{fileName}
+
+      Los colaboradores activos pueden leerlos.
+      Solo administradores pueden subir, actualizar o eliminar archivos.
+    */
+    match /dashboard/announcements/{announcementId}/{fileName} {
+      allow read: if hasProfile();
+
+      allow create, update: if signedIn()
+        && isAdmin()
+        && validDashboardAttachmentFile();
+
+      allow delete: if signedIn() && isAdmin();
+    }
+
+    /*
+      Adjuntos privados de notas personales:
+      dashboard/personalNotes/{userUid}/{noteId}/{fileName}
+
+      Solo el dueño de la nota puede leer, subir o eliminar archivos.
+      Los administradores no reciben permiso especial aquí.
+    */
+    match /dashboard/personalNotes/{userUid}/{noteId}/{fileName} {
+      allow read: if signedIn()
+        && hasProfile()
+        && request.auth.uid == userUid;
+
+      allow create, update: if signedIn()
+        && hasProfile()
+        && request.auth.uid == userUid
+        && validDashboardAttachmentFile();
+
+      allow delete: if signedIn()
+        && hasProfile()
+        && request.auth.uid == userUid;
+    }
+
     /*
       Evidencias de instalaciones técnicas:
       technical-installations/{installationId}/evidence/{userUid}/{fileName}
