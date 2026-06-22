@@ -286,7 +286,9 @@ export default function Dashboard() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const unreadMessagesCount = useUnreadInternalMessagesCount(profile);
+  const unreadDirectMessagesCount = useUnreadInternalMessagesCount(profile);
+  const unreadDepartmentMessagesCount = useUnreadDepartmentMessagesCount(profile, isAdmin);
+  const unreadMessagesCount = unreadDirectMessagesCount + unreadDepartmentMessagesCount;
   const unreadAnnouncementsCount = useUnreadAnnouncementsCount(profile);
 
   useDashboardPresence(profile, page);
@@ -448,7 +450,7 @@ export default function Dashboard() {
     }
 
     if (page === "internal-messages") {
-      return <InternalMessages profile={profile} />;
+      return <InternalMessages profile={profile} isAdmin={isAdmin} />;
     }
 
     if (page === "executive-dashboard" && isAdmin) {
@@ -2629,20 +2631,26 @@ function matchesMessageSearch(message, searchTerm) {
 }
 
 
-function InternalMessages({ profile }) {
+function InternalMessages({ profile, isAdmin = false }) {
   const currentUserId = getCurrentUserId(profile);
   const [collaborators, setCollaborators] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [presenceByUserId, setPresenceByUserId] = useState({});
   const [presenceNow, setPresenceNow] = useState(Date.now());
   const [inboxMessages, setInboxMessages] = useState([]);
   const [sentMessages, setSentMessages] = useState([]);
+  const [departmentMessages, setDepartmentMessages] = useState([]);
+  const [conversationType, setConversationType] = useState("direct");
   const [selectedConversationId, setSelectedConversationId] = useState("");
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
   const [newConversationOpen, setNewConversationOpen] = useState(false);
   const [messageForm, setMessageForm] = useState({
     toUserId: "",
     message: "",
   });
+  const [departmentForm, setDepartmentForm] = useState({ message: "" });
   const [messageAttachments, setMessageAttachments] = useState([]);
+  const [departmentAttachments, setDepartmentAttachments] = useState([]);
   const [messageStatus, setMessageStatus] = useState("");
   const [messageError, setMessageError] = useState("");
   const [messageSaving, setMessageSaving] = useState(false);
@@ -2669,6 +2677,31 @@ function InternalMessages({ profile }) {
       (error) => {
         console.error("No se pudieron cargar los colaboradores:", error);
         setMessageError("No se pudo cargar la lista de colaboradores.");
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    return onSnapshot(
+      collection(db, "departments"),
+      (snapshot) => {
+        const nextDepartments = snapshot.docs
+          .map((departmentDoc) => ({ id: departmentDoc.id, ...departmentDoc.data() }))
+          .filter((department) => department.active !== false && department.deleted !== true)
+          .filter((department) => department.name || department.title)
+          .sort((a, b) => {
+            const orderA = Number(a.order ?? a.position ?? 9999);
+            const orderB = Number(b.order ?? b.position ?? 9999);
+            if (orderA !== orderB) return orderA - orderB;
+            return String(a.name || a.title || "").localeCompare(String(b.name || b.title || ""), "es");
+          });
+
+        setDepartments(nextDepartments);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los departamentos:", error);
       }
     );
   }, [currentUserId]);
@@ -2756,17 +2789,69 @@ function InternalMessages({ profile }) {
   }, [currentUserId]);
 
   useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const departmentMessagesRef = collection(db, "departmentMessages");
+    const departmentMessagesQuery = isAdmin
+      ? departmentMessagesRef
+      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
+
+    return onSnapshot(
+      departmentMessagesQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+            readBy: messageDoc.data()?.readBy || {},
+          }))
+          .sort(sortByCreatedAtDesc);
+
+        setDepartmentMessages(nextMessages);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los mensajes por departamento:", error);
+        setMessageError("No se pudieron cargar los chats por departamento.");
+      }
+    );
+  }, [currentUserId, isAdmin]);
+
+  useEffect(() => {
     return () => revokeDraftAttachmentPreviews(messageAttachments);
   }, []);
 
+  useEffect(() => {
+    return () => revokeDraftAttachmentPreviews(departmentAttachments);
+  }, []);
+
+  const departmentOptions = buildDepartmentChatOptions({
+    departments,
+    collaborators,
+    profile,
+    currentUserId,
+    isAdmin,
+  });
   const allMessages = [...inboxMessages, ...sentMessages].sort(sortByCreatedAtDesc);
   const conversations = buildInternalConversations(allMessages, collaborators, currentUserId);
+  const departmentConversations = buildDepartmentConversations(
+    departmentMessages,
+    departmentOptions,
+    currentUserId
+  );
   const filteredConversations = conversations.filter((conversation) =>
     matchesConversationSearch(conversation, conversationSearchTerm)
+  );
+  const filteredDepartmentConversations = departmentConversations.filter((conversation) =>
+    matchesDepartmentConversationSearch(conversation, conversationSearchTerm)
   );
   const selectedConversation =
     filteredConversations.find((conversation) => conversation.participantId === selectedConversationId) ||
     filteredConversations[0] ||
+    null;
+  const selectedDepartmentConversation =
+    filteredDepartmentConversations.find((conversation) => conversation.departmentId === selectedDepartmentId) ||
+    filteredDepartmentConversations[0] ||
     null;
   const selectedMessages = selectedConversation
     ? selectedConversation.messages
@@ -2774,9 +2859,18 @@ function InternalMessages({ profile }) {
         .sort(sortByCreatedAtAsc)
         .filter((message) => matchesMessageSearch(message, threadSearchTerm))
     : [];
+  const selectedDepartmentMessages = selectedDepartmentConversation
+    ? selectedDepartmentConversation.messages
+        .slice()
+        .sort(sortByCreatedAtAsc)
+        .filter((message) => matchesDepartmentMessageSearch(message, threadSearchTerm))
+    : [];
   const selectedConversationTotalMessages = selectedConversation?.messages.length || 0;
+  const selectedDepartmentTotalMessages = selectedDepartmentConversation?.messages.length || 0;
   const unreadCount = inboxMessages.filter((message) => !message.read).length;
-  const totalMessages = allMessages.length;
+  const unreadDepartmentCount = departmentMessages.filter((message) => isUnreadDepartmentMessage(message, currentUserId)).length;
+  const totalUnreadCount = unreadCount + unreadDepartmentCount;
+  const totalMessages = allMessages.length + departmentMessages.length;
   const selectedRecipient = selectedConversation
     ? {
         id: selectedConversation.participantId,
@@ -2790,19 +2884,32 @@ function InternalMessages({ profile }) {
   );
 
   useEffect(() => {
+    if (conversationType !== "direct") return;
     if (!selectedConversation && filteredConversations[0]?.participantId) {
       setSelectedConversationId(filteredConversations[0].participantId);
     }
-  }, [filteredConversations.length, selectedConversation?.participantId]);
+  }, [conversationType, filteredConversations.length, selectedConversation?.participantId]);
 
   useEffect(() => {
-    if (!selectedConversation) return;
+    if (conversationType !== "department") return;
+    if (!selectedDepartmentConversation && filteredDepartmentConversations[0]?.departmentId) {
+      setSelectedDepartmentId(filteredDepartmentConversations[0].departmentId);
+    }
+  }, [conversationType, filteredDepartmentConversations.length, selectedDepartmentConversation?.departmentId]);
+
+  useEffect(() => {
+    if (conversationType !== "direct" || !selectedConversation) return;
     setMessageForm((current) => ({
       ...current,
       toUserId: selectedConversation.participantId,
     }));
     markConversationMessagesAsRead(selectedConversation.messages);
-  }, [selectedConversation?.participantId, selectedConversation?.unreadCount]);
+  }, [conversationType, selectedConversation?.participantId, selectedConversation?.unreadCount]);
+
+  useEffect(() => {
+    if (conversationType !== "department" || !selectedDepartmentConversation) return;
+    markDepartmentConversationMessagesAsRead(selectedDepartmentConversation.messages);
+  }, [conversationType, selectedDepartmentConversation?.departmentId, selectedDepartmentConversation?.unreadCount]);
 
   function resetMessageComposer() {
     revokeDraftAttachmentPreviews(messageAttachments);
@@ -2811,6 +2918,12 @@ function InternalMessages({ profile }) {
       message: "",
     }));
     setMessageAttachments([]);
+  }
+
+  function resetDepartmentComposer() {
+    revokeDraftAttachmentPreviews(departmentAttachments);
+    setDepartmentForm({ message: "" });
+    setDepartmentAttachments([]);
   }
 
   function handleMessageFileSelection(event) {
@@ -2830,6 +2943,23 @@ function InternalMessages({ profile }) {
     setMessageError("");
   }
 
+  function handleDepartmentFileSelection(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+
+    const validation = validateBoardFiles(files, departmentAttachments.length);
+    if (!validation.valid) {
+      setMessageError(validation.message);
+      return;
+    }
+
+    setDepartmentAttachments((current) => [
+      ...current,
+      ...files.map(createDraftAttachment),
+    ]);
+    setMessageError("");
+  }
+
   function handleRemoveMessageAttachment(attachmentId) {
     setMessageAttachments((current) => {
       const next = current.filter((attachment) => attachment.id !== attachmentId);
@@ -2841,8 +2971,20 @@ function InternalMessages({ profile }) {
     });
   }
 
+  function handleRemoveDepartmentAttachment(attachmentId) {
+    setDepartmentAttachments((current) => {
+      const next = current.filter((attachment) => attachment.id !== attachmentId);
+      const removed = current.find((attachment) => attachment.id === attachmentId);
+      if (removed?.previewUrl) {
+        URL.revokeObjectURL(removed.previewUrl);
+      }
+      return next;
+    });
+  }
+
   function handleStartConversation(userId) {
     if (!userId) return;
+    setConversationType("direct");
     setSelectedConversationId(userId);
     setMessageForm({ toUserId: userId, message: "" });
     setThreadSearchTerm("");
@@ -2914,6 +3056,65 @@ function InternalMessages({ profile }) {
     }
   }
 
+  async function handleDepartmentMessageSubmit(event) {
+    event.preventDefault();
+    setMessageStatus("");
+    setMessageError("");
+
+    const department = selectedDepartmentConversation || departmentOptions.find((item) => item.id === selectedDepartmentId);
+    const cleanMessage = departmentForm.message.trim();
+
+    if (!department?.id) {
+      setMessageError("Selecciona un departamento.");
+      return;
+    }
+
+    if (!cleanMessage && departmentAttachments.length === 0) {
+      setMessageError("Escribe un mensaje o adjunta un archivo.");
+      return;
+    }
+
+    const memberIds = getDepartmentMemberIds(department, collaborators, profile, currentUserId);
+    if (!memberIds.includes(currentUserId)) {
+      memberIds.push(currentUserId);
+    }
+
+    setMessageSaving(true);
+
+    try {
+      const messageId = doc(collection(db, "departmentMessages")).id;
+      const attachments = await uploadBoardAttachments(departmentAttachments, {
+        folder: `dashboard/departmentMessages/${department.id}/${currentUserId}/${messageId}`,
+        ownerUid: currentUserId,
+      });
+
+      await setDoc(doc(db, "departmentMessages", messageId), {
+        departmentId: department.id,
+        departmentName: department.name || "Departamento",
+        fromUserId: currentUserId,
+        fromUserName: profile?.name || "Usuario",
+        fromUserEmail: profile?.email || "",
+        message: cleanMessage || "Archivo adjunto",
+        attachments,
+        memberIds,
+        readBy: {
+          [currentUserId]: serverTimestamp(),
+        },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setSelectedDepartmentId(department.id);
+      setMessageStatus("Mensaje enviado al departamento.");
+      resetDepartmentComposer();
+    } catch (error) {
+      console.error("No se pudo enviar el mensaje por departamento:", error);
+      setMessageError("No se pudo enviar el mensaje al departamento.");
+    } finally {
+      setMessageSaving(false);
+    }
+  }
+
   async function markMessageAsRead(message) {
     if (!message?.id || message.toUserId !== currentUserId || message.read) return;
 
@@ -2929,13 +3130,34 @@ function InternalMessages({ profile }) {
     }
   }
 
+  async function markDepartmentMessageAsRead(message) {
+    if (!message?.id || !isUnreadDepartmentMessage(message, currentUserId)) return;
+
+    try {
+      await updateDoc(doc(db, "departmentMessages", message.id), {
+        [`readBy.${currentUserId}`]: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("No se pudo marcar el mensaje de departamento como leído:", error);
+      setMessageError("No se pudo marcar el mensaje del departamento como leído.");
+    }
+  }
+
   function markConversationMessagesAsRead(messages) {
     (messages || [])
       .filter((message) => message.toUserId === currentUserId && !message.read)
       .forEach((message) => markMessageAsRead(message));
   }
 
+  function markDepartmentConversationMessagesAsRead(messages) {
+    (messages || [])
+      .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
+      .forEach((message) => markDepartmentMessageAsRead(message));
+  }
+
   function handleSelectConversation(conversation) {
+    setConversationType("direct");
     setSelectedConversationId(conversation.participantId);
     setMessageForm({ toUserId: conversation.participantId, message: "" });
     setThreadSearchTerm("");
@@ -2944,34 +3166,48 @@ function InternalMessages({ profile }) {
     markConversationMessagesAsRead(conversation.messages);
   }
 
+  function handleSelectDepartmentConversation(conversation) {
+    setConversationType("department");
+    setSelectedDepartmentId(conversation.departmentId);
+    setThreadSearchTerm("");
+    setMessageStatus("");
+    setMessageError("");
+    markDepartmentConversationMessagesAsRead(conversation.messages);
+  }
+
   return (
-    <div className="internal-messages-page chat-messages-page">
+    <div className="internal-messages-page chat-messages-page department-chat-page">
       <div className="visual-page-header messages-hero chat-hero">
         <div>
           <span className="visual-page-kicker">Comunicación interna</span>
           <div className="messages-title-row">
             <h1>Mensajes</h1>
-            {unreadCount > 0 && (
+            {totalUnreadCount > 0 && (
               <span className="messages-title-unread-badge">
-                {unreadCount} sin leer
+                {totalUnreadCount} sin leer
               </span>
             )}
           </div>
           <p>
-            Conversa con colaboradores en hilos tipo chat, revisa el historial y deja mensajes aunque no estén conectados.
+            Conversa con colaboradores o con departamentos completos en hilos tipo chat, con historial y adjuntos.
           </p>
         </div>
 
-        <div className="messages-summary-grid chat-summary-grid">
+        <div className="messages-summary-grid chat-summary-grid department-chat-summary-grid">
           <div className="messages-summary-card unread">
             <span>✉️</span>
-            <strong>{unreadCount}</strong>
+            <strong>{totalUnreadCount}</strong>
             <small>No leídos</small>
           </div>
           <div className="messages-summary-card inbox">
             <span>💬</span>
             <strong>{conversations.length}</strong>
-            <small>Conversaciones</small>
+            <small>Individuales</small>
+          </div>
+          <div className="messages-summary-card group">
+            <span>👥</span>
+            <strong>{departmentConversations.length}</strong>
+            <small>Departamentos</small>
           </div>
           <div className="messages-summary-card sent">
             <span>📨</span>
@@ -2984,19 +3220,51 @@ function InternalMessages({ profile }) {
       {messageError && <div className="workspace-error-box">{messageError}</div>}
       {messageStatus && <div className="workspace-success-box">{messageStatus}</div>}
 
-      <div className="chat-layout workspace-card">
+      <div className="chat-layout workspace-card department-chat-layout">
         <aside className="chat-sidebar-panel">
           <div className="chat-sidebar-header">
             <div>
               <span>Historial</span>
-              <h3>Conversaciones</h3>
+              <h3>{conversationType === "department" ? "Departamentos" : "Conversaciones"}</h3>
             </div>
-            <button type="button" onClick={() => setNewConversationOpen((current) => !current)}>
-              {newConversationOpen ? "Cerrar" : "+ Nueva"}
+            {conversationType === "direct" && (
+              <button type="button" onClick={() => setNewConversationOpen((current) => !current)}>
+                {newConversationOpen ? "Cerrar" : "+ Nueva"}
+              </button>
+            )}
+          </div>
+
+          <div className="chat-mode-tabs" role="tablist" aria-label="Tipo de conversación">
+            <button
+              type="button"
+              className={conversationType === "direct" ? "active" : ""}
+              onClick={() => {
+                setConversationType("direct");
+                setThreadSearchTerm("");
+                setMessageError("");
+                setMessageStatus("");
+              }}
+            >
+              Individuales
+              {unreadCount > 0 && <span>{unreadCount}</span>}
+            </button>
+            <button
+              type="button"
+              className={conversationType === "department" ? "active" : ""}
+              onClick={() => {
+                setConversationType("department");
+                setNewConversationOpen(false);
+                setThreadSearchTerm("");
+                setMessageError("");
+                setMessageStatus("");
+              }}
+            >
+              Departamentos
+              {unreadDepartmentCount > 0 && <span>{unreadDepartmentCount}</span>}
             </button>
           </div>
 
-          {newConversationOpen && (
+          {conversationType === "direct" && newConversationOpen && (
             <div className="chat-new-conversation-box">
               <label>
                 <span>Iniciar conversación con</span>
@@ -3025,58 +3293,114 @@ function InternalMessages({ profile }) {
 
           <div className="chat-search-box">
             <label>
-              <span>Buscar conversaciones</span>
+              <span>{conversationType === "department" ? "Buscar departamentos" : "Buscar conversaciones"}</span>
               <input
                 value={conversationSearchTerm}
                 onChange={(event) => setConversationSearchTerm(event.target.value)}
-                placeholder="Nombre, correo, mensaje o adjunto..."
+                placeholder={conversationType === "department" ? "Departamento, mensaje o adjunto..." : "Nombre, correo, mensaje o adjunto..."}
               />
             </label>
             <small>
-              {filteredConversations.length} de {conversations.length} conversación(es)
+              {conversationType === "department"
+                ? `${filteredDepartmentConversations.length} de ${departmentConversations.length} departamento(s)`
+                : `${filteredConversations.length} de ${conversations.length} conversación(es)`}
             </small>
           </div>
 
-          <div className="chat-conversation-list">
-            {conversations.length === 0 ? (
-              <div className="workspace-empty-state messages-empty-state compact">
-                <strong>No hay conversaciones</strong>
-                <p>Inicia una conversación con algún colaborador.</p>
-              </div>
-            ) : filteredConversations.length === 0 ? (
-              <div className="workspace-empty-state messages-empty-state compact">
-                <strong>No hay coincidencias</strong>
-                <p>Prueba con otro nombre, mensaje o archivo.</p>
-              </div>
-            ) : (
-              filteredConversations.map((conversation) => {
-                const presenceStatus = getPresenceStatus(
-                  presenceByUserId[conversation.participantId],
-                  presenceNow
-                );
+          {conversationType === "direct" ? (
+            <div className="chat-conversation-list">
+              {conversations.length === 0 ? (
+                <div className="workspace-empty-state messages-empty-state compact">
+                  <strong>No hay conversaciones</strong>
+                  <p>Inicia una conversación con algún colaborador.</p>
+                </div>
+              ) : filteredConversations.length === 0 ? (
+                <div className="workspace-empty-state messages-empty-state compact">
+                  <strong>No hay coincidencias</strong>
+                  <p>Prueba con otro nombre, mensaje o archivo.</p>
+                </div>
+              ) : (
+                filteredConversations.map((conversation) => {
+                  const presenceStatus = getPresenceStatus(
+                    presenceByUserId[conversation.participantId],
+                    presenceNow
+                  );
 
-                return (
+                  return (
+                    <button
+                      key={conversation.participantId}
+                      type="button"
+                      className={`chat-conversation-item ${selectedConversation?.participantId === conversation.participantId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
+                      onClick={() => handleSelectConversation(conversation)}
+                    >
+                      <div className={`chat-conversation-avatar presence-avatar ${presenceStatus.online ? "online" : "offline"}`}>
+                        {getInitials(conversation.participantName)}
+                      </div>
+                      <div className="chat-conversation-main">
+                        <div className="chat-conversation-topline">
+                          <strong>{conversation.participantName}</strong>
+                          <small>{formatDateTime(conversation.lastMessage?.createdAt)}</small>
+                        </div>
+                        <PresenceBadge status={presenceStatus} compact />
+                        <p>
+                          {conversation.lastMessage?.fromUserId === currentUserId ? "Tú: " : ""}
+                          {conversation.lastMessage?.message || "Archivo adjunto"}
+                        </p>
+                        <div className="chat-conversation-meta">
+                          <span>{conversation.messages.length} mensaje(s)</span>
+                          {conversation.unreadCount > 0 && (
+                            <span className="chat-new-message-tag">
+                              {conversation.unreadCount} nuevo(s)
+                            </span>
+                          )}
+                          {conversation.lastMessage?.attachments?.length > 0 && <span>Adjuntos</span>}
+                        </div>
+                      </div>
+                      {conversation.unreadCount > 0 && (
+                        <span className="chat-unread-pill">{conversation.unreadCount}</span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="chat-conversation-list department-conversation-list">
+              {departmentConversations.length === 0 ? (
+                <div className="workspace-empty-state messages-empty-state compact">
+                  <strong>No hay chats por departamento</strong>
+                  <p>Cuando tengas un departamento asignado, aparecerá aquí.</p>
+                </div>
+              ) : filteredDepartmentConversations.length === 0 ? (
+                <div className="workspace-empty-state messages-empty-state compact">
+                  <strong>No hay coincidencias</strong>
+                  <p>Prueba con otro departamento, mensaje o archivo.</p>
+                </div>
+              ) : (
+                filteredDepartmentConversations.map((conversation) => (
                   <button
-                    key={conversation.participantId}
+                    key={conversation.departmentId}
                     type="button"
-                    className={`chat-conversation-item ${selectedConversation?.participantId === conversation.participantId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
-                    onClick={() => handleSelectConversation(conversation)}
+                    className={`chat-conversation-item department-chat-item ${selectedDepartmentConversation?.departmentId === conversation.departmentId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
+                    onClick={() => handleSelectDepartmentConversation(conversation)}
                   >
-                    <div className={`chat-conversation-avatar presence-avatar ${presenceStatus.online ? "online" : "offline"}`}>
-                      {getInitials(conversation.participantName)}
+                    <div className="chat-conversation-avatar department-chat-avatar">
+                      {getInitials(conversation.departmentName)}
                     </div>
                     <div className="chat-conversation-main">
                       <div className="chat-conversation-topline">
-                        <strong>{conversation.participantName}</strong>
+                        <strong>{conversation.departmentName}</strong>
                         <small>{formatDateTime(conversation.lastMessage?.createdAt)}</small>
                       </div>
-                      <PresenceBadge status={presenceStatus} compact />
+                      <span className="department-chat-label">Chat grupal</span>
                       <p>
-                        {conversation.lastMessage?.fromUserId === currentUserId ? "Tú: " : ""}
-                        {conversation.lastMessage?.message || "Archivo adjunto"}
+                        {conversation.lastMessage
+                          ? `${conversation.lastMessage.fromUserId === currentUserId ? "Tú" : conversation.lastMessage.fromUserName || "Usuario"}: ${conversation.lastMessage.message || "Archivo adjunto"}`
+                          : "Todavía no hay mensajes en este departamento."}
                       </p>
                       <div className="chat-conversation-meta">
                         <span>{conversation.messages.length} mensaje(s)</span>
+                        {conversation.memberCount > 0 && <span>{conversation.memberCount} integrante(s)</span>}
                         {conversation.unreadCount > 0 && (
                           <span className="chat-new-message-tag">
                             {conversation.unreadCount} nuevo(s)
@@ -3089,33 +3413,128 @@ function InternalMessages({ profile }) {
                       <span className="chat-unread-pill">{conversation.unreadCount}</span>
                     )}
                   </button>
-                );
-              })
-            )}
-          </div>
+                ))
+              )}
+            </div>
+          )}
         </aside>
 
         <section className="chat-thread-panel">
-          {!selectedRecipient ? (
+          {conversationType === "direct" ? (
+            !selectedRecipient ? (
+              <div className="workspace-empty-state messages-empty-state chat-empty-thread">
+                <strong>Selecciona una conversación</strong>
+                <p>El historial del chat aparecerá aquí.</p>
+              </div>
+            ) : (
+              <>
+                <div className="chat-thread-header">
+                  <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.online ? "online" : "offline"}`}>{getInitials(selectedRecipient.name)}</div>
+                  <div>
+                    <span>Conversación con</span>
+                    <h3>{selectedRecipient.name || selectedRecipient.email || "Usuario"}</h3>
+                    <small>{selectedRecipient.email || "Sin correo registrado"}</small>
+                    <PresenceBadge status={selectedPresenceStatus} />
+                  </div>
+                </div>
+
+                <div className="chat-thread-search-box">
+                  <label>
+                    <span>Buscar en esta conversación</span>
+                    <input
+                      value={threadSearchTerm}
+                      onChange={(event) => setThreadSearchTerm(event.target.value)}
+                      placeholder="Buscar mensaje, remitente o archivo..."
+                    />
+                  </label>
+                  <small>
+                    Mostrando {selectedMessages.length} de {selectedConversationTotalMessages} mensaje(s)
+                  </small>
+                </div>
+
+                <div className="chat-thread-messages">
+                  {selectedConversationTotalMessages === 0 ? (
+                    <div className="chat-date-separator">Todavía no hay mensajes en esta conversación.</div>
+                  ) : selectedMessages.length === 0 ? (
+                    <div className="chat-date-separator">No hay mensajes que coincidan con tu búsqueda.</div>
+                  ) : (
+                    selectedMessages.map((message) => {
+                      const outgoing = message.fromUserId === currentUserId;
+                      return (
+                        <article key={message.id} className={`chat-bubble-row ${outgoing ? "outgoing" : "incoming"}`}>
+                          {!outgoing && (
+                            <div className="chat-message-avatar">{getInitials(message.fromUserName)}</div>
+                          )}
+                          <div className="chat-bubble">
+                            <div className="chat-bubble-topline">
+                              <strong>{outgoing ? "Tú" : message.fromUserName || "Usuario"}</strong>
+                              <small>{formatDateTime(message.createdAt)}</small>
+                            </div>
+                            {message.message && <p>{message.message}</p>}
+                            <AttachmentGallery attachments={message.attachments} compact />
+                            <div className="chat-bubble-status">
+                              {outgoing ? (message.read ? "Leído" : "Enviado") : "Recibido"}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+
+                <form className="chat-composer" onSubmit={handleMessageSubmit}>
+                  <textarea
+                    value={messageForm.message}
+                    onChange={(event) =>
+                      setMessageForm((current) => ({
+                        ...current,
+                        toUserId: selectedRecipient.id,
+                        message: event.target.value,
+                      }))
+                    }
+                    placeholder={`Escribe un mensaje para ${selectedRecipient.name || "este colaborador"}...`}
+                    maxLength={1200}
+                  />
+
+                  <div className="chat-composer-tools">
+                    <AttachmentPicker
+                      title="Adjuntos"
+                      helper="Imagen, documento, audio o video. Máximo 6 archivos."
+                      onChange={handleMessageFileSelection}
+                    />
+
+                    <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
+                      {messageSaving ? "Enviando..." : "Enviar"}
+                    </button>
+                  </div>
+
+                  <AttachmentDraftList
+                    items={messageAttachments}
+                    onRemove={handleRemoveMessageAttachment}
+                  />
+                </form>
+              </>
+            )
+          ) : !selectedDepartmentConversation ? (
             <div className="workspace-empty-state messages-empty-state chat-empty-thread">
-              <strong>Selecciona una conversación</strong>
-              <p>El historial del chat aparecerá aquí.</p>
+              <strong>Selecciona un departamento</strong>
+              <p>El historial del chat grupal aparecerá aquí.</p>
             </div>
           ) : (
             <>
-              <div className="chat-thread-header">
-                <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.online ? "online" : "offline"}`}>{getInitials(selectedRecipient.name)}</div>
+              <div className="chat-thread-header department-thread-header">
+                <div className="chat-thread-avatar department-chat-avatar">{getInitials(selectedDepartmentConversation.departmentName)}</div>
                 <div>
-                  <span>Conversación con</span>
-                  <h3>{selectedRecipient.name || selectedRecipient.email || "Usuario"}</h3>
-                  <small>{selectedRecipient.email || "Sin correo registrado"}</small>
-                  <PresenceBadge status={selectedPresenceStatus} />
+                  <span>Chat por departamento</span>
+                  <h3>{selectedDepartmentConversation.departmentName}</h3>
+                  <small>{selectedDepartmentConversation.memberCount || 0} integrante(s) incluidos en esta conversación.</small>
+                  <span className="department-chat-label">Visible para miembros del departamento y administradores</span>
                 </div>
               </div>
 
               <div className="chat-thread-search-box">
                 <label>
-                  <span>Buscar en esta conversación</span>
+                  <span>Buscar en este departamento</span>
                   <input
                     value={threadSearchTerm}
                     onChange={(event) => setThreadSearchTerm(event.target.value)}
@@ -3123,24 +3542,24 @@ function InternalMessages({ profile }) {
                   />
                 </label>
                 <small>
-                  Mostrando {selectedMessages.length} de {selectedConversationTotalMessages} mensaje(s)
+                  Mostrando {selectedDepartmentMessages.length} de {selectedDepartmentTotalMessages} mensaje(s)
                 </small>
               </div>
 
               <div className="chat-thread-messages">
-                {selectedConversationTotalMessages === 0 ? (
-                  <div className="chat-date-separator">Todavía no hay mensajes en esta conversación.</div>
-                ) : selectedMessages.length === 0 ? (
+                {selectedDepartmentTotalMessages === 0 ? (
+                  <div className="chat-date-separator">Todavía no hay mensajes en este departamento.</div>
+                ) : selectedDepartmentMessages.length === 0 ? (
                   <div className="chat-date-separator">No hay mensajes que coincidan con tu búsqueda.</div>
                 ) : (
-                  selectedMessages.map((message) => {
+                  selectedDepartmentMessages.map((message) => {
                     const outgoing = message.fromUserId === currentUserId;
                     return (
                       <article key={message.id} className={`chat-bubble-row ${outgoing ? "outgoing" : "incoming"}`}>
                         {!outgoing && (
                           <div className="chat-message-avatar">{getInitials(message.fromUserName)}</div>
                         )}
-                        <div className="chat-bubble">
+                        <div className="chat-bubble department-chat-bubble">
                           <div className="chat-bubble-topline">
                             <strong>{outgoing ? "Tú" : message.fromUserName || "Usuario"}</strong>
                             <small>{formatDateTime(message.createdAt)}</small>
@@ -3148,7 +3567,9 @@ function InternalMessages({ profile }) {
                           {message.message && <p>{message.message}</p>}
                           <AttachmentGallery attachments={message.attachments} compact />
                           <div className="chat-bubble-status">
-                            {outgoing ? (message.read ? "Leído" : "Enviado") : "Recibido"}
+                            {outgoing
+                              ? `Enviado · visto por ${Math.max(Object.keys(message.readBy || {}).length - 1, 0)}`
+                              : "Recibido"}
                           </div>
                         </div>
                       </article>
@@ -3157,17 +3578,11 @@ function InternalMessages({ profile }) {
                 )}
               </div>
 
-              <form className="chat-composer" onSubmit={handleMessageSubmit}>
+              <form className="chat-composer" onSubmit={handleDepartmentMessageSubmit}>
                 <textarea
-                  value={messageForm.message}
-                  onChange={(event) =>
-                    setMessageForm((current) => ({
-                      ...current,
-                      toUserId: selectedRecipient.id,
-                      message: event.target.value,
-                    }))
-                  }
-                  placeholder={`Escribe un mensaje para ${selectedRecipient.name || "este colaborador"}...`}
+                  value={departmentForm.message}
+                  onChange={(event) => setDepartmentForm({ message: event.target.value })}
+                  placeholder={`Escribe un mensaje para ${selectedDepartmentConversation.departmentName}...`}
                   maxLength={1200}
                 />
 
@@ -3175,17 +3590,17 @@ function InternalMessages({ profile }) {
                   <AttachmentPicker
                     title="Adjuntos"
                     helper="Imagen, documento, audio o video. Máximo 6 archivos."
-                    onChange={handleMessageFileSelection}
+                    onChange={handleDepartmentFileSelection}
                   />
 
                   <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
-                    {messageSaving ? "Enviando..." : "Enviar"}
+                    {messageSaving ? "Enviando..." : "Enviar al departamento"}
                   </button>
                 </div>
 
                 <AttachmentDraftList
-                  items={messageAttachments}
-                  onRemove={handleRemoveMessageAttachment}
+                  items={departmentAttachments}
+                  onRemove={handleRemoveDepartmentAttachment}
                 />
               </form>
             </>
@@ -3195,6 +3610,7 @@ function InternalMessages({ profile }) {
     </div>
   );
 }
+
 
 function buildInternalConversations(messages, collaborators, currentUserId) {
   const collaboratorMap = new Map(
@@ -3240,6 +3656,199 @@ function buildInternalConversations(messages, collaborators, currentUserId) {
       return getMillisFromFirestoreDate(b.lastMessage?.createdAt) - getMillisFromFirestoreDate(a.lastMessage?.createdAt);
     });
 }
+function buildDepartmentChatOptions({ departments, collaborators, profile, currentUserId, isAdmin }) {
+  const optionsByKey = new Map();
+  const currentUserLabels = getUserDepartmentLabels(profile);
+  const currentUserDepartmentKeys = currentUserLabels.map(normalizeText).filter(Boolean);
+
+  function addOption({ id, name, source = "profile", raw = {} }) {
+    const cleanName = String(name || "").trim();
+    if (!cleanName) return;
+    const normalizedName = normalizeText(cleanName);
+    if (!normalizedName) return;
+    const optionId = id || getDepartmentOptionId(cleanName);
+    if (!optionsByKey.has(normalizedName)) {
+      optionsByKey.set(normalizedName, {
+        id: optionId,
+        name: cleanName,
+        normalizedName,
+        source,
+        departmentDocId: raw.id || "",
+        memberCount: 0,
+      });
+    }
+  }
+
+  (departments || []).forEach((department) => {
+    const departmentName = department.name || department.title || "";
+    const normalizedName = normalizeText(departmentName);
+    if (!departmentName || (!isAdmin && !currentUserDepartmentKeys.includes(normalizedName))) return;
+    addOption({ id: department.id || getDepartmentOptionId(departmentName), name: departmentName, source: "departments", raw: department });
+  });
+
+  if (isAdmin) {
+    [{ ...profile, id: currentUserId }, ...(collaborators || [])].forEach((user) => {
+      getUserDepartmentLabels(user).forEach((departmentName) => addOption({ name: departmentName, source: "users" }));
+    });
+  } else {
+    currentUserLabels.forEach((departmentName) => addOption({ name: departmentName, source: "profile" }));
+  }
+
+  const users = [{ ...profile, id: currentUserId }, ...(collaborators || [])];
+  return Array.from(optionsByKey.values())
+    .map((option) => ({
+      ...option,
+      memberCount: getDepartmentMemberIds(option, collaborators, profile, currentUserId).length,
+    }))
+    .filter((option) => isAdmin || users.some((user) => userBelongsToDepartment(user, option.normalizedName)))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+function buildDepartmentConversations(messages, departmentOptions, currentUserId) {
+  const grouped = new Map();
+
+  (departmentOptions || []).forEach((department) => {
+    grouped.set(department.id, {
+      departmentId: department.id,
+      departmentName: department.name,
+      normalizedName: department.normalizedName,
+      memberCount: department.memberCount || 0,
+      messages: [],
+      unreadCount: 0,
+      lastMessage: null,
+    });
+  });
+
+  (messages || []).forEach((message) => {
+    const departmentId = message.departmentId || getDepartmentOptionId(message.departmentName || "Departamento");
+    if (!grouped.has(departmentId)) {
+      grouped.set(departmentId, {
+        departmentId,
+        departmentName: message.departmentName || "Departamento",
+        normalizedName: normalizeText(message.departmentName || "Departamento"),
+        memberCount: Array.isArray(message.memberIds) ? message.memberIds.length : 0,
+        messages: [],
+        unreadCount: 0,
+        lastMessage: null,
+      });
+    }
+
+    const conversation = grouped.get(departmentId);
+    conversation.messages.push(message);
+    if (isUnreadDepartmentMessage(message, currentUserId)) {
+      conversation.unreadCount += 1;
+    }
+    if (!conversation.memberCount && Array.isArray(message.memberIds)) {
+      conversation.memberCount = message.memberIds.length;
+    }
+  });
+
+  return Array.from(grouped.values())
+    .map((conversation) => {
+      const sortedMessages = conversation.messages.slice().sort(sortByCreatedAtDesc);
+      return {
+        ...conversation,
+        messages: sortedMessages,
+        lastMessage: sortedMessages[0] || null,
+      };
+    })
+    .sort((a, b) => {
+      const unreadDiff = Number(b.unreadCount > 0) - Number(a.unreadCount > 0);
+      if (unreadDiff !== 0) return unreadDiff;
+      const dateDiff = getMillisFromFirestoreDate(b.lastMessage?.createdAt) - getMillisFromFirestoreDate(a.lastMessage?.createdAt);
+      if (dateDiff !== 0) return dateDiff;
+      return a.departmentName.localeCompare(b.departmentName, "es");
+    });
+}
+
+function getDepartmentMemberIds(department, collaborators, profile, currentUserId) {
+  const normalizedName = department?.normalizedName || normalizeText(department?.name || department?.departmentName || "");
+  const userMap = new Map();
+
+  [{ ...profile, id: currentUserId }, ...(collaborators || [])].forEach((user) => {
+    const userId = user?.id || user?.uid || "";
+    if (!userId) return;
+    if (userBelongsToDepartment(user, normalizedName)) {
+      userMap.set(userId, user);
+    }
+  });
+
+  if (currentUserId) {
+    userMap.set(currentUserId, { ...profile, id: currentUserId });
+  }
+
+  return Array.from(userMap.keys()).filter(Boolean);
+}
+
+function getDepartmentOptionId(departmentName = "") {
+  const slug = normalizeText(departmentName)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+  return slug || `department-${Date.now()}`;
+}
+
+function getUserDepartmentLabels(user = {}) {
+  return [
+    user?.area,
+    user?.department,
+    user?.departmentName,
+    user?.team,
+    ...(Array.isArray(user?.departmentNames) ? user.departmentNames : []),
+    ...(Array.isArray(user?.departments) ? user.departments : []),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean)
+    .filter((value, index, array) => array.findIndex((item) => normalizeText(item) === normalizeText(value)) === index);
+}
+
+function userBelongsToDepartment(user = {}, normalizedDepartmentName = "") {
+  if (!normalizedDepartmentName) return false;
+  return getUserDepartmentLabels(user).some((departmentName) => normalizeText(departmentName) === normalizedDepartmentName);
+}
+
+function isUnreadDepartmentMessage(message, currentUserId) {
+  if (!message?.id || !currentUserId) return false;
+  if (message.fromUserId === currentUserId) return false;
+  const readBy = message.readBy || {};
+  return !readBy[currentUserId];
+}
+
+function matchesDepartmentConversationSearch(conversation, searchTerm) {
+  const normalizedSearch = normalizeText(searchTerm);
+  if (!normalizedSearch) return true;
+
+  const values = [
+    conversation.departmentName,
+    conversation.lastMessage?.message,
+    conversation.lastMessage?.fromUserName,
+    getSearchableAttachmentText(conversation.lastMessage?.attachments),
+    ...(conversation.messages || []).flatMap((message) => [
+      message.message,
+      message.fromUserName,
+      message.fromUserEmail,
+      getSearchableAttachmentText(message.attachments),
+    ]),
+  ];
+
+  return values.some((value) => normalizeText(value).includes(normalizedSearch));
+}
+
+function matchesDepartmentMessageSearch(message, searchTerm) {
+  const normalizedSearch = normalizeText(searchTerm);
+  if (!normalizedSearch) return true;
+
+  return [
+    message.departmentName,
+    message.message,
+    message.fromUserName,
+    message.fromUserEmail,
+    getSearchableAttachmentText(message.attachments),
+  ].some((value) => normalizeText(value).includes(normalizedSearch));
+}
+
 
 function getInternalMessageParticipant(message, currentUserId) {
   if (message.fromUserId === currentUserId) {
@@ -3365,6 +3974,42 @@ function useUnreadInternalMessagesCount(profile) {
       }
     );
   }, [currentUserId]);
+
+  return unreadCount;
+}
+
+
+function useUnreadDepartmentMessagesCount(profile, isAdmin = false) {
+  const currentUserId = getCurrentUserId(profile);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setUnreadCount(0);
+      return undefined;
+    }
+
+    const departmentMessagesRef = collection(db, "departmentMessages");
+    const departmentMessagesQuery = isAdmin
+      ? departmentMessagesRef
+      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
+
+    return onSnapshot(
+      departmentMessagesQuery,
+      (snapshot) => {
+        const nextUnreadCount = snapshot.docs.filter((messageDoc) => {
+          const data = messageDoc.data();
+          return data.fromUserId !== currentUserId && !(data.readBy || {})[currentUserId];
+        }).length;
+
+        setUnreadCount(nextUnreadCount);
+      },
+      (error) => {
+        console.error("No se pudo cargar el contador de mensajes por departamento:", error);
+        setUnreadCount(0);
+      }
+    );
+  }, [currentUserId, isAdmin]);
 
   return unreadCount;
 }

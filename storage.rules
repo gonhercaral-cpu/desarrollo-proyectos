@@ -210,6 +210,24 @@ service firebase.storage {
     }
 
 
+    function departmentMessagePath(messageId) {
+      return /databases/(default)/documents/departmentMessages/$(messageId);
+    }
+
+    function departmentMessageExists(messageId) {
+      return firestore.exists(departmentMessagePath(messageId));
+    }
+
+    function canReadDepartmentMessageAttachment(messageId) {
+      return hasProfile()
+        && departmentMessageExists(messageId)
+        && (
+          isAdmin()
+          || request.auth.uid in firestore.get(departmentMessagePath(messageId)).data.memberIds
+        );
+    }
+
+
 
     /*
       Adjuntos del tablero general de anuncios:
@@ -270,6 +288,28 @@ service firebase.storage {
       allow delete: if signedIn()
         && hasProfile()
         && request.auth.uid == fromUid;
+    }
+
+
+    /*
+      Adjuntos de chats por departamento:
+      dashboard/departmentMessages/{departmentId}/{fromUid}/{messageId}/{fileName}
+
+      Los miembros incluidos en el mensaje y administradores pueden leerlos.
+      Solo el remitente puede subirlos antes de guardar el mensaje.
+    */
+    match /dashboard/departmentMessages/{departmentId}/{fromUid}/{messageId}/{fileName} {
+      allow read: if signedIn()
+        && canReadDepartmentMessageAttachment(messageId);
+
+      allow create, update: if signedIn()
+        && hasProfile()
+        && request.auth.uid == fromUid
+        && validDashboardAttachmentFile();
+
+      allow delete: if signedIn()
+        && hasProfile()
+        && (request.auth.uid == fromUid || isAdmin());
     }
 
     /*

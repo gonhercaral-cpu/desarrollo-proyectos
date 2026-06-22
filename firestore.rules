@@ -1959,6 +1959,96 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+
+    function userMatchesDepartmentName(departmentName) {
+      return hasProfile()
+        && departmentName is string
+        && (
+          isAdmin()
+          || userDoc().data.area == departmentName
+          || userDoc().data.department == departmentName
+          || userDoc().data.departmentName == departmentName
+          || userDoc().data.team == departmentName
+          || (
+            userDoc().data.departmentNames is list
+            && departmentName in userDoc().data.departmentNames
+          )
+          || (
+            userDoc().data.departments is list
+            && departmentName in userDoc().data.departments
+          )
+        );
+    }
+
+    function canReadDepartmentMessage() {
+      return hasProfile()
+        && (
+          isAdmin()
+          || request.auth.uid in resource.data.memberIds
+        );
+    }
+
+    function validDepartmentMessageCreate() {
+      return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "departmentId",
+          "departmentName",
+          "fromUserId",
+          "fromUserName",
+          "fromUserEmail",
+          "message",
+          "attachments",
+          "memberIds",
+          "readBy",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.fromUserId == request.auth.uid
+        && request.resource.data.departmentId is string
+        && request.resource.data.departmentId.size() > 0
+        && request.resource.data.departmentId.size() <= 120
+        && request.resource.data.departmentName is string
+        && request.resource.data.departmentName.size() > 0
+        && request.resource.data.departmentName.size() <= 120
+        && (
+          userMatchesDepartmentName(request.resource.data.departmentName)
+          || request.auth.uid in request.resource.data.memberIds
+        )
+        && request.resource.data.fromUserName is string
+        && request.resource.data.fromUserName.size() <= 120
+        && request.resource.data.fromUserEmail is string
+        && request.resource.data.fromUserEmail.size() <= 180
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 1200
+        && request.resource.data.attachments is list
+        && request.resource.data.attachments.size() <= 6
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() <= 80
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.readBy is map
+        && request.resource.data.readBy.keys().hasOnly([request.auth.uid])
+        && request.resource.data.readBy[request.auth.uid] is timestamp
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function validDepartmentMessageReadUpdate() {
+      return hasProfile()
+        && canReadDepartmentMessage()
+        && request.resource.data.departmentId == resource.data.departmentId
+        && request.resource.data.departmentName == resource.data.departmentName
+        && request.resource.data.fromUserId == resource.data.fromUserId
+        && request.resource.data.memberIds == resource.data.memberIds
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "readBy",
+          "updatedAt"
+        ])
+        && request.resource.data.readBy is map
+        && request.resource.data.readBy[request.auth.uid] is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
     function validUserPresenceWrite(userId) {
       return hasProfile()
         && userId == request.auth.uid
@@ -2026,6 +2116,17 @@ service cloud.firestore {
       allow create: if validInternalMessageCreate();
 
       allow update: if validInternalMessageReadUpdate();
+
+      allow delete: if false;
+    }
+
+
+    match /departmentMessages/{messageId} {
+      allow get, list: if canReadDepartmentMessage();
+
+      allow create: if validDepartmentMessageCreate();
+
+      allow update: if validDepartmentMessageReadUpdate();
 
       allow delete: if false;
     }

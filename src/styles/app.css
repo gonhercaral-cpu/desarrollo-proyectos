@@ -37121,3 +37121,116 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   CHAT POR DEPARTAMENTO
+========================================================= */
+
+.department-chat-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.messages-summary-card.group {
+  background: linear-gradient(135deg, #ecfeff, #f0fdfa);
+  border-color: #99f6e4;
+}
+
+.messages-summary-card.group span {
+  background: #ccfbf1;
+  color: #0f9488;
+}
+
+.chat-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  padding: 6px;
+  margin: 0 0 14px;
+  border: 1px solid #dce6f5;
+  border-radius: 999px;
+  background: #eef4fb;
+}
+
+.chat-mode-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #526176;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.chat-mode-tabs button.active {
+  background: #ffffff;
+  color: #0f4fc4;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.chat-mode-tabs button span {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 7px;
+  background: #fee2e2;
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.department-chat-item {
+  border-left: 5px solid #0f9488;
+}
+
+.department-chat-avatar {
+  background: linear-gradient(135deg, #0f9488, #0f4fc4) !important;
+  color: #ffffff;
+}
+
+.department-chat-label {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #ccfbf1;
+  color: #0f766e;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 900;
+  margin: 2px 0 6px;
+}
+
+.department-thread-header {
+  border-left: 5px solid #0f9488;
+}
+
+.department-thread-header .department-chat-label {
+  margin-top: 7px;
+}
+
+.department-chat-bubble {
+  border-color: #bfeee8;
+}
+
+.department-chat-bubble .chat-bubble-status {
+  color: #0f766e;
+}
+
+@media (max-width: 1100px) {
+  .department-chat-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .department-chat-summary-grid,
+  .chat-mode-tabs {
+    grid-template-columns: 1fr;
+  }
+}
