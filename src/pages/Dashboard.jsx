@@ -1988,12 +1988,10 @@ function InternalMessages({ profile }) {
   const [collaborators, setCollaborators] = useState([]);
   const [inboxMessages, setInboxMessages] = useState([]);
   const [sentMessages, setSentMessages] = useState([]);
-  const [activeTab, setActiveTab] = useState("inbox");
-  const [selectedMessageId, setSelectedMessageId] = useState("");
-  const [composeOpen, setComposeOpen] = useState(true);
+  const [selectedConversationId, setSelectedConversationId] = useState("");
+  const [newConversationOpen, setNewConversationOpen] = useState(false);
   const [messageForm, setMessageForm] = useState({
     toUserId: "",
-    subject: "",
     message: "",
   });
   const [messageAttachments, setMessageAttachments] = useState([]);
@@ -2012,7 +2010,9 @@ function InternalMessages({ profile }) {
           .filter((user) => user.id !== currentUserId)
           .filter((user) => user.active !== false && user.deleted !== true)
           .filter((user) => user.email || user.name)
-          .sort((a, b) => String(a.name || a.email || "").localeCompare(String(b.name || b.email || ""), "es"));
+          .sort((a, b) =>
+            String(a.name || a.email || "").localeCompare(String(b.name || b.email || ""), "es")
+          );
 
         setCollaborators(nextCollaborators);
       },
@@ -2046,7 +2046,7 @@ function InternalMessages({ profile }) {
       },
       (error) => {
         console.error("No se pudo cargar la bandeja de entrada:", error);
-        setMessageError("No se pudo cargar la bandeja de entrada.");
+        setMessageError("No se pudo cargar tus mensajes recibidos.");
       }
     );
   }, [currentUserId]);
@@ -2074,7 +2074,7 @@ function InternalMessages({ profile }) {
       },
       (error) => {
         console.error("No se pudieron cargar los mensajes enviados:", error);
-        setMessageError("No se pudieron cargar los mensajes enviados.");
+        setMessageError("No se pudieron cargar tus mensajes enviados.");
       }
     );
   }, [currentUserId]);
@@ -2083,24 +2083,46 @@ function InternalMessages({ profile }) {
     return () => revokeDraftAttachmentPreviews(messageAttachments);
   }, []);
 
-  const visibleMessages = activeTab === "sent" ? sentMessages : inboxMessages;
-  const unreadCount = inboxMessages.filter((message) => !message.read).length;
-  const selectedMessage =
-    visibleMessages.find((message) => message.id === selectedMessageId) ||
-    visibleMessages[0] ||
+  const allMessages = [...inboxMessages, ...sentMessages].sort(sortByCreatedAtDesc);
+  const conversations = buildInternalConversations(allMessages, collaborators, currentUserId);
+  const selectedConversation =
+    conversations.find((conversation) => conversation.participantId === selectedConversationId) ||
+    conversations[0] ||
     null;
+  const selectedMessages = selectedConversation
+    ? selectedConversation.messages.slice().sort(sortByCreatedAtAsc)
+    : [];
+  const unreadCount = inboxMessages.filter((message) => !message.read).length;
+  const totalMessages = allMessages.length;
+  const selectedRecipient = selectedConversation
+    ? {
+        id: selectedConversation.participantId,
+        name: selectedConversation.participantName,
+        email: selectedConversation.participantEmail,
+      }
+    : collaborators.find((user) => user.id === messageForm.toUserId) || null;
 
   useEffect(() => {
-    if (selectedMessage?.id) {
-      setSelectedMessageId(selectedMessage.id);
-    } else {
-      setSelectedMessageId("");
+    if (!selectedConversation && conversations[0]?.participantId) {
+      setSelectedConversationId(conversations[0].participantId);
     }
-  }, [activeTab, visibleMessages.length]);
+  }, [conversations.length, selectedConversation?.participantId]);
+
+  useEffect(() => {
+    if (!selectedConversation) return;
+    setMessageForm((current) => ({
+      ...current,
+      toUserId: selectedConversation.participantId,
+    }));
+    markConversationMessagesAsRead(selectedConversation.messages);
+  }, [selectedConversation?.participantId, selectedConversation?.unreadCount]);
 
   function resetMessageComposer() {
     revokeDraftAttachmentPreviews(messageAttachments);
-    setMessageForm({ toUserId: "", subject: "", message: "" });
+    setMessageForm((current) => ({
+      ...current,
+      message: "",
+    }));
     setMessageAttachments([]);
   }
 
@@ -2132,22 +2154,39 @@ function InternalMessages({ profile }) {
     });
   }
 
+  function handleStartConversation(userId) {
+    if (!userId) return;
+    setSelectedConversationId(userId);
+    setMessageForm({ toUserId: userId, message: "" });
+    setNewConversationOpen(false);
+    setMessageStatus("");
+    setMessageError("");
+  }
+
   async function handleMessageSubmit(event) {
     event.preventDefault();
     setMessageStatus("");
     setMessageError("");
 
-    const recipient = collaborators.find((user) => user.id === messageForm.toUserId);
-    const cleanSubject = messageForm.subject.trim();
+    const recipientId = messageForm.toUserId || selectedConversation?.participantId || "";
+    const recipient =
+      collaborators.find((user) => user.id === recipientId) ||
+      (selectedConversation?.participantId === recipientId
+        ? {
+            id: selectedConversation.participantId,
+            name: selectedConversation.participantName,
+            email: selectedConversation.participantEmail,
+          }
+        : null);
     const cleanMessage = messageForm.message.trim();
 
-    if (!recipient) {
-      setMessageError("Selecciona a quién enviar el mensaje.");
+    if (!recipient?.id) {
+      setMessageError("Selecciona una conversación o un colaborador.");
       return;
     }
 
-    if (!cleanSubject || !cleanMessage) {
-      setMessageError("Escribe el asunto y el mensaje.");
+    if (!cleanMessage && messageAttachments.length === 0) {
+      setMessageError("Escribe un mensaje o adjunta un archivo.");
       return;
     }
 
@@ -2159,27 +2198,26 @@ function InternalMessages({ profile }) {
         folder: `dashboard/internalMessages/${currentUserId}/${recipient.id}/${messageId}`,
         ownerUid: currentUserId,
       });
+      const recipientName = recipient.name || recipient.email || "Usuario";
 
       await setDoc(doc(db, "internalMessages", messageId), {
         fromUserId: currentUserId,
         fromUserName: profile?.name || "Usuario",
         fromUserEmail: profile?.email || "",
         toUserId: recipient.id,
-        toUserName: recipient.name || recipient.email || "Usuario",
+        toUserName: recipientName,
         toUserEmail: recipient.email || "",
-        subject: cleanSubject,
-        message: cleanMessage,
+        subject: `Conversación con ${recipientName}`.slice(0, 120),
+        message: cleanMessage || "Archivo adjunto",
         attachments,
         read: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
+      setSelectedConversationId(recipient.id);
       setMessageStatus("Mensaje enviado.");
-      setActiveTab("sent");
-      setSelectedMessageId(messageId);
       resetMessageComposer();
-      setComposeOpen(false);
     } catch (error) {
       console.error("No se pudo enviar el mensaje:", error);
       setMessageError("No se pudo enviar el mensaje.");
@@ -2203,55 +2241,46 @@ function InternalMessages({ profile }) {
     }
   }
 
-  function handleSelectMessage(message) {
-    setSelectedMessageId(message.id);
-    if (activeTab === "inbox") {
-      markMessageAsRead(message);
-    }
+  function markConversationMessagesAsRead(messages) {
+    (messages || [])
+      .filter((message) => message.toUserId === currentUserId && !message.read)
+      .forEach((message) => markMessageAsRead(message));
   }
 
-  function handleReplyToMessage(message) {
-    const replySubject = String(message.subject || "").startsWith("Re:")
-      ? message.subject
-      : `Re: ${message.subject || "Mensaje"}`;
-
-    setMessageForm({
-      toUserId: message.fromUserId,
-      subject: replySubject,
-      message: "",
-    });
-    setMessageAttachments([]);
-    setComposeOpen(true);
+  function handleSelectConversation(conversation) {
+    setSelectedConversationId(conversation.participantId);
+    setMessageForm({ toUserId: conversation.participantId, message: "" });
     setMessageStatus("");
     setMessageError("");
+    markConversationMessagesAsRead(conversation.messages);
   }
 
   return (
-    <div className="internal-messages-page">
-      <div className="visual-page-header messages-hero">
+    <div className="internal-messages-page chat-messages-page">
+      <div className="visual-page-header messages-hero chat-hero">
         <div>
           <span className="visual-page-kicker">Comunicación interna</span>
           <h1>Mensajes</h1>
           <p>
-            Envía mensajes a otros colaboradores, deja avisos aunque no estén conectados y revisa tus conversaciones internas.
+            Conversa con colaboradores en hilos tipo chat, revisa el historial y deja mensajes aunque no estén conectados.
           </p>
         </div>
 
-        <div className="messages-summary-grid">
+        <div className="messages-summary-grid chat-summary-grid">
           <div className="messages-summary-card unread">
             <span>✉️</span>
             <strong>{unreadCount}</strong>
             <small>No leídos</small>
           </div>
           <div className="messages-summary-card inbox">
-            <span>📥</span>
-            <strong>{inboxMessages.length}</strong>
-            <small>Recibidos</small>
+            <span>💬</span>
+            <strong>{conversations.length}</strong>
+            <small>Conversaciones</small>
           </div>
           <div className="messages-summary-card sent">
-            <span>📤</span>
-            <strong>{sentMessages.length}</strong>
-            <small>Enviados</small>
+            <span>📨</span>
+            <strong>{totalMessages}</strong>
+            <small>Mensajes</small>
           </div>
         </div>
       </div>
@@ -2259,27 +2288,25 @@ function InternalMessages({ profile }) {
       {messageError && <div className="workspace-error-box">{messageError}</div>}
       {messageStatus && <div className="workspace-success-box">{messageStatus}</div>}
 
-      <div className="messages-layout">
-        <section className="messages-compose-panel workspace-card">
-          <div className="messages-panel-header">
+      <div className="chat-layout workspace-card">
+        <aside className="chat-sidebar-panel">
+          <div className="chat-sidebar-header">
             <div>
-              <span>Nuevo mensaje</span>
-              <h3>Enviar a colaborador</h3>
+              <span>Historial</span>
+              <h3>Conversaciones</h3>
             </div>
-            <button type="button" onClick={() => setComposeOpen((current) => !current)}>
-              {composeOpen ? "Ocultar" : "Redactar"}
+            <button type="button" onClick={() => setNewConversationOpen((current) => !current)}>
+              {newConversationOpen ? "Cerrar" : "+ Nueva"}
             </button>
           </div>
 
-          {composeOpen && (
-            <form className="messages-compose-form" onSubmit={handleMessageSubmit}>
+          {newConversationOpen && (
+            <div className="chat-new-conversation-box">
               <label>
-                <span>Para</span>
+                <span>Iniciar conversación con</span>
                 <select
                   value={messageForm.toUserId}
-                  onChange={(event) =>
-                    setMessageForm((current) => ({ ...current, toUserId: event.target.value }))
-                  }
+                  onChange={(event) => setMessageForm({ toUserId: event.target.value, message: "" })}
                 >
                   <option value="">Selecciona un colaborador</option>
                   {collaborators.map((collaborator) => (
@@ -2289,168 +2316,200 @@ function InternalMessages({ profile }) {
                   ))}
                 </select>
               </label>
+              <button
+                type="button"
+                className="workspace-primary-button"
+                onClick={() => handleStartConversation(messageForm.toUserId)}
+                disabled={!messageForm.toUserId}
+              >
+                Abrir chat
+              </button>
+            </div>
+          )}
 
-              <label>
-                <span>Asunto</span>
-                <input
-                  value={messageForm.subject}
-                  onChange={(event) =>
-                    setMessageForm((current) => ({ ...current, subject: event.target.value }))
-                  }
-                  placeholder="Ej. Revisión pendiente"
-                  maxLength={120}
-                />
-              </label>
+          <div className="chat-conversation-list">
+            {conversations.length === 0 ? (
+              <div className="workspace-empty-state messages-empty-state compact">
+                <strong>No hay conversaciones</strong>
+                <p>Inicia una conversación con algún colaborador.</p>
+              </div>
+            ) : (
+              conversations.map((conversation) => (
+                <button
+                  key={conversation.participantId}
+                  type="button"
+                  className={`chat-conversation-item ${selectedConversation?.participantId === conversation.participantId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
+                  onClick={() => handleSelectConversation(conversation)}
+                >
+                  <div className="chat-conversation-avatar">
+                    {getInitials(conversation.participantName)}
+                  </div>
+                  <div className="chat-conversation-main">
+                    <div className="chat-conversation-topline">
+                      <strong>{conversation.participantName}</strong>
+                      <small>{formatDateTime(conversation.lastMessage?.createdAt)}</small>
+                    </div>
+                    <p>
+                      {conversation.lastMessage?.fromUserId === currentUserId ? "Tú: " : ""}
+                      {conversation.lastMessage?.message || "Archivo adjunto"}
+                    </p>
+                    <div className="chat-conversation-meta">
+                      <span>{conversation.messages.length} mensaje(s)</span>
+                      {conversation.lastMessage?.attachments?.length > 0 && <span>Adjuntos</span>}
+                    </div>
+                  </div>
+                  {conversation.unreadCount > 0 && (
+                    <span className="chat-unread-pill">{conversation.unreadCount}</span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </aside>
 
-              <label>
-                <span>Mensaje</span>
+        <section className="chat-thread-panel">
+          {!selectedRecipient ? (
+            <div className="workspace-empty-state messages-empty-state chat-empty-thread">
+              <strong>Selecciona una conversación</strong>
+              <p>El historial del chat aparecerá aquí.</p>
+            </div>
+          ) : (
+            <>
+              <div className="chat-thread-header">
+                <div className="chat-thread-avatar">{getInitials(selectedRecipient.name)}</div>
+                <div>
+                  <span>Conversación con</span>
+                  <h3>{selectedRecipient.name || selectedRecipient.email || "Usuario"}</h3>
+                  <small>{selectedRecipient.email || "Sin correo registrado"}</small>
+                </div>
+              </div>
+
+              <div className="chat-thread-messages">
+                {selectedMessages.length === 0 ? (
+                  <div className="chat-date-separator">Todavía no hay mensajes en esta conversación.</div>
+                ) : (
+                  selectedMessages.map((message) => {
+                    const outgoing = message.fromUserId === currentUserId;
+                    return (
+                      <article key={message.id} className={`chat-bubble-row ${outgoing ? "outgoing" : "incoming"}`}>
+                        {!outgoing && (
+                          <div className="chat-message-avatar">{getInitials(message.fromUserName)}</div>
+                        )}
+                        <div className="chat-bubble">
+                          <div className="chat-bubble-topline">
+                            <strong>{outgoing ? "Tú" : message.fromUserName || "Usuario"}</strong>
+                            <small>{formatDateTime(message.createdAt)}</small>
+                          </div>
+                          {message.message && <p>{message.message}</p>}
+                          <AttachmentGallery attachments={message.attachments} compact />
+                          <div className="chat-bubble-status">
+                            {outgoing ? (message.read ? "Leído" : "Enviado") : "Recibido"}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+
+              <form className="chat-composer" onSubmit={handleMessageSubmit}>
                 <textarea
                   value={messageForm.message}
                   onChange={(event) =>
-                    setMessageForm((current) => ({ ...current, message: event.target.value }))
+                    setMessageForm((current) => ({
+                      ...current,
+                      toUserId: selectedRecipient.id,
+                      message: event.target.value,
+                    }))
                   }
-                  placeholder="Escribe tu mensaje..."
+                  placeholder={`Escribe un mensaje para ${selectedRecipient.name || "este colaborador"}...`}
                   maxLength={1200}
                 />
-              </label>
 
-              <AttachmentPicker
-                title="Archivos adjuntos"
-                helper="Puedes adjuntar imágenes, documentos, audio o video. Máximo 6 archivos."
-                onChange={handleMessageFileSelection}
-              />
+                <div className="chat-composer-tools">
+                  <AttachmentPicker
+                    title="Adjuntos"
+                    helper="Imagen, documento, audio o video. Máximo 6 archivos."
+                    onChange={handleMessageFileSelection}
+                  />
 
-              <AttachmentDraftList
-                items={messageAttachments}
-                onRemove={handleRemoveMessageAttachment}
-              />
-
-              <div className="workspace-form-actions">
-                <button type="button" className="workspace-soft-button" onClick={resetMessageComposer}>
-                  Limpiar
-                </button>
-                <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
-                  {messageSaving ? "Enviando..." : "Enviar mensaje"}
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
-
-        <section className="messages-inbox-panel workspace-card">
-          <div className="messages-tabs">
-            <button
-              type="button"
-              className={activeTab === "inbox" ? "active" : ""}
-              onClick={() => setActiveTab("inbox")}
-            >
-              Bandeja de entrada
-              {unreadCount > 0 && <span>{unreadCount}</span>}
-            </button>
-            <button
-              type="button"
-              className={activeTab === "sent" ? "active" : ""}
-              onClick={() => setActiveTab("sent")}
-            >
-              Enviados
-            </button>
-          </div>
-
-          <div className="messages-content-grid">
-            <div className="messages-list">
-              {visibleMessages.length === 0 ? (
-                <div className="workspace-empty-state messages-empty-state">
-                  <strong>{activeTab === "sent" ? "No has enviado mensajes" : "No tienes mensajes"}</strong>
-                  <p>Los mensajes aparecerán aquí cuando existan.</p>
-                </div>
-              ) : (
-                visibleMessages.map((message) => (
-                  <button
-                    key={message.id}
-                    type="button"
-                    className={`message-list-item ${selectedMessage?.id === message.id ? "active" : ""} ${!message.read && activeTab === "inbox" ? "unread" : ""}`}
-                    onClick={() => handleSelectMessage(message)}
-                  >
-                    <div className="message-list-avatar">
-                      {getInitials(activeTab === "sent" ? message.toUserName : message.fromUserName)}
-                    </div>
-                    <div>
-                      <div className="message-list-topline">
-                        <strong>{activeTab === "sent" ? message.toUserName : message.fromUserName}</strong>
-                        <small>{formatDateTime(message.createdAt)}</small>
-                      </div>
-                      <span>{message.subject || "Sin asunto"}</span>
-                      <p>{message.message}</p>
-                      {message.attachments?.length > 0 && (
-                        <em>{message.attachments.length} archivo(s) adjunto(s)</em>
-                      )}
-                    </div>
+                  <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
+                    {messageSaving ? "Enviando..." : "Enviar"}
                   </button>
-                ))
-              )}
-            </div>
-
-            <div className="message-detail-panel">
-              {!selectedMessage ? (
-                <div className="workspace-empty-state messages-empty-state">
-                  <strong>Selecciona un mensaje</strong>
-                  <p>Aquí podrás ver el contenido completo.</p>
                 </div>
-              ) : (
-                <article className="message-detail-card">
-                  <div className="message-detail-top">
-                    <div>
-                      <span className={selectedMessage.read || activeTab === "sent" ? "read-status read" : "read-status unread"}>
-                        {activeTab === "sent"
-                          ? selectedMessage.read
-                            ? "Leído por destinatario"
-                            : "Pendiente de lectura"
-                          : selectedMessage.read
-                          ? "Leído"
-                          : "No leído"}
-                      </span>
-                      <h3>{selectedMessage.subject || "Sin asunto"}</h3>
-                    </div>
-                    <small>{formatDateTime(selectedMessage.createdAt)}</small>
-                  </div>
 
-                  <div className="message-address-box">
-                    <div>
-                      <span>De</span>
-                      <strong>{selectedMessage.fromUserName || "Usuario"}</strong>
-                      <small>{selectedMessage.fromUserEmail || "Sin correo"}</small>
-                    </div>
-                    <div>
-                      <span>Para</span>
-                      <strong>{selectedMessage.toUserName || "Usuario"}</strong>
-                      <small>{selectedMessage.toUserEmail || "Sin correo"}</small>
-                    </div>
-                  </div>
-
-                  <p className="message-detail-body">{selectedMessage.message}</p>
-
-                  <AttachmentGallery attachments={selectedMessage.attachments} />
-
-                  <div className="message-detail-actions">
-                    {activeTab === "inbox" && !selectedMessage.read && (
-                      <button type="button" onClick={() => markMessageAsRead(selectedMessage)}>
-                        Marcar como leído
-                      </button>
-                    )}
-                    {activeTab === "inbox" && (
-                      <button type="button" onClick={() => handleReplyToMessage(selectedMessage)}>
-                        Responder
-                      </button>
-                    )}
-                  </div>
-                </article>
-              )}
-            </div>
-          </div>
+                <AttachmentDraftList
+                  items={messageAttachments}
+                  onRemove={handleRemoveMessageAttachment}
+                />
+              </form>
+            </>
+          )}
         </section>
       </div>
     </div>
   );
+}
+
+function buildInternalConversations(messages, collaborators, currentUserId) {
+  const collaboratorMap = new Map(
+    collaborators.map((collaborator) => [collaborator.id, collaborator])
+  );
+  const grouped = new Map();
+
+  messages.forEach((message) => {
+    const otherUser = getInternalMessageParticipant(message, currentUserId);
+    if (!otherUser.id) return;
+
+    if (!grouped.has(otherUser.id)) {
+      const collaborator = collaboratorMap.get(otherUser.id) || {};
+      grouped.set(otherUser.id, {
+        participantId: otherUser.id,
+        participantName: collaborator.name || otherUser.name || collaborator.email || "Usuario",
+        participantEmail: collaborator.email || otherUser.email || "",
+        messages: [],
+        unreadCount: 0,
+        lastMessage: null,
+      });
+    }
+
+    const conversation = grouped.get(otherUser.id);
+    conversation.messages.push(message);
+    if (message.toUserId === currentUserId && !message.read) {
+      conversation.unreadCount += 1;
+    }
+  });
+
+  return Array.from(grouped.values())
+    .map((conversation) => {
+      const sortedMessages = conversation.messages.slice().sort(sortByCreatedAtDesc);
+      return {
+        ...conversation,
+        messages: sortedMessages,
+        lastMessage: sortedMessages[0] || null,
+      };
+    })
+    .sort((a, b) => {
+      const unreadDiff = Number(b.unreadCount > 0) - Number(a.unreadCount > 0);
+      if (unreadDiff !== 0) return unreadDiff;
+      return getMillisFromFirestoreDate(b.lastMessage?.createdAt) - getMillisFromFirestoreDate(a.lastMessage?.createdAt);
+    });
+}
+
+function getInternalMessageParticipant(message, currentUserId) {
+  if (message.fromUserId === currentUserId) {
+    return {
+      id: message.toUserId || "",
+      name: message.toUserName || "Usuario",
+      email: message.toUserEmail || "",
+    };
+  }
+
+  return {
+    id: message.fromUserId || "",
+    name: message.fromUserName || "Usuario",
+    email: message.fromUserEmail || "",
+  };
 }
 
 
@@ -2475,6 +2534,10 @@ function getMillisFromFirestoreDate(value) {
 
 function sortByCreatedAtDesc(a, b) {
   return getMillisFromFirestoreDate(b.createdAt) - getMillisFromFirestoreDate(a.createdAt);
+}
+
+function sortByCreatedAtAsc(a, b) {
+  return getMillisFromFirestoreDate(a.createdAt) - getMillisFromFirestoreDate(b.createdAt);
 }
 
 function sortByReadAtDesc(a, b) {
