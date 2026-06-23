@@ -40330,3 +40330,1087 @@ body {
     padding-bottom: 0;
   }
 }
+
+/* =========================================================
+   REDISEÑO TABLERO GENERAL - LIMPIO Y COMPACTO
+========================================================= */
+
+.workspace-dashboard-redesign {
+  padding: 34px 38px 42px;
+  display: grid;
+  gap: 22px;
+}
+
+.workspace-redesign-header {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.workspace-redesign-header h1 {
+  margin: 0 0 8px;
+  color: #071b49;
+  font-size: 32px;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+.workspace-redesign-header p {
+  margin: 0;
+  color: #526176;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.compact-pending-strip {
+  width: fit-content;
+  margin-top: 12px;
+  padding: 9px 13px;
+  border-radius: 999px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.workspace-clean-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workspace-clean-metric {
+  position: relative;
+  min-height: 132px;
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 22px;
+  border-radius: 18px;
+  border: 1px solid #e1e9f3;
+  background: #ffffff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
+  color: #071b49;
+  text-align: left;
+  overflow: hidden;
+  transition: 0.18s ease;
+}
+
+.workspace-clean-metric:hover {
+  transform: translateY(-2px);
+  border-color: #c8d7ee;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.09);
+}
+
+.workspace-clean-metric::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+}
+
+.workspace-clean-metric.metric-blue::after { background: #0f4fc4; }
+.workspace-clean-metric.metric-gold::after { background: #d99a00; }
+.workspace-clean-metric.metric-green::after { background: #16a34a; }
+.workspace-clean-metric.metric-purple::after { background: #7c3aed; }
+
+.workspace-clean-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 19px;
+  font-size: 30px;
+  background: #eaf2ff;
+}
+
+.workspace-clean-metric.metric-gold .workspace-clean-icon { background: #fff4d8; }
+.workspace-clean-metric.metric-green .workspace-clean-icon { background: #dcfce7; }
+.workspace-clean-metric.metric-purple .workspace-clean-icon { background: #ede9fe; }
+
+.workspace-clean-metric strong {
+  display: block;
+  color: #071b49;
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.workspace-clean-metric small {
+  display: block;
+  color: #071b49;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.workspace-clean-metric em {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.workspace-primary-grid-redesign {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  align-items: start;
+}
+
+.workspace-clean-card {
+  background: #ffffff;
+  border: 1px solid #e1e9f3;
+  border-radius: 20px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.07);
+  padding: 24px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace-clean-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e8edf3;
+  margin-bottom: 18px;
+}
+
+.workspace-clean-card-header h3 {
+  margin: 0 0 6px;
+  color: #071b49;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+}
+
+.workspace-clean-card-header p {
+  margin: 0;
+  color: #526176;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.workspace-clean-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.workspace-clean-card-actions > span {
+  display: inline-grid;
+  place-items: center;
+  min-height: 35px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  border: 1px solid #bad0ff;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.notes-clean-card .workspace-clean-card-actions > span,
+.note-empty-button,
+.note-action-button {
+  background: #fff4d8;
+  color: #a16207;
+  border-color: #fde68a;
+}
+
+.clean-action-button {
+  min-height: 38px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  box-shadow: 0 12px 24px rgba(15, 79, 196, 0.18);
+}
+
+.note-action-button {
+  box-shadow: 0 12px 24px rgba(217, 154, 0, 0.18);
+}
+
+.clean-composer {
+  margin-bottom: 18px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: #f8fbff;
+  padding: 18px;
+}
+
+.clean-note-composer {
+  border-color: #fde68a;
+  background: #fffdf6;
+}
+
+.clean-toolbar {
+  margin: 0 0 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.clean-announcement-list,
+.clean-notes-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.workspace-clean-empty {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 28px;
+  color: #526176;
+}
+
+.clean-empty-illustration-icon {
+  width: 108px;
+  height: 108px;
+  display: grid;
+  place-items: center;
+  border-radius: 34px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 54px;
+  margin-bottom: 10px;
+}
+
+.note-empty-illustration .clean-empty-illustration-icon {
+  background: #fff4d8;
+  color: #d99a00;
+}
+
+.clean-empty-illustration-icon.muted {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.workspace-clean-empty strong {
+  color: #071b49;
+  font-size: 17px;
+}
+
+.workspace-clean-empty p {
+  max-width: 460px;
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.clean-empty-button {
+  margin-top: 8px;
+  border-radius: 999px;
+  padding: 10px 16px;
+}
+
+.clean-announcement-item,
+.clean-note-item {
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: none;
+}
+
+.clean-announcement-item + .clean-announcement-item,
+.clean-note-item + .clean-note-item {
+  margin-top: 12px;
+}
+
+.clean-admin-actions,
+.clean-note-actions {
+  border-top: 1px solid #e8edf3;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.workspace-admin-details {
+  margin-top: 18px;
+  border: 1px solid #dbe7ff;
+  border-radius: 16px;
+  background: #f8fbff;
+  padding: 12px 14px;
+}
+
+.workspace-admin-details > summary {
+  color: #0f4fc4;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.workspace-admin-details[open] > summary {
+  margin-bottom: 14px;
+}
+
+.workspace-activity-clean-card {
+  min-height: 160px;
+}
+
+.compact-activity-header {
+  margin-bottom: 0;
+}
+
+.workspace-clean-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-clean-activity-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e8edf3;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 13px;
+  text-align: left;
+  transition: 0.18s ease;
+}
+
+.workspace-clean-activity-item:hover {
+  background: #f8fbff;
+  border-color: #c8d7ee;
+  transform: translateY(-1px);
+}
+
+.workspace-clean-activity-item > span:first-child {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #eaf2ff;
+}
+
+.workspace-clean-activity-item strong {
+  display: block;
+  color: #071b49;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.workspace-clean-activity-item small {
+  display: block;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
+.workspace-clean-activity-item em {
+  color: #64748b;
+  font-style: normal;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.compact-clean-empty {
+  min-height: 140px;
+}
+
+.compact-clean-empty .clean-empty-illustration-icon {
+  width: 56px;
+  height: 56px;
+  font-size: 28px;
+  border-radius: 18px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 1350px) {
+  .workspace-clean-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-primary-grid-redesign {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .workspace-dashboard-redesign {
+    padding: 20px 18px 82px;
+  }
+
+  .workspace-clean-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-clean-card-header,
+  .workspace-clean-card-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .workspace-clean-card-actions,
+  .clean-action-button {
+    width: 100%;
+  }
+
+  .workspace-clean-metric {
+    grid-template-columns: 58px minmax(0, 1fr);
+    min-height: 112px;
+  }
+
+  .workspace-clean-icon {
+    width: 54px;
+    height: 54px;
+    font-size: 25px;
+  }
+
+  .workspace-clean-activity-item {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .workspace-clean-activity-item em {
+    grid-column: 2;
+  }
+}
+
+/* =========================================================
+   AJUSTE TABLERO GENERAL: PANEL ADMINISTRATIVO A TODO EL ANCHO
+========================================================= */
+
+.workspace-admin-details-wide {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 0;
+  padding: 16px 18px 18px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
+}
+
+.workspace-admin-details-wide > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 15px;
+}
+
+.workspace-admin-details-wide[open] > summary {
+  margin-bottom: 16px;
+}
+
+.workspace-admin-details-wide .announcement-admin-dashboard {
+  margin: 0;
+  padding: 22px;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.workspace-admin-details-wide .announcement-admin-dashboard-header {
+  align-items: center;
+}
+
+.workspace-admin-details-wide .announcement-admin-dashboard-header h4 {
+  font-size: 22px;
+}
+
+.workspace-admin-details-wide .announcement-admin-dashboard-header p {
+  max-width: 760px;
+  font-size: 14px;
+}
+
+.workspace-admin-details-wide .announcement-admin-metrics {
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.workspace-admin-details-wide .announcement-admin-metrics > div {
+  min-height: 98px;
+  padding: 16px;
+}
+
+.workspace-admin-details-wide .announcement-admin-metrics span {
+  font-size: 12px;
+}
+
+.workspace-admin-details-wide .announcement-admin-metrics strong {
+  font-size: 30px;
+}
+
+.workspace-admin-details-wide .announcement-admin-toolbar {
+  grid-template-columns: minmax(320px, 0.7fr) minmax(0, 1.3fr);
+  gap: 18px;
+  align-items: end;
+}
+
+.workspace-admin-details-wide .announcement-admin-filters {
+  justify-content: flex-end;
+}
+
+.workspace-admin-details-wide .announcement-admin-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 0.42fr);
+  gap: 20px;
+}
+
+.workspace-admin-details-wide .announcement-admin-table-wrap,
+.workspace-admin-details-wide .announcement-admin-detail {
+  border-radius: 18px;
+}
+
+.workspace-admin-details-wide .announcement-admin-table {
+  min-width: 980px;
+}
+
+.workspace-admin-details-wide .announcement-admin-table th {
+  font-size: 12px;
+  padding: 13px 14px;
+}
+
+.workspace-admin-details-wide .announcement-admin-table td {
+  font-size: 13px;
+  padding: 14px;
+}
+
+.workspace-admin-details-wide .announcement-admin-title-button strong {
+  font-size: 14px;
+}
+
+.workspace-admin-details-wide .announcement-admin-title-button span {
+  font-size: 12px;
+}
+
+.workspace-admin-details-wide .announcement-admin-row-actions button {
+  font-size: 12px !important;
+  padding: 8px 10px !important;
+}
+
+.workspace-admin-details-wide .announcement-admin-detail {
+  position: sticky;
+  top: 18px;
+  padding: 18px;
+}
+
+.workspace-admin-details-wide .announcement-admin-detail-top h5 {
+  font-size: 18px;
+}
+
+.workspace-admin-details-wide .announcement-admin-detail-top p {
+  font-size: 13px;
+}
+
+.workspace-admin-details-wide .announcement-admin-detail-stats {
+  gap: 10px;
+}
+
+.workspace-admin-details-wide .announcement-admin-detail-stats div {
+  padding: 13px;
+}
+
+.workspace-admin-details-wide .announcement-admin-detail-stats span,
+.workspace-admin-details-wide .announcement-admin-people-grid strong,
+.workspace-admin-details-wide .announcement-admin-people-grid p,
+.workspace-admin-details-wide .reader-person-chip,
+.workspace-admin-details-wide .missing-person-chip {
+  font-size: 12px;
+}
+
+@media (max-width: 1350px) {
+  .workspace-admin-details-wide .announcement-admin-layout,
+  .workspace-admin-details-wide .announcement-admin-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-admin-details-wide .announcement-admin-filters {
+    justify-content: flex-start;
+  }
+
+  .workspace-admin-details-wide .announcement-admin-detail {
+    position: static;
+  }
+}
+
+/* =========================================================
+   AJUSTES TABLERO GENERAL - SIMETRÍA Y MENÚ LATERAL
+========================================================= */
+
+/* Mantiene el color institucional del menú visible al hacer scroll. */
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-height: 100vh;
+  align-self: start;
+}
+
+/* Evita que aparezca un espacio blanco debajo de la columna del menú en vistas largas. */
+.app-shell {
+  background:
+    linear-gradient(90deg, #071f4f 0, #071f4f 292px, #f5f7fb 292px, #f5f7fb 100%);
+}
+
+.app-shell.sidebar-collapsed {
+  background:
+    linear-gradient(90deg, #071f4f 0, #071f4f 92px, #f5f7fb 92px, #f5f7fb 100%);
+}
+
+/* Hace que Tablero de anuncios y Mis notas personales queden del mismo alto. */
+.workspace-primary-grid-redesign {
+  align-items: stretch;
+}
+
+.workspace-primary-grid-redesign > .workspace-clean-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-primary-grid-redesign .clean-announcement-list,
+.workspace-primary-grid-redesign .clean-notes-list,
+.workspace-primary-grid-redesign .workspace-clean-empty {
+  flex: 1;
+}
+
+.notes-clean-card .workspace-clean-empty {
+  min-height: 0;
+}
+
+/* En pantallas pequeñas se conserva el comportamiento normal. */
+@media (max-width: 1050px) {
+  .sidebar {
+    position: relative;
+    height: auto;
+    min-height: auto;
+  }
+
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    background: #f5f7fb;
+  }
+}
+
+/* =========================================================
+   AJUSTE MENÚ LATERAL - STICKY CON PATRÓN INSTITUCIONAL
+========================================================= */
+
+/* Quitamos el relleno sólido agregado antes para que no se vea una franja plana. */
+.app-shell,
+.app-shell.sidebar-collapsed {
+  position: relative;
+  background: #f5f7fb;
+}
+
+/* Mantiene una capa fija con el mismo patrón del menú detrás de la columna izquierda. */
+.app-shell::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 292px;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+}
+
+.app-shell.sidebar-collapsed::before {
+  width: 92px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-height: 100vh;
+  align-self: start;
+  z-index: 2;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+}
+
+.main-content,
+.redesigned-main-content {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 1050px) {
+  .app-shell::before,
+  .app-shell.sidebar-collapsed::before {
+    display: none;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+    min-height: auto;
+  }
+}
+
+/* =========================================================
+   AJUSTE FINAL MENÚ LATERAL - FIJO, A LA MANO Y SIN CORTES
+========================================================= */
+
+.app-shell {
+  position: relative;
+  grid-template-columns: 292px minmax(0, 1fr);
+  background: #f5f7fb;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
+.app-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 292px;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+}
+
+.app-shell.sidebar-collapsed::before {
+  width: 92px;
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 292px;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 5;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+  background-attachment: local;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+.sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.12), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.15), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.12), transparent 30%);
+  opacity: 1;
+}
+
+.sidebar::after {
+  content: "";
+  position: absolute;
+  left: -100px;
+  bottom: -120px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  width: 92px;
+}
+
+.sidebar-brand-panel,
+.sidebar-collapse-button,
+.sidebar-nav,
+.sidebar-help-card {
+  position: relative;
+  z-index: 2;
+}
+
+.sidebar-help-card {
+  margin-bottom: 14px;
+}
+
+.main-content,
+.redesigned-main-content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+@media (max-width: 1050px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell::before,
+  .app-shell.sidebar-collapsed::before {
+    display: none;
+  }
+
+  .sidebar,
+  .app-shell.sidebar-collapsed .sidebar {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+}
+
+/* =========================================================
+   CORRECCIÓN MENÚ FIJO - SIN SCROLL VACÍO Y FLECHA NATURAL
+========================================================= */
+
+.app-shell {
+  grid-template-columns: 292px minmax(0, 1fr);
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
+.app-shell::before {
+  width: 292px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+}
+
+.app-shell.sidebar-collapsed::before {
+  width: 92px;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 292px;
+  height: 100vh;
+  min-height: 100vh;
+  z-index: 20;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 14px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+}
+
+.sidebar::before {
+  display: none;
+}
+
+.sidebar::after {
+  content: "";
+  position: absolute;
+  left: -100px;
+  bottom: -120px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  width: 92px;
+}
+
+.sidebar-brand-panel {
+  flex: 0 0 auto;
+}
+
+.sidebar-nav.redesigned-sidebar-nav,
+.sidebar-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-width: none;
+}
+
+.sidebar-nav.redesigned-sidebar-nav::-webkit-scrollbar,
+.sidebar-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.sidebar-help-card {
+  flex: 0 0 auto;
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+/* La flecha queda como una pestaña discreta en el borde del menú. */
+.sidebar-collapse-button {
+  position: fixed;
+  top: 50%;
+  left: 280px;
+  right: auto;
+  transform: translateY(-50%);
+  z-index: 40;
+  width: 26px;
+  height: 44px;
+  border-radius: 0 999px 999px 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-left: none;
+  background: rgba(10, 47, 112, 0.92);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 17px;
+  font-weight: 900;
+  box-shadow: 8px 12px 26px rgba(2, 12, 32, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.sidebar-collapse-button:hover {
+  background: rgba(15, 79, 196, 0.96);
+  color: #ffffff;
+  transform: translateY(-50%);
+}
+
+.app-shell.sidebar-collapsed .sidebar-collapse-button {
+  left: 80px;
+  right: auto;
+}
+
+/* Evita que la columna izquierda genere un segundo scroll visual vacío. */
+.main-content,
+.redesigned-main-content {
+  min-height: 100vh;
+}
+
+@media (max-width: 1050px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell::before,
+  .app-shell.sidebar-collapsed::before {
+    display: none;
+  }
+
+  .sidebar,
+  .app-shell.sidebar-collapsed .sidebar {
+    position: relative;
+    top: auto;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .sidebar-nav.redesigned-sidebar-nav,
+  .sidebar-nav {
+    overflow: visible;
+  }
+
+  .sidebar-collapse-button,
+  .app-shell.sidebar-collapsed .sidebar-collapse-button {
+    display: none;
+  }
+}
+
+/* =========================================================
+   CORRECCIÓN: CONTENIDO VISIBLE CON MENÚ FIJO
+   Mantiene la flecha como pestaña lateral.
+========================================================= */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
+/* Al quedar el menú en position: fixed, el contenido debe ocupar explícitamente la segunda columna. */
+.main-content,
+.redesigned-main-content {
+  grid-column: 2 / -1;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+  z-index: 1;
+  display: block;
+  visibility: visible;
+  opacity: 1;
+}
+
+.sidebar {
+  grid-column: 1;
+}
+
+/* La pestaña se queda en el mismo lugar que te gustó. */
+.sidebar-collapse-button {
+  position: fixed;
+  top: 50%;
+  left: 280px;
+  right: auto;
+  transform: translateY(-50%);
+  z-index: 40;
+}
+
+.app-shell.sidebar-collapsed .sidebar-collapse-button {
+  left: 80px;
+}
+
+@media (max-width: 1050px) {
+  .main-content,
+  .redesigned-main-content {
+    grid-column: 1 / -1;
+  }
+}

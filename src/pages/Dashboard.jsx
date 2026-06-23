@@ -915,6 +915,8 @@ function WorkspaceDashboard({
   const [activeCollaborators, setActiveCollaborators] = useState([]);
   const [noteSearchTerm, setNoteSearchTerm] = useState("");
   const [noteFilter, setNoteFilter] = useState("all");
+  const [showAnnouncementComposer, setShowAnnouncementComposer] = useState(false);
+  const [showNoteComposer, setShowNoteComposer] = useState(false);
   const communicationActivity = useWorkspaceCommunicationActivity(profile, isAdmin);
 
   useEffect(() => {
@@ -1057,6 +1059,7 @@ function WorkspaceDashboard({
     setAnnouncementAttachments([]);
     setOriginalAnnouncementAttachments([]);
     setEditingAnnouncementId("");
+    setShowAnnouncementComposer(false);
   }
 
   function resetNoteEditor() {
@@ -1065,6 +1068,7 @@ function WorkspaceDashboard({
     setNoteAttachments([]);
     setOriginalNoteAttachments([]);
     setEditingNoteId("");
+    setShowNoteComposer(false);
   }
 
   function handleAnnouncementFileSelection(event) {
@@ -1200,6 +1204,7 @@ function WorkspaceDashboard({
     });
     setAnnouncementStatus("");
     setAnnouncementError("");
+    setShowAnnouncementComposer(true);
   }
 
   async function handleArchiveAnnouncement(announcementId) {
@@ -1344,6 +1349,7 @@ function WorkspaceDashboard({
     });
     setNoteStatus("");
     setNoteError("");
+    setShowNoteComposer(true);
   }
 
   async function handleToggleNote(note, field) {
@@ -1427,74 +1433,100 @@ function WorkspaceDashboard({
     Number(unreadMessagesCount || 0) + Number(unreadAnnouncements || 0) + Number(pendingNotes || 0);
 
   return (
-    <div className="workspace-dashboard-page">
-      <div className="visual-page-header workspace-dashboard-header workspace-board-header">
+    <div className="workspace-dashboard-page workspace-dashboard-redesign">
+      <div className="visual-page-header workspace-dashboard-header workspace-board-header workspace-redesign-header">
         <div>
-          <span className="visual-page-kicker">Centro de trabajo</span>
           <h1>Tablero general</h1>
           <p>
-            Consulta anuncios importantes, confirma su lectura y administra tus notas personales privadas.
+            Publica avisos importantes, consulta tus notas personales y mantente al día con lo esencial.
           </p>
           {unreadAnnouncements > 0 && (
-            <div className="announcement-pending-strip">
+            <div className="announcement-pending-strip compact-pending-strip">
               <span>📣</span>
               <strong>{unreadAnnouncements} anuncio(s) pendiente(s) de confirmar</strong>
             </div>
           )}
         </div>
-
-        <div className="workspace-dashboard-summary workspace-summary-grid">
-          <div className="workspace-summary-card highlight-blue">
-            <span className="summary-icon">📣</span>
-            <strong>{activeAnnouncements.length}</strong>
-            <small>Anuncios activos</small>
-          </div>
-          <div className="workspace-summary-card highlight-orange">
-            <span className="summary-icon">⚠️</span>
-            <strong>{importantAnnouncements}</strong>
-            <small>Importantes</small>
-          </div>
-          <div className="workspace-summary-card highlight-green">
-            <span className="summary-icon">✅</span>
-            <strong>{isAdmin ? adminTotalPendingConfirmations : unreadAnnouncements}</strong>
-            <small>{isAdmin ? "Confirmaciones pendientes" : "Por confirmar"}</small>
-          </div>
-          <div className="workspace-summary-card highlight-yellow">
-            <span className="summary-icon">📝</span>
-            <strong>{pendingNotes}</strong>
-            <small>Notas pendientes</small>
-          </div>
-        </div>
       </div>
 
-      <WorkspaceNoticeCenter
-        unreadDirectMessagesCount={unreadDirectMessagesCount}
-        unreadDepartmentMessagesCount={unreadDepartmentMessagesCount}
-        unreadAnnouncementsCount={unreadAnnouncements}
-        pendingNotesCount={pendingNotes}
-        totalPendingCount={totalWorkspacePendingItems}
-        activityItems={activityItems}
-        onOpenMessages={() => onOpenModule("internal-messages")}
-        onOpenAnnouncements={() => scrollToWorkspaceSection("workspace-announcements-section")}
-        onOpenNotes={() => scrollToWorkspaceSection("workspace-notes-section")}
-        onOpenProjects={() => onOpenModule("my-projects")}
-      />
+      <section className="workspace-clean-metrics">
+        <button
+          type="button"
+          className="workspace-clean-metric metric-blue"
+          onClick={() => scrollToWorkspaceSection("workspace-announcements-section")}
+        >
+          <span className="workspace-clean-icon">📣</span>
+          <span>
+            <strong>{activeAnnouncements.length}</strong>
+            <small>Avisos activos</small>
+            <em>Anuncios publicados</em>
+          </span>
+        </button>
 
-      <div className="workspace-dashboard-grid">
-        <section id="workspace-announcements-section" className="workspace-card announcements-card board-visual-card">
-          <div className="workspace-card-header workspace-card-header-visual">
+        <button
+          type="button"
+          className="workspace-clean-metric metric-gold"
+          onClick={() => scrollToWorkspaceSection("workspace-notes-section")}
+        >
+          <span className="workspace-clean-icon">🔔</span>
+          <span>
+            <strong>{pendingNotes}</strong>
+            <small>Notas pendientes</small>
+            <em>Notas por revisar</em>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className="workspace-clean-metric metric-green"
+          onClick={() => scrollToWorkspaceSection("workspace-notes-section")}
+        >
+          <span className="workspace-clean-icon">🗂️</span>
+          <span>
+            <strong>{notesWithAttachments}</strong>
+            <small>Notas con archivos</small>
+            <em>Notas con adjuntos</em>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className="workspace-clean-metric metric-purple"
+          onClick={() => onOpenModule("internal-messages")}
+        >
+          <span className="workspace-clean-icon">💬</span>
+          <span>
+            <strong>{unreadMessagesCount}</strong>
+            <small>Mensajes no leídos</small>
+            <em>Nuevos mensajes</em>
+          </span>
+        </button>
+      </section>
+
+      <div className="workspace-primary-grid-redesign">
+        <section id="workspace-announcements-section" className="workspace-clean-card announcement-clean-card">
+          <div className="workspace-clean-card-header">
             <div>
-              <span className="workspace-card-kicker">Comunicación interna</span>
               <h3>Tablero de anuncios</h3>
-              <p>
-                Aquí se publican avisos importantes para el equipo. Puedes adjuntar imágenes, audios, documentos y videos.
-              </p>
+              <p>Publica avisos importantes para todo el equipo.</p>
             </div>
-            <div className="workspace-card-side-badge announcement-side-badge">{activeAnnouncements.length} activos</div>
+
+            <div className="workspace-clean-card-actions">
+              <span>{activeAnnouncements.length} activos</span>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="workspace-primary-button clean-action-button"
+                  onClick={() => setShowAnnouncementComposer((current) => !current)}
+                >
+                  + Publicar anuncio
+                </button>
+              )}
+            </div>
           </div>
 
-          {isAdmin && (
-            <form className="announcement-form board-form-visual" onSubmit={handleAnnouncementSubmit}>
+          {isAdmin && (showAnnouncementComposer || editingAnnouncementId) && (
+            <form className="announcement-form board-form-visual clean-composer" onSubmit={handleAnnouncementSubmit}>
               <div className="announcement-form-grid">
                 <label>
                   <span>Título del anuncio</span>
@@ -1555,15 +1587,13 @@ function WorkspaceDashboard({
               />
 
               <div className="workspace-form-actions">
-                {editingAnnouncementId && (
-                  <button
-                    type="button"
-                    className="workspace-soft-button"
-                    onClick={resetAnnouncementEditor}
-                  >
-                    Cancelar edición
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="workspace-soft-button"
+                  onClick={resetAnnouncementEditor}
+                >
+                  Cancelar
+                </button>
 
                 <button type="submit" className="workspace-primary-button" disabled={announcementSaving}>
                   {announcementSaving
@@ -1579,62 +1609,50 @@ function WorkspaceDashboard({
           {announcementError && <div className="workspace-error-box">{announcementError}</div>}
           {announcementStatus && <div className="workspace-success-box">{announcementStatus}</div>}
 
-          {isAdmin && (
-            <AnnouncementAdminDashboard
-              announcements={announcements}
-              activeAnnouncements={activeAnnouncements}
-              archivedAnnouncements={archivedAnnouncements}
-              activeCollaborators={activeCollaborators}
-              announcementReceipts={announcementReceipts}
-              filter={adminAnnouncementFilter}
-              onFilterChange={setAdminAnnouncementFilter}
-              searchTerm={adminAnnouncementSearchTerm}
-              onSearchTermChange={setAdminAnnouncementSearchTerm}
-              selectedAnnouncementId={selectedAdminAnnouncementId}
-              onSelectAnnouncement={setSelectedAdminAnnouncementId}
-              onEdit={handleEditAnnouncement}
-              onArchive={handleArchiveAnnouncement}
-              onRestore={handleRestoreAnnouncement}
-              onDelete={handleDeleteAnnouncement}
-            />
+          {activeAnnouncements.length > 0 && (
+            <div className="board-search-toolbar clean-toolbar">
+              <label className="board-search-input">
+                <span>Buscar anuncios</span>
+                <input
+                  value={announcementSearchTerm}
+                  onChange={(event) => setAnnouncementSearchTerm(event.target.value)}
+                  placeholder="Buscar por título, mensaje, autor o archivo..."
+                />
+              </label>
+
+              <div className="board-filter-pills" aria-label="Filtros de anuncios">
+                {ANNOUNCEMENT_FILTER_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={announcementFilter === option.value ? "active" : ""}
+                    onClick={() => setAnnouncementFilter(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
-          <div className="board-search-toolbar">
-            <label className="board-search-input">
-              <span>Buscar anuncios</span>
-              <input
-                value={announcementSearchTerm}
-                onChange={(event) => setAnnouncementSearchTerm(event.target.value)}
-                placeholder="Buscar por título, mensaje, autor o archivo..."
-              />
-            </label>
-
-            <div className="board-filter-pills" aria-label="Filtros de anuncios">
-              {ANNOUNCEMENT_FILTER_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={announcementFilter === option.value ? "active" : ""}
-                  onClick={() => setAnnouncementFilter(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            <small>
-              Mostrando {filteredAnnouncements.length} de {activeAnnouncements.length} anuncio(s) activo(s).
-            </small>
-          </div>
-
-          <div className="announcement-list visual-announcement-list">
+          <div className="announcement-list visual-announcement-list clean-announcement-list">
             {activeAnnouncements.length === 0 ? (
-              <div className="workspace-empty-state board-empty-state">
-                <strong>No hay anuncios activos</strong>
-                <p>Cuando se publique un anuncio, aparecerá aquí.</p>
+              <div className="workspace-clean-empty announcement-empty-illustration">
+                <div className="clean-empty-illustration-icon">📣</div>
+                <strong>Aún no hay anuncios publicados</strong>
+                <p>Comparte información importante con tu equipo.</p>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="workspace-soft-button clean-empty-button"
+                    onClick={() => setShowAnnouncementComposer(true)}
+                  >
+                    Publicar mi primer anuncio +
+                  </button>
+                )}
               </div>
             ) : filteredAnnouncements.length === 0 ? (
-              <div className="workspace-empty-state board-empty-state">
+              <div className="workspace-clean-empty">
                 <strong>No hay anuncios que coincidan</strong>
                 <p>Ajusta la búsqueda o cambia el filtro seleccionado.</p>
               </div>
@@ -1648,14 +1666,10 @@ function WorkspaceDashboard({
                 return (
                   <article
                     key={announcement.id}
-                    className={`announcement-item visual-announcement-item ${
+                    className={`announcement-item visual-announcement-item clean-announcement-item ${
                       announcement.priority === "important" ? "important" : ""
                     } ${currentUserHasRead ? "" : "pending-read"}`}
                   >
-                    <div className="announcement-ribbon">
-                      <span>{announcement.priority === "important" ? "📢" : "📌"}</span>
-                    </div>
-
                     <div className="announcement-item-top">
                       <div>
                         <span className="announcement-badge">
@@ -1691,43 +1705,20 @@ function WorkspaceDashboard({
                     </div>
 
                     {isAdmin && (
-                      <div className="announcement-admin-panel">
-                        <details>
-                          <summary>
-                            Confirmaciones de lectura: {receipts.length}
-                          </summary>
-
-                          {receipts.length === 0 ? (
-                            <p>Aún no hay confirmaciones para este anuncio.</p>
-                          ) : (
-                            <div className="announcement-readers-list">
-                              {receipts.map((receipt) => (
-                                <div key={receipt.id}>
-                                  <strong>{receipt.userName || "Usuario"}</strong>
-                                  <span>
-                                    {receipt.userEmail || "Sin correo"} · {formatDateTime(receipt.readAt)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </details>
-
-                        <div className="announcement-admin-actions">
-                          <button type="button" onClick={() => handleEditAnnouncement(announcement)}>
-                            Editar
-                          </button>
-                          <button type="button" onClick={() => handleArchiveAnnouncement(announcement.id)}>
-                            Archivar
-                          </button>
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={() => handleDeleteAnnouncement(announcement)}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
+                      <div className="announcement-admin-actions clean-admin-actions">
+                        <button type="button" onClick={() => handleEditAnnouncement(announcement)}>
+                          Editar
+                        </button>
+                        <button type="button" onClick={() => handleArchiveAnnouncement(announcement.id)}>
+                          Archivar
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => handleDeleteAnnouncement(announcement)}
+                        >
+                          Eliminar
+                        </button>
                       </div>
                     )}
                   </article>
@@ -1737,128 +1728,141 @@ function WorkspaceDashboard({
           </div>
         </section>
 
-        <section id="workspace-notes-section" className="workspace-card notes-card board-visual-card">
-          <div className="workspace-card-header workspace-card-header-visual">
+        <section id="workspace-notes-section" className="workspace-clean-card notes-clean-card">
+          <div className="workspace-clean-card-header">
             <div>
-              <span className="workspace-card-kicker">Espacio privado</span>
               <h3>Mis notas personales</h3>
-              <p>
-                Tus notas funcionan como post-it digitales: privadas, visuales y con archivos adjuntos.
-              </p>
+              <p>Crea notas rápidas y organiza tu información personal.</p>
             </div>
-            <div className="workspace-card-side-badge note-side-badge">{notesWithAttachments} con archivos</div>
+
+            <div className="workspace-clean-card-actions">
+              <span>{notes.length} notas</span>
+              <button
+                type="button"
+                className="workspace-primary-button clean-action-button note-action-button"
+                onClick={() => setShowNoteComposer((current) => !current)}
+              >
+                + Nueva nota
+              </button>
+            </div>
           </div>
 
-          <form className="personal-note-form board-form-visual" onSubmit={handleNoteSubmit}>
-            <label>
-              <span>Título</span>
-              <input
-                value={noteForm.title}
-                onChange={(event) =>
-                  setNoteForm((current) => ({ ...current, title: event.target.value }))
-                }
-                placeholder="Ej. Recordatorio"
-                maxLength={80}
-              />
-            </label>
-
-            <label>
-              <span>Nota</span>
-              <textarea
-                value={noteForm.content}
-                onChange={(event) =>
-                  setNoteForm((current) => ({ ...current, content: event.target.value }))
-                }
-                placeholder="Escribe una nota rápida tipo post-it..."
-                maxLength={700}
-              />
-            </label>
-
-            <div className="note-form-toolbar">
-              <label className="note-pin-row">
+          {(showNoteComposer || editingNoteId) && (
+            <form className="personal-note-form board-form-visual clean-composer clean-note-composer" onSubmit={handleNoteSubmit}>
+              <label>
+                <span>Título</span>
                 <input
-                  type="checkbox"
-                  checked={noteForm.pinned}
+                  value={noteForm.title}
                   onChange={(event) =>
-                    setNoteForm((current) => ({ ...current, pinned: event.target.checked }))
+                    setNoteForm((current) => ({ ...current, title: event.target.value }))
                   }
+                  placeholder="Ej. Recordatorio"
+                  maxLength={80}
                 />
-                <span>Fijar arriba</span>
               </label>
 
-              <NoteColorPicker
-                value={noteForm.color}
-                onChange={(value) => setNoteForm((current) => ({ ...current, color: value }))}
+              <label>
+                <span>Nota</span>
+                <textarea
+                  value={noteForm.content}
+                  onChange={(event) =>
+                    setNoteForm((current) => ({ ...current, content: event.target.value }))
+                  }
+                  placeholder="Escribe una nota rápida tipo post-it..."
+                  maxLength={700}
+                />
+              </label>
+
+              <div className="note-form-toolbar">
+                <label className="note-pin-row">
+                  <input
+                    type="checkbox"
+                    checked={noteForm.pinned}
+                    onChange={(event) =>
+                      setNoteForm((current) => ({ ...current, pinned: event.target.checked }))
+                    }
+                  />
+                  <span>Fijar arriba</span>
+                </label>
+
+                <NoteColorPicker
+                  value={noteForm.color}
+                  onChange={(value) => setNoteForm((current) => ({ ...current, color: value }))}
+                />
+              </div>
+
+              <AttachmentPicker
+                title="Archivos adjuntos"
+                helper="Adjunta imágenes, audio, video o documentos. Máximo 6 archivos por nota."
+                onChange={handleNoteFileSelection}
               />
-            </div>
 
-            <AttachmentPicker
-              title="Archivos adjuntos"
-              helper="Adjunta imágenes, audio, video o documentos. Máximo 6 archivos por nota."
-              onChange={handleNoteFileSelection}
-            />
+              <AttachmentDraftList
+                items={noteAttachments}
+                onRemove={handleRemoveNoteAttachment}
+              />
 
-            <AttachmentDraftList
-              items={noteAttachments}
-              onRemove={handleRemoveNoteAttachment}
-            />
-
-            <div className="workspace-form-actions">
-              {editingNoteId && (
+              <div className="workspace-form-actions">
                 <button
                   type="button"
                   className="workspace-soft-button"
                   onClick={resetNoteEditor}
                 >
-                  Cancelar edición
+                  Cancelar
                 </button>
-              )}
 
-              <button type="submit" className="workspace-primary-button" disabled={noteSaving}>
-                {noteSaving ? "Guardando..." : editingNoteId ? "Guardar nota" : "Agregar nota"}
-              </button>
-            </div>
-          </form>
+                <button type="submit" className="workspace-primary-button" disabled={noteSaving}>
+                  {noteSaving ? "Guardando..." : editingNoteId ? "Guardar nota" : "Agregar nota"}
+                </button>
+              </div>
+            </form>
+          )}
 
           {noteError && <div className="workspace-error-box">{noteError}</div>}
           {noteStatus && <div className="workspace-success-box">{noteStatus}</div>}
 
-          <div className="board-search-toolbar notes-search-toolbar">
-            <label className="board-search-input">
-              <span>Buscar notas</span>
-              <input
-                value={noteSearchTerm}
-                onChange={(event) => setNoteSearchTerm(event.target.value)}
-                placeholder="Buscar por título, contenido o archivo..."
-              />
-            </label>
+          {notes.length > 0 && (
+            <div className="board-search-toolbar notes-search-toolbar clean-toolbar">
+              <label className="board-search-input">
+                <span>Buscar notas</span>
+                <input
+                  value={noteSearchTerm}
+                  onChange={(event) => setNoteSearchTerm(event.target.value)}
+                  placeholder="Buscar por título, contenido o archivo..."
+                />
+              </label>
 
-            <div className="board-filter-pills" aria-label="Filtros de notas personales">
-              {NOTE_FILTER_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={noteFilter === option.value ? "active" : ""}
-                  onClick={() => setNoteFilter(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
+              <div className="board-filter-pills" aria-label="Filtros de notas personales">
+                {NOTE_FILTER_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={noteFilter === option.value ? "active" : ""}
+                    onClick={() => setNoteFilter(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
 
-            <small>
-              Mostrando {filteredNotes.length} de {notes.length} nota(s).
-            </small>
-          </div>
-
-          <div className="personal-notes-list visual-notes-grid">
+          <div className="personal-notes-list visual-notes-grid clean-notes-list">
             {notes.length === 0 ? (
-              <div className="workspace-empty-state postit-empty board-empty-state">
-                <strong>No tienes notas personales</strong>
-                <p>Agrega recordatorios rápidos para tenerlos a la mano.</p>
+              <div className="workspace-clean-empty note-empty-illustration">
+                <div className="clean-empty-illustration-icon">📝</div>
+                <strong>Aún no tienes notas personales</strong>
+                <p>Crea tu primera nota para guardar información importante.</p>
+                <button
+                  type="button"
+                  className="workspace-soft-button clean-empty-button note-empty-button"
+                  onClick={() => setShowNoteComposer(true)}
+                >
+                  Crear mi primera nota +
+                </button>
               </div>
             ) : filteredNotes.length === 0 ? (
-              <div className="workspace-empty-state postit-empty board-empty-state">
+              <div className="workspace-clean-empty">
                 <strong>No hay notas que coincidan</strong>
                 <p>Ajusta la búsqueda o cambia el filtro seleccionado.</p>
               </div>
@@ -1866,7 +1870,7 @@ function WorkspaceDashboard({
               filteredNotes.map((note) => (
                 <article
                   key={note.id}
-                  className={`personal-note-item visual-note-item note-color-${normalizeNoteColor(note.color)} ${note.completed ? "completed" : ""}`}
+                  className={`personal-note-item visual-note-item clean-note-item note-color-${normalizeNoteColor(note.color)} ${note.completed ? "completed" : ""}`}
                 >
                   <div className="note-postit-pin" />
 
@@ -1885,7 +1889,7 @@ function WorkspaceDashboard({
 
                   <AttachmentGallery attachments={note.attachments} compact />
 
-                  <div className="personal-note-actions">
+                  <div className="personal-note-actions clean-note-actions">
                     <button type="button" onClick={() => handleToggleNote(note, "completed")}>
                       {note.completed ? "Marcar pendiente" : "Completar"}
                     </button>
@@ -1908,7 +1912,73 @@ function WorkspaceDashboard({
             )}
           </div>
         </section>
+
+        {isAdmin && announcements.length > 0 && (
+          <details className="workspace-admin-details workspace-admin-details-wide">
+            <summary>Panel administrativo de anuncios</summary>
+            <AnnouncementAdminDashboard
+              announcements={announcements}
+              activeAnnouncements={activeAnnouncements}
+              archivedAnnouncements={archivedAnnouncements}
+              activeCollaborators={activeCollaborators}
+              announcementReceipts={announcementReceipts}
+              filter={adminAnnouncementFilter}
+              onFilterChange={setAdminAnnouncementFilter}
+              searchTerm={adminAnnouncementSearchTerm}
+              onSearchTermChange={setAdminAnnouncementSearchTerm}
+              selectedAnnouncementId={selectedAdminAnnouncementId}
+              onSelectAnnouncement={setSelectedAdminAnnouncementId}
+              onEdit={handleEditAnnouncement}
+              onArchive={handleArchiveAnnouncement}
+              onRestore={handleRestoreAnnouncement}
+              onDelete={handleDeleteAnnouncement}
+            />
+          </details>
+        )}
       </div>
+
+      <section className="workspace-clean-card workspace-activity-clean-card">
+        <div className="workspace-clean-card-header compact-activity-header">
+          <div>
+            <h3>Actividad reciente</h3>
+            <p>Lo más importante para revisar.</p>
+          </div>
+
+          <button type="button" className="workspace-soft-button" onClick={() => onOpenModule("my-projects")}>
+            Ver mis proyectos
+          </button>
+        </div>
+
+        <div className="workspace-clean-activity-list">
+          {activityItems.length === 0 ? (
+            <div className="workspace-clean-empty compact-clean-empty">
+              <div className="clean-empty-illustration-icon muted">📋</div>
+              <strong>No hay actividad reciente</strong>
+              <p>Cuando haya anuncios, notas o mensajes, aparecerán aquí.</p>
+            </div>
+          ) : (
+            activityItems.slice(0, 4).map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={`workspace-clean-activity-item activity-${item.tone}`}
+                onClick={() => {
+                  if (item.action === "messages") onOpenModule("internal-messages");
+                  if (item.action === "announcements") scrollToWorkspaceSection("workspace-announcements-section");
+                  if (item.action === "notes") scrollToWorkspaceSection("workspace-notes-section");
+                }}
+              >
+                <span>{item.icon}</span>
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.description}</small>
+                </span>
+                <em>{item.timeLabel}</em>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }
