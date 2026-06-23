@@ -149,6 +149,8 @@ export default function TeamAgenda() {
     allowedRadiusMeters: "150",
   });
 
+  const [activePanel, setActivePanel] = useState("");
+
   useEffect(() => {
     setLoadingUsers(true);
     setLoadError("");
@@ -1062,735 +1064,801 @@ export default function TeamAgenda() {
     }
   }
 
+  const pendingRequests = useMemo(
+    () => requests.filter((request) => request.status === "pending"),
+    [requests]
+  );
+
+  const todayTeam = useMemo(() => {
+    const todayKey = getTodayKey();
+
+    return team
+      .map((person) => ({
+        ...person,
+        todaySchedule: person.schedules[todayKey] || { status: "unset" },
+      }))
+      .sort((a, b) => {
+        const order = {
+          active: 0,
+          normal: 1,
+          approved: 1,
+          pending: 2,
+          permission: 3,
+          absence: 3,
+          rest: 4,
+          dayOff: 4,
+          unset: 5,
+        };
+
+        return (
+          (order[a.todaySchedule?.status] ?? 9) -
+            (order[b.todaySchedule?.status] ?? 9) ||
+          String(a.name || "").localeCompare(String(b.name || ""), "es")
+        );
+      });
+  }, [team]);
+
+  const myVisibleRequests = isAdmin
+    ? requests
+    : requests.filter((request) => request.userId === currentUserId);
+
   return (
-    <div className="team-agenda-page">
-      <div className="team-agenda-header">
-        <div>
+    <div className="team-agenda-page team-agenda-modern">
+      <section className="team-agenda-modern-hero">
+        <div className="agenda-modern-copy">
           <span className="team-agenda-eyebrow">Horarios y disponibilidad</span>
           <h2>Agenda del equipo</h2>
           <p>
-            Consulta los horarios del equipo completo, ausencias, permisos y
-            cambios aprobados. Cada colaborador puede consultar el historial de
-            sus propias solicitudes y comentarios administrativos.
+            Consulta la semana laboral, revisa disponibilidad y da seguimiento a
+            solicitudes de permisos, ausencias y cambios de horario.
           </p>
         </div>
 
-        <div className="team-agenda-week-pill">
-          Semana actual
-          <strong>
-            {currentWeek[0]?.shortDate} - {currentWeek[6]?.shortDate}
-          </strong>
+        <div className="agenda-modern-week-card">
+          <span className="agenda-modern-week-icon">📅</span>
+          <div>
+            <span>Semana actual</span>
+            <strong>
+              {currentWeek[0]?.shortDate} - {currentWeek[6]?.shortDate}
+            </strong>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {loadError && <div className="team-agenda-alert">{loadError}</div>}
+      {loadError && <div className="team-agenda-alert agenda-modern-alert">{loadError}</div>}
 
-      <section className="team-agenda-summary-grid">
-        <SummaryCard
+      <section className="team-agenda-modern-summary">
+        <ModernAgendaSummaryCard
+          icon="👥"
           label="En turno ahora"
           value={summary.activeNow}
-          detail="Personas activas en este momento"
+          detail="personas activas"
           tone="green"
         />
 
-        <SummaryCard
+        <ModernAgendaSummaryCard
+          icon="📅"
           label="Programados hoy"
           value={summary.normalToday}
-          detail="Con horario asignado para hoy"
+          detail="con horario asignado"
           tone="blue"
         />
 
-        <SummaryCard
+        <ModernAgendaSummaryCard
+          icon="👤"
           label="Ausencias / permisos"
           value={summary.absences}
-          detail="No disponibles el día de hoy"
+          detail="no disponibles hoy"
           tone="red"
         />
 
-        <SummaryCard
+        <ModernAgendaSummaryCard
+          icon="↔"
           label="Cambios pendientes"
           value={summary.pending}
-          detail={
-            isAdmin
-              ? "Solicitudes por revisar"
-              : "Tus solicitudes pendientes"
-          }
+          detail={isAdmin ? "solicitudes por revisar" : "tus solicitudes pendientes"}
           tone="yellow"
         />
       </section>
 
-      {isAdmin && <AgendaInsights insights={agendaInsights} />}
+      <section className="agenda-modern-layout">
+        <div className="agenda-modern-main-stack">
+          <section className="agenda-modern-card agenda-weekly-card">
+            <div className="agenda-modern-card-header">
+              <div>
+                <h3>Vista semanal del equipo</h3>
+                <p>
+                  {loading
+                    ? "Cargando horarios reales del equipo..."
+                    : "Horarios base y ajustes aprobados para esta semana."}
+                </p>
+              </div>
 
-      {isAdmin && (
-        <AttendanceControlPanel
-          insights={attendanceInsights}
-          locations={attendanceLocations}
-          loading={loadingAttendance}
-          message={attendanceMessage}
-          locationForm={locationForm}
-          onLocationFormChange={handleLocationFormChange}
-          onUseCurrentLocation={handleUseCurrentAdminLocation}
-          onSaveLocation={handleSaveAttendanceLocation}
-          onDeactivateLocation={handleDeactivateAttendanceLocation}
-        />
-      )}
+              <div className="agenda-modern-tools">
+                <select aria-label="Filtrar colaboradores" defaultValue="all">
+                  <option value="all">Todos los colaboradores</option>
+                </select>
+                <span>{team.length} colaborador(es)</span>
+              </div>
+            </div>
 
-      <section className="team-agenda-card">
-        <div className="team-agenda-section-header">
-          <div>
-            <h3>Vista semanal</h3>
-            <p>
-              {loading
-                ? "Cargando horarios reales del equipo..."
-                : "Resumen visual de horarios por colaborador."}
-            </p>
-          </div>
+            {loading ? (
+              <div className="team-agenda-empty">Cargando agenda del equipo...</div>
+            ) : team.length === 0 ? (
+              <div className="team-agenda-empty">
+                No hay colaboradores activos registrados para mostrar en la agenda.
+              </div>
+            ) : (
+              <div className="team-agenda-table-wrap agenda-modern-table-wrap">
+                <table className="team-agenda-table agenda-modern-table">
+                  <thead>
+                    <tr>
+                      <th>Colaborador</th>
 
-          <div className="team-agenda-legend">
-            <span className="legend-dot normal" /> Normal
-            <span className="legend-dot active" /> En turno
-            <span className="legend-dot pending" /> Pendiente
-            <span className="legend-dot absence" /> Ausente
-            <span className="legend-dot rest" /> Descanso
-          </div>
+                      {DAYS.map((day, index) => (
+                        <th key={day.key}>
+                          <span>{day.label.slice(0, 3)}</span>
+                          <small>{currentWeek[index]?.shortDate}</small>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {team.map((person) => (
+                      <tr key={person.id}>
+                        <td>
+                          <div className="team-person-cell agenda-modern-person-cell">
+                            <div className="team-person-avatar">
+                              {getInitials(person.name)}
+                            </div>
+
+                            <div>
+                              <strong>{person.name}</strong>
+                              <span>{person.area}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {DAYS.map((day) => {
+                          const schedule = person.schedules[day.key];
+
+                          return (
+                            <td key={day.key}>
+                              <ScheduleCell
+                                schedule={schedule}
+                                canEdit={isAdmin}
+                                onEdit={() =>
+                                  handleSelectSchedule(person.id, day.key)
+                                }
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="agenda-modern-legend">
+              <span><i className="normal" /> Horario</span>
+              <span><i className="active" /> En turno</span>
+              <span><i className="permission" /> Permiso</span>
+              <span><i className="absence" /> Ausencia</span>
+              <span><i className="rest" /> Descanso</span>
+            </div>
+          </section>
+
+          <section className="agenda-modern-card agenda-modern-quick-summary">
+            <div className="agenda-modern-card-header compact">
+              <div>
+                <h3>Resumen rápido</h3>
+                <p>Lo más importante de la semana sin saturar el tablero.</p>
+              </div>
+            </div>
+
+            <div className="agenda-modern-quick-grid">
+              <AgendaQuickCard
+                icon="↗"
+                label="Mayor cobertura"
+                value={agendaInsights.busiestDay?.label || "Sin datos"}
+                detail={
+                  agendaInsights.busiestDay
+                    ? `${agendaInsights.busiestDay.value} colaboradores programados`
+                    : "Configura horarios para calcularlo"
+                }
+                tone="green"
+              />
+
+              <AgendaQuickCard
+                icon="◷"
+                label="Más horas esta semana"
+                value={agendaInsights.topHoursPerson?.label || "Sin datos"}
+                detail={
+                  agendaInsights.topHoursPerson
+                    ? `${formatHours(agendaInsights.topHoursPerson.value)} programadas`
+                    : "Sin horarios suficientes"
+                }
+                tone="blue"
+              />
+
+              <AgendaQuickCard
+                icon="📋"
+                label="Solicitudes"
+                value={`${pendingRequests.length} pendiente(s)`}
+                detail={
+                  pendingRequests.length > 0
+                    ? "Requieren revisión administrativa"
+                    : "Sin solicitudes por revisar"
+                }
+                tone="yellow"
+              />
+            </div>
+          </section>
+
+          <section className="agenda-modern-card agenda-modern-action-hub">
+            <div className="agenda-modern-card-header compact agenda-modern-action-header">
+              <div>
+                <h3>Herramientas de agenda</h3>
+                <p>
+                  Accede a las acciones principales desde un panel más claro,
+                  visual y fácil de abrir en vista enfocada.
+                </p>
+              </div>
+            </div>
+
+            <div className={`agenda-modern-action-grid ${isAdmin ? "is-admin" : "is-collaborator"}`}>
+              <AgendaActionCard
+                icon="↗"
+                tone="blue"
+                title="Solicitar cambio"
+                detail="Permisos, ausencias, cambios temporales o ajustes permanentes."
+                meta="Abrir solicitud"
+                onOpen={() => setActivePanel("request")}
+              />
+
+              {isAdmin && (
+                <AgendaActionCard
+                  icon="⚙"
+                  tone="violet"
+                  title="Configurar horarios base"
+                  detail="Asigna el horario regular por colaborador y día de la semana."
+                  meta="Administración"
+                  onOpen={() => setActivePanel("base")}
+                />
+              )}
+
+              <AgendaActionCard
+                icon="📋"
+                tone="green"
+                title={isAdmin ? "Historial de solicitudes" : "Mis solicitudes"}
+                detail={
+                  isAdmin
+                    ? "Revisa, aprueba o rechaza solicitudes con comentarios administrativos."
+                    : "Consulta el historial de tus solicitudes y sus comentarios."
+                }
+                meta={`${myVisibleRequests.length} registro(s)`}
+                onOpen={() => setActivePanel("history")}
+              />
+
+              {isAdmin && (
+                <AgendaActionCard
+                  icon="📈"
+                  tone="gold"
+                  title="Indicadores y control de asistencia"
+                  detail="Cobertura, sedes autorizadas y registros administrativos del equipo."
+                  meta="Vista analítica"
+                  onOpen={() => setActivePanel("insights")}
+                />
+              )}
+            </div>
+          </section>
         </div>
 
-        {loading ? (
-          <div className="team-agenda-empty">Cargando agenda del equipo...</div>
-        ) : team.length === 0 ? (
-          <div className="team-agenda-empty">
-            No hay colaboradores activos registrados para mostrar en la agenda.
-          </div>
-        ) : (
-          <div className="team-agenda-table-wrap">
-            <table className="team-agenda-table">
-              <thead>
-                <tr>
-                  <th>Colaborador</th>
-
-                  {DAYS.map((day, index) => (
-                    <th key={day.key}>
-                      <span>{day.label}</span>
-                      <small>{currentWeek[index]?.shortDate}</small>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody>
-                {team.map((person) => (
-                  <tr key={person.id}>
-                    <td>
-                      <div className="team-person-cell">
-                        <div className="team-person-avatar">
-                          {getInitials(person.name)}
-                        </div>
-
-                        <div>
-                          <strong>{person.name}</strong>
-                          <span>{person.area}</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {DAYS.map((day) => {
-                      const schedule = person.schedules[day.key];
-
-                      return (
-                        <td key={day.key}>
-                          <ScheduleCell
-                            schedule={schedule}
-                            canEdit={isAdmin}
-                            onEdit={() =>
-                              handleSelectSchedule(person.id, day.key)
-                            }
-                          />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {isAdmin && (
-        <section className="team-agenda-card">
-          <div className="team-agenda-section-header">
-            <div>
-              <h3>Configurar horarios base</h3>
-              <p>
-                Asigna el horario regular de cada colaborador. Los cambios se
-                guardan en Firebase en la colección workSchedules.
-              </p>
-            </div>
-          </div>
-
-          <form className="team-agenda-form" onSubmit={handleSaveSchedule}>
-            <div className="team-agenda-form-row agenda-admin-row">
-              <label>
-                Colaborador
-                <select
-                  name="userId"
-                  value={scheduleForm.userId}
-                  onChange={handleScheduleChange}
-                  required
-                >
-                  {teamUsers.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name} — {user.area || "Sin área"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Día
-                <select
-                  name="dayOfWeek"
-                  value={scheduleForm.dayOfWeek}
-                  onChange={handleScheduleChange}
-                  required
-                >
-                  {DAYS.map((day) => (
-                    <option key={day.key} value={day.key}>
-                      {day.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Hora de entrada
-                <input
-                  type="time"
-                  name="startTime"
-                  value={scheduleForm.startTime}
-                  onChange={handleScheduleChange}
-                  disabled={scheduleForm.isRestDay}
-                />
-              </label>
-
-              <label>
-                Hora de salida
-                <input
-                  type="time"
-                  name="endTime"
-                  value={scheduleForm.endTime}
-                  onChange={handleScheduleChange}
-                  disabled={scheduleForm.isRestDay}
-                />
-              </label>
-            </div>
-
-            <label className="team-agenda-checkbox-label">
-              <input
-                type="checkbox"
-                name="isRestDay"
-                checked={scheduleForm.isRestDay}
-                onChange={handleScheduleChange}
-              />
-              Marcar este día como descanso
-            </label>
-
-            <div className="team-agenda-form-actions">
-              <button
-                type="submit"
-                className="team-agenda-primary-button"
-                disabled={savingSchedule || teamUsers.length === 0}
-              >
-                {savingSchedule ? "Guardando..." : "Guardar horario"}
-              </button>
-
-              {saveMessage && <span>{saveMessage}</span>}
-            </div>
-          </form>
-        </section>
-      )}
-
-      <div
-        className={`team-agenda-bottom-grid ${
-          formData.type === "permanentScheduleChange" ? "permanent-mode" : ""
-        }`}
-      >
-        <section
-          className={`team-agenda-card ${
-            formData.type === "permanentScheduleChange" ? "team-agenda-card-wide" : ""
-          }`}
-        >
-          <div className="team-agenda-section-header">
-            <div>
-              <h3>Solicitar cambio</h3>
-              <p>
-                Registra un permiso, ausencia o cambio de horario. La solicitud
-                solo será visible para administración.
-              </p>
-            </div>
-          </div>
-
-          <form className="team-agenda-form" onSubmit={handleSubmit}>
-            <label>
-              Tipo de solicitud
-              <select name="type" value={formData.type} onChange={handleChange}>
-                {Object.entries(REQUEST_TYPES).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Motivo de autorización
-              <select
-                name="autoApprovalReason"
-                value={formData.autoApprovalReason}
-                onChange={handleChange}
-                disabled={formData.type === "permanentScheduleChange"}
-              >
-                {Object.entries(AUTO_APPROVAL_REASONS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {formData.type !== "permanentScheduleChange" &&
-              isAutoApprovalReason(formData.autoApprovalReason) && (
-                <p className="team-agenda-auto-approval-note">
-                  Esta solicitud se aprobará automáticamente por tratarse de un
-                  motivo autorizado. El ajuste se reflejará en la agenda sin
-                  modificar el horario permanente.
-                </p>
-              )}
-
-            {formData.type === "permanentScheduleChange" && (
-              <p className="team-agenda-auto-approval-note warning">
-                Este tipo de solicitud siempre requiere aprobación administrativa
-                porque modifica el horario base.
-              </p>
-            )}
-
-            <div className="team-agenda-form-row">
-              <label>
-                {formData.type === "permanentScheduleChange"
-                  ? "Fecha desde la que aplica"
-                  : "Fecha inicial"}
-                <input
-                  type="date"
-                  name="startDate"
-                  value={formData.startDate}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-
-              {formData.type !== "permanentScheduleChange" && (
-                <label>
-                  Fecha final
-                  <input
-                    type="date"
-                    name="endDate"
-                    value={formData.endDate}
-                    onChange={handleChange}
-                  />
-                </label>
-              )}
-            </div>
-
-            {formData.type === "temporarySwap" && (
-              <div className="team-agenda-swap-box">
-                <strong>Cambio temporal de día</strong>
-                <p>
-                  Usa esta opción cuando no puedas asistir un día de esta semana
-                  y quieras reponerlo en otro día sin modificar tu horario
-                  permanente.
-                </p>
-
-                <div className="team-agenda-form-row">
-                  <label>
-                    Día que vas a reponer
-                    <input
-                      type="date"
-                      name="replacementDate"
-                      value={formData.replacementDate}
-                      onChange={handleChange}
-                      required={formData.type === "temporarySwap"}
-                    />
-                  </label>
-
-                  <label>
-                    Entrada de reposición
-                    <input
-                      type="time"
-                      name="replacementStartTime"
-                      value={formData.replacementStartTime}
-                      onChange={handleChange}
-                      required={formData.type === "temporarySwap"}
-                    />
-                  </label>
-                </div>
-
-                <div className="team-agenda-form-row">
-                  <label>
-                    Salida de reposición
-                    <input
-                      type="time"
-                      name="replacementEndTime"
-                      value={formData.replacementEndTime}
-                      onChange={handleChange}
-                      required={formData.type === "temporarySwap"}
-                    />
-                  </label>
-
-                  <div className="team-agenda-swap-note">
-                    El día inicial quedará como no disponible y el día de
-                    reposición aparecerá como horario temporal aprobado.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {formData.type === "permanentScheduleChange" && (
-              <div className="team-agenda-swap-box permanent-schedule-box team-agenda-permanent-change-box">
-                <strong>Cambio permanente de horario base</strong>
-                <p>
-                  Usa esta opción cuando quieras modificar tu horario regular.
-                  Requiere aprobación administrativa y, al aprobarse, actualizará
-                  los horarios siguientes sin afectar los ajustes temporales ya
-                  registrados.
-                </p>
-
-                <div className="team-agenda-permanent-days-grid permanent-week-grid">
-                  {DAYS.map((day) => {
-                    const dayChange =
-                      formData.permanentChanges?.[day.key] ||
-                      DEFAULT_PERMANENT_CHANGE_DAYS[day.key];
-
-                    return (
-                      <div
-                        key={day.key}
-                        className={`team-agenda-permanent-day-card permanent-day-card ${dayChange.selected ? "selected" : ""}`}
-                      >
-                        <label className="team-agenda-permanent-day-header permanent-day-check">
-                          <input
-                            type="checkbox"
-                            checked={dayChange.selected}
-                            onChange={(event) =>
-                              handlePermanentDayChange(
-                                day.key,
-                                "selected",
-                                event.target.checked
-                              )
-                            }
-                          />
-                          <span>{day.label}</span>
-                        </label>
-
-                        <label className="team-agenda-permanent-day-rest team-agenda-checkbox-label permanent-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={dayChange.isRestDay}
-                            disabled={!dayChange.selected}
-                            onChange={(event) =>
-                              handlePermanentDayChange(
-                                day.key,
-                                "isRestDay",
-                                event.target.checked
-                              )
-                            }
-                          />
-                          Descanso fijo
-                        </label>
-
-                        <div className="team-agenda-permanent-day-fields permanent-day-times">
-                          <label>
-                            Entrada
-                            <input
-                              type="time"
-                              value={dayChange.startTime}
-                              disabled={!dayChange.selected || dayChange.isRestDay}
-                              onChange={(event) =>
-                                handlePermanentDayChange(
-                                  day.key,
-                                  "startTime",
-                                  event.target.value
-                                )
-                              }
-                            />
-                          </label>
-
-                          <label>
-                            Salida
-                            <input
-                              type="time"
-                              value={dayChange.endTime}
-                              disabled={!dayChange.selected || dayChange.isRestDay}
-                              onChange={(event) =>
-                                handlePermanentDayChange(
-                                  day.key,
-                                  "endTime",
-                                  event.target.value
-                                )
-                              }
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="team-agenda-swap-note">
-                  Selecciona uno o varios días. Este cambio no se autoaprueba.
-                  Cuando administración lo apruebe, se actualizarán solo los días
-                  seleccionados del horario base para las siguientes semanas.
-                </div>
-              </div>
-            )}
-
-            {formData.type !== "temporarySwap" && formData.type !== "permanentScheduleChange" && (
-              <div className="team-agenda-form-row">
-                <label>
-                  Nueva entrada
-                  <input
-                    type="time"
-                    name="requestedStartTime"
-                    value={formData.requestedStartTime}
-                    onChange={handleChange}
-                  />
-                </label>
-
-                <label>
-                  Nueva salida
-                  <input
-                    type="time"
-                    name="requestedEndTime"
-                    value={formData.requestedEndTime}
-                    onChange={handleChange}
-                  />
-                </label>
-              </div>
-            )}
-
-            <label>
-              Motivo
-              <textarea
-                name="reason"
-                value={formData.reason}
-                onChange={handleChange}
-                placeholder="Describe brevemente el motivo de la solicitud."
-                rows="4"
-                required
-              />
-            </label>
-
-            <button
-              type="submit"
-              className="team-agenda-primary-button"
-              disabled={savingRequest}
-            >
-              {savingRequest ? "Registrando..." : "Registrar solicitud"}
-            </button>
-
-            {requestMessage && (
-              <p className="team-agenda-form-note strong-note">
-                {requestMessage}
-              </p>
-            )}
-          </form>
-        </section>
-
-        {isAdmin && (
-          <section className="team-agenda-card">
-            <div className="team-agenda-section-header">
+        <aside className="agenda-modern-side-stack">
+          <section className="agenda-modern-card agenda-today-card">
+            <div className="agenda-modern-side-header">
               <div>
-                <h3>Solicitudes por revisar</h3>
-                <p>
-                  Solo administradores pueden ver el detalle, aprobar o rechazar
-                  solicitudes.
-                </p>
+                <h3>Equipo de hoy</h3>
+                <p>Disponibilidad resumida</p>
               </div>
+              <span>{summary.activeNow} en turno</span>
             </div>
 
-            <div className="team-agenda-request-list">
-              {loadingRequests ? (
-                <div className="team-agenda-empty">Cargando solicitudes...</div>
-              ) : requests.length === 0 ? (
-                <div className="team-agenda-empty">
-                  No hay solicitudes registradas.
-                </div>
+            <div className="agenda-modern-team-list">
+              {todayTeam.length === 0 ? (
+                <div className="team-agenda-empty compact">Sin equipo programado hoy.</div>
               ) : (
-                requests.map((request) => (
-                  <article key={request.id} className="team-agenda-request-card">
-                    <div className="team-agenda-request-top">
-                      <div>
-                        <strong>{request.userName}</strong>
-                        <span>{REQUEST_TYPES[request.type]}</span>
-                      </div>
-
-                      <StatusBadge status={request.status} />
-                    </div>
-
-                    <div className="team-agenda-request-info">
-                      <span>
-                        <b>Fecha:</b> {formatDate(request.startDate)}
-                        {request.endDate && request.endDate !== request.startDate
-                          ? ` - ${formatDate(request.endDate)}`
-                          : ""}
-                      </span>
-
-                      <span>
-                        <b>Horario actual:</b> {request.originalSchedule}
-                      </span>
-
-                      <span>
-                        <b>Solicitado:</b> {request.requestedSchedule}
-                      </span>
-
-                      {request.type === "temporarySwap" && request.replacementSchedule && (
-                        <span>
-                          <b>Reposición:</b> {request.replacementSchedule}
-                        </span>
-                      )}
-
-                      {request.type === "permanentScheduleChange" && (
-                        <span>
-                          <b>Días base a modificar:</b>{" "}
-                          {getPermanentChangesShortLabel(request)}
-                        </span>
-                      )}
-
-                      {request.autoApprovalReason &&
-                        request.autoApprovalReason !== "standard" && (
-                          <span>
-                            <b>Motivo autorizado:</b>{" "}
-                            {getAutoApprovalReasonLabel(request.autoApprovalReason)}
-                          </span>
-                        )}
-
-                      {request.reviewedByName && (
-                        <span>
-                          <b>Revisó:</b> {request.reviewedByName}
-                        </span>
-                      )}
-                    </div>
-
-                    <p>{request.reason}</p>
-
-                    {request.adminComment && (
-                      <p className="team-agenda-admin-comment">
-                        <b>Comentario administrativo:</b> {request.adminComment}
-                      </p>
-                    )}
-
-                    {request.status === "pending" && (
-                      <>
-                        <label className="team-agenda-admin-comment-box">
-                          Comentario administrativo opcional
-                          <textarea
-                            value={adminComments[request.id] || ""}
-                            onChange={(event) =>
-                              handleAdminCommentChange(
-                                request.id,
-                                event.target.value
-                              )
-                            }
-                            rows="2"
-                            placeholder="Puedes dejar un comentario interno o explicación para el colaborador."
-                          />
-                        </label>
-
-                        <div className="team-agenda-request-actions">
-                          <button
-                            type="button"
-                            disabled={reviewingRequestId === request.id}
-                            onClick={() => reviewRequest(request, "approved")}
-                          >
-                            {reviewingRequestId === request.id
-                              ? "Procesando..."
-                              : "Aprobar"}
-                          </button>
-
-                          <button
-                            type="button"
-                            className="danger"
-                            disabled={reviewingRequestId === request.id}
-                            onClick={() => reviewRequest(request, "rejected")}
-                          >
-                            Rechazar
-                          </button>
-
-                          <button
-                            type="button"
-                            className="danger subtle"
-                            disabled={deletingRequestId === request.id}
-                            onClick={() => deleteRequest(request)}
-                          >
-                            {deletingRequestId === request.id
-                              ? "Eliminando..."
-                              : "Eliminar"}
-                          </button>
-                        </div>
-                      </>
-                    )}
-
-                    {request.status !== "pending" && (
-                      <div className="team-agenda-request-actions">
-                        <button
-                          type="button"
-                          className="danger subtle"
-                          disabled={deletingRequestId === request.id}
-                          onClick={() => deleteRequest(request)}
-                        >
-                          {deletingRequestId === request.id
-                            ? "Eliminando..."
-                            : "Eliminar solicitud"}
-                        </button>
-                      </div>
-                    )}
-                  </article>
+                todayTeam.slice(0, 7).map((person) => (
+                  <TodayTeamItem key={person.id} person={person} schedule={person.todaySchedule} />
                 ))
               )}
             </div>
           </section>
-        )}
 
-        {!isAdmin && (
-          <section className="team-agenda-card">
-            <div className="team-agenda-section-header">
+          <section className="agenda-modern-card agenda-pending-card">
+            <div className="agenda-modern-side-header">
               <div>
-                <h3>Mis solicitudes</h3>
-                <p>
-                  Consulta el historial de tus solicitudes y los comentarios que
-                  deje administración al aprobar o rechazar.
-                </p>
+                <h3>{isAdmin ? "Solicitudes pendientes" : "Mis solicitudes"}</h3>
+                <p>{isAdmin ? "Revisión administrativa" : "Seguimiento personal"}</p>
               </div>
+              <span>{pendingRequests.length} pendiente(s)</span>
             </div>
 
-            <div className="team-agenda-request-list">
+            <div className="agenda-modern-pending-list">
               {loadingRequests ? (
-                <div className="team-agenda-empty">Cargando tus solicitudes...</div>
-              ) : requests.length === 0 ? (
-                <div className="team-agenda-empty">
-                  Todavía no tienes solicitudes registradas.
+                <div className="team-agenda-empty compact">Cargando solicitudes...</div>
+              ) : (isAdmin ? pendingRequests : myVisibleRequests).length === 0 ? (
+                <div className="team-agenda-empty compact">
+                  {isAdmin ? "No hay solicitudes pendientes." : "Sin solicitudes registradas."}
                 </div>
               ) : (
-                requests.map((request) => (
-                  <article key={request.id} className="team-agenda-request-card">
+                (isAdmin ? pendingRequests : myVisibleRequests).slice(0, 5).map((request) => (
+                  <CompactAgendaRequest key={request.id} request={request} isAdmin={isAdmin} />
+                ))
+              )}
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      {activePanel === "request" && (
+        <FocusedAgendaPanel
+          title="Solicitar cambio"
+          description="Registra permisos, ausencias o ajustes de horario en una vista enfocada y más clara."
+          badge="Vista enfocada"
+          onClose={() => setActivePanel("")}
+          sideContent={
+            <AgendaFocusSummary
+              title="Resumen rápido"
+              description="Elige el tipo de ajuste y registra solo la información necesaria."
+              items={[
+                { icon: "📅", label: "Semana actual", value: `${currentWeek[0]?.shortDate || ""} - ${currentWeek[6]?.shortDate || ""}`, detail: "Periodo visible en agenda" },
+                { icon: "⚡", label: "Autoaprobación", value: "Disponible", detail: "Asamblea, reunión o evento teocrático" },
+                { icon: "📋", label: "Mis solicitudes", value: `${myVisibleRequests.length}`, detail: "Historial registrado" },
+              ]}
+              actions={[
+                { label: isAdmin ? "Ver historial" : "Ver mis solicitudes", onClick: () => setActivePanel("history") },
+              ]}
+            />
+          }
+        >
+          {requestMessage && (
+            <div className="team-agenda-info-alert agenda-focused-alert">{requestMessage}</div>
+          )}
+
+          <section className="agenda-focused-section">
+            <form className="team-agenda-form agenda-modern-form agenda-focused-form" onSubmit={handleSubmit}>
+              <div className="team-agenda-form-row">
+                <label>
+                  Tipo de solicitud
+                  <select name="type" value={formData.type} onChange={handleChange}>
+                    {Object.entries(REQUEST_TYPES).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Motivo de autorización
+                  <select
+                    name="autoApprovalReason"
+                    value={formData.autoApprovalReason}
+                    onChange={handleChange}
+                    disabled={formData.type === "permanentScheduleChange"}
+                  >
+                    {Object.entries(AUTO_APPROVAL_REASONS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {formData.type !== "permanentScheduleChange" &&
+                isAutoApprovalReason(formData.autoApprovalReason) && (
+                  <p className="team-agenda-auto-approval-note">
+                    Esta solicitud se aprobará automáticamente por tratarse de un
+                    motivo autorizado. El ajuste se reflejará en la agenda sin
+                    modificar el horario permanente.
+                  </p>
+                )}
+
+              {formData.type === "permanentScheduleChange" && (
+                <p className="team-agenda-auto-approval-note warning">
+                  Este tipo de solicitud siempre requiere aprobación administrativa
+                  porque modifica el horario base.
+                </p>
+              )}
+
+              <div className="team-agenda-form-row">
+                <label>
+                  {formData.type === "permanentScheduleChange"
+                    ? "Fecha desde la que aplica"
+                    : "Fecha inicial"}
+                  <input
+                    type="date"
+                    name="startDate"
+                    value={formData.startDate}
+                    onChange={handleChange}
+                    required
+                  />
+                </label>
+
+                {formData.type !== "permanentScheduleChange" && (
+                  <label>
+                    Fecha final
+                    <input
+                      type="date"
+                      name="endDate"
+                      value={formData.endDate}
+                      onChange={handleChange}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {formData.type === "temporarySwap" && (
+                <div className="team-agenda-swap-box agenda-focused-block">
+                  <strong>Cambio temporal de día</strong>
+                  <p>
+                    Usa esta opción cuando no puedas asistir un día de esta semana
+                    y quieras reponerlo en otro día sin modificar tu horario
+                    permanente.
+                  </p>
+
+                  <div className="team-agenda-form-row">
+                    <label>
+                      Día que vas a reponer
+                      <input
+                        type="date"
+                        name="replacementDate"
+                        value={formData.replacementDate}
+                        onChange={handleChange}
+                        required={formData.type === "temporarySwap"}
+                      />
+                    </label>
+
+                    <label>
+                      Entrada de reposición
+                      <input
+                        type="time"
+                        name="replacementStartTime"
+                        value={formData.replacementStartTime}
+                        onChange={handleChange}
+                        required={formData.type === "temporarySwap"}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="team-agenda-form-row">
+                    <label>
+                      Salida de reposición
+                      <input
+                        type="time"
+                        name="replacementEndTime"
+                        value={formData.replacementEndTime}
+                        onChange={handleChange}
+                        required={formData.type === "temporarySwap"}
+                      />
+                    </label>
+
+                    <div className="team-agenda-swap-note">
+                      El día inicial quedará como no disponible y el día de
+                      reposición aparecerá como horario temporal aprobado.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {formData.type === "permanentScheduleChange" && (
+                <div className="team-agenda-swap-box permanent-schedule-box team-agenda-permanent-change-box agenda-focused-block">
+                  <strong>Cambio permanente de horario base</strong>
+                  <p>
+                    Usa esta opción cuando quieras modificar tu horario regular.
+                    Requiere aprobación administrativa y, al aprobarse, actualizará
+                    los horarios siguientes sin afectar los ajustes temporales ya
+                    registrados.
+                  </p>
+
+                  <div className="team-agenda-permanent-days-grid permanent-week-grid">
+                    {DAYS.map((day) => {
+                      const dayChange =
+                        formData.permanentChanges?.[day.key] ||
+                        DEFAULT_PERMANENT_CHANGE_DAYS[day.key];
+
+                      return (
+                        <div
+                          key={day.key}
+                          className={`team-agenda-permanent-day-card permanent-day-card ${dayChange.selected ? "selected" : ""}`}
+                        >
+                          <label className="team-agenda-permanent-day-header permanent-day-check">
+                            <input
+                              type="checkbox"
+                              checked={dayChange.selected}
+                              onChange={(event) =>
+                                handlePermanentDayChange(
+                                  day.key,
+                                  "selected",
+                                  event.target.checked
+                                )
+                              }
+                            />
+                            <span>{day.label}</span>
+                          </label>
+
+                          <label className="team-agenda-permanent-day-rest team-agenda-checkbox-label permanent-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={dayChange.isRestDay}
+                              disabled={!dayChange.selected}
+                              onChange={(event) =>
+                                handlePermanentDayChange(
+                                  day.key,
+                                  "isRestDay",
+                                  event.target.checked
+                                )
+                              }
+                            />
+                            Descanso fijo
+                          </label>
+
+                          <div className="team-agenda-permanent-day-fields permanent-day-times">
+                            <label>
+                              Entrada
+                              <input
+                                type="time"
+                                value={dayChange.startTime}
+                                disabled={!dayChange.selected || dayChange.isRestDay}
+                                onChange={(event) =>
+                                  handlePermanentDayChange(
+                                    day.key,
+                                    "startTime",
+                                    event.target.value
+                                  )
+                                }
+                              />
+                            </label>
+
+                            <label>
+                              Salida
+                              <input
+                                type="time"
+                                value={dayChange.endTime}
+                                disabled={!dayChange.selected || dayChange.isRestDay}
+                                onChange={(event) =>
+                                  handlePermanentDayChange(
+                                    day.key,
+                                    "endTime",
+                                    event.target.value
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="team-agenda-swap-note">
+                    Selecciona uno o varios días. Este cambio no se autoaprueba.
+                    Cuando administración lo apruebe, se actualizarán solo los días
+                    seleccionados del horario base para las siguientes semanas.
+                  </div>
+                </div>
+              )}
+
+              {formData.type !== "temporarySwap" && formData.type !== "permanentScheduleChange" && (
+                <div className="team-agenda-form-row">
+                  <label>
+                    Nueva entrada
+                    <input
+                      type="time"
+                      name="requestedStartTime"
+                      value={formData.requestedStartTime}
+                      onChange={handleChange}
+                    />
+                  </label>
+
+                  <label>
+                    Nueva salida
+                    <input
+                      type="time"
+                      name="requestedEndTime"
+                      value={formData.requestedEndTime}
+                      onChange={handleChange}
+                    />
+                  </label>
+                </div>
+              )}
+
+              <label>
+                Motivo
+                <textarea
+                  name="reason"
+                  value={formData.reason}
+                  onChange={handleChange}
+                  placeholder="Describe brevemente el motivo de la solicitud."
+                  rows="4"
+                  required
+                />
+              </label>
+
+              <div className="team-agenda-form-actions">
+                <button
+                  type="submit"
+                  className="team-agenda-primary-button"
+                  disabled={savingRequest}
+                >
+                  {savingRequest ? "Registrando..." : "Registrar solicitud"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </FocusedAgendaPanel>
+      )}
+
+      {activePanel === "base" && isAdmin && (
+        <FocusedAgendaPanel
+          title="Configurar horarios base"
+          description="Define la asignación regular por colaborador y día en un panel más limpio."
+          badge="Administración"
+          onClose={() => setActivePanel("")}
+          sideContent={
+            <AgendaFocusSummary
+              title="Configuración"
+              description="Ajusta el horario regular sin mezclarlo con solicitudes temporales."
+              items={[
+                { icon: "👥", label: "Colaboradores", value: `${teamUsers.length}`, detail: "Activos en el sistema" },
+                { icon: "📅", label: "Programados hoy", value: `${summary.scheduledToday}`, detail: "Con horario asignado" },
+                { icon: "✅", label: "En turno ahora", value: `${summary.activeNow}`, detail: "Personas activas" },
+              ]}
+              actions={[
+                { label: "Ver solicitudes", onClick: () => setActivePanel("history") },
+              ]}
+            />
+          }
+        >
+          <section className="agenda-focused-section">
+            <form className="team-agenda-form agenda-modern-form agenda-focused-form" onSubmit={handleSaveSchedule}>
+              <div className="team-agenda-form-row agenda-admin-row">
+                <label>
+                  Colaborador
+                  <select
+                    name="userId"
+                    value={scheduleForm.userId}
+                    onChange={handleScheduleChange}
+                    required
+                  >
+                    {teamUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} — {user.area || "Sin área"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Día
+                  <select
+                    name="dayOfWeek"
+                    value={scheduleForm.dayOfWeek}
+                    onChange={handleScheduleChange}
+                    required
+                  >
+                    {DAYS.map((day) => (
+                      <option key={day.key} value={day.key}>
+                        {day.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Hora de entrada
+                  <input
+                    type="time"
+                    name="startTime"
+                    value={scheduleForm.startTime}
+                    onChange={handleScheduleChange}
+                    disabled={scheduleForm.isRestDay}
+                  />
+                </label>
+
+                <label>
+                  Hora de salida
+                  <input
+                    type="time"
+                    name="endTime"
+                    value={scheduleForm.endTime}
+                    onChange={handleScheduleChange}
+                    disabled={scheduleForm.isRestDay}
+                  />
+                </label>
+              </div>
+
+              <label className="team-agenda-checkbox-label agenda-rest-toggle">
+                <input
+                  type="checkbox"
+                  name="isRestDay"
+                  checked={scheduleForm.isRestDay}
+                  onChange={handleScheduleChange}
+                />
+                Marcar este día como descanso
+              </label>
+
+              <div className="team-agenda-form-actions">
+                <button
+                  type="submit"
+                  className="team-agenda-primary-button"
+                  disabled={savingSchedule || teamUsers.length === 0}
+                >
+                  {savingSchedule ? "Guardando..." : "Guardar horario"}
+                </button>
+
+                {saveMessage && <span>{saveMessage}</span>}
+              </div>
+            </form>
+          </section>
+        </FocusedAgendaPanel>
+      )}
+
+      {activePanel === "history" && (
+        <FocusedAgendaPanel
+          title={isAdmin ? "Historial de solicitudes" : "Mis solicitudes"}
+          description={
+            isAdmin
+              ? "Consulta, aprueba o revisa solicitudes desde una vista enfocada."
+              : "Consulta el historial de tus solicitudes y sus comentarios administrativos."
+          }
+          badge={`${myVisibleRequests.length} registro(s)`}
+          onClose={() => setActivePanel("")}
+          sideContent={
+            <AgendaFocusSummary
+              title="Estado de solicitudes"
+              description="Resumen para revisar pendientes y dar seguimiento sin saturar la agenda."
+              items={[
+                { icon: "🟡", label: "Pendientes", value: `${myVisibleRequests.filter((request) => request.status === "pending").length}`, detail: "Por revisar" },
+                { icon: "🟢", label: "Aprobadas", value: `${myVisibleRequests.filter((request) => request.status === "approved").length}`, detail: "Ya reflejadas" },
+                { icon: "🔴", label: "Rechazadas", value: `${myVisibleRequests.filter((request) => request.status === "rejected").length}`, detail: "Con respuesta administrativa" },
+              ]}
+              actions={[
+                { label: "Registrar solicitud", onClick: () => setActivePanel("request") },
+              ]}
+            />
+          }
+        >
+          <section className="agenda-focused-section">
+            <div className="team-agenda-request-list agenda-modern-request-list agenda-focused-request-list">
+              {loadingRequests ? (
+                <div className="team-agenda-empty">
+                  {isAdmin ? "Cargando solicitudes..." : "Cargando tus solicitudes..."}
+                </div>
+              ) : myVisibleRequests.length === 0 ? (
+                <div className="team-agenda-empty">
+                  {isAdmin
+                    ? "No hay solicitudes registradas."
+                    : "Todavía no tienes solicitudes registradas."}
+                </div>
+              ) : (
+                myVisibleRequests.map((request) => (
+                  <article key={request.id} className="team-agenda-request-card agenda-modern-request-card">
                     <div className="team-agenda-request-top">
                       <div>
-                        <strong>{REQUEST_TYPES[request.type]}</strong>
-                        <span>Solicitud registrada por ti</span>
+                        <strong>{isAdmin ? request.userName : REQUEST_TYPES[request.type]}</strong>
+                        <span>{isAdmin ? REQUEST_TYPES[request.type] : "Solicitud registrada por ti"}</span>
                       </div>
 
                       <StatusBadge status={request.status} />
                     </div>
 
-                    <div className="team-agenda-request-info">
+                    <div className="team-agenda-request-info agenda-request-detail-info">
                       <span>
                         <b>Fecha:</b> {formatDate(request.startDate)}
                         {request.endDate && request.endDate !== request.startDate
@@ -1841,21 +1909,315 @@ export default function TeamAgenda() {
                         <b>Comentario administrativo:</b> {request.adminComment}
                       </p>
                     ) : (
-                      request.status !== "pending" && (
+                      !isAdmin && request.status !== "pending" && (
                         <p className="team-agenda-admin-comment muted">
                           Sin comentario administrativo.
                         </p>
                       )
+                    )}
+
+                    {isAdmin && request.status === "pending" && (
+                      <>
+                        <label className="team-agenda-admin-comment-box">
+                          Comentario administrativo opcional
+                          <textarea
+                            value={adminComments[request.id] || ""}
+                            onChange={(event) =>
+                              handleAdminCommentChange(
+                                request.id,
+                                event.target.value
+                              )
+                            }
+                            rows="2"
+                            placeholder="Puedes dejar un comentario interno o explicación para el colaborador."
+                          />
+                        </label>
+
+                        <div className="team-agenda-request-actions">
+                          <button
+                            type="button"
+                            disabled={reviewingRequestId === request.id}
+                            onClick={() => reviewRequest(request, "approved")}
+                          >
+                            {reviewingRequestId === request.id
+                              ? "Procesando..."
+                              : "Aprobar"}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="danger"
+                            disabled={reviewingRequestId === request.id}
+                            onClick={() => reviewRequest(request, "rejected")}
+                          >
+                            Rechazar
+                          </button>
+
+                          <button
+                            type="button"
+                            className="danger subtle"
+                            disabled={deletingRequestId === request.id}
+                            onClick={() => deleteRequest(request)}
+                          >
+                            {deletingRequestId === request.id
+                              ? "Eliminando..."
+                              : "Eliminar"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {isAdmin && request.status !== "pending" && (
+                      <div className="team-agenda-request-actions">
+                        <button
+                          type="button"
+                          className="danger subtle"
+                          disabled={deletingRequestId === request.id}
+                          onClick={() => deleteRequest(request)}
+                        >
+                          {deletingRequestId === request.id
+                            ? "Eliminando..."
+                            : "Eliminar solicitud"}
+                        </button>
+                      </div>
                     )}
                   </article>
                 ))
               )}
             </div>
           </section>
-        )}
+        </FocusedAgendaPanel>
+      )}
+
+      {activePanel === "insights" && isAdmin && (
+        <FocusedAgendaPanel
+          title="Indicadores y control de asistencia"
+          description="Consulta cobertura, horas, solicitudes y sedes autorizadas desde una vista enfocada."
+          badge="Vista analítica"
+          onClose={() => setActivePanel("")}
+          sideContent={
+            <AgendaFocusSummary
+              title="Resumen rápido"
+              description={`Semana ${currentWeek[0]?.shortDate || ""} - ${currentWeek[6]?.shortDate || ""}`}
+              items={[
+                { icon: "📅", label: "Mayor cobertura", value: agendaInsights.busiestDay?.label || "Sin datos", detail: agendaInsights.busiestDay ? `${agendaInsights.busiestDay.value} colaboradores programados` : "Sin horarios suficientes" },
+                { icon: "◷", label: "Más horas semanales", value: agendaInsights.topHoursPerson?.label || "Sin datos", detail: agendaInsights.topHoursPerson ? `${formatHours(agendaInsights.topHoursPerson.value)} programadas` : "Sin horas registradas" },
+                { icon: "↔", label: "Cambios solicitados", value: `${pendingRequests.length}`, detail: "Solicitudes pendientes" },
+                { icon: "✅", label: "Horas reales hoy", value: formatMinutesAsHours(attendanceInsights.realMinutesToday), detail: "Con inicio válido en sede" },
+              ]}
+              actions={[
+                { label: "Registrar cambio temporal", onClick: () => setActivePanel("request") },
+                { label: "Revisar solicitudes", onClick: () => setActivePanel("history") },
+              ]}
+            />
+          }
+        >
+          <section className="agenda-focused-section agenda-focused-stacked-section agenda-attendance-focus-section">
+            <AttendanceControlPanel
+              insights={attendanceInsights}
+              locations={attendanceLocations}
+              loading={loadingAttendance}
+              message={attendanceMessage}
+              locationForm={locationForm}
+              onLocationFormChange={handleLocationFormChange}
+              onUseCurrentLocation={handleUseCurrentAdminLocation}
+              onSaveLocation={handleSaveAttendanceLocation}
+              onDeactivateLocation={handleDeactivateAttendanceLocation}
+            />
+          </section>
+        </FocusedAgendaPanel>
+      )}
+    </div>
+  );
+}
+function ModernAgendaSummaryCard({ icon, label, value, detail, tone }) {
+  return (
+    <article className={`agenda-modern-summary-card ${tone}`}>
+      <span className="agenda-modern-summary-icon">{icon}</span>
+      <div>
+        <strong>{value}</strong>
+        <h4>{label}</h4>
+        <p>{detail}</p>
+      </div>
+    </article>
+  );
+}
+
+function AgendaQuickCard({ icon, label, value, detail, tone }) {
+  return (
+    <article className={`agenda-modern-quick-card ${tone}`}>
+      <span>{icon}</span>
+      <div>
+        <small>{label}</small>
+        <strong>{value}</strong>
+        <p>{detail}</p>
+      </div>
+    </article>
+  );
+}
+
+function AgendaActionCard({ icon, tone = "blue", title, detail, meta, onOpen }) {
+  return (
+    <article className={`agenda-modern-action-card ${tone}`}>
+      <div className="agenda-modern-action-top">
+        <span className="agenda-modern-action-icon">{icon}</span>
+        {meta && <b className="agenda-modern-action-meta">{meta}</b>}
+      </div>
+
+      <div className="agenda-modern-action-copy">
+        <h4>{title}</h4>
+        <p>{detail}</p>
+      </div>
+
+      <button type="button" className="agenda-modern-action-button" onClick={onOpen}>
+        Abrir vista
+      </button>
+    </article>
+  );
+}
+
+function AgendaFocusSummary({ title, description, items = [], actions = [] }) {
+  return (
+    <aside className="agenda-focus-sidebar">
+      <div className="agenda-focus-sidebar-header">
+        <span>☷</span>
+        <div>
+          <h4>{title}</h4>
+          <p>{description}</p>
+        </div>
+      </div>
+
+      <div className="agenda-focus-summary-list">
+        {items.map((item) => (
+          <article key={`${item.label}-${item.value}`} className="agenda-focus-summary-item">
+            <span>{item.icon}</span>
+            <div>
+              <small>{item.label}</small>
+              <strong>{item.value}</strong>
+              <p>{item.detail}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {actions.length > 0 && (
+        <div className="agenda-focus-actions">
+          <h4>Acciones rápidas</h4>
+          {actions.map((action) => (
+            <button key={action.label} type="button" onClick={action.onClick}>
+              <span>↗</span>
+              {action.label}
+              <b>›</b>
+            </button>
+          ))}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function FocusedAgendaPanel({ title, description, badge, sideContent, onClose, children }) {
+  return (
+    <div className="agenda-focused-overlay" role="dialog" aria-modal="true">
+      <div className={`agenda-focused-panel ${sideContent ? "with-sidebar" : ""}`}>
+        <div className="agenda-focused-header">
+          <div>
+            <span className="agenda-focused-eyebrow">Agenda del equipo</span>
+            <h3>{title}</h3>
+            <p>{description}</p>
+          </div>
+
+          <div className="agenda-focused-header-actions">
+            {badge && <span className="agenda-focused-badge">{badge}</span>}
+            <button type="button" className="agenda-focused-close-icon" onClick={onClose} aria-label="Cerrar panel">
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div className="agenda-focused-content">
+          {sideContent}
+          <main className="agenda-focused-main">{children}</main>
+        </div>
       </div>
     </div>
   );
+}
+
+function TodayTeamItem({ person, schedule }) {
+  const tone = getScheduleTone(schedule);
+
+  return (
+    <article className="agenda-modern-team-item">
+      <div className="team-person-avatar agenda-modern-avatar">
+        {getInitials(person.name)}
+      </div>
+
+      <div>
+        <strong>{person.name}</strong>
+        <span>{getScheduleTimeLabel(schedule)}</span>
+      </div>
+
+      <b className={`agenda-modern-status-pill ${tone}`}>
+        {getScheduleShortStatus(schedule)}
+      </b>
+    </article>
+  );
+}
+
+function CompactAgendaRequest({ request, isAdmin }) {
+  return (
+    <article className="agenda-modern-pending-item">
+      <div className="team-person-avatar agenda-modern-avatar small">
+        {getInitials(request.userName || REQUEST_TYPES[request.type])}
+      </div>
+
+      <div>
+        <strong>{isAdmin ? request.userName : REQUEST_TYPES[request.type]}</strong>
+        <span>{REQUEST_TYPES[request.type] || "Solicitud"}</span>
+      </div>
+
+      <div className="agenda-modern-pending-meta">
+        <StatusBadge status={request.status} />
+        <small>{formatDate(request.startDate)}</small>
+      </div>
+    </article>
+  );
+}
+
+function getScheduleTone(schedule) {
+  const status = schedule?.status || "unset";
+
+  if (status === "active") return "green";
+  if (status === "normal" || status === "approved") return "blue";
+  if (status === "pending") return "yellow";
+  if (status === "absence" || status === "permission") return "red";
+  if (status === "rest" || status === "dayOff") return "gray";
+
+  return "gray";
+}
+
+function getScheduleShortStatus(schedule) {
+  const status = schedule?.status || "unset";
+
+  if (status === "active") return "En turno";
+  if (status === "normal" || status === "approved") return "Programado";
+  if (status === "pending") return "Pendiente";
+  if (status === "permission") return "Permiso";
+  if (status === "absence") return "Ausente";
+  if (status === "rest" || status === "dayOff") return "Descanso";
+
+  return "Sin horario";
+}
+
+function getScheduleTimeLabel(schedule) {
+  const status = schedule?.status || "unset";
+
+  if (["rest", "dayOff"].includes(status)) return "Descanso";
+  if (["absence", "permission"].includes(status)) return "No disponible";
+  if (!schedule?.start || !schedule?.end) return "Sin horario asignado";
+
+  return `${formatTime(schedule.start)} - ${formatTime(schedule.end)}`;
 }
 
 function AttendanceControlPanel({
@@ -1869,146 +2231,206 @@ function AttendanceControlPanel({
   onSaveLocation,
   onDeactivateLocation,
 }) {
+  const activeLocations = locations.filter((location) => location.isActive !== false);
+  const expectedMinutes = Number(insights.expectedMinutesToday || 0);
+  const realMinutes = Number(insights.realMinutesToday || 0);
+  const attendancePercent = expectedMinutes > 0
+    ? Math.min(100, Math.round((realMinutes / expectedMinutes) * 100))
+    : 0;
+  const visibleRows = insights.rows.slice(0, 6);
+  const visibleAlerts = insights.alerts.slice(0, 4);
+
   return (
-    <section className="team-agenda-card attendance-admin-card">
-      <div className="team-agenda-section-header">
+    <section className="attendance-visual-panel">
+      <div className="attendance-visual-intro">
         <div>
-          <h3>Control de asistencia</h3>
+          <span className="attendance-visual-kicker">Control de asistencia</span>
+          <h3>Estado de asistencia de hoy</h3>
           <p>
-            Registro automático por inicio de sesión y ubicación. Esta información
-            solo se muestra a administradores.
+            Monitorea registros, sedes y alertas sin saturar la vista principal.
           </p>
+        </div>
+        <div className="attendance-visual-score-card">
+          <span>Registro del día</span>
+          <strong>{attendancePercent}%</strong>
+          <div className="attendance-visual-progress-track">
+            <div
+              className="attendance-visual-progress-fill"
+              style={{ width: `${attendancePercent}%` }}
+            />
+          </div>
+          <small>{formatMinutesAsHours(realMinutes)} de {formatMinutesAsHours(expectedMinutes)}</small>
         </div>
       </div>
 
-      <div className="attendance-metrics-grid">
-        <InsightCard
-          title="Horas esperadas hoy"
-          value={formatMinutesAsHours(insights.expectedMinutesToday)}
+      <div className="attendance-visual-metrics">
+        <AttendanceVisualMetric
+          icon="◷"
+          tone="blue"
+          label="Horas esperadas"
+          value={formatMinutesAsHours(expectedMinutes)}
           detail="Según la agenda vigente"
         />
-        <InsightCard
-          title="Horas reales registradas"
-          value={formatMinutesAsHours(insights.realMinutesToday)}
-          detail="Con inicio válido en sede"
+        <AttendanceVisualMetric
+          icon="✓"
+          tone="green"
+          label="Horas registradas"
+          value={formatMinutesAsHours(realMinutes)}
+          detail={`${attendancePercent}% del total esperado`}
         />
-        <InsightCard
-          title="Sin registro"
+        <AttendanceVisualMetric
+          icon="○"
+          tone="gold"
+          label="Sin registro"
           value={insights.missingCount}
           detail="Personas con horario hoy"
         />
-        <InsightCard
-          title="Alertas"
+        <AttendanceVisualMetric
+          icon="!"
+          tone="red"
+          label="Alertas"
           value={insights.alerts.length}
-          detail="Tardanza, inactividad, fuera de sede o falta de registro"
+          detail="Requieren atención"
         />
       </div>
 
-      {message && <div className="team-agenda-info-alert">{message}</div>}
+      {message && <div className="team-agenda-info-alert attendance-visual-message">{message}</div>}
 
-      <div className="attendance-layout-grid">
-        <div className="attendance-panel-block">
-          <h4>Asistencia de hoy</h4>
+      <div className="attendance-visual-main-grid">
+        <section className="attendance-visual-card attendance-visual-today-card">
+          <div className="attendance-visual-card-header">
+            <div>
+              <span>📅</span>
+              <h4>Asistencia de hoy</h4>
+            </div>
+            <small>{insights.rows.length} registro(s)</small>
+          </div>
+
           {loading ? (
-            <div className="team-agenda-empty">Cargando asistencia...</div>
+            <div className="team-agenda-empty compact">Cargando asistencia...</div>
           ) : insights.rows.length === 0 ? (
-            <div className="team-agenda-empty">
+            <div className="team-agenda-empty compact">
               No hay colaboradores con horario para comparar hoy.
             </div>
           ) : (
-            <div className="attendance-table-wrap">
-              <table className="attendance-table">
-                <thead>
-                  <tr>
-                    <th>Colaborador</th>
-                    <th>Esperado</th>
-                    <th>Entrada real</th>
-                    <th>Sede</th>
-                    <th>Horas reales</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {insights.rows.map((row) => (
-                    <tr key={row.userId}>
-                      <td>
-                        <strong>{row.userName}</strong>
-                        <span>{row.area}</span>
-                      </td>
-                      <td>{row.expectedLabel}</td>
-                      <td>{row.checkInLabel}</td>
-                      <td>{row.locationLabel}</td>
-                      <td>{formatMinutesAsHours(row.realMinutes)}</td>
-                      <td>
-                        <span className={`attendance-status ${row.statusTone}`}>
-                          {row.statusLabel}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="attendance-visual-row-list">
+              {visibleRows.map((row) => (
+                <article key={row.userId} className="attendance-visual-row-card">
+                  <div className="team-person-avatar agenda-modern-avatar small">
+                    {getInitials(row.userName)}
+                  </div>
+                  <div className="attendance-visual-row-person">
+                    <strong>{row.userName}</strong>
+                    <span>{row.area || "Sin área"}</span>
+                  </div>
+                  <div>
+                    <small>Horario</small>
+                    <b>{row.expectedLabel}</b>
+                  </div>
+                  <div>
+                    <small>Registro</small>
+                    <b>{row.checkInLabel}</b>
+                  </div>
+                  <div>
+                    <small>Sede</small>
+                    <b>{row.locationLabel}</b>
+                  </div>
+                  <span className={`attendance-status ${row.statusTone}`}>
+                    {row.statusLabel}
+                  </span>
+                </article>
+              ))}
+              {insights.rows.length > visibleRows.length && (
+                <p className="attendance-visual-more-note">
+                  Mostrando {visibleRows.length} de {insights.rows.length} registros para mantener la vista limpia.
+                </p>
+              )}
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="attendance-panel-block">
-          <h4>Alertas por persona</h4>
-          {insights.alerts.length === 0 ? (
-            <div className="team-agenda-empty">Sin alertas por ahora.</div>
+        <section className="attendance-visual-card attendance-visual-alerts-card">
+          <div className="attendance-visual-card-header">
+            <div>
+              <span>🔔</span>
+              <h4>Alertas por persona</h4>
+            </div>
+            <small>{insights.alerts.length} alerta(s)</small>
+          </div>
+
+          {visibleAlerts.length === 0 ? (
+            <div className="attendance-visual-empty-mini">
+              <strong>Sin alertas</strong>
+              <span>Todo se ve en orden por ahora.</span>
+            </div>
           ) : (
-            <div className="attendance-alert-list">
-              {insights.alerts.map((alert) => (
-                <article key={`${alert.userId}-${alert.type}`} className="attendance-alert-card">
-                  <strong>{alert.userName}</strong>
-                  <span>{alert.message}</span>
+            <div className="attendance-visual-alert-list">
+              {visibleAlerts.map((alert) => (
+                <article key={`${alert.userId}-${alert.type}`} className="attendance-visual-alert-card">
+                  <div className="team-person-avatar agenda-modern-avatar small">
+                    {getInitials(alert.userName)}
+                  </div>
+                  <div>
+                    <strong>{alert.userName}</strong>
+                    <span>{alert.message}</span>
+                  </div>
+                  <i />
                 </article>
               ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
 
-      <div className="attendance-location-admin">
-        <div className="attendance-panel-block">
-          <h4>Sedes autorizadas</h4>
-          <p>
-            El sistema solo contabiliza la jornada cuando el inicio de sesión se
-            valida dentro del radio permitido de una sede activa.
-          </p>
+      <div className="attendance-visual-locations-grid">
+        <section className="attendance-visual-card attendance-visual-locations-card">
+          <div className="attendance-visual-card-header">
+            <div>
+              <span>⌖</span>
+              <h4>Sedes autorizadas</h4>
+            </div>
+            <small>{activeLocations.length} activa(s)</small>
+          </div>
 
-          {locations.filter((location) => location.isActive !== false).length === 0 ? (
-            <div className="team-agenda-empty">
-              No hay sedes autorizadas configuradas. Mientras no existan, ningún
-              inicio de sesión se contabilizará como jornada válida.
+          {activeLocations.length === 0 ? (
+            <div className="team-agenda-empty compact">
+              No hay sedes autorizadas configuradas.
             </div>
           ) : (
-            <div className="attendance-location-list">
-              {locations
-                .filter((location) => location.isActive !== false)
-                .map((location) => (
-                  <article key={location.id} className="attendance-location-card">
+            <div className="attendance-visual-location-list">
+              {activeLocations.slice(0, 4).map((location) => (
+                <article key={location.id} className="attendance-visual-location-card">
+                  <div>
+                    <span>🏢</span>
                     <div>
                       <strong>{location.name}</strong>
-                      <span>
-                        Radio: {location.allowedRadiusMeters || 150} m · {Number(location.latitude).toFixed(5)}, {Number(location.longitude).toFixed(5)}
-                      </span>
+                      <small>Sede activa · Radio {location.allowedRadiusMeters || 150} m</small>
                     </div>
-                    <button
-                      type="button"
-                      className="team-agenda-danger-link"
-                      onClick={() => onDeactivateLocation(location.id)}
-                    >
-                      Desactivar
-                    </button>
-                  </article>
-                ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="team-agenda-danger-link"
+                    onClick={() => onDeactivateLocation(location.id)}
+                  >
+                    Desactivar
+                  </button>
+                </article>
+              ))}
             </div>
           )}
-        </div>
+        </section>
 
-        <form className="attendance-location-form" onSubmit={onSaveLocation}>
-          <h4>Agregar sede</h4>
+        <form className="attendance-visual-card attendance-visual-location-form" onSubmit={onSaveLocation}>
+          <div className="attendance-visual-card-header no-border">
+            <div>
+              <span>＋</span>
+              <h4>Agregar sede</h4>
+            </div>
+          </div>
+          <p>
+            Registra una nueva sede para que el sistema pueda validar el inicio de sesión.
+          </p>
+
           <label>
             Nombre de la sede
             <input
@@ -2021,7 +2443,7 @@ function AttendanceControlPanel({
             />
           </label>
 
-          <div className="team-agenda-form-row">
+          <div className="attendance-visual-location-two-cols">
             <label>
               Latitud
               <input
@@ -2059,9 +2481,9 @@ function AttendanceControlPanel({
             />
           </label>
 
-          <div className="attendance-location-actions">
+          <div className="attendance-visual-location-actions">
             <button type="button" onClick={onUseCurrentLocation}>
-              Usar mi ubicación actual
+              Usar ubicación actual
             </button>
             <button type="submit" className="team-agenda-primary-button">
               Guardar sede
@@ -2070,6 +2492,19 @@ function AttendanceControlPanel({
         </form>
       </div>
     </section>
+  );
+}
+
+function AttendanceVisualMetric({ icon, tone, label, value, detail }) {
+  return (
+    <article className={`attendance-visual-metric ${tone}`}>
+      <span>{icon}</span>
+      <div>
+        <small>{label}</small>
+        <strong>{value}</strong>
+        <p>{detail}</p>
+      </div>
+    </article>
   );
 }
 

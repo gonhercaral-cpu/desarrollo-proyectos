@@ -2884,6 +2884,8 @@ function InternalMessages({ profile, isAdmin = false }) {
   const [messageSaving, setMessageSaving] = useState(false);
   const [conversationSearchTerm, setConversationSearchTerm] = useState("");
   const [threadSearchTerm, setThreadSearchTerm] = useState("");
+  const [showChatFilesPanel, setShowChatFilesPanel] = useState(false);
+  const [mutedChats, setMutedChats] = useState({});
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -3111,6 +3113,34 @@ function InternalMessages({ profile, isAdmin = false }) {
     presenceNow
   );
 
+  const activeThreadMessages = conversationType === "department"
+    ? (selectedDepartmentConversation?.messages || [])
+    : (selectedConversation?.messages || []);
+  const activeFilteredMessages = conversationType === "department"
+    ? selectedDepartmentMessages
+    : selectedMessages;
+  const activeChatTitle = conversationType === "department"
+    ? selectedDepartmentConversation?.departmentName || "Departamento"
+    : selectedRecipient?.name || selectedRecipient?.email || "Conversación";
+  const activeChatSubtitle = conversationType === "department"
+    ? `${selectedDepartmentConversation?.memberCount || 0} integrante(s) incluidos`
+    : selectedRecipient?.email || "Sin correo registrado";
+  const activeAllSharedAttachments = activeThreadMessages.flatMap((message) =>
+    normalizeStoredAttachments(message.attachments).map((attachment) => ({
+      ...attachment,
+      messageId: message.id,
+      createdAt: message.createdAt,
+      fromUserName: message.fromUserName || "Usuario",
+    }))
+  );
+  const activeSharedAttachments = activeAllSharedAttachments.slice(0, 6);
+  const activeChatTypeLabel = conversationType === "department" ? "Chat por departamento" : "Chat individual";
+  const activeChatKey =
+    conversationType === "department"
+      ? `department:${selectedDepartmentConversation?.departmentId || ""}`
+      : `direct:${selectedConversation?.participantId || selectedRecipient?.id || ""}`;
+  const activeChatMuted = Boolean(mutedChats[activeChatKey]);
+
   useEffect(() => {
     if (conversationType !== "direct") return;
     if (!selectedConversation && filteredConversations[0]?.participantId) {
@@ -3216,6 +3246,7 @@ function InternalMessages({ profile, isAdmin = false }) {
     setSelectedConversationId(userId);
     setMessageForm({ toUserId: userId, message: "" });
     setThreadSearchTerm("");
+    setShowChatFilesPanel(false);
     setNewConversationOpen(false);
     setMessageStatus("");
     setMessageError("");
@@ -3389,6 +3420,7 @@ function InternalMessages({ profile, isAdmin = false }) {
     setSelectedConversationId(conversation.participantId);
     setMessageForm({ toUserId: conversation.participantId, message: "" });
     setThreadSearchTerm("");
+    setShowChatFilesPanel(false);
     setMessageStatus("");
     setMessageError("");
     markConversationMessagesAsRead(conversation.messages);
@@ -3398,6 +3430,7 @@ function InternalMessages({ profile, isAdmin = false }) {
     setConversationType("department");
     setSelectedDepartmentId(conversation.departmentId);
     setThreadSearchTerm("");
+    setShowChatFilesPanel(false);
     setMessageStatus("");
     setMessageError("");
     markDepartmentConversationMessagesAsRead(conversation.messages);
@@ -3417,7 +3450,7 @@ function InternalMessages({ profile, isAdmin = false }) {
             )}
           </div>
           <p>
-            Conversa con colaboradores o con departamentos completos en hilos tipo chat, con historial y adjuntos.
+            Conversa con colaboradores y departamentos en un espacio claro, ordenado y con historial.
           </p>
         </div>
 
@@ -3457,7 +3490,7 @@ function InternalMessages({ profile, isAdmin = false }) {
             </div>
             {conversationType === "direct" && (
               <button type="button" onClick={() => setNewConversationOpen((current) => !current)}>
-                {newConversationOpen ? "Cerrar" : "+ Nueva"}
+                {newConversationOpen ? "Cerrar" : "+ Nuevo chat"}
               </button>
             )}
           </div>
@@ -3469,6 +3502,7 @@ function InternalMessages({ profile, isAdmin = false }) {
               onClick={() => {
                 setConversationType("direct");
                 setThreadSearchTerm("");
+                setShowChatFilesPanel(false);
                 setMessageError("");
                 setMessageStatus("");
               }}
@@ -3483,6 +3517,7 @@ function InternalMessages({ profile, isAdmin = false }) {
                 setConversationType("department");
                 setNewConversationOpen(false);
                 setThreadSearchTerm("");
+                setShowChatFilesPanel(false);
                 setMessageError("");
                 setMessageStatus("");
               }}
@@ -3510,11 +3545,11 @@ function InternalMessages({ profile, isAdmin = false }) {
               </label>
               <button
                 type="button"
-                className="workspace-primary-button"
+                className="chat-start-button"
                 onClick={() => handleStartConversation(messageForm.toUserId)}
                 disabled={!messageForm.toUserId}
               >
-                Abrir chat
+                Iniciar chat
               </button>
             </div>
           )}
@@ -3561,7 +3596,7 @@ function InternalMessages({ profile, isAdmin = false }) {
                       className={`chat-conversation-item ${selectedConversation?.participantId === conversation.participantId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
                       onClick={() => handleSelectConversation(conversation)}
                     >
-                      <div className={`chat-conversation-avatar presence-avatar ${presenceStatus.online ? "online" : "offline"}`}>
+                      <div className={`chat-conversation-avatar presence-avatar ${presenceStatus.state || (presenceStatus.online ? "online" : "unavailable")}`}>
                         {getInitials(conversation.participantName)}
                       </div>
                       <div className="chat-conversation-main">
@@ -3657,7 +3692,7 @@ function InternalMessages({ profile, isAdmin = false }) {
             ) : (
               <>
                 <div className="chat-thread-header">
-                  <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.online ? "online" : "offline"}`}>{getInitials(selectedRecipient.name)}</div>
+                  <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.state || (selectedPresenceStatus.online ? "online" : "unavailable")}`}>{getInitials(selectedRecipient.name)}</div>
                   <div>
                     <span>Conversación con</span>
                     <h3>{selectedRecipient.name || selectedRecipient.email || "Usuario"}</h3>
@@ -3731,8 +3766,14 @@ function InternalMessages({ profile, isAdmin = false }) {
                       onChange={handleMessageFileSelection}
                     />
 
-                    <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
-                      {messageSaving ? "Enviando..." : "Enviar"}
+                    <button
+                      type="submit"
+                      className="workspace-primary-button chat-send-icon-button"
+                      disabled={messageSaving}
+                      aria-label={messageSaving ? "Enviando mensaje" : "Enviar mensaje"}
+                      title={messageSaving ? "Enviando..." : "Enviar"}
+                    >
+                      {messageSaving ? "…" : "➤"}
                     </button>
                   </div>
 
@@ -3821,8 +3862,14 @@ function InternalMessages({ profile, isAdmin = false }) {
                     onChange={handleDepartmentFileSelection}
                   />
 
-                  <button type="submit" className="workspace-primary-button" disabled={messageSaving}>
-                    {messageSaving ? "Enviando..." : "Enviar al departamento"}
+                  <button
+                    type="submit"
+                    className="workspace-primary-button chat-send-icon-button"
+                    disabled={messageSaving}
+                    aria-label={messageSaving ? "Enviando mensaje" : "Enviar mensaje al departamento"}
+                    title={messageSaving ? "Enviando..." : "Enviar"}
+                  >
+                    {messageSaving ? "…" : "➤"}
                   </button>
                 </div>
 
@@ -3834,6 +3881,159 @@ function InternalMessages({ profile, isAdmin = false }) {
             </>
           )}
         </section>
+
+        <aside className="chat-info-panel">
+          <div className="chat-info-card">
+            <div className="chat-info-title">
+              <span>ⓘ</span>
+              <h3>Información</h3>
+            </div>
+
+            <div className="chat-info-section">
+              <small>Tipo de chat</small>
+              <strong>{activeChatTypeLabel}</strong>
+            </div>
+
+            <div className="chat-info-section">
+              <small>{conversationType === "department" ? "Departamento" : "Participante"}</small>
+              <div className="chat-info-person">
+                <div className={`chat-conversation-avatar ${conversationType === "department" ? "department-chat-avatar" : "presence-avatar"} ${conversationType === "direct" ? selectedPresenceStatus.state || (selectedPresenceStatus.online ? "online" : "unavailable") : ""}`}>
+                  {getInitials(activeChatTitle)}
+                </div>
+                <div>
+                  <strong>{activeChatTitle}</strong>
+                  <span>{activeChatSubtitle}</span>
+                  {conversationType === "direct" && <PresenceBadge status={selectedPresenceStatus} compact />}
+                </div>
+              </div>
+            </div>
+
+            <div className="chat-info-section">
+              <div className="chat-info-section-head">
+                <small>Archivos compartidos</small>
+                <b>{activeAllSharedAttachments.length}</b>
+              </div>
+              {activeSharedAttachments.length === 0 ? (
+                <p className="chat-info-muted">Aún no hay archivos compartidos en este chat.</p>
+              ) : (
+                <div className="chat-shared-files-list">
+                  {activeSharedAttachments.map((attachment) => {
+                    const type = getAttachmentType(attachment.contentType, attachment.name);
+                    return (
+                      <a
+                        key={`${attachment.messageId}-${attachment.path || attachment.url || attachment.name}`}
+                        className="chat-shared-file"
+                        href={attachment.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <span className={`chat-shared-file-icon type-${type}`}>
+                          {type === "image" ? "IMG" : type === "video" ? "VID" : type === "audio" ? "AUD" : "DOC"}
+                        </span>
+                        <div>
+                          <strong>{attachment.name || "Archivo"}</strong>
+                          <small>{getAttachmentTypeLabel(type)} · {formatFileSize(attachment.size)}</small>
+                        </div>
+                        <em>↗</em>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="chat-info-section chat-info-stats">
+              <div>
+                <strong>{activeThreadMessages.length}</strong>
+                <span>Mensajes</span>
+              </div>
+              <div>
+                <strong>{activeFilteredMessages.length}</strong>
+                <span>Visibles</span>
+              </div>
+            </div>
+
+            <div className="chat-info-section chat-info-quick-actions">
+              <small>Acciones rápidas</small>
+              <button
+                type="button"
+                onClick={() => document.querySelector('.chat-thread-search-box input')?.focus()}
+              >
+                <span>⌕</span>
+                Buscar en chat
+                <b>›</b>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowChatFilesPanel((current) => !current)}
+              >
+                <span>▣</span>
+                {showChatFilesPanel ? "Ocultar archivos" : "Ver archivos"}
+                <b>›</b>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMutedChats((current) => ({
+                    ...current,
+                    [activeChatKey]: !current[activeChatKey],
+                  }));
+                  setMessageStatus(activeChatMuted ? "Notificaciones activadas para este chat." : "Notificaciones silenciadas para este chat.");
+                }}
+              >
+                <span>{activeChatMuted ? "🔔" : "🔕"}</span>
+                {activeChatMuted ? "Activar notificaciones" : "Silenciar notificaciones"}
+                <b>›</b>
+              </button>
+            </div>
+
+            {showChatFilesPanel && (
+              <div className="chat-info-section chat-info-expanded-files">
+                <div className="chat-info-section-head">
+                  <small>Todos los archivos del chat</small>
+                  <b>{activeAllSharedAttachments.length}</b>
+                </div>
+                {activeAllSharedAttachments.length === 0 ? (
+                  <p className="chat-info-muted">Todavía no hay archivos para mostrar.</p>
+                ) : (
+                  <div className="chat-expanded-files-list">
+                    {activeAllSharedAttachments.map((attachment) => {
+                      const type = getAttachmentType(attachment.contentType, attachment.name);
+                      return (
+                        <a
+                          key={`full-${attachment.messageId}-${attachment.path || attachment.url || attachment.name}`}
+                          className="chat-shared-file"
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <span className={`chat-shared-file-icon type-${type}`}>
+                            {type === "image" ? "IMG" : type === "video" ? "VID" : type === "audio" ? "AUD" : "DOC"}
+                          </span>
+                          <div>
+                            <strong>{attachment.name || "Archivo"}</strong>
+                            <small>
+                              {getAttachmentTypeLabel(type)} · {formatFileSize(attachment.size)}
+                              {attachment.fromUserName ? ` · ${attachment.fromUserName}` : ""}
+                            </small>
+                          </div>
+                          <em>↗</em>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeChatMuted && (
+              <div className="chat-info-section chat-muted-notice">
+                <span>🔕</span>
+                <p>Las notificaciones de este chat están silenciadas en esta sesión.</p>
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );
@@ -4444,7 +4644,7 @@ function useDashboardPresence(profile, currentPage) {
 
 function PresenceBadge({ status, compact = false }) {
   return (
-    <span className={`presence-badge ${status.online ? "online" : "offline"} ${compact ? "compact" : ""}`}>
+    <span className={`presence-badge ${status.state || (status.online ? "online" : "unavailable")} ${compact ? "compact" : ""}`}>
       <span className="presence-dot" />
       {status.label}
     </span>
@@ -4454,25 +4654,32 @@ function PresenceBadge({ status, compact = false }) {
 function getPresenceStatus(presence, now = Date.now()) {
   const lastSeenMillis = getMillisFromFirestoreDate(presence?.lastSeen || presence?.updatedAt);
   const onlineWindow = 2 * 60 * 1000;
-  const online = Boolean(presence?.isOnline) && lastSeenMillis > 0 && now - lastSeenMillis <= onlineWindow;
+  const awayWindow = 8 * 60 * 60 * 1000;
+  const hasPresenceRecord = Boolean(presence && (presence.userId || presence.id || lastSeenMillis > 0));
+  const hasRecentHeartbeat = lastSeenMillis > 0 && now - lastSeenMillis <= onlineWindow;
+  const hasRecentActivity = lastSeenMillis > 0 && now - lastSeenMillis <= awayWindow;
+  const explicitlyOnline = presence?.isOnline === true;
 
-  if (online) {
+  if (explicitlyOnline && hasRecentHeartbeat) {
     return {
       online: true,
+      state: "online",
       label: "En línea",
     };
   }
 
-  if (lastSeenMillis) {
+  if (hasPresenceRecord && hasRecentActivity) {
     return {
       online: false,
+      state: "away",
       label: `Última vez ${formatRelativePresenceTime(lastSeenMillis, now)}`,
     };
   }
 
   return {
     online: false,
-    label: "Sin actividad reciente",
+    state: "unavailable",
+    label: "No disponible",
   };
 }
 
@@ -4715,12 +4922,10 @@ function NotificationsCenter({
 }) {
   const [marking, setMarking] = useState(false);
   const [status, setStatus] = useState("");
-  const notifications = buildQuickNotifications({
-    isAdmin,
-    unreadMessagesCount,
-    unreadAnnouncementsCount,
-  });
-  const totalUnread = Number(unreadMessagesCount || 0) + Number(unreadAnnouncementsCount || 0);
+  const { notifications } = useDashboardNotifications(profile, isAdmin);
+  const totalUnread = notifications.length;
+  const realUnreadMessagesCount = notifications.filter((notification) => notification.group === "message").length;
+  const realUnreadAnnouncementsCount = notifications.filter((notification) => notification.group === "announcement").length;
 
   async function handleMarkAllRead() {
     setMarking(true);
@@ -4737,12 +4942,22 @@ function NotificationsCenter({
     }
   }
 
+  async function handleOpenNotification(notification) {
+    try {
+      await markDashboardNotificationRead(notification, { profile });
+    } catch (error) {
+      console.error("No se pudo marcar la notificación como leída:", error);
+    }
+
+    onOpenModule?.(notification.route || "workspace-dashboard");
+  }
+
   return (
     <section className="notifications-center-page">
       <div className="notifications-center-hero">
         <div>
           <h2>Notificaciones</h2>
-          <p>Consulta avisos prioritarios, mensajes pendientes y recordatorios importantes del sistema.</p>
+          <p>Consulta avisos reales de mensajes pendientes y comunicados por confirmar.</p>
         </div>
 
         <button
@@ -4761,46 +4976,53 @@ function NotificationsCenter({
         <article className="notifications-center-summary-card unread">
           <span>Sin leer</span>
           <strong>{formatUnreadBadgeCount(totalUnread)}</strong>
-          <p>Mensajes y anuncios pendientes.</p>
+          <p>Notificaciones reales pendientes.</p>
         </article>
 
         <article className="notifications-center-summary-card">
           <span>Mensajes</span>
-          <strong>{formatUnreadBadgeCount(unreadMessagesCount)}</strong>
+          <strong>{formatUnreadBadgeCount(realUnreadMessagesCount || unreadMessagesCount)}</strong>
           <p>Conversaciones pendientes.</p>
         </article>
 
         <article className="notifications-center-summary-card">
           <span>Anuncios</span>
-          <strong>{formatUnreadBadgeCount(unreadAnnouncementsCount)}</strong>
+          <strong>{formatUnreadBadgeCount(realUnreadAnnouncementsCount || unreadAnnouncementsCount)}</strong>
           <p>Comunicados por confirmar.</p>
         </article>
       </div>
 
       <div className="notifications-center-list-card">
         <div className="admin-panel-header">
-          <h3>Prioritarias</h3>
+          <h3>Notificaciones pendientes</h3>
           <button type="button" onClick={() => onOpenModule?.("internal-messages")}>Abrir mensajes</button>
         </div>
 
         <div className="notifications-center-list">
-          {notifications.map((notification) => (
-            <button
-              type="button"
-              key={notification.key}
-              className="notifications-center-item"
-              onClick={() => onOpenModule?.(notification.route || "workspace-dashboard")}
-            >
-              <span className={`notification-icon notification-${notification.tone}`}>
-                {notification.icon}
-              </span>
-              <span>
-                <strong>{notification.title}</strong>
-                <small>{notification.detail}</small>
-              </span>
-              <em>{notification.time}</em>
-            </button>
-          ))}
+          {notifications.length === 0 ? (
+            <div className="notifications-empty-state">
+              <strong>No hay notificaciones pendientes</strong>
+              <p>Cuando recibas mensajes o haya anuncios por confirmar, aparecerán aquí.</p>
+            </div>
+          ) : (
+            notifications.map((notification) => (
+              <button
+                type="button"
+                key={notification.key}
+                className="notifications-center-item"
+                onClick={() => handleOpenNotification(notification)}
+              >
+                <span className={`notification-icon notification-${notification.tone}`}>
+                  {notification.icon}
+                </span>
+                <span>
+                  <strong>{notification.title}</strong>
+                  <small>{notification.detail}</small>
+                </span>
+                <em>{notification.time}</em>
+              </button>
+            ))
+          )}
         </div>
       </div>
     </section>
@@ -4822,13 +5044,8 @@ function TopProfileBar({
   onOpenModule,
   onOpenProject,
 }) {
-  const notificationCount = unreadMessagesCount + unreadAnnouncementsCount;
-  const safeNotificationCount = notificationCount;
-  const notifications = buildQuickNotifications({
-    isAdmin,
-    unreadMessagesCount,
-    unreadAnnouncementsCount,
-  });
+  const { notifications } = useDashboardNotifications(profile, isAdmin);
+  const safeNotificationCount = notifications.length;
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -4913,6 +5130,17 @@ function TopProfileBar({
     setNotificationPanelOpen(false);
   }
 
+  async function handleOpenNotification(notification) {
+    try {
+      await markDashboardNotificationRead(notification, { profile });
+    } catch (error) {
+      console.error("No se pudo marcar la notificación como leída:", error);
+    }
+
+    if (notification.route) onOpenModule?.(notification.route);
+    setNotificationPanelOpen(false);
+  }
+
   return (
     <div className="top-profile-bar redesigned-topbar">
       <div className="topbar-title-area">
@@ -4994,27 +5222,31 @@ function TopProfileBar({
               )}
 
               <div className="notifications-list">
-                {notifications.map((notification) => (
-                  <button
-                    type="button"
-                    key={notification.key}
-                    className="notification-item"
-                    onClick={() => {
-                      if (notification.route) onOpenModule?.(notification.route);
-                      setNotificationPanelOpen(false);
-                    }}
-                  >
-                    <span className={`notification-icon notification-${notification.tone}`}>
-                      {notification.icon}
-                    </span>
-                    <span className="notification-copy">
-                      <strong>{notification.title}</strong>
-                      <small>{notification.detail}</small>
-                    </span>
-                    <span className="notification-time">{notification.time}</span>
-                    <i className={`notification-dot notification-dot-${notification.tone}`} />
-                  </button>
-                ))}
+                {notifications.length === 0 ? (
+                  <div className="notifications-empty-state notifications-dropdown-empty">
+                    <strong>No hay notificaciones pendientes</strong>
+                    <p>Los mensajes nuevos y anuncios por confirmar aparecerán aquí.</p>
+                  </div>
+                ) : (
+                  notifications.map((notification) => (
+                    <button
+                      type="button"
+                      key={notification.key}
+                      className="notification-item"
+                      onClick={() => handleOpenNotification(notification)}
+                    >
+                      <span className={`notification-icon notification-${notification.tone}`}>
+                        {notification.icon}
+                      </span>
+                      <span className="notification-copy">
+                        <strong>{notification.title}</strong>
+                        <small>{notification.detail}</small>
+                      </span>
+                      <span className="notification-time">{notification.time}</span>
+                      <i className={`notification-dot notification-dot-${notification.tone}`} />
+                    </button>
+                  ))
+                )}
               </div>
 
               <button
@@ -5280,86 +5512,280 @@ async function markAllDashboardNotificationsRead({ profile, isAdmin }) {
   );
 }
 
-function buildQuickNotifications({ isAdmin, unreadMessagesCount, unreadAnnouncementsCount }) {
-  if (isAdmin) {
-    return [
-      {
-        key: "approval",
-        tone: "red",
-        icon: "!",
-        title: "Aprobación urgente",
-        detail: "Hay proyectos y solicitudes que requieren revisión administrativa.",
-        time: "Hace 10 min",
-        route: "all-projects",
+function useDashboardNotifications(profile, isAdmin = false) {
+  const currentUserId = getCurrentUserId(profile);
+  const [directMessages, setDirectMessages] = useState([]);
+  const [departmentMessages, setDepartmentMessages] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementReadState, setAnnouncementReadState] = useState({});
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setDirectMessages([]);
+      return undefined;
+    }
+
+    const directMessagesQuery = query(
+      collection(db, "internalMessages"),
+      where("toUserId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      directMessagesQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+          }))
+          .filter((message) => message.fromUserId !== currentUserId && message.read !== true)
+          .sort(sortByCreatedAtDesc);
+
+        setDirectMessages(nextMessages);
       },
-      {
-        key: "overdue",
-        tone: "gold",
-        icon: "◷",
-        title: "Tareas vencidas",
-        detail: "Revisa pendientes y fechas límite de proyectos activos.",
-        time: "Hace 1 h",
-        route: "all-projects",
+      (error) => {
+        console.error("No se pudieron cargar notificaciones de mensajes directos:", error);
+        setDirectMessages([]);
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setDepartmentMessages([]);
+      return undefined;
+    }
+
+    const departmentMessagesRef = collection(db, "departmentMessages");
+    const departmentMessagesQuery = isAdmin
+      ? departmentMessagesRef
+      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
+
+    return onSnapshot(
+      departmentMessagesQuery,
+      (snapshot) => {
+        const nextMessages = snapshot.docs
+          .map((messageDoc) => ({
+            id: messageDoc.id,
+            ...messageDoc.data(),
+            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
+            readBy: messageDoc.data()?.readBy || {},
+          }))
+          .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
+          .sort(sortByCreatedAtDesc);
+
+        setDepartmentMessages(nextMessages);
       },
-      {
-        key: "technical",
-        tone: "blue",
-        icon: "⌁",
-        title: "Incidente técnico",
-        detail: "Se reportó una incidencia en soporte técnico.",
-        time: "Hace 2 h",
-        route: "technical-support",
+      (error) => {
+        console.error("No se pudieron cargar notificaciones de departamentos:", error);
+        setDepartmentMessages([]);
+      }
+    );
+  }, [currentUserId, isAdmin]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setAnnouncements([]);
+      setAnnouncementReadState({});
+      return undefined;
+    }
+
+    return onSnapshot(
+      collection(db, "announcements"),
+      (snapshot) => {
+        const nextAnnouncements = snapshot.docs
+          .map((announcementDoc) => ({
+            id: announcementDoc.id,
+            ...announcementDoc.data(),
+            attachments: normalizeStoredAttachments(announcementDoc.data()?.attachments),
+          }))
+          .filter(isAnnouncementActive)
+          .sort(sortByCreatedAtDesc);
+
+        setAnnouncements(nextAnnouncements);
+        setAnnouncementReadState((current) => {
+          const nextState = {};
+          nextAnnouncements.forEach((announcement) => {
+            if (Object.prototype.hasOwnProperty.call(current, announcement.id)) {
+              nextState[announcement.id] = current[announcement.id];
+            }
+          });
+          return nextState;
+        });
       },
-      {
-        key: "collaborator",
-        tone: "green",
-        icon: "✓",
-        title: "Nuevo colaborador",
-        detail: "Consulta actividad reciente del equipo.",
-        time: "Hace 3 h",
-        route: "collaborators-admin",
-      },
-    ];
+      (error) => {
+        console.error("No se pudieron cargar notificaciones de anuncios:", error);
+        setAnnouncements([]);
+        setAnnouncementReadState({});
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || announcements.length === 0) {
+      setAnnouncementReadState({});
+      return undefined;
+    }
+
+    const unsubscribers = announcements.map((announcement) =>
+      onSnapshot(
+        doc(db, "announcements", announcement.id, "reads", currentUserId),
+        (snapshot) => {
+          setAnnouncementReadState((current) => ({
+            ...current,
+            [announcement.id]: snapshot.exists(),
+          }));
+        },
+        (error) => {
+          console.error("No se pudo cargar estado de lectura de anuncio:", error);
+          setAnnouncementReadState((current) => ({
+            ...current,
+            [announcement.id]: false,
+          }));
+        }
+      )
+    );
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [announcements, currentUserId]);
+
+  return buildRealDashboardNotifications({
+    directMessages,
+    departmentMessages,
+    announcements: announcements.filter((announcement) => announcementReadState[announcement.id] !== true),
+  });
+}
+
+function buildRealDashboardNotifications({ directMessages = [], departmentMessages = [], announcements = [] }) {
+  const directNotifications = directMessages.map((message) => ({
+    key: `direct-${message.id}`,
+    type: "direct-message",
+    group: "message",
+    id: message.id,
+    tone: "blue",
+    icon: "💬",
+    title: `${message.fromUserName || "Un colaborador"} te envió un mensaje`,
+    detail: getNotificationMessageDetail(message),
+    time: formatNotificationTime(message.createdAt),
+    dateValue: message.createdAt,
+    route: "internal-messages",
+  }));
+
+  const departmentNotifications = departmentMessages.map((message) => ({
+    key: `department-${message.id}`,
+    type: "department-message",
+    group: "message",
+    id: message.id,
+    tone: "green",
+    icon: "👥",
+    title: `Nuevo mensaje en ${message.departmentName || "Departamento"}`,
+    detail: `${message.fromUserName || "Un colaborador"}: ${getNotificationMessageDetail(message)}`,
+    time: formatNotificationTime(message.createdAt),
+    dateValue: message.createdAt,
+    route: "internal-messages",
+  }));
+
+  const announcementNotifications = announcements.map((announcement) => ({
+    key: `announcement-${announcement.id}`,
+    type: "announcement",
+    group: "announcement",
+    id: announcement.id,
+    tone: announcement.priority === "important" ? "red" : "gold",
+    icon: announcement.priority === "important" ? "!" : "📣",
+    title: announcement.priority === "important" ? "Anuncio importante pendiente" : "Anuncio pendiente",
+    detail: `${announcement.title || "Comunicado"}${announcement.message ? ` · ${truncateNotificationText(announcement.message, 90)}` : ""}`,
+    time: formatNotificationTime(announcement.createdAt || announcement.updatedAt),
+    dateValue: announcement.createdAt || announcement.updatedAt,
+    route: "workspace-dashboard",
+  }));
+
+  return {
+    notifications: [...directNotifications, ...departmentNotifications, ...announcementNotifications]
+      .sort((a, b) => getMillisFromFirestoreDate(b.dateValue) - getMillisFromFirestoreDate(a.dateValue))
+      .slice(0, 30),
+  };
+}
+
+function getNotificationMessageDetail(message) {
+  const cleanMessage = String(message?.message || "").trim();
+  if (cleanMessage) return truncateNotificationText(cleanMessage, 90);
+
+  const attachments = normalizeStoredAttachments(message?.attachments);
+  if (attachments.length === 1) return `Archivo adjunto: ${attachments[0].name || "Archivo"}`;
+  if (attachments.length > 1) return `${attachments.length} archivos adjuntos`;
+  return "Mensaje pendiente por revisar.";
+}
+
+function truncateNotificationText(value = "", maxLength = 90) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
+
+function formatNotificationTime(value) {
+  const millis = getMillisFromFirestoreDate(value);
+  if (!millis) return "Ahora";
+
+  const diff = Math.max(Date.now() - millis, 0);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < minute) return "Ahora";
+  if (diff < hour) {
+    const minutes = Math.max(Math.floor(diff / minute), 1);
+    return `Hace ${minutes} min`;
+  }
+  if (diff < day) {
+    const hours = Math.max(Math.floor(diff / hour), 1);
+    return `Hace ${hours} h`;
   }
 
-  return [
-    {
-      key: "task",
-      tone: "red",
-      icon: "□",
-      title: "Nueva tarea asignada",
-      detail: "Tienes actividades pendientes en tus proyectos.",
-      time: "Hace 10 min",
-      route: "my-projects",
-    },
-    {
-      key: "message",
-      tone: "blue",
-      icon: "☰",
-      title: "Comentario en proyecto",
-      detail: unreadMessagesCount > 0 ? `${unreadMessagesCount} mensaje(s) sin leer.` : "Hay comentarios recientes por revisar.",
-      time: "Hace 30 min",
-      route: "internal-messages",
-    },
-    {
-      key: "agenda",
-      tone: "gold",
-      icon: "◷",
-      title: "Recordatorio de agenda",
-      detail: unreadAnnouncementsCount > 0 ? `${unreadAnnouncementsCount} anuncio(s) pendiente(s).` : "Revisa tus próximos eventos del equipo.",
-      time: "Hace 1 h",
-      route: "team-agenda",
-    },
-    {
-      key: "support",
-      tone: "green",
-      icon: "✓",
-      title: "Actualización de soporte técnico",
-      detail: "Consulta el estado de tus reportes o tickets.",
-      time: "Hace 2 h",
-      route: "technical-support",
-    },
-  ];
+  const days = Math.max(Math.floor(diff / day), 1);
+  if (days < 7) return `Hace ${days} d`;
+
+  return formatDateTime(value);
+}
+
+async function markDashboardNotificationRead(notification, { profile }) {
+  const currentUserId = getCurrentUserId(profile);
+  if (!currentUserId || !notification?.id) return;
+
+  if (notification.type === "direct-message") {
+    await updateDoc(doc(db, "internalMessages", notification.id), {
+      read: true,
+      readAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  if (notification.type === "department-message") {
+    await updateDoc(doc(db, "departmentMessages", notification.id), {
+      [`readBy.${currentUserId}`]: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  if (notification.type === "announcement") {
+    await setDoc(
+      doc(db, "announcements", notification.id, "reads", currentUserId),
+      {
+        announcementId: notification.id,
+        userId: currentUserId,
+        userName: profile?.name || "Usuario",
+        userEmail: profile?.email || "",
+        readAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+}
+
+function buildQuickNotifications() {
+  return [];
 }
 
 function ProfilePage({ profile, isAdmin, onClose }) {
