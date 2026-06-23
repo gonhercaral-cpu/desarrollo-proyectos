@@ -216,11 +216,7 @@ const printRequestTypes = [
 
 const printRequestStatuses = [
   "Solicitud recibida",
-  "Datos incompletos",
-  "En revisión",
-  "Aprobada",
   "En producción",
-  "En revisión de calidad",
   "Lista para entrega",
   "Entregada",
   "Cancelada",
@@ -890,6 +886,34 @@ function getPriorityTone(priority) {
   if (priority === "Alta") return "orange";
   if (priority === "Baja") return "teal";
   return "blue";
+}
+
+function parseRequestDate(value) {
+  if (!value) return null;
+
+  const date = typeof value?.toDate === "function"
+    ? value.toDate()
+    : new Date(String(value).includes("T") ? value : `${value}T00:00:00`);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function calculateRequestPriority({ requestDate, dueDate, createdAt } = {}) {
+  const due = parseRequestDate(dueDate);
+
+  if (!due) return "Normal";
+
+  const start = parseRequestDate(requestDate) || parseRequestDate(createdAt) || new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysToDeliver = Math.ceil((due.getTime() - start.getTime()) / dayMs);
+
+  if (daysToDeliver <= 3) return "Urgente";
+  if (daysToDeliver <= 7) return "Alta";
+  return "Normal";
+}
+
+function normalizePrintRequestStatus(status) {
+  return printRequestStatuses.includes(status) ? status : "Solicitud recibida";
 }
 
 function getDefaultCertificateTemplatePositions() {
@@ -3445,6 +3469,18 @@ export default function PrintShop() {
         };
       }
 
+      if (name === "requestDate" || name === "dueDate") {
+        const nextForm = {
+          ...current,
+          [name]: value,
+        };
+
+        return {
+          ...nextForm,
+          priority: calculateRequestPriority(nextForm),
+        };
+      }
+
       return {
         ...current,
         [name]: value,
@@ -3469,6 +3505,33 @@ export default function PrintShop() {
 
   function findCertificateTemplate(templateId) {
     return certificateTemplates.find((template) => template.id === templateId) || null;
+  }
+
+  function findMatchingCertificateTemplate(form, selectedProduct = null) {
+    const directTemplate = findCertificateTemplate(form.certificateTemplateId);
+    if (directTemplate) return directTemplate;
+
+    const targetLevel = form.level && form.level !== "No aplica"
+      ? form.level
+      : selectedProduct?.level || "";
+    const targetType = isRequestCertificateLike(form.requestType) ? form.requestType : selectedProduct?.category || "";
+
+    return activeCertificateTemplates.find((template) => {
+      const matchesLevel = !targetLevel || isSameText(template.level, targetLevel);
+      const matchesType = !targetType || isSameText(template.certificateType, targetType) || isSameText(template.audience, targetType);
+
+      return matchesLevel && matchesType;
+    }) || activeCertificateTemplates.find((template) => !targetLevel || isSameText(template.level, targetLevel)) || null;
+  }
+
+  function findMatchingCertificateSigner(signerId, signerName, type) {
+    const directSigner = findCertificateSigner(signerId);
+    if (directSigner) return directSigner;
+
+    const signers = type === "Principal" ? activePrincipalSigners : activeTeacherSigners;
+    const normalizedName = String(signerName || "").trim();
+
+    return signers.find((signer) => isSameText(signer.name, normalizedName)) || null;
   }
 
   function handleTemplateInputChange(event) {
@@ -4222,11 +4285,11 @@ export default function PrintShop() {
       responsibleUid: request.responsibleUid || "",
       responsibleName: request.responsibleName || "",
       responsibleEmail: request.responsibleEmail || "",
-      priority: request.priority || "Normal",
+      priority: request.dueDate ? calculateRequestPriority(request) : request.priority || "Normal",
       requestedQuantity: Number(request.requestedQuantity || 0),
       deliveredQuantity: Number(request.deliveredQuantity || 0),
       deliveryType: request.deliveryType || "Impresa",
-      status: request.status || "Solicitud recibida",
+      status: normalizePrintRequestStatus(request.status),
       requestDate: request.requestDate || "",
       dueDate: request.dueDate || "",
       certificateIssueDate: request.certificateIssueDate || "",
@@ -4283,7 +4346,22 @@ export default function PrintShop() {
       return;
     }
 
-    const selectedProduct = products.find((product) => product.id === requestForm.productId);
+    const selectedProduct =
+      products.find((product) => product.id === requestForm.productId) ||
+      products.find((product) => isSameText(product.name, currentRequest?.productName)) ||
+      (currentRequest?.productName
+        ? {
+            id: currentRequest.productId || "",
+            name: currentRequest.productName,
+            category: currentRequest.requestType || requestForm.requestType,
+            level: currentRequest.level || requestForm.level,
+          }
+        : null);
+    const automaticPriority = calculateRequestPriority({
+      requestDate: requestForm.requestDate,
+      dueDate: requestForm.dueDate,
+      createdAt: currentRequest?.createdAt,
+    });
 
     if (!selectedProduct) {
       setRequestMessage("Selecciona un producto o servicio del catálogo.");
@@ -4294,6 +4372,17 @@ export default function PrintShop() {
     const deliveredQuantity = Number(requestForm.deliveredQuantity || 0);
     const printedQuantity = Number(requestForm.printedQuantity || 0);
     const digitalQuantity = Number(requestForm.digitalQuantity || 0);
+    const resolvedTemplate = findMatchingCertificateTemplate(requestForm, selectedProduct);
+    const resolvedPrincipalSigner = findMatchingCertificateSigner(
+      requestForm.principalSignerId,
+      requestForm.principalSignerName,
+      "Principal"
+    );
+    const resolvedTeacherSigner = findMatchingCertificateSigner(
+      requestForm.teacherSignerId,
+      requestForm.teacherSignerName || requestForm.teacherName,
+      "Teacher"
+    );
 
     if (requestedQuantity <= 0) {
       setRequestMessage("La cantidad solicitada debe ser mayor que cero.");
@@ -4311,7 +4400,7 @@ export default function PrintShop() {
         return;
       }
 
-      if (!requestForm.certificateTemplateId || !requestForm.certificateTemplateImageDataUrl) {
+      if (!resolvedTemplate?.id || !resolvedTemplate?.templateImageDataUrl) {
         setRequestMessage("Selecciona una plantilla de certificado con imagen base optimizada. Si la plantilla es antigua, edítala y vuelve a subir su imagen.");
         return;
       }
@@ -4321,12 +4410,12 @@ export default function PrintShop() {
         return;
       }
 
-      if (!requestForm.principalSignerId || !requestForm.principalSignatureUrl) {
+      if (!resolvedPrincipalSigner?.id || !resolvedPrincipalSigner?.signatureUrl) {
         setRequestMessage("Selecciona el firmante principal con firma cargada.");
         return;
       }
 
-      if (!requestForm.teacherSignerId || !requestForm.teacherSignatureUrl) {
+      if (!resolvedTeacherSigner?.id || !resolvedTeacherSigner?.signatureUrl) {
         setRequestMessage("Selecciona el teacher con firma cargada.");
         return;
       }
@@ -4342,48 +4431,48 @@ export default function PrintShop() {
       responsibleUid: requestForm.responsibleUid || "",
       responsibleName: requestForm.responsibleName || "",
       responsibleEmail: requestForm.responsibleEmail || "",
-      priority: requestForm.priority,
+      priority: automaticPriority,
       requestedQuantity,
       deliveredQuantity,
       deliveryType: requestForm.deliveryType,
-      status: requestForm.status,
+      status: normalizePrintRequestStatus(requestForm.status),
       requestDate: requestForm.requestDate,
       dueDate: requestForm.dueDate,
       certificateIssueDate: requestForm.certificateIssueDate || "",
-      certificateTemplateId: requestForm.certificateTemplateId || "",
-      certificateTemplateName: requestForm.certificateTemplateName || "",
-      certificateTemplateLevel: requestForm.certificateTemplateLevel || "",
-      certificateTemplateProgramName: requestForm.certificateTemplateProgramName || "",
-      certificateTemplateAudience: requestForm.certificateTemplateAudience || "",
+      certificateTemplateId: resolvedTemplate?.id || requestForm.certificateTemplateId || "",
+      certificateTemplateName: resolvedTemplate?.name || requestForm.certificateTemplateName || "",
+      certificateTemplateLevel: resolvedTemplate?.level || requestForm.certificateTemplateLevel || "",
+      certificateTemplateProgramName: resolvedTemplate?.programName || requestForm.certificateTemplateProgramName || "",
+      certificateTemplateAudience: resolvedTemplate?.audience || requestForm.certificateTemplateAudience || "",
       certificateTemplateBodyText: getCertificateBodyTextFromSegments(
-        requestForm.certificateTemplateBodySegments,
-        requestForm.certificateTemplateBodyText
+        resolvedTemplate?.bodySegments || requestForm.certificateTemplateBodySegments,
+        resolvedTemplate?.bodyText || requestForm.certificateTemplateBodyText
       ),
       certificateTemplateBodySegments: normalizeCertificateBodySegments(
-        requestForm.certificateTemplateBodySegments,
-        requestForm.certificateTemplateBodyText
+        resolvedTemplate?.bodySegments || requestForm.certificateTemplateBodySegments,
+        resolvedTemplate?.bodyText || requestForm.certificateTemplateBodyText
       ),
-      certificateTemplateCustomTexts: normalizeTemplateCustomTexts(requestForm.certificateTemplateCustomTexts),
-      certificateTemplateCustomImages: normalizeTemplateCustomImages(requestForm.certificateTemplateCustomImages),
-      certificateTemplateImageUrl: requestForm.certificateTemplateImageUrl || "",
-      certificateTemplateImageDataUrl: requestForm.certificateTemplateImageDataUrl || "",
-      certificateTemplateStoragePath: requestForm.certificateTemplateStoragePath || "",
-      certificateTemplatePositions: normalizeCertificateTemplatePositions(requestForm.certificateTemplatePositions),
+      certificateTemplateCustomTexts: normalizeTemplateCustomTexts(resolvedTemplate?.customTexts || requestForm.certificateTemplateCustomTexts),
+      certificateTemplateCustomImages: normalizeTemplateCustomImages(resolvedTemplate?.customImages || requestForm.certificateTemplateCustomImages),
+      certificateTemplateImageUrl: resolvedTemplate?.templateImageUrl || requestForm.certificateTemplateImageUrl || "",
+      certificateTemplateImageDataUrl: resolvedTemplate?.templateImageDataUrl || requestForm.certificateTemplateImageDataUrl || "",
+      certificateTemplateStoragePath: resolvedTemplate?.storagePath || requestForm.certificateTemplateStoragePath || "",
+      certificateTemplatePositions: normalizeCertificateTemplatePositions(resolvedTemplate?.positions || requestForm.certificateTemplatePositions),
       notes: requestForm.notes || "",
-      level: requestForm.level || "No aplica",
+      level: requestForm.level || resolvedTemplate?.level || "No aplica",
       group: requestForm.group.trim(),
       teacherName: requestForm.teacherName.trim(),
       schedule: requestForm.schedule.trim(),
       printedQuantity,
       digitalQuantity,
-      principalSignerId: requestForm.principalSignerId || "",
-      principalSignerName: requestForm.principalSignerName || "",
-      principalSignerRole: requestForm.principalSignerRole || "Principal",
-      principalSignatureUrl: requestForm.principalSignatureUrl || "",
-      teacherSignerId: requestForm.teacherSignerId || "",
-      teacherSignerName: requestForm.teacherSignerName || requestForm.teacherName.trim(),
-      teacherSignerRole: requestForm.teacherSignerRole || "Teacher",
-      teacherSignatureUrl: requestForm.teacherSignatureUrl || "",
+      principalSignerId: resolvedPrincipalSigner?.id || requestForm.principalSignerId || "",
+      principalSignerName: resolvedPrincipalSigner?.name || requestForm.principalSignerName || "",
+      principalSignerRole: resolvedPrincipalSigner?.role || requestForm.principalSignerRole || "Principal",
+      principalSignatureUrl: resolvedPrincipalSigner?.signatureUrl || requestForm.principalSignatureUrl || "",
+      teacherSignerId: resolvedTeacherSigner?.id || requestForm.teacherSignerId || "",
+      teacherSignerName: resolvedTeacherSigner?.name || requestForm.teacherSignerName || requestForm.teacherName.trim(),
+      teacherSignerRole: resolvedTeacherSigner?.role || requestForm.teacherSignerRole || "Teacher",
+      teacherSignatureUrl: resolvedTeacherSigner?.signatureUrl || requestForm.teacherSignatureUrl || "",
       students: normalizeRequestStudents(currentRequest?.students || []),
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
@@ -4461,6 +4550,87 @@ export default function PrintShop() {
       setRequestMessage("No se pudo guardar la solicitud. Revisa las reglas de Firestore.");
     } finally {
       setSavingRequest(false);
+    }
+  }
+
+  async function markRequestInProduction(request) {
+    if (
+      !request?.id ||
+      request.status !== "Solicitud recibida" ||
+      !canCurrentUserEditRequest(request)
+    ) {
+      return;
+    }
+
+    const auditUser = getAuditUser();
+
+    try {
+      await updateDoc(doc(db, "printRequests", request.id), {
+        status: "En producción",
+        viewedAt: serverTimestamp(),
+        productionStartedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+
+      await createPrintshopLog({
+        type: "REQUEST_UPDATED",
+        module: "requests",
+        title: "Solicitud enviada a producción",
+        description: `Se abrió el detalle de la solicitud ${request.folio || request.id}.`,
+        referenceType: "request",
+        referenceId: request.id,
+        requestId: request.id,
+        requestFolio: request.folio || "",
+        productId: request.productId || "",
+        productName: request.productName || "",
+        campus: request.campus || "",
+        level: request.level || "",
+      });
+    } catch (error) {
+      console.error("No se pudo cambiar la solicitud a producción:", error);
+    }
+  }
+
+  async function markRequestReadyForDelivery(request, reason = "Certificados preparados para impresión") {
+    if (
+      !request?.id ||
+      ["Lista para entrega", "Entregada", "Cancelada"].includes(request.status) ||
+      !canCurrentUserEditRequest(request)
+    ) {
+      return;
+    }
+
+    const auditUser = getAuditUser();
+
+    try {
+      await updateDoc(doc(db, "printRequests", request.id), {
+        status: "Lista para entrega",
+        readyForDeliveryAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+
+      await createPrintshopLog({
+        type: "REQUEST_UPDATED",
+        module: "requests",
+        title: "Solicitud lista para entrega",
+        description: `${reason}: ${request.folio || request.id}.`,
+        referenceType: "request",
+        referenceId: request.id,
+        requestId: request.id,
+        requestFolio: request.folio || "",
+        productId: request.productId || "",
+        productName: request.productName || "",
+        campus: request.campus || "",
+        level: request.level || "",
+      });
+    } catch (error) {
+      console.error("No se pudo cambiar la solicitud a lista para entrega:", error);
     }
   }
 
@@ -6504,90 +6674,19 @@ export default function PrintShop() {
       </section>
 
       <section className="printshop-section-tabs">
-        <button
-          type="button"
-          className={activeSection === "dashboard" ? "active" : ""}
-          onClick={() => setActiveSection("dashboard")}
-        >
-          <span>▦</span>
-          Inicio
-        </button>
-        <button
-          type="button"
-          className={activeSection === "catalog" ? "active" : ""}
-          onClick={() => setActiveSection("catalog")}
-        >
-          <span>▤</span>
-          Catálogo de productos
-        </button>
-        <button
-          type="button"
-          className={activeSection === "inventory" ? "active" : ""}
-          onClick={() => setActiveSection("inventory")}
-        >
-          <span>▣</span>
-          Inventario terminado
-        </button>
-        <button
-          type="button"
-          className={activeSection === "supplies" ? "active" : ""}
-          onClick={() => setActiveSection("supplies")}
-        >
-          <span>▥</span>
-          Insumos
-        </button>
-        <button
-          type="button"
-          className={activeSection === "requests" ? "active" : ""}
-          onClick={() => setActiveSection("requests")}
-        >
-          <span>▤</span>
-          Solicitudes
-        </button>
-        <button
-          type="button"
-          className={activeSection === "batches" ? "active" : ""}
-          onClick={() => setActiveSection("batches")}
-        >
-          <span>▧</span>
-          Lotes de producción
-        </button>
-        <button
-          type="button"
-          className={activeSection === "certificates" ? "active" : ""}
-          onClick={() => setActiveSection("certificates")}
-        >
-          <span>☑</span>
-          Historial de certificados
-        </button>
-        <button
-          type="button"
-          className={activeSection === "logs" ? "active" : ""}
-          onClick={() => setActiveSection("logs")}
-        >
-          <span>▨</span>
-          Bitácora
-        </button>
-        {isAdmin && (
+        {getPrintshopTabs(isAdmin).map((tab) => (
           <button
+            key={tab.key}
             type="button"
-            className={activeSection === "templates" ? "active" : ""}
-            onClick={() => setActiveSection("templates")}
+            className={activeSection === tab.key ? "active" : ""}
+            onClick={() => setActiveSection(tab.key)}
           >
-            <span>▧</span>
-            Plantillas
+            <span className="printshop-tab-icon">
+              <PrintshopIcon name={tab.icon} />
+            </span>
+            {tab.label}
           </button>
-        )}
-        {isAdmin && (
-          <button
-            type="button"
-            className={activeSection === "signers" ? "active" : ""}
-            onClick={() => setActiveSection("signers")}
-          >
-            <span>✒</span>
-            Firmas
-          </button>
-        )}
+        ))}
       </section>
 
       {activeSection === "dashboard" ? (
@@ -6765,6 +6864,8 @@ export default function PrintShop() {
           onGenerateAllStudentFolios={generateAllStudentFolios}
           onRegisterGeneratedCertificate={registerGeneratedCertificate}
           onLogPrintshopAction={createPrintshopLog}
+          onMarkRequestInProduction={markRequestInProduction}
+          onMarkRequestReadyForDelivery={markRequestReadyForDelivery}
           onSoftDeleteRequest={(request) => softDeletePrintshopRecord("printRequests", request, {
             module: "requests",
             sectionLabel: "Solicitudes",
@@ -6963,7 +7064,7 @@ function PrintshopLogsView({
   const latestLogs = filteredLogs.slice(0, 250);
 
   return (
-    <section className="printshop-logs-section">
+    <section className="printshop-logs-section printshop-tab-redesign logs-redesign-page">
       <div className="printshop-section-heading">
         <div>
           <p className="section-kicker printshop-kicker">Bitácora de imprenta</p>
@@ -7098,20 +7199,14 @@ function GeneratedCertificatesView({
   onSoftDeleteCertificate,
 }) {
   const stats = useMemo(() => {
-    const generated = filteredCertificates.filter((certificate) => certificate.status === "Generado").length;
     const delivered = filteredCertificates.filter((certificate) => certificate.status === "Entregado").length;
     const cancelled = filteredCertificates.filter((certificate) => certificate.status === "Cancelado").length;
-    const uniqueTeachers = new Set(filteredCertificates.map((certificate) => certificate.teacherName || "Sin maestro")).size;
-    const uniqueCampuses = new Set(filteredCertificates.map((certificate) => certificate.campus || "Sin plantel")).size;
 
     return {
       total: filteredCertificates.length,
       all: certificates.length,
-      generated,
       delivered,
       cancelled,
-      uniqueTeachers,
-      uniqueCampuses,
     };
   }, [certificates, filteredCertificates]);
 
@@ -7139,63 +7234,45 @@ function GeneratedCertificatesView({
     [certificates]
   );
 
-  const teacherChart = useMemo(
-    () => buildCertificateDistribution(filteredCertificates, (certificate) => certificate.teacherName || "Sin maestro"),
-    [filteredCertificates]
-  );
-
-  const campusChart = useMemo(
-    () => buildCertificateDistribution(filteredCertificates, (certificate) => certificate.campus || "Sin plantel"),
-    [filteredCertificates]
-  );
-
-  const levelChart = useMemo(
-    () => buildCertificateDistribution(filteredCertificates, (certificate) => certificate.level || "No aplica"),
-    [filteredCertificates]
-  );
-
   return (
-    <section className="generated-certificates-section">
-      <div className="printshop-section-heading">
+    <section className="generated-certificates-section generated-certificates-redesign">
+      <div className="printshop-section-heading certificates-clean-hero">
         <div>
-          <p className="section-kicker printshop-kicker">Historial de certificados</p>
           <h2>Historial de certificados generados</h2>
           <p>
             Consulta todos los certificados emitidos, filtra por año, plantel, maestro o estado,
-            revisa indicadores rápidos y abre cualquier certificado listo para reimprimir.
+            y abre cualquier certificado listo para reimprimir.
           </p>
         </div>
       </div>
 
-      <div className="catalog-metrics-grid generated-certificates-metrics">
-        <CatalogMetric tone="blue" icon="☑" label="Filtrados" value={stats.total} />
-        <CatalogMetric tone="teal" icon="▥" label="Total histórico" value={stats.all} />
-        <CatalogMetric tone="green" icon="✓" label="Entregados" value={stats.delivered} />
-        <CatalogMetric tone="red" icon="!" label="Cancelados" value={stats.cancelled} />
-      </div>
+      <section className="certificate-quick-summary" aria-label="Resumen rápido de certificados">
+        <h3>Resumen rápido</h3>
+        <div className="certificate-quick-summary-items">
+          <div className="certificate-quick-summary-item blue">
+            <span>☑</span>
+            <strong>{stats.total}</strong>
+            <small>filtrados</small>
+          </div>
+          <div className="certificate-quick-summary-item teal">
+            <span>▥</span>
+            <strong>{stats.all}</strong>
+            <small>histórico</small>
+          </div>
+          <div className="certificate-quick-summary-item green">
+            <span>✓</span>
+            <strong>{stats.delivered}</strong>
+            <small>entregados</small>
+          </div>
+          <div className="certificate-quick-summary-item red">
+            <span>!</span>
+            <strong>{stats.cancelled}</strong>
+            <small>cancelados</small>
+          </div>
+        </div>
+      </section>
 
-      <div className="generated-certificates-insights-grid">
-        <CertificateDistributionCard
-          title="Certificados por maestro"
-          subtitle={`${stats.uniqueTeachers} maestros en la selección`}
-          data={teacherChart}
-          emptyLabel="Sin certificados para graficar por maestro."
-        />
-        <CertificateDistributionCard
-          title="Certificados por plantel"
-          subtitle={`${stats.uniqueCampuses} planteles en la selección`}
-          data={campusChart}
-          emptyLabel="Sin certificados para graficar por plantel."
-        />
-        <CertificateDistributionCard
-          title="Certificados por nivel"
-          subtitle="Distribución académica"
-          data={levelChart}
-          emptyLabel="Sin certificados para graficar por nivel."
-        />
-      </div>
-
-      <Panel title="Registro histórico" icon="☑" actionLabel={`${filteredCertificates.length} registros`}>
+      <Panel title="Registro histórico" icon="☑" actionLabel={`${filteredCertificates.length} certificados`}>
         <div className="generated-certificates-toolbar enhanced">
           <label className="catalog-filter-search">
             <span>Buscar</span>
@@ -7272,18 +7349,16 @@ function GeneratedCertificatesView({
           </div>
         ) : (
           <div className="table-wrapper generated-certificates-table-wrapper">
-            <table className="data-table generated-certificates-table">
+            <table className="data-table generated-certificates-table certificate-list-table">
               <thead>
                 <tr>
                   <th>Folio</th>
                   <th>Alumno</th>
-                  <th>Nivel / programa</th>
-                  <th>Maestro</th>
-                  <th>Plantel</th>
-                  <th>Fecha certificado</th>
+                  <th>Programa</th>
+                  <th>Emisión</th>
                   <th>Solicitud</th>
                   <th>Estado</th>
-                  <th>Generado</th>
+                  <th>PDF</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -7295,24 +7370,23 @@ function GeneratedCertificatesView({
 
                   return (
                     <tr key={certificate.id || certificate.validationCode || certificate.folio}>
-                      <td>
+                      <td className="certificate-folio-cell">
                         <strong>{certificate.folio || "Sin folio"}</strong>
                         <small>{certificate.validationCode || "Sin código"}</small>
                       </td>
-                      <td>
+                      <td className="certificate-student-cell">
                         <strong>{certificate.studentName || "Sin alumno"}</strong>
                         <small>{certificate.studentDeliveryType || "Sin modalidad"}</small>
                       </td>
-                      <td>
-                        {certificate.level || "No aplica"}
+                      <td className="certificate-program-cell">
+                        <strong>{certificate.level || "No aplica"}</strong>
                         <small>{certificate.programName || certificate.templateName || "Sin programa"}</small>
                       </td>
-                      <td>
-                        {certificate.teacherName || "Sin maestro"}
-                        <small>{certificate.group || "Sin grupo"}</small>
+                      <td className="certificate-issue-cell">
+                        <strong>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</strong>
+                        <small>{certificate.campus || "Sin plantel"}</small>
+                        <small>{certificate.teacherName || "Sin maestro"} · {certificate.group || "Sin grupo"}</small>
                       </td>
-                      <td>{certificate.campus || "Sin plantel"}</td>
-                      <td>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</td>
                       <td>
                         <button
                           type="button"
@@ -7328,9 +7402,10 @@ function GeneratedCertificatesView({
                         </StatusBadge>
                       </td>
                       <td>
-                        {formatDate(certificate.generatedAt)}
-                        <small>{certificate.generatedByName || ""}</small>
-                        <small>{certificate.pdfUrl ? "PDF original guardado" : "Sin PDF original"}</small>
+                        <span className={`certificate-pdf-chip ${certificate.pdfUrl ? "ready" : "missing"}`}>
+                          {certificate.pdfUrl ? "Guardado" : "Sin PDF"}
+                        </span>
+                        <small>{formatDate(certificate.generatedAt)}</small>
                       </td>
                       <td>
                         <div className="table-actions generated-certificate-actions">
@@ -7389,47 +7464,15 @@ function GeneratedCertificatesView({
                 })}
               </tbody>
             </table>
+            <div className="certificate-list-footer">
+              <span>
+                Mostrando {filteredCertificates.length} de {certificates.length} certificados
+              </span>
+            </div>
           </div>
         )}
       </Panel>
     </section>
-  );
-}
-
-function CertificateDistributionCard({ title, subtitle, data, emptyLabel }) {
-  const maxValue = Math.max(...data.map((item) => Number(item.value || 0)), 0);
-
-  return (
-    <article className="certificate-distribution-card">
-      <div className="certificate-distribution-header">
-        <div>
-          <strong>{title}</strong>
-          <span>{subtitle}</span>
-        </div>
-      </div>
-
-      {data.length === 0 ? (
-        <p className="certificate-distribution-empty">{emptyLabel}</p>
-      ) : (
-        <div className="certificate-distribution-bars">
-          {data.slice(0, 8).map((item) => {
-            const width = maxValue > 0 ? Math.max(8, Math.round((Number(item.value || 0) / maxValue) * 100)) : 0;
-
-            return (
-              <div className="certificate-distribution-row" key={item.label}>
-                <div className="certificate-distribution-label">
-                  <span>{item.label}</span>
-                  <strong>{item.value}</strong>
-                </div>
-                <div className="certificate-distribution-track">
-                  <span style={{ width: `${width}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </article>
   );
 }
 
@@ -7711,7 +7754,6 @@ function ProductionBatchesView({
   onOpenInventory,
   onSoftDeleteBatch,
 }) {
-  const activeBatches = productionBatches.filter((batch) => batch.status !== "Cancelado");
   const selectedRole = isAdmin
     ? "admin"
     : isSameUid(currentUserUid, selectedBatch?.responsibleUid)
@@ -7738,6 +7780,39 @@ function ProductionBatchesView({
     : null;
 
   const [batchFocusOpen, setBatchFocusOpen] = useState(false);
+  const [batchSearchTerm, setBatchSearchTerm] = useState("");
+  const [batchStatusFilter, setBatchStatusFilter] = useState("Todos");
+  const visibleProductionBatches = useMemo(() => {
+    const normalizedSearchTerm = normalizeComparable(batchSearchTerm);
+
+    return productionBatches.filter((batch) => {
+      const matchesSearch =
+        !normalizedSearchTerm ||
+        [
+          batch.folio,
+          batch.productName,
+          batch.level,
+          batch.unit,
+          batch.responsibleName,
+          batch.responsible,
+          batch.auditorName,
+          batch.status,
+        ].some((value) => normalizeComparable(value).includes(normalizedSearchTerm));
+
+      const inventoryReady =
+        batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
+      const matchesStatus =
+        batchStatusFilter === "Todos" ||
+        (batchStatusFilter === "Activos" &&
+          !["Cancelado", "Cerrado", "Ingresado a inventario"].includes(batch.status)) ||
+        (batchStatusFilter === "Ingresados" && inventoryReady) ||
+        (batchStatusFilter === "Cancelados" && batch.status === "Cancelado") ||
+        batch.status === batchStatusFilter;
+      const matchesPeriod = isBatchInsideRange(batch, batchSummaryFrom, batchSummaryTo);
+
+      return matchesSearch && matchesStatus && matchesPeriod;
+    });
+  }, [productionBatches, batchSearchTerm, batchStatusFilter, batchSummaryFrom, batchSummaryTo]);
 
   function openBatchFocus(batch = null) {
     if (batch) {
@@ -7767,21 +7842,22 @@ function ProductionBatchesView({
     }, 100);
   }
 
+  function resetBatchFilters() {
+    setBatchSearchTerm("");
+    setBatchStatusFilter("Todos");
+    onBatchSummaryFromChange("");
+    onBatchSummaryToChange("");
+  }
+
   return (
     <section className="printshop-batches-page">
-      <div className="printshop-catalog-hero batches-hero">
-        <div>
-          <p className="section-kicker printshop-kicker">Producción</p>
+      <div className="printshop-catalog-hero batches-hero batches-clean-hero">
+        <div className="batches-clean-copy">
           <h2>Lotes de producción</h2>
           <p>
             Registra producciones internas de libros, controla su avance y, al aprobarlos,
             ingrésalos automáticamente al inventario terminado.
           </p>
-        </div>
-
-        <div className="inventory-hero-card batches-hero-card">
-          <strong>{batchStats.active}</strong>
-          <span>Lotes activos</span>
         </div>
 
         {canCreateBatch && (
@@ -7791,60 +7867,86 @@ function ProductionBatchesView({
         )}
       </div>
 
-      <div className="printshop-catalog-metrics">
-        <CatalogMetric tone="blue" icon="▧" label="Total" value={batchStats.total} />
-        <CatalogMetric tone="teal" icon="↻" label="Activos" value={batchStats.active} />
-        <CatalogMetric tone="orange" icon="→" label="Por ingresar" value={batchStats.pendingInventory} />
-        <CatalogMetric tone="green" icon="✓" label="Ingresados" value={batchStats.completed} />
-        <CatalogMetric tone="red" icon="×" label="Cancelados" value={batchStats.cancelled} />
-      </div>
-
-      <Panel title="Resumen de producción" icon="∑" actionLabel={`${batchProductionSummary.count} lotes`}>
-        <div className="batch-summary-toolbar">
-          <label>
-            <span>Desde</span>
-            <input
-              type="date"
-              value={batchSummaryFrom}
-              onChange={(event) => onBatchSummaryFromChange(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Hasta</span>
-            <input
-              type="date"
-              value={batchSummaryTo}
-              onChange={(event) => onBatchSummaryToChange(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="visual-outline-button"
-            onClick={() => {
-              onBatchSummaryFromChange("");
-              onBatchSummaryToChange("");
-            }}
-          >
-            Limpiar periodo
-          </button>
+      <section className="batch-quick-summary" aria-label="Resumen rápido de lotes">
+        <h3>Resumen rápido</h3>
+        <div className="batch-quick-summary-items">
+          <div className="batch-quick-summary-item teal">
+            <span>↻</span>
+            <strong>{batchStats.active}</strong>
+            <small>activos</small>
+          </div>
+          <div className="batch-quick-summary-item green">
+            <span>✓</span>
+            <strong>{batchStats.completed}</strong>
+            <small>ingresados</small>
+          </div>
+          <div className="batch-quick-summary-item orange">
+            <span>%</span>
+            <strong>{batchProductionSummary.rejectionRate}%</strong>
+            <small>rechazo</small>
+          </div>
+          <div className="batch-quick-summary-item purple">
+            <span>↳</span>
+            <strong>{batchProductionSummary.inventoryApplied}</strong>
+            <small>inventario</small>
+          </div>
         </div>
-
-        <div className="batch-summary-grid">
-          <CatalogMetric tone="blue" icon="□" label="Planeado" value={batchProductionSummary.planned} />
-          <CatalogMetric tone="teal" icon="▣" label="Producido" value={batchProductionSummary.produced} />
-          <CatalogMetric tone="green" icon="✓" label="Aprobado" value={batchProductionSummary.approved} />
-          <CatalogMetric tone="red" icon="×" label="Rechazado" value={batchProductionSummary.rejected} />
-          <CatalogMetric tone="orange" icon="%" label="Rechazo" value={`${batchProductionSummary.rejectionRate}%`} />
-          <CatalogMetric tone="purple" icon="↳" label="Inventario" value={batchProductionSummary.inventoryApplied} />
-        </div>
-      </Panel>
+      </section>
 
       {batchesError && <div className="form-error">{batchesError}</div>}
       {usersError && <div className="form-error">{usersError}</div>}
 
       <div className={`printshop-batches-layout ${batchFocusOpen ? "printshop-focused-layout" : ""}`}>
         <div className="printshop-batches-main">
-          <Panel title="Lotes registrados" icon="▧" actionLabel={`${activeBatches.length} visibles`}>
+          <Panel title="Lotes registrados" icon="▧" actionLabel={`${visibleProductionBatches.length} lotes`}>
+            <div className="batch-list-toolbar">
+              <label className="batch-search-field">
+                <span>Buscar lote o producto</span>
+                <input
+                  type="search"
+                  value={batchSearchTerm}
+                  onChange={(event) => setBatchSearchTerm(event.target.value)}
+                  placeholder="Buscar lote o producto"
+                />
+              </label>
+
+              <label>
+                <span>Estado</span>
+                <select
+                  value={batchStatusFilter}
+                  onChange={(event) => setBatchStatusFilter(event.target.value)}
+                >
+                  <option value="Todos">Todos</option>
+                  <option value="Activos">Activos</option>
+                  <option value="Aprobado">Aprobado</option>
+                  <option value="Ingresados">Ingresados</option>
+                  <option value="Cancelados">Cancelados</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Desde</span>
+                <input
+                  type="date"
+                  value={batchSummaryFrom}
+                  onChange={(event) => onBatchSummaryFromChange(event.target.value)}
+                />
+              </label>
+
+              <label>
+                <span>Hasta</span>
+                <input
+                  type="date"
+                  value={batchSummaryTo}
+                  onChange={(event) => onBatchSummaryToChange(event.target.value)}
+                />
+              </label>
+
+              <button type="button" className="visual-outline-button" onClick={resetBatchFilters}>
+                Limpiar filtros
+              </button>
+            </div>
+
             {loadingBatches ? (
               <div className="printshop-empty-catalog">
                 <div>▧</div>
@@ -7859,27 +7961,28 @@ function ProductionBatchesView({
                   Crea el primer lote para producir libros y conectarlo con el inventario terminado.
                 </p>
               </div>
+            ) : visibleProductionBatches.length === 0 ? (
+              <div className="printshop-empty-catalog">
+                <div>⌕</div>
+                <h3>No hay lotes con estos filtros</h3>
+                <p>Ajusta la búsqueda, estado o periodo para volver a ver producciones.</p>
+              </div>
             ) : (
               <div className="printshop-table-wrap">
-                <table className="printshop-table printshop-batches-table">
+                <table className="printshop-table printshop-batches-table batch-list-table">
                   <thead>
                     <tr>
-                      <th>Lote</th>
+                      <th>Folio</th>
                       <th>Producto</th>
-                      <th>Responsable</th>
-                      <th>Auditor</th>
-                      <th>Planeado</th>
-                      <th>Producido</th>
-                      <th>Aprobado</th>
-                      <th>Rechazado</th>
+                      <th>Fecha de creación</th>
+                      <th>Progreso</th>
+                      <th>Producción</th>
                       <th>Estado</th>
-                      <th>Calidad</th>
-                      <th>Inventario</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {productionBatches.map((batch) => {
+                    {visibleProductionBatches.map((batch) => {
                       const tone = getBatchStatusTone(batch.status);
                       const inventoryReady =
                         batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
@@ -7893,49 +7996,32 @@ function ProductionBatchesView({
                           key={batch.id}
                           className={selectedBatchId === batch.id ? "selected-product-row" : ""}
                         >
-                          <td>
+                          <td className="batch-folio-cell">
                             <strong>{batch.folio}</strong>
-                            <span>{formatDate(batch.createdAt)}</span>
                           </td>
-                          <td>
+                          <td className="batch-product-cell">
                             <strong>{batch.productName}</strong>
                             <span>{batch.level || "No aplica"} · {batch.unit || "Libro"}</span>
                           </td>
-                          <td>
-                            <strong>{batch.responsibleName || batch.responsible || "Sin asignar"}</strong>
-                            <span>{batch.responsibleEmail || ""}</span>
-                          </td>
-                          <td>
-                            <strong>{batch.auditorName || "Sin asignar"}</strong>
-                            <span>{batch.auditorEmail || ""}</span>
-                          </td>
-                          <td>{Number(batch.plannedQuantity || 0)}</td>
-                          <td>{Number(batch.producedQuantity || 0)}</td>
-                          <td>{Number(batch.approvedQuantity || 0)}</td>
-                          <td>{Number(batch.rejectedQuantity || 0)}</td>
-                          <td>
-                            <StatusBadge tone={tone}>{batch.status || "Planeado"}</StatusBadge>
+                          <td>{formatDate(batch.createdAt)}</td>
+                          <td className="batch-progress-cell">
+                            <span>{getBatchProgress(batch)}%</span>
                             <ProgressBar value={getBatchProgress(batch)} tone={tone} />
                           </td>
-                          <td>
-                            <StatusBadge tone={getQualityStatusTone(batch.qualityStatus)}>
-                              {batch.qualityStatus || "Pendiente"}
-                            </StatusBadge>
-                            <span className="batch-quality-mini">
-                              {isQualityChecklistComplete(batch.qualityChecklist)
-                                ? "Checklist completo"
-                                : "Checklist pendiente"}
-                            </span>
+                          <td className="batch-production-cell">
+                            <span>{Number(batch.plannedQuantity || 0)} planeado</span>
+                            <span className="approved">{Number(batch.approvedQuantity || 0)} aprobado</span>
+                            <span className="rejected">{Number(batch.rejectedQuantity || 0)} rechazo</span>
                           </td>
                           <td>
-                            <StatusBadge tone={inventoryReady ? "green" : "orange"}>
-                              {inventoryReady ? "Ingresado" : "Pendiente"}
+                            <StatusBadge tone={inventoryReady ? "green" : tone}>
+                              {inventoryReady ? "Ingresado" : batch.status || "Planeado"}
                             </StatusBadge>
                           </td>
                           <td>
                             <div className="printshop-product-actions batch-actions">
                               <button type="button" onClick={() => openBatchDetails(batch)}>
-                                Ver detalles
+                                Detalles
                               </button>
                               <button type="button" onClick={() => openBatchFocus(batch)}>
                                 Editar
@@ -7975,6 +8061,11 @@ function ProductionBatchesView({
                     })}
                   </tbody>
                 </table>
+                <div className="batch-list-footer">
+                  <span>
+                    Mostrando {visibleProductionBatches.length} de {productionBatches.length} lotes
+                  </span>
+                </div>
               </div>
             )}
           </Panel>
@@ -8447,7 +8538,7 @@ function FinishedInventoryView({
   const latestMovements = inventoryMovements.slice(0, 8);
 
   return (
-    <section className="printshop-inventory-page">
+    <section className="printshop-inventory-page printshop-tab-redesign inventory-redesign-page">
       <div className="printshop-catalog-hero inventory-hero">
         <div>
           <p className="section-kicker printshop-kicker">Inventario terminado</p>
@@ -9213,7 +9304,7 @@ function SupplyInventoryView({
   const latestSupplyMovement = latestMovements[0] || null;
 
   return (
-    <section className="printshop-supplies-page supplies-redesign-page">
+    <section className="printshop-supplies-page supplies-redesign-page printshop-tab-redesign">
       <div className="printshop-catalog-hero supplies-hero supplies-hero-redesign">
         <div>
           <p className="section-kicker printshop-kicker">Inventario de insumos</p>
@@ -9666,7 +9757,7 @@ function SupplyInventoryView({
                                   </button>
                                   <button
                                     type="button"
-                                    className="danger-table-button"
+                                    className="danger-table-button request-action-button request-action-delete"
                                     onClick={() => onSoftDeleteSupplyItem(item)}
                                   >
                                     Eliminar
@@ -10234,6 +10325,8 @@ function PrintRequestsView({
   onGenerateAllStudentFolios,
   onRegisterGeneratedCertificate,
   onLogPrintshopAction,
+  onMarkRequestInProduction,
+  onMarkRequestReadyForDelivery,
   onSoftDeleteRequest,
 }) {
   const requestProducts = products.filter(
@@ -10252,23 +10345,49 @@ function PrintRequestsView({
   const canEditOperationalFields = isAdmin || selectedRole === "responsible";
   const canCreateRequest = isAdmin;
   const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
+  const isEditingExistingRequest = Boolean(selectedRequestId);
+  const sourceFieldsLocked = isEditingExistingRequest;
 
   const [requestFocusOpen, setRequestFocusOpen] = useState(false);
+  const [requestEditOpen, setRequestEditOpen] = useState(false);
+  const [requestPageSize, setRequestPageSize] = useState(5);
+  const [requestPage, setRequestPage] = useState(1);
 
-  const previewRequest = selectedRequest || filteredRequests[0] || null;
+  const requestTotalPages = Math.max(1, Math.ceil(filteredRequests.length / requestPageSize));
+  const normalizedRequestPage = Math.min(requestPage, requestTotalPages);
+  const requestPageStartIndex = filteredRequests.length === 0 ? 0 : (normalizedRequestPage - 1) * requestPageSize;
+  const visibleRequests = filteredRequests.slice(requestPageStartIndex, requestPageStartIndex + requestPageSize);
+  const requestPageEndIndex = requestPageStartIndex + visibleRequests.length;
+  const requestPageOptions = [5, 10, 20];
+
+  const previewRequest = selectedRequest || visibleRequests[0] || filteredRequests[0] || null;
   const previewRequestId = selectedRequestId || previewRequest?.id || "";
+
+  useEffect(() => {
+    setRequestPage(1);
+  }, [requestSearch, requestStatusFilter, requestTypeFilter, requestPriorityFilter, requestPageSize]);
+
+  useEffect(() => {
+    if (requestPage > requestTotalPages) {
+      setRequestPage(requestTotalPages);
+    }
+  }, [requestPage, requestTotalPages]);
 
   function openRequestFocus(request = null) {
     if (request) {
       onSelectRequest(request);
+      onMarkRequestInProduction?.(request);
+      setRequestEditOpen(false);
     } else {
       onResetRequestForm();
+      setRequestEditOpen(true);
     }
     setRequestFocusOpen(true);
   }
 
   function closeRequestFocus() {
     onResetRequestForm();
+    setRequestEditOpen(false);
     setRequestFocusOpen(false);
   }
 
@@ -10316,7 +10435,7 @@ function PrintRequestsView({
   ];
 
   return (
-    <section className="printshop-requests-section printshop-requests-redesign">
+    <section className="printshop-requests-section printshop-requests-redesign printshop-tab-redesign">
       <div className="printshop-section-heading printshop-requests-hero-redesign">
         <div>
           <p className="section-kicker printshop-kicker">Solicitudes de imprenta</p>
@@ -10353,7 +10472,22 @@ function PrintRequestsView({
                 <span>▤</span>
                 <h2>Solicitudes registradas</h2>
               </div>
-              <button type="button">{filteredRequests.length} visibles</button>
+              <div className="request-list-count-control">
+                <span>{filteredRequests.length} visibles</span>
+                <label>
+                  <span>Ver</span>
+                  <select
+                    value={requestPageSize}
+                    onChange={(event) => setRequestPageSize(Number(event.target.value))}
+                  >
+                    {requestPageOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
 
             <div className="catalog-toolbar request-toolbar request-toolbar-redesign">
@@ -10418,7 +10552,7 @@ function PrintRequestsView({
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredRequests.map((request) => {
+                      {visibleRequests.map((request) => {
                         const progress = getRequestProgress(request.status);
                         const isActiveRow = previewRequestId === request.id;
 
@@ -10459,6 +10593,7 @@ function PrintRequestsView({
                               <div className="table-actions request-row-actions">
                                 <button
                                   type="button"
+                                  className="request-action-button request-action-view"
                                   title="Ver información completa"
                                   aria-label="Ver información completa"
                                   onClick={(event) => {
@@ -10466,12 +10601,12 @@ function PrintRequestsView({
                                     openRequestFocus(request);
                                   }}
                                 >
-                                  ◉
+                                  <PrintshopIcon name="view" />
                                 </button>
                                 {isAdmin && (
                                   <button
                                     type="button"
-                                    className="danger-table-button"
+                                    className="danger-table-button request-action-button request-action-delete"
                                     title="Eliminar solicitud"
                                     aria-label="Eliminar solicitud"
                                     onClick={(event) => {
@@ -10479,7 +10614,7 @@ function PrintRequestsView({
                                       onSoftDeleteRequest(request);
                                     }}
                                   >
-                                    ⋮
+                                    <PrintshopIcon name="trash" />
                                   </button>
                                 )}
                               </div>
@@ -10493,12 +10628,28 @@ function PrintRequestsView({
 
                 <div className="request-table-footer-redesign">
                   <span>
-                    Mostrando {filteredRequests.length === 0 ? "0" : `1 a ${filteredRequests.length}`} de {filteredRequests.length} solicitudes
+                    Mostrando {filteredRequests.length === 0 ? "0" : `${requestPageStartIndex + 1} a ${requestPageEndIndex}`} de {filteredRequests.length} solicitudes
                   </span>
                   <div>
-                    <button type="button" disabled>‹</button>
-                    <button type="button" className="active">1</button>
-                    <button type="button" disabled>›</button>
+                    <button
+                      type="button"
+                      disabled={normalizedRequestPage <= 1}
+                      onClick={() => setRequestPage((current) => Math.max(1, current - 1))}
+                      aria-label="Pagina anterior"
+                    >
+                      ‹
+                    </button>
+                    <button type="button" className="active" aria-current="page">
+                      {normalizedRequestPage} / {requestTotalPages}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={normalizedRequestPage >= requestTotalPages}
+                      onClick={() => setRequestPage((current) => Math.min(requestTotalPages, current + 1))}
+                      aria-label="Pagina siguiente"
+                    >
+                      ›
+                    </button>
                   </div>
                 </div>
               </>
@@ -10506,7 +10657,11 @@ function PrintRequestsView({
           </section>
         </div>
 
-        <aside className="printshop-batches-side request-side-column">
+        <aside
+          className={`printshop-batches-side request-side-column ${
+            requestFocusOpen && selectedRequest && !requestEditOpen ? "request-detail-only" : ""
+          }`}
+        >
           {!requestFocusOpen && (
             <RequestPreviewPanel
               request={previewRequest}
@@ -10520,6 +10675,15 @@ function PrintRequestsView({
                 ← Regresar a solicitudes
               </button>
               <span>{selectedRequest ? "Vista enfocada de seguimiento" : "Vista enfocada de alta"}</span>
+              {selectedRequest && (
+                <button
+                  type="button"
+                  className="visual-outline-button request-edit-toggle-button"
+                  onClick={() => setRequestEditOpen((current) => !current)}
+                >
+                  {requestEditOpen ? "Ocultar edicion" : "Editar datos"}
+                </button>
+              )}
             </div>
           )}
 
@@ -10551,23 +10715,34 @@ function PrintRequestsView({
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
               onRegisterGeneratedCertificate={onRegisterGeneratedCertificate}
               onLogPrintshopAction={onLogPrintshopAction}
+              onMarkRequestReadyForDelivery={onMarkRequestReadyForDelivery}
             />
           )}
 
-          {requestFocusOpen && (
+          {requestFocusOpen && (!selectedRequest || requestEditOpen) && (
           <Panel
             title={selectedRequest ? "Actualizar solicitud" : "Nueva solicitud"}
             icon={selectedRequest ? "✎" : "＋"}
             actionLabel={selectedRequest ? "Seguimiento" : "Alta"}
           >
             <form className="printshop-product-form request-form" onSubmit={onSavePrintRequest}>
+              {sourceFieldsLocked && (
+                <div className="request-source-lock-note full">
+                  <strong>Datos recibidos desde direcciÃ³n</strong>
+                  <p>
+                    Producto, tipo, solicitante, plantel, cantidades y datos del certificado se conservan desde la solicitud original.
+                    AquÃ­ solo se ajusta responsable, seguimiento, entrega y observaciones operativas.
+                  </p>
+                </div>
+              )}
+
               <label className="full">
                 <span>Producto o servicio</span>
                 <select
                   name="productId"
                   value={requestForm.productId}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields || requestProducts.length === 0}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields || requestProducts.length === 0}
                 >
                   <option value="">Seleccionar producto del catálogo</option>
                   {requestProducts.map((product) => (
@@ -10584,7 +10759,7 @@ function PrintRequestsView({
                   name="requestType"
                   value={requestForm.requestType}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields}
+                      disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 >
                   {printRequestTypes.map((type) => (
                     <option key={type}>{type}</option>
@@ -10598,7 +10773,7 @@ function PrintRequestsView({
                   name="priority"
                   value={requestForm.priority}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields}
+                  disabled
                 >
                   {printRequestPriorities.map((priority) => (
                     <option key={priority}>{priority}</option>
@@ -10613,7 +10788,7 @@ function PrintRequestsView({
                   value={requestForm.requesterName}
                   onChange={onRequestInputChange}
                   placeholder="Nombre o área que solicita"
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 />
               </label>
 
@@ -10624,7 +10799,7 @@ function PrintRequestsView({
                   value={requestForm.requesterArea}
                   onChange={onRequestInputChange}
                   placeholder="Recepción, Dirección Académica, Administración..."
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 />
               </label>
 
@@ -10634,7 +10809,7 @@ function PrintRequestsView({
                   name="campus"
                   value={requestForm.campus}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 >
                   {printCampuses.map((campus) => (
                     <option key={campus}>{campus}</option>
@@ -10667,7 +10842,7 @@ function PrintRequestsView({
                   min="0"
                   value={requestForm.requestedQuantity}
                   onChange={onRequestNumberInputChange}
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 />
               </label>
 
@@ -10689,7 +10864,7 @@ function PrintRequestsView({
                   name="deliveryType"
                   value={requestForm.deliveryType}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 >
                   {printDeliveryTypes.map((type) => (
                     <option key={type}>{type}</option>
@@ -10718,7 +10893,7 @@ function PrintRequestsView({
                   name="requestDate"
                   value={requestForm.requestDate}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 />
               </label>
 
@@ -10729,7 +10904,7 @@ function PrintRequestsView({
                   name="dueDate"
                   value={requestForm.dueDate}
                   onChange={onRequestInputChange}
-                  disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                 />
               </label>
 
@@ -10762,7 +10937,7 @@ function PrintRequestsView({
                       name="certificateTemplateId"
                       value={requestForm.certificateTemplateId}
                       onChange={onRequestInputChange}
-                      disabled={!canEditAdministrativeFields || activeCertificateTemplates.length === 0}
+                      disabled={sourceFieldsLocked || !canEditAdministrativeFields || activeCertificateTemplates.length === 0}
                     >
                       <option value="">Seleccionar plantilla</option>
                       {activeCertificateTemplates.map((template) => (
@@ -10775,7 +10950,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Nivel</span>
-                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields}>
+                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={sourceFieldsLocked || !canEditAdministrativeFields}>
                       {levels.map((level) => (
                         <option key={level}>{level}</option>
                       ))}
@@ -10784,7 +10959,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Grupo</span>
-                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditAdministrativeFields} />
+                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
                   </label>
 
                   <label>
@@ -10793,7 +10968,7 @@ function PrintRequestsView({
                       name="principalSignerId"
                       value={requestForm.principalSignerId}
                       onChange={onRequestInputChange}
-                      disabled={!canEditAdministrativeFields || activePrincipalSigners.length === 0}
+                      disabled={sourceFieldsLocked || !canEditAdministrativeFields || activePrincipalSigners.length === 0}
                     >
                       <option value="">Seleccionar principal</option>
                       {activePrincipalSigners.map((signer) => (
@@ -10810,7 +10985,7 @@ function PrintRequestsView({
                       name="teacherSignerId"
                       value={requestForm.teacherSignerId}
                       onChange={onRequestInputChange}
-                      disabled={!canEditAdministrativeFields || activeTeacherSigners.length === 0}
+                      disabled={sourceFieldsLocked || !canEditAdministrativeFields || activeTeacherSigners.length === 0}
                     >
                       <option value="">Seleccionar teacher</option>
                       {activeTeacherSigners.map((signer) => (
@@ -10823,12 +10998,12 @@ function PrintRequestsView({
 
                   <label>
                     <span>Maestro / nombre visible</span>
-                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditAdministrativeFields} />
+                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Horario</span>
-                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditAdministrativeFields} />
+                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
                   </label>
 
                   <label>
@@ -10838,18 +11013,18 @@ function PrintRequestsView({
                       name="certificateIssueDate"
                       value={requestForm.certificateIssueDate}
                       onChange={onRequestInputChange}
-                      disabled={!canEditAdministrativeFields}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
                     />
                   </label>
 
                   <label>
                     <span>Impresos</span>
-                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Digitales</span>
-                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
                   </label>
                 </div>
               )}
@@ -11031,12 +11206,18 @@ function RequestDetailCard({
   onGenerateAllStudentFolios,
   onRegisterGeneratedCertificate,
   onLogPrintshopAction,
+  onMarkRequestReadyForDelivery,
 }) {
   const students = normalizeRequestStudents(request?.students || []);
   const [previewStudentId, setPreviewStudentId] = useState("");
+  const [detailActiveTab, setDetailActiveTab] = useState("summary");
   const [bulkCertificateWorking, setBulkCertificateWorking] = useState(false);
   const [bulkCertificateMessage, setBulkCertificateMessage] = useState("");
   const bulkCertificateRefs = useRef({});
+
+  useEffect(() => {
+    setDetailActiveTab(reprintCertificateStudentId ? "students" : "summary");
+  }, [request?.id, reprintCertificateStudentId]);
 
   useEffect(() => {
     if (
@@ -11377,6 +11558,8 @@ function RequestDetailCard({
         });
       }
 
+      await onMarkRequestReadyForDelivery?.(request, "PDF de impresión abierto");
+
       setBulkCertificateMessage("PDF consolidado abierto en una pestaña nueva. Desde el visor puedes imprimir todos juntos.");
     } catch (error) {
       console.error("No se pudo abrir el PDF consolidado de certificados:", error);
@@ -11401,17 +11584,58 @@ function RequestDetailCard({
       icon="ℹ"
       actionLabel={request.folio || "Sin folio"}
     >
-      <div className="request-detail-card">
+      <div className={`request-detail-card request-detail-redesign-card detail-view-${detailActiveTab}`}>
         <div className="request-detail-hero">
           <div>
             <span>Producto / servicio</span>
             <strong>{getRequestProductLabel(request)}</strong>
             <p>{request.requestType || "Solicitud"} · {request.deliveryType || "Sin tipo de entrega"}</p>
           </div>
-          <StatusBadge tone={getRequestStatusTone(request.status)}>
-            {request.status || "Solicitud recibida"}
-          </StatusBadge>
+          <div className="request-detail-status-stack">
+            <StatusBadge tone={getRequestStatusTone(request.status)}>
+              {request.status || "Solicitud recibida"}
+            </StatusBadge>
+            <small>{getRequestProgress(request.status)}% completado</small>
+          </div>
         </div>
+
+        <div className="request-detail-progress-strip">
+          <div>
+            <span>Solicitado</span>
+            <strong>{requestedQuantity}</strong>
+          </div>
+          <div>
+            <span>Entregado</span>
+            <strong>{deliveredQuantity}</strong>
+          </div>
+          <div>
+            <span>Pendiente</span>
+            <strong>{pendingQuantity}</strong>
+          </div>
+          <div className="request-detail-progress-cell">
+            <span>Avance</span>
+            <ProgressBar value={getRequestProgress(request.status)} tone={getRequestStatusTone(request.status)} />
+          </div>
+        </div>
+
+        {isCertificateLike && (
+          <nav className="request-detail-tabs" aria-label="Secciones del detalle de solicitud">
+            <button
+              type="button"
+              className={detailActiveTab === "summary" ? "active" : ""}
+              onClick={() => setDetailActiveTab("summary")}
+            >
+              Resumen
+            </button>
+            <button
+              type="button"
+              className={detailActiveTab === "students" ? "active" : ""}
+              onClick={() => setDetailActiveTab("students")}
+            >
+              Alumnos y certificados
+            </button>
+          </nav>
+        )}
 
         <div className="request-detail-grid">
           <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} · ${request.campus || "Sin plantel"}`} />
@@ -11897,18 +12121,6 @@ function getYearFromDateString(value) {
 function sortTextValues(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "es"));
-}
-
-function buildCertificateDistribution(items, keyGetter, fallbackLabel = "Sin dato") {
-  const counter = items.reduce((map, item) => {
-    const label = String(keyGetter(item) || fallbackLabel).trim() || fallbackLabel;
-    map.set(label, (map.get(label) || 0) + 1);
-    return map;
-  }, new Map());
-
-  return [...counter.entries()]
-    .map(([label, value]) => ({ label, value }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"));
 }
 
 function buildGeneratedCertificatePdfStoragePath(request, student, fileName) {
@@ -12941,7 +13153,7 @@ function CertificateTemplatesView({
   }
 
   return (
-    <section className="certificate-templates-section">
+    <section className="certificate-templates-section printshop-tab-redesign templates-redesign-page">
       <div className="printshop-section-heading">
         <div>
           <p className="section-kicker printshop-kicker">Plantillas de certificados</p>
@@ -13882,7 +14094,7 @@ function CertificateSignersView({
 
 
   return (
-    <section className="printshop-signers-section">
+    <section className="printshop-signers-section printshop-tab-redesign signers-redesign-page">
       <div className="printshop-section-heading">
         <div>
           <p className="section-kicker printshop-kicker">Certificados</p>
@@ -14101,7 +14313,7 @@ function ProductCatalogView({
   }
 
   return (
-    <section className="printshop-catalog-page">
+    <section className="printshop-catalog-page printshop-tab-redesign product-catalog-redesign">
       <div className="printshop-catalog-hero">
         <div>
           <p className="section-kicker printshop-kicker">Catálogo</p>
@@ -14578,6 +14790,131 @@ function ProductCatalogView({
         </aside>
       </div>
     </section>
+  );
+}
+
+function getPrintshopTabs(isAdmin) {
+  return [
+    { key: "dashboard", label: "Inicio", icon: "dashboard" },
+    { key: "catalog", label: "Cat\u00e1logo de productos", icon: "catalog" },
+    { key: "inventory", label: "Inventario terminado", icon: "inventory" },
+    { key: "supplies", label: "Insumos", icon: "supplies" },
+    { key: "requests", label: "Solicitudes", icon: "requests" },
+    { key: "batches", label: "Lotes de producci\u00f3n", icon: "batches" },
+    { key: "certificates", label: "Historial de certificados", icon: "certificates" },
+    { key: "logs", label: "Bit\u00e1cora", icon: "logs" },
+    { key: "templates", label: "Plantillas", icon: "templates", adminOnly: true },
+    { key: "signers", label: "Firmas", icon: "signers", adminOnly: true },
+  ].filter((tab) => !tab.adminOnly || isAdmin);
+}
+
+function PrintshopIcon({ name }) {
+  const commonProps = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: "2",
+  };
+
+  const paths = {
+    dashboard: (
+      <>
+        <rect x="4" y="4" width="6" height="6" rx="1.5" />
+        <rect x="14" y="4" width="6" height="6" rx="1.5" />
+        <rect x="4" y="14" width="6" height="6" rx="1.5" />
+        <rect x="14" y="14" width="6" height="6" rx="1.5" />
+      </>
+    ),
+    catalog: (
+      <>
+        <path d="M6 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V5a1 1 0 0 1 1-1Z" />
+        <path d="M8 8h7" />
+        <path d="M8 12h6" />
+      </>
+    ),
+    inventory: (
+      <>
+        <path d="M4 7l8-4 8 4-8 4-8-4Z" />
+        <path d="M4 7v10l8 4 8-4V7" />
+        <path d="M12 11v10" />
+      </>
+    ),
+    supplies: (
+      <>
+        <path d="M7 5h10v15H7z" />
+        <path d="M9 5V3h6v2" />
+        <path d="M10 10h4" />
+        <path d="M10 14h4" />
+      </>
+    ),
+    requests: (
+      <>
+        <path d="M7 3h7l4 4v14H7z" />
+        <path d="M14 3v5h5" />
+        <path d="M10 12h6" />
+        <path d="M10 16h4" />
+      </>
+    ),
+    batches: (
+      <>
+        <path d="M4 20V9l4 3V8l4 3V7l8 5v8Z" />
+        <path d="M7 16h3" />
+        <path d="M14 16h3" />
+      </>
+    ),
+    certificates: (
+      <>
+        <path d="M6 4h12v16H6z" />
+        <path d="M9 9h6" />
+        <path d="M9 13l2 2 4-5" />
+      </>
+    ),
+    logs: (
+      <>
+        <path d="M5 5h14" />
+        <path d="M5 12h10" />
+        <path d="M5 19h14" />
+        <path d="M18 10v4l3 2" />
+      </>
+    ),
+    templates: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <path d="M8 8h8" />
+        <path d="M8 12h3" />
+        <path d="M13 12h3" />
+        <path d="M8 16h8" />
+      </>
+    ),
+    signers: (
+      <>
+        <path d="M4 20h16" />
+        <path d="M6 16l8.5-8.5 2 2L8 18H6z" />
+        <path d="M15 6l2-2 3 3-2 2" />
+      </>
+    ),
+    view: (
+      <>
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+        <circle cx="12" cy="12" r="2.5" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M6 7l1 14h10l1-14" />
+        <path d="M9 7V4h6v3" />
+      </>
+    ),
+  };
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...commonProps}>
+      {paths[name] || paths.dashboard}
+    </svg>
   );
 }
 
