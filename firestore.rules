@@ -2837,6 +2837,76 @@ service cloud.firestore {
     }
 
 
+
+
+    function canReadIdea() {
+      return isAdmin()
+        || (
+          hasProfile()
+          && resource.data.createdByUid == request.auth.uid
+        );
+    }
+
+    function canReadIdeaId(ideaId) {
+      return isAdmin()
+        || (
+          hasProfile()
+          && exists(/databases/$(database)/documents/ideas/$(ideaId))
+          && get(/databases/$(database)/documents/ideas/$(ideaId)).data.createdByUid == request.auth.uid
+        );
+    }
+
+    function validIdeaCreate() {
+      return hasProfile()
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.currentProblem is string
+        && request.resource.data.currentProblem.size() > 0
+        && request.resource.data.proposedIdea is string
+        && request.resource.data.proposedIdea.size() > 0
+        && request.resource.data.expectedBenefit is string
+        && request.resource.data.expectedBenefit.size() > 0
+        && request.resource.data.status == "nueva";
+    }
+
+    function validIdeaOwnerEvidenceUpdate() {
+      return hasProfile()
+        && resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "evidenceFiles",
+          "evidenceCount",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ]);
+    }
+
+    match /ideas/{ideaId} {
+      allow get, list: if canReadIdea();
+
+      allow create: if validIdeaCreate();
+
+      allow update: if isAdmin()
+        || validIdeaOwnerEvidenceUpdate();
+
+      allow delete: if isAdmin();
+
+      match /comments/{commentId} {
+        allow get, list: if canReadIdeaId(ideaId);
+
+        allow create: if isAdmin()
+          && request.resource.data.ideaId == ideaId
+          && request.resource.data.comment is string
+          && request.resource.data.comment.size() > 0
+          && request.resource.data.createdByUid == request.auth.uid;
+
+        allow update, delete: if false;
+      }
+    }
+
     match /bugReports/{reportId} {
       allow get, list: if canReadBugReport();
 
