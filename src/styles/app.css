@@ -46893,3 +46893,3285 @@ body {
     padding: 16px 16px 32px !important;
   }
 }
+
+/* =========================================================
+   MIS PROYECTOS - REDISEÑO VISUAL AISLADO
+   Agregado sobre app.css completo para no afectar otros módulos
+========================================================= */
+.my-projects-redesign {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 22px 32px 42px;
+  overflow-x: hidden;
+}
+
+.my-projects-redesign .message-box {
+  margin: 0 0 18px;
+}
+
+.my-projects-hero-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  min-height: 155px;
+  margin-bottom: 20px;
+  padding: 28px 34px;
+  border: 1px solid #dce7f6;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 92% 12%, rgba(15, 79, 196, 0.12), transparent 30%),
+    radial-gradient(circle at 5% 18%, rgba(237, 28, 36, 0.035), transparent 25%),
+    linear-gradient(135deg, #ffffff 0%, #f8fbff 48%, #eaf3ff 100%);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.my-projects-hero-card::after {
+  content: "";
+  position: absolute;
+  right: -90px;
+  top: -110px;
+  width: 310px;
+  height: 310px;
+  border-radius: 50%;
+  border: 36px solid rgba(15, 79, 196, 0.055);
+  pointer-events: none;
+}
+
+.my-projects-hero-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+
+.my-projects-hero-icon {
+  width: 78px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid #d7e5fb;
+  border-radius: 50%;
+  background: #eef5ff;
+  color: #0f4fc4;
+  font-size: 34px;
+  font-weight: 900;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.my-projects-hero-main span {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f4fc4;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.my-projects-hero-main h2 {
+  margin: 0 0 8px;
+  color: #071f4f;
+  font-size: clamp(32px, 2.8vw, 46px);
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.my-projects-hero-main p {
+  margin: 0;
+  max-width: 760px;
+  color: #526176;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.my-projects-hero-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: min(100%, 540px);
+}
+
+.my-projects-search-box {
+  width: min(410px, 100%);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.my-projects-metrics-v2 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.my-project-metric-card-v2 {
+  position: relative;
+  width: 100%;
+  min-height: 125px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid #e6edf7;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  color: #071f4f;
+  text-align: left;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.my-project-metric-card-v2::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+}
+
+.my-project-metric-card-v2::before {
+  content: "›";
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #73839a;
+  font-size: 28px;
+  font-weight: 400;
+}
+
+.my-project-metric-card-v2:hover {
+  transform: translateY(-2px);
+  border-color: #c9d9f2;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.1);
+}
+
+.my-project-metric-icon-v2 {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 25px;
+  font-weight: 900;
+}
+
+.my-project-metric-card-v2 strong {
+  display: block;
+  color: #071f4f;
+  font-size: 30px;
+  line-height: 1;
+  margin-bottom: 7px;
+}
+
+.my-project-metric-card-v2 h4 {
+  margin: 0 0 6px;
+  color: #071f4f;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.my-project-metric-card-v2 p {
+  margin: 0;
+  color: #536176;
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 170px;
+}
+
+.my-project-metric-card-v2.blue .my-project-metric-icon-v2 {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+.my-project-metric-card-v2.blue::after { background: #0f4fc4; }
+
+.my-project-metric-card-v2.teal .my-project-metric-icon-v2 {
+  background: #ccfbf1;
+  color: #0f9488;
+}
+.my-project-metric-card-v2.teal::after { background: #0f9488; }
+
+.my-project-metric-card-v2.green .my-project-metric-icon-v2 {
+  background: #dcfce7;
+  color: #16a34a;
+}
+.my-project-metric-card-v2.green::after { background: #16a34a; }
+
+.my-project-metric-card-v2.orange .my-project-metric-icon-v2 {
+  background: #ffedd5;
+  color: #f97316;
+}
+.my-project-metric-card-v2.orange::after { background: #f97316; }
+
+.my-project-metric-card-v2.purple .my-project-metric-icon-v2 {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+.my-project-metric-card-v2.purple::after { background: #7c3aed; }
+
+.my-projects-layout-v2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 22px;
+  align-items: start;
+}
+
+.my-projects-main-v2,
+.my-projects-side-v2 {
+  min-width: 0;
+}
+
+.my-projects-side-v2 {
+  display: grid;
+  gap: 18px;
+  position: sticky;
+  top: 22px;
+}
+
+.my-projects-workspace-v2,
+.my-projects-side-card-v2 {
+  border: 1px solid #e4ebf5;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.my-projects-workspace-v2 {
+  padding: 22px;
+}
+
+.my-projects-workspace-header-v2 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e7eef7;
+  margin-bottom: 16px;
+}
+
+.my-projects-section-title-v2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.my-projects-section-icon-v2 {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.my-projects-section-title-v2 h3 {
+  margin: 0 0 5px;
+  color: #071f4f;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+}
+
+.my-projects-section-title-v2 p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.workspace-toolbar-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.my-project-card-list-v2 {
+  display: grid;
+  gap: 14px;
+}
+
+.my-project-card-v2 {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 16px;
+  border: 1px solid #e4ebf5;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  padding: 16px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.my-project-card-v2:hover {
+  transform: translateY(-1px);
+  border-color: #c7d8f0;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+}
+
+.my-project-icon-v2 {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.my-project-card-body-v2 {
+  min-width: 0;
+}
+
+.my-project-card-top-v2 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.my-project-card-top-v2 .project-title-line h3 {
+  margin: 0;
+  color: #071f4f;
+  font-size: 18px;
+  letter-spacing: -0.015em;
+}
+
+.my-project-card-top-v2 p {
+  margin: 0;
+  color: #536176;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.my-project-meta-grid-v2 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 13px;
+}
+
+.my-project-meta-item-v2 {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.meta-item-icon-v2 {
+  width: 28px;
+  height: 28px;
+  display: grid !important;
+  place-items: center;
+  margin: 0 !important;
+  border-radius: 8px;
+  background: #f1f6ff;
+  color: #0f4fc4 !important;
+  font-size: 13px !important;
+}
+
+.my-project-progress-row-v2 {
+  display: grid;
+  grid-template-columns: 85px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.my-project-progress-row-v2 > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.my-project-progress-row-v2 span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.my-project-progress-row-v2 strong {
+  color: #0f4fc4;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.my-project-detail-button-v2 {
+  min-width: 118px;
+  padding: 10px 14px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.my-project-detail-button-v2 span {
+  color: inherit;
+  font-size: 15px;
+}
+
+.my-projects-side-card-v2 {
+  padding: 18px;
+}
+
+.my-projects-side-header-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e7eef7;
+  margin-bottom: 14px;
+}
+
+.my-projects-side-header-v2 > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.my-projects-side-header-v2 span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.my-projects-side-header-v2 h3 {
+  margin: 0;
+  color: #071f4f;
+  font-size: 18px;
+}
+
+.my-projects-side-header-v2 button {
+  border: none;
+  background: transparent;
+  color: #0f4fc4;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.my-projects-deadline-list-v2,
+.my-projects-activity-list-v2 {
+  display: grid;
+  gap: 10px;
+}
+
+.my-projects-deadline-item-v2,
+.my-projects-activity-item-v2 {
+  width: 100%;
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e4ebf5;
+  border-radius: 15px;
+  background: #fbfdff;
+  padding: 12px;
+  text-align: left;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.my-projects-deadline-item-v2 {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+}
+
+.my-projects-activity-item-v2 {
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+
+.my-projects-deadline-item-v2:hover,
+.my-projects-activity-item-v2:hover {
+  transform: translateY(-1px);
+  border-color: #c7d8f0;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.07);
+}
+
+.side-item-icon-v2 {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.side-item-icon-v2.teal {
+  background: #ccfbf1;
+  color: #0f9488;
+}
+
+.side-item-icon-v2.red {
+  background: #fee2e2;
+  color: #ed1c24;
+}
+
+.my-projects-deadline-item-v2 strong,
+.my-projects-activity-item-v2 strong {
+  display: block;
+  color: #071f4f;
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.my-projects-deadline-item-v2 small,
+.my-projects-activity-item-v2 small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.my-projects-activity-item-v2 p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 7px 0 0;
+}
+
+.my-projects-empty-v2 {
+  min-height: 150px;
+  padding: 22px;
+}
+
+.my-projects-empty-v2 div {
+  font-size: 44px;
+}
+
+@media (max-width: 1560px) {
+  .my-projects-metrics-v2 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .my-projects-layout-v2 {
+    grid-template-columns: minmax(0, 1fr) 355px;
+  }
+
+  .my-project-meta-grid-v2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1280px) {
+  .my-projects-layout-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .my-projects-side-v2 {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .my-projects-redesign {
+    padding: 18px;
+  }
+
+  .my-projects-hero-card {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 24px;
+  }
+
+  .my-projects-hero-actions,
+  .my-projects-search-box {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .my-projects-metrics-v2,
+  .my-projects-side-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-toolbar-v2 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .my-projects-redesign .project-view-tabs,
+  .workspace-toolbar-v2 .filter-pills {
+    width: 100%;
+  }
+
+  .my-projects-redesign .project-view-tabs button,
+  .workspace-toolbar-v2 .filter-pills button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .my-projects-hero-main {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .my-project-card-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .my-project-card-top-v2,
+  .my-projects-workspace-header-v2 {
+    flex-direction: column;
+  }
+
+  .my-project-meta-grid-v2,
+  .my-project-progress-row-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .my-project-detail-button-v2,
+  .my-projects-redesign .workspace-count {
+    width: 100%;
+  }
+
+  .my-projects-deadline-item-v2 {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .my-projects-deadline-item-v2 .visual-badge {
+    grid-column: 2;
+    width: fit-content;
+  }
+}
+
+/* =========================================================
+   AJUSTE MIS PROYECTOS: HERO MÁS DELGADO + ICONO DEL MENÚ
+   Se agrega al final para no afectar otros módulos.
+========================================================= */
+.my-projects-menu-svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.my-projects-hero-card {
+  min-height: 116px;
+  padding: 20px 28px;
+  gap: 18px;
+  margin-bottom: 16px;
+  border-radius: 24px;
+}
+
+.my-projects-hero-card::after {
+  right: -70px;
+  top: -95px;
+  width: 250px;
+  height: 250px;
+  border-width: 28px;
+}
+
+.my-projects-hero-main {
+  gap: 16px;
+}
+
+.my-projects-hero-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  font-size: 27px;
+}
+
+.my-projects-hero-main span {
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.13em;
+}
+
+.my-projects-hero-main h2 {
+  margin-bottom: 5px;
+  font-size: clamp(28px, 2.2vw, 36px);
+}
+
+.my-projects-hero-main p {
+  max-width: 700px;
+  font-size: 14px;
+  line-height: 1.42;
+}
+
+.my-projects-hero-actions {
+  min-width: min(100%, 500px);
+}
+
+.my-projects-hero-actions .visual-outline-button {
+  min-height: 42px;
+  padding: 10px 15px;
+  border-radius: 999px;
+}
+
+.my-projects-search-box {
+  height: 42px;
+}
+
+.my-project-metric-card-v2.blue .my-project-metric-icon-v2,
+.my-projects-section-icon-v2,
+.my-project-icon-v2 {
+  color: #0f4fc4;
+}
+
+.my-project-metric-icon-v2 .my-projects-menu-svg,
+.my-projects-section-icon-v2 .my-projects-menu-svg,
+.my-project-icon-v2 .my-projects-menu-svg {
+  width: 1em;
+  height: 1em;
+}
+
+@media (max-width: 980px) {
+  .my-projects-hero-card {
+    min-height: 0;
+    padding: 20px;
+  }
+
+  .my-projects-hero-icon {
+    width: 54px;
+    height: 54px;
+    font-size: 25px;
+  }
+}
+
+/* =========================================================
+   AJUSTE FINAL DETALLE DE PROYECTO - DISEÑO LIMPIO 2026
+   Se agrega al final para no romper estilos existentes.
+========================================================= */
+
+.project-detail-redesign {
+  padding: 22px 28px 36px;
+  gap: 18px;
+}
+
+.project-detail-topline {
+  position: relative;
+  overflow: hidden;
+  align-items: center;
+  min-height: 118px;
+  margin: 0 0 4px;
+  padding: 22px 26px;
+  border: 1px solid #dce8f8;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 91% 18%, rgba(15, 79, 196, 0.14), transparent 30%),
+    radial-gradient(circle at 72% 100%, rgba(15, 79, 196, 0.08), transparent 34%),
+    linear-gradient(135deg, #ffffff 0%, #f4f9ff 56%, #eaf4ff 100%);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
+}
+
+.project-detail-topline::after {
+  content: "";
+  position: absolute;
+  right: -90px;
+  bottom: -155px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  border: 38px solid rgba(15, 79, 196, 0.06);
+  pointer-events: none;
+}
+
+.project-detail-topline > * {
+  position: relative;
+  z-index: 1;
+}
+
+.project-detail-topline h2 {
+  font-size: 32px;
+  line-height: 1.08;
+}
+
+.project-detail-topline p {
+  max-width: 720px;
+  line-height: 1.45;
+}
+
+.project-detail-topline .visual-page-actions {
+  align-items: center;
+}
+
+.project-detail-topline .visual-outline-button,
+.project-detail-topline .status-change-select {
+  min-height: 46px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.project-detail-topline .status-change-select {
+  border-color: #dbe7ff;
+  color: #0f2442;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.project-hero-overview {
+  min-height: 214px;
+  margin-top: 0;
+  padding: 24px 28px;
+  border: 1px solid #e3ebf7;
+  border-radius: 22px;
+  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.07);
+}
+
+.project-hero-overview .area-progress-track {
+  height: 8px;
+  background: #e6edf7;
+}
+
+.project-hero-overview .area-progress-fill {
+  background: linear-gradient(90deg, #0f4fc4, #1d6bff);
+}
+
+.project-title-area {
+  align-items: center;
+}
+
+.project-code-badge {
+  min-height: 44px;
+  border-radius: 11px;
+  padding: 0 17px;
+}
+
+.project-title-area h3 {
+  font-size: 23px;
+}
+
+.hero-meta-grid {
+  gap: 0;
+  border-top: 1px solid #e6edf7;
+  padding-top: 14px;
+}
+
+.hero-meta-item {
+  border-top: 0;
+  padding: 0 18px;
+  min-height: 48px;
+  border-right: 1px solid #e6edf7;
+}
+
+.hero-meta-item:first-child {
+  padding-left: 0;
+}
+
+.hero-meta-item:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.hero-meta-icon {
+  border-radius: 12px;
+}
+
+.project-hero-illustration {
+  height: 150px;
+  width: 190px;
+  justify-self: end;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(15, 79, 196, 0.15), transparent 48%),
+    linear-gradient(180deg, #eef5ff, #f8fbff);
+}
+
+.illustration-board {
+  transform: translateX(-4px);
+}
+
+.illustration-plant {
+  right: 28px;
+  bottom: 28px;
+}
+
+.redesigned-detail-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 380px);
+  gap: 18px;
+}
+
+.redesigned-detail-main,
+.redesigned-detail-side {
+  display: grid;
+  gap: 14px;
+}
+
+.redesigned-detail-main .visual-card,
+.redesigned-detail-side .visual-card,
+.admin-review-visual-card {
+  margin-top: 0;
+  border-radius: 20px;
+  border-color: #e3ebf7;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+.description-focus-card {
+  min-height: 118px;
+  padding: 22px 24px;
+  border-left-width: 6px;
+}
+
+.description-focus-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+}
+
+.prominent-description {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.advances-card {
+  padding: 20px 22px;
+}
+
+.advances-header {
+  margin-bottom: 15px;
+}
+
+.advances-header p {
+  margin-left: 31px;
+  font-size: 12.5px;
+}
+
+.advance-composer {
+  grid-template-columns: 40px minmax(0, 1fr);
+  margin-bottom: 18px;
+}
+
+.advance-composer-box {
+  border-radius: 18px;
+}
+
+.advance-composer-box textarea {
+  min-height: 76px;
+}
+
+.advance-composer-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.attach-evidence-chip,
+.publish-advance-button {
+  min-height: 42px;
+  border-radius: 12px;
+}
+
+.publish-advance-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 12px 22px rgba(15, 79, 196, 0.2);
+}
+
+.publish-advance-button::before {
+  content: "➤";
+  font-size: 12px;
+}
+
+.advance-timeline {
+  gap: 12px;
+}
+
+.advance-entry {
+  border-radius: 18px;
+  padding: 14px;
+}
+
+.advance-entry-header {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.advance-file-review-card {
+  min-width: 0;
+  border: 1px solid #dbe3ec;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.advance-file-chip {
+  width: 100%;
+  border: none;
+  padding: 0;
+}
+
+.evidence-review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.evidence-review-meta {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.formal-log-card {
+  padding: 20px 22px;
+}
+
+.formal-log-table {
+  border-radius: 16px;
+}
+
+.formal-log-table-head,
+.formal-log-table-row {
+  grid-template-columns: 160px 105px minmax(0, 1fr) 145px;
+}
+
+.side-compact-card {
+  padding: 17px;
+}
+
+.redesigned-detail-side {
+  top: 18px;
+}
+
+.responsible-item {
+  padding: 10px;
+  border: 1px solid #edf1f7;
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.redesigned-indicator-grid {
+  gap: 10px;
+}
+
+.redesigned-indicator-grid .indicator-card {
+  border-radius: 15px;
+  min-height: 86px;
+}
+
+.redesigned-indicator-grid .indicator-card strong {
+  font-size: 23px;
+}
+
+.next-actions-list .action-item {
+  padding: 10px;
+  border: 1px solid #edf1f7;
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.comment-list .comment-item {
+  background: #fbfdff;
+}
+
+.internal-notes-admin-card {
+  border-left-width: 5px;
+}
+
+.breadcrumb-line {
+  margin-top: 0;
+  color: #0f4fc4;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 1500px) {
+  .project-detail-redesign {
+    padding: 20px 24px 34px;
+  }
+
+  .redesigned-detail-layout {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
+  .project-hero-overview {
+    grid-template-columns: minmax(0, 1fr) 180px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .redesigned-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .redesigned-detail-side {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-hero-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .project-hero-illustration {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .project-detail-redesign {
+    padding: 16px;
+  }
+
+  .project-detail-topline {
+    padding: 20px;
+  }
+
+  .hero-meta-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .hero-meta-item {
+    border-right: 0;
+    border-top: 1px solid #e6edf7;
+    padding: 12px 0 0;
+  }
+
+  .advance-composer-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .advance-help-text {
+    margin-right: 0;
+  }
+
+  .redesigned-detail-side {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   PATCH SEGURO - REDISEÑO EDITAR PROYECTO
+   Agregar al final de app.css
+========================================================= */
+
+.edit-project-redesign-page {
+  padding-bottom: 32px;
+}
+
+.edit-project-redesign-page .message-box {
+  margin: 0 0 16px;
+}
+
+.edit-project-redesign-page .edit-project-hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 32px;
+  margin-bottom: 18px;
+  border: 1px solid #dde7f3;
+  border-radius: 24px;
+  background: linear-gradient(90deg, #f9fbff 0%, #f7fbff 50%, #eef5ff 100%);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+}
+
+.edit-project-redesign-page .edit-project-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.edit-project-redesign-page .edit-project-hero-icon {
+  width: 74px;
+  height: 74px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #edf4ff 0%, #e8f1ff 100%);
+  color: #0f4fc4;
+  font-size: 34px;
+  flex-shrink: 0;
+}
+
+.edit-project-redesign-page .edit-project-kicker {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #0f4fc4;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.edit-project-redesign-page .edit-project-hero-card h2 {
+  margin: 0;
+  color: #0f2442;
+  font-size: 28px;
+  line-height: 1.05;
+}
+
+.edit-project-redesign-page .edit-project-hero-card p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 16px;
+}
+
+.edit-project-redesign-page .edit-project-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.edit-project-redesign-page .edit-summary-redesign {
+  grid-template-columns: 52px minmax(150px, 0.9fr) minmax(120px, 0.6fr) minmax(230px, 1.2fr) repeat(4, minmax(120px, 0.8fr));
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+
+.edit-project-redesign-page .edit-summary-strip {
+  border-radius: 20px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.edit-project-redesign-page .edit-summary-strip > div:not(.edit-summary-icon) {
+  min-width: 0;
+}
+
+.edit-project-redesign-page .edit-summary-strip strong {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.edit-project-redesign-page .edit-project-redesign-layout {
+  grid-template-columns: minmax(0, 1fr) 350px;
+  gap: 20px;
+}
+
+.edit-project-redesign-page .edit-project-section-card,
+.edit-project-redesign-page .edit-side-card {
+  border: 1px solid #e3ebf5;
+  border-radius: 22px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.edit-project-redesign-page .form-section-card {
+  padding: 22px;
+}
+
+.edit-project-redesign-page .form-section-header {
+  margin-bottom: 22px;
+}
+
+.edit-project-redesign-page .form-section-header > span {
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+}
+
+.edit-project-redesign-page .form-section-header h3 {
+  font-size: 18px;
+}
+
+.edit-project-redesign-page .form-section-header p {
+  font-size: 14px;
+}
+
+.edit-project-redesign-page .edit-form-grid-redesign {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 20px;
+}
+
+.edit-project-redesign-page .visual-field > span {
+  font-size: 13px;
+}
+
+.edit-project-redesign-page .visual-field input,
+.edit-project-redesign-page .visual-field select,
+.edit-project-redesign-page .visual-field textarea {
+  min-height: 52px;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+}
+
+.edit-project-redesign-page .visual-field textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.edit-project-redesign-page .field-counter {
+  margin-top: -32px;
+  font-size: 12px;
+}
+
+.edit-project-redesign-page .edit-progress-redesign {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 14px 16px;
+  align-items: center;
+}
+
+.edit-project-redesign-page .edit-progress-redesign input[type="range"] {
+  width: 100%;
+  accent-color: #0f4fc4;
+}
+
+.edit-project-redesign-page .edit-progress-scale {
+  display: flex;
+  justify-content: space-between;
+  grid-column: 1 / 2;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: -4px;
+}
+
+.edit-project-redesign-page .edit-progress-box {
+  grid-row: 1 / span 2;
+  grid-column: 2 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 54px;
+  border: 1px solid #d9e2ef;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.edit-project-redesign-page .edit-progress-box input {
+  width: 58px;
+  min-height: auto;
+  border: none;
+  padding: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f2442;
+  background: transparent;
+}
+
+.edit-project-redesign-page .edit-progress-box strong {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.edit-project-redesign-page .selected-chips {
+  margin-top: 10px;
+}
+
+.edit-project-redesign-page .selected-chips button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.edit-project-redesign-page .edit-attachments-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+}
+
+.edit-project-redesign-page .edit-dropzone {
+  min-height: 190px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f7fbff 100%);
+}
+
+.edit-project-redesign-page .edit-dropzone span {
+  font-size: 38px;
+}
+
+.edit-project-redesign-page .attached-files {
+  gap: 12px;
+}
+
+.edit-project-redesign-page .attached-file-item {
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.edit-project-redesign-page .attached-file-item > span {
+  border-radius: 12px;
+}
+
+.edit-project-redesign-page .edit-project-side-redesign {
+  gap: 16px;
+  align-content: start;
+}
+
+.edit-project-redesign-page .edit-preview-card {
+  border-radius: 18px;
+}
+
+.edit-project-redesign-page .preview-badges {
+  margin-bottom: 16px;
+}
+
+.edit-project-redesign-page .preview-details {
+  gap: 12px;
+}
+
+.edit-project-redesign-page .preview-details > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.edit-project-redesign-page .edit-required-list {
+  gap: 10px;
+}
+
+.edit-project-redesign-page .edit-required-list div {
+  font-size: 13px;
+}
+
+.edit-project-redesign-page .edit-tip-card {
+  background: linear-gradient(180deg, #f8fbff 0%, #f3f8ff 100%);
+}
+
+.edit-project-redesign-page .edit-tip-header {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.edit-project-redesign-page .edit-tip-header > span {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 22px;
+}
+
+.edit-project-redesign-page .edit-tip-header h3 {
+  margin: 0 0 6px;
+  color: #0f2442;
+  font-size: 18px;
+}
+
+.edit-project-redesign-page .edit-tip-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.edit-project-redesign-page .edit-impact-card {
+  border-radius: 20px;
+}
+
+@media (max-width: 1500px) {
+  .edit-project-redesign-page .edit-summary-redesign {
+    grid-template-columns: 52px repeat(3, minmax(170px, 1fr)) repeat(3, minmax(120px, 0.9fr));
+  }
+}
+
+@media (max-width: 1320px) {
+  .edit-project-redesign-page .edit-project-hero-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .edit-project-redesign-page .edit-project-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .edit-project-redesign-page .edit-summary-redesign {
+    grid-template-columns: 52px repeat(2, minmax(180px, 1fr)) repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 1200px) {
+  .edit-project-redesign-page .edit-project-redesign-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-project-redesign-page .edit-form-grid-redesign,
+  .edit-project-redesign-page .edit-attachments-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .edit-project-redesign-page .edit-project-hero-card {
+    padding: 22px 18px;
+    border-radius: 20px;
+  }
+
+  .edit-project-redesign-page .edit-project-hero-left {
+    align-items: flex-start;
+  }
+
+  .edit-project-redesign-page .edit-project-hero-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 18px;
+    font-size: 28px;
+  }
+
+  .edit-project-redesign-page .edit-project-hero-card h2 {
+    font-size: 24px;
+  }
+
+  .edit-project-redesign-page .edit-project-hero-card p {
+    font-size: 14px;
+  }
+
+  .edit-project-redesign-page .edit-summary-redesign {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-project-redesign-page .edit-summary-icon {
+    margin-bottom: 6px;
+  }
+
+  .edit-project-redesign-page .edit-progress-redesign {
+    grid-template-columns: 1fr;
+  }
+
+  .edit-project-redesign-page .edit-progress-box {
+    grid-column: auto;
+    grid-row: auto;
+    justify-content: flex-start;
+    padding: 0 14px;
+  }
+
+  .edit-project-redesign-page .edit-progress-scale {
+    grid-column: auto;
+  }
+}
+
+/* =========================================================
+   AJUSTE DE ESPACIADO - EDITAR PROYECTO
+   Agregar después del patch actual de Editar proyecto
+========================================================= */
+
+.edit-project-redesign-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 20px 32px !important;
+}
+
+.edit-project-redesign-page > form {
+  width: 100%;
+  max-width: 100%;
+}
+
+.edit-project-redesign-page .edit-project-hero-card,
+.edit-project-redesign-page .edit-summary-strip,
+.edit-project-redesign-page .edit-project-redesign-layout {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
+.edit-project-redesign-page .edit-project-redesign-layout {
+  margin-right: 0;
+}
+
+@media (min-width: 1200px) {
+  .edit-project-redesign-page {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .edit-project-redesign-page {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+}
+
+/* =========================================================
+   REDISEÑO VISUAL - MÓDULO IMPRENTA
+   Agregar al final de app.css
+========================================================= */
+
+.printshop-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 24px 34px !important;
+  gap: 18px !important;
+}
+
+.printshop-page *,
+.printshop-page *::before,
+.printshop-page *::after {
+  box-sizing: border-box;
+}
+
+.printshop-topbar {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 430px) !important;
+  align-items: center !important;
+  gap: 28px !important;
+  min-height: 168px;
+  margin: 0 !important;
+  padding: 30px 34px !important;
+  border: 1px solid rgba(185, 205, 250, 0.22);
+  border-radius: 24px !important;
+  color: #ffffff;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%) !important;
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.16);
+}
+
+.printshop-topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 62%, rgba(255, 255, 255, 0.07) 62% 100%),
+    radial-gradient(circle at 97% 70%, rgba(255, 255, 255, 0.1), transparent 24%);
+  opacity: 0.95;
+}
+
+.printshop-topbar::after {
+  content: "";
+  position: absolute;
+  right: -26px;
+  bottom: -50px;
+  width: 300px;
+  height: 210px;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  border-radius: 34px;
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+
+.printshop-topbar > div {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding-left: 86px;
+}
+
+.printshop-topbar > div::before {
+  content: "▣";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.printshop-topbar .printshop-kicker,
+.printshop-topbar .section-kicker {
+  margin: 0 0 8px !important;
+  color: #d7e6ff !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+}
+
+.printshop-topbar h1 {
+  margin: 0 0 8px !important;
+  color: #ffffff !important;
+  font-size: clamp(30px, 3vw, 42px) !important;
+  line-height: 1 !important;
+  letter-spacing: -0.045em !important;
+}
+
+.printshop-topbar p:not(.section-kicker) {
+  max-width: 780px !important;
+  margin: 0 !important;
+  color: #e7f0ff !important;
+  font-size: 15px !important;
+  line-height: 1.55 !important;
+}
+
+.printshop-topbar .printshop-search,
+.printshop-search {
+  position: relative;
+  z-index: 1;
+  width: 100% !important;
+  min-height: 58px !important;
+  margin: 0 !important;
+  padding: 0 18px !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 18px 38px rgba(2, 12, 32, 0.18) !important;
+}
+
+.printshop-search span {
+  width: 34px !important;
+  height: 34px !important;
+  background: #eef4ff !important;
+  color: #0f4fc4 !important;
+}
+
+.printshop-search input {
+  color: #0f2442 !important;
+  font-size: 14px !important;
+}
+
+.printshop-section-tabs {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  margin: 0 0 4px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.printshop-section-tabs button {
+  min-height: 46px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 9px !important;
+  border: 1px solid #dbe3ef !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0f2442 !important;
+  padding: 0 18px !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04) !important;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.printshop-section-tabs button:hover {
+  transform: translateY(-1px);
+  border-color: #b9cdfa !important;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08) !important;
+}
+
+.printshop-section-tabs button.active {
+  border-color: #0f4fc4 !important;
+  background: #0f4fc4 !important;
+  color: #ffffff !important;
+  box-shadow: 0 14px 28px rgba(15, 79, 196, 0.24) !important;
+}
+
+.printshop-section-tabs button span {
+  font-size: 15px !important;
+  line-height: 1 !important;
+}
+
+.printshop-dashboard-compact-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  margin: 2px 0 18px !important;
+}
+
+.printshop-dashboard-compact-metrics .printshop-metric-card {
+  min-height: 118px !important;
+  padding: 20px !important;
+  border-radius: 18px !important;
+  gap: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.07) !important;
+}
+
+.printshop-dashboard-compact-metrics .printshop-metric-icon {
+  width: 56px !important;
+  height: 56px !important;
+  border-radius: 19px !important;
+  font-size: 23px !important;
+}
+
+.printshop-dashboard-compact-metrics .printshop-metric-card strong {
+  font-size: 33px !important;
+  margin-bottom: 6px !important;
+}
+
+.printshop-dashboard-compact-metrics .printshop-metric-card span {
+  color: #0f2442 !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  margin-bottom: 5px !important;
+}
+
+.printshop-dashboard-compact-metrics .printshop-metric-card p {
+  color: #64748b !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.printshop-dashboard-compact-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.42fr) minmax(380px, 0.78fr) !important;
+  gap: 18px !important;
+  align-items: start !important;
+}
+
+.printshop-dashboard-compact-layout .printshop-panel {
+  border-radius: 22px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08) !important;
+  padding: 20px !important;
+}
+
+.printshop-dashboard-compact-layout .printshop-panel-header {
+  padding-bottom: 16px !important;
+  margin-bottom: 16px !important;
+}
+
+.printshop-dashboard-compact-layout .printshop-panel-header span {
+  width: 38px !important;
+  height: 38px !important;
+  border-radius: 13px !important;
+  font-size: 17px !important;
+}
+
+.printshop-dashboard-compact-layout .printshop-panel-header h2 {
+  font-size: 20px !important;
+  letter-spacing: -0.02em;
+}
+
+.printshop-dashboard-compact-layout .printshop-panel-header button {
+  border-radius: 999px !important;
+  background: #eaf2ff !important;
+  color: #0f4fc4 !important;
+  padding: 7px 11px !important;
+  font-size: 12px !important;
+}
+
+.printshop-workboard-grid.compact-home {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 18px !important;
+}
+
+.printshop-workboard-column {
+  min-width: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+
+.printshop-workboard-column + .printshop-workboard-column {
+  border-left: 1px solid #e7edf6;
+  padding-left: 18px;
+}
+
+.printshop-mini-heading {
+  display: grid !important;
+  grid-template-columns: 42px minmax(0, 1fr) !important;
+  gap: 12px !important;
+  align-items: center !important;
+  margin-bottom: 2px !important;
+}
+
+.printshop-mini-heading > span {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 14px !important;
+  display: grid !important;
+  place-items: center !important;
+  background: #eaf2ff !important;
+  color: #0f4fc4 !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+}
+
+.printshop-mini-heading strong {
+  display: block;
+  color: #0f2442 !important;
+  font-size: 15px !important;
+  margin-bottom: 4px;
+}
+
+.printshop-mini-heading p {
+  margin: 0 !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.printshop-request-card-list,
+.printshop-batch-card-list,
+.compact-home-inventory {
+  display: grid !important;
+  gap: 10px !important;
+}
+
+.printshop-request-card.home-clickable-card,
+.printshop-batch-card.home-clickable-card,
+.compact-home-inventory .finished-inventory-row.home-clickable-card {
+  min-height: 72px;
+  border-radius: 15px !important;
+  padding: 13px 14px !important;
+  background: linear-gradient(180deg, #ffffff, #fbfdff) !important;
+}
+
+.printshop-request-card.home-clickable-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 12px !important;
+  align-items: center !important;
+}
+
+.printshop-request-card strong,
+.printshop-batch-card strong,
+.finished-inventory-row strong {
+  color: #0f2442 !important;
+  font-size: 14px !important;
+}
+
+.printshop-request-card span,
+.printshop-batch-card span,
+.finished-inventory-row span {
+  color: #64748b !important;
+  font-size: 12px !important;
+}
+
+.printshop-request-card small,
+.printshop-batch-card small,
+.finished-inventory-row small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b !important;
+  font-size: 11px !important;
+  text-align: right;
+}
+
+.printshop-home-footer-link {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  border: 1px solid #bad0ff;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f4fc4;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+.printshop-home-footer-link:hover {
+  background: #f8fbff;
+  border-color: #0f4fc4;
+}
+
+.printshop-home-footer-link span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.printshop-home-footer-link.full-width {
+  margin-top: 16px;
+}
+
+.printshop-status-badge {
+  border-radius: 999px !important;
+  padding: 7px 10px !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+}
+
+.printshop-progress-cell {
+  gap: 10px !important;
+}
+
+.printshop-progress-track {
+  height: 8px !important;
+  background: #e8edf5 !important;
+}
+
+.printshop-progress-fill {
+  border-radius: inherit;
+}
+
+@media (max-width: 1450px) {
+  .printshop-page {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  .printshop-dashboard-compact-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 1250px) {
+  .printshop-topbar {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-topbar .printshop-search {
+    max-width: 620px;
+  }
+
+  .printshop-dashboard-compact-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .printshop-page {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  .printshop-topbar {
+    padding: 24px 20px !important;
+    border-radius: 22px !important;
+  }
+
+  .printshop-topbar > div {
+    padding-left: 0;
+    padding-top: 76px;
+  }
+
+  .printshop-topbar > div::before {
+    top: 0;
+    transform: none;
+  }
+
+  .printshop-workboard-grid.compact-home {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-workboard-column + .printshop-workboard-column {
+    border-left: none;
+    border-top: 1px solid #e7edf6;
+    padding-left: 0;
+    padding-top: 18px;
+  }
+}
+
+@media (max-width: 680px) {
+  .printshop-dashboard-compact-metrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-section-tabs button {
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - AJUSTE DE ESPACIADO Y ENCABEZADOS
+   - Más aire hacia el borde derecho
+   - Franjas de encabezado más delgadas y uniformes
+========================================================= */
+
+.printshop-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 34px 34px 20px !important;
+  gap: 16px !important;
+}
+
+.printshop-page > * {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Encabezado principal del módulo */
+.printshop-topbar {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px) !important;
+  gap: 22px !important;
+  min-height: 142px !important;
+  padding: 22px 28px !important;
+  border-radius: 22px !important;
+}
+
+.printshop-topbar > div {
+  padding-left: 74px !important;
+}
+
+.printshop-topbar > div::before {
+  width: 54px !important;
+  height: 54px !important;
+  border-radius: 18px !important;
+  font-size: 24px !important;
+}
+
+.printshop-topbar .printshop-kicker,
+.printshop-topbar .section-kicker {
+  margin: 0 0 6px !important;
+}
+
+.printshop-topbar h1 {
+  margin: 0 0 6px !important;
+  font-size: clamp(28px, 2.6vw, 38px) !important;
+}
+
+.printshop-topbar p:not(.section-kicker) {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+.printshop-topbar .printshop-search,
+.printshop-search {
+  min-height: 52px !important;
+  border-radius: 15px !important;
+}
+
+/* Franjas/headers de las demás pestañas */
+.printshop-catalog-hero,
+.printshop-section-heading,
+.printshop-focused-header {
+  padding: 14px 18px !important;
+  border-radius: 18px !important;
+  gap: 12px !important;
+  min-height: auto !important;
+}
+
+.printshop-catalog-hero h2,
+.printshop-section-heading h2 {
+  margin: 2px 0 4px !important;
+  font-size: clamp(21px, 1.9vw, 27px) !important;
+  line-height: 1.1 !important;
+}
+
+.printshop-catalog-hero p,
+.printshop-section-heading p,
+.printshop-focused-header p {
+  margin: 0 !important;
+  font-size: 13px !important;
+  line-height: 1.42 !important;
+}
+
+.printshop-hero-actions,
+.printshop-hero-actions.compact-actions {
+  gap: 8px !important;
+}
+
+.printshop-hero-actions .visual-primary-button,
+.printshop-hero-actions .visual-outline-button,
+.printshop-focused-header .visual-primary-button,
+.printshop-focused-header .visual-outline-button {
+  min-height: 40px !important;
+  padding: 0 14px !important;
+  border-radius: 12px !important;
+}
+
+/* Tabs un poco más compactas y uniformes */
+.printshop-section-tabs {
+  gap: 8px !important;
+  margin: 0 0 2px !important;
+}
+
+.printshop-section-tabs button {
+  min-height: 42px !important;
+  padding: 0 16px !important;
+  border-radius: 13px !important;
+  font-size: 12.5px !important;
+}
+
+.printshop-section-tabs button span {
+  font-size: 14px !important;
+}
+
+@media (max-width: 1200px) {
+  .printshop-page {
+    padding: 0 26px 30px 18px !important;
+  }
+
+  .printshop-topbar {
+    grid-template-columns: 1fr !important;
+    min-height: auto !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .printshop-page {
+    padding: 0 14px 24px !important;
+  }
+
+  .printshop-topbar {
+    padding: 18px 18px !important;
+    border-radius: 18px !important;
+  }
+
+  .printshop-topbar > div {
+    padding-left: 0 !important;
+  }
+
+  .printshop-topbar > div::before {
+    display: none !important;
+  }
+
+  .printshop-catalog-hero,
+  .printshop-section-heading,
+  .printshop-focused-header {
+    padding: 14px 14px !important;
+  }
+}/* =========================================================
+   IMPRENTA - REDISEÑO PESTAÑA INSUMOS
+   Agregar al final de app.css
+========================================================= */
+
+.printshop-page .supplies-redesign-page {
+  gap: 16px !important;
+}
+
+.printshop-page .supplies-hero-redesign {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 150px auto !important;
+  align-items: center !important;
+  padding: 16px 20px !important;
+  min-height: 108px !important;
+  border-radius: 20px !important;
+  background:
+    radial-gradient(circle at 88% 38%, rgba(237, 28, 36, 0.08), transparent 25%),
+    linear-gradient(90deg, #ffffff 0%, #f8fbff 66%, #fff4f4 100%) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05) !important;
+}
+
+.printshop-page .supplies-hero-redesign h2 {
+  font-size: clamp(23px, 2vw, 30px) !important;
+  margin: 2px 0 6px !important;
+}
+
+.printshop-page .supplies-hero-redesign p:not(.section-kicker) {
+  max-width: 850px !important;
+  font-size: 13px !important;
+  line-height: 1.42 !important;
+}
+
+.printshop-page .supplies-hero-count {
+  min-width: 132px !important;
+  min-height: 78px !important;
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.07) !important;
+}
+
+.printshop-page .supplies-hero-count strong {
+  font-size: 27px !important;
+}
+
+.printshop-page .supplies-hero-actions-redesign .visual-primary-button,
+.printshop-page .supplies-hero-actions-redesign .visual-outline-button {
+  min-height: 44px !important;
+  padding: 0 18px !important;
+  border-radius: 13px !important;
+  white-space: nowrap;
+}
+
+.printshop-page .supplies-metrics-redesign {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  margin-bottom: 0 !important;
+}
+
+.printshop-page .supplies-metrics-redesign .catalog-metric-card {
+  min-height: 78px !important;
+  padding: 13px 16px !important;
+  border-radius: 16px !important;
+  grid-template-columns: 42px minmax(0, 1fr) !important;
+  gap: 12px !important;
+}
+
+.printshop-page .supplies-metrics-redesign .catalog-metric-card div {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 14px !important;
+}
+
+.printshop-page .supplies-metrics-redesign .catalog-metric-card strong {
+  font-size: 25px !important;
+}
+
+.printshop-page .supplies-dashboard-layout:not(.printshop-focused-layout) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.printshop-page .supplies-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 390px);
+  gap: 16px;
+  align-items: start;
+}
+
+.printshop-page .supplies-dashboard-left,
+.printshop-page .supplies-dashboard-side {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.printshop-page .supplies-dashboard-side {
+  align-content: start;
+}
+
+.printshop-page .supplies-dashboard-grid .printshop-panel {
+  margin: 0 !important;
+  border-radius: 18px !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05) !important;
+}
+
+.printshop-page .supplies-dashboard-grid .printshop-panel-header {
+  padding-bottom: 10px !important;
+  margin-bottom: 12px !important;
+}
+
+.printshop-page .supply-barcode-scanner-redesign {
+  gap: 12px !important;
+}
+
+.printshop-page .compact-scan-controls {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: end !important;
+  gap: 12px !important;
+}
+
+.printshop-page .compact-scan-controls label {
+  margin: 0 !important;
+}
+
+.printshop-page .compact-scan-controls input {
+  height: 46px !important;
+  border-radius: 13px !important;
+}
+
+.printshop-page .supply-barcode-buttons {
+  flex-wrap: nowrap !important;
+}
+
+.printshop-page .supply-barcode-buttons .visual-primary-button,
+.printshop-page .supply-barcode-buttons .visual-outline-button {
+  min-height: 46px !important;
+  padding: 0 14px !important;
+  border-radius: 12px !important;
+  font-size: 12px !important;
+  white-space: nowrap;
+}
+
+.printshop-page .supply-quick-scan-card-redesign {
+  gap: 12px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.printshop-page .supply-quick-scan-heading strong {
+  color: #0f2442 !important;
+  font-size: 13px !important;
+}
+
+.printshop-page .supply-quick-scan-modes-redesign {
+  gap: 8px !important;
+}
+
+.printshop-page .supply-quick-scan-modes-redesign button {
+  min-height: 34px !important;
+  padding: 0 13px !important;
+  border-radius: 999px !important;
+  background: #f8fbff !important;
+}
+
+.printshop-page .supply-quick-scan-modes-redesign button.active {
+  background: #0f4fc4 !important;
+  border-color: #0f4fc4 !important;
+  color: #ffffff !important;
+}
+
+.printshop-page .supply-quick-scan-fields-redesign {
+  grid-template-columns: minmax(120px, 0.55fr) minmax(180px, 0.9fr) minmax(190px, 1fr) minmax(160px, 0.75fr) !important;
+  gap: 12px !important;
+}
+
+.printshop-page .supply-quick-scan-fields-redesign .supply-notes-field {
+  grid-column: 1 / -1;
+}
+
+.printshop-page .supply-quick-scan-fields-redesign label {
+  margin: 0 !important;
+}
+
+.printshop-page .supply-quick-scan-fields-redesign input,
+.printshop-page .supply-quick-scan-fields-redesign select {
+  min-height: 44px !important;
+  border-radius: 13px !important;
+}
+
+.printshop-page .supply-quick-scan-actions-redesign {
+  justify-content: space-between !important;
+  padding-top: 4px;
+}
+
+.printshop-page .supply-quick-scan-actions-redesign .visual-primary-button {
+  min-height: 46px !important;
+  padding: 0 18px !important;
+  border-radius: 13px !important;
+}
+
+.printshop-page .supplies-alert-card,
+.printshop-page .supplies-summary-card {
+  padding: 18px !important;
+  min-height: 0;
+}
+
+.printshop-page .supplies-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e8edf3;
+  margin-bottom: 12px;
+}
+
+.printshop-page .supplies-card-title-row > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.printshop-page .supplies-card-title-row h2 {
+  margin: 0 !important;
+  color: #0f2442 !important;
+  font-size: 17px !important;
+  line-height: 1.15;
+}
+
+.printshop-page .supplies-card-title-row button {
+  border: none;
+  background: transparent;
+  color: #0f4fc4;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.printshop-page .supplies-side-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.printshop-page .supplies-side-icon.warning {
+  background: #ffedd5;
+  color: #f97316;
+}
+
+.printshop-page .supplies-side-icon.summary {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.printshop-page .supplies-alert-list {
+  display: grid;
+  gap: 10px;
+}
+
+.printshop-page .supplies-alert-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.printshop-page .supplies-alert-row > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f97316;
+}
+
+.printshop-page .supplies-alert-row strong {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.printshop-page .supplies-alert-row b {
+  color: #ed1c24;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.printshop-page .supplies-alert-row small {
+  color: #526176;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.printshop-page .supplies-empty-mini {
+  padding: 12px;
+  border: 1px dashed #dbe3ec;
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.printshop-page .supplies-empty-mini strong {
+  display: block;
+  color: #0f2442;
+  font-size: 13px;
+}
+
+.printshop-page .supplies-empty-mini p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.printshop-page .supplies-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.printshop-page .supplies-summary-metrics div {
+  display: grid;
+  gap: 5px;
+  border-radius: 14px;
+  background: #f8fbff;
+  border: 1px solid #e2e8f0;
+  padding: 11px;
+}
+
+.printshop-page .supplies-summary-metrics span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.printshop-page .supplies-summary-metrics strong {
+  color: #0f2442;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.printshop-page .supplies-last-update {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.printshop-page .supplies-toolbar-redesign {
+  grid-template-columns: minmax(260px, 1fr) 200px 190px !important;
+  align-items: end !important;
+  gap: 12px !important;
+  margin-bottom: 12px !important;
+}
+
+.printshop-page .supplies-toolbar-redesign label {
+  margin: 0 !important;
+}
+
+.printshop-page .supplies-toolbar-redesign input,
+.printshop-page .supplies-toolbar-redesign select {
+  min-height: 42px !important;
+  border-radius: 12px !important;
+}
+
+.printshop-page .supplies-table-redesign th,
+.printshop-page .supplies-table-redesign td,
+.printshop-page .supplies-movements-table-redesign th,
+.printshop-page .supplies-movements-table-redesign td {
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+}
+
+.printshop-page .supplies-actions-redesign {
+  gap: 6px !important;
+}
+
+.printshop-page .supplies-actions-redesign button {
+  padding: 7px 9px !important;
+  font-size: 11px !important;
+  border-radius: 9px !important;
+}
+
+@media (max-width: 1450px) {
+  .printshop-page .supplies-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-page .supplies-dashboard-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .printshop-page .supplies-hero-redesign {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-page .supplies-hero-actions-redesign {
+    justify-content: flex-start !important;
+  }
+
+  .printshop-page .supplies-metrics-redesign {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .printshop-page .supply-barcode-buttons {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+  }
+
+  .printshop-page .supply-quick-scan-fields-redesign,
+  .printshop-page .supplies-toolbar-redesign {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 820px) {
+  .printshop-page .supplies-dashboard-side,
+  .printshop-page .supplies-summary-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .printshop-page .compact-scan-controls {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-page .supplies-alert-row {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+
+  .printshop-page .supplies-alert-row b,
+  .printshop-page .supplies-alert-row small {
+    grid-column: 2;
+  }
+}
+/* =========================================================
+   IMPRENTA - AJUSTE FRANJA INSUMOS
+   Hace visible el botón "Registrar movimiento" y equilibra el encabezado.
+   Agregar al final de app.css
+========================================================= */
+
+.printshop-page .supplies-hero-redesign {
+  grid-template-columns: minmax(0, 1fr) 132px minmax(360px, auto) !important;
+  column-gap: 20px !important;
+  padding-right: 24px !important;
+}
+
+.printshop-page .supplies-hero-actions-redesign,
+.printshop-page .printshop-hero-actions.supplies-hero-actions-redesign,
+.printshop-page .printshop-hero-actions.compact-actions.supplies-hero-actions-redesign {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 12px !important;
+  margin-top: 0 !important;
+  min-width: 0 !important;
+  flex-wrap: nowrap !important;
+}
+
+.printshop-page .supplies-hero-actions-redesign .visual-primary-button,
+.printshop-page .supplies-hero-actions-redesign .visual-outline-button {
+  min-width: 170px !important;
+  min-height: 44px !important;
+  padding: 0 18px !important;
+  border-radius: 13px !important;
+  white-space: nowrap !important;
+  opacity: 1 !important;
+}
+
+.printshop-page .supplies-hero-actions-redesign .visual-outline-button {
+  background: #ffffff !important;
+  border: 1px solid #b9cdfa !important;
+  color: #0f4fc4 !important;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06) !important;
+}
+
+.printshop-page .supplies-hero-actions-redesign .visual-outline-button:hover {
+  background: #eef5ff !important;
+  border-color: #0f4fc4 !important;
+  color: #0f4fc4 !important;
+}
+
+@media (max-width: 1320px) {
+  .printshop-page .supplies-hero-redesign {
+    grid-template-columns: minmax(0, 1fr) 132px !important;
+  }
+
+  .printshop-page .supplies-hero-actions-redesign,
+  .printshop-page .printshop-hero-actions.supplies-hero-actions-redesign,
+  .printshop-page .printshop-hero-actions.compact-actions.supplies-hero-actions-redesign {
+    grid-column: 1 / -1 !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .printshop-page .supplies-hero-redesign {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-page .supplies-hero-actions-redesign .visual-primary-button,
+  .printshop-page .supplies-hero-actions-redesign .visual-outline-button {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - REDISEÑO PESTAÑA SOLICITUDES
+   Agregar al final de app.css
+========================================================= */
+
+.printshop-requests-redesign {
+  gap: 16px !important;
+}
+
+.printshop-requests-hero-redesign {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 18px !important;
+  padding: 18px 20px !important;
+  border: 1px solid #dbe7ff !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 90% 18%, rgba(237, 28, 36, 0.08), transparent 30%),
+    linear-gradient(90deg, #ffffff 0%, #f7fbff 62%, #eef6ff 100%) !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06) !important;
+}
+
+.printshop-requests-hero-redesign .printshop-kicker {
+  margin: 0 0 5px !important;
+  color: #0f4fc4 !important;
+  font-size: 12px !important;
+}
+
+.printshop-requests-hero-redesign h2 {
+  margin: 0 0 6px !important;
+  color: #0f2442 !important;
+  font-size: clamp(24px, 2.1vw, 32px) !important;
+  line-height: 1.05 !important;
+}
+
+.printshop-requests-hero-redesign p:not(.printshop-kicker) {
+  margin: 0 !important;
+  color: #526176 !important;
+  font-size: 13px !important;
+  line-height: 1.42 !important;
+}
+
+.printshop-requests-hero-redesign .visual-primary-button {
+  min-height: 48px !important;
+  padding: 0 20px !important;
+  border-radius: 12px !important;
+  white-space: nowrap !important;
+}
+
+.request-metrics-redesign {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  margin-bottom: 2px !important;
+}
+
+.request-metric-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-areas:
+    "icon label"
+    "icon value"
+    "icon helper";
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 88px;
+  padding: 15px 18px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.request-metric-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: #0f4fc4;
+}
+
+.request-metric-card > div {
+  grid-area: icon;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 900;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.request-metric-card span {
+  grid-area: label;
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.request-metric-card strong {
+  grid-area: value;
+  color: #0f2442;
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.request-metric-card p {
+  grid-area: helper;
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.request-metric-card.orange > div { background: #ffedd5; color: #f97316; }
+.request-metric-card.orange::after { background: #f97316; }
+.request-metric-card.teal > div { background: #ccfbf1; color: #0f9488; }
+.request-metric-card.teal::after { background: #0f9488; }
+.request-metric-card.red > div { background: #fee2e2; color: #ed1c24; }
+.request-metric-card.red::after { background: #ed1c24; }
+.request-metric-card.green > div { background: #dcfce7; color: #16a34a; }
+.request-metric-card.green::after { background: #16a34a; }
+.request-metric-card.purple > div { background: #ede9fe; color: #7c3aed; }
+.request-metric-card.purple::after { background: #7c3aed; }
+
+.request-dashboard-layout.request-layout:not(.printshop-focused-layout) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 350px) !important;
+  gap: 16px !important;
+  align-items: start !important;
+}
+
+.request-dashboard-layout.request-layout:not(.printshop-focused-layout) .printshop-batches-side {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  position: sticky !important;
+  top: 18px !important;
+  align-self: start !important;
+}
+
+.request-dashboard-layout.request-layout:not(.printshop-focused-layout) .printshop-batches-main {
+  min-width: 0 !important;
+}
+
+.request-list-panel-redesign {
+  padding: 16px 18px 14px !important;
+  border-radius: 20px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06) !important;
+}
+
+.request-list-header-redesign {
+  padding-bottom: 14px !important;
+  margin-bottom: 14px !important;
+}
+
+.request-list-header-redesign h2 {
+  font-size: 18px !important;
+}
+
+.request-toolbar-redesign {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 1.35fr) minmax(160px, 0.85fr) minmax(160px, 0.85fr) minmax(150px, 0.8fr) !important;
+  gap: 12px !important;
+  align-items: center !important;
+  margin-bottom: 14px !important;
+}
+
+.request-toolbar-redesign .request-search-redesign,
+.request-toolbar-redesign select {
+  height: 46px !important;
+  min-height: 46px !important;
+  border-radius: 13px !important;
+}
+
+.request-toolbar-redesign select {
+  border: 1px solid #d9e2ef !important;
+  background: #ffffff !important;
+  color: #0f2442 !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+}
+
+.request-table-wrap-redesign {
+  border: 1px solid #e5eaf2;
+  border-radius: 16px;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.request-table-redesign {
+  min-width: 1040px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.request-table-redesign th {
+  background: #f8fafc !important;
+  color: #526176 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.03em !important;
+  padding: 12px 12px !important;
+  border-bottom: 1px solid #e5eaf2 !important;
+}
+
+.request-table-redesign td {
+  padding: 12px 12px !important;
+  border-bottom: 1px solid #eef2f7 !important;
+  vertical-align: middle !important;
+}
+
+.request-table-redesign tbody tr {
+  cursor: pointer;
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.request-table-redesign tbody tr:hover {
+  background: #f8fbff !important;
+}
+
+.request-table-redesign tbody tr.request-selected-row {
+  background: #eef5ff !important;
+  box-shadow: inset 3px 0 0 #0f4fc4;
+}
+
+.request-table-redesign td strong {
+  color: #0f2442 !important;
+  font-size: 12.5px !important;
+  line-height: 1.3 !important;
+}
+
+.request-table-redesign td small {
+  color: #64748b !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+}
+
+.request-table-redesign .printshop-status-badge {
+  width: fit-content;
+  font-size: 11px !important;
+  padding: 6px 9px !important;
+}
+
+.request-row-actions {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 7px;
+}
+
+.request-row-actions button {
+  width: 34px !important;
+  height: 34px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border-radius: 10px !important;
+  font-size: 14px !important;
+}
+
+.request-row-actions .danger-table-button {
+  color: #0f4fc4 !important;
+  border-color: #dbe7ff !important;
+  background: #ffffff !important;
+}
+
+.request-row-actions .danger-table-button:hover {
+  color: #b42318 !important;
+  border-color: #fecaca !important;
+  background: #fff5f5 !important;
+}
+
+.request-table-footer-redesign {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 2px 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.request-table-footer-redesign > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.request-table-footer-redesign button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #dbe7ff;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f4fc4;
+  font-weight: 900;
+}
+
+.request-table-footer-redesign button.active {
+  background: #0f4fc4;
+  color: #ffffff;
+  border-color: #0f4fc4;
+}
+
+.request-preview-panel {
+  border-radius: 20px !important;
+  padding: 16px !important;
+  min-height: 100% !important;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.08) !important;
+}
+
+.request-preview-header {
+  margin-bottom: 14px !important;
+  padding-bottom: 13px !important;
+}
+
+.request-preview-header h2 {
+  font-size: 17px !important;
+}
+
+.request-preview-header > button {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 10px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+}
+
+.request-preview-content {
+  display: grid;
+  gap: 14px;
+}
+
+.request-preview-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.request-preview-folio {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.request-preview-content h3 {
+  margin: 0;
+  color: #0f2442;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.request-preview-info-list {
+  display: grid;
+  gap: 12px;
+}
+
+.request-preview-info-list > div,
+.request-preview-description,
+.request-preview-quantity {
+  display: grid;
+  gap: 4px;
+}
+
+.request-preview-info-list span,
+.request-preview-description span,
+.request-preview-quantity span,
+.request-preview-progress span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.request-preview-info-list strong,
+.request-preview-quantity strong {
+  color: #0f2442;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.request-preview-info-list small {
+  color: #526176;
+  font-size: 11px;
+}
+
+.request-preview-progress {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.request-preview-progress > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.request-preview-progress > div:first-child strong {
+  color: #0f2442;
+  font-size: 14px;
+}
+
+.request-preview-progress .printshop-progress-cell {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  margin: 0 !important;
+}
+
+.request-preview-progress small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.request-preview-description p {
+  margin: 0;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.request-preview-open-button {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px !important;
+  margin-top: 2px;
+}
+
+.request-preview-empty {
+  min-height: 300px !important;
+}
+
+@media (max-width: 1350px) {
+  .request-dashboard-layout.request-layout:not(.printshop-focused-layout) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .request-dashboard-layout.request-layout:not(.printshop-focused-layout) .printshop-batches-side {
+    position: static !important;
+  }
+
+  .request-preview-panel {
+    min-height: auto !important;
+  }
+}
+
+@media (max-width: 1050px) {
+  .request-metrics-redesign {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .request-toolbar-redesign {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .request-toolbar-redesign .request-search-redesign {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .printshop-requests-hero-redesign {
+    grid-template-columns: 1fr !important;
+    padding: 16px !important;
+  }
+
+  .printshop-requests-hero-redesign .visual-primary-button {
+    width: 100% !important;
+  }
+
+  .request-metrics-redesign,
+  .request-toolbar-redesign {
+    grid-template-columns: 1fr !important;
+  }
+
+  .request-table-footer-redesign {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

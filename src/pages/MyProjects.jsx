@@ -6,6 +6,18 @@ import { calculateAutomaticProgress } from "../utils/progressUtils";
 
 const PROJECTS_COLLECTION = "projects";
 
+
+function MyProjectsMenuIcon({ className = "" }) {
+  return (
+    <svg className={`my-projects-menu-svg ${className}`.trim()} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 5h14v14H5z" />
+      <path d="M8 9h8" />
+      <path d="M8 13h6" />
+      <path d="M8 17h4" />
+    </svg>
+  );
+}
+
 export default function MyProjects({ onOpenProject }) {
   const { profile, currentUser, firebaseUser, isAdmin } = useAuth();
 
@@ -185,176 +197,119 @@ export default function MyProjects({ onOpenProject }) {
     ? recentActivity
     : recentActivity.slice(0, 4);
 
-  const statusDistribution = useMemo(() => {
-    const total = allMyProjects.length || 1;
-
-    const items = [
-      {
-        label: "Por iniciar",
-        value: allMyProjects.filter(
-          (project) =>
-            project.status === "Por iniciar" ||
-            project.status === "Asignado" ||
-            project.status === "Pendiente"
-        ).length,
-        color: "blue",
-      },
-      {
-        label: "En planeación",
-        value: allMyProjects.filter(
-          (project) => project.status === "En planeación"
-        ).length,
-        color: "gold",
-      },
-      {
-        label: "En proceso",
-        value: allMyProjects.filter(
-          (project) => project.status === "En proceso"
-        ).length,
-        color: "green",
-      },
-      {
-        label: "Listo para revisión",
-        value: allMyProjects.filter(
-          (project) => project.status === "Listo para revisión"
-        ).length,
-        color: "purple",
-      },
-    ];
-
-    return items.map((item) => ({
-      ...item,
-      percentage: Math.round((item.value / total) * 100),
-    }));
-  }, [allMyProjects]);
-
   if (loading) {
     return (
-      <div className="visual-page">
+      <div className="my-projects-redesign">
         <div className="dashboard-loading-card">Cargando tus proyectos...</div>
       </div>
     );
   }
 
   return (
-    <div className="visual-page">
-      <PageHeader
-        title="Mis proyectos"
-        subtitle="Consulta tus proyectos asignados, colaboraciones, próximos vencimientos y seguimiento de avances."
-      >
-        <button className="visual-outline-button" onClick={loadProjects}>
-          ↻ Actualizar
-        </button>
+    <div className="my-projects-redesign">
+      <section className="my-projects-hero-card">
+        <div className="my-projects-hero-main">
+          <div className="my-projects-hero-icon"><MyProjectsMenuIcon /></div>
 
-        <div className="visual-search">
-          <span>⌕</span>
-          <input
-            id="my-projects-search"
-            name="search"
-            type="text"
-            placeholder="Buscar proyecto o departamento..."
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-          />
+          <div>
+            <span>MIS PROYECTOS</span>
+            <h2>Mis proyectos</h2>
+            <p>
+              Consulta tus proyectos asignados, colaboraciones y próximos
+              vencimientos desde una vista limpia y fácil de revisar.
+            </p>
+          </div>
         </div>
-      </PageHeader>
+
+        <div className="my-projects-hero-actions">
+          <button className="visual-outline-button" onClick={loadProjects}>
+            ↻ Actualizar
+          </button>
+
+          <div className="visual-search my-projects-search-box">
+            <span>⌕</span>
+            <input
+              id="my-projects-search"
+              name="search"
+              type="text"
+              placeholder="Buscar proyecto o departamento..."
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+            />
+          </div>
+        </div>
+      </section>
 
       {message && <div className="message-box">{message}</div>}
 
-      <div className="my-metrics-grid">
-        <button
-          type="button"
-          className="metric-action-button"
+      <div className="my-projects-metrics-v2">
+        <MetricAction
+          icon={<MyProjectsMenuIcon />}
+          value={metrics.assigned}
+          title="Asignados"
+          detail="Proyectos donde eres responsable"
+          color="blue"
           onClick={() => {
             setActiveProjectView("Asignados");
             setActiveFilter("Todos");
           }}
-        >
-          <SimpleMetric
-            icon="▣"
-            value={metrics.assigned}
-            title="Asignados"
-            detail="Proyectos donde eres responsable"
-            color="blue"
-          />
-        </button>
+        />
 
-        <button
-          type="button"
-          className="metric-action-button"
+        <MetricAction
+          icon="👥"
+          value={metrics.collaborator}
+          title="Colaboraciones"
+          detail="Proyectos donde participas"
+          color="teal"
           onClick={() => {
             setActiveProjectView("Colaboraciones");
             setActiveFilter("Todos");
           }}
-        >
-          <SimpleMetric
-            icon="👥"
-            value={metrics.collaborator}
-            title="Colaboraciones"
-            detail="Proyectos donde participas"
-            color="teal"
-          />
-        </button>
+        />
 
-        <button
-          type="button"
-          className="metric-action-button"
+        <MetricAction
+          icon="◷"
+          value={metrics.inProgress}
+          title="En curso"
+          detail="Proyectos activos"
+          color="green"
           onClick={() => {
             setActiveProjectView("Todos");
             setActiveFilter("En curso");
           }}
-        >
-          <SimpleMetric
-            icon="◷"
-            value={metrics.inProgress}
-            title="En curso"
-            detail="Proyectos activos"
-            color="green"
-          />
-        </button>
+        />
 
-        <button
-          type="button"
-          className="metric-action-button"
+        <MetricAction
+          icon="⚑"
+          value={metrics.dueSoon}
+          title="Por vencer"
+          detail="Vencen en 3 días o menos"
+          color="orange"
           onClick={() => {
             setActiveProjectView("Todos");
             setActiveFilter("Por vencer");
           }}
-        >
-          <SimpleMetric
-            icon="⚑"
-            value={metrics.dueSoon}
-            title="Por vencer"
-            detail="Vencen en 3 días o menos"
-            color="orange"
-          />
-        </button>
+        />
 
-        <button
-          type="button"
-          className="metric-action-button"
+        <MetricAction
+          icon="☑"
+          value={metrics.readyForReview}
+          title="Por revisión"
+          detail="Listos para revisión"
+          color="purple"
           onClick={() => {
             setActiveProjectView("Todos");
             setActiveFilter("Por revisar");
           }}
-        >
-          <SimpleMetric
-            icon="☑"
-            value={metrics.readyForReview}
-            title="Por revisión"
-            detail="Listos para revisión"
-            color="purple"
-          />
-        </button>
+        />
       </div>
 
-      <div className="my-projects-layout">
-        <main className="my-projects-main">
-          <section className="visual-card my-projects-workspace">
-            <div className="workspace-header">
-              <div className="section-title-row no-border no-margin">
-                <span className="section-title-icon section-title-blue">▦</span>
-
+      <div className="my-projects-layout-v2">
+        <main className="my-projects-main-v2">
+          <section className="my-projects-workspace-v2">
+            <div className="my-projects-workspace-header-v2">
+              <div className="my-projects-section-title-v2">
+                <div className="my-projects-section-icon-v2"><MyProjectsMenuIcon /></div>
                 <div>
                   <h3>Mis proyectos activos</h3>
                   <p>
@@ -370,9 +325,9 @@ export default function MyProjects({ onOpenProject }) {
               </div>
             </div>
 
-            <div className="workspace-toolbar">
+            <div className="workspace-toolbar-v2">
               <div className="project-view-tabs">
-                {["Todos", "Asignados", "Colaboraciones"].map((view) => (
+                {['Todos', 'Asignados', 'Colaboraciones'].map((view) => (
                   <button
                     type="button"
                     key={view}
@@ -412,28 +367,31 @@ export default function MyProjects({ onOpenProject }) {
           </section>
         </main>
 
-        <aside className="my-projects-side">
-          <section className="visual-card compact-side-card">
+        <aside className="my-projects-side-v2">
+          <section className="my-projects-side-card-v2">
             <SectionHeader
+              icon="▣"
               title="Próximos vencimientos"
               action={showFullAgenda ? "Ver menos" : "Ver todos"}
               onAction={() => setShowFullAgenda((current) => !current)}
             />
 
-            <div className="agenda-list compact-agenda-list">
+            <div className="my-projects-deadline-list-v2">
               {visibleAgendaProjects.length === 0 ? (
                 <EmptyState text="No tienes vencimientos próximos." />
               ) : (
                 visibleAgendaProjects.map((project) => (
                   <button
                     type="button"
-                    className="agenda-item agenda-button compact-agenda-item"
+                    className="my-projects-deadline-item-v2"
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                   >
+                    <span className={`side-item-icon-v2 ${isOverdue(project) ? "red" : "blue"}`}>▣</span>
+
                     <div>
                       <strong>{project.title}</strong>
-                      <span>{getProjectDepartmentName(project)}</span>
+                      <small>{getProjectDepartmentName(project)}</small>
                     </div>
 
                     <Badge color={isOverdue(project) ? "red" : "orange"}>
@@ -445,69 +403,39 @@ export default function MyProjects({ onOpenProject }) {
             </div>
           </section>
 
-          <section className="visual-card compact-side-card">
+          <section className="my-projects-side-card-v2">
             <SectionHeader
+              icon="↻"
               title="Actividad reciente"
               action={showFullActivity ? "Ver menos" : "Ver más"}
               onAction={() => setShowFullActivity((current) => !current)}
             />
 
-            <div className="recent-project-list compact-recent-list">
+            <div className="my-projects-activity-list-v2">
               {visibleActivity.length === 0 ? (
                 <EmptyState text="No hay actividad reciente." />
               ) : (
                 visibleActivity.map((project) => (
                   <button
                     type="button"
-                    className="recent-project-item recent-project-button compact-recent-item"
+                    className="my-projects-activity-item-v2"
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                   >
-                    <span className="recent-icon">▧</span>
+                    <span className="side-item-icon-v2 teal">▧</span>
 
                     <div>
                       <strong>{project.title}</strong>
-
-                      <div className="recent-project-meta">
-                        <Badge color="blue">
+                      <p>
+                        <Badge color={getStatusBadgeColor(project)}>
                           {project.status || "Sin estado"}
                         </Badge>
-
-                        <small>
-                          {formatDate(project.updatedAt || project.createdAt)}
-                        </small>
-                      </div>
+                        <small>{formatDate(project.updatedAt || project.createdAt)}</small>
+                      </p>
                     </div>
                   </button>
                 ))
               )}
-            </div>
-          </section>
-
-          <section className="visual-card compact-side-card">
-            <SectionHeader title="Distribución de estados" />
-
-            <div className="status-distribution-list compact-status-list">
-              {statusDistribution.map((item) => (
-                <div
-                  className="status-distribution-item compact-status-item"
-                  key={item.label}
-                >
-                  <div>
-                    <span>{item.label}</span>
-                    <strong>{item.value}</strong>
-                  </div>
-
-                  <div className="area-progress-track">
-                    <div
-                      className="area-progress-fill"
-                      style={{ width: `${item.percentage}%` }}
-                    />
-                  </div>
-
-                  <small>{item.percentage}%</small>
-                </div>
-              ))}
             </div>
           </section>
         </aside>
@@ -575,109 +503,110 @@ async function getMyAllowedProjects(userId, isAdmin) {
 
 function ProjectList({ projects, onOpenProject }) {
   return (
-    <div className="my-project-card-list compact-project-list">
+    <div className="my-project-card-list-v2">
       {projects.length === 0 ? (
         <EmptyState text="No hay proyectos para mostrar con estos filtros." />
       ) : (
-        projects.map((project) => (
-          <article className="my-project-card compact-project-card" key={project.id}>
-            <div className="my-project-card-top">
-              <div>
-                <div className="project-title-line">
-                  <h3>{project.title}</h3>
+        projects.map((project) => {
+          const progress = calculateAutomaticProgress(project);
 
-                  <Badge
-                    color={project.relationType === "Asignado" ? "blue" : "teal"}
-                  >
-                    {project.relationType}
+          return (
+            <article className="my-project-card-v2" key={project.id}>
+              <div className="my-project-icon-v2">
+                {project.relationType === "Asignado" ? <MyProjectsMenuIcon /> : "▥"}
+              </div>
+
+              <div className="my-project-card-body-v2">
+                <div className="my-project-card-top-v2">
+                  <div>
+                    <div className="project-title-line">
+                      <h3>{project.title}</h3>
+
+                      <Badge
+                        color={project.relationType === "Asignado" ? "blue" : "teal"}
+                      >
+                        {project.relationType}
+                      </Badge>
+                    </div>
+
+                    <p>{project.description || "Sin descripción registrada."}</p>
+                  </div>
+
+                  <Badge color={getStatusBadgeColor(project)}>
+                    {isOverdue(project)
+                      ? "Atrasado"
+                      : project.status || "Sin estado"}
                   </Badge>
                 </div>
 
-                <p>{project.description || "Sin descripción registrada."}</p>
+                <div className="my-project-meta-grid-v2">
+                  <MetaItem label="Departamento" value={getProjectDepartmentName(project)} icon="▥" />
+                  <MetaItem label="Prioridad" value={project.priority} icon="⚑" />
+                  <MetaItem
+                    label="Fecha límite"
+                    value={formatPlainDate(project.deadline)}
+                    icon="▣"
+                  />
+                  <MetaItem
+                    label="Responsable"
+                    value={project.assignedToName || project.responsibleName || "Sin responsable"}
+                    icon="👤"
+                  />
+                </div>
+
+                <div className="my-project-progress-row-v2">
+                  <div>
+                    <span>Avance</span>
+                    <strong>{progress}%</strong>
+                  </div>
+
+                  <div className="area-progress-track">
+                    <div
+                      className="area-progress-fill"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="visual-primary-button my-project-detail-button-v2"
+                    onClick={() => onOpenProject(project.id)}
+                  >
+                    Ver detalle <span>›</span>
+                  </button>
+                </div>
               </div>
-
-              <Badge color={getStatusBadgeColor(project)}>
-                {isOverdue(project)
-                  ? "Atrasado"
-                  : project.status || "Sin estado"}
-              </Badge>
-            </div>
-
-            <div className="my-project-meta-grid compact-meta-grid">
-              <MetaItem label="Departamento" value={getProjectDepartmentName(project)} />
-              <MetaItem label="Prioridad" value={project.priority} />
-              <MetaItem
-                label="Fecha límite"
-                value={formatPlainDate(project.deadline)}
-              />
-              <MetaItem
-                label="Tiempo"
-                value={renderDeadlineLabel(project)}
-                danger={isOverdue(project)}
-              />
-            </div>
-
-            <div className="my-project-progress-row compact-progress-row">
-              <div>
-                <span>Avance</span>
-                <strong>{calculateAutomaticProgress(project)}%</strong>
-              </div>
-
-              <div className="area-progress-track">
-                <div
-                  className="area-progress-fill"
-                  style={{ width: `${calculateAutomaticProgress(project)}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="my-project-card-actions">
-              <button
-                type="button"
-                className="visual-primary-button"
-                onClick={() => onOpenProject(project.id)}
-              >
-                Ver detalle
-              </button>
-            </div>
-          </article>
-        ))
+            </article>
+          );
+        })
       )}
     </div>
   );
 }
 
-function PageHeader({ title, subtitle, children }) {
+function MetricAction({ icon, value, title, detail, color, onClick }) {
   return (
-    <div className="visual-page-header">
-      <div>
-        <h2>{title}</h2>
-        <p>{subtitle}</p>
-      </div>
-
-      <div className="visual-page-actions">{children}</div>
-    </div>
-  );
-}
-
-function SimpleMetric({ icon, value, title, detail, color }) {
-  return (
-    <div className={`simple-metric simple-${color}`}>
-      <div className="simple-metric-icon">{icon}</div>
+    <button
+      type="button"
+      className={`my-project-metric-card-v2 ${color}`}
+      onClick={onClick}
+    >
+      <span className="my-project-metric-icon-v2">{icon}</span>
 
       <div>
         <strong>{value}</strong>
         <h4>{title}</h4>
         <p>{detail}</p>
       </div>
-    </div>
+    </button>
   );
 }
 
-function SectionHeader({ title, action, onAction }) {
+function SectionHeader({ icon, title, action, onAction }) {
   return (
-    <div className="mini-section-header">
+    <div className="my-projects-side-header-v2">
       <div>
+        {icon && <span>{icon}</span>}
         <h3>{title}</h3>
       </div>
 
@@ -692,8 +621,8 @@ function SectionHeader({ title, action, onAction }) {
 
 function EmptyState({ text }) {
   return (
-    <div className="empty-state">
-      <div>▯</div>
+    <div className="empty-state my-projects-empty-v2">
+      <div>✦</div>
       <p>{text}</p>
     </div>
   );
@@ -703,13 +632,16 @@ function Badge({ color, children }) {
   return <span className={`visual-badge badge-${color}`}>{children}</span>;
 }
 
-function MetaItem({ label, value, danger }) {
+function MetaItem({ label, value, danger, icon }) {
   return (
-    <div className="meta-item">
-      <span>{label}</span>
-      <strong className={danger ? "danger-text" : ""}>
-        {value || "Sin información"}
-      </strong>
+    <div className="meta-item my-project-meta-item-v2">
+      {icon && <span className="meta-item-icon-v2">{icon}</span>}
+      <div>
+        <span>{label}</span>
+        <strong className={danger ? "danger-text" : ""}>
+          {value || "Sin información"}
+        </strong>
+      </div>
     </div>
   );
 }

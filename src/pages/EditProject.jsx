@@ -259,6 +259,10 @@ export default function EditProject({ projectId, onBack, onSaved }) {
     .filter((field) => !field.optional)
     .every((field) => field.complete);
 
+  const completionPercent = Math.round(
+    (requiredFields.filter((field) => field.complete).length / requiredFields.length) * 100
+  );
+
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -401,21 +405,22 @@ export default function EditProject({ projectId, onBack, onSaved }) {
   }
 
   return (
-    <div className="visual-page edit-project-page">
+    <div className="visual-page edit-project-page edit-project-redesign-page">
       <form onSubmit={handleSubmit}>
-        <div className="visual-page-header">
-          <div>
-            <h2>Editar proyecto</h2>
-            <p>
-              Actualiza la información, responsables y seguimiento del proyecto.
-            </p>
+        <section className="edit-project-hero-card">
+          <div className="edit-project-hero-left">
+            <div className="edit-project-hero-icon">📝</div>
 
-            <small className="breadcrumb-line">
-              Todos los proyectos / Detalle de proyecto / Editar proyecto
-            </small>
+            <div>
+              <span className="edit-project-kicker">Gestión de proyectos</span>
+              <h2>Editar proyecto</h2>
+              <p>
+                Actualiza la información, responsables y seguimiento del proyecto.
+              </p>
+            </div>
           </div>
 
-          <div className="visual-page-actions">
+          <div className="edit-project-hero-actions">
             <button
               type="submit"
               className="visual-primary-button"
@@ -442,11 +447,11 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               ◉ Vista previa
             </button>
           </div>
-        </div>
+        </section>
 
         {message && <div className="message-box">{message}</div>}
 
-        <section className="edit-summary-strip">
+        <section className="edit-summary-strip edit-summary-redesign">
           <div className="edit-summary-icon">▧</div>
 
           <div>
@@ -454,7 +459,10 @@ export default function EditProject({ projectId, onBack, onSaved }) {
             <strong>{getProjectCode(project)}</strong>
           </div>
 
-          <Badge color="blue">En edición</Badge>
+          <div>
+            <span>Estado</span>
+            <Badge color="blue">En edición</Badge>
+          </div>
 
           <div>
             <span>Título del proyecto</span>
@@ -484,24 +492,22 @@ export default function EditProject({ projectId, onBack, onSaved }) {
           </div>
         </section>
 
-        <div className="edit-project-layout">
+        <div className="edit-project-layout edit-project-redesign-layout">
           <main className="edit-project-main">
-            <section className="visual-card form-section-card">
+            <section className="visual-card form-section-card edit-project-section-card">
               <FormSectionHeader
                 number="1"
                 title="Información general"
                 subtitle="Completa los datos básicos del proyecto."
               />
 
-              <div className="edit-form-grid">
+              <div className="edit-form-grid edit-form-grid-redesign">
                 <Field label="Título del proyecto" required>
                   <input
                     id="edit-project-title"
                     name="title"
                     value={form.title}
-                    onChange={(event) =>
-                      updateField("title", event.target.value)
-                    }
+                    onChange={(event) => updateField("title", event.target.value)}
                     placeholder="Ej. Rediseño de material académico"
                   />
                 </Field>
@@ -516,7 +522,6 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     }
                   >
                     <option value="">Selecciona un área</option>
-
                     {AREAS.map((area) => (
                       <option value={area} key={area}>
                         {area}
@@ -530,15 +535,11 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     id="edit-project-requester"
                     name="requester"
                     value={
-                      users.find((user) => user.email === form.requesterEmail)
-                        ?.id || ""
+                      users.find((user) => user.email === form.requesterEmail)?.id || ""
                     }
-                    onChange={(event) =>
-                      handleRequesterChange(event.target.value)
-                    }
+                    onChange={(event) => handleRequesterChange(event.target.value)}
                   >
                     <option value="">Selecciona el solicitante</option>
-
                     {users.map((user) => (
                       <option value={user.id} key={user.id}>
                         {user.name}
@@ -552,12 +553,9 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     id="edit-project-priority"
                     name="priority"
                     value={form.priority}
-                    onChange={(event) =>
-                      updateField("priority", event.target.value)
-                    }
+                    onChange={(event) => updateField("priority", event.target.value)}
                   >
                     <option value="">Selecciona prioridad</option>
-
                     {PRIORITIES.map((priority) => (
                       <option value={priority} key={priority}>
                         {priority}
@@ -572,9 +570,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     name="deadline"
                     type="date"
                     value={form.deadline}
-                    onChange={(event) =>
-                      updateField("deadline", event.target.value)
-                    }
+                    onChange={(event) => updateField("deadline", event.target.value)}
                   />
                 </Field>
 
@@ -584,41 +580,32 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     name="description"
                     maxLength={500}
                     value={form.description}
-                    onChange={(event) =>
-                      updateField("description", event.target.value)
-                    }
+                    onChange={(event) => updateField("description", event.target.value)}
                     placeholder="Describe el objetivo, alcance y entregables principales del proyecto..."
                   />
-
-                  <small className="field-counter">
-                    {form.description.length}/500
-                  </small>
+                  <small className="field-counter">{form.description.length}/500</small>
                 </Field>
               </div>
             </section>
 
-            <section className="visual-card form-section-card">
+            <section className="visual-card form-section-card edit-project-section-card">
               <FormSectionHeader
                 number="2"
                 title="Asignación y seguimiento"
                 subtitle="Define quién hará seguimiento y cómo avanza el proyecto."
               />
 
-              <div className="edit-form-grid">
+              <div className="edit-form-grid edit-form-grid-redesign">
                 <Field label="Responsable del proyecto" required>
                   <select
                     id="edit-project-assigned-to"
                     name="assignedTo"
                     value={form.assignedToUid || form.assignedToId}
-                    onChange={(event) =>
-                      handleAssignedChange(event.target.value)
-                    }
+                    onChange={(event) => handleAssignedChange(event.target.value)}
                   >
                     <option value="">Selecciona al responsable</option>
-
                     {users.map((user) => {
                       const userUid = getUserUid(user);
-
                       return (
                         <option value={userUid} key={user.id}>
                           {user.name}
@@ -636,10 +623,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     onChange={(event) => toggleCollaborator(event.target.value)}
                   >
                     <option value="">Selecciona colaboradores</option>
-
                     {users.map((user) => {
                       const userUid = getUserUid(user);
-
                       return (
                         <option value={userUid} key={user.id}>
                           {user.name}
@@ -651,7 +636,6 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                   <div className="selected-chips">
                     {selectedCollaborators.map((user) => {
                       const userUid = getUserUid(user);
-
                       return (
                         <button
                           type="button"
@@ -672,12 +656,9 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     id="edit-project-status"
                     name="status"
                     value={form.status}
-                    onChange={(event) =>
-                      updateField("status", event.target.value)
-                    }
+                    onChange={(event) => updateField("status", event.target.value)}
                   >
                     <option value="">Selecciona estado</option>
-
                     {STATUSES.map((status) => (
                       <option value={status} key={status}>
                         {status}
@@ -686,44 +667,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                   </select>
                 </Field>
 
-                <Field label="Porcentaje de avance (%)" required>
-                  <div className="edit-progress-control">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateField(
-                          "progress",
-                          Math.max(0, Number(form.progress || 0) - 5)
-                        )
-                      }
-                    >
-                      −
-                    </button>
-
-                    <input
-                      id="edit-project-progress-number"
-                      name="progress"
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={form.progress}
-                      onChange={(event) =>
-                        updateField("progress", event.target.value)
-                      }
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateField(
-                          "progress",
-                          Math.min(100, Number(form.progress || 0) + 5)
-                        )
-                      }
-                    >
-                      ＋
-                    </button>
-
+                <Field label="Porcentaje de avance (%)" required full>
+                  <div className="edit-progress-redesign">
                     <input
                       id="edit-project-progress-range"
                       name="progressRange"
@@ -731,28 +676,41 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                       min="0"
                       max="100"
                       value={form.progress}
-                      onChange={(event) =>
-                        updateField("progress", event.target.value)
-                      }
+                      onChange={(event) => updateField("progress", event.target.value)}
                     />
-                  </div>
 
-                  <small className="current-progress-label">
-                    Avance actual <strong>{Number(form.progress || 0)}%</strong>
-                  </small>
+                    <div className="edit-progress-scale">
+                      <span>0%</span>
+                      <span>50%</span>
+                      <span>100%</span>
+                    </div>
+
+                    <div className="edit-progress-box">
+                      <input
+                        id="edit-project-progress-number"
+                        name="progress"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={form.progress}
+                        onChange={(event) => updateField("progress", event.target.value)}
+                      />
+                      <strong>%</strong>
+                    </div>
+                  </div>
                 </Field>
               </div>
             </section>
 
-            <section className="visual-card form-section-card">
+            <section className="visual-card form-section-card edit-project-section-card">
               <FormSectionHeader
                 number="3"
                 title="Adjuntos y evidencias"
                 subtitle="Agrega archivos o referencias que respalden el proyecto."
               />
 
-              <div className="attachments-grid">
-                <label className="dropzone">
+              <div className="attachments-grid edit-attachments-grid">
+                <label className="dropzone edit-dropzone">
                   <input
                     id="edit-project-files"
                     name="files"
@@ -764,17 +722,15 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                   <strong>Arrastra y suelta archivos aquí</strong>
                   <p>o haz clic para seleccionar</p>
                   <small>
-                    Formatos permitidos: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX,
-                    JPG, PNG.
+                    Formatos permitidos: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, JPG y PNG.
                   </small>
                 </label>
 
                 <div className="attached-files">
                   <div className="mini-section-header">
                     <div>
-                      <h3>
-                        Archivos adjuntos ({evidenceFiles.length + files.length})
-                      </h3>
+                      <span>◷</span>
+                      <h3>Archivos adjuntos ({evidenceFiles.length + files.length})</h3>
                     </div>
                   </div>
 
@@ -810,15 +766,13 @@ export default function EditProject({ projectId, onBack, onSaved }) {
             </section>
           </main>
 
-          <aside className="edit-project-side">
-            <section className="visual-card">
+          <aside className="edit-project-side edit-project-side-redesign">
+            <section className="visual-card edit-side-card">
               <SectionHeader title="Resumen del proyecto" icon="◉" />
 
-              <div className="project-preview-card">
+              <div className="project-preview-card edit-preview-card">
                 <span className="preview-label">VISTA PREVIA</span>
-
                 <h3>{form.title || "Título del proyecto"}</h3>
-
                 <p>
                   {form.description ||
                     "Descripción breve del proyecto aparecerá aquí..."}
@@ -826,32 +780,20 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
                 <div className="preview-badges">
                   <Badge color="blue">{form.responsibleArea || "Área"}</Badge>
-
                   <Badge color={form.priority === "Alta" ? "red" : "gold"}>
                     {form.priority || "Prioridad"}
                   </Badge>
-
                   <Badge color="green">{form.status || "Estado"}</Badge>
                 </div>
 
                 <div className="preview-details">
-                  <PreviewItem
-                    label="Responsable"
-                    value={form.assignedToName}
-                  />
-                  <PreviewItem
-                    label="Fecha límite"
-                    value={formatPlainDate(form.deadline)}
-                  />
-                  <PreviewItem
-                    label="Solicitante"
-                    value={form.requesterName}
-                  />
+                  <PreviewItem label="Responsable" value={form.assignedToName} />
+                  <PreviewItem label="Fecha límite" value={formatPlainDate(form.deadline)} />
+                  <PreviewItem label="Solicitante" value={form.requesterName} />
                 </div>
 
                 <div className="area-progress">
                   <strong>{Number(form.progress || 0)}%</strong>
-
                   <div className="area-progress-track">
                     <div
                       className="area-progress-fill"
@@ -862,15 +804,12 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               </div>
             </section>
 
-            <section className="visual-card">
-              <SectionHeader title="Campos requeridos" icon="◷" />
+            <section className="visual-card edit-side-card">
+              <SectionHeader title="Campos requeridos" icon="✓" />
 
-              <div className="required-list">
+              <div className="required-list edit-required-list">
                 {requiredFields.map((field) => (
-                  <div
-                    key={field.label}
-                    className={field.complete ? "complete" : ""}
-                  >
+                  <div key={field.label} className={field.complete ? "complete" : ""}>
                     <span>{field.complete ? "✓" : "○"}</span>
                     {field.label}
                   </div>
@@ -878,38 +817,22 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               </div>
             </section>
 
-            <section className="visual-card">
-              <SectionHeader title="Buenas prácticas" icon="☼" />
-
-              <div className="tips-list">
-                <Tip
-                  color="green"
-                  title="Sé claro y específico"
-                  text="Define un título y descripción que comuniquen el objetivo."
-                />
-
-                <Tip
-                  color="blue"
-                  title="Asigna responsables"
-                  text="Involucra al equipo adecuado desde el inicio."
-                />
-
-                <Tip
-                  color="orange"
-                  title="Adjunta documentos clave"
-                  text="Soporta el proyecto con archivos y referencias relevantes."
-                />
+            <section className="visual-card edit-side-card edit-tip-card">
+              <div className="edit-tip-header">
+                <span>💡</span>
+                <div>
+                  <h3>Tip</h3>
+                  <p>Mantén la información actualizada para mejorar el seguimiento y cumplimiento de metas.</p>
+                </div>
               </div>
             </section>
 
-            <section className="impact-card">
+            <section className="impact-card edit-impact-card">
               <h3>Impacto del cambio</h3>
-
               <div>
                 <strong>Estás editando un proyecto en ejecución.</strong>
                 <p>
-                  Los cambios pueden afectar tareas, responsables, fechas y
-                  dependencias asociadas.
+                  Los cambios pueden afectar tareas, responsables, fechas y dependencias asociadas.
                 </p>
                 <button type="button">Ver detalles del impacto ›</button>
               </div>
@@ -927,7 +850,6 @@ function Field({ label, required, full, children }) {
       <span>
         {label} {required && <b>*</b>}
       </span>
-
       {children}
     </label>
   );
@@ -963,19 +885,6 @@ function PreviewItem({ label, value }) {
   );
 }
 
-function Tip({ color, title, text }) {
-  return (
-    <div className="tip-item">
-      <span className={`tip-icon tip-${color}`}>✓</span>
-
-      <div>
-        <strong>{title}</strong>
-        <p>{text}</p>
-      </div>
-    </div>
-  );
-}
-
 function AttachedFile({ name, detail, onRemove }) {
   return (
     <div className="attached-file-item">
@@ -987,11 +896,7 @@ function AttachedFile({ name, detail, onRemove }) {
       </div>
 
       {onRemove && (
-        <button
-          type="button"
-          className="remove-file-button"
-          onClick={onRemove}
-        >
+        <button type="button" className="remove-file-button" onClick={onRemove}>
           ×
         </button>
       )}
@@ -1014,13 +919,10 @@ function Badge({ color, children }) {
 
 function normalizeArray(value) {
   if (!value) return [];
-
   if (Array.isArray(value)) return value;
-
   if (typeof value === "object" && !value.toDate) {
     return Object.values(value);
   }
-
   return [];
 }
 
@@ -1030,7 +932,6 @@ function removeDuplicatedValues(values) {
 
 function normalizeFileItem(file) {
   if (!file) return {};
-
   if (typeof file === "string") {
     return {
       fileName: getNameFromUrl(file),
@@ -1038,7 +939,6 @@ function normalizeFileItem(file) {
       url: file,
     };
   }
-
   return {
     ...file,
     fileName:
@@ -1057,11 +957,7 @@ function normalizeFileItem(file) {
       file.link ||
       "",
     uploadedAt:
-      file.uploadedAt ||
-      file.createdAt ||
-      file.date ||
-      file.uploadDate ||
-      null,
+      file.uploadedAt || file.createdAt || file.date || file.uploadDate || null,
     uploadedByName:
       file.uploadedByName ||
       file.authorName ||
@@ -1097,13 +993,11 @@ function getFileUrl(file) {
 
 function getNameFromUrl(url = "") {
   if (!url) return "Archivo";
-
   try {
     const decoded = decodeURIComponent(url);
     const cleanUrl = decoded.split("?")[0];
     const parts = cleanUrl.split("/");
     const lastPart = parts[parts.length - 1];
-
     return lastPart || "Archivo";
   } catch {
     return "Archivo";
@@ -1130,7 +1024,6 @@ function getProjectCode(project) {
 
 function getFileIcon(fileName = "") {
   const lowerName = fileName.toLowerCase();
-
   if (lowerName.endsWith(".pdf")) return "PDF";
   if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) return "XLS";
   if (lowerName.endsWith(".doc") || lowerName.endsWith(".docx")) return "DOC";
@@ -1143,17 +1036,13 @@ function getFileIcon(fileName = "") {
   ) {
     return "IMG";
   }
-
   return "FILE";
 }
 
 function formatDate(value) {
   if (!value) return "Sin fecha";
-
   const date = value?.toDate?.() || new Date(value);
-
   if (Number.isNaN(date.getTime())) return "Sin fecha";
-
   return date.toLocaleString("es-MX", {
     day: "2-digit",
     month: "short",
@@ -1165,14 +1054,11 @@ function formatDate(value) {
 
 function formatPlainDate(value) {
   if (!value) return "Sin fecha";
-
   const date =
     typeof value === "string"
       ? new Date(`${value}T00:00:00`)
       : value?.toDate?.() || new Date(value);
-
   if (Number.isNaN(date.getTime())) return "Sin fecha";
-
   return date.toLocaleDateString("es-MX", {
     day: "2-digit",
     month: "short",

@@ -7563,6 +7563,14 @@ function DashboardView({
                   </button>
                 ))}
               </div>
+
+              <button
+                type="button"
+                className="printshop-home-footer-link"
+                onClick={onOpenRequests}
+              >
+                Ver todas las solicitudes <span>›</span>
+              </button>
             </div>
 
             <div className="printshop-workboard-column">
@@ -7594,6 +7602,14 @@ function DashboardView({
                   </button>
                 ))}
               </div>
+
+              <button
+                type="button"
+                className="printshop-home-footer-link"
+                onClick={onOpenBatches}
+              >
+                Ver todos los lotes <span>›</span>
+              </button>
             </div>
           </div>
         </Panel>
@@ -7645,6 +7661,14 @@ function DashboardView({
               })
             )}
           </div>
+
+          <button
+            type="button"
+            className="printshop-home-footer-link full-width"
+            onClick={onOpenInventory}
+          >
+            Ver inventario completo <span>›</span>
+          </button>
         </Panel>
       </section>
     </>
@@ -9173,9 +9197,24 @@ function SupplyInventoryView({
     );
   }
 
+  const activeSupplyItems = supplyItems.filter((item) => item.active !== false);
+  const supplyAlertItems = activeSupplyItems
+    .filter((item) => {
+      const currentStock = Number(item.currentStock || 0);
+      const minStock = Number(item.minStock || 0);
+      return minStock > 0 && currentStock < minStock;
+    })
+    .sort((a, b) => Number(a.currentStock || 0) - Number(b.currentStock || 0))
+    .slice(0, 4);
+  const totalSupplyUnits = activeSupplyItems.reduce(
+    (sum, item) => sum + Number(item.currentStock || 0),
+    0
+  );
+  const latestSupplyMovement = latestMovements[0] || null;
+
   return (
-    <section className="printshop-supplies-page">
-      <div className="printshop-catalog-hero supplies-hero">
+    <section className="printshop-supplies-page supplies-redesign-page">
+      <div className="printshop-catalog-hero supplies-hero supplies-hero-redesign">
         <div>
           <p className="section-kicker printshop-kicker">Inventario de insumos</p>
           <h2>Materiales para producción de imprenta</h2>
@@ -9185,25 +9224,25 @@ function SupplyInventoryView({
           </p>
         </div>
 
-        <div className="inventory-hero-card">
+        <div className="inventory-hero-card supplies-hero-count">
           <strong>{supplyStats.total}</strong>
           <span>Insumos activos</span>
         </div>
 
-        <div className="printshop-hero-actions compact-actions">
+        <div className="printshop-hero-actions compact-actions supplies-hero-actions-redesign">
           {isAdmin && (
             <button type="button" className="visual-primary-button" onClick={() => openSupplyFormFocus()}>
               + Nuevo insumo
             </button>
           )}
           <button type="button" className="visual-outline-button" onClick={() => openSupplyMovementFocus()}>
-            Registrar movimiento
+            ↔ Registrar movimiento
           </button>
         </div>
       </div>
 
-      <div className="printshop-catalog-metrics supplies-metrics">
-        <CatalogMetric tone="blue" icon="▥" label="Insumos" value={supplyStats.total} />
+      <div className="printshop-catalog-metrics supplies-metrics supplies-metrics-redesign">
+        <CatalogMetric tone="blue" icon="▧" label="Insumos" value={supplyStats.total} />
         <CatalogMetric tone="orange" icon="!" label="Stock bajo" value={supplyStats.lowStock} />
         <CatalogMetric tone="red" icon="×" label="Críticos" value={supplyStats.critical} />
         <CatalogMetric tone="green" icon="$" label="Valor aprox." value={formatCurrency(supplyStats.totalValue)} />
@@ -9212,228 +9251,291 @@ function SupplyInventoryView({
 
       {suppliesError && <div className="form-error">{suppliesError}</div>}
 
-      <div className={`printshop-supplies-layout ${supplyFormFocus ? "printshop-focused-layout focus-supply" : supplyMovementFocus ? "printshop-focused-layout focus-movement" : ""}`}>
+      <div className={`printshop-supplies-layout supplies-dashboard-layout ${supplyFormFocus ? "printshop-focused-layout focus-supply" : supplyMovementFocus ? "printshop-focused-layout focus-movement" : ""}`}>
         <div className="printshop-supplies-main">
-          <Panel title="Escaneo rápido" icon="▦" actionLabel="Cámara / código">
-            <div className="supply-barcode-scanner">
-              <div className="supply-barcode-copy">
-                <strong>Escanear código de barras del producto</strong>
-                <p>
-                  Usa la cámara del celular para reconocer el código del insumo. Elige primero si quieres registrar
-                  entrada, salida, merma, devolución o ajuste; luego confirma cantidad y motivo.
-                </p>
-              </div>
+          <div className="supplies-dashboard-grid">
+            <div className="supplies-dashboard-left">
+              <Panel title="Escaneo rápido" icon="▦" actionLabel="Cámara / código">
+                <div className="supply-barcode-scanner supply-barcode-scanner-redesign">
+                  <div className="supply-barcode-controls compact-scan-controls">
+                    <label>
+                      <span>Escanea o escribe el código del insumo</span>
+                      <input
+                        value={barcodeScanInput}
+                        onChange={(event) => setBarcodeScanInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            applyBarcodeResult(barcodeScanInput, "manual");
+                          }
+                        }}
+                        placeholder="Escanea o escribe el código del insumo..."
+                      />
+                    </label>
 
-              <div className="supply-barcode-controls">
-                <label>
-                  <span>Código leído o manual</span>
-                  <input
-                    value={barcodeScanInput}
-                    onChange={(event) => setBarcodeScanInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        applyBarcodeResult(barcodeScanInput, "manual");
-                      }
-                    }}
-                    placeholder="Escanea o escribe el código..."
-                  />
-                </label>
+                    <div className="supply-barcode-buttons">
+                      <button
+                        type="button"
+                        className="visual-primary-button"
+                        onClick={barcodeScannerActive ? stopBarcodeScanner : startBarcodeScanner}
+                      >
+                        📷 {barcodeScannerActive ? "Detener cámara" : "Abrir cámara"}
+                      </button>
+                      <button
+                        type="button"
+                        className="visual-outline-button"
+                        onClick={() => applyBarcodeResult(barcodeScanInput, "manual")}
+                      >
+                        Buscar código
+                      </button>
+                      {barcodeScanResult?.found === false && isAdmin && (
+                        <button
+                          type="button"
+                          className="visual-outline-button"
+                          onClick={copyScannedCodeToSupplyForm}
+                        >
+                          Usar en nuevo insumo
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
-                <div className="supply-barcode-buttons">
-                  <button
-                    type="button"
-                    className="visual-primary-button"
-                    onClick={barcodeScannerActive ? stopBarcodeScanner : startBarcodeScanner}
-                  >
-                    {barcodeScannerActive ? "Detener cámara" : "Abrir cámara"}
-                  </button>
-                  <button
-                    type="button"
-                    className="visual-outline-button"
-                    onClick={() => applyBarcodeResult(barcodeScanInput, "manual")}
-                  >
-                    Buscar código
-                  </button>
-                  {barcodeScanResult?.found === false && isAdmin && (
-                    <button
-                      type="button"
-                      className="visual-outline-button"
-                      onClick={copyScannedCodeToSupplyForm}
-                    >
-                      Usar en nuevo insumo
-                    </button>
+                  <div className={`supply-barcode-video-wrap ${barcodeScannerActive ? "active" : ""}`}>
+                    <video ref={scannerVideoRef} muted playsInline autoPlay />
+                  </div>
+
+                  {barcodeScanResult?.found === true && barcodeScanResult.supply && (
+                    <div className="supply-barcode-result found">
+                      <strong>{barcodeScanResult.supply.name}</strong>
+                      <span>{barcodeScanResult.supply.category}</span>
+                      {barcodeScanResult.presentation && (
+                        <span>
+                          Presentación: {barcodeScanResult.presentation.name} · equivale a {barcodeScanResult.presentation.quantity} {barcodeScanResult.supply.stockUnit}
+                        </span>
+                      )}
+                      <span>
+                        Stock actual: {barcodeScanResult.supply.currentStock} {barcodeScanResult.supply.stockUnit}
+                      </span>
+                    </div>
+                  )}
+
+                  {barcodeScanMessage && (
+                    <div className="message-box supply-barcode-message">
+                      {barcodeScanMessage}
+                    </div>
                   )}
                 </div>
-              </div>
+              </Panel>
 
-              <div className={`supply-barcode-video-wrap ${barcodeScannerActive ? "active" : ""}`}>
-                <video ref={scannerVideoRef} muted playsInline autoPlay />
-              </div>
+              <Panel title="Movimiento rápido" icon="↔" actionLabel="Entrada / salida">
+                <div className="supply-quick-scan-card supply-quick-scan-card-redesign">
+                  <div className="supply-quick-scan-heading">
+                    <strong>Registra entradas, salidas, ajustes y otros movimientos sin abrir formularios largos.</strong>
+                    <span>Elige el tipo de movimiento antes o después de escanear.</span>
+                  </div>
 
-              <div className="supply-quick-scan-card">
-                <div className="supply-quick-scan-heading">
-                  <strong>Movimiento rápido</strong>
-                  <span>Elige el tipo de movimiento antes o después de escanear.</span>
-                </div>
+                  <div className="supply-quick-scan-modes supply-quick-scan-modes-redesign">
+                    {supplyMovementTypes.map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        className={supplyMovementForm.type === type ? "active" : ""}
+                        onClick={() => setQuickScanMovementType(type)}
+                      >
+                        {type === "Entrada" ? "↓" : type === "Salida" ? "↑" : type === "Ajuste" ? "↔" : type === "Merma" ? "⚠" : "↩"} {type}
+                      </button>
+                    ))}
+                  </div>
 
-                <div className="supply-quick-scan-modes">
-                  {supplyMovementTypes.map((type) => (
+                  <div className="supply-quick-scan-fields supply-quick-scan-fields-redesign">
+                    <label>
+                      <span>{supplyMovementForm.type === "Ajuste" ? "Nuevo stock" : "Cantidad"}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={supplyMovementForm.quantity}
+                        onChange={(event) =>
+                          onSupplyMovementNumberInputChange({
+                            target: {
+                              name: "quantity",
+                              value: event.target.value,
+                            },
+                          })
+                        }
+                        placeholder="Ej. 10"
+                      />
+                    </label>
+
+                    <label>
+                      <span>Motivo</span>
+                      <select
+                        value={supplyMovementForm.reason}
+                        onChange={(event) =>
+                          onSupplyMovementInputChange({
+                            target: {
+                              name: "reason",
+                              value: event.target.value,
+                            },
+                          })
+                        }
+                      >
+                        {supplyMovementReasons.map((reason) => (
+                          <option key={reason}>{reason}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Lote relacionado</span>
+                      <select
+                        value={supplyMovementForm.relatedId}
+                        onChange={(event) => setRelatedProductionBatch(event.target.value)}
+                      >
+                        <option value="">Sin lote</option>
+                        {activeProductionBatches.map((batch) => (
+                          <option key={batch.id} value={batch.id}>
+                            {batch.folio} · {batch.productName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Folio relacionado</span>
+                      <input
+                        value={supplyMovementForm.relatedFolio}
+                        onChange={(event) =>
+                          onSupplyMovementInputChange({
+                            target: {
+                              name: "relatedFolio",
+                              value: event.target.value,
+                            },
+                          })
+                        }
+                        placeholder="Ej. LOTE-2026-0012"
+                      />
+                    </label>
+
+                    <label className="supply-notes-field">
+                      <span>Notas rápidas</span>
+                      <input
+                        value={supplyMovementForm.notes}
+                        onChange={(event) =>
+                          onSupplyMovementInputChange({
+                            target: {
+                              name: "notes",
+                              value: event.target.value,
+                            },
+                          })
+                        }
+                        placeholder="Ej. Compra, uso en lote, pruebas..."
+                      />
+                    </label>
+                  </div>
+
+                  {selectedMovementSupply && estimatedYield > 0 && (
+                    <div className="supply-yield-estimate">
+                      <strong>Rendimiento esperado</strong>
+                      <p>
+                        Con {supplyMovementForm.quantity} {selectedMovementSupply.stockUnit.toLowerCase()} deberían salir aproximadamente{" "}
+                        <b>{estimatedYield} {selectedMovementSupply.expectedYieldUnit}</b>.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="supply-quick-scan-actions supply-quick-scan-actions-redesign">
+                    <span>
+                      {selectedMovementSupply
+                        ? `Seleccionado: ${selectedMovementSupply.name}`
+                        : "Escanea o busca un código para seleccionar un insumo."}
+                    </span>
                     <button
-                      key={type}
                       type="button"
-                      className={supplyMovementForm.type === type ? "active" : ""}
-                      onClick={() => setQuickScanMovementType(type)}
+                      className="visual-primary-button"
+                      disabled={savingSupplyMovement || !selectedMovementSupply}
+                      onClick={registerQuickScanMovement}
                     >
-                      {type}
+                      {savingSupplyMovement ? "Registrando..." : "Registrar movimiento ›"}
                     </button>
-                  ))}
+                  </div>
+                </div>
+              </Panel>
+            </div>
+
+            <div className="supplies-dashboard-side">
+              <section className="printshop-panel supplies-alert-card">
+                <div className="supplies-card-title-row">
+                  <div>
+                    <span className="supplies-side-icon warning">⚠</span>
+                    <h2>Alertas de insumos</h2>
+                  </div>
+                  <button type="button" onClick={() => onStatusFilterChange("Bajo")}>Ver todas</button>
                 </div>
 
-                <div className="supply-quick-scan-fields">
-                  <label>
-                    <span>{supplyMovementForm.type === "Ajuste" ? "Nuevo stock" : "Cantidad"}</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={supplyMovementForm.quantity}
-                      onChange={(event) =>
-                        onSupplyMovementNumberInputChange({
-                          target: {
-                            name: "quantity",
-                            value: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    <span>Motivo</span>
-                    <select
-                      value={supplyMovementForm.reason}
-                      onChange={(event) =>
-                        onSupplyMovementInputChange({
-                          target: {
-                            name: "reason",
-                            value: event.target.value,
-                          },
-                        })
-                      }
-                    >
-                      {supplyMovementReasons.map((reason) => (
-                        <option key={reason}>{reason}</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Lote relacionado</span>
-                    <select
-                      value={supplyMovementForm.relatedId}
-                      onChange={(event) => setRelatedProductionBatch(event.target.value)}
-                    >
-                      <option value="">Sin lote</option>
-                      {activeProductionBatches.map((batch) => (
-                        <option key={batch.id} value={batch.id}>
-                          {batch.folio} · {batch.productName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Folio relacionado</span>
-                    <input
-                      value={supplyMovementForm.relatedFolio}
-                      onChange={(event) =>
-                        onSupplyMovementInputChange({
-                          target: {
-                            name: "relatedFolio",
-                            value: event.target.value,
-                          },
-                        })
-                      }
-                      placeholder="Ej. LOTE-2026-0012"
-                    />
-                  </label>
-
-                  <label>
-                    <span>Notas rápidas</span>
-                    <input
-                      value={supplyMovementForm.notes}
-                      onChange={(event) =>
-                        onSupplyMovementInputChange({
-                          target: {
-                            name: "notes",
-                            value: event.target.value,
-                          },
-                        })
-                      }
-                      placeholder="Ej. Compra, uso en lote, pruebas..."
-                    />
-                  </label>
-                </div>
-
-                {selectedMovementSupply && estimatedYield > 0 && (
-                  <div className="supply-yield-estimate">
-                    <strong>Rendimiento esperado</strong>
-                    <p>
-                      Con {supplyMovementForm.quantity} {selectedMovementSupply.stockUnit.toLowerCase()} deberían salir aproximadamente{" "}
-                      <b>{estimatedYield} {selectedMovementSupply.expectedYieldUnit}</b>.
-                    </p>
+                {supplyAlertItems.length === 0 ? (
+                  <div className="supplies-empty-mini">
+                    <strong>Sin alertas por ahora</strong>
+                    <p>Los insumos activos están dentro de su stock mínimo.</p>
+                  </div>
+                ) : (
+                  <div className="supplies-alert-list">
+                    {supplyAlertItems.map((item) => (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className="supplies-alert-row"
+                        onClick={() => onSelectSupply(item)}
+                      >
+                        <span />
+                        <strong>{item.name}</strong>
+                        <b>Stock actual: {item.currentStock}</b>
+                        <small>Mínimo: {item.minStock}</small>
+                      </button>
+                    ))}
                   </div>
                 )}
+              </section>
 
-                <div className="supply-quick-scan-actions">
-                  <button
-                    type="button"
-                    className="visual-primary-button"
-                    disabled={savingSupplyMovement || !selectedMovementSupply}
-                    onClick={registerQuickScanMovement}
-                  >
-                    {savingSupplyMovement ? "Registrando..." : "Registrar movimiento"}
-                  </button>
-                  <span>
-                    {selectedMovementSupply
-                      ? `Seleccionado: ${selectedMovementSupply.name}`
-                      : "Escanea o busca un código para seleccionar un insumo."}
-                  </span>
+              <section className="printshop-panel supplies-summary-card">
+                <div className="supplies-card-title-row">
+                  <div>
+                    <span className="supplies-side-icon summary">▧</span>
+                    <h2>Resumen de inventario</h2>
+                  </div>
+                  <button type="button" onClick={() => onStatusFilterChange("Todos")}>Ver detalle</button>
                 </div>
-              </div>
 
-              {barcodeScanResult?.found === true && barcodeScanResult.supply && (
-                <div className="supply-barcode-result found">
-                  <strong>{barcodeScanResult.supply.name}</strong>
-                  <span>{barcodeScanResult.supply.category}</span>
-                  {barcodeScanResult.presentation && (
-                    <span>
-                      Presentación: {barcodeScanResult.presentation.name} · equivale a {barcodeScanResult.presentation.quantity} {barcodeScanResult.supply.stockUnit}
-                    </span>
-                  )}
-                  <span>
-                    Stock actual: {barcodeScanResult.supply.currentStock} {barcodeScanResult.supply.stockUnit}
-                  </span>
+                <div className="supplies-summary-metrics">
+                  <div>
+                    <span>Total de insumos</span>
+                    <strong>{supplyStats.total}</strong>
+                  </div>
+                  <div>
+                    <span>Valor aproximado</span>
+                    <strong>{formatCurrency(supplyStats.totalValue)}</strong>
+                  </div>
+                  <div>
+                    <span>Unidades en stock</span>
+                    <strong>{totalSupplyUnits}</strong>
+                  </div>
                 </div>
-              )}
 
-              {barcodeScanMessage && (
-                <div className="message-box supply-barcode-message">
-                  {barcodeScanMessage}
-                </div>
-              )}
+                <p className="supplies-last-update">
+                  ◷ Última actualización: {latestSupplyMovement ? formatDate(latestSupplyMovement.createdAt) : "sin movimientos registrados"}.
+                </p>
+              </section>
             </div>
-          </Panel>
+          </div>
 
-          <Panel title="Existencias de insumos" icon="▥" actionLabel={`${filteredSupplyItems.length} registros`}>
-            <div className="printshop-supplies-toolbar">
+          <Panel title="Inventario de insumos" icon="▦" actionLabel={`${filteredSupplyItems.length} registros`}>
+            <div className="printshop-supplies-toolbar supplies-toolbar-redesign">
               <label className="catalog-filter-search">
                 <span>Buscar</span>
                 <input
                   type="search"
                   value={supplySearch}
                   onChange={(event) => onSearchChange(event.target.value)}
-                  placeholder="Nombre, código, color, proveedor..."
+                  placeholder="Buscar insumo..."
                 />
               </label>
 
@@ -9473,7 +9575,7 @@ function SupplyInventoryView({
               </div>
             ) : (
               <div className="printshop-table-wrap">
-                <table className="printshop-table printshop-supplies-table">
+                <table className="printshop-table printshop-supplies-table supplies-table-redesign">
                   <thead>
                     <tr>
                       <th>Insumo</th>
@@ -9540,7 +9642,7 @@ function SupplyInventoryView({
                             {item.lastMovementType && <small>{item.lastMovementType} · {item.lastMovementReason}</small>}
                           </td>
                           <td>
-                            <div className="table-actions supply-actions">
+                            <div className="table-actions supply-actions supplies-actions-redesign">
                               <button type="button" onClick={() => openSupplyMovementFocus(item, "Entrada")}>
                                 Entrada
                               </button>
@@ -9590,7 +9692,7 @@ function SupplyInventoryView({
               </div>
             ) : (
               <div className="printshop-table-wrap">
-                <table className="printshop-table supply-movements-table">
+                <table className="printshop-table supply-movements-table supplies-movements-table-redesign">
                   <thead>
                     <tr>
                       <th>Fecha</th>
@@ -10153,6 +10255,9 @@ function PrintRequestsView({
 
   const [requestFocusOpen, setRequestFocusOpen] = useState(false);
 
+  const previewRequest = selectedRequest || filteredRequests[0] || null;
+  const previewRequestId = selectedRequestId || previewRequest?.id || "";
+
   function openRequestFocus(request = null) {
     if (request) {
       onSelectRequest(request);
@@ -10167,42 +10272,52 @@ function PrintRequestsView({
     setRequestFocusOpen(false);
   }
 
+  function handlePreviewRequest(request) {
+    if (!request) return;
+    onSelectRequest(request);
+  }
+
   const requestMetricCards = [
     {
       tone: "blue",
       icon: "▤",
       label: "Pendientes",
       value: requestStats.pending,
+      helper: "Por atender",
     },
     {
       tone: "orange",
       icon: "◷",
       label: "En producción",
       value: requestStats.inProduction,
+      helper: "En proceso",
     },
     {
       tone: "teal",
       icon: "✓",
       label: "Listas para entrega",
       value: requestStats.ready,
+      helper: "Finalizadas",
     },
     {
       tone: "red",
-      icon: "!",
+      icon: "⚑",
       label: "Urgentes",
       value: requestStats.urgent,
+      helper: "Prioritarias",
     },
     {
-      tone: "green",
-      icon: "↗",
+      tone: "purple",
+      icon: "▣",
       label: "Entregadas",
       value: requestStats.delivered,
+      helper: "Cerradas",
     },
   ];
 
   return (
-    <section className="printshop-requests-section">
-      <div className="printshop-section-heading">
+    <section className="printshop-requests-section printshop-requests-redesign">
+      <div className="printshop-section-heading printshop-requests-hero-redesign">
         <div>
           <p className="section-kicker printshop-kicker">Solicitudes de imprenta</p>
           <h2>Trabajos solicitados por áreas y planteles</h2>
@@ -10219,23 +10334,30 @@ function PrintRequestsView({
         )}
       </div>
 
-      <div className="catalog-metrics-grid request-metrics-grid">
+      <div className="request-metrics-grid request-metrics-redesign">
         {requestMetricCards.map((metric) => (
-          <CatalogMetric
-            key={metric.label}
-            tone={metric.tone}
-            icon={metric.icon}
-            label={metric.label}
-            value={metric.value}
-          />
+          <article key={metric.label} className={`request-metric-card ${metric.tone}`}>
+            <div>{metric.icon}</div>
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+            <p>{metric.helper}</p>
+          </article>
         ))}
       </div>
 
-      <div className={`printshop-batches-layout request-layout ${requestFocusOpen ? "printshop-focused-layout" : ""} ${requestFocusOpen && selectedRequest ? "request-has-detail" : requestFocusOpen ? "request-new" : ""}`}>
-        <div className="printshop-batches-main">
-          <Panel title="Solicitudes registradas" icon="▤" actionLabel={`${filteredRequests.length} visibles`}>
-            <div className="catalog-toolbar request-toolbar">
-              <label className="visual-search catalog-search">
+      <div className={`printshop-batches-layout request-layout request-dashboard-layout ${requestFocusOpen ? "printshop-focused-layout" : ""} ${requestFocusOpen && selectedRequest ? "request-has-detail" : requestFocusOpen ? "request-new" : ""}`}>
+        <div className="printshop-batches-main request-list-column">
+          <section className="printshop-panel request-list-panel-redesign">
+            <div className="printshop-panel-header request-list-header-redesign">
+              <div>
+                <span>▤</span>
+                <h2>Solicitudes registradas</h2>
+              </div>
+              <button type="button">{filteredRequests.length} visibles</button>
+            </div>
+
+            <div className="catalog-toolbar request-toolbar request-toolbar-redesign">
+              <label className="visual-search catalog-search request-search-redesign">
                 <span>⌕</span>
                 <input
                   type="search"
@@ -10279,81 +10401,119 @@ function PrintRequestsView({
                 <p>No hay solicitudes con los filtros seleccionados.</p>
               </div>
             ) : (
-              <div className="visual-table-wrap">
-                <table className="visual-table production-batches-table request-table">
-                  <thead>
-                    <tr>
-                      <th>Folio</th>
-                      <th>Producto / servicio</th>
-                      <th>Solicitante</th>
-                      <th>Responsable</th>
-                      <th>Cantidad</th>
-                      <th>Prioridad</th>
-                      <th>Estado</th>
-                      <th>Compromiso</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.map((request) => {
-                      const progress = getRequestProgress(request.status);
+              <>
+                <div className="visual-table-wrap request-table-wrap-redesign">
+                  <table className="visual-table production-batches-table request-table request-table-redesign">
+                    <thead>
+                      <tr>
+                        <th>Folio</th>
+                        <th>Producto / Servicio</th>
+                        <th>Solicitante</th>
+                        <th>Área / Plantel</th>
+                        <th>Estado</th>
+                        <th>Prioridad</th>
+                        <th>Fecha solicitud</th>
+                        <th>Compromiso</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRequests.map((request) => {
+                        const progress = getRequestProgress(request.status);
+                        const isActiveRow = previewRequestId === request.id;
 
-                      return (
-                        <tr key={request.id} className={selectedRequestId === request.id ? "selected-user-row" : ""}>
-                          <td>
-                            <strong>{request.folio || "Sin folio"}</strong>
-                            <small>{request.requestType || "Solicitud"}</small>
-                          </td>
-                          <td>
-                            <strong>{getRequestProductLabel(request)}</strong>
-                            <small>{request.deliveryType || "Sin tipo de entrega"}</small>
-                          </td>
-                          <td>
-                            <strong>{request.requesterName || "Sin solicitante"}</strong>
-                            <small>{request.requesterArea || "Sin área"} · {request.campus || "Sin plantel"}</small>
-                          </td>
-                          <td>
-                            <strong>{request.responsibleName || "Sin asignar"}</strong>
-                            <small>{request.responsibleEmail || ""}</small>
-                          </td>
-                          <td>
-                            <strong>{Number(request.deliveredQuantity || 0)} / {Number(request.requestedQuantity || 0)}</strong>
-                            <ProgressBar value={progress} tone={getRequestStatusTone(request.status)} />
-                          </td>
-                          <td>
-                            <StatusBadge tone={getPriorityTone(request.priority)}>{request.priority || "Normal"}</StatusBadge>
-                          </td>
-                          <td>
-                            <StatusBadge tone={getRequestStatusTone(request.status)}>{request.status || "Solicitud recibida"}</StatusBadge>
-                          </td>
-                          <td>{getRequestDueLabel(request)}</td>
-                          <td>
-                            <div className="table-actions">
-                              <button type="button" onClick={() => openRequestFocus(request)}>
-                                Abrir
-                              </button>
-                              {isAdmin && (
+                        return (
+                          <tr
+                            key={request.id}
+                            className={isActiveRow ? "selected-user-row request-selected-row" : ""}
+                            onClick={() => handlePreviewRequest(request)}
+                          >
+                            <td>
+                              <strong>{request.folio || "Sin folio"}</strong>
+                              <small>{request.requestType || "Solicitud"}</small>
+                            </td>
+                            <td>
+                              <strong>{getRequestProductLabel(request)}</strong>
+                              <small>{request.deliveryType || "Sin tipo de entrega"}</small>
+                            </td>
+                            <td>
+                              <strong>{request.requesterName || "Sin solicitante"}</strong>
+                              <small>{request.requesterArea || "Sin área"}</small>
+                            </td>
+                            <td>
+                              <strong>{request.campus || "Sin plantel"}</strong>
+                              <small>{request.responsibleName ? `Resp. ${request.responsibleName}` : "Sin responsable"}</small>
+                            </td>
+                            <td>
+                              <StatusBadge tone={getRequestStatusTone(request.status)}>{request.status || "Solicitud recibida"}</StatusBadge>
+                              <small>{progress}% completado</small>
+                            </td>
+                            <td>
+                              <StatusBadge tone={getPriorityTone(request.priority)}>{request.priority || "Normal"}</StatusBadge>
+                            </td>
+                            <td>
+                              <strong>{formatDate(request.requestDate || request.createdAt)}</strong>
+                            </td>
+                            <td>{getRequestDueLabel(request)}</td>
+                            <td>
+                              <div className="table-actions request-row-actions">
                                 <button
                                   type="button"
-                                  className="danger-table-button"
-                                  onClick={() => onSoftDeleteRequest(request)}
+                                  title="Ver información completa"
+                                  aria-label="Ver información completa"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openRequestFocus(request);
+                                  }}
                                 >
-                                  Eliminar
+                                  ◉
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    className="danger-table-button"
+                                    title="Eliminar solicitud"
+                                    aria-label="Eliminar solicitud"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onSoftDeleteRequest(request);
+                                    }}
+                                  >
+                                    ⋮
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="request-table-footer-redesign">
+                  <span>
+                    Mostrando {filteredRequests.length === 0 ? "0" : `1 a ${filteredRequests.length}`} de {filteredRequests.length} solicitudes
+                  </span>
+                  <div>
+                    <button type="button" disabled>‹</button>
+                    <button type="button" className="active">1</button>
+                    <button type="button" disabled>›</button>
+                  </div>
+                </div>
+              </>
             )}
-          </Panel>
+          </section>
         </div>
 
-        <aside className="printshop-batches-side">
+        <aside className="printshop-batches-side request-side-column">
+          {!requestFocusOpen && (
+            <RequestPreviewPanel
+              request={previewRequest}
+              onOpen={() => previewRequest && openRequestFocus(previewRequest)}
+            />
+          )}
+
           {requestFocusOpen && (
             <div className="printshop-focused-header">
               <button type="button" className="visual-outline-button" onClick={closeRequestFocus}>
@@ -10363,7 +10523,7 @@ function PrintRequestsView({
             </div>
           )}
 
-          {selectedRequest && (
+          {requestFocusOpen && selectedRequest && (
             <RequestDetailCard
               request={selectedRequest}
               selectedRole={selectedRole}
@@ -10394,6 +10554,7 @@ function PrintRequestsView({
             />
           )}
 
+          {requestFocusOpen && (
           <Panel
             title={selectedRequest ? "Actualizar solicitud" : "Nueva solicitud"}
             icon={selectedRequest ? "✎" : "＋"}
@@ -10746,7 +10907,97 @@ function PrintRequestsView({
               )}
             </form>
           </Panel>
+          )}
         </aside>
+      </div>
+    </section>
+  );
+}
+
+function RequestPreviewPanel({ request, onOpen }) {
+  if (!request) {
+    return (
+      <section className="printshop-panel request-preview-panel request-preview-empty">
+        <div className="printshop-panel-header request-preview-header">
+          <div>
+            <span>◉</span>
+            <h2>Detalle de la solicitud</h2>
+          </div>
+        </div>
+
+        <div className="empty-state small">
+          <div>▤</div>
+          <p>Selecciona una solicitud para ver el detalle.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const progress = getRequestProgress(request.status);
+  const requestedQuantity = Number(request.requestedQuantity || 0);
+  const deliveredQuantity = Number(request.deliveredQuantity || 0);
+  const progressLabel = `${progress}% completado`;
+
+  return (
+    <section className="printshop-panel request-preview-panel">
+      <div className="printshop-panel-header request-preview-header">
+        <div>
+          <span>◉</span>
+          <h2>Detalle de la solicitud</h2>
+        </div>
+        <button type="button" aria-label="Ocultar detalle">⌃</button>
+      </div>
+
+      <div className="request-preview-content">
+        <div className="request-preview-title-row">
+          <span className="request-preview-folio">{request.folio || "Sin folio"}</span>
+          <StatusBadge tone={getRequestStatusTone(request.status)}>
+            {request.status || "Solicitud recibida"}
+          </StatusBadge>
+        </div>
+
+        <h3>{getRequestProductLabel(request)}</h3>
+
+        <div className="request-preview-info-list">
+          <div>
+            <span>Solicitante</span>
+            <strong>{request.requesterName || "Sin solicitante"}</strong>
+          </div>
+          <div>
+            <span>Área / Plantel</span>
+            <strong>{request.requesterArea || "Sin área"} · {request.campus || "Sin plantel"}</strong>
+          </div>
+          <div>
+            <span>Fechas</span>
+            <strong>Solicitud</strong>
+            <small>{formatDate(request.requestDate || request.createdAt)}</small>
+            <strong>Compromiso</strong>
+            <small>{getRequestDueLabel(request)}</small>
+          </div>
+        </div>
+
+        <div className="request-preview-progress">
+          <div>
+            <span>Progreso</span>
+            <strong>{progress}%</strong>
+          </div>
+          <ProgressBar value={progress} tone={getRequestStatusTone(request.status)} />
+          <small>{progressLabel}</small>
+        </div>
+
+        <div className="request-preview-description">
+          <span>Descripción</span>
+          <p>{request.notes || `${getRequestProductLabel(request)} solicitado a Imprenta.`}</p>
+        </div>
+
+        <div className="request-preview-quantity">
+          <span>Cantidad</span>
+          <strong>{deliveredQuantity} / {requestedQuantity}</strong>
+        </div>
+
+        <button type="button" className="visual-primary-button request-preview-open-button" onClick={onOpen}>
+          Ver información completa
+        </button>
       </div>
     </section>
   );
