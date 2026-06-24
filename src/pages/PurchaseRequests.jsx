@@ -185,6 +185,42 @@ function PurchaseModuleIcon({ name }) {
         <path d="M9 7V4h6v3" {...common} />
       </>
     ),
+
+    cart: (
+      <>
+        <path d="M6 7h13l-1.4 8H8.1z" {...common} />
+        <path d="M6 7 5.2 4H3" {...common} />
+        <circle cx="9" cy="20" r="1.5" {...common} />
+        <circle cx="17" cy="20" r="1.5" {...common} />
+      </>
+    ),
+    package: (
+      <>
+        <path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5z" {...common} />
+        <path d="M3.5 9 12 14l8.5-5" {...common} />
+        <path d="M12 14v7" {...common} />
+      </>
+    ),
+    truck: (
+      <>
+        <path d="M3 7h11v9H3z" {...common} />
+        <path d="M14 10h4l3 3v3h-7z" {...common} />
+        <circle cx="7" cy="18" r="2" {...common} />
+        <circle cx="17" cy="18" r="2" {...common} />
+      </>
+    ),
+    plus: (
+      <>
+        <path d="M12 5v14" {...common} />
+        <path d="M5 12h14" {...common} />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" {...common} />
+        <path d="M4 21c1.5-4 14.5-4 16 0" {...common} />
+      </>
+    ),
     search: (
       <>
         <circle cx="11" cy="11" r="7" {...common} />
@@ -596,138 +632,191 @@ export default function PurchaseRequests() {
   }
 
   const renderCreateView = () => (
-    <div className="purchase-focused-view">
-      <button type="button" className="purchase-back-button" onClick={backToList}>
-        <PurchaseModuleIcon name="back" />
-        Regresar a solicitudes
-      </button>
-
-      <div className="purchase-focused-header">
-        <div>
-          <span className="purchase-focused-kicker">Vista enfocada</span>
-          <h2>Nueva solicitud de compra</h2>
-          <p>Registra solo la información necesaria para que Administración pueda revisar, aprobar y dar seguimiento.</p>
-        </div>
-        <PurchaseModuleIcon name="request" />
-      </div>
-
-      <div className="purchase-focused-card purchase-create-focused-card">
-        <form className="purchase-focused-form" onSubmit={handleCreateRequest}>
-          <label className="visual-field">
-            <span>¿Qué necesitas? <b>*</b></span>
-            <input
-              type="text"
-              value={form.itemName}
-              onChange={(event) => updateForm("itemName", event.target.value)}
-              placeholder="Ej. Mouse inalámbrico, cable HDMI, no break..."
-              maxLength={120}
-            />
-          </label>
-
-          <label className="visual-field">
-            <span>Cantidad <b>*</b></span>
-            <input
-              type="number"
-              min="1"
-              value={form.quantity}
-              onChange={(event) => updateForm("quantity", event.target.value)}
-            />
-          </label>
-
-          <label className="visual-field full">
-            <span>Descripción / justificación <b>*</b></span>
-            <textarea
-              value={form.description}
-              onChange={(event) => updateForm("description", event.target.value)}
-              placeholder="Explica para qué se necesita, dónde se usará y cualquier detalle importante."
-              maxLength={700}
-            />
-          </label>
-
-          <label className="visual-field">
-            <span>Área / departamento</span>
-            <select
-              value={form.department}
-              onChange={(event) => updateForm("department", event.target.value)}
-            >
-              {DEPARTMENTS.map((department) => (
-                <option key={department} value={department}>
-                  {department}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="visual-field">
-            <span>Prioridad</span>
-            <select value={form.priority} onChange={(event) => updateForm("priority", event.target.value)}>
-              {PRIORITIES.map((priority) => (
-                <option key={priority.value} value={priority.value}>
-                  {priority.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="visual-field">
-            <span>Link sugerido</span>
-            <input
-              type="url"
-              value={form.suggestedLink}
-              onChange={(event) => updateForm("suggestedLink", event.target.value)}
-              placeholder="https://..."
-            />
-          </label>
-
-          <label className="visual-field">
-            <span>Proyecto relacionado</span>
-            <input
-              type="text"
-              value={form.projectName}
-              onChange={(event) => updateForm("projectName", event.target.value)}
-              placeholder="Opcional"
-              maxLength={120}
-            />
-          </label>
-
-          <label className="visual-field full">
-            <span>Comentario adicional</span>
-            <textarea
-              value={form.requesterComment}
-              onChange={(event) => updateForm("requesterComment", event.target.value)}
-              placeholder="Opcional: marca, modelo, medidas, color, proveedor, etc."
-              maxLength={500}
-            />
-          </label>
-
-          <div className="purchase-focused-actions">
-            <button type="button" className="visual-outline-button" onClick={backToList} disabled={saving}>
-              Cancelar
-            </button>
-
-            <button type="submit" className="visual-primary-button" disabled={saving}>
-              {saving ? "Guardando..." : "Registrar solicitud"}
-            </button>
+    <>
+      <div className="module-topbar purchase-module-topbar purchase-focused-topbar">
+        <div className="module-topbar-main">
+          <div className="module-topbar-module-icon purchase-topbar-module-icon">
+            <PurchaseModuleIcon name="cart" />
           </div>
-        </form>
+          <div className="module-topbar-copy">
+            <p className="module-topbar-kicker">ADMINISTRACIÓN</p>
+            <h1>Nueva solicitud</h1>
+            <p>Captura una necesidad de compra con datos claros para revisión, autorización y seguimiento.</p>
+          </div>
+        </div>
+
+        <div className="module-topbar-actions purchase-topbar-actions compact">
+          <button type="button" className="module-topbar-button" onClick={backToList}>
+            <PurchaseModuleIcon name="back" />
+            Volver a solicitudes
+          </button>
+        </div>
       </div>
-    </div>
+
+      <div className="purchase-focused-shell purchase-create-shell">
+        <section className="purchase-panel-card purchase-create-main-card">
+          <div className="purchase-card-heading purchase-section-heading">
+            <PurchaseModuleIcon name="request" />
+            <div>
+              <h3>Datos de la solicitud</h3>
+              <p>Registra solo la información necesaria para que Administración pueda evaluar la compra.</p>
+            </div>
+          </div>
+
+          <form className="purchase-focused-form purchase-create-form" onSubmit={handleCreateRequest}>
+            <label className="visual-field">
+              <span>¿Qué necesitas? <b>*</b></span>
+              <input
+                type="text"
+                value={form.itemName}
+                onChange={(event) => updateForm("itemName", event.target.value)}
+                placeholder="Ej. Mouse inalámbrico, cable HDMI, no break..."
+                maxLength={120}
+              />
+            </label>
+
+            <label className="visual-field">
+              <span>Cantidad <b>*</b></span>
+              <input
+                type="number"
+                min="1"
+                value={form.quantity}
+                onChange={(event) => updateForm("quantity", event.target.value)}
+              />
+            </label>
+
+            <label className="visual-field full">
+              <span>Descripción / justificación <b>*</b></span>
+              <textarea
+                value={form.description}
+                onChange={(event) => updateForm("description", event.target.value)}
+                placeholder="Explica para qué se necesita, dónde se usará y cualquier detalle importante."
+                maxLength={700}
+              />
+            </label>
+
+            <label className="visual-field">
+              <span>Área / departamento</span>
+              <select
+                value={form.department}
+                onChange={(event) => updateForm("department", event.target.value)}
+              >
+                {DEPARTMENTS.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="visual-field">
+              <span>Prioridad</span>
+              <select value={form.priority} onChange={(event) => updateForm("priority", event.target.value)}>
+                {PRIORITIES.map((priority) => (
+                  <option key={priority.value} value={priority.value}>
+                    {priority.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="visual-field">
+              <span>Link sugerido</span>
+              <input
+                type="url"
+                value={form.suggestedLink}
+                onChange={(event) => updateForm("suggestedLink", event.target.value)}
+                placeholder="https://..."
+              />
+            </label>
+
+            <label className="visual-field">
+              <span>Proyecto relacionado</span>
+              <input
+                type="text"
+                value={form.projectName}
+                onChange={(event) => updateForm("projectName", event.target.value)}
+                placeholder="Opcional"
+                maxLength={120}
+              />
+            </label>
+
+            <label className="visual-field full">
+              <span>Comentario adicional</span>
+              <textarea
+                value={form.requesterComment}
+                onChange={(event) => updateForm("requesterComment", event.target.value)}
+                placeholder="Opcional: marca, modelo, medidas, color, proveedor, etc."
+                maxLength={500}
+              />
+            </label>
+
+            <div className="purchase-focused-actions">
+              <button type="button" className="visual-outline-button" onClick={backToList} disabled={saving}>
+                Cancelar
+              </button>
+
+              <button type="submit" className="visual-primary-button" disabled={saving}>
+                {saving ? "Guardando..." : "Registrar solicitud"}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <aside className="purchase-focused-side">
+          <div className="purchase-panel-card purchase-preview-card">
+            <div className="purchase-card-heading compact-heading">
+              <PurchaseModuleIcon name="package" />
+              <div>
+                <h3>Vista previa</h3>
+                <p>Así se verá la solicitud antes de enviarla.</p>
+              </div>
+            </div>
+
+            <div className="purchase-preview-request-card">
+              <div className="purchase-request-icon">{getInitials(form.itemName || "Compra")}</div>
+              <div>
+                <span className="purchase-badge tone-blue">{priorityConfig(form.priority).label}</span>
+                <h4>{form.itemName || "Nombre del producto"}</h4>
+                <p>{form.description || "Aquí aparecerá la descripción breve de la necesidad."}</p>
+                <small>{form.quantity || 1} pieza(s) · {form.department || "Sin área"}</small>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </>
   );
 
   const renderDetailView = () => {
     if (!selectedRequest) {
       return (
-        <div className="purchase-focused-view">
-          <button type="button" className="purchase-back-button" onClick={backToList}>
-            <PurchaseModuleIcon name="back" />
-            Regresar a solicitudes
-          </button>
-          <div className="purchase-focused-card">
+        <>
+          <div className="module-topbar purchase-module-topbar purchase-focused-topbar">
+            <div className="module-topbar-main">
+              <div className="module-topbar-module-icon purchase-topbar-module-icon">
+                <PurchaseModuleIcon name="cart" />
+              </div>
+              <div className="module-topbar-copy">
+                <p className="module-topbar-kicker">ADMINISTRACIÓN</p>
+                <h1>Detalle de solicitud</h1>
+                <p>La solicitud seleccionada ya no está disponible.</p>
+              </div>
+            </div>
+            <div className="module-topbar-actions purchase-topbar-actions compact">
+              <button type="button" className="module-topbar-button" onClick={backToList}>
+                <PurchaseModuleIcon name="back" />
+                Volver a solicitudes
+              </button>
+            </div>
+          </div>
+
+          <div className="purchase-panel-card">
             <div className="empty-state small">
               <p>La solicitud seleccionada ya no está disponible.</p>
             </div>
           </div>
-        </div>
+        </>
       );
     }
 
@@ -737,22 +826,34 @@ export default function PurchaseRequests() {
       selectedRequest.status === "pending_review" && selectedRequest.requestedByUid === firebaseUser?.uid;
 
     return (
-      <div className="purchase-focused-view">
-        <button type="button" className="purchase-back-button" onClick={backToList}>
-          <PurchaseModuleIcon name="back" />
-          Regresar a solicitudes
-        </button>
-
-        <div className="purchase-focused-header purchase-detail-focused-header">
-          <div className="purchase-focused-title-group">
-            <div className="purchase-detail-avatar">{getInitials(selectedRequest.itemName)}</div>
-            <div>
-              <span className="purchase-focused-kicker">Detalle de solicitud</span>
-              <h2>{selectedRequest.itemName}</h2>
+      <>
+        <div className="module-topbar purchase-module-topbar purchase-focused-topbar purchase-detail-topbar">
+          <div className="module-topbar-main">
+            <div className="module-topbar-module-icon purchase-topbar-module-icon">
+              <PurchaseModuleIcon name="package" />
+            </div>
+            <div className="module-topbar-copy">
+              <p className="module-topbar-kicker">DETALLE DE COMPRA</p>
+              <h1>{selectedRequest.itemName}</h1>
               <p>{selectedRequest.quantity || 1} pieza(s) · {selectedRequest.department || "Sin área"}</p>
             </div>
           </div>
 
+          <div className="module-topbar-actions purchase-topbar-actions compact">
+            <span className={`purchase-badge topbar-badge tone-${status.tone}`}>{status.label}</span>
+            <button type="button" className="module-topbar-button" onClick={backToList}>
+              <PurchaseModuleIcon name="back" />
+              Volver
+            </button>
+          </div>
+        </div>
+
+        <div className="purchase-detail-summary-card">
+          <div className="purchase-detail-avatar">{getInitials(selectedRequest.itemName)}</div>
+          <div>
+            <h3>{selectedRequest.itemName}</h3>
+            <p>{selectedRequest.description}</p>
+          </div>
           <div className="purchase-detail-badges focused">
             <span className={`purchase-badge tone-${status.tone}`}>{status.label}</span>
             <span className={`purchase-badge tone-${priority.tone}`}>Prioridad {priority.label}</span>
@@ -839,120 +940,127 @@ export default function PurchaseRequests() {
             )}
           </div>
 
-          {isAdmin && (
-            <div className="purchase-focused-card purchase-admin-focused-card">
-              <div className="purchase-card-heading">
-                <PurchaseModuleIcon name="check" />
-                <div>
-                  <h3>Actualizar solicitud</h3>
-                  <p>Cambia el estado visible para el solicitante.</p>
+          <aside className="purchase-detail-side-stack">
+            {isAdmin && (
+              <div className="purchase-focused-card purchase-admin-focused-card">
+                <div className="purchase-card-heading">
+                  <PurchaseModuleIcon name="check" />
+                  <div>
+                    <h3>Actualizar solicitud</h3>
+                    <p>Cambia el estado visible para el solicitante.</p>
+                  </div>
                 </div>
-              </div>
 
-              <label className="visual-field">
-                <span>Estado</span>
-                <select value={adminStatus} onChange={(event) => setAdminStatus(event.target.value)}>
-                  {PURCHASE_STATUSES.filter((item) => item.value !== "cancelled").map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="visual-field">
-                <span>Comentario administrativo</span>
-                <textarea
-                  value={adminComment}
-                  onChange={(event) => setAdminComment(event.target.value)}
-                  placeholder="Ej. Se comprará junto con otros accesorios esta semana."
-                />
-              </label>
-
-              {adminStatus === "rejected" && (
                 <label className="visual-field">
-                  <span>Motivo de rechazo</span>
+                  <span>Estado</span>
+                  <select value={adminStatus} onChange={(event) => setAdminStatus(event.target.value)}>
+                    {PURCHASE_STATUSES.filter((item) => item.value !== "cancelled").map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="visual-field">
+                  <span>Comentario administrativo</span>
                   <textarea
-                    value={rejectionReason}
-                    onChange={(event) => setRejectionReason(event.target.value)}
-                    placeholder="Explica brevemente por qué no se realizará la compra."
+                    value={adminComment}
+                    onChange={(event) => setAdminComment(event.target.value)}
+                    placeholder="Ej. Se comprará junto con otros accesorios esta semana."
                   />
                 </label>
-              )}
 
-              <button
-                type="button"
-                className="visual-primary-button"
-                onClick={handleAdminUpdate}
-                disabled={updatingStatus}
-              >
-                {updatingStatus ? "Actualizando..." : "Guardar avance"}
-              </button>
+                {adminStatus === "rejected" && (
+                  <label className="visual-field">
+                    <span>Motivo de rechazo</span>
+                    <textarea
+                      value={rejectionReason}
+                      onChange={(event) => setRejectionReason(event.target.value)}
+                      placeholder="Explica brevemente por qué no se realizará la compra."
+                    />
+                  </label>
+                )}
 
-              <div className="purchase-delete-zone compact">
-                <div>
-                  <strong>Eliminar solicitud</strong>
-                  <p>Solo para registros duplicados, pruebas o capturas por error.</p>
-                </div>
                 <button
                   type="button"
-                  className="danger-table-button purchase-delete-button"
-                  onClick={() => handleDeleteRequest(selectedRequest)}
-                  disabled={deletingRequestId === selectedRequest.id}
+                  className="visual-primary-button"
+                  onClick={handleAdminUpdate}
+                  disabled={updatingStatus}
                 >
-                  {deletingRequestId === selectedRequest.id ? "Eliminando..." : "Eliminar"}
+                  {updatingStatus ? "Actualizando..." : "Guardar avance"}
                 </button>
-              </div>
-            </div>
-          )}
 
-          <div className="purchase-focused-card purchase-log-focused-card">
-            <div className="purchase-card-heading compact-heading">
-              <PurchaseModuleIcon name="clock" />
-              <div>
-                <h3>Bitácora</h3>
-                <p>Movimientos registrados automáticamente.</p>
-              </div>
-            </div>
-
-            {logsLoading ? (
-              <div className="purchase-log-empty">Cargando bitácora...</div>
-            ) : logs.length === 0 ? (
-              <div className="purchase-log-empty">Sin movimientos registrados.</div>
-            ) : (
-              <div className="purchase-log-list focused-log-list">
-                {logs.map((log) => (
-                  <div key={log.id} className="purchase-log-item">
-                    <span />
-                    <div>
-                      <strong>{log.message}</strong>
-                      <small>
-                        {log.createdByName || "Usuario"} · {formatDate(log.createdAt)}
-                      </small>
-                    </div>
+                <div className="purchase-delete-zone compact">
+                  <div>
+                    <strong>Eliminar solicitud</strong>
+                    <p>Solo para registros duplicados, pruebas o capturas por error.</p>
                   </div>
-                ))}
+                  <button
+                    type="button"
+                    className="danger-table-button purchase-delete-button"
+                    onClick={() => handleDeleteRequest(selectedRequest)}
+                    disabled={deletingRequestId === selectedRequest.id}
+                  >
+                    {deletingRequestId === selectedRequest.id ? "Eliminando..." : "Eliminar"}
+                  </button>
+                </div>
               </div>
             )}
-          </div>
+
+            <div className="purchase-focused-card purchase-log-focused-card">
+              <div className="purchase-card-heading compact-heading">
+                <PurchaseModuleIcon name="clock" />
+                <div>
+                  <h3>Bitácora</h3>
+                  <p>Movimientos registrados automáticamente.</p>
+                </div>
+              </div>
+
+              {logsLoading ? (
+                <div className="purchase-log-empty">Cargando bitácora...</div>
+              ) : logs.length === 0 ? (
+                <div className="purchase-log-empty">Sin movimientos registrados.</div>
+              ) : (
+                <div className="purchase-log-list focused-log-list">
+                  {logs.map((log) => (
+                    <div key={log.id} className="purchase-log-item">
+                      <span />
+                      <div>
+                        <strong>{log.message}</strong>
+                        <small>
+                          {log.createdByName || "Usuario"} · {formatDate(log.createdAt)}
+                        </small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
-      </div>
+      </>
     );
   };
 
   const renderListView = () => (
     <>
-      <div className="purchase-hero-card">
-        <div className="purchase-hero-content">
-          <span>Centro de compras</span>
-          <h2>Solicitudes de compra</h2>
-          <p>
-            Revisa necesidades pendientes, da seguimiento administrativo y conserva una bitácora clara de cada solicitud.
-          </p>
+      <div className="module-topbar purchase-module-topbar">
+        <div className="module-topbar-main">
+          <div className="module-topbar-module-icon purchase-topbar-module-icon">
+            <PurchaseModuleIcon name="cart" />
+          </div>
+          <div className="module-topbar-copy">
+            <p className="module-topbar-kicker">ADMINISTRACIÓN</p>
+            <h1>Solicitudes de compra</h1>
+            <p>
+              Controla necesidades, autorizaciones, compras y entregas con una vista limpia de seguimiento.
+            </p>
+          </div>
         </div>
 
-        <div className="purchase-hero-actions">
-          <div className="purchase-hero-search">
+        <div className="module-topbar-actions purchase-topbar-actions">
+          <div className="module-topbar-search purchase-topbar-search">
             <PurchaseModuleIcon name="search" />
             <input
               type="search"
@@ -962,82 +1070,119 @@ export default function PurchaseRequests() {
             />
           </div>
 
-          <button type="button" className="purchase-hero-button" onClick={openCreateView}>
-            <PurchaseModuleIcon name="request" />
+          <button type="button" className="module-topbar-button primary purchase-topbar-button" onClick={openCreateView}>
+            <PurchaseModuleIcon name="plus" />
             Nueva solicitud
           </button>
         </div>
       </div>
 
-      <div className="purchase-compact-metrics">
-        <div className="purchase-compact-metric total">
+      <div className="purchase-module-metrics-grid">
+        <div className="purchase-module-metric-card metric-total">
           <PurchaseModuleIcon name="list" />
           <div>
+            <span>{isAdmin ? "Todas las solicitudes" : "Mis solicitudes"}</span>
             <strong>{metrics.total}</strong>
-            <span>{isAdmin ? "Todas" : "Mías"}</span>
+            <p>Registros activos</p>
           </div>
         </div>
-        <div className="purchase-compact-metric pending">
+        <div className="purchase-module-metric-card metric-pending">
           <PurchaseModuleIcon name="alert" />
           <div>
-            <strong>{metrics.pending}</strong>
             <span>Pendientes</span>
+            <strong>{metrics.pending}</strong>
+            <p>Por revisar</p>
           </div>
         </div>
-        <div className="purchase-compact-metric process">
+        <div className="purchase-module-metric-card metric-process">
           <PurchaseModuleIcon name="clock" />
           <div>
-            <strong>{metrics.inProcess}</strong>
             <span>En proceso</span>
+            <strong>{metrics.inProcess}</strong>
+            <p>Compra o revisión</p>
           </div>
         </div>
-        <div className="purchase-compact-metric delivered">
-          <PurchaseModuleIcon name="check" />
+        <div className="purchase-module-metric-card metric-delivered">
+          <PurchaseModuleIcon name="truck" />
           <div>
-            <strong>{metrics.delivered}</strong>
             <span>Entregadas</span>
+            <strong>{metrics.delivered}</strong>
+            <p>Cerradas correctamente</p>
           </div>
         </div>
-        <div className="purchase-compact-metric urgent">
+        <div className="purchase-module-metric-card metric-urgent">
           <PurchaseModuleIcon name="alert" />
           <div>
-            <strong>{metrics.urgent}</strong>
             <span>Urgentes</span>
+            <strong>{metrics.urgent}</strong>
+            <p>Requieren prioridad</p>
           </div>
         </div>
       </div>
 
+      <section className="purchase-alert-strip">
+        <div className="purchase-card-heading compact-heading">
+          <PurchaseModuleIcon name="alert" />
+          <div>
+            <h3>Requiere atención</h3>
+            <p>Pendientes, urgentes o en revisión para dar seguimiento oportuno.</p>
+          </div>
+        </div>
+
+        {attentionRequests.length === 0 ? (
+          <div className="purchase-side-empty">No hay solicitudes críticas por ahora.</div>
+        ) : (
+          <div className="purchase-attention-list horizontal">
+            {attentionRequests.map((request) => (
+              <button key={request.id} type="button" onClick={() => openDetailView(request)}>
+                <strong>{request.itemName}</strong>
+                <span>{statusConfig(request.status).label} · {priorityConfig(request.priority).label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="purchase-filters-card">
+        <div className="purchase-card-heading compact-heading">
+          <PurchaseModuleIcon name="search" />
+          <div>
+            <h3>Filtros de trabajo</h3>
+            <p>{loading ? "Cargando registros..." : `Mostrando ${filteredRequests.length} de ${requests.length} solicitudes.`}</p>
+          </div>
+        </div>
+        <div className="purchase-filter-controls">
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">Todos los estados</option>
+            {PURCHASE_STATUSES.map((status) => (
+              <option key={status.value} value={status.value}>
+                {status.label}
+              </option>
+            ))}
+          </select>
+
+          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+            <option value="all">Todas las prioridades</option>
+            {PRIORITIES.map((priority) => (
+              <option key={priority.value} value={priority.value}>
+                {priority.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
       <div className="purchase-workspace-grid">
         <div className="purchase-panel-card purchase-list-panel-card">
           <div className="purchase-panel-header">
-            <div>
-              <h3>{isAdmin ? "Todas las solicitudes" : "Mis solicitudes"}</h3>
-              <p>
-                {loading
-                  ? "Cargando registros..."
-                  : `Mostrando ${filteredRequests.length} de ${requests.length} solicitudes.`}
-              </p>
+            <div className="purchase-card-heading compact-heading">
+              <PurchaseModuleIcon name="request" />
+              <div>
+                <h3>{isAdmin ? "Todas las solicitudes" : "Mis solicitudes"}</h3>
+                <p>Consulta el detalle, estado, prioridad y solicitante de cada compra.</p>
+              </div>
             </div>
-
-            <div className="purchase-compact-filters">
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="all">Todos los estados</option>
-                {PURCHASE_STATUSES.map((status) => (
-                  <option key={status.value} value={status.value}>
-                    {status.label}
-                  </option>
-                ))}
-              </select>
-
-              <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
-                <option value="all">Todas las prioridades</option>
-                {PRIORITIES.map((priority) => (
-                  <option key={priority.value} value={priority.value}>
-                    {priority.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <span className="purchase-visible-pill">{filteredRequests.length} visibles</span>
           </div>
 
           {loading ? (
@@ -1109,29 +1254,6 @@ export default function PurchaseRequests() {
         </div>
 
         <aside className="purchase-side-summary">
-          <div className="purchase-panel-card purchase-attention-card">
-            <div className="purchase-card-heading">
-              <PurchaseModuleIcon name="alert" />
-              <div>
-                <h3>Requiere atención</h3>
-                <p>Pendientes, urgentes o en revisión.</p>
-              </div>
-            </div>
-
-            {attentionRequests.length === 0 ? (
-              <div className="purchase-side-empty">No hay solicitudes críticas por ahora.</div>
-            ) : (
-              <div className="purchase-attention-list">
-                {attentionRequests.map((request) => (
-                  <button key={request.id} type="button" onClick={() => openDetailView(request)}>
-                    <strong>{request.itemName}</strong>
-                    <span>{statusConfig(request.status).label} · {priorityConfig(request.priority).label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
           <div className="purchase-panel-card purchase-status-summary-card">
             <div className="purchase-card-heading compact-heading">
               <PurchaseModuleIcon name="overview" />
@@ -1163,7 +1285,6 @@ export default function PurchaseRequests() {
       </div>
     </>
   );
-
   return (
     <section className="purchase-requests-page purchase-redesign visual-page">
       {message && <div className="message-box">{message}</div>}

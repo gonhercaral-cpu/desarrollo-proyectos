@@ -813,18 +813,13 @@ export default function Dashboard() {
           ))}
         </nav>
 
-        <button
-          type="button"
-          className="sidebar-help-card"
-          onClick={() => goToPage("technical-support")}
-        >
-          <span className="sidebar-footer-icon"><DashboardNavIcon name="technical" /></span>
+        <div className="sidebar-brand-footer" aria-label="Active English School - Desarrollo de Proyectos">
+          <span className="sidebar-brand-footer-icon"><DashboardNavIcon name="dashboard" /></span>
           <span>
-            <strong>¿Necesitas ayuda?</strong>
-            <small>Soporte técnico disponible</small>
+            <strong>Active English School</strong>
+            <small>Desarrollo de Proyectos</small>
           </span>
-          <b>›</b>
-        </button>
+        </div>
       </aside>
 
       <MobileModuleDrawer
@@ -1854,7 +1849,7 @@ function WorkspaceDashboard({
             </div>
           )}
 
-          <div className="personal-notes-list visual-notes-grid clean-notes-list">
+          <div className={`personal-notes-list visual-notes-grid clean-notes-list ${notes.length === 0 ? "notes-list-empty-state" : ""}`}>
             {notes.length === 0 ? (
               <div className="workspace-clean-empty note-empty-illustration">
                 <div className="clean-empty-illustration-icon">📝</div>
