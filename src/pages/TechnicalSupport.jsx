@@ -453,14 +453,14 @@ const EMPTY_INSTALLATION_FORM = {
 };
 
 const TECHNICAL_TABS = [
-  { id: "resumen", label: "Resumen", icon: "⌂" },
-  { id: "mantenimientos", label: "Mantenimientos", icon: "🛠" },
-  { id: "equipos", label: "Equipos", icon: "▣" },
-  { id: "recambios", label: "Recambios", icon: "▤" },
-  { id: "instalaciones", label: "Instalaciones", icon: "▥" },
-  { id: "bajas", label: "Bajas", icon: "↓" },
-  { id: "ubicaciones-tecnicas", label: "Ubicaciones técnicas", icon: "⌖" },
-  { id: "registrar-equipo", label: "Registrar equipo", icon: "+" },
+  { id: "resumen", label: "Resumen", icon: "dashboard" },
+  { id: "mantenimientos", label: "Mantenimientos", icon: "maintenance" },
+  { id: "equipos", label: "Equipos", icon: "devices" },
+  { id: "recambios", label: "Recambios", icon: "spares" },
+  { id: "instalaciones", label: "Instalaciones", icon: "installations" },
+  { id: "ubicaciones-tecnicas", label: "Ubicaciones técnicas", icon: "locations" },
+  { id: "registrar-equipo", label: "Registrar equipo", icon: "add" },
+  { id: "bajas", label: "Bajas", icon: "archive" },
 ];
 
 const MOVEMENT_TYPES = [
@@ -2218,7 +2218,6 @@ export default function TechnicalSupport() {
       selectedCompletionMaintenance ||
       selectedMovementAsset ||
       selectedHistoryAsset ||
-      showAssetForm ||
       showLocationReviewForm
   );
   const focusedSupportViewActive = Boolean(
@@ -5866,7 +5865,7 @@ function closeCompletionForm(options = {}) {
               onChange={handleInstallationEvidenceFileChange}
               disabled={uploadingInstallationEvidence || isCancelled}
             />
-            <span>▣</span>
+            <span><TechnicalTabIcon name="devices" /></span>
             <strong>Seleccionar fotos o videos</strong>
             <p>JPG, PNG, WEBP, MP4, MOV o WEBM</p>
           </label>
@@ -6019,7 +6018,7 @@ function closeCompletionForm(options = {}) {
       return (
         <section className="installation-location-update-card warning">
           <div>
-            <span>!</span>
+            <span><TechnicalTabIcon name="alert" /></span>
           </div>
           <div>
             <strong>Sin ubicación técnica de destino</strong>
@@ -6035,7 +6034,7 @@ function closeCompletionForm(options = {}) {
       return (
         <section className="installation-location-update-card info">
           <div>
-            <span>↦</span>
+            <span><TechnicalTabIcon name="locations" /></span>
           </div>
           <div>
             <strong>Actualización automática al finalizar</strong>
@@ -6050,7 +6049,7 @@ function closeCompletionForm(options = {}) {
     return (
       <section className="installation-location-update-card warning">
         <div>
-          <span>!</span>
+          <span><TechnicalTabIcon name="alert" /></span>
         </div>
         <div>
           <strong>Ubicación no actualizada automáticamente</strong>
@@ -6325,6 +6324,27 @@ function closeCompletionForm(options = {}) {
     );
   }
 
+  function renderInstallationSubTabs() {
+    return (
+      <div className="installation-subtabs">
+        <button
+          type="button"
+          className={installationSubTab === "templates" ? "active" : ""}
+          onClick={() => setInstallationSubTab("templates")}
+        >
+          Plantillas
+        </button>
+        <button
+          type="button"
+          className={installationSubTab === "installations" ? "active" : ""}
+          onClick={() => setInstallationSubTab("installations")}
+        >
+          Instalaciones realizadas
+        </button>
+      </div>
+    );
+  }
+
   function renderInstallationTemplatesPanel() {
     return (
       <section className={`installation-templates-workspace ${showInstallationTemplateForm ? "installation-template-focused-action" : ""}`}>
@@ -6378,6 +6398,8 @@ function closeCompletionForm(options = {}) {
             <p>Checklist acumulado</p>
           </article>
         </div>
+
+        {renderInstallationSubTabs()}
 
         {showInstallationTemplateForm && (
           <section className="installation-template-form-panel">
@@ -6620,7 +6642,7 @@ function closeCompletionForm(options = {}) {
                     key={template.id}
                   >
                     <div className="installation-template-card-top">
-                      <span className="installation-template-icon">▥</span>
+                      <span className="installation-template-icon"><TechnicalTabIcon name="installations" /></span>
                       <div>
                         <strong>{template.name || "Plantilla sin nombre"}</strong>
                         <p>
@@ -6737,7 +6759,7 @@ function closeCompletionForm(options = {}) {
         {activeInstallationTemplates.length === 0 && (
           <div className="technical-alert-strip installation-alert-strip">
             <div className="technical-alert-main">
-              <span>!</span>
+              <span><TechnicalTabIcon name="alert" /></span>
               <div>
                 <strong>Primero necesitas una plantilla activa</strong>
                 <p>
@@ -6777,6 +6799,8 @@ function closeCompletionForm(options = {}) {
             <p>Promedio general</p>
           </article>
         </div>
+
+        {renderInstallationSubTabs()}
 
         {showInstallationForm && (
           <section className="installation-run-form-panel">
@@ -7315,7 +7339,7 @@ function closeCompletionForm(options = {}) {
                 return (
                   <article className="installation-run-card" key={installation.id}>
                     <div className="installation-run-card-top">
-                      <span className="installation-run-icon">▥</span>
+                      <span className="installation-run-icon"><TechnicalTabIcon name="installations" /></span>
                       <div>
                         <strong>{installation.title || "Instalación sin título"}</strong>
                         <p>
@@ -7374,23 +7398,6 @@ function closeCompletionForm(options = {}) {
   function renderInstallationsPanel() {
     return (
       <section className={`installations-workspace ${showInstallationTemplateForm || showInstallationForm || selectedInstallation ? "installations-focused-shell" : ""}`}>
-        <div className="installation-subtabs">
-          <button
-            type="button"
-            className={installationSubTab === "templates" ? "active" : ""}
-            onClick={() => setInstallationSubTab("templates")}
-          >
-            Plantillas
-          </button>
-          <button
-            type="button"
-            className={installationSubTab === "installations" ? "active" : ""}
-            onClick={() => setInstallationSubTab("installations")}
-          >
-            Instalaciones realizadas
-          </button>
-        </div>
-
         {installationSubTab === "templates"
           ? renderInstallationTemplatesPanel()
           : renderInstallationRunsPanel()}
@@ -7517,7 +7524,7 @@ function closeCompletionForm(options = {}) {
           {selectedScannedPart && (
             <div className="spare-scan-result">
               <div className="spare-scan-part-card">
-                <span className="spare-part-icon">▤</span>
+                <span className="spare-part-icon"><TechnicalTabIcon name="spares" /></span>
                 <div>
                   <strong>{selectedScannedPart.name || "Recambio sin nombre"}</strong>
                   <p>
@@ -8012,7 +8019,7 @@ function closeCompletionForm(options = {}) {
                     key={part.id}
                   >
                     <div className="spare-part-card-top">
-                      <span className="spare-part-icon">▤</span>
+                      <span className="spare-part-icon"><TechnicalTabIcon name="spares" /></span>
                       <div>
                         <strong>{part.name || "Recambio sin nombre"}</strong>
                         <p>
@@ -8287,21 +8294,21 @@ function closeCompletionForm(options = {}) {
             type="button"
             onClick={() => startQuickMaintenance(selectedQuickAsset)}
           >
-            <span>🛠</span>
+            <span><TechnicalTabIcon name="maintenance" /></span>
             {selectedQuickNextMaintenance ? "Iniciar mantenimiento" : "Programar mantenimiento"}
           </button>
 
           <div className="field-mode-secondary-actions">
             <button type="button" onClick={() => openQuickMovementAction(selectedQuickAsset)}>
-              <span>↔</span>
+              <span><TechnicalTabIcon name="spares" /></span>
               Movimiento
             </button>
             <button type="button" onClick={() => openQuickHistoryAction(selectedQuickAsset)}>
-              <span>☰</span>
+              <span><TechnicalTabIcon name="info" /></span>
               Historial
             </button>
             <button type="button" onClick={() => openQuickQrAction(selectedQuickAsset)}>
-              <span>▦</span>
+              <span><TechnicalTabIcon name="qr" /></span>
               QR
             </button>
           </div>
@@ -8327,7 +8334,7 @@ function closeCompletionForm(options = {}) {
                     key={maintenance.id}
                   >
                     <div>
-                      <span>{urgency.icon}</span>
+                      <span><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></span>
                       <strong>{maintenance.title}</strong>
                       <p>{urgency.label} · {formatMaintenanceDate(maintenance.nextDate)}</p>
                     </div>
@@ -8410,7 +8417,7 @@ function closeCompletionForm(options = {}) {
 
   return (
     <div
-      className={`technical-support-page technical-support-redesign-v3 ${
+      className={`technical-support-page technical-support-redesign-v3 technical-support-redesign-v5 ${
         fieldActionModeActive ? "field-action-mode" : ""
       } ${focusedSupportViewActive ? "technical-focused-view" : ""}`}
     >
@@ -8441,95 +8448,96 @@ function closeCompletionForm(options = {}) {
         </div>
       )}
 
-      {!focusedSupportViewActive && activeTab === "resumen" && (
-      <section className="technical-command-grid technical-command-grid-v4" aria-label="Indicadores principales de soporte técnico">
-        <button
-          className="technical-command-card danger"
-          type="button"
-          onClick={() => setActiveTab("mantenimientos")}
-        >
-          <span className="technical-command-icon">⚠</span>
-          <div>
-            <strong>{overdueMaintenances.length}</strong>
-            <h3>Mantenimientos vencidos</h3>
-            <p>Requieren atención inmediata.</p>
-          </div>
-          <b>Ver casos →</b>
-        </button>
-
-        <button
-          className="technical-command-card warning"
-          type="button"
-          onClick={() => setActiveTab("mantenimientos")}
-        >
-          <span className="technical-command-icon">📅</span>
-          <div>
-            <strong>{weekMaintenances.length}</strong>
-            <h3>Vencen esta semana</h3>
-            <p>Trabajos próximos por atender.</p>
-          </div>
-          <b>Revisar agenda →</b>
-        </button>
-
-        <button
-          className="technical-command-card info"
-          type="button"
-          onClick={() => setActiveTab("equipos")}
-        >
-          <span className="technical-command-icon">▣</span>
-          <div>
-            <strong>{totalAssets}</strong>
-            <h3>Equipos registrados</h3>
-            <p>Inventario técnico actual.</p>
-          </div>
-          <b>Ver inventario →</b>
-        </button>
-
-        <button
-          className="technical-command-card success"
-          type="button"
-          onClick={() => setActiveTab("mantenimientos")}
-        >
-          <span className="technical-command-icon">🔧</span>
-          <div>
-            <strong>{upcomingMaintenances.length}</strong>
-            <h3>Mantenimientos próximos</h3>
-            <p>Próximas revisiones programadas.</p>
-          </div>
-          <b>Ver calendario →</b>
-        </button>
-
-
-        <button
-          className="technical-command-card info"
-          type="button"
-          onClick={() => setActiveTab("ubicaciones-tecnicas")}
-        >
-          <span className="technical-command-icon">⌖</span>
-          <div>
-            <strong>{pendingLocationReviews.length}</strong>
-            <h3>Revisiones de ubicación</h3>
-            <p>Checklist técnico periódico por ubicación.</p>
-          </div>
-          <b>Revisar ubicaciones →</b>
-        </button>
-      </section>
+      {!focusedSupportViewActive && (
+        <nav className="technical-tabs" aria-label="Navegación de Soporte Técnico">
+          {TECHNICAL_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={activeTab === tab.id ? "active" : ""}
+              onClick={() => handleTechnicalTabChange(tab.id)}
+            >
+              <span className="technical-tab-icon">
+                <TechnicalTabIcon name={tab.icon} />
+              </span>
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       )}
 
-      {!focusedSupportViewActive && (
-      <nav className="technical-tabs" aria-label="Navegación de Soporte Técnico">
-        {TECHNICAL_TABS.map((tab) => (
+      {!focusedSupportViewActive && activeTab === "resumen" && (
+        <section className="technical-command-grid technical-command-grid-v4" aria-label="Indicadores principales de soporte técnico">
           <button
-            key={tab.id}
+            className="technical-command-card danger"
             type="button"
-            className={activeTab === tab.id ? "active" : ""}
-            onClick={() => handleTechnicalTabChange(tab.id)}
+            onClick={() => setActiveTab("mantenimientos")}
           >
-            <span>{tab.icon}</span>
-            {tab.label}
+            <span className="technical-command-icon"><TechnicalTabIcon name="alert" /></span>
+            <div>
+              <strong>{overdueMaintenances.length}</strong>
+              <h3>Mantenimientos vencidos</h3>
+              <p>Requieren atención inmediata.</p>
+            </div>
+            <b>Ver casos →</b>
           </button>
-        ))}
-      </nav>
+
+          <button
+            className="technical-command-card warning"
+            type="button"
+            onClick={() => setActiveTab("mantenimientos")}
+          >
+            <span className="technical-command-icon"><TechnicalTabIcon name="calendar" /></span>
+            <div>
+              <strong>{weekMaintenances.length}</strong>
+              <h3>Vencen esta semana</h3>
+              <p>Trabajos próximos por atender.</p>
+            </div>
+            <b>Revisar agenda →</b>
+          </button>
+
+          <button
+            className="technical-command-card info"
+            type="button"
+            onClick={() => setActiveTab("equipos")}
+          >
+            <span className="technical-command-icon"><TechnicalTabIcon name="devices" /></span>
+            <div>
+              <strong>{totalAssets}</strong>
+              <h3>Equipos registrados</h3>
+              <p>Inventario técnico actual.</p>
+            </div>
+            <b>Ver inventario →</b>
+          </button>
+
+          <button
+            className="technical-command-card success"
+            type="button"
+            onClick={() => setActiveTab("mantenimientos")}
+          >
+            <span className="technical-command-icon"><TechnicalTabIcon name="maintenance" /></span>
+            <div>
+              <strong>{upcomingMaintenances.length}</strong>
+              <h3>Mantenimientos próximos</h3>
+              <p>Próximas revisiones programadas.</p>
+            </div>
+            <b>Ver calendario →</b>
+          </button>
+
+          <button
+            className="technical-command-card info"
+            type="button"
+            onClick={() => setActiveTab("ubicaciones-tecnicas")}
+          >
+            <span className="technical-command-icon"><TechnicalTabIcon name="locations" /></span>
+            <div>
+              <strong>{pendingLocationReviews.length}</strong>
+              <h3>Revisiones de ubicación</h3>
+              <p>Checklist técnico periódico por ubicación.</p>
+            </div>
+            <b>Revisar ubicaciones →</b>
+          </button>
+        </section>
       )}
 
       {selectedQrAsset && (
@@ -8551,15 +8559,6 @@ function closeCompletionForm(options = {}) {
               >
                 Imprimir solo esta etiqueta
               </button>
-
-              <button
-                className="visual-outline-button"
-                type="button"
-                onClick={printAllQrLabels}
-              >
-                Imprimir todas
-              </button>
-
               <button
                 className="visual-outline-button"
                 type="button"
@@ -8570,33 +8569,10 @@ function closeCompletionForm(options = {}) {
             </div>
           </div>
 
-          <div className="technical-qr-layout">
+          <div className="technical-qr-layout technical-qr-layout-single">
             <div className="technical-qr-print-area">
 {renderQrLabel(selectedQrAsset)}
             </div>
-
-            <aside className="technical-qr-help-card">
-              <div className="asset-auto-preview-icon">QR</div>
-              <h3>¿Qué abrirá este código?</h3>
-              <p>
-                El QR apunta a la ficha del equipo dentro del sistema. Si el técnico
-                no ha iniciado sesión, primero verá el login y después podrá acceder
-                a la información del equipo.
-              </p>
-
-              <div className="asset-generated-row">
-                <span>URL del QR</span>
-                <strong>{getAssetQrValue(selectedQrAsset)}</strong>
-              </div>
-
-              <div className="asset-generated-note">
-                <strong>Siguiente mejora recomendada</strong>
-                <span>
-                  Al escanear el QR se abrirá la ficha rápida del equipo para
-                  consultar datos, historial e iniciar mantenimiento.
-                </span>
-              </div>
-            </aside>
           </div>
         </section>
       )}
@@ -8613,7 +8589,7 @@ function closeCompletionForm(options = {}) {
       {selectedQuickAsset && !focusedSubActionActive && (
         <section className="technical-panel technical-quick-asset-panel technical-focused-panel">
           <div className="technical-quick-asset-hero">
-            <div className="technical-quick-asset-icon">▣</div>
+            <div className="technical-quick-asset-icon"><TechnicalTabIcon name={getAssetCategoryIconName(selectedQuickAsset.category)} /></div>
 
             <div className="technical-quick-asset-title">
               <span className="asset-tag">
@@ -8763,7 +8739,7 @@ function closeCompletionForm(options = {}) {
                         className={`technical-quick-maintenance-item urgency-${urgency.level}`}
                         key={maintenance.id}
                       >
-                        <span>{urgency.icon}</span>
+                        <span><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></span>
                         <div>
                           <strong>{maintenance.title}</strong>
                           <p>{urgency.label}</p>
@@ -8798,7 +8774,7 @@ function closeCompletionForm(options = {}) {
         <section className="technical-panel technical-focused-panel location-review-focused-panel-v2">
           <div className="location-review-hero-v2">
             <div className="location-review-hero-icon-v2">
-              {getLocationTypeIcon(selectedTechnicalLocation.type)}
+              <TechnicalTabIcon name={getLocationTypeIconName(selectedTechnicalLocation.type)} />
             </div>
 
             <div className="location-review-hero-content-v2">
@@ -8987,7 +8963,7 @@ function closeCompletionForm(options = {}) {
                   type="button"
                   onClick={() => setActiveTab("mantenimientos")}
                 >
-                  <span>⚠</span>
+                  <span><TechnicalTabIcon name="alert" /></span>
                   <div>
                     <strong>{overdueMaintenances.length}</strong>
                     <p>Mantenimientos vencidos</p>
@@ -9000,7 +8976,7 @@ function closeCompletionForm(options = {}) {
                   type="button"
                   onClick={() => setActiveTab("mantenimientos")}
                 >
-                  <span>📅</span>
+                  <span><TechnicalTabIcon name="calendar" /></span>
                   <div>
                     <strong>{todayMaintenances.length}</strong>
                     <p>Vencen hoy</p>
@@ -9013,7 +8989,7 @@ function closeCompletionForm(options = {}) {
                   type="button"
                   onClick={() => setActiveTab("ubicaciones-tecnicas")}
                 >
-                  <span>⌖</span>
+                  <span><TechnicalTabIcon name="locations" /></span>
                   <div>
                     <strong>{pendingLocationReviews.length}</strong>
                     <p>Revisiones de ubicación</p>
@@ -9026,7 +9002,7 @@ function closeCompletionForm(options = {}) {
                   type="button"
                   onClick={() => setActiveTab("recambios")}
                 >
-                  <span>▤</span>
+                  <span><TechnicalTabIcon name="spares" /></span>
                   <div>
                     <strong>{sparePartMetrics.lowStock}</strong>
                     <p>Recambios bajo stock</p>
@@ -9046,37 +9022,37 @@ function closeCompletionForm(options = {}) {
 
               <div className="technical-workspace-grid-v4">
                 <button type="button" onClick={() => setActiveTab("equipos")}>
-                  <span className="blue">▣</span>
+                  <span className="blue"><TechnicalTabIcon name="devices" /></span>
                   <strong>Inventario</strong>
                   <small>{totalAssets} equipos · {activeAssets} activos</small>
                 </button>
 
                 <button type="button" onClick={() => setActiveTab("mantenimientos")}>
-                  <span className="red">🛠</span>
+                  <span className="red"><TechnicalTabIcon name="maintenance" /></span>
                   <strong>Mantenimientos</strong>
                   <small>{pendingMaintenances.length} pendientes</small>
                 </button>
 
                 <button type="button" onClick={() => setActiveTab("ubicaciones-tecnicas")}>
-                  <span className="purple">⌖</span>
+                  <span className="purple"><TechnicalTabIcon name="locations" /></span>
                   <strong>Ubicaciones</strong>
                   <small>{technicalLocations.length} registradas</small>
                 </button>
 
                 <button type="button" onClick={() => setActiveTab("recambios")}>
-                  <span className="gold">▤</span>
+                  <span className="gold"><TechnicalTabIcon name="spares" /></span>
                   <strong>Recambios</strong>
                   <small>{sparePartMetrics.active} activos</small>
                 </button>
 
                 <button type="button" onClick={() => setActiveTab("instalaciones")}>
-                  <span className="green">▥</span>
+                  <span className="green"><TechnicalTabIcon name="installations" /></span>
                   <strong>Instalaciones</strong>
                   <small>{installationMetrics.active} en proceso</small>
                 </button>
 
                 <button type="button" onClick={() => setActiveTab("bajas")}>
-                  <span className="gray">↓</span>
+                  <span className="gray"><TechnicalTabIcon name="archive" /></span>
                   <strong>Bajas</strong>
                   <small>{inactiveAssets} equipos</small>
                 </button>
@@ -9111,7 +9087,7 @@ function closeCompletionForm(options = {}) {
                           className={`technical-mini-item urgency-${urgency.level}`}
                           key={maintenance.id}
                         >
-                          <span className="technical-mini-icon">{urgency.icon}</span>
+                          <span className="technical-mini-icon"><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></span>
                           <div>
                             <strong>{maintenance.title}</strong>
                             <p>
@@ -9189,22 +9165,22 @@ function closeCompletionForm(options = {}) {
 
                 <div className="technical-health-grid-v4">
                   <article>
-                    <span className="ok">●</span>
+                    <span className="ok"><TechnicalTabIcon name="check" /></span>
                     <strong>{activeAssets}</strong>
                     <small>equipos activos</small>
                   </article>
                   <article>
-                    <span className="warning">●</span>
+                    <span className="warning"><TechnicalTabIcon name="maintenance" /></span>
                     <strong>{maintenanceAssets}</strong>
                     <small>en revisión</small>
                   </article>
                   <article>
-                    <span className="danger">●</span>
+                    <span className="danger"><TechnicalTabIcon name="alert" /></span>
                     <strong>{locationsNeedingAttention}</strong>
                     <small>ubicaciones con alerta</small>
                   </article>
                   <article>
-                    <span className="info">●</span>
+                    <span className="info"><TechnicalTabIcon name="installations" /></span>
                     <strong>{installationMetrics.averageProgress}%</strong>
                     <small>avance instalaciones</small>
                   </article>
@@ -9229,7 +9205,7 @@ function closeCompletionForm(options = {}) {
                           className={`technical-calendar-card urgency-${urgency.level}`}
                           key={maintenance.id}
                         >
-                          <span className="technical-calendar-icon">{urgency.icon}</span>
+                          <span className="technical-calendar-icon"><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></span>
                           <div>
                             <strong>{maintenance.assetName || maintenance.title}</strong>
                             <p>{maintenance.assetTag || "Sin código"}</p>
@@ -10095,7 +10071,7 @@ function closeCompletionForm(options = {}) {
 
           <div className="equipment-history-summary">
             <article>
-              <span className="equipment-metric-icon gray">↓</span>
+              <span className="equipment-metric-icon gray"><TechnicalTabIcon name="archive" /></span>
               <div>
                 <strong>{inactiveTechnicalAssets.length}</strong>
                 <p>Equipos en historial</p>
@@ -10103,7 +10079,7 @@ function closeCompletionForm(options = {}) {
               </div>
             </article>
             <article>
-              <span className="equipment-metric-icon orange">!</span>
+              <span className="equipment-metric-icon orange"><TechnicalTabIcon name="alert" /></span>
               <div>
                 <strong>{inactiveTechnicalAssets.filter((asset) => asset.status === "Dado de baja").length}</strong>
                 <p>Dados de baja</p>
@@ -10111,7 +10087,7 @@ function closeCompletionForm(options = {}) {
               </div>
             </article>
             <article>
-              <span className="equipment-metric-icon red">×</span>
+              <span className="equipment-metric-icon red"><TechnicalTabIcon name="trash" /></span>
               <div>
                 <strong>{inactiveTechnicalAssets.filter((asset) => asset.deleted === true || asset.status === "Eliminado").length}</strong>
                 <p>Eliminados</p>
@@ -10154,7 +10130,7 @@ function closeCompletionForm(options = {}) {
                           onClick={() => openQuickAssetPanel(asset)}
                         >
                           <span className="equipment-list-icon muted">
-                            {getAssetCategoryIcon(asset.category)}
+                            <TechnicalTabIcon name={getAssetCategoryIconName(asset.category)} />
                           </span>
                           <span>
                             <strong>{asset.name || "Equipo sin nombre"}</strong>
@@ -10250,7 +10226,7 @@ function closeCompletionForm(options = {}) {
           {!showLocationForm && !showChecklistEditor && !showLocationReviewForm && (
             <div className="technical-location-metrics">
             <article>
-              <span className="equipment-metric-icon purple">⌖</span>
+              <span className="equipment-metric-icon purple"><TechnicalTabIcon name="locations" /></span>
               <div>
                 <strong>{technicalLocations.length}</strong>
                 <p>Ubicaciones técnicas</p>
@@ -10259,7 +10235,7 @@ function closeCompletionForm(options = {}) {
             </article>
 
             <article>
-              <span className="equipment-metric-icon orange">!</span>
+              <span className="equipment-metric-icon orange"><TechnicalTabIcon name="alert" /></span>
               <div>
                 <strong>{locationsNeedingAttention}</strong>
                 <p>Requieren atención</p>
@@ -10268,7 +10244,7 @@ function closeCompletionForm(options = {}) {
             </article>
 
             <article>
-              <span className="equipment-metric-icon green">▣</span>
+              <span className="equipment-metric-icon green"><TechnicalTabIcon name="devices" /></span>
               <div>
                 <strong>{visibleAssets.length}</strong>
                 <p>Equipos activos</p>
@@ -10277,7 +10253,7 @@ function closeCompletionForm(options = {}) {
             </article>
 
             <article>
-              <span className="equipment-metric-icon gray">🛠</span>
+              <span className="equipment-metric-icon gray"><TechnicalTabIcon name="maintenance" /></span>
               <div>
                 <strong>{pendingMaintenances.length}</strong>
                 <p>Mantenimientos activos</p>
@@ -10862,7 +10838,7 @@ function closeCompletionForm(options = {}) {
                         }}
                       >
                         <div className="location-card-icon">
-                          {getLocationTypeIcon(location.type)}
+                          <TechnicalTabIcon name={getLocationTypeIconName(location.type)} />
                         </div>
 
                         <div>
@@ -10899,7 +10875,7 @@ function closeCompletionForm(options = {}) {
                 <>
                   <div className="location-detail-hero">
                     <div className="location-detail-icon">
-                      {getLocationTypeIcon(selectedTechnicalLocation.type)}
+                      <TechnicalTabIcon name={getLocationTypeIconName(selectedTechnicalLocation.type)} />
                     </div>
 
                     <div>
@@ -11408,7 +11384,7 @@ function closeCompletionForm(options = {}) {
                               className={`location-maintenance-item urgency-${urgency.level}`}
                               key={maintenance.id}
                             >
-                              <span>{urgency.icon}</span>
+                              <span><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></span>
                               <div>
                                 <strong>{maintenance.title}</strong>
                                 <p>{maintenance.assetName || "Equipo sin nombre"}</p>
@@ -11903,7 +11879,7 @@ function closeCompletionForm(options = {}) {
                         className={`maintenance-clean-row urgency-${urgency.level}`}
                         key={maintenance.id}
                       >
-                        <div className="maintenance-clean-icon">{urgency.icon}</div>
+                        <div className="maintenance-clean-icon"><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></div>
 
                         <div className="maintenance-clean-main">
                           <span className="asset-tag">{maintenance.assetTag || "Sin código"}</span>
@@ -11962,7 +11938,7 @@ function closeCompletionForm(options = {}) {
                           key={`scheduled-location-mini-${review.location.id}`}
                           onClick={() => startLocationReviewFromSchedule(review.location)}
                         >
-                          <span>{urgency.icon}</span>
+                          <span><TechnicalTabIcon name={getUrgencyIconName(urgency.level)} /></span>
                           <div>
                             <strong>{review.location.name}</strong>
                             <small>
@@ -12030,7 +12006,7 @@ function closeCompletionForm(options = {}) {
 
           <div className="equipment-quick-metrics">
             <article>
-              <span className="equipment-metric-icon">▣</span>
+              <span className="equipment-metric-icon"><TechnicalTabIcon name="devices" /></span>
               <div>
                 <strong>{activeAssets}</strong>
                 <p>Equipos activos</p>
@@ -12039,7 +12015,7 @@ function closeCompletionForm(options = {}) {
             </article>
 
             <article>
-              <span className="equipment-metric-icon orange">⌘</span>
+              <span className="equipment-metric-icon orange"><TechnicalTabIcon name="maintenance" /></span>
               <div>
                 <strong>{maintenanceAssets}</strong>
                 <p>En mantenimiento</p>
@@ -12048,7 +12024,7 @@ function closeCompletionForm(options = {}) {
             </article>
 
             <article>
-              <span className="equipment-metric-icon green">QR</span>
+              <span className="equipment-metric-icon green"><TechnicalTabIcon name="qr" /></span>
               <div>
                 <strong>{assetsWithQr}</strong>
                 <p>Con código QR</p>
@@ -12057,7 +12033,7 @@ function closeCompletionForm(options = {}) {
             </article>
 
             <article>
-              <span className="equipment-metric-icon gray">i</span>
+              <span className="equipment-metric-icon gray"><TechnicalTabIcon name="info" /></span>
               <div>
                 <strong>{totalAssets}</strong>
                 <p>Equipos visibles</p>
@@ -12212,7 +12188,7 @@ function closeCompletionForm(options = {}) {
                               onClick={() => openQuickAssetPanel(asset)}
                             >
                               <span className="equipment-list-icon">
-                                {getAssetCategoryIcon(asset.category)}
+                                <TechnicalTabIcon name={getAssetCategoryIconName(asset.category)} />
                               </span>
                               <span>
                                 <strong>{asset.name || "Equipo sin nombre"}</strong>
@@ -12416,6 +12392,216 @@ function getUniqueAssetValues(assets, fieldName) {
         .filter(Boolean)
     )
   ).sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function TechnicalTabIcon({ name }) {
+  const commonProps = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: "2",
+  };
+
+  const paths = {
+    dashboard: (
+      <>
+        <rect x="4" y="4" width="6" height="6" rx="1.5" />
+        <rect x="14" y="4" width="6" height="6" rx="1.5" />
+        <rect x="4" y="14" width="6" height="6" rx="1.5" />
+        <rect x="14" y="14" width="6" height="6" rx="1.5" />
+      </>
+    ),
+    maintenance: (
+      <>
+        <path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5" />
+        <path d="M15 5l4 4" />
+        <path d="M17 3l4 4" />
+      </>
+    ),
+    devices: (
+      <>
+        <rect x="4" y="5" width="16" height="11" rx="2" />
+        <path d="M9 20h6" />
+        <path d="M12 16v4" />
+        <path d="M8 9h8" />
+      </>
+    ),
+    spares: (
+      <>
+        <path d="M7 7h10v10H7z" />
+        <path d="M9 2v3" />
+        <path d="M15 2v3" />
+        <path d="M9 19v3" />
+        <path d="M15 19v3" />
+        <path d="M2 9h3" />
+        <path d="M2 15h3" />
+        <path d="M19 9h3" />
+        <path d="M19 15h3" />
+      </>
+    ),
+    installations: (
+      <>
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <path d="M8 9h8" />
+        <path d="M8 13h3" />
+        <path d="M14 13h2" />
+        <path d="M9 17h6" />
+      </>
+    ),
+    archive: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M6 7l1 13h10l1-13" />
+        <path d="M9 7V4h6v3" />
+        <path d="M12 10v6" />
+        <path d="M9.5 13.5L12 16l2.5-2.5" />
+      </>
+    ),
+    locations: (
+      <>
+        <path d="M12 21s7-5.2 7-11a7 7 0 0 0-14 0c0 5.8 7 11 7 11Z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </>
+    ),
+    add: (
+      <>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+      </>
+    ),
+    alert: (
+      <>
+        <path d="M12 8v5" />
+        <path d="M12 17h.01" />
+        <path d="M10.3 4.2 2.8 17.1A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.7-2.9L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect x="4" y="5" width="16" height="15" rx="2" />
+        <path d="M8 3v4" />
+        <path d="M16 3v4" />
+        <path d="M4 10h16" />
+        <path d="M8 14h.01" />
+        <path d="M12 14h.01" />
+        <path d="M16 14h.01" />
+      </>
+    ),
+    check: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8.5 12.5 2.2 2.2 4.8-5" />
+      </>
+    ),
+    qr: (
+      <>
+        <rect x="4" y="4" width="6" height="6" rx="1" />
+        <rect x="14" y="4" width="6" height="6" rx="1" />
+        <rect x="4" y="14" width="6" height="6" rx="1" />
+        <path d="M14 14h2v2h-2z" />
+        <path d="M18 14h2v6h-6v-2" />
+      </>
+    ),
+    info: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5" />
+        <path d="M12 8h.01" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M6 7l1 13h10l1-13" />
+        <path d="M9 7V4h6v3" />
+      </>
+    ),
+    printer: (
+      <>
+        <path d="M7 8V4h10v4" />
+        <rect x="5" y="12" width="14" height="8" rx="2" />
+        <path d="M7 16h10" />
+        <path d="M6 8h12a3 3 0 0 1 3 3v4h-2" />
+        <path d="M5 15H3v-4a3 3 0 0 1 3-3" />
+      </>
+    ),
+    camera: (
+      <>
+        <path d="M4 8h4l2-3h4l2 3h4v11H4z" />
+        <circle cx="12" cy="13" r="3" />
+      </>
+    ),
+    network: (
+      <>
+        <rect x="4" y="4" width="6" height="6" rx="1.5" />
+        <rect x="14" y="14" width="6" height="6" rx="1.5" />
+        <path d="M10 7h4" />
+        <path d="M17 10v4" />
+        <path d="M7 10v7h7" />
+      </>
+    ),
+    power: (
+      <>
+        <path d="M13 2 6 13h6l-1 9 7-12h-6z" />
+      </>
+    ),
+    audio: (
+      <>
+        <path d="M5 10v4h4l5 4V6l-5 4H5z" />
+        <path d="M17 9a4 4 0 0 1 0 6" />
+      </>
+    ),
+    locationRoom: (
+      <>
+        <rect x="5" y="4" width="14" height="16" rx="2" />
+        <path d="M9 8h6" />
+        <path d="M9 12h6" />
+        <path d="M9 16h3" />
+      </>
+    ),
+  };
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...commonProps}>
+      {paths[name] || paths.dashboard}
+    </svg>
+  );
+}
+
+function getAssetCategoryIconName(category = "") {
+  const normalized = String(category || "").toLowerCase();
+
+  if (normalized.includes("impres")) return "printer";
+  if (normalized.includes("cámara") || normalized.includes("camara")) return "camera";
+  if (normalized.includes("router") || normalized.includes("switch") || normalized.includes("access") || normalized.includes("dvr") || normalized.includes("nvr")) return "network";
+  if (normalized.includes("no-break") || normalized.includes("nobreak") || normalized.includes("ups")) return "power";
+  if (normalized.includes("bocina") || normalized.includes("audio")) return "audio";
+  if (normalized.includes("monitor") || normalized.includes("pantalla") || normalized.includes("proyector")) return "devices";
+
+  return "devices";
+}
+
+function getLocationTypeIconName(type = "") {
+  const normalized = String(type || "").toLowerCase();
+
+  if (normalized.includes("sal") || normalized.includes("cabina") || normalized.includes("recepción") || normalized.includes("recepcion") || normalized.includes("oficina") || normalized.includes("coffee") || normalized.includes("café") || normalized.includes("cafe")) {
+    return "locationRoom";
+  }
+
+  return "locations";
+}
+
+function getUrgencyIconName(level = "") {
+  const normalized = String(level || "").toLowerCase();
+
+  if (normalized.includes("overdue") || normalized.includes("venc")) return "alert";
+  if (normalized.includes("today") || normalized.includes("soon")) return "calendar";
+
+  return "maintenance";
 }
 
 function getAssetCategoryIcon(category = "") {
@@ -12809,7 +12995,7 @@ function getMaintenanceUrgency(value) {
       label: `Vencido hace ${Math.abs(differenceInDays)} día${
         Math.abs(differenceInDays) === 1 ? "" : "s"
       }`,
-      icon: "⚠",
+      icon: "!",
       days: differenceInDays,
     };
   }
@@ -12829,7 +13015,7 @@ function getMaintenanceUrgency(value) {
       label: `Vence en ${differenceInDays} día${
         differenceInDays === 1 ? "" : "s"
       }`,
-      icon: "📅",
+      icon: "▦",
       days: differenceInDays,
     };
   }
@@ -12837,7 +13023,7 @@ function getMaintenanceUrgency(value) {
   return {
     level: "future",
     label: `En ${differenceInDays} días`,
-    icon: "🛠",
+    icon: "⚒",
     days: differenceInDays,
   };
 }

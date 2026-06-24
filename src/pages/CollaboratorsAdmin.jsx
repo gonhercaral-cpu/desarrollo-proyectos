@@ -72,6 +72,7 @@ export default function CollaboratorsAdmin() {
 
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedUserDraft, setSelectedUserDraft] = useState(null);
+  const [showFocusedEditor, setShowFocusedEditor] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -245,10 +246,11 @@ export default function CollaboratorsAdmin() {
     }
   }
 
-  function selectUser(user, departmentsSource = departments) {
+  function selectUser(user, departmentsSource = departments, openEditor = false) {
     if (!user) {
       setSelectedUserId("");
       setSelectedUserDraft(null);
+      setShowFocusedEditor(false);
       return;
     }
 
@@ -272,6 +274,19 @@ export default function CollaboratorsAdmin() {
     });
     setMessage("");
     setError("");
+
+    if (openEditor) {
+      setShowFocusedEditor(true);
+    }
+  }
+
+  function openFocusedEditor(user = selectedUser) {
+    if (!user) return;
+    selectUser(user, departments, true);
+  }
+
+  function closeFocusedEditor() {
+    setShowFocusedEditor(false);
   }
 
   function updateDraft(field, value) {
@@ -617,42 +632,255 @@ export default function CollaboratorsAdmin() {
 
   return (
     <div className="collaborators-admin-page">
-      <div className="visual-page-header collaborators-header">
-        <div>
-          <span className="breadcrumb-line">Panel de administrador</span>
-          <h2>Gestión de colaboradores</h2>
-          <p>
-            Administra usuarios, departamentos y privilegios desde un solo lugar.
-          </p>
+      <section className="printshop-topbar collaborators-topbar">
+        <div className="printshop-topbar-main">
+          <span className="printshop-topbar-module-icon">
+            <Icon name="users" />
+          </span>
+
+          <div className="printshop-topbar-copy">
+            <p className="printshop-kicker">ADMINISTRACIÓN</p>
+            <h1>Colaboradores</h1>
+            <p>
+              Administra usuarios, departamentos, privilegios y accesos del equipo desde un solo lugar.
+            </p>
+          </div>
         </div>
 
-        <div className="visual-page-actions">
+        <div className="collaborators-topbar-actions">
           <button
             type="button"
-            className="visual-outline-button"
+            className="collaborators-topbar-button secondary"
             onClick={loadData}
             disabled={loading || saving || creatingUser}
           >
-            ↻ Actualizar
+            <Icon name="refresh" />
+            Actualizar
           </button>
 
           <button
             type="button"
-            className="visual-primary-button"
+            className="collaborators-topbar-button primary"
             onClick={openCreateUserModal}
             disabled={loading || saving || creatingUser}
           >
-            + Agregar usuario
+            <Icon name="plus" />
+            Agregar usuario
           </button>
         </div>
-      </div>
+      </section>
 
       {message && <div className="message-box">{message}</div>}
       {error && <div className="error-box">{error}</div>}
 
+      {showFocusedEditor && selectedUserDraft ? (
+        <section className="collaborator-focused-editor">
+          <div className="collaborator-focused-heading">
+            <div className="collaborator-focused-title">
+              <div className="profile-page-avatar collaborator-focused-avatar">
+                {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
+              </div>
+
+              <div>
+                <span>VISTA ENFOCADA</span>
+                <h2>Editar colaborador</h2>
+                <p>Actualiza información, departamentos, privilegios y estado sin saturar la pantalla principal.</p>
+              </div>
+            </div>
+
+            <div className="collaborator-focused-actions">
+              <button
+                type="button"
+                className="visual-primary-button"
+                onClick={handleSaveChanges}
+                disabled={saving || creatingUser}
+              >
+                Guardar cambios
+              </button>
+
+              <button
+                type="button"
+                className="visual-outline-button"
+                onClick={closeFocusedEditor}
+                disabled={saving || creatingUser}
+              >
+                ← Volver a colaboradores
+              </button>
+            </div>
+          </div>
+
+          <div className="collaborator-focused-layout">
+            <div className="collaborator-focused-main-card">
+              <div className="collaborator-focus-section-header">
+                <span className="collaborators-section-icon"><Icon name="idCard" /></span>
+                <div>
+                  <h3>Datos del colaborador</h3>
+                  <p>Edita los datos principales y el acceso del usuario seleccionado.</p>
+                </div>
+              </div>
+
+              <div className="collaborator-focused-form">
+                <label>
+                  Nombre completo
+                  <input
+                    type="text"
+                    value={selectedUserDraft.name}
+                    onChange={(event) => updateDraft("name", event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Correo electrónico
+                  <input
+                    type="email"
+                    value={selectedUserDraft.email}
+                    onChange={(event) => updateDraft("email", event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Privilegio
+                  <select
+                    value={selectedUserDraft.role}
+                    onChange={(event) => {
+                      updateDraft("role", event.target.value);
+                      updateDraft("privilege", event.target.value);
+                    }}
+                  >
+                    {PRIVILEGE_OPTIONS.map((privilege) => (
+                      <option key={privilege.value} value={privilege.value}>
+                        {privilege.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Estado
+                  <select
+                    value={selectedUserDraft.active ? "active" : "inactive"}
+                    onChange={(event) =>
+                      updateDraft("active", event.target.value === "active")
+                    }
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status.value} value={status.value}>
+                        {status.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="collaborator-focused-full">
+                  <DepartmentSelector
+                    title="Departamentos"
+                    helperText="Selecciona una o varias áreas. El primer departamento será el área principal."
+                    departments={departments}
+                    selectedDepartmentIds={selectedUserDraft.departmentIds}
+                    onToggleDepartment={toggleSelectedUserDepartment}
+                    disabled={saving || creatingUser}
+                    compact={false}
+                  />
+                </div>
+
+                <div className="collaborator-primary-area-card collaborator-focused-full">
+                  <span>Área principal</span>
+                  <strong>
+                    {getDepartmentNamesByIds(
+                      selectedUserDraft.departmentIds,
+                      departments
+                    )[0] ||
+                      selectedUserDraft.area ||
+                      "Sin área principal"}
+                  </strong>
+                  <small>
+                    Se toma automáticamente del primer departamento seleccionado.
+                  </small>
+                </div>
+
+                <label className="collaborator-focused-full">
+                  Observaciones
+                  <textarea
+                    value={selectedUserDraft.notes}
+                    onChange={(event) => updateDraft("notes", event.target.value)}
+                    placeholder="Agrega notas administrativas sobre este colaborador..."
+                  />
+                </label>
+              </div>
+            </div>
+
+            <aside className="collaborator-focused-side-card">
+              <div className="collaborator-focus-profile-card">
+                <div className="profile-page-avatar collaborator-focused-avatar large">
+                  {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
+                </div>
+
+                <h3>{selectedUserDraft.name || "Usuario sin nombre"}</h3>
+                <p>{selectedUserDraft.email || "Sin correo"}</p>
+
+                <div className="collaborator-focus-badges">
+                  <span className={`role-chip ${getRoleClass(selectedUserDraft.role)}`}>
+                    {getRoleLabel(selectedUserDraft.role)}
+                  </span>
+                  <span
+                    className={`status-chip ${
+                      selectedUserDraft.active ? "status-active" : "status-inactive"
+                    }`}
+                  >
+                    {selectedUserDraft.active ? "Activo" : "Inactivo"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="collaborator-focus-actions-card">
+                <h3>Acciones rápidas</h3>
+
+                <button
+                  type="button"
+                  className="visual-outline-button"
+                  onClick={handleResetPassword}
+                  disabled={saving || creatingUser}
+                >
+                  Restablecer contraseña
+                </button>
+
+                {selectedUser?.active === false || selectedUser?.deleted ? (
+                  <button
+                    type="button"
+                    className="restore-user-button"
+                    onClick={handleRestoreUser}
+                    disabled={saving || creatingUser}
+                  >
+                    Restaurar usuario
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="deactivate-user-button"
+                    onClick={handleDeactivateUser}
+                    disabled={saving || creatingUser}
+                  >
+                    Desactivar usuario
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="delete-user-button"
+                  onClick={handleSoftDeleteUser}
+                  disabled={saving || creatingUser}
+                >
+                  Eliminar usuario
+                </button>
+              </div>
+            </aside>
+          </div>
+        </section>
+      ) : (
+        <>
       <section className="collaborator-metrics-grid">
         <MetricCard
-          icon="👥"
+          icon={<Icon name="users" />}
           label="Usuarios totales"
           value={stats.total}
           hint="Perfiles registrados"
@@ -660,7 +888,7 @@ export default function CollaboratorsAdmin() {
         />
 
         <MetricCard
-          icon="●"
+          icon={<Icon name="checkCircle" />}
           label="Activos"
           value={stats.active}
           hint={`${getPercentage(stats.active, stats.total)}% del total`}
@@ -668,7 +896,7 @@ export default function CollaboratorsAdmin() {
         />
 
         <MetricCard
-          icon="🛡"
+          icon={<Icon name="shield" />}
           label="Administradores"
           value={stats.admins}
           hint={`${getPercentage(stats.admins, stats.total)}% del total`}
@@ -676,7 +904,7 @@ export default function CollaboratorsAdmin() {
         />
 
         <MetricCard
-          icon="☷"
+          icon={<Icon name="idCard" />}
           label="Colaboradores"
           value={stats.collaborators}
           hint={`${getPercentage(stats.collaborators, stats.total)}% del total`}
@@ -686,9 +914,21 @@ export default function CollaboratorsAdmin() {
 
       <section className="collaborators-layout">
         <div className="collaborators-main-card">
+          <div className="collaborators-list-header">
+            <div>
+              <span className="collaborators-section-icon"><Icon name="list" /></span>
+              <div>
+                <h2>Usuarios registrados</h2>
+                <p>Filtra, revisa y selecciona un colaborador para editar su perfil.</p>
+              </div>
+            </div>
+
+            <strong>{visibleUsers.length} visibles</strong>
+          </div>
+
           <div className="collaborators-toolbar">
             <div className="visual-search collaborators-search">
-              <span>⌕</span>
+              <span><Icon name="search" /></span>
               <input
                 type="text"
                 placeholder="Buscar por nombre, correo o departamento..."
@@ -828,13 +1068,13 @@ export default function CollaboratorsAdmin() {
                         <td>
                           <button
                             type="button"
-                            className="table-dot-button"
+                            className="collaborators-row-action"
                             onClick={(event) => {
                               event.stopPropagation();
-                              selectUser(user);
+                              selectUser(user, departments, true);
                             }}
                           >
-                            ⋮
+                            Ver
                           </button>
                         </td>
                       </tr>
@@ -855,96 +1095,38 @@ export default function CollaboratorsAdmin() {
           )}
         </div>
 
-        <aside className="collaborator-editor-card">
+        <aside className="collaborator-editor-card collaborator-quick-card">
           {!selectedUserDraft ? (
             <div className="empty-state small">
-              <div>👤</div>
-              <p>Selecciona un colaborador para editarlo.</p>
+              <div><Icon name="users" /></div>
+              <p>Selecciona un colaborador para ver su información.</p>
             </div>
           ) : (
             <>
               <div className="collaborator-editor-header">
-                <div className="profile-page-avatar small-avatar">
+                <div className="profile-page-avatar small-avatar collaborator-editor-avatar">
                   {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
                 </div>
 
                 <div>
-                  <h3>Editar colaborador</h3>
-                  <strong>
-                    {selectedUserDraft.name || "Usuario sin nombre"}
-                  </strong>
+                  <h3>Detalle rápido</h3>
+                  <strong>{selectedUserDraft.name || "Usuario sin nombre"}</strong>
                   <span>{selectedUserDraft.email || "Sin correo"}</span>
                 </div>
               </div>
 
-              <div className="collaborator-editor-form">
-                <label>
-                  Nombre completo
-                  <input
-                    type="text"
-                    value={selectedUserDraft.name}
-                    onChange={(event) =>
-                      updateDraft("name", event.target.value)
-                    }
-                  />
-                </label>
-
-                <label>
-                  Correo electrónico
-                  <input
-                    type="email"
-                    value={selectedUserDraft.email}
-                    onChange={(event) =>
-                      updateDraft("email", event.target.value)
-                    }
-                  />
-                </label>
-
-                <div className="collaborator-editor-two-columns">
-                  <label>
-                    Privilegio
-                    <select
-                      value={selectedUserDraft.role}
-                      onChange={(event) => {
-                        updateDraft("role", event.target.value);
-                        updateDraft("privilege", event.target.value);
-                      }}
-                    >
-                      {PRIVILEGE_OPTIONS.map((privilege) => (
-                        <option key={privilege.value} value={privilege.value}>
-                          {privilege.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    Estado
-                    <select
-                      value={selectedUserDraft.active ? "active" : "inactive"}
-                      onChange={(event) =>
-                        updateDraft("active", event.target.value === "active")
-                      }
-                    >
-                      {STATUS_OPTIONS.map((status) => (
-                        <option key={status.value} value={status.value}>
-                          {status.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+              <div className="collaborator-quick-summary">
+                <div>
+                  <span>Privilegio</span>
+                  <strong>{getRoleLabel(selectedUserDraft.role)}</strong>
                 </div>
 
-                <DepartmentSelector
-                  title="Departamentos"
-                  helperText="Selecciona una o varias áreas. El primer departamento será el área principal."
-                  departments={departments}
-                  selectedDepartmentIds={selectedUserDraft.departmentIds}
-                  onToggleDepartment={toggleSelectedUserDepartment}
-                  disabled={saving || creatingUser}
-                />
+                <div>
+                  <span>Estado</span>
+                  <strong>{selectedUserDraft.active ? "Activo" : "Inactivo"}</strong>
+                </div>
 
-                <div className="collaborator-primary-area-card">
+                <div className="full">
                   <span>Área principal</span>
                   <strong>
                     {getDepartmentNamesByIds(
@@ -954,31 +1136,22 @@ export default function CollaboratorsAdmin() {
                       selectedUserDraft.area ||
                       "Sin área principal"}
                   </strong>
-                  <small>
-                    Se toma automáticamente del primer departamento seleccionado.
-                  </small>
                 </div>
 
-                <label>
-                  Observaciones
-                  <textarea
-                    value={selectedUserDraft.notes}
-                    onChange={(event) =>
-                      updateDraft("notes", event.target.value)
-                    }
-                    placeholder="Agrega notas administrativas sobre este colaborador..."
-                  />
-                </label>
+                <div className="full">
+                  <span>Departamentos asignados</span>
+                  <strong>{selectedUserDraft.departmentIds?.length || 0}</strong>
+                </div>
               </div>
 
               <div className="collaborator-editor-actions">
                 <button
                   type="button"
                   className="visual-primary-button"
-                  onClick={handleSaveChanges}
+                  onClick={() => openFocusedEditor()}
                   disabled={saving || creatingUser}
                 >
-                  Guardar cambios
+                  Editar en vista enfocada
                 </button>
 
                 <button
@@ -1019,18 +1192,13 @@ export default function CollaboratorsAdmin() {
                   Eliminar usuario
                 </button>
               </div>
-
-              <div className="new-user-hint-card">
-                <strong>Nuevo usuario</strong>
-                <p>
-                  El botón “Agregar usuario” crea la cuenta en Firebase
-                  Authentication y también genera su perfil en Firestore.
-                </p>
-              </div>
             </>
           )}
         </aside>
       </section>
+
+        </>
+      )}
 
       {showCreateUserModal && (
         <div className="modal-backdrop">
@@ -1169,6 +1337,97 @@ export default function CollaboratorsAdmin() {
       )}
     </div>
   );
+}
+
+function Icon({ name }) {
+  const icons = {
+    users: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M16 11.2a3.6 3.6 0 1 0-3.58-3.6A3.58 3.58 0 0 0 16 11.2Z" />
+        <path d="M8.4 12a3.1 3.1 0 1 0-3.08-3.1A3.09 3.09 0 0 0 8.4 12Z" />
+        <path d="M16 13c-3.18 0-5.76 1.8-5.76 4.02V19a1 1 0 0 0 1 1h9.52a1 1 0 0 0 1-1v-1.98C21.76 14.8 19.18 13 16 13Z" />
+        <path d="M8.4 13.6C5.42 13.6 3 15.27 3 17.34V19a1 1 0 0 0 1 1h4.42a2.6 2.6 0 0 1-.18-1v-1.98a5.02 5.02 0 0 1 1.24-3.22 7.36 7.36 0 0 0-1.08-.2Z" />
+      </svg>
+    ),
+    refresh: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20.2 12.7a8.2 8.2 0 0 1-14.05 5.06 1 1 0 1 1 1.42-1.41 6.2 6.2 0 0 0 10.61-3.65h-1.73a.9.9 0 0 1-.64-1.54l2.87-2.88a.9.9 0 0 1 1.28 0l2.87 2.88a.9.9 0 0 1-.64 1.54h-1.99Z" />
+        <path d="M3.8 11.3A8.2 8.2 0 0 1 17.85 6.24a1 1 0 1 1-1.42 1.41A6.2 6.2 0 0 0 5.82 11.3h1.73a.9.9 0 0 1 .64 1.54l-2.87 2.88a.9.9 0 0 1-1.28 0l-2.87-2.88a.9.9 0 0 1 .64-1.54H3.8Z" />
+      </svg>
+    ),
+    plus: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M11 5a1 1 0 0 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6H5a1 1 0 0 1 0-2h6V5Z" />
+      </svg>
+    ),
+    checkCircle: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19Zm4.53 7.28-5.08 5.08a1 1 0 0 1-1.42 0l-2.36-2.36a1 1 0 1 1 1.42-1.41l1.65 1.65 4.37-4.37a1 1 0 1 1 1.42 1.41Z" />
+      </svg>
+    ),
+    shield: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.4 4.8 5.1a1.2 1.2 0 0 0-.78 1.12v4.95c0 4.6 2.92 8.72 7.25 10.26.47.17.99.17 1.46 0 4.33-1.54 7.25-5.66 7.25-10.26V6.22a1.2 1.2 0 0 0-.78-1.12L12 2.4Zm3.9 7.55-4.5 4.5a1 1 0 0 1-1.42 0l-1.88-1.88a1 1 0 1 1 1.42-1.42l1.17 1.17 3.8-3.78a1 1 0 0 1 1.41 1.41Z" />
+      </svg>
+    ),
+    idCard: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5.5 4.5h13A2.5 2.5 0 0 1 21 7v10a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17V7a2.5 2.5 0 0 1 2.5-2.5Zm2.25 4A2.25 2.25 0 1 0 10 10.75 2.25 2.25 0 0 0 7.75 8.5Zm-3 7.32c0 .37.3.68.68.68h4.64c.38 0 .68-.3.68-.68 0-1.16-1.34-2.07-3-2.07s-3 .91-3 2.07ZM13 9a1 1 0 0 0 0 2h4a1 1 0 1 0 0-2h-4Zm0 4a1 1 0 1 0 0 2h3a1 1 0 1 0 0-2h-3Z" />
+      </svg>
+    ),
+    list: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 7a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm0 5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm0 5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM9 6h11a1 1 0 1 1 0 2H9a1 1 0 0 1 0-2Zm0 5h11a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2Zm0 5h11a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2Z" />
+      </svg>
+    ),
+    search: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M10.5 4a6.5 6.5 0 0 1 5.16 10.45l3.44 3.45a1 1 0 0 1-1.41 1.41l-3.45-3.44A6.5 6.5 0 1 1 10.5 4Zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z" />
+      </svg>
+    ),
+    printer: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h10a1 1 0 0 1 1 1V8H6V4.5a1 1 0 0 1 1-1Zm-1 13H5a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3.5a2 2 0 0 1-2 2h-1v-3H6v3Zm2-1h8v4H8v-4Z" />
+      </svg>
+    ),
+    headset: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3a8 8 0 0 0-8 8v3.5A2.5 2.5 0 0 0 6.5 17H8a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H6.1a6 6 0 0 1 11.8 0H16a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h1.5a2.48 2.48 0 0 0 1.4-.43 4.2 4.2 0 0 1-4.05 3.13H13a1 1 0 1 0 0 2h1.85A6.2 6.2 0 0 0 21 15.5V11a8 8 0 0 0-9-8Z" />
+      </svg>
+    ),
+    code: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8.7 7.3a1 1 0 0 1 0 1.4L5.41 12l3.3 3.3a1 1 0 1 1-1.42 1.4l-4-4a1 1 0 0 1 0-1.4l4-4a1 1 0 0 1 1.42 0Zm6.6 0a1 1 0 0 1 1.4 0l4 4a1 1 0 0 1 0 1.4l-4 4a1 1 0 0 1-1.4-1.4l3.29-3.3-3.3-3.3a1 1 0 0 1 0-1.4ZM13.96 5a1 1 0 0 1 .7 1.23l-3 12a1 1 0 1 1-1.94-.48l3-12a1 1 0 0 1 1.24-.75Z" />
+      </svg>
+    ),
+    book: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H19a1 1 0 0 1 1 1v15.5a1 1 0 0 1-1 1H7.5A2.5 2.5 0 0 0 5 22V4.5Zm3 1.75a1 1 0 0 0 0 2h7a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H8Z" />
+      </svg>
+    ),
+    chat: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5.5A3.5 3.5 0 0 1 7.5 2h9A3.5 3.5 0 0 1 20 5.5v6A3.5 3.5 0 0 1 16.5 15h-5.56l-4.2 3.43A1.05 1.05 0 0 1 5 17.62V15.1A3.5 3.5 0 0 1 4 12.64V5.5Zm4 1.75a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5.5a1 1 0 1 0 0-2H8Z" />
+      </svg>
+    ),
+    building: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 20h16a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2Zm1-9.25a1.5 1.5 0 0 1 .83-1.34l5.5-2.75a1.5 1.5 0 0 1 1.34 0l5.5 2.75A1.5 1.5 0 0 1 19 10.75V18h-2v-6h-2v6h-2v-6h-2v6H9v-6H7v6H5v-7.25ZM12 2.2l8.2 4.1a1 1 0 0 1-.9 1.8L12 4.45 4.7 8.1a1 1 0 0 1-.9-1.8L12 2.2Z" />
+      </svg>
+    ),
+    grid: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" />
+      </svg>
+    ),
+    monitor: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-5v2h2a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h2v-2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 2v9h14V6H5Z" />
+      </svg>
+    ),
+  };
+
+  return <span className="collaborators-svg-icon">{icons[name] || icons.users}</span>;
 }
 
 function DepartmentSelector({
@@ -1321,16 +1580,16 @@ function getRoleClass(role = "") {
 function getDepartmentIcon(name = "") {
   const normalizedName = String(name).toLowerCase();
 
-  if (normalizedName.includes("audiovisual")) return "🎬";
-  if (normalizedName.includes("software")) return "⌨";
-  if (normalizedName.includes("material")) return "📚";
-  if (normalizedName.includes("redes")) return "💬";
-  if (normalizedName.includes("imprenta")) return "🖨";
-  if (normalizedName.includes("soporte")) return "🎧";
-  if (normalizedName.includes("dirección")) return "🏛";
-  if (normalizedName.includes("general")) return "▦";
+  if (normalizedName.includes("audiovisual")) return <Icon name="monitor" />;
+  if (normalizedName.includes("software")) return <Icon name="code" />;
+  if (normalizedName.includes("material")) return <Icon name="book" />;
+  if (normalizedName.includes("redes")) return <Icon name="chat" />;
+  if (normalizedName.includes("imprenta")) return <Icon name="printer" />;
+  if (normalizedName.includes("soporte")) return <Icon name="headset" />;
+  if (normalizedName.includes("dirección")) return <Icon name="building" />;
+  if (normalizedName.includes("general")) return <Icon name="grid" />;
 
-  return "▤";
+  return <Icon name="grid" />;
 }
 
 function getAreaClass(area = "") {

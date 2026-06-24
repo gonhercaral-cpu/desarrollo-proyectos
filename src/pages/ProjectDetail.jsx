@@ -970,23 +970,29 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   }
 
   return (
-    <div className="visual-page project-detail-page project-detail-redesign">
-      <div className="project-detail-topline">
-        <div>
-          <span className="breadcrumb-line">
-            Inicio / Proyectos / {getProjectCode(project)} / Detalle
+    <div className="visual-page project-detail-page project-detail-redesign project-screen-page">
+      <section className="printshop-topbar project-screen-topbar project-detail-module-topbar">
+        <div className="printshop-topbar-main">
+          <span className="printshop-topbar-module-icon project-screen-module-icon">
+            <SvgIcon name="project" />
           </span>
 
-          <h2>Detalle de proyecto</h2>
-          <p>
-            Consulta la información general, avances, evidencias y seguimiento
-            del proyecto.
-          </p>
+          <div className="printshop-topbar-copy">
+            <p className="section-kicker">Gestión de proyectos</p>
+            <h1>Detalle de proyecto</h1>
+            <p>
+              Consulta la información general, avances, evidencias y seguimiento
+              del proyecto.
+            </p>
+            <span className="project-screen-breadcrumb">
+              Inicio / Proyectos / {getProjectCode(project)} / Detalle
+            </span>
+          </div>
         </div>
 
-        <div className="visual-page-actions">
+        <div className="printshop-hero-actions compact-actions project-screen-actions">
           <select
-            className="status-change-select status-pill-select"
+            className="status-change-select status-pill-select project-screen-status-select"
             value={project.status || ""}
             disabled={changingStatus || projectIsHistorical}
             onChange={(event) => handleStatusChange(event.target.value)}
@@ -1004,18 +1010,21 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
           {isAdmin && !projectIsHistorical && (
             <button
-              className="visual-outline-button"
+              type="button"
+              className="visual-primary-button"
               onClick={() => onEditProject(project.id)}
             >
-              ✎ Editar proyecto
+              <SvgIcon name="edit" />
+              Editar proyecto
             </button>
           )}
 
-          <button className="visual-outline-button" onClick={onBack}>
-            ← Volver
+          <button type="button" className="visual-outline-button" onClick={onBack}>
+            <SvgIcon name="back" />
+            Volver
           </button>
         </div>
-      </div>
+      </section>
 
       {message && <div className="message-box">{message}</div>}
 
@@ -1061,7 +1070,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
           <div className="hero-meta-grid">
             <HeroMeta
-              icon="●"
+              icon={<SvgIcon name="status" />}
               label="Estado"
               value={
                 isOverdue
@@ -1074,21 +1083,21 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             />
 
             <HeroMeta
-              icon="◷"
+              icon={<SvgIcon name="calendar" />}
               label="Fecha límite"
               value={formatPlainDate(project.deadline)}
               color="blue"
             />
 
             <HeroMeta
-              icon="⚑"
+              icon={<SvgIcon name="flag" />}
               label="Prioridad"
               value={project.priority || "Sin prioridad"}
               color={project.priority === "Alta" ? "red" : "gold"}
             />
 
             <HeroMeta
-              icon="▣"
+              icon={<SvgIcon name="department" />}
               label="Departamento"
               value={getProjectDepartmentName(project)}
               color="blue"
@@ -1109,11 +1118,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       <div className="project-detail-layout redesigned-detail-layout">
         <main className="project-detail-main redesigned-detail-main">
           <section className="visual-card description-focus-card">
-            <div className="description-focus-icon">▧</div>
+            <div className="description-focus-icon"><SvgIcon name="description" /></div>
 
             <div>
               <SectionTitle
-                icon=""
+                icon={<SvgIcon name="description" />}
                 title="Descripción del proyecto"
                 color="blue"
               />
@@ -1129,7 +1138,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             <div className="advances-header">
               <div>
                 <SectionTitle
-                  icon="↗"
+                  icon={<SvgIcon name="trend" />}
                   title="Avances"
                   color="blue"
                   count={advancesFeed.length}
@@ -1161,7 +1170,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
                 <div className="advance-composer-footer">
                   <label className="attach-evidence-chip">
-                    ⌘ Adjuntar evidencia
+                    <SvgIcon name="attachment" /> Adjuntar evidencia
                     <input
                       type="file"
                       multiple
@@ -1448,7 +1457,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         <aside className="project-detail-side redesigned-detail-side">
           <section className="visual-card side-compact-card">
             <div className="side-card-title-row">
-              <SectionTitle icon="👥" title="Responsables" color="blue" />
+              <SectionTitle icon={<SvgIcon name="users" />} title="Responsables" color="blue" />
             </div>
 
             <div className="responsible-list">
@@ -1472,12 +1481,12 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           </section>
 
           <section className="visual-card side-compact-card">
-            <SectionTitle icon="▱" title="Indicadores" color="blue" />
+            <SectionTitle icon={<SvgIcon name="chart" />} title="Indicadores" color="blue" />
 
             <div className="indicator-grid redesigned-indicator-grid">
               <Indicator
                 color={isOverdue ? "red" : "blue"}
-                icon="◷"
+                icon={<SvgIcon name="calendar" />}
                 value={
                   daysDifference === null
                     ? "—"
@@ -1489,19 +1498,19 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               />
               <Indicator
                 color="blue"
-                icon="◔"
+                icon={<SvgIcon name="progress" />}
                 value={`${metrics.progress}%`}
                 label="avance general"
               />
               <Indicator
                 color="purple"
-                icon="☵"
+                icon={<SvgIcon name="message" />}
                 value={metrics.comments}
                 label="comentarios"
               />
               <Indicator
                 color="green"
-                icon="⌘"
+                icon={<SvgIcon name="attachment" />}
                 value={metrics.evidence}
                 label="evidencias"
               />
@@ -1511,7 +1520,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           {isAdmin && (
             <section className="visual-card side-compact-card internal-notes-admin-card">
               <div className="section-header-with-action compact-action-header">
-                <SectionTitle icon="✎" title="Notas internas" color="purple" />
+                <SectionTitle icon={<SvgIcon name="note" />} title="Notas internas" color="purple" />
 
                 {!editingInternalNotes && !projectIsHistorical && (
                   <button
@@ -1631,7 +1640,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           )}
 
           <section className="visual-card side-compact-card">
-            <SectionTitle icon="☑" title="Próximas acciones" color="blue" />
+            <SectionTitle icon={<SvgIcon name="checklist" />} title="Próximas acciones" color="blue" />
 
             <div className="next-actions-list">
               <ActionItem
@@ -1680,7 +1689,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
           <section className="visual-card side-compact-card">
             <SectionTitle
-              icon="☵"
+              icon={<SvgIcon name="message" />}
               title="Últimos comentarios"
               color="purple"
               count={comments.length}
@@ -1772,6 +1781,122 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   );
 }
 
+
+function SvgIcon({ name }) {
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    xmlns: "http://www.w3.org/2000/svg",
+    "aria-hidden": "true",
+  };
+
+  const stroke = {
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  };
+
+  const icons = {
+    project: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M7 4h7l3 3v13H7z" />
+        <path {...stroke} d="M14 4v4h4" />
+        <path {...stroke} d="M9 12h6M9 16h6" />
+      </svg>
+    ),
+    edit: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+        <path {...stroke} d="M13.5 7.5l3 3" />
+      </svg>
+    ),
+    back: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M15 18l-6-6 6-6" />
+      </svg>
+    ),
+    status: (
+      <svg {...commonProps}>
+        <circle {...stroke} cx="12" cy="12" r="8" />
+        <path {...stroke} d="M12 8v5l3 2" />
+      </svg>
+    ),
+    calendar: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M7 3v3M17 3v3M4 8h16M5 5h14v15H5z" />
+      </svg>
+    ),
+    flag: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M6 21V4h11l-1.6 4L17 12H6" />
+      </svg>
+    ),
+    department: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M4 20V8l8-4 8 4v12" />
+        <path {...stroke} d="M9 20v-6h6v6M8 10h.01M12 10h.01M16 10h.01" />
+      </svg>
+    ),
+    description: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M6 4h12v16H6z" />
+        <path {...stroke} d="M9 8h6M9 12h6M9 16h4" />
+      </svg>
+    ),
+    trend: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M4 17l6-6 4 4 6-8" />
+        <path {...stroke} d="M15 7h5v5" />
+      </svg>
+    ),
+    attachment: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M8 12.5l5.8-5.8a3 3 0 1 1 4.2 4.2l-7 7a5 5 0 0 1-7.1-7.1l7.4-7.4" />
+      </svg>
+    ),
+    users: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M16 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+        <circle {...stroke} cx="9.5" cy="7" r="3" />
+        <path {...stroke} d="M21 20v-2a4 4 0 0 0-3-3.8M16 4.2a3 3 0 0 1 0 5.6" />
+      </svg>
+    ),
+    chart: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M4 19V5" />
+        <path {...stroke} d="M8 17V9M13 17V6M18 17v-4" />
+        <path {...stroke} d="M3 19h18" />
+      </svg>
+    ),
+    progress: (
+      <svg {...commonProps}>
+        <circle {...stroke} cx="12" cy="12" r="8" />
+        <path {...stroke} d="M12 4v8l5 3" />
+      </svg>
+    ),
+    note: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M5 4h14v16H5z" />
+        <path {...stroke} d="M8 8h8M8 12h8M8 16h5" />
+      </svg>
+    ),
+    checklist: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M9 6h11M9 12h11M9 18h11" />
+        <path {...stroke} d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" />
+      </svg>
+    ),
+    message: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M4 5h16v11H8l-4 4z" />
+        <path {...stroke} d="M8 9h8M8 13h5" />
+      </svg>
+    ),
+  };
+
+  return <span className="project-svg-icon">{icons[name] || icons.project}</span>;
+}
 
 function HeroMeta({ icon, label, value, color }) {
   return (

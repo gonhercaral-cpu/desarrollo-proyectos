@@ -168,6 +168,17 @@ function getIdeaIcon(idea) {
   return STATUS_ICONS[idea?.status] || "💡";
 }
 
+
+function IdeasModuleIcon() {
+  return (
+    <svg className="module-topbar-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 18h6" />
+      <path d="M10 21h4" />
+      <path d="M8 14.5a6 6 0 1 1 8 0c-.9.8-1.3 1.6-1.3 2.5H9.3c0-.9-.4-1.7-1.3-2.5z" />
+    </svg>
+  );
+}
+
 export default function IdeasIncubator() {
   const { firebaseUser, profile } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -457,31 +468,35 @@ export default function IdeasIncubator() {
 
   return (
     <section className="ideas-incubator-page ideas-incubator-modern visual-page">
-      <div className="ideas-modern-hero">
-        <div className="ideas-modern-hero-main">
-          <div className="ideas-modern-hero-icon">💡</div>
-          <div>
-            <span className="ideas-modern-eyebrow">Innovación y mejora</span>
-            <h2>Incubadora de ideas</h2>
+      <section className="module-topbar module-topbar-ideas">
+        <div className="module-topbar-main">
+          <span className="module-topbar-module-icon">
+            <IdeasModuleIcon />
+          </span>
+
+          <div className="module-topbar-copy">
+            <p className="section-kicker module-topbar-kicker">Innovación y mejora</p>
+            <h1>Incubadora de ideas</h1>
             <p>
-              Captura, evalúa y da seguimiento a las ideas del equipo para impulsar
-              mejoras y nuevos proyectos.
+              Captura, evalúa y da seguimiento a las ideas del equipo para impulsar mejoras y nuevos proyectos.
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          className="ideas-modern-primary"
-          onClick={() => {
-            setShowForm(true);
-            setMessage("");
-            setError("");
-          }}
-        >
-          + Nueva idea
-        </button>
-      </div>
+        <div className="module-topbar-actions compact">
+          <button
+            type="button"
+            className="module-topbar-button primary"
+            onClick={() => {
+              setShowForm(true);
+              setMessage("");
+              setError("");
+            }}
+          >
+            + Nueva idea
+          </button>
+        </div>
+      </section>
 
       {message && <div className="message-box ideas-modern-message">{message}</div>}
       {error && <div className="error-box ideas-modern-message">{error}</div>}

@@ -405,28 +405,34 @@ export default function EditProject({ projectId, onBack, onSaved }) {
   }
 
   return (
-    <div className="visual-page edit-project-page edit-project-redesign-page">
+    <div className="visual-page edit-project-page edit-project-redesign-page project-screen-page">
       <form onSubmit={handleSubmit}>
-        <section className="edit-project-hero-card">
-          <div className="edit-project-hero-left">
-            <div className="edit-project-hero-icon">📝</div>
+        <section className="printshop-topbar project-screen-topbar edit-project-module-topbar">
+          <div className="printshop-topbar-main">
+            <span className="printshop-topbar-module-icon project-screen-module-icon">
+              <SvgIcon name="edit" />
+            </span>
 
-            <div>
-              <span className="edit-project-kicker">Gestión de proyectos</span>
-              <h2>Editar proyecto</h2>
+            <div className="printshop-topbar-copy">
+              <p className="section-kicker">Gestión de proyectos</p>
+              <h1>Editar proyecto</h1>
               <p>
                 Actualiza la información, responsables y seguimiento del proyecto.
               </p>
+              <span className="project-screen-breadcrumb">
+                Inicio / Proyectos / {getProjectCode(project)} / Edición
+              </span>
             </div>
           </div>
 
-          <div className="edit-project-hero-actions">
+          <div className="printshop-hero-actions compact-actions project-screen-actions">
             <button
               type="submit"
               className="visual-primary-button"
               disabled={saving}
             >
-              ✓ {saving ? "Guardando..." : "Guardar cambios"}
+              <SvgIcon name="save" />
+              {saving ? "Guardando..." : "Guardar cambios"}
             </button>
 
             <button
@@ -435,7 +441,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               onClick={onBack}
               disabled={saving}
             >
-              × Cancelar
+              <SvgIcon name="close" />
+              Cancelar
             </button>
 
             <button
@@ -444,7 +451,8 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               onClick={onBack}
               disabled={saving}
             >
-              ◉ Vista previa
+              <SvgIcon name="preview" />
+              Vista previa
             </button>
           </div>
         </section>
@@ -452,7 +460,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
         {message && <div className="message-box">{message}</div>}
 
         <section className="edit-summary-strip edit-summary-redesign">
-          <div className="edit-summary-icon">▧</div>
+          <div className="edit-summary-icon"><SvgIcon name="project" /></div>
 
           <div>
             <span>Código del proyecto</span>
@@ -718,7 +726,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                     multiple
                     onChange={handleFiles}
                   />
-                  <span>☁</span>
+                  <span><SvgIcon name="upload" /></span>
                   <strong>Arrastra y suelta archivos aquí</strong>
                   <p>o haz clic para seleccionar</p>
                   <small>
@@ -729,7 +737,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                 <div className="attached-files">
                   <div className="mini-section-header">
                     <div>
-                      <span>◷</span>
+                      <span><SvgIcon name="attachment" /></span>
                       <h3>Archivos adjuntos ({evidenceFiles.length + files.length})</h3>
                     </div>
                   </div>
@@ -768,7 +776,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
           <aside className="edit-project-side edit-project-side-redesign">
             <section className="visual-card edit-side-card">
-              <SectionHeader title="Resumen del proyecto" icon="◉" />
+              <SectionHeader title="Resumen del proyecto" icon={<SvgIcon name="preview" />} />
 
               <div className="project-preview-card edit-preview-card">
                 <span className="preview-label">VISTA PREVIA</span>
@@ -805,7 +813,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
             </section>
 
             <section className="visual-card edit-side-card">
-              <SectionHeader title="Campos requeridos" icon="✓" />
+              <SectionHeader title="Campos requeridos" icon={<SvgIcon name="checklist" />} />
 
               <div className="required-list edit-required-list">
                 {requiredFields.map((field) => (
@@ -819,7 +827,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
             <section className="visual-card edit-side-card edit-tip-card">
               <div className="edit-tip-header">
-                <span>💡</span>
+                <span><SvgIcon name="tip" /></span>
                 <div>
                   <h3>Tip</h3>
                   <p>Mantén la información actualizada para mejorar el seguimiento y cumplimiento de metas.</p>
@@ -827,21 +835,85 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               </div>
             </section>
 
-            <section className="impact-card edit-impact-card">
-              <h3>Impacto del cambio</h3>
-              <div>
-                <strong>Estás editando un proyecto en ejecución.</strong>
-                <p>
-                  Los cambios pueden afectar tareas, responsables, fechas y dependencias asociadas.
-                </p>
-                <button type="button">Ver detalles del impacto ›</button>
-              </div>
-            </section>
           </aside>
         </div>
       </form>
     </div>
   );
+}
+
+function SvgIcon({ name }) {
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    xmlns: "http://www.w3.org/2000/svg",
+    "aria-hidden": "true",
+  };
+
+  const stroke = {
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  };
+
+  const icons = {
+    edit: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+        <path {...stroke} d="M13.5 7.5l3 3" />
+      </svg>
+    ),
+    save: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M5 12l4 4L19 6" />
+      </svg>
+    ),
+    close: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M6 6l12 12M18 6L6 18" />
+      </svg>
+    ),
+    preview: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" />
+        <circle {...stroke} cx="12" cy="12" r="3" />
+      </svg>
+    ),
+    project: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M7 4h7l3 3v13H7z" />
+        <path {...stroke} d="M14 4v4h4" />
+        <path {...stroke} d="M9 12h6M9 16h6" />
+      </svg>
+    ),
+    upload: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M12 16V4" />
+        <path {...stroke} d="M7 9l5-5 5 5" />
+        <path {...stroke} d="M5 20h14" />
+      </svg>
+    ),
+    attachment: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M8 12.5l5.8-5.8a3 3 0 1 1 4.2 4.2l-7 7a5 5 0 0 1-7.1-7.1l7.4-7.4" />
+      </svg>
+    ),
+    checklist: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M9 6h11M9 12h11M9 18h11" />
+        <path {...stroke} d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" />
+      </svg>
+    ),
+    tip: (
+      <svg {...commonProps}>
+        <path {...stroke} d="M9 18h6M10 22h4" />
+        <path {...stroke} d="M8 14a6 6 0 1 1 8 0c-1 1-1.5 2-1.5 3h-5c0-1-.5-2-1.5-3z" />
+      </svg>
+    ),
+  };
+
+  return <span className="project-svg-icon">{icons[name] || icons.project}</span>;
 }
 
 function Field({ label, required, full, children }) {

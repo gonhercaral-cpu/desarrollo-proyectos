@@ -207,26 +207,27 @@ export default function MyProjects({ onOpenProject }) {
 
   return (
     <div className="my-projects-redesign">
-      <section className="my-projects-hero-card">
-        <div className="my-projects-hero-main">
-          <div className="my-projects-hero-icon"><MyProjectsMenuIcon /></div>
+      <section className="module-topbar module-topbar-my-projects">
+        <div className="module-topbar-main">
+          <span className="module-topbar-module-icon">
+            <MyProjectsMenuIcon />
+          </span>
 
-          <div>
-            <span>MIS PROYECTOS</span>
-            <h2>Mis proyectos</h2>
+          <div className="module-topbar-copy">
+            <p className="section-kicker module-topbar-kicker">Operación</p>
+            <h1>Mis proyectos</h1>
             <p>
-              Consulta tus proyectos asignados, colaboraciones y próximos
-              vencimientos desde una vista limpia y fácil de revisar.
+              Consulta tus proyectos asignados, colaboraciones y próximos vencimientos desde una vista limpia y fácil de revisar.
             </p>
           </div>
         </div>
 
-        <div className="my-projects-hero-actions">
-          <button className="visual-outline-button" onClick={loadProjects}>
+        <div className="module-topbar-actions">
+          <button className="module-topbar-button" onClick={loadProjects}>
             ↻ Actualizar
           </button>
 
-          <div className="visual-search my-projects-search-box">
+          <label className="module-topbar-search">
             <span>⌕</span>
             <input
               id="my-projects-search"
@@ -236,7 +237,7 @@ export default function MyProjects({ onOpenProject }) {
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
             />
-          </div>
+          </label>
         </div>
       </section>
 

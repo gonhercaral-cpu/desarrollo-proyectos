@@ -4285,13 +4285,13 @@ export default function PrintShop() {
       responsibleUid: request.responsibleUid || "",
       responsibleName: request.responsibleName || "",
       responsibleEmail: request.responsibleEmail || "",
-      priority: request.dueDate ? calculateRequestPriority(request) : request.priority || "Normal",
+      priority: request.priority || (request.dueDate ? calculateRequestPriority(request) : "Normal"),
       requestedQuantity: Number(request.requestedQuantity || 0),
       deliveredQuantity: Number(request.deliveredQuantity || 0),
       deliveryType: request.deliveryType || "Impresa",
       status: normalizePrintRequestStatus(request.status),
       requestDate: request.requestDate || "",
-      dueDate: request.dueDate || "",
+      dueDate: request.dueDate || request.requestedDeliveryDate || "",
       certificateIssueDate: request.certificateIssueDate || "",
       certificateTemplateId: request.certificateTemplateId || "",
       certificateTemplateName: request.certificateTemplateName || "",
@@ -4317,7 +4317,7 @@ export default function PrintShop() {
       printedQuantity: Number(request.printedQuantity || 0),
       digitalQuantity: Number(request.digitalQuantity || 0),
       principalSignerId: request.principalSignerId || "",
-      principalSignerName: request.principalSignerName || "",
+      principalSignerName: request.principalSignerName || request.certificateDirectorName || request.academicDirector || "",
       principalSignerRole: request.principalSignerRole || "Principal",
       principalSignatureUrl: request.principalSignatureUrl || "",
       principalSignatureDataUrl: request.principalSignatureDataUrl || "",
@@ -4431,7 +4431,7 @@ export default function PrintShop() {
       responsibleUid: requestForm.responsibleUid || "",
       responsibleName: requestForm.responsibleName || "",
       responsibleEmail: requestForm.responsibleEmail || "",
-      priority: automaticPriority,
+      priority: requestForm.priority || automaticPriority,
       requestedQuantity,
       deliveredQuantity,
       deliveryType: requestForm.deliveryType,
@@ -6617,16 +6617,21 @@ export default function PrintShop() {
   return (
     <div className="printshop-page">
       <section className="printshop-topbar">
-        <div>
-          <p className="section-kicker printshop-kicker">Módulo operativo</p>
-          <h1>Imprenta</h1>
-          <p>
-            Control de solicitudes, producción, inventario terminado e insumos para el trabajo diario de imprenta.
-          </p>
+        <div className="printshop-topbar-main">
+          <span className="printshop-topbar-module-icon">
+            <PrintshopIcon name="printshop" />
+          </span>
+          <div className="printshop-topbar-copy">
+            <p className="section-kicker printshop-kicker">Módulo operativo</p>
+            <h1>Imprenta</h1>
+            <p>
+              Control de solicitudes, producción, inventario terminado e insumos para el trabajo diario de imprenta.
+            </p>
+          </div>
         </div>
 
         <label className="printshop-search">
-          <span>⌕</span>
+          <span><PrintshopIcon name="search" /></span>
           <input
             type="search"
             placeholder="Buscar folio, producto, insumo o certificado"
@@ -7125,7 +7130,7 @@ function PrintshopLogsView({
           <div className="message-box">{logsError}</div>
         ) : latestLogs.length === 0 ? (
           <div className="empty-state small">
-            <div>▨</div>
+            <div><PrintshopIcon name="logs" /></div>
             <p>No hay acciones registradas con esos filtros.</p>
           </div>
         ) : (
@@ -7250,22 +7255,22 @@ function GeneratedCertificatesView({
         <h3>Resumen rápido</h3>
         <div className="certificate-quick-summary-items">
           <div className="certificate-quick-summary-item blue">
-            <span>☑</span>
+            <span><PrintshopIcon name="certificates" /></span>
             <strong>{stats.total}</strong>
             <small>filtrados</small>
           </div>
           <div className="certificate-quick-summary-item teal">
-            <span>▥</span>
+            <span><PrintshopIcon name="supplies" /></span>
             <strong>{stats.all}</strong>
             <small>histórico</small>
           </div>
           <div className="certificate-quick-summary-item green">
-            <span>✓</span>
+            <span><PrintshopIcon name="ready" /></span>
             <strong>{stats.delivered}</strong>
             <small>entregados</small>
           </div>
           <div className="certificate-quick-summary-item red">
-            <span>!</span>
+            <span><PrintshopIcon name="alert" /></span>
             <strong>{stats.cancelled}</strong>
             <small>cancelados</small>
           </div>
@@ -7344,7 +7349,7 @@ function GeneratedCertificatesView({
           <div className="message-box">{certificatesError}</div>
         ) : filteredCertificates.length === 0 ? (
           <div className="empty-state small">
-            <div>☑</div>
+            <div><PrintshopIcon name="certificates" /></div>
             <p>No hay certificados generados con esos filtros.</p>
           </div>
         ) : (
@@ -7580,7 +7585,7 @@ function DashboardView({
           <div className="printshop-workboard-grid compact-home">
             <div className="printshop-workboard-column">
               <div className="printshop-mini-heading">
-                <span>▤</span>
+                <span><PrintshopIcon name="requests" /></span>
                 <div>
                   <strong>Solicitudes recientes</strong>
                   <p>Trabajos pedidos por áreas o planteles.</p>
@@ -7618,7 +7623,7 @@ function DashboardView({
 
             <div className="printshop-workboard-column">
               <div className="printshop-mini-heading">
-                <span>▧</span>
+                <span><PrintshopIcon name="batches" /></span>
                 <div>
                   <strong>Lotes de producción</strong>
                   <p>Producción interna para mantener inventario.</p>
@@ -7876,12 +7881,12 @@ function ProductionBatchesView({
             <small>activos</small>
           </div>
           <div className="batch-quick-summary-item green">
-            <span>✓</span>
+            <span><PrintshopIcon name="ready" /></span>
             <strong>{batchStats.completed}</strong>
             <small>ingresados</small>
           </div>
           <div className="batch-quick-summary-item orange">
-            <span>%</span>
+            <span><PrintshopIcon name="percentage" /></span>
             <strong>{batchProductionSummary.rejectionRate}%</strong>
             <small>rechazo</small>
           </div>
@@ -7949,13 +7954,13 @@ function ProductionBatchesView({
 
             {loadingBatches ? (
               <div className="printshop-empty-catalog">
-                <div>▧</div>
+                <div><PrintshopIcon name="batches" /></div>
                 <h3>Cargando lotes...</h3>
                 <p>Estamos consultando las producciones registradas.</p>
               </div>
             ) : productionBatches.length === 0 ? (
               <div className="printshop-empty-catalog">
-                <div>▧</div>
+                <div><PrintshopIcon name="batches" /></div>
                 <h3>Aún no hay lotes de producción</h3>
                 <p>
                   Crea el primer lote para producir libros y conectarlo con el inventario terminado.
@@ -8093,7 +8098,7 @@ function ProductionBatchesView({
             >
             {!selectedBatch ? (
               <div className="empty-state small">
-                <div>▥</div>
+                <div><PrintshopIcon name="supplies" /></div>
                 <p>Selecciona un lote para ver los insumos vinculados a su producción.</p>
               </div>
             ) : selectedBatchConsumption.rows.length === 0 ? (
@@ -8576,13 +8581,13 @@ function FinishedInventoryView({
           <Panel title="Existencias actuales" icon="▣" actionLabel={`${inventoryItems.length} productos`}>
             {loadingInventory ? (
               <div className="printshop-empty-catalog">
-                <div>▣</div>
+                <div><PrintshopIcon name="inventory" /></div>
                 <h3>Cargando inventario...</h3>
                 <p>Estamos consultando las existencias registradas.</p>
               </div>
             ) : inventoryItems.length === 0 ? (
               <div className="printshop-empty-catalog">
-                <div>▣</div>
+                <div><PrintshopIcon name="inventory" /></div>
                 <h3>Aún no hay inventario terminado</h3>
                 <p>
                   Crea inventario desde productos del catálogo, empezando por los libros.
@@ -9326,8 +9331,9 @@ function SupplyInventoryView({
               + Nuevo insumo
             </button>
           )}
-          <button type="button" className="visual-outline-button" onClick={() => openSupplyMovementFocus()}>
-            ↔ Registrar movimiento
+          <button type="button" className="visual-outline-button printshop-icon-button" onClick={() => openSupplyMovementFocus()}>
+            <PrintshopIcon name="movements" />
+            Registrar movimiento
           </button>
         </div>
       </div>
@@ -9557,7 +9563,7 @@ function SupplyInventoryView({
               <section className="printshop-panel supplies-alert-card">
                 <div className="supplies-card-title-row">
                   <div>
-                    <span className="supplies-side-icon warning">⚠</span>
+                    <span className="supplies-side-icon warning"><PrintshopIcon name="warning" /></span>
                     <h2>Alertas de insumos</h2>
                   </div>
                   <button type="button" onClick={() => onStatusFilterChange("Bajo")}>Ver todas</button>
@@ -9590,7 +9596,7 @@ function SupplyInventoryView({
               <section className="printshop-panel supplies-summary-card">
                 <div className="supplies-card-title-row">
                   <div>
-                    <span className="supplies-side-icon summary">▧</span>
+                    <span className="supplies-side-icon summary"><PrintshopIcon name="supplies" /></span>
                     <h2>Resumen de inventario</h2>
                   </div>
                   <button type="button" onClick={() => onStatusFilterChange("Todos")}>Ver detalle</button>
@@ -9654,13 +9660,13 @@ function SupplyInventoryView({
 
             {loadingSupplies ? (
               <div className="printshop-empty-catalog">
-                <div>▥</div>
+                <div><PrintshopIcon name="supplies" /></div>
                 <h3>Cargando insumos...</h3>
                 <p>Estamos consultando el inventario de materiales.</p>
               </div>
             ) : filteredSupplyItems.length === 0 ? (
               <div className="printshop-empty-catalog">
-                <div>▥</div>
+                <div><PrintshopIcon name="supplies" /></div>
                 <h3>No hay insumos con esos filtros</h3>
                 <p>Agrega insumos como papel, vinil, laminado o pegamento desde el formulario lateral.</p>
               </div>
@@ -9778,7 +9784,7 @@ function SupplyInventoryView({
           <Panel title="Movimientos recientes de insumos" icon="↕" actionLabel={`${latestMovements.length} recientes`}>
             {latestMovements.length === 0 ? (
               <div className="empty-state small">
-                <div>↕</div>
+                <div><PrintshopIcon name="movements" /></div>
                 <p>Aún no hay movimientos de insumos.</p>
               </div>
             ) : (
@@ -10346,7 +10352,7 @@ function PrintRequestsView({
   const canCreateRequest = isAdmin;
   const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
   const isEditingExistingRequest = Boolean(selectedRequestId);
-  const sourceFieldsLocked = isEditingExistingRequest;
+  const sourceFieldsLocked = isEditingExistingRequest && !canEditAdministrativeFields;
 
   const [requestFocusOpen, setRequestFocusOpen] = useState(false);
   const [requestEditOpen, setRequestEditOpen] = useState(false);
@@ -10456,7 +10462,7 @@ function PrintRequestsView({
       <div className="request-metrics-grid request-metrics-redesign">
         {requestMetricCards.map((metric) => (
           <article key={metric.label} className={`request-metric-card ${metric.tone}`}>
-            <div>{metric.icon}</div>
+            <div>{renderPrintshopIcon(metric.icon)}</div>
             <span>{metric.label}</span>
             <strong>{metric.value}</strong>
             <p>{metric.helper}</p>
@@ -10464,12 +10470,12 @@ function PrintRequestsView({
         ))}
       </div>
 
-      <div className={`printshop-batches-layout request-layout request-dashboard-layout ${requestFocusOpen ? "printshop-focused-layout" : ""} ${requestFocusOpen && selectedRequest ? "request-has-detail" : requestFocusOpen ? "request-new" : ""}`}>
+      <div className={`printshop-batches-layout request-layout request-dashboard-layout ${requestFocusOpen ? "printshop-focused-layout" : ""} ${requestFocusOpen && selectedRequest ? "request-has-detail" : requestFocusOpen ? "request-new" : ""} ${requestFocusOpen && selectedRequest && requestEditOpen ? "request-edit-focused" : ""}`}>
         <div className="printshop-batches-main request-list-column">
           <section className="printshop-panel request-list-panel-redesign">
             <div className="printshop-panel-header request-list-header-redesign">
               <div>
-                <span>▤</span>
+                <span><PrintshopIcon name="requests" /></span>
                 <h2>Solicitudes registradas</h2>
               </div>
               <div className="request-list-count-control">
@@ -10531,7 +10537,7 @@ function PrintRequestsView({
               </div>
             ) : filteredRequests.length === 0 ? (
               <div className="empty-state small">
-                <div>▤</div>
+                <div><PrintshopIcon name="requests" /></div>
                 <p>No hay solicitudes con los filtros seleccionados.</p>
               </div>
             ) : (
@@ -10660,7 +10666,7 @@ function PrintRequestsView({
         <aside
           className={`printshop-batches-side request-side-column ${
             requestFocusOpen && selectedRequest && !requestEditOpen ? "request-detail-only" : ""
-          }`}
+          } ${requestFocusOpen && selectedRequest && requestEditOpen ? "request-edit-only" : ""}`}
         >
           {!requestFocusOpen && (
             <RequestPreviewPanel
@@ -10674,20 +10680,26 @@ function PrintRequestsView({
               <button type="button" className="visual-outline-button" onClick={closeRequestFocus}>
                 ← Regresar a solicitudes
               </button>
-              <span>{selectedRequest ? "Vista enfocada de seguimiento" : "Vista enfocada de alta"}</span>
+              <span>
+                {selectedRequest
+                  ? requestEditOpen
+                    ? "Vista enfocada de edición"
+                    : "Vista enfocada de seguimiento"
+                  : "Vista enfocada de alta"}
+              </span>
               {selectedRequest && (
                 <button
                   type="button"
                   className="visual-outline-button request-edit-toggle-button"
                   onClick={() => setRequestEditOpen((current) => !current)}
                 >
-                  {requestEditOpen ? "Ocultar edicion" : "Editar datos"}
+                  {requestEditOpen ? "Volver a certificados" : "Editar datos"}
                 </button>
               )}
             </div>
           )}
 
-          {requestFocusOpen && selectedRequest && (
+          {requestFocusOpen && selectedRequest && !requestEditOpen && (
             <RequestDetailCard
               request={selectedRequest}
               selectedRole={selectedRole}
@@ -10721,17 +10733,18 @@ function PrintRequestsView({
 
           {requestFocusOpen && (!selectedRequest || requestEditOpen) && (
           <Panel
-            title={selectedRequest ? "Actualizar solicitud" : "Nueva solicitud"}
+            title={selectedRequest ? "Editar datos de la solicitud" : "Nueva solicitud"}
             icon={selectedRequest ? "✎" : "＋"}
-            actionLabel={selectedRequest ? "Seguimiento" : "Alta"}
+            actionLabel={selectedRequest ? "Edición enfocada" : "Alta"}
           >
             <form className="printshop-product-form request-form" onSubmit={onSavePrintRequest}>
-              {sourceFieldsLocked && (
+              {isEditingExistingRequest && (
                 <div className="request-source-lock-note full">
-                  <strong>Datos recibidos desde direcciÃ³n</strong>
+                  <strong>Datos importados desde Dirección Académica</strong>
                   <p>
-                    Producto, tipo, solicitante, plantel, cantidades y datos del certificado se conservan desde la solicitud original.
-                    AquÃ­ solo se ajusta responsable, seguimiento, entrega y observaciones operativas.
+                    {sourceFieldsLocked
+                      ? "La información se cargó desde la solicitud original. En tu rol solo puedes ajustar responsable, seguimiento, entrega y observaciones operativas."
+                      : "La información se cargó automáticamente desde la solicitud original de certificados. Como administrador puedes corregir cualquier campo antes de continuar con la producción."}
                   </p>
                 </div>
               )}
@@ -10742,9 +10755,13 @@ function PrintRequestsView({
                   name="productId"
                   value={requestForm.productId}
                   onChange={onRequestInputChange}
-                  disabled={sourceFieldsLocked || !canEditAdministrativeFields || requestProducts.length === 0}
+                  disabled={sourceFieldsLocked || !canEditAdministrativeFields || (requestProducts.length === 0 && !selectedRequest?.productName)}
                 >
-                  <option value="">Seleccionar producto del catálogo</option>
+                  <option value="">
+                    {selectedRequest?.productName
+                      ? `${selectedRequest.productName} · ${selectedRequest.requestType || requestForm.requestType || "Servicio"}${selectedRequest.productId ? "" : " (sin catálogo)"}`
+                      : "Seleccionar producto del catálogo"}
+                  </option>
                   {requestProducts.map((product) => (
                     <option key={product.id} value={product.id}>
                       {product.name} · {product.category}
@@ -10773,7 +10790,7 @@ function PrintRequestsView({
                   name="priority"
                   value={requestForm.priority}
                   onChange={onRequestInputChange}
-                  disabled
+                  disabled={!canEditAdministrativeFields}
                 >
                   {printRequestPriorities.map((priority) => (
                     <option key={priority}>{priority}</option>
@@ -11065,7 +11082,7 @@ function PrintRequestsView({
                 <button
                   type="submit"
                   className="visual-primary-button"
-                  disabled={savingRequest || (!canCreateRequest && !canEditOperationalFields) || requestProducts.length === 0}
+                  disabled={savingRequest || (!canCreateRequest && !canEditOperationalFields) || (requestProducts.length === 0 && !selectedRequest?.productName)}
                 >
                   {savingRequest
                     ? "Guardando..."
@@ -11075,7 +11092,7 @@ function PrintRequestsView({
                 </button>
               </div>
 
-              {requestProducts.length === 0 && (
+              {requestProducts.length === 0 && !selectedRequest?.productName && (
                 <p className="inventory-side-help full">
                   Primero crea productos o servicios de solicitud en el catálogo.
                 </p>
@@ -11101,7 +11118,7 @@ function RequestPreviewPanel({ request, onOpen }) {
         </div>
 
         <div className="empty-state small">
-          <div>▤</div>
+          <div><PrintshopIcon name="requests" /></div>
           <p>Selecciona una solicitud para ver el detalle.</p>
         </div>
       </section>
@@ -11847,7 +11864,7 @@ Mariana Torres`}
               <div className="request-students-table-wrap">
                 {students.length === 0 ? (
                   <div className="empty-state small">
-                    <div>◌</div>
+                    <div><PrintshopIcon name="users" /></div>
                     <p>No hay alumnos registrados todavía.</p>
                   </div>
                 ) : (
@@ -13190,7 +13207,7 @@ function CertificateTemplatesView({
               <div className="message-box">{templatesError}</div>
             ) : templates.length === 0 ? (
               <div className="empty-state small">
-                <div>▧</div>
+                <div><PrintshopIcon name="batches" /></div>
                 <p>No hay plantillas registradas todavía.</p>
               </div>
             ) : (
@@ -13268,7 +13285,7 @@ function CertificateTemplatesView({
                   />
                 ) : (
                   <div className="empty-state small">
-                    <div>▧</div>
+                    <div><PrintshopIcon name="batches" /></div>
                     <p>Sube o selecciona una plantilla para editar posiciones.</p>
                   </div>
                 )}
@@ -14120,11 +14137,11 @@ function CertificateSignersView({
       <div className={`printshop-signers-layout ${signerFocusOpen ? "printshop-focused-layout" : ""}`}>
         <Panel title="Firmantes registrados" icon="✒" actionLabel={`${signers.length} registros`}>
           {loadingSigners ? (
-            <div className="empty-state small"><div>◌</div><p>Cargando firmas...</p></div>
+            <div className="empty-state small"><div><PrintshopIcon name="target" /></div><p>Cargando firmas...</p></div>
           ) : signersError ? (
             <div className="message-box error">{signersError}</div>
           ) : signers.length === 0 ? (
-            <div className="empty-state small"><div>✒</div><p>No hay firmantes registrados todavía.</p></div>
+            <div className="empty-state small"><div><PrintshopIcon name="signers" /></div><p>No hay firmantes registrados todavía.</p></div>
           ) : (
             <div className="signers-grid">
               {signers.map((signer) => (
@@ -14417,13 +14434,13 @@ function ProductCatalogView({
 
             {loadingProducts ? (
               <div className="printshop-empty-catalog">
-                <div>▤</div>
+                <div><PrintshopIcon name="requests" /></div>
                 <h3>Cargando catálogo...</h3>
                 <p>Estamos consultando los productos registrados en Firestore.</p>
               </div>
             ) : filteredProducts.length === 0 ? (
               <div className="printshop-empty-catalog">
-                <div>▤</div>
+                <div><PrintshopIcon name="requests" /></div>
                 <h3>No hay productos para mostrar</h3>
                 <p>
                   Ajusta los filtros o registra el primer producto del catálogo
@@ -14808,6 +14825,49 @@ function getPrintshopTabs(isAdmin) {
   ].filter((tab) => !tab.adminOnly || isAdmin);
 }
 
+function normalizePrintshopIconName(name) {
+  const aliases = {
+    "▤": "requests",
+    "▥": "supplies",
+    "▦": "workboard",
+    "▧": "batches",
+    "▨": "logs",
+    "▣": "inventory",
+    "✓": "ready",
+    "!": "alert",
+    "×": "critical",
+    "↕": "movements",
+    "↔": "movements",
+    "↗": "trend",
+    "↺": "history",
+    "◷": "today",
+    "⚑": "urgent",
+    "●": "active",
+    "◎": "target",
+    "○": "inactive",
+    "＋": "plus",
+    "+": "plus",
+    "✎": "edit",
+    "✒": "signers",
+    "≈": "capacity",
+    "∆": "difference",
+    "%": "percentage",
+    "$": "value",
+    "A": "adult",
+    "K": "kids",
+    "ℹ": "info",
+    "☑": "certificates",
+    "⚠": "warning",
+    "👤": "users",
+  };
+
+  return aliases[name] || name || "dashboard";
+}
+
+function renderPrintshopIcon(icon) {
+  return <PrintshopIcon name={icon} />;
+}
+
 function PrintshopIcon({ name }) {
   const commonProps = {
     fill: "none",
@@ -14818,6 +14878,20 @@ function PrintshopIcon({ name }) {
   };
 
   const paths = {
+    printshop: (
+      <>
+        <path d="M7 8V4h10v4" />
+        <rect x="6" y="14" width="12" height="7" rx="1.5" />
+        <rect x="4" y="8" width="16" height="9" rx="2" />
+        <circle cx="17" cy="11.5" r="1" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="6" />
+        <path d="m16 16 4 4" />
+      </>
+    ),
     dashboard: (
       <>
         <rect x="4" y="4" width="6" height="6" rx="1.5" />
@@ -14831,6 +14905,14 @@ function PrintshopIcon({ name }) {
         <path d="M6 4h9a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V5a1 1 0 0 1 1-1Z" />
         <path d="M8 8h7" />
         <path d="M8 12h6" />
+      </>
+    ),
+    products: (
+      <>
+        <path d="M5 5h14v14H5z" />
+        <path d="M8 9h8" />
+        <path d="M8 13h6" />
+        <path d="M8 17h5" />
       </>
     ),
     inventory: (
@@ -14894,6 +14976,193 @@ function PrintshopIcon({ name }) {
         <path d="M15 6l2-2 3 3-2 2" />
       </>
     ),
+    ready: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="m8.5 12.5 2.2 2.2 5-5.4" />
+      </>
+    ),
+    active: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="m9 12 2 2 4-5" />
+      </>
+    ),
+    inactive: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="m9 9 6 6" />
+        <path d="m15 9-6 6" />
+      </>
+    ),
+    alert: (
+      <>
+        <path d="M12 4v9" />
+        <path d="M12 18h.01" />
+        <path d="M10.4 3.5h3.2l6.5 15a2 2 0 0 1-1.8 2.8H5.7a2 2 0 0 1-1.8-2.8z" />
+      </>
+    ),
+    warning: (
+      <>
+        <path d="M12 4v9" />
+        <path d="M12 18h.01" />
+        <path d="M10.4 3.5h3.2l6.5 15a2 2 0 0 1-1.8 2.8H5.7a2 2 0 0 1-1.8-2.8z" />
+      </>
+    ),
+    critical: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="m9 9 6 6" />
+        <path d="m15 9-6 6" />
+      </>
+    ),
+    lowStock: (
+      <>
+        <path d="M4 7l8-4 8 4-8 4-8-4Z" />
+        <path d="M4 7v10l8 4 8-4V7" />
+        <path d="M12 11v4" />
+        <path d="M12 18h.01" />
+      </>
+    ),
+    workboard: (
+      <>
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <path d="M8 9h8" />
+        <path d="M8 13h3" />
+        <path d="M13 13h3" />
+      </>
+    ),
+    movements: (
+      <>
+        <path d="M7 7h11l-3-3" />
+        <path d="M17 17H6l3 3" />
+        <path d="M18 7l-3 3" />
+        <path d="M6 17l3-3" />
+      </>
+    ),
+    history: (
+      <>
+        <path d="M7 7h7a6 6 0 1 1-5.2 9" />
+        <path d="M7 7V3" />
+        <path d="M7 7H3" />
+      </>
+    ),
+    today: (
+      <>
+        <rect x="4" y="5" width="16" height="15" rx="2" />
+        <path d="M8 3v4" />
+        <path d="M16 3v4" />
+        <path d="M4 10h16" />
+        <path d="M9 15h6" />
+      </>
+    ),
+    urgent: (
+      <>
+        <path d="M6 21V4" />
+        <path d="M6 5h11l-2 4 2 4H6" />
+      </>
+    ),
+    delivered: (
+      <>
+        <path d="M4 8l8-4 8 4-8 4-8-4Z" />
+        <path d="M4 8v8l8 4 8-4V8" />
+        <path d="m9 15 2 2 4-5" />
+      </>
+    ),
+    trend: (
+      <>
+        <path d="M4 17l6-6 4 4 6-8" />
+        <path d="M14 7h6v6" />
+      </>
+    ),
+    users: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+        <circle cx="17" cy="9" r="2.4" />
+        <path d="M15.5 15.5a4.5 4.5 0 0 1 5 4.5" />
+      </>
+    ),
+    value: (
+      <>
+        <path d="M12 3v18" />
+        <path d="M16 7.5c-.8-1-2.2-1.6-4-1.6-2.2 0-3.8 1-3.8 2.7 0 4.1 7.8 1.9 7.8 6.5 0 1.8-1.6 3-4 3-1.8 0-3.4-.6-4.4-1.8" />
+      </>
+    ),
+    capacity: (
+      <>
+        <path d="M5 17a8 8 0 1 1 14 0" />
+        <path d="M12 17l4-6" />
+        <path d="M7 17h10" />
+      </>
+    ),
+    difference: (
+      <>
+        <path d="M12 4v16" />
+        <path d="M6 8h12" />
+        <path d="M8 16h8" />
+      </>
+    ),
+    percentage: (
+      <>
+        <path d="M19 5 5 19" />
+        <circle cx="7" cy="7" r="2" />
+        <circle cx="17" cy="17" r="2" />
+      </>
+    ),
+    plus: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 8v8" />
+        <path d="M8 12h8" />
+      </>
+    ),
+    edit: (
+      <>
+        <path d="M4 20h4l10.5-10.5-4-4L4 16z" />
+        <path d="M13.5 6.5l4 4" />
+      </>
+    ),
+    info: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 11v5" />
+        <path d="M12 8h.01" />
+      </>
+    ),
+    adult: (
+      <>
+        <circle cx="12" cy="7" r="3" />
+        <path d="M6.5 20a5.5 5.5 0 0 1 11 0" />
+      </>
+    ),
+    kids: (
+      <>
+        <circle cx="9" cy="8" r="2.5" />
+        <circle cx="16" cy="9" r="2" />
+        <path d="M4.5 20a4.5 4.5 0 0 1 9 0" />
+        <path d="M14 16a4 4 0 0 1 5.5 4" />
+      </>
+    ),
+    target: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v4" />
+        <path d="M12 18v4" />
+        <path d="M2 12h4" />
+        <path d="M18 12h4" />
+      </>
+    ),
+    scanner: (
+      <>
+        <path d="M5 7V5h4" />
+        <path d="M15 5h4v4" />
+        <path d="M19 15v4h-4" />
+        <path d="M9 19H5v-4" />
+        <path d="M8 12h8" />
+      </>
+    ),
     view: (
       <>
         <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
@@ -14911,9 +15180,11 @@ function PrintshopIcon({ name }) {
     ),
   };
 
+  const iconName = normalizePrintshopIconName(name);
+
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...commonProps}>
-      {paths[name] || paths.dashboard}
+    <svg className="printshop-svg-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...commonProps}>
+      {paths[iconName] || paths.dashboard}
     </svg>
   );
 }
@@ -14953,7 +15224,7 @@ function RequirementChips({ product }) {
 function CatalogMetric({ tone, icon, label, value }) {
   return (
     <article className={`catalog-metric-card ${tone}`}>
-      <div>{icon}</div>
+      <div>{renderPrintshopIcon(icon)}</div>
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
@@ -14963,7 +15234,7 @@ function CatalogMetric({ tone, icon, label, value }) {
 function MetricCard({ metric }) {
   return (
     <article className={`printshop-metric-card ${metric.tone}`}>
-      <div className="printshop-metric-icon">{metric.icon}</div>
+      <div className="printshop-metric-icon">{renderPrintshopIcon(metric.icon)}</div>
       <div>
         <span>{metric.label}</span>
         <strong>{metric.value}</strong>
@@ -14976,7 +15247,7 @@ function MetricCard({ metric }) {
 function ActionCard({ icon, title, description, onClick }) {
   return (
     <button type="button" className="printshop-action-card" onClick={onClick}>
-      <span>{icon}</span>
+      <span>{renderPrintshopIcon(icon)}</span>
       <div>
         <strong>{title}</strong>
         <p>{description}</p>
@@ -14991,7 +15262,7 @@ function Panel({ title, icon, actionLabel, children }) {
     <section className="printshop-panel">
       <div className="printshop-panel-header">
         <div>
-          <span>{icon}</span>
+          <span>{renderPrintshopIcon(icon)}</span>
           <h2>{title}</h2>
         </div>
 

@@ -38,6 +38,18 @@ function inferLevelFromCourse(value = "") {
   return match?.[1] || "No aplica";
 }
 
+function buildCertificateProductName(value = "") {
+  const cleanValue = String(value || "").trim();
+
+  if (!cleanValue) return CERTIFICATE_TYPE;
+
+  if (/certificado|diploma/i.test(cleanValue)) {
+    return cleanValue;
+  }
+
+  return `${CERTIFICATE_TYPE} ${cleanValue}`;
+}
+
 function parseBulkNames(value = "", deliveryType = "Impreso") {
   return value
     .split(/\n|,|;/)
@@ -250,7 +262,9 @@ export default function PublicCertificateRequest() {
       const requestedQuantity = preparedStudents.length;
       const { printedQuantity, digitalQuantity, deliveryType } =
         getDeliverySummary(preparedStudents);
-      const level = inferLevelFromCourse(courseLevel);
+      const cleanCourseLevel = courseLevel.trim();
+      const level = inferLevelFromCourse(cleanCourseLevel);
+      const publicProductName = buildCertificateProductName(cleanCourseLevel);
       const requestDate = getTodayInputDate();
       const cleanRequesterName = requesterName.trim();
       const cleanCertificateDirectorName = certificateDirectorName.trim();
@@ -258,7 +272,7 @@ export default function PublicCertificateRequest() {
       const docRef = await addDoc(collection(db, "printRequests"), {
         folio,
         productId: "",
-        productName: CERTIFICATE_TYPE,
+        productName: publicProductName,
         requestType: CERTIFICATE_TYPE,
 
         requesterName: cleanRequesterName,
@@ -296,7 +310,7 @@ export default function PublicCertificateRequest() {
 
         notes: notes.trim(),
         level,
-        group: courseLevel.trim(),
+        group: cleanCourseLevel,
         teacherName: "",
         schedule: "",
         printedQuantity,
@@ -317,7 +331,7 @@ export default function PublicCertificateRequest() {
         publicRequestSource: "certificate-public-form",
         academicDirector: cleanCertificateDirectorName,
         certificateDirectorName: cleanCertificateDirectorName,
-        courseLevel: courseLevel.trim(),
+        courseLevel: cleanCourseLevel,
         statusLabel: "Solicitud recibida",
 
         createdAt: serverTimestamp(),

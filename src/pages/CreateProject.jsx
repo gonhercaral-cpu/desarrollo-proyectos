@@ -299,36 +299,45 @@ export default function CreateProject() {
   }
 
   return (
-    <div className="visual-page">
-      <form onSubmit={handleSubmit}>
-        <div className="visual-page-header">
-          <div>
-            <h2>Alta de proyecto</h2>
-            <p>
-              Registra una nueva solicitud o proyecto interno de forma clara y
-              ordenada.
-            </p>
+    <div className="visual-page create-project-redesign">
+      <form onSubmit={handleSubmit} className="create-project-form-shell">
+        <section className="module-topbar create-project-module-topbar">
+          <div className="module-topbar-main">
+            <span className="module-topbar-module-icon">
+              <SvgIcon name="projectPlus" />
+            </span>
+
+            <div className="module-topbar-copy">
+              <p className="section-kicker module-topbar-kicker">Gestión de proyectos</p>
+              <h1>Alta de proyecto</h1>
+              <p>
+                Registra una nueva solicitud o proyecto interno de forma clara,
+                ordenada y lista para seguimiento.
+              </p>
+            </div>
           </div>
 
-          <div className="visual-page-actions">
+          <div className="create-project-topbar-actions">
             <button
               type="button"
-              className="visual-outline-button"
+              className="create-project-header-button secondary"
               onClick={resetForm}
               disabled={saving}
             >
-              × Cancelar
+              <SvgIcon name="x" />
+              Cancelar
             </button>
 
             <button
               type="submit"
-              className="visual-primary-button"
+              className="create-project-header-button primary"
               disabled={saving}
             >
-              ＋ {saving ? "Creando..." : "Crear proyecto"}
+              <SvgIcon name="plus" />
+              {saving ? "Creando..." : "Crear proyecto"}
             </button>
           </div>
-        </div>
+        </section>
 
         {message && <div className="message-box">{message}</div>}
 
@@ -337,6 +346,7 @@ export default function CreateProject() {
             <section className="visual-card form-section-card">
               <FormSectionHeader
                 number="1"
+                icon="fileText"
                 title="Información general"
                 subtitle="Completa los datos básicos del proyecto."
               />
@@ -450,6 +460,7 @@ export default function CreateProject() {
             <section className="visual-card form-section-card">
               <FormSectionHeader
                 number="2"
+                icon="users"
                 title="Asignación y seguimiento"
                 subtitle="Define quién hará seguimiento y cómo inicia el proyecto."
               />
@@ -590,6 +601,7 @@ export default function CreateProject() {
             <section className="visual-card form-section-card">
               <FormSectionHeader
                 number="3"
+                icon="upload"
                 title="Adjuntos y referencias"
                 subtitle="Agrega archivos o enlaces que respalden el proyecto."
               />
@@ -603,7 +615,9 @@ export default function CreateProject() {
                     multiple
                     onChange={handleFiles}
                   />
-                  <span>☁</span>
+                  <span className="create-project-dropzone-icon">
+                    <SvgIcon name="uploadCloud" />
+                  </span>
                   <strong>Arrastra y suelta archivos aquí</strong>
                   <p>o haz clic para seleccionar</p>
                   <small>
@@ -640,7 +654,7 @@ export default function CreateProject() {
 
           <aside className="create-project-side">
             <section className="visual-card">
-              <SectionHeader title="Resumen del proyecto" icon="◉" />
+              <SectionHeader title="Resumen del proyecto" icon="layout" />
 
               <div className="project-preview-card">
                 <span className="preview-label">VISTA PREVIA</span>
@@ -686,7 +700,7 @@ export default function CreateProject() {
             </section>
 
             <section className="visual-card">
-              <SectionHeader title="Campos requeridos" icon="◷" />
+              <SectionHeader title="Campos requeridos" icon="checklist" />
 
               <div className="required-list">
                 {requiredFields.map((field) => (
@@ -702,7 +716,7 @@ export default function CreateProject() {
             </section>
 
             <section className="visual-card">
-              <SectionHeader title="Buenas prácticas" icon="☼" />
+              <SectionHeader title="Buenas prácticas" icon="sparkle" />
 
               <div className="tips-list">
                 <Tip
@@ -743,22 +757,31 @@ function Field({ label, required, full, children }) {
   );
 }
 
-function FormSectionHeader({ number, title, subtitle }) {
+function FormSectionHeader({ number, icon, title, subtitle }) {
   return (
-    <div className="form-section-header">
-      <span>{number}</span>
+    <div className="form-section-header create-project-section-header">
+      <span className="create-project-section-icon">
+        <SvgIcon name={icon || "check"} />
+      </span>
 
-      <h3>{title}</h3>
-      <p>{subtitle}</p>
+      <div>
+        <small>Paso {number}</small>
+        <h3>{title}</h3>
+        <p>{subtitle}</p>
+      </div>
     </div>
   );
 }
 
 function SectionHeader({ title, icon }) {
   return (
-    <div className="mini-section-header">
+    <div className="mini-section-header create-project-mini-header">
       <div>
-        {icon && <span>{icon}</span>}
+        {icon && (
+          <span className="create-project-mini-icon">
+            <SvgIcon name={icon} />
+          </span>
+        )}
         <h3>{title}</h3>
       </div>
     </div>
@@ -777,7 +800,9 @@ function PreviewItem({ label, value }) {
 function Tip({ color, title, text }) {
   return (
     <div className="tip-item">
-      <span className={`tip-icon tip-${color}`}>✓</span>
+      <span className={`tip-icon tip-${color}`}>
+        <SvgIcon name="check" />
+      </span>
 
       <div>
         <strong>{title}</strong>
@@ -789,8 +814,10 @@ function Tip({ color, title, text }) {
 
 function EmptyState({ text }) {
   return (
-    <div className="empty-state small">
-      <div>▯</div>
+    <div className="empty-state small create-project-empty-state">
+      <div>
+        <SvgIcon name="fileText" />
+      </div>
       <p>{text}</p>
     </div>
   );
@@ -798,6 +825,119 @@ function EmptyState({ text }) {
 
 function Badge({ color, children }) {
   return <span className={`visual-badge badge-${color}`}>{children}</span>;
+}
+
+function SvgIcon({ name }) {
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.9",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true",
+  };
+
+  switch (name) {
+    case "projectPlus":
+      return (
+        <svg {...commonProps}>
+          <path d="M4.5 6.5h15" />
+          <path d="M6.5 4.5h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z" />
+          <path d="M9 12h6" />
+          <path d="M12 9v6" />
+        </svg>
+      );
+    case "plus":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </svg>
+      );
+    case "x":
+      return (
+        <svg {...commonProps}>
+          <path d="M18 6 6 18" />
+          <path d="m6 6 12 12" />
+        </svg>
+      );
+    case "fileText":
+      return (
+        <svg {...commonProps}>
+          <path d="M7 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 20V3.5Z" />
+          <path d="M13 3.5V8h4" />
+          <path d="M9.5 12h5" />
+          <path d="M9.5 15h5" />
+        </svg>
+      );
+    case "users":
+      return (
+        <svg {...commonProps}>
+          <path d="M16 20v-1.5A3.5 3.5 0 0 0 12.5 15h-5A3.5 3.5 0 0 0 4 18.5V20" />
+          <circle cx="10" cy="8" r="3" />
+          <path d="M20 20v-1.2a3 3 0 0 0-2.2-2.9" />
+          <path d="M16.5 5.2a3 3 0 0 1 0 5.6" />
+        </svg>
+      );
+    case "upload":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 16V5" />
+          <path d="m7.5 9.5 4.5-4.5 4.5 4.5" />
+          <path d="M5 18.5h14" />
+        </svg>
+      );
+    case "uploadCloud":
+      return (
+        <svg {...commonProps}>
+          <path d="M17.5 17.5H18a4 4 0 0 0 .7-7.9 6 6 0 0 0-11.2-2.1A4.8 4.8 0 0 0 6 17.5h.5" />
+          <path d="M12 18V10" />
+          <path d="m8.8 13.2 3.2-3.2 3.2 3.2" />
+        </svg>
+      );
+    case "layout":
+      return (
+        <svg {...commonProps}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <path d="M4 10h16" />
+          <path d="M10 20V10" />
+        </svg>
+      );
+    case "checklist":
+      return (
+        <svg {...commonProps}>
+          <path d="M8 6h12" />
+          <path d="M8 12h12" />
+          <path d="M8 18h12" />
+          <path d="m3.8 6 1 1 2-2" />
+          <path d="m3.8 12 1 1 2-2" />
+          <path d="m3.8 18 1 1 2-2" />
+        </svg>
+      );
+    case "sparkle":
+      return (
+        <svg {...commonProps}>
+          <path d="M12 3.5 13.8 9l5.7 1.8-5.7 1.8L12 18.5l-1.8-5.9-5.7-1.8L10.2 9 12 3.5Z" />
+          <path d="M19 15.5v4" />
+          <path d="M17 17.5h4" />
+        </svg>
+      );
+    case "check":
+      return (
+        <svg {...commonProps}>
+          <path d="m5 12.5 4.2 4.2L19 7" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M12 8v4" />
+          <path d="M12 16h.01" />
+        </svg>
+      );
+  }
 }
 
 function getInitials(name = "") {

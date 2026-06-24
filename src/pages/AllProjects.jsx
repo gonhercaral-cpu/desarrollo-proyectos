@@ -307,172 +307,222 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
 
   if (loading) {
     return (
-      <div className="visual-page">
+      <div className="all-projects-redesign">
         <div className="dashboard-loading-card">Cargando proyectos...</div>
       </div>
     );
   }
 
   return (
-    <div className="visual-page">
-      <PageHeader
-        title="Todos los proyectos"
-        subtitle="Administra, filtra y supervisa todos los proyectos activos del área."
-      >
-        <div className="visual-search wide">
-          <span>⌕</span>
+    <div className="all-projects-redesign">
+      <section className="module-topbar all-projects-module-topbar">
+        <div className="module-topbar-main">
+          <span className="module-topbar-module-icon">
+            <ProjectIcon name="projects" />
+          </span>
+
+          <div>
+            <p className="module-topbar-kicker">Administración</p>
+            <h1>Todos los proyectos</h1>
+            <p>
+              Supervisa proyectos activos, responsables, avances, alertas y prioridades del área.
+            </p>
+          </div>
+        </div>
+
+        <label className="module-topbar-search all-projects-topbar-search">
+          <span>
+            <ProjectIcon name="search" />
+          </span>
           <input
             type="text"
             placeholder="Buscar proyecto, responsable o departamento..."
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
-        </div>
-
-        <button className="visual-outline-button">☷ Filtros</button>
-        <button className="visual-primary-button">＋ Nuevo proyecto</button>
-      </PageHeader>
+        </label>
+      </section>
 
       {message && <div className="message-box">{message}</div>}
 
-      <div className="all-metrics-grid">
-        <SimpleMetric
-          icon="▣"
+      <section className="all-projects-metrics-grid">
+        <ProjectMetric
+          icon="folder"
           value={metrics.total}
           title="Total activos"
           detail="Proyectos visibles"
           color="blue"
         />
 
-        <SimpleMetric
-          icon="✓"
+        <ProjectMetric
+          icon="check"
           value={metrics.active}
           title="En operación"
           detail="No cerrados"
           color="green"
         />
 
-        <SimpleMetric
-          icon="◷"
+        <ProjectMetric
+          icon="alert"
           value={metrics.overdue}
           title="Atrasados"
           detail="Requieren seguimiento"
           color="red"
         />
 
-        <SimpleMetric
-          icon="⚑"
+        <ProjectMetric
+          icon="flag"
           value={metrics.highPriority}
           title="Alta prioridad"
           detail="Prioridades activas"
           color="orange"
         />
 
-        <SimpleMetric
-          icon="☑"
+        <ProjectMetric
+          icon="review"
           value={metrics.review}
           title="Por revisar"
           detail="Revisión administrativa"
           color="teal"
         />
-      </div>
+      </section>
 
-      <div className="all-projects-layout">
-        <main className="all-projects-main">
-          <section className="visual-card filters-card">
-            <div className="filters-card-top">
-              <div className="section-title-row no-border no-margin">
-                <span className="section-title-icon section-title-blue">⌕</span>
-                <h3>Filtros avanzados</h3>
-              </div>
+      <section className="all-projects-panel all-projects-alerts-wide-panel">
+        <SectionHeader
+          icon="alert"
+          title="Alertas importantes"
+          action={showFullAlerts ? "Ver menos" : "Ver todas"}
+          onAction={() => setShowFullAlerts((current) => !current)}
+        />
 
-              <div className="filter-pills compact">
-                {["Todos", "En curso", "Por revisar", "Atrasados"].map(
-                  (filter) => (
+        <div className="all-projects-alert-list all-projects-alert-list-wide">
+          {visibleAlertItems.map((alert) => (
+            <div
+              className={`all-projects-alert-card all-projects-alert-${alert.type}`}
+              key={alert.title}
+            >
+              <strong>{alert.title}</strong>
+              <p>{alert.detail}</p>
+
+              {alert.projects.length > 0 && (
+                <div className="alert-project-links">
+                  {alert.projects.slice(0, 3).map((project) => (
                     <button
-                      key={filter}
-                      className={activeQuickFilter === filter ? "active" : ""}
-                      onClick={() => setActiveQuickFilter(filter)}
+                      type="button"
+                      key={project.id}
+                      onClick={() => onOpenProject(project.id)}
                     >
-                      {filter}
-                      {filter === "Atrasados" && <span className="red-dot" />}
+                      {project.title}
                     </button>
-                  )
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
 
-              <button className="clear-filter-button" onClick={clearFilters}>
-                ↻ Limpiar filtros
+      <section className="all-projects-filter-panel">
+        <div className="all-projects-filter-top">
+          <div className="all-projects-panel-heading compact">
+            <span>
+              <ProjectIcon name="filter" />
+            </span>
+            <div>
+              <h2>Filtros de trabajo</h2>
+              <p>Refina la vista sin salir del tablero.</p>
+            </div>
+          </div>
+
+          <div className="all-projects-quick-tabs">
+            {["Todos", "En curso", "Por revisar", "Atrasados"].map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                className={activeQuickFilter === filter ? "active" : ""}
+                onClick={() => setActiveQuickFilter(filter)}
+              >
+                {filter}
+                {filter === "Atrasados" && <span className="red-dot" />}
               </button>
-            </div>
+            ))}
+          </div>
 
-            <div className="advanced-filters-grid">
-              <SelectFilter
-                label="Departamento"
-                value={departmentFilter}
-                onChange={setDepartmentFilter}
-                placeholder="Todos los departamentos"
-                options={departments}
-              />
+          <button
+            type="button"
+            className="all-projects-clear-button"
+            onClick={clearFilters}
+          >
+            <ProjectIcon name="refresh" />
+            Limpiar filtros
+          </button>
+        </div>
 
-              <SelectFilter
-                label="Responsable"
-                value={responsibleFilter}
-                onChange={setResponsibleFilter}
-                placeholder="Todos los responsables"
-                options={responsiblePeople}
-              />
+        <div className="all-projects-filter-grid">
+          <SelectFilter
+            label="Departamento"
+            value={departmentFilter}
+            onChange={setDepartmentFilter}
+            placeholder="Todos los departamentos"
+            options={departments}
+          />
 
-              <SelectFilter
-                label="Prioridad"
-                value={priorityFilter}
-                onChange={setPriorityFilter}
-                placeholder="Todas las prioridades"
-                options={["Alta", "Media", "Baja"]}
-              />
+          <SelectFilter
+            label="Responsable"
+            value={responsibleFilter}
+            onChange={setResponsibleFilter}
+            placeholder="Todos los responsables"
+            options={responsiblePeople}
+          />
 
-              <SelectFilter
-                label="Estado"
-                value={statusFilter}
-                onChange={setStatusFilter}
-                placeholder="Todos los estados"
-                options={[
-                  "Por iniciar",
-                  "En planeación",
-                  "En proceso",
-                  "En espera de información",
-                  "Listo para revisión",
-                  "Correcciones solicitadas",
-                  "Aprobado para entrega",
-                  "Pausado",
-                ]}
-              />
+          <SelectFilter
+            label="Prioridad"
+            value={priorityFilter}
+            onChange={setPriorityFilter}
+            placeholder="Todas las prioridades"
+            options={["Alta", "Media", "Baja"]}
+          />
 
-              <button className="visual-primary-button apply-filter-button">
-                Aplicar filtros
-              </button>
-            </div>
-          </section>
+          <SelectFilter
+            label="Estado"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="Todos los estados"
+            options={[
+              "Por iniciar",
+              "En planeación",
+              "En proceso",
+              "En espera de información",
+              "Listo para revisión",
+              "Correcciones solicitadas",
+              "Aprobado para entrega",
+              "Pausado",
+            ]}
+          />
+        </div>
+      </section>
 
-          <section className="visual-card">
-            <div className="list-header">
-              <div className="section-title-row no-border no-margin">
-                <span className="section-title-icon section-title-blue">▦</span>
-                <h3>Lista de proyectos ({filteredProjects.length})</h3>
+      <div className="all-projects-workspace-grid">
+        <main className="all-projects-main-column">
+          <section className="all-projects-panel all-projects-table-panel">
+            <div className="all-projects-panel-header">
+              <div className="all-projects-panel-heading">
+                <span>
+                  <ProjectIcon name="list" />
+                </span>
+                <div>
+                  <h2>Proyectos registrados</h2>
+                  <p>Mostrando {filteredProjects.length} de {projects.length} proyecto(s)</p>
+                </div>
               </div>
 
-              <div className="sort-control">
-                <span>Ordenar por:</span>
-                <select>
-                  <option>Fecha límite más próxima</option>
-                  <option>Más recientes</option>
-                  <option>Mayor avance</option>
-                </select>
+              <div className="all-projects-count-badge">
+                {filteredProjects.length} visibles
               </div>
             </div>
 
-            <div className="visual-table-wrap">
-              <table className="visual-table modern-projects-table">
+            <div className="visual-table-wrap all-projects-table-wrap">
+              <table className="visual-table modern-projects-table all-projects-modern-table">
                 <thead>
                   <tr>
                     <th>Proyecto</th>
@@ -487,108 +537,111 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                 </thead>
 
                 <tbody>
-                  {filteredProjects.map((project) => (
-                    <tr key={project.id}>
-                      <td>
-                        <div className="project-name-cell">
-                          <span className="project-table-icon">▧</span>
+                  {filteredProjects.map((project) => {
+                    const progress = calculateAutomaticProgress(project);
 
-                          <div>
-                            <strong>{project.title}</strong>
-                            <small>{project.id.slice(0, 8).toUpperCase()}</small>
+                    return (
+                      <tr key={project.id}>
+                        <td>
+                          <div className="project-name-cell all-project-name-cell">
+                            <span className="project-table-icon all-project-table-icon">
+                              <ProjectIcon name="project" />
+                            </span>
+
+                            <div>
+                              <strong>{project.title}</strong>
+                              <small>{project.id.slice(0, 8).toUpperCase()}</small>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td>{getProjectDepartmentName(project)}</td>
+                        <td>{getProjectDepartmentName(project)}</td>
 
-                      <td>
-                        <div className="collaborator-cell">
-                          <span className="avatar-mini">
-                            {(project.assignedToName || "?")
-                              .split(" ")
-                              .map((word) => word[0])
-                              .join("")
-                              .slice(0, 2)}
-                          </span>
+                        <td>
+                          <div className="collaborator-cell">
+                            <span className="avatar-mini all-projects-responsible-avatar">
+                              {(project.assignedToName || "?")
+                                .split(" ")
+                                .map((word) => word[0])
+                                .join("")
+                                .slice(0, 2)}
+                            </span>
 
-                          {project.assignedToName || "Sin responsable"}
-                        </div>
-                      </td>
-
-                      <td>
-                        <Badge color={isOverdue(project) ? "red" : "blue"}>
-                          {isOverdue(project)
-                            ? "Atrasado"
-                            : project.status || "Sin estado"}
-                        </Badge>
-                      </td>
-
-                      <td>
-                        <Badge
-                          color={
-                            project.priority === "Alta"
-                              ? "orange"
-                              : project.priority === "Media"
-                              ? "gold"
-                              : "green"
-                          }
-                        >
-                          {project.priority || "Sin prioridad"}
-                        </Badge>
-                      </td>
-
-                      <td>
-                        <strong>{formatPlainDate(project.deadline)}</strong>
-                        <small
-                          className={isOverdue(project) ? "danger-text" : ""}
-                        >
-                          {renderDeadlineLabel(project)}
-                        </small>
-                      </td>
-
-                      <td>
-                        <div className="table-progress">
-                          <strong>{calculateAutomaticProgress(project)}%</strong>
-
-                          <div className="area-progress-track">
-                            <div
-                              className="area-progress-fill"
-                              style={{
-                                width: `${calculateAutomaticProgress(project)}%`,
-                              }}
-                            />
+                            {project.assignedToName || "Sin responsable"}
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td>
-                        <div className="table-actions">
-                          <button onClick={() => onOpenProject(project.id)}>
-                            Ver
-                          </button>
+                        <td>
+                          <Badge color={isOverdue(project) ? "red" : "blue"}>
+                            {isOverdue(project)
+                              ? "Atrasado"
+                              : project.status || "Sin estado"}
+                          </Badge>
+                        </td>
 
-                          {onEditProject && (
-                            <button onClick={() => onEditProject(project.id)}>
-                              Editar
+                        <td>
+                          <Badge
+                            color={
+                              project.priority === "Alta"
+                                ? "orange"
+                                : project.priority === "Media"
+                                ? "gold"
+                                : "green"
+                            }
+                          >
+                            {project.priority || "Sin prioridad"}
+                          </Badge>
+                        </td>
+
+                        <td>
+                          <strong>{formatPlainDate(project.deadline)}</strong>
+                          <small className={isOverdue(project) ? "danger-text" : ""}>
+                            {renderDeadlineLabel(project)}
+                          </small>
+                        </td>
+
+                        <td>
+                          <div className="table-progress all-projects-progress-cell">
+                            <strong>{progress}%</strong>
+
+                            <div className="area-progress-track">
+                              <div
+                                className="area-progress-fill"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+
+                        <td>
+                          <div className="table-actions all-projects-table-actions">
+                            <button type="button" onClick={() => onOpenProject(project.id)}>
+                              Ver
                             </button>
-                          )}
 
-                          {isAdmin && (
-                            <button
-                              className="danger-table-button"
-                              disabled={deletingProjectId === project.id}
-                              onClick={() => handleDeleteProject(project)}
-                            >
-                              {deletingProjectId === project.id
-                                ? "Eliminando..."
-                                : "Eliminar"}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {onEditProject && (
+                              <button type="button" onClick={() => onEditProject(project.id)}>
+                                Editar
+                              </button>
+                            )}
+
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className="danger-table-button"
+                                disabled={deletingProjectId === project.id}
+                                onClick={() => handleDeleteProject(project)}
+                              >
+                                {deletingProjectId === project.id
+                                  ? "Eliminando..."
+                                  : "Eliminar"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 
@@ -599,30 +652,27 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
           </section>
         </main>
 
-        <aside className="all-projects-side">
-          <section className="visual-card">
+        <aside className="all-projects-side-column">
+          <section className="all-projects-panel all-projects-side-panel">
             <SectionHeader
+              icon="department"
               title="Resumen por departamento"
-              action={
-                showFullDepartmentSummary ? "Ver menos" : "Ver detalle"
-              }
+              action={showFullDepartmentSummary ? "Ver menos" : "Ver detalle"}
               onAction={() =>
                 setShowFullDepartmentSummary((current) => !current)
               }
             />
 
-            <div className="area-summary-list">
+            <div className="all-projects-department-list">
               {visibleDepartmentSummary.length === 0 ? (
                 <EmptyState text="No hay departamentos para mostrar." />
               ) : (
                 visibleDepartmentSummary.map((item) => (
-                  <div
-                    className="area-summary-item"
-                    key={item.department}
-                  >
-                    <span>{item.department}</span>
-
-                    <Badge color="blue">{item.total}</Badge>
+                  <div className="all-projects-department-row" key={item.department}>
+                    <div>
+                      <strong>{item.department}</strong>
+                      <small>{item.total} proyecto(s)</small>
+                    </div>
 
                     <div className="area-progress-track">
                       <div
@@ -631,15 +681,16 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                       />
                     </div>
 
-                    <strong>{item.average}%</strong>
+                    <span>{item.average}%</span>
                   </div>
                 ))
               )}
             </div>
           </section>
 
-          <section className="visual-card">
+          <section className="all-projects-panel all-projects-side-panel">
             <SectionHeader
+              icon="clock"
               title="Proyectos recientes"
               action={showFullRecentProjects ? "Ver menos" : "Ver todos"}
               onAction={() =>
@@ -647,23 +698,25 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
               }
             />
 
-            <div className="recent-project-list">
+            <div className="all-projects-recent-list">
               {visibleRecentProjects.length === 0 ? (
                 <EmptyState text="No hay proyectos recientes." />
               ) : (
                 visibleRecentProjects.map((project) => (
                   <button
                     type="button"
-                    className="recent-project-item recent-project-button"
+                    className="all-projects-recent-card"
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                   >
-                    <span className="recent-icon">▧</span>
+                    <span>
+                      <ProjectIcon name="project" />
+                    </span>
 
                     <div>
                       <strong>{project.title}</strong>
 
-                      <div className="recent-project-meta">
+                      <div>
                         <Badge color="blue">
                           {project.status || "Sin estado"}
                         </Badge>
@@ -679,74 +732,22 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
             </div>
           </section>
 
-          <section className="visual-card">
-            <SectionHeader
-              title="Alertas importantes"
-              action={showFullAlerts ? "Ver menos" : "Ver todas"}
-              onAction={() => setShowFullAlerts((current) => !current)}
-            />
-
-            <div className="alerts-side-list">
-              {visibleAlertItems.map((alert) => (
-                <div
-                  className={`side-alert ${
-                    alert.type === "red"
-                      ? "red-side-alert"
-                      : alert.type === "orange"
-                      ? "orange-side-alert"
-                      : alert.type === "gold"
-                      ? "gold-side-alert"
-                      : "purple-side-alert"
-                  }`}
-                  key={alert.title}
-                >
-                  <strong>{alert.title}</strong>
-                  <p>{alert.detail}</p>
-
-                  {alert.projects.length > 0 && (
-                    <div className="alert-project-links">
-                      {alert.projects.slice(0, 3).map((project) => (
-                        <button
-                          type="button"
-                          key={project.id}
-                          onClick={() => onOpenProject(project.id)}
-                        >
-                          {project.title}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
         </aside>
       </div>
     </div>
   );
 }
 
-function PageHeader({ title, subtitle, children }) {
+function ProjectMetric({ icon, value, title, detail, color }) {
   return (
-    <div className="visual-page-header">
-      <div>
-        <h2>{title}</h2>
-        <p>{subtitle}</p>
+    <div className={`all-projects-metric-card ${color}`}>
+      <div className="all-projects-metric-icon">
+        <ProjectIcon name={icon} />
       </div>
-
-      <div className="visual-page-actions">{children}</div>
-    </div>
-  );
-}
-
-function SimpleMetric({ icon, value, title, detail, color }) {
-  return (
-    <div className={`simple-metric simple-${color}`}>
-      <div className="simple-metric-icon">{icon}</div>
 
       <div>
         <strong>{value}</strong>
-        <h4>{title}</h4>
+        <span>{title}</span>
         <p>{detail}</p>
       </div>
     </div>
@@ -755,7 +756,7 @@ function SimpleMetric({ icon, value, title, detail, color }) {
 
 function SelectFilter({ label, value, onChange, placeholder, options }) {
   return (
-    <label className="select-filter">
+    <label className="select-filter all-projects-select-filter">
       <span>{label}</span>
 
       <select value={value} onChange={(event) => onChange(event.target.value)}>
@@ -771,10 +772,13 @@ function SelectFilter({ label, value, onChange, placeholder, options }) {
   );
 }
 
-function SectionHeader({ title, action, onAction }) {
+function SectionHeader({ icon, title, action, onAction }) {
   return (
-    <div className="mini-section-header">
+    <div className="all-projects-side-header">
       <div>
+        <span>
+          <ProjectIcon name={icon} />
+        </span>
         <h3>{title}</h3>
       </div>
 
@@ -789,8 +793,10 @@ function SectionHeader({ title, action, onAction }) {
 
 function EmptyState({ text }) {
   return (
-    <div className="empty-state">
-      <div>▯</div>
+    <div className="empty-state all-projects-empty-state">
+      <div>
+        <ProjectIcon name="empty" />
+      </div>
       <p>{text}</p>
     </div>
   );
@@ -798,6 +804,102 @@ function EmptyState({ text }) {
 
 function Badge({ color, children }) {
   return <span className={`visual-badge badge-${color}`}>{children}</span>;
+}
+
+function ProjectIcon({ name }) {
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    xmlns: "http://www.w3.org/2000/svg",
+    className: "all-projects-svg-icon",
+    "aria-hidden": "true",
+  };
+
+  const icons = {
+    projects: (
+      <svg {...commonProps}>
+        <path d="M4 6.7C4 5.2 5.2 4 6.7 4h10.6C18.8 4 20 5.2 20 6.7v10.6c0 1.5-1.2 2.7-2.7 2.7H6.7C5.2 20 4 18.8 4 17.3V6.7Z" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+    search: (
+      <svg {...commonProps}>
+        <path d="M10.8 17.2a6.4 6.4 0 1 0 0-12.8 6.4 6.4 0 0 0 0 12.8Z" stroke="currentColor" strokeWidth="1.9" />
+        <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      </svg>
+    ),
+    folder: (
+      <svg {...commonProps}>
+        <path d="M3.8 7.5c0-1.3 1-2.3 2.3-2.3h4l2 2.2h5.8c1.3 0 2.3 1 2.3 2.3v7.2c0 1.3-1 2.3-2.3 2.3H6.1c-1.3 0-2.3-1-2.3-2.3V7.5Z" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M7.5 12h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+    check: (
+      <svg {...commonProps}>
+        <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    alert: (
+      <svg {...commonProps}>
+        <path d="M12 3.8 21 19H3L12 3.8Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M12 9v4.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path d="M12 16.5h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+    ),
+    flag: (
+      <svg {...commonProps}>
+        <path d="M6 20V4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+        <path d="M7 5h9.5l-1.4 3 1.4 3H7V5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      </svg>
+    ),
+    review: (
+      <svg {...commonProps}>
+        <path d="M6.5 4.5h11A1.5 1.5 0 0 1 19 6v12a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 18V6a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" strokeWidth="1.8" />
+        <path d="m8.5 12.4 2 2 5-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    filter: (
+      <svg {...commonProps}>
+        <path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      </svg>
+    ),
+    refresh: (
+      <svg {...commonProps}>
+        <path d="M19 8a7 7 0 1 0 1 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M19 4v4h-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    list: (
+      <svg {...commonProps}>
+        <path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      </svg>
+    ),
+    project: (
+      <svg {...commonProps}>
+        <path d="M5 5.8C5 4.8 5.8 4 6.8 4h7.4L19 8.8v9.4c0 1-.8 1.8-1.8 1.8H6.8c-1 0-1.8-.8-1.8-1.8V5.8Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M14 4v5h5M8.5 13h7M8.5 16h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    department: (
+      <svg {...commonProps}>
+        <path d="M4.5 10.5h6v9h-6v-9ZM13.5 4.5h6v15h-6v-15Z" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M6.5 13h2M15.5 7h2M15.5 10h2M15.5 13h2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    ),
+    clock: (
+      <svg {...commonProps}>
+        <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M12 7.5V12l3 2" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    empty: (
+      <svg {...commonProps}>
+        <path d="M12 4 13.7 9.4 19 11l-5.3 1.6L12 18l-1.7-5.4L5 11l5.3-1.6L12 4Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      </svg>
+    ),
+  };
+
+  return icons[name] || icons.project;
 }
 
 function getProjectDepartmentName(project) {

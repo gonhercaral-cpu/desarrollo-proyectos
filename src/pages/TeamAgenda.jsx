@@ -92,6 +92,21 @@ function getDefaultPermanentChangeDays() {
   }, {});
 }
 
+
+function TeamAgendaModuleIcon() {
+  return (
+    <svg className="module-topbar-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="16" rx="3" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="M3 10h18" />
+      <path d="M8 14h3" />
+      <path d="M13 14h3" />
+      <path d="M8 18h3" />
+    </svg>
+  );
+}
+
 export default function TeamAgenda() {
   const { profile, isAdmin } = useAuth();
   const currentWeek = useMemo(() => getCurrentWeek(), []);
@@ -1104,17 +1119,22 @@ export default function TeamAgenda() {
 
   return (
     <div className="team-agenda-page team-agenda-modern">
-      <section className="team-agenda-modern-hero">
-        <div className="agenda-modern-copy">
-          <span className="team-agenda-eyebrow">Horarios y disponibilidad</span>
-          <h2>Agenda del equipo</h2>
-          <p>
-            Consulta la semana laboral, revisa disponibilidad y da seguimiento a
-            solicitudes de permisos, ausencias y cambios de horario.
-          </p>
+      <section className="module-topbar module-topbar-agenda">
+        <div className="module-topbar-main">
+          <span className="module-topbar-module-icon">
+            <TeamAgendaModuleIcon />
+          </span>
+
+          <div className="module-topbar-copy">
+            <p className="section-kicker module-topbar-kicker">Horarios y disponibilidad</p>
+            <h1>Agenda del equipo</h1>
+            <p>
+              Consulta la semana laboral, revisa disponibilidad y da seguimiento a solicitudes de permisos, ausencias y cambios de horario.
+            </p>
+          </div>
         </div>
 
-        <div className="agenda-modern-week-card">
+        <div className="module-topbar-side-card agenda-modern-week-card">
           <span className="agenda-modern-week-icon">📅</span>
           <div>
             <span>Semana actual</span>

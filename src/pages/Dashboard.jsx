@@ -1434,20 +1434,27 @@ function WorkspaceDashboard({
 
   return (
     <div className="workspace-dashboard-page workspace-dashboard-redesign">
-      <div className="visual-page-header workspace-dashboard-header workspace-board-header workspace-redesign-header">
-        <div>
-          <h1>Tablero general</h1>
-          <p>
-            Publica avisos importantes, consulta tus notas personales y mantente al día con lo esencial.
-          </p>
-          {unreadAnnouncements > 0 && (
-            <div className="announcement-pending-strip compact-pending-strip">
-              <span>📣</span>
-              <strong>{unreadAnnouncements} anuncio(s) pendiente(s) de confirmar</strong>
-            </div>
-          )}
+      <section className="module-topbar module-topbar-dashboard workspace-module-topbar">
+        <div className="module-topbar-main">
+          <span className="module-topbar-module-icon">
+            <DashboardNavIcon name="dashboard" />
+          </span>
+
+          <div className="module-topbar-copy">
+            <p className="section-kicker module-topbar-kicker">General</p>
+            <h1>Tablero general</h1>
+            <p>
+              Publica avisos importantes, consulta tus notas personales y mantente al día con lo esencial.
+            </p>
+            {unreadAnnouncements > 0 && (
+              <div className="announcement-pending-strip compact-pending-strip module-topbar-alert">
+                <span>📣</span>
+                <strong>{unreadAnnouncements} anuncio(s) pendiente(s) de confirmar</strong>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
       <section className="workspace-clean-metrics">
         <button
@@ -3438,23 +3445,29 @@ function InternalMessages({ profile, isAdmin = false }) {
 
   return (
     <div className="internal-messages-page chat-messages-page department-chat-page">
-      <div className="visual-page-header messages-hero chat-hero">
-        <div>
-          <span className="visual-page-kicker">Comunicación interna</span>
-          <div className="messages-title-row">
-            <h1>Mensajes</h1>
-            {totalUnreadCount > 0 && (
-              <span className="messages-title-unread-badge">
-                {totalUnreadCount} sin leer
-              </span>
-            )}
+      <section className="module-topbar module-topbar-messages messages-module-topbar">
+        <div className="module-topbar-main">
+          <span className="module-topbar-module-icon">
+            <DashboardNavIcon name="messages" />
+          </span>
+
+          <div className="module-topbar-copy">
+            <p className="section-kicker module-topbar-kicker">Comunicación interna</p>
+            <div className="messages-title-row module-topbar-title-row">
+              <h1>Mensajes</h1>
+              {totalUnreadCount > 0 && (
+                <span className="messages-title-unread-badge">
+                  {totalUnreadCount} sin leer
+                </span>
+              )}
+            </div>
+            <p>
+              Conversa con colaboradores y departamentos en un espacio claro, ordenado y con historial.
+            </p>
           </div>
-          <p>
-            Conversa con colaboradores y departamentos en un espacio claro, ordenado y con historial.
-          </p>
         </div>
 
-        <div className="messages-summary-grid chat-summary-grid department-chat-summary-grid">
+        <div className="messages-summary-grid chat-summary-grid department-chat-summary-grid module-header-summary-grid module-topbar-summary-grid">
           <div className="messages-summary-card unread">
             <span>✉️</span>
             <strong>{totalUnreadCount}</strong>
@@ -3476,7 +3489,7 @@ function InternalMessages({ profile, isAdmin = false }) {
             <small>Mensajes</small>
           </div>
         </div>
-      </div>
+      </section>
 
       {messageError && <div className="workspace-error-box">{messageError}</div>}
       {messageStatus && <div className="workspace-success-box">{messageStatus}</div>}
