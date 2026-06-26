@@ -26,6 +26,7 @@ import PurchaseRequests from "./PurchaseRequests";
 import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
 import BugReports from "./BugReports";
+import SubscriptionManager from "./SubscriptionManager";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -100,6 +101,17 @@ function renderDashboardNavIconPath(name) {
           <circle cx="17" cy="20" r="1.4" />
         </>
       );
+    case "subscriptions":
+      return (
+        <>
+          <rect x="4" y="5" width="16" height="14" rx="3" />
+          <path d="M8 9h8" />
+          <path d="M8 13h5" />
+          <path d="M16 16h.01" />
+          <path d="M7 3v4" />
+          <path d="M17 3v4" />
+        </>
+      );
     case "ideas":
       return (
         <>
@@ -159,10 +171,10 @@ function renderDashboardNavIconPath(name) {
     case "departments":
       return (
         <>
-          <rect x="4" y="4" width="7" height="7" rx="2" />
-          <rect x="13" y="4" width="7" height="7" rx="2" />
-          <rect x="4" y="13" width="7" height="7" rx="2" />
-          <rect x="13" y="13" width="7" height="7" rx="2" />
+          <path d="M4 20h16" />
+          <path d="M6 20V8l6-4 6 4v12" />
+          <path d="M9 20v-6h6v6" />
+          <path d="M9 10h.01M12 10h.01M15 10h.01" />
         </>
       );
     case "history":
@@ -238,6 +250,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "collaborators-admin", label: "Colaboradores", mobileLabel: "Equipo", icon: "collaborators", section: "Administración" });
     items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
     items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Administración" });
+    items.push({ page: "subscription-manager", label: "Gestor de suscripciones", mobileLabel: "Suscripciones", icon: "subscriptions", section: "Administración" });
     items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Administración" });
   }
 
@@ -284,6 +297,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "create-project",
     "collaborators-admin",
     "departments-admin",
+    "subscription-manager",
   ]);
 
   if (!page) return defaultPage;
@@ -430,6 +444,8 @@ export default function Dashboard() {
       setReturnPage("print-shop");
     } else if (page === "purchase-requests") {
       setReturnPage("purchase-requests");
+    } else if (page === "subscription-manager") {
+      setReturnPage("subscription-manager");
     } else if (page === "team-agenda") {
       setReturnPage("team-agenda");
     } else if (page === "ideas-incubator") {
@@ -539,6 +555,10 @@ export default function Dashboard() {
 
     if (page === "purchase-requests") {
       return <PurchaseRequests />;
+    }
+
+    if (page === "subscription-manager" && isAdmin) {
+      return <SubscriptionManager />;
     }
 
     if (page === "team-agenda") {
@@ -672,6 +692,10 @@ export default function Dashboard() {
 
     if (navPage === "purchase-requests") {
       return page === "purchase-requests";
+    }
+
+    if (navPage === "subscription-manager") {
+      return page === "subscription-manager";
     }
 
     if (navPage === "team-agenda") {

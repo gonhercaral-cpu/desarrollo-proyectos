@@ -1247,6 +1247,35 @@ service cloud.firestore {
         && request.resource.data.positions is map;
     }
 
+    function validCredentialTemplateData() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && (
+          !("orientation" in request.resource.data)
+          || (
+            request.resource.data.orientation is string
+            && request.resource.data.orientation in [
+              "horizontal",
+              "vertical"
+            ]
+          )
+        )
+        && request.resource.data.active is bool
+        && request.resource.data.notes is string
+        && request.resource.data.frontImageUrl is string
+        && request.resource.data.frontImageUrl.size() > 0
+        && request.resource.data.frontImageDataUrl is string
+        && request.resource.data.frontImageDataUrl.size() > 0
+        && request.resource.data.frontStoragePath is string
+        && request.resource.data.frontStoragePath.size() > 0
+        && request.resource.data.backImageUrl is string
+        && request.resource.data.backImageDataUrl is string
+        && request.resource.data.backStoragePath is string
+        && request.resource.data.positions is map
+        && (!("customTexts" in request.resource.data) || request.resource.data.customTexts is list)
+        && (!("customImages" in request.resource.data) || request.resource.data.customImages is list);
+    }
+
     function validPrintRequestStatus(status) {
       return status in [
         "Solicitud recibida",
@@ -1535,6 +1564,56 @@ service cloud.firestore {
         && request.resource.data.institution is string
         && request.resource.data.requestId is string
         && printRequestExists(request.resource.data.requestId);
+    }
+
+    function validGeneratedCredentialData() {
+      return request.resource.data.folio is string
+        && request.resource.data.folio.size() > 0
+        && request.resource.data.validationCode is string
+        && request.resource.data.validationCode.size() > 0
+        && request.resource.data.validationUrl is string
+        && request.resource.data.qrDataUrl is string
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.position is string
+        && request.resource.data.employeeId is string
+        && request.resource.data.templateId is string
+        && request.resource.data.templateId.size() > 0
+        && exists(/databases/$(database)/documents/credentialTemplates/$(request.resource.data.templateId))
+        && request.resource.data.templateName is string
+        && request.resource.data.issueDate is string
+        && request.resource.data.expiryDate is string
+        && request.resource.data.status is string
+        && validGeneratedCertificateStatus(request.resource.data.status)
+        && request.resource.data.notes is string
+        && request.resource.data.generatedByUid is string
+        && request.resource.data.generatedByName is string
+        && request.resource.data.generatedByEmail is string
+        && request.resource.data.updatedByUid is string
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
+    }
+
+    function validPublicCredentialValidationData() {
+      return request.resource.data.validationCode is string
+        && request.resource.data.validationCode.size() > 0
+        && request.resource.data.folio is string
+        && request.resource.data.folio.size() > 0
+        && request.resource.data.validationUrl is string
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0
+        && request.resource.data.department is string
+        && request.resource.data.department.size() > 0
+        && request.resource.data.position is string
+        && request.resource.data.employeeId is string
+        && request.resource.data.templateName is string
+        && request.resource.data.issueDate is string
+        && request.resource.data.expiryDate is string
+        && request.resource.data.status is string
+        && validGeneratedCertificateStatus(request.resource.data.status)
+        && request.resource.data.institution is string;
     }
 
 
@@ -2436,6 +2515,21 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /credentialTemplates/{templateId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if isAdmin()
+        && validCredentialTemplateData();
+
+      allow update: if (
+          isAdmin()
+          && validCredentialTemplateData()
+        )
+        || validPrintshopSoftDeleteUpdate();
+
+      allow delete: if false;
+    }
+
     match /generatedCertificates/{certificateId} {
       allow read: if canAccessPrintshop();
 
@@ -2445,6 +2539,21 @@ service cloud.firestore {
       allow update: if (
           canManageGeneratedCertificateRequest(resource.data.requestId)
           && validGeneratedCertificateData()
+        )
+        || validPrintshopSoftDeleteUpdate();
+
+      allow delete: if false;
+    }
+
+    match /generatedCredentials/{credentialId} {
+      allow read: if canAccessPrintshop();
+
+      allow create: if canAccessPrintshop()
+        && validGeneratedCredentialData();
+
+      allow update: if (
+          canAccessPrintshop()
+          && validGeneratedCredentialData()
         )
         || validPrintshopSoftDeleteUpdate();
 
@@ -2465,6 +2574,15 @@ service cloud.firestore {
 
       allow create, update: if canManageGeneratedCertificateRequest(request.resource.data.requestId)
         && validPublicCertificateValidationData();
+
+      allow delete: if false;
+    }
+
+    match /publicCredentialValidations/{validationId} {
+      allow read: if true;
+
+      allow create, update: if canAccessPrintshop()
+        && validPublicCredentialValidationData();
 
       allow delete: if false;
     }
@@ -2947,6 +3065,10 @@ service cloud.firestore {
       allow create: if validInternalNoteCreate();
 
       allow update, delete: if false;
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /{document=**} {

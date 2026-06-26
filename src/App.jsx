@@ -4,6 +4,7 @@ import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import CertificateValidation from "./pages/CertificateValidation";
+import CredentialValidation from "./pages/CredentialValidation";
 import PublicCertificateRequest from "./pages/PublicCertificateRequest";
 import PublicCertificateStatus from "./pages/PublicCertificateStatus";
 
@@ -14,6 +15,13 @@ function CertificateValidationRoute() {
   const validationCode = decodeURIComponent((params["*"] || "").replace(/\/+$/, ""));
 
   return <CertificateValidation validationCode={validationCode} />;
+}
+
+function CredentialValidationRoute() {
+  const params = useParams();
+  const validationCode = decodeURIComponent((params["*"] || "").replace(/\/+$/, ""));
+
+  return <CredentialValidation validationCode={validationCode} />;
 }
 
 function ProtectedSystem() {
@@ -71,6 +79,11 @@ export default function App() {
         <Route
           path="/validar-certificado/*"
           element={<CertificateValidationRoute />}
+        />
+
+        <Route
+          path="/validar-credencial/*"
+          element={<CredentialValidationRoute />}
         />
 
         <Route path="/*" element={<ProtectedSystem />} />

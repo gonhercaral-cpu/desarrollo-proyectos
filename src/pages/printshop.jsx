@@ -318,6 +318,18 @@ const certificateTemplateEditorElements = [
   { key: "folio", label: "Folio / validación", kind: "text" },
 ];
 
+const credentialTemplateEditorElements = [
+  { key: "fullName", label: "Nombre", kind: "text", side: "front" },
+  { key: "department", label: "Departamento", kind: "text", side: "front" },
+  { key: "position", label: "Puesto", kind: "text", side: "front" },
+  { key: "employeeId", label: "ID colaborador", kind: "text", side: "front" },
+  { key: "credentialId", label: "Folio", kind: "text", side: "front" },
+  { key: "issueDate", label: "Emision", kind: "text", side: "back" },
+  { key: "expiryDate", label: "Vigencia", kind: "text", side: "back" },
+  { key: "qr", label: "QR de validacion", kind: "qr", side: "back" },
+  { key: "validationCode", label: "Codigo de validacion", kind: "text", side: "back" },
+];
+
 const templateFormInitialState = {
   name: "",
   level: "A1",
@@ -335,6 +347,35 @@ const templateFormInitialState = {
   storagePath: "",
   positions: getDefaultCertificateTemplatePositions(),
   positionsVersion: 2,
+};
+
+const credentialTemplateFormInitialState = {
+  name: "",
+  orientation: "horizontal",
+  active: true,
+  notes: "",
+  frontImageUrl: "",
+  frontImageDataUrl: "",
+  frontStoragePath: "",
+  backImageUrl: "",
+  backImageDataUrl: "",
+  backStoragePath: "",
+  positions: getDefaultCredentialTemplatePositions(),
+  positionsVersion: 1,
+  customTexts: [],
+  customImages: [],
+};
+
+const credentialFormInitialState = {
+  templateId: "",
+  collaboratorId: "",
+  fullName: "",
+  department: "",
+  position: "",
+  employeeId: "",
+  issueDate: "",
+  expiryDate: "",
+  notes: "",
 };
 
 const signerFormInitialState = {
@@ -398,6 +439,25 @@ const requestFormInitialState = {
   teacherSignatureUrl: "",
   teacherSignatureDataUrl: "",
 };
+
+function createStandaloneCertificateForm() {
+  return {
+    mode: "request",
+    requestId: "",
+    studentName: "",
+    requestType: "Certificado",
+    templateId: "",
+    level: "A1",
+    group: "",
+    campus: "Plaza Estrella",
+    principalSignerId: "",
+    teacherSignerId: "",
+    teacherName: "",
+    schedule: "",
+    certificateIssueDate: new Date().toISOString().slice(0, 10),
+    notes: "",
+  };
+}
 
 const productionBatchStatuses = [
   "Planeado",
@@ -954,6 +1014,40 @@ function normalizeCertificateTemplatePositions(positions) {
   }, {});
 }
 
+function getDefaultCredentialTemplatePositions() {
+  return {
+    front: {
+      fullName: { x: 52, y: 48, width: 58, fontSize: 25, active: true },
+      department: { x: 52, y: 61, width: 48, fontSize: 14, active: true },
+      position: { x: 52, y: 69, width: 48, fontSize: 12, active: true },
+      employeeId: { x: 23, y: 84, width: 28, fontSize: 9, active: true },
+      credentialId: { x: 73, y: 84, width: 32, fontSize: 9, active: true },
+    },
+    back: {
+      issueDate: { x: 28, y: 24, width: 30, fontSize: 10, active: true },
+      expiryDate: { x: 28, y: 34, width: 30, fontSize: 10, active: true },
+      qr: { x: 72, y: 48, size: 28, active: true },
+      validationCode: { x: 72, y: 78, width: 42, fontSize: 8, active: true },
+    },
+  };
+}
+
+function normalizeCredentialTemplatePositions(positions) {
+  const defaults = getDefaultCredentialTemplatePositions();
+  const source = positions && typeof positions === "object" ? positions : {};
+
+  return ["front", "back"].reduce((nextPositions, side) => {
+    const sideSource = source[side] && typeof source[side] === "object" ? source[side] : {};
+
+    nextPositions[side] = Object.keys(defaults[side]).reduce((sidePositions, key) => {
+      sidePositions[key] = normalizeTemplatePosition(sideSource[key], defaults[side][key]);
+      return sidePositions;
+    }, {});
+
+    return nextPositions;
+  }, {});
+}
+
 function getTemplateElementStyle(position, extra = {}) {
   const normalized = normalizeTemplatePosition(position, {});
   const width = extra.size ? normalized.size : normalized.width;
@@ -1183,6 +1277,52 @@ function normalizeTemplateCustomImages(customImages, options = {}) {
   );
 }
 
+function normalizeCredentialSide(value) {
+  return value === "back" ? "back" : "front";
+}
+
+function createDefaultCredentialCustomText(index = 0, side = "front") {
+  return {
+    ...createDefaultTemplateCustomText(index),
+    side: normalizeCredentialSide(side),
+  };
+}
+
+function normalizeCredentialCustomText(customText, index = 0) {
+  return {
+    ...normalizeTemplateCustomText(customText, index),
+    side: normalizeCredentialSide(customText?.side),
+  };
+}
+
+function normalizeCredentialCustomTexts(customTexts) {
+  if (!Array.isArray(customTexts)) return [];
+
+  return customTexts.map((customText, index) => normalizeCredentialCustomText(customText, index));
+}
+
+function createDefaultCredentialCustomImage(index = 0, side = "front", data = {}) {
+  return {
+    ...createDefaultTemplateCustomImage(index, data),
+    side: normalizeCredentialSide(side),
+  };
+}
+
+function normalizeCredentialCustomImage(customImage, index = 0, options = {}) {
+  return {
+    ...normalizeTemplateCustomImage(customImage, index, options),
+    side: normalizeCredentialSide(customImage?.side),
+  };
+}
+
+function normalizeCredentialCustomImages(customImages, options = {}) {
+  if (!Array.isArray(customImages)) return [];
+
+  return customImages.map((customImage, index) =>
+    normalizeCredentialCustomImage(customImage, index, options)
+  );
+}
+
 function getTemplateCustomImageKey(customImageId) {
   return `customImage:${customImageId}`;
 }
@@ -1273,6 +1413,38 @@ function normalizeCertificateTemplate(template) {
   };
 }
 
+function normalizeCredentialTemplate(template) {
+  return {
+    id: template?.id || "",
+    name: String(template?.name || "").trim(),
+    orientation: template?.orientation === "vertical" ? "vertical" : "horizontal",
+    active: template?.active !== false,
+    notes: String(template?.notes || ""),
+    frontImageUrl: String(template?.frontImageUrl || ""),
+    frontImageDataUrl: String(template?.frontImageDataUrl || ""),
+    frontStoragePath: String(template?.frontStoragePath || ""),
+    backImageUrl: String(template?.backImageUrl || ""),
+    backImageDataUrl: String(template?.backImageDataUrl || ""),
+    backStoragePath: String(template?.backStoragePath || ""),
+    positions: normalizeCredentialTemplatePositions(template?.positions),
+    positionsVersion: Number(template?.positionsVersion || 0),
+    customTexts: normalizeCredentialCustomTexts(template?.customTexts),
+    customImages: normalizeCredentialCustomImages(template?.customImages),
+    createdAt: template?.createdAt || "",
+    updatedAt: template?.updatedAt || "",
+  };
+}
+
+function normalizeCredentialOrientation(value) {
+  return value === "vertical" ? "vertical" : "horizontal";
+}
+
+function getCredentialCanvasSize(orientation = "horizontal") {
+  return normalizeCredentialOrientation(orientation) === "vertical"
+    ? { width: 638, height: 1012, pdfOrientation: "portrait" }
+    : { width: 1012, height: 638, pdfOrientation: "landscape" };
+}
+
 function isValidCertificateTemplateFile(file) {
   if (!file) return false;
 
@@ -1281,6 +1453,9 @@ function isValidCertificateTemplateFile(file) {
 
   return allowedTypes.includes(file.type) && file.size <= maxSize;
 }
+
+const isValidCredentialTemplateFile = isValidCertificateTemplateFile;
+
 function isValidTemplateAssetImage(file) {
   if (!file) return false;
 
@@ -1449,6 +1624,69 @@ async function readTemplateFileAsDataUrl(file) {
     return canvas.toDataURL("image/jpeg", 0.92);
   } catch (error) {
     console.error("No se pudo optimizar la plantilla:", error);
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function readCredentialTemplateFileAsDataUrl(file, orientation = "horizontal") {
+  if (!file) return "";
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const canvas = document.createElement("canvas");
+    const canvasSize = getCredentialCanvasSize(orientation);
+    const ratio = Math.min(760 / canvasSize.width, 760 / canvasSize.height, 1);
+    const targetWidth = Math.round(canvasSize.width * ratio);
+    const targetHeight = Math.round(canvasSize.height * ratio);
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, targetWidth, targetHeight);
+
+    const imageRatio = image.naturalWidth / image.naturalHeight;
+    const targetRatio = targetWidth / targetHeight;
+
+    let drawWidth = targetWidth;
+    let drawHeight = targetHeight;
+    let drawX = 0;
+    let drawY = 0;
+
+    if (imageRatio > targetRatio) {
+      drawHeight = targetHeight;
+      drawWidth = targetHeight * imageRatio;
+      drawX = (targetWidth - drawWidth) / 2;
+    } else {
+      drawWidth = targetWidth;
+      drawHeight = targetWidth / imageRatio;
+      drawY = (targetHeight - drawHeight) / 2;
+    }
+
+    context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+    return canvas.toDataURL("image/jpeg", 0.86);
+  } catch (error) {
+    console.error("No se pudo optimizar la plantilla de credencial:", error);
     return await new Promise((resolve, reject) => {
       const reader = new FileReader();
 
@@ -1658,6 +1896,27 @@ function buildValidationUrl(validationCode) {
     : "https://active-english-school.web.app";
 
   return `${origin}/validar-certificado/${encodeURIComponent(validationCode)}`;
+}
+
+function buildCredentialValidationUrl(validationCode) {
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? window.location.origin
+    : "https://active-english-school.web.app";
+
+  return `${origin}/validar-credencial/${encodeURIComponent(validationCode)}`;
+}
+
+function buildCredentialFolio({ department, employeeId } = {}) {
+  const year = new Date().getFullYear();
+  const departmentCode = sanitizeFolioSegment(department || "CRED", "CRED").slice(0, 8);
+  const personCode = sanitizeFolioSegment(employeeId || Date.now(), "ID").slice(-8);
+  const suffix = String(Date.now()).slice(-5);
+
+  return `CRED-${year}-${departmentCode}-${personCode}-${suffix}`;
+}
+
+function buildCredentialValidationCode(folio) {
+  return buildValidationCode(folio);
 }
 
 function getRequestProductLabel(request) {
@@ -2418,6 +2677,22 @@ export default function PrintShop() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateMessage, setTemplateMessage] = useState("");
 
+  const [credentialTemplates, setCredentialTemplates] = useState([]);
+  const [loadingCredentialTemplates, setLoadingCredentialTemplates] = useState(true);
+  const [credentialTemplatesError, setCredentialTemplatesError] = useState("");
+  const [credentialTemplateForm, setCredentialTemplateForm] = useState(credentialTemplateFormInitialState);
+  const [selectedCredentialTemplateId, setSelectedCredentialTemplateId] = useState(null);
+  const [credentialFrontFile, setCredentialFrontFile] = useState(null);
+  const [credentialBackFile, setCredentialBackFile] = useState(null);
+  const [savingCredentialTemplate, setSavingCredentialTemplate] = useState(false);
+  const [credentialTemplateMessage, setCredentialTemplateMessage] = useState("");
+  const [credentialForm, setCredentialForm] = useState(credentialFormInitialState);
+  const [generatedCredentials, setGeneratedCredentials] = useState([]);
+  const [loadingGeneratedCredentials, setLoadingGeneratedCredentials] = useState(true);
+  const [generatedCredentialsError, setGeneratedCredentialsError] = useState("");
+  const [savingCredential, setSavingCredential] = useState(false);
+  const [credentialMessage, setCredentialMessage] = useState("");
+
   const [generatedCertificates, setGeneratedCertificates] = useState([]);
   const [loadingGeneratedCertificates, setLoadingGeneratedCertificates] = useState(true);
   const [generatedCertificatesError, setGeneratedCertificatesError] = useState("");
@@ -2444,11 +2719,6 @@ export default function PrintShop() {
   }, [selectedRequestId]);
 
   useEffect(() => {
-    if (!isAdmin) {
-      setActiveUsers([]);
-      return undefined;
-    }
-
     setLoadingUsers(true);
     setUsersError("");
 
@@ -2475,13 +2745,13 @@ export default function PrintShop() {
       },
       (error) => {
         console.error("No se pudo cargar la lista de usuarios:", error);
-        setUsersError("No se pudo cargar la lista de responsables y auditores.");
+        setUsersError("No se pudo cargar la lista de colaboradores.");
         setLoadingUsers(false);
       }
     );
 
     return () => unsubscribe();
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -2811,6 +3081,74 @@ export default function PrintShop() {
   }, []);
 
   useEffect(() => {
+    setLoadingCredentialTemplates(true);
+    setCredentialTemplatesError("");
+
+    const templatesQuery = query(
+      collection(db, "credentialTemplates"),
+      orderBy("name", "asc")
+    );
+
+    const unsubscribe = onSnapshot(
+      templatesQuery,
+      (snapshot) => {
+        const nextTemplates = snapshot.docs
+          .map((templateDoc) =>
+            normalizeCredentialTemplate({
+              id: templateDoc.id,
+              ...templateDoc.data(),
+            })
+          )
+          .filter((template) => template.deleted !== true);
+
+        setCredentialTemplates(nextTemplates);
+        setLoadingCredentialTemplates(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar las plantillas de credenciales:", error);
+        setCredentialTemplatesError("No se pudieron cargar las plantillas de credenciales. Revisa las reglas de Firestore.");
+        setLoadingCredentialTemplates(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    setLoadingGeneratedCredentials(true);
+    setGeneratedCredentialsError("");
+
+    const credentialsQuery = query(
+      collection(db, "generatedCredentials"),
+      orderBy("generatedAt", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      credentialsQuery,
+      (snapshot) => {
+        const nextCredentials = snapshot.docs
+          .map((credentialDoc) =>
+            normalizeGeneratedCredential({
+              id: credentialDoc.id,
+              ...credentialDoc.data(),
+            })
+          )
+          .filter((credential) => credential.deleted !== true);
+
+        setGeneratedCredentials(nextCredentials);
+        setLoadingGeneratedCredentials(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar las credenciales generadas:", error);
+        setGeneratedCredentialsError("No se pudieron cargar las credenciales generadas. Revisa las reglas de Firestore.");
+        setLoadingGeneratedCredentials(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     setLoadingPrintshopLogs(true);
     setPrintshopLogsError("");
 
@@ -3097,6 +3435,16 @@ export default function PrintShop() {
     });
   }, [printRequests, requestSearch, requestStatusFilter, requestTypeFilter, requestPriorityFilter]);
 
+  const certificateRequests = useMemo(
+    () => printRequests.filter((request) => isRequestCertificateLike(request.requestType)),
+    [printRequests]
+  );
+
+  const filteredCertificateRequests = useMemo(
+    () => filteredRequests.filter((request) => isRequestCertificateLike(request.requestType)),
+    [filteredRequests]
+  );
+
   const filteredGeneratedCertificates = useMemo(() => {
     const normalizedSearch = generatedCertificateSearch.trim().toLowerCase();
 
@@ -3191,9 +3539,19 @@ export default function PrintShop() {
     [certificateTemplates]
   );
 
+  const activeCredentialTemplates = useMemo(
+    () => credentialTemplates.filter((template) => template.active !== false),
+    [credentialTemplates]
+  );
+
   const selectedTemplate = useMemo(
     () => certificateTemplates.find((template) => template.id === selectedTemplateId) || null,
     [certificateTemplates, selectedTemplateId]
+  );
+
+  const selectedCredentialTemplate = useMemo(
+    () => credentialTemplates.find((template) => template.id === selectedCredentialTemplateId) || null,
+    [credentialTemplates, selectedCredentialTemplateId]
   );
 
   const selectedSigner = useMemo(
@@ -3282,6 +3640,7 @@ export default function PrintShop() {
       if (collectionName === "printProductionBatches" && selectedBatchId === record.id) resetBatchForm();
       if (collectionName === "printRequests" && selectedRequestId === record.id) resetRequestForm();
       if (collectionName === "certificateTemplates" && selectedTemplateId === record.id) resetTemplateForm();
+      if (collectionName === "credentialTemplates" && selectedCredentialTemplateId === record.id) resetCredentialTemplateForm();
       if (collectionName === "certificateSigners" && selectedSignerId === record.id) resetSignerForm();
 
       await createPrintshopLog({
@@ -3293,10 +3652,10 @@ export default function PrintShop() {
         referenceId: record.id,
         requestId: collectionName === "printRequests" ? record.id : record.requestId || "",
         requestFolio: record.requestFolio || record.folio || "",
-        certificateId: collectionName === "generatedCertificates" ? record.id : "",
+        certificateId: collectionName === "generatedCertificates" || collectionName === "generatedCredentials" ? record.id : "",
         certificateFolio: record.certificateFolio || record.folio || "",
         validationCode: record.validationCode || "",
-        studentName: record.studentName || "",
+        studentName: record.studentName || record.fullName || "",
         batchId: collectionName === "printProductionBatches" ? record.id : record.batchId || "",
         batchFolio: record.batchFolio || record.folio || "",
         productId: record.productId || (collectionName === "printProducts" ? record.id : ""),
@@ -4088,6 +4447,551 @@ export default function PrintShop() {
     }
   }
 
+  function handleCredentialTemplateInputChange(event) {
+    const { name, value, type, checked } = event.target;
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
+
+  function handleCredentialInputChange(event) {
+    const { name, value } = event.target;
+    setCredentialMessage("");
+    setCredentialForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  function handleCredentialTemplatePositionChange(side, elementKey, field, value) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => {
+      const normalizedPositions = normalizeCredentialTemplatePositions(current.positions);
+      const currentPosition = normalizedPositions[side]?.[elementKey] || normalizeTemplatePosition(null, {});
+
+      return {
+        ...current,
+        positions: {
+          ...normalizedPositions,
+          [side]: {
+            ...normalizedPositions[side],
+            [elementKey]: {
+              ...currentPosition,
+              [field]: field === "active" ? Boolean(value) : Number(value),
+            },
+          },
+        },
+      };
+    });
+  }
+
+  function handleCredentialEditorLayerMove(side, elementKey, nextPosition) {
+    if (isTemplateCustomTextKey(elementKey)) {
+      const customTextId = getTemplateCustomTextIdFromKey(elementKey);
+      setCredentialTemplateForm((current) => ({
+        ...current,
+        customTexts: normalizeCredentialCustomTexts(current.customTexts).map((customText) =>
+          customText.id === customTextId
+            ? { ...customText, x: nextPosition.x, y: nextPosition.y }
+            : customText
+        ),
+      }));
+      return;
+    }
+
+    if (isTemplateCustomImageKey(elementKey)) {
+      const customImageId = getTemplateCustomImageIdFromKey(elementKey);
+      setCredentialTemplateForm((current) => ({
+        ...current,
+        customImages: normalizeCredentialCustomImages(current.customImages, { keepFile: true }).map((image) =>
+          image.id === customImageId
+            ? { ...image, x: nextPosition.x, y: nextPosition.y }
+            : image
+        ),
+      }));
+      return;
+    }
+
+    setCredentialTemplateForm((current) => {
+      const normalizedPositions = normalizeCredentialTemplatePositions(current.positions);
+      const currentPosition = normalizedPositions[side]?.[elementKey] || normalizeTemplatePosition(null, {});
+
+      return {
+        ...current,
+        positions: {
+          ...normalizedPositions,
+          [side]: {
+            ...normalizedPositions[side],
+            [elementKey]: {
+              ...currentPosition,
+              x: nextPosition.x,
+              y: nextPosition.y,
+            },
+          },
+        },
+      };
+    });
+  }
+
+  function handleCredentialCustomTextChange(customTextId, field, value) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeCredentialCustomTexts(current.customTexts).map((customText) =>
+        customText.id === customTextId
+          ? { ...customText, [field]: field === "active" ? Boolean(value) : ["x", "y", "width", "fontSize"].includes(field) ? Number(value) : value }
+          : customText
+      ),
+    }));
+  }
+
+  function addCredentialCustomText(side) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => {
+      const customTexts = normalizeCredentialCustomTexts(current.customTexts);
+      return {
+        ...current,
+        customTexts: [
+          ...customTexts,
+          createDefaultCredentialCustomText(customTexts.length, side),
+        ],
+      };
+    });
+  }
+
+  function removeCredentialCustomText(customTextId) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeCredentialCustomTexts(current.customTexts).filter(
+        (customText) => customText.id !== customTextId
+      ),
+    }));
+  }
+
+  function handleCredentialCustomTextSegmentChange(customTextId, segmentId, field, value) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeCredentialCustomTexts(current.customTexts).map((customText) =>
+        customText.id === customTextId
+          ? {
+              ...customText,
+              segments: normalizeCertificateBodySegments(customText.segments).map((segment) =>
+                segment.id === segmentId ? { ...segment, [field]: value } : segment
+              ),
+            }
+          : customText
+      ),
+    }));
+  }
+
+  function addCredentialCustomTextSegment(customTextId) {
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeCredentialCustomTexts(current.customTexts).map((customText) =>
+        customText.id === customTextId
+          ? {
+              ...customText,
+              segments: [
+                ...normalizeCertificateBodySegments(customText.segments),
+                {
+                  id: createTemplateBodySegmentId(),
+                  text: "Texto",
+                  bold: false,
+                  italic: false,
+                  underline: false,
+                },
+              ],
+            }
+          : customText
+      ),
+    }));
+  }
+
+  function removeCredentialCustomTextSegment(customTextId, segmentId) {
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customTexts: normalizeCredentialCustomTexts(current.customTexts).map((customText) => {
+        if (customText.id !== customTextId) return customText;
+        const segments = normalizeCertificateBodySegments(customText.segments);
+        if (segments.length <= 1) return customText;
+        return {
+          ...customText,
+          segments: segments.filter((segment) => segment.id !== segmentId),
+        };
+      }),
+    }));
+  }
+
+  async function addCredentialCustomImage(side, file) {
+    setCredentialTemplateMessage("");
+
+    if (!file) return;
+
+    if (!isValidTemplateAssetImage(file)) {
+      setCredentialTemplateMessage("La imagen debe ser PNG, JPG o WEBP y pesar menos de 5 MB.");
+      return;
+    }
+
+    const imageDataUrl = await readTemplateAssetFileAsDataUrl(file);
+
+    setCredentialTemplateForm((current) => {
+      const customImages = normalizeCredentialCustomImages(current.customImages, { keepFile: true });
+      return {
+        ...current,
+        customImages: [
+          ...customImages,
+          createDefaultCredentialCustomImage(customImages.length, side, {
+            imageDataUrl,
+            file,
+          }),
+        ],
+      };
+    });
+  }
+
+  function handleCredentialCustomImageChange(customImageId, field, value) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customImages: normalizeCredentialCustomImages(current.customImages, { keepFile: true }).map((image) =>
+        image.id === customImageId
+          ? { ...image, [field]: field === "active" ? Boolean(value) : ["x", "y", "width", "height", "opacity", "zIndex"].includes(field) ? Number(value) : value }
+          : image
+      ),
+    }));
+  }
+
+  function removeCredentialCustomImage(customImageId) {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      customImages: normalizeCredentialCustomImages(current.customImages, { keepFile: true }).filter(
+        (image) => image.id !== customImageId
+      ),
+    }));
+  }
+
+  function resetCredentialTemplatePositions() {
+    setCredentialTemplateMessage("");
+    setCredentialTemplateForm((current) => ({
+      ...current,
+      positions: getDefaultCredentialTemplatePositions(),
+      positionsVersion: 1,
+    }));
+  }
+
+  function resetCredentialTemplateForm() {
+    setSelectedCredentialTemplateId(null);
+    setCredentialTemplateForm(credentialTemplateFormInitialState);
+    setCredentialFrontFile(null);
+    setCredentialBackFile(null);
+    setCredentialTemplateMessage("");
+  }
+
+  function selectCredentialTemplate(template) {
+    setSelectedCredentialTemplateId(template.id);
+    setCredentialTemplateMessage("");
+    setCredentialFrontFile(null);
+    setCredentialBackFile(null);
+    setCredentialTemplateForm({
+      name: template.name || "",
+      orientation: normalizeCredentialOrientation(template.orientation),
+      active: template.active !== false,
+      notes: template.notes || "",
+      frontImageUrl: template.frontImageUrl || "",
+      frontImageDataUrl: template.frontImageDataUrl || "",
+      frontStoragePath: template.frontStoragePath || "",
+      backImageUrl: template.backImageUrl || "",
+      backImageDataUrl: template.backImageDataUrl || "",
+      backStoragePath: template.backStoragePath || "",
+      positions: normalizeCredentialTemplatePositions(template.positions),
+      positionsVersion: 1,
+      customTexts: normalizeCredentialCustomTexts(template.customTexts),
+      customImages: normalizeCredentialCustomImages(template.customImages, { keepFile: true }),
+    });
+    setCredentialForm((current) => ({
+      ...current,
+      templateId: template.id,
+    }));
+  }
+
+  async function saveCredentialTemplate(event) {
+    event.preventDefault();
+    setCredentialTemplateMessage("");
+
+    if (!isAdmin) {
+      setCredentialTemplateMessage("Solo los administradores pueden administrar plantillas.");
+      return;
+    }
+
+    const auditUser = getAuditUser();
+    const name = credentialTemplateForm.name.trim();
+
+    if (!name) {
+      setCredentialTemplateMessage("Indica el nombre de la plantilla.");
+      return;
+    }
+
+    if (!selectedCredentialTemplateId && !credentialFrontFile) {
+      setCredentialTemplateMessage("Sube al menos la imagen frontal de la credencial.");
+      return;
+    }
+
+    if (credentialFrontFile && !isValidCredentialTemplateFile(credentialFrontFile)) {
+      setCredentialTemplateMessage("El frente debe ser PNG, JPG o WEBP y pesar menos de 12 MB.");
+      return;
+    }
+
+    if (credentialBackFile && !isValidCredentialTemplateFile(credentialBackFile)) {
+      setCredentialTemplateMessage("El reverso debe ser PNG, JPG o WEBP y pesar menos de 12 MB.");
+      return;
+    }
+
+    try {
+      setSavingCredentialTemplate(true);
+
+      let frontImageUrl = credentialTemplateForm.frontImageUrl || "";
+      let frontImageDataUrl = credentialTemplateForm.frontImageDataUrl || "";
+      let frontStoragePath = credentialTemplateForm.frontStoragePath || "";
+      let backImageUrl = credentialTemplateForm.backImageUrl || "";
+      let backImageDataUrl = credentialTemplateForm.backImageDataUrl || "";
+      let backStoragePath = credentialTemplateForm.backStoragePath || "";
+
+      if (credentialFrontFile) {
+        frontImageDataUrl = await readCredentialTemplateFileAsDataUrl(credentialFrontFile, credentialTemplateForm.orientation);
+        const safeName = sanitizeStorageFileName(credentialFrontFile.name);
+        frontStoragePath = `printshop/credential-templates/front/${auditUser.uid}/${Date.now()}-${safeName}`;
+        const fileRef = storageRef(storage, frontStoragePath);
+
+        await uploadBytes(fileRef, credentialFrontFile, {
+          contentType: credentialFrontFile.type,
+        });
+        frontImageUrl = await getDownloadURL(fileRef);
+      }
+
+      if (credentialBackFile) {
+        backImageDataUrl = await readCredentialTemplateFileAsDataUrl(credentialBackFile, credentialTemplateForm.orientation);
+        const safeName = sanitizeStorageFileName(credentialBackFile.name);
+        backStoragePath = `printshop/credential-templates/back/${auditUser.uid}/${Date.now()}-${safeName}`;
+        const fileRef = storageRef(storage, backStoragePath);
+
+        await uploadBytes(fileRef, credentialBackFile, {
+          contentType: credentialBackFile.type,
+        });
+        backImageUrl = await getDownloadURL(fileRef);
+      }
+
+      const customImages = [];
+      const rawCustomImages = normalizeCredentialCustomImages(credentialTemplateForm.customImages, { keepFile: true });
+
+      for (const [index, image] of rawCustomImages.entries()) {
+        let nextImage = normalizeCredentialCustomImage(image, index);
+
+        if (image.file) {
+          const safeName = sanitizeStorageFileName(image.file.name || `${image.label || "imagen"}.png`);
+          const imageStoragePath = `printshop/credential-assets/${auditUser.uid}/${Date.now()}-${index}-${safeName}`;
+          const imageRef = storageRef(storage, imageStoragePath);
+
+          await uploadBytes(imageRef, image.file, {
+            contentType: image.file.type || "image/png",
+          });
+
+          nextImage = {
+            ...nextImage,
+            imageUrl: await getDownloadURL(imageRef),
+            imageDataUrl: image.imageDataUrl || await readTemplateAssetFileAsDataUrl(image.file),
+            storagePath: imageStoragePath,
+          };
+        }
+
+        customImages.push(nextImage);
+      }
+
+      const payload = {
+        name,
+        orientation: normalizeCredentialOrientation(credentialTemplateForm.orientation),
+        active: credentialTemplateForm.active !== false,
+        notes: credentialTemplateForm.notes || "",
+        frontImageUrl,
+        frontImageDataUrl,
+        frontStoragePath,
+        backImageUrl,
+        backImageDataUrl,
+        backStoragePath,
+        positions: normalizeCredentialTemplatePositions(credentialTemplateForm.positions),
+        positionsVersion: 1,
+        customTexts: normalizeCredentialCustomTexts(credentialTemplateForm.customTexts),
+        customImages,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      };
+
+      if (selectedCredentialTemplateId) {
+        await updateDoc(doc(db, "credentialTemplates", selectedCredentialTemplateId), payload);
+        await createPrintshopLog({
+          type: "CREDENTIAL_TEMPLATE_UPDATED",
+          module: "credentials",
+          title: "Plantilla de credencial actualizada",
+          description: `Se actualizo la plantilla ${name}.`,
+          referenceType: "credential-template",
+          referenceId: selectedCredentialTemplateId,
+          productName: name,
+        });
+        setCredentialTemplateMessage("Plantilla actualizada correctamente.");
+      } else {
+        const newTemplateRef = await addDoc(collection(db, "credentialTemplates"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          createdByUid: auditUser.uid,
+          createdByName: auditUser.name,
+          createdByEmail: auditUser.email,
+        });
+        await createPrintshopLog({
+          type: "CREDENTIAL_TEMPLATE_CREATED",
+          module: "credentials",
+          title: "Plantilla de credencial creada",
+          description: `Se creo la plantilla ${name}.`,
+          referenceType: "credential-template",
+          referenceId: newTemplateRef.id,
+          productName: name,
+        });
+        setCredentialTemplateMessage("Plantilla creada correctamente.");
+      }
+
+      resetCredentialTemplateForm();
+    } catch (error) {
+      console.error("No se pudo guardar la plantilla de credencial:", error);
+      setCredentialTemplateMessage("No se pudo guardar la plantilla de credencial. Revisa reglas de Firestore y Storage.");
+    } finally {
+      setSavingCredentialTemplate(false);
+    }
+  }
+
+  async function toggleCredentialTemplateStatus(template) {
+    if (!isAdmin || !template?.id) return;
+
+    const auditUser = getAuditUser();
+
+    try {
+      await updateDoc(doc(db, "credentialTemplates", template.id), {
+        active: template.active === false,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    } catch (error) {
+      console.error("No se pudo cambiar el estado de la plantilla de credencial:", error);
+      setCredentialTemplateMessage("No se pudo cambiar el estado de la plantilla.");
+    }
+  }
+
+  async function generateCredentialRecord(form) {
+    setCredentialMessage("");
+
+    const template = credentialTemplates.find((item) => item.id === form.templateId) || null;
+
+    if (!template) {
+      setCredentialMessage("Selecciona una plantilla activa.");
+      return null;
+    }
+
+    const fullName = String(form.fullName || "").trim();
+    const department = String(form.department || "").trim();
+
+    if (!fullName || !department) {
+      setCredentialMessage("Indica nombre y departamento.");
+      return null;
+    }
+
+    const auditUser = getAuditUser();
+    const folio = buildCredentialFolio({
+      department,
+      employeeId: form.employeeId,
+    });
+    const validationCode = buildCredentialValidationCode(folio);
+    const validationUrl = buildCredentialValidationUrl(validationCode);
+    const qrDataUrl = await QRCode.toDataURL(validationUrl, {
+      margin: 2,
+      width: 220,
+      errorCorrectionLevel: "M",
+    });
+
+    const payload = {
+      folio,
+      validationCode,
+      validationUrl,
+      qrDataUrl,
+      fullName,
+      department,
+      position: String(form.position || ""),
+      employeeId: String(form.employeeId || ""),
+      templateId: template.id,
+      templateName: template.name,
+      issueDate: String(form.issueDate || ""),
+      expiryDate: String(form.expiryDate || ""),
+      status: "Generado",
+      notes: String(form.notes || ""),
+      generatedAt: serverTimestamp(),
+      generatedByUid: auditUser.uid,
+      generatedByName: auditUser.name,
+      generatedByEmail: auditUser.email,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+    const credentialId = sanitizeGeneratedCertificateId(validationCode || folio);
+
+    try {
+      setSavingCredential(true);
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, "generatedCredentials", credentialId), payload, { merge: true });
+      batch.set(
+        doc(db, "publicCredentialValidations", credentialId),
+        buildPublicCredentialValidationPayload(payload, {
+          publishedAt: serverTimestamp(),
+        }),
+        { merge: true }
+      );
+
+      await batch.commit();
+      await createPrintshopLog({
+        type: "CREDENTIAL_GENERATED",
+        module: "credentials",
+        title: "Credencial generada",
+        description: `Se genero la credencial de ${fullName}.`,
+        referenceType: "credential",
+        referenceId: credentialId,
+        validationCode,
+        studentName: fullName,
+        productName: "Credencial",
+        level: department,
+      });
+
+      const generatedCredential = {
+        id: credentialId,
+        ...payload,
+        generatedAt: new Date().toISOString(),
+      };
+      setCredentialMessage(`Credencial ${folio} generada correctamente.`);
+      return generatedCredential;
+    } catch (error) {
+      console.error("No se pudo generar la credencial:", error);
+      setCredentialMessage("No se pudo generar la credencial. Revisa las reglas de Firestore.");
+      return null;
+    } finally {
+      setSavingCredential(false);
+    }
+  }
+
   function handleSignerInputChange(event) {
     const { name, value, type, checked } = event.target;
 
@@ -4816,6 +5720,110 @@ export default function PrintShop() {
     setRequestMessage(`Certificado ${student.certificateFolio} registrado en el historial.`);
   }
 
+  async function registerStandaloneGeneratedCertificate({
+    request,
+    student,
+    certificateTemplate,
+    principalName,
+    teacherName,
+    fileName,
+    pdfUrl = "",
+    pdfStoragePath = "",
+  }) {
+    if (!request?.id || !student?.id) {
+      throw new Error("No se encontro la informacion para registrar el certificado individual.");
+    }
+
+    if (!student.certificateFolio || !student.validationCode) {
+      throw new Error("Primero prepara folio y QR para este certificado.");
+    }
+
+    const auditUser = getAuditUser();
+    const certificateId = sanitizeGeneratedCertificateId(
+      student.validationCode || student.certificateFolio || `${request.id}-${student.id}`
+    );
+    const existingCertificate = generatedCertificates.find(
+      (certificate) => certificate.id === certificateId || certificate.validationCode === student.validationCode
+    );
+    const nextStatus = existingCertificate?.status === "Entregado" ? "Entregado" : "Generado";
+    const programName =
+      certificateTemplate?.programName ||
+      request.certificateTemplateProgramName ||
+      getCertificateTrackLabel(request);
+    const templateName =
+      certificateTemplate?.name || request.certificateTemplateName || "Plantilla no especificada";
+    const issueDate = getCertificateIssueDate(request);
+    const issueYear = getYearFromDateString(issueDate) || String(new Date().getFullYear());
+
+    const certificatePayload = {
+      folio: student.certificateFolio,
+      validationCode: student.validationCode,
+      validationUrl: student.validationUrl || buildValidationUrl(student.validationCode),
+      studentId: student.id,
+      studentName: student.name,
+      studentDeliveryType: student.deliveryType || "Impreso",
+      campus: request.campus || "Sin plantel",
+      group: request.group || "",
+      requestId: "",
+      requestFolio: request.folio || "Individual",
+      requestType: request.requestType || "Certificado",
+      productId: request.productId || "",
+      productName: request.productName || "Certificado individual",
+      responsibleUid: auditUser.uid,
+      responsibleName: auditUser.name,
+      responsibleEmail: auditUser.email,
+      level: request.level || "No aplica",
+      programName,
+      templateId: request.certificateTemplateId || certificateTemplate?.id || "",
+      templateName,
+      issueDate,
+      issueYear,
+      generatedYear: issueYear,
+      principalName: principalName || request.principalSignerName || "",
+      teacherName: teacherName || request.teacherSignerName || request.teacherName || "",
+      status: nextStatus,
+      pdfFileName: fileName || "",
+      pdfUrl: pdfUrl || existingCertificate?.pdfUrl || "",
+      pdfStoragePath: pdfStoragePath || existingCertificate?.pdfStoragePath || "",
+      ...(pdfStoragePath || pdfUrl ? { pdfSavedAt: serverTimestamp() } : {}),
+      generatedAt: serverTimestamp(),
+      generatedByUid: auditUser.uid,
+      generatedByName: auditUser.name,
+      generatedByEmail: auditUser.email,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+
+    const batch = writeBatch(db);
+    batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
+    batch.set(
+      doc(db, "publicCertificateValidations", certificateId),
+      buildPublicCertificateValidationPayload(certificatePayload, {
+        publishedAt: serverTimestamp(),
+      }),
+      { merge: true }
+    );
+
+    await batch.commit();
+    await createPrintshopLog({
+      type: "CERTIFICATE_GENERATED",
+      module: "certificates",
+      title: "Certificado individual generado",
+      description: `Se genero un certificado individual para ${student.name}.`,
+      referenceType: "certificate",
+      referenceId: certificateId,
+      certificateId,
+      certificateFolio: student.certificateFolio,
+      validationCode: student.validationCode,
+      studentName: student.name,
+      productName: request.productName || "Certificado individual",
+      campus: request.campus || "",
+      level: request.level || "",
+    });
+  }
+
   async function updateGeneratedCertificateStatus(certificate, nextStatus) {
     if (!certificate?.id || !generatedCertificateStatuses.includes(nextStatus)) return;
 
@@ -4937,7 +5945,15 @@ export default function PrintShop() {
       selectRequest(request);
     }
 
-    setActiveSection("requests");
+    setActiveSection("certificates");
+  }
+
+  function openCertificateRequest(request) {
+    if (!request) return;
+
+    selectRequest(request);
+    markRequestInProduction(request);
+    setActiveSection("certificates");
   }
 
   function reprintGeneratedCertificate(certificate) {
@@ -4971,7 +5987,7 @@ export default function PrintShop() {
       campus: certificate.campus || "",
       level: certificate.level || "",
     });
-    setActiveSection("requests");
+    setActiveSection("certificates");
   }
 
   async function addSingleRequestStudent(event) {
@@ -6643,10 +7659,12 @@ export default function PrintShop() {
                   : activeSection === "requests"
                     ? requestSearch
                     : activeSection === "certificates"
-                      ? generatedCertificateSearch
-                      : activeSection === "logs"
-                        ? printshopLogSearch
-                        : ""
+                      ? requestSearch
+                      : activeSection === "credentials"
+                        ? credentialForm.fullName
+                        : activeSection === "logs"
+                          ? printshopLogSearch
+                          : ""
             }
             onChange={(event) => {
               if (activeSection === "requests") {
@@ -6654,7 +7672,9 @@ export default function PrintShop() {
               } else if (activeSection === "supplies") {
                 setSupplySearch(event.target.value);
               } else if (activeSection === "certificates") {
-                setGeneratedCertificateSearch(event.target.value);
+                setRequestSearch(event.target.value);
+              } else if (activeSection === "credentials") {
+                setCredentialForm((current) => ({ ...current, fullName: event.target.value }));
               } else if (activeSection === "logs") {
                 setPrintshopLogSearch(event.target.value);
               } else {
@@ -6669,9 +7689,11 @@ export default function PrintShop() {
                     ? "supplies"
                     : activeSection === "certificates"
                       ? "certificates"
-                      : activeSection === "logs"
-                        ? "logs"
-                        : "catalog"
+                      : activeSection === "credentials"
+                        ? "credentials"
+                        : activeSection === "logs"
+                          ? "logs"
+                          : "catalog"
               )
             }
           />
@@ -6827,6 +7849,16 @@ export default function PrintShop() {
           activeTeacherSigners={activeTeacherSigners}
           activeCertificateTemplates={activeCertificateTemplates}
           generatedCertificates={generatedCertificates}
+          filteredCertificates={filteredGeneratedCertificates}
+          loadingCertificates={loadingGeneratedCertificates}
+          certificatesError={generatedCertificatesError}
+          certificateSearch={generatedCertificateSearch}
+          certificateStatusFilter={generatedCertificateStatusFilter}
+          certificateYearFilter={generatedCertificateYearFilter}
+          certificateCampusFilter={generatedCertificateCampusFilter}
+          certificateTeacherFilter={generatedCertificateTeacherFilter}
+          certificateLevelFilter={generatedCertificateLevelFilter}
+          updatingCertificateId={updatingGeneratedCertificateId}
           loadingRequests={loadingRequests}
           requestsError={requestsError}
           requestStats={requestStats}
@@ -6868,9 +7900,11 @@ export default function PrintShop() {
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
           onRegisterGeneratedCertificate={registerGeneratedCertificate}
+          onRegisterStandaloneGeneratedCertificate={registerStandaloneGeneratedCertificate}
           onLogPrintshopAction={createPrintshopLog}
           onMarkRequestInProduction={markRequestInProduction}
           onMarkRequestReadyForDelivery={markRequestReadyForDelivery}
+          onOpenCertificateRequest={openCertificateRequest}
           onSoftDeleteRequest={(request) => softDeletePrintshopRecord("printRequests", request, {
             module: "requests",
             sectionLabel: "Solicitudes",
@@ -6878,34 +7912,127 @@ export default function PrintShop() {
           })}
         />
       ) : activeSection === "certificates" ? (
-        <GeneratedCertificatesView
-          certificates={generatedCertificates}
+        <CertificatesWorkspaceView
+          certificateRequests={certificateRequests}
+          filteredCertificateRequests={filteredCertificateRequests}
+          selectedRequest={selectedRequest}
+          activePrincipalSigners={activePrincipalSigners}
+          activeTeacherSigners={activeTeacherSigners}
+          activeCertificateTemplates={activeCertificateTemplates}
+          generatedCertificates={generatedCertificates}
           filteredCertificates={filteredGeneratedCertificates}
           loadingCertificates={loadingGeneratedCertificates}
           certificatesError={generatedCertificatesError}
-          search={generatedCertificateSearch}
-          statusFilter={generatedCertificateStatusFilter}
-          yearFilter={generatedCertificateYearFilter}
-          campusFilter={generatedCertificateCampusFilter}
-          teacherFilter={generatedCertificateTeacherFilter}
-          levelFilter={generatedCertificateLevelFilter}
+          certificateSearch={generatedCertificateSearch}
+          certificateStatusFilter={generatedCertificateStatusFilter}
+          certificateYearFilter={generatedCertificateYearFilter}
+          certificateCampusFilter={generatedCertificateCampusFilter}
+          certificateTeacherFilter={generatedCertificateTeacherFilter}
+          certificateLevelFilter={generatedCertificateLevelFilter}
           updatingCertificateId={updatingGeneratedCertificateId}
+          loadingRequests={loadingRequests}
+          requestsError={requestsError}
+          requestSearch={requestSearch}
+          requestStatusFilter={requestStatusFilter}
+          requestPriorityFilter={requestPriorityFilter}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
-          onSearchChange={setGeneratedCertificateSearch}
-          onStatusFilterChange={setGeneratedCertificateStatusFilter}
-          onYearFilterChange={setGeneratedCertificateYearFilter}
-          onCampusFilterChange={setGeneratedCertificateCampusFilter}
-          onTeacherFilterChange={setGeneratedCertificateTeacherFilter}
-          onLevelFilterChange={setGeneratedCertificateLevelFilter}
-          onMarkDelivered={(certificate) => updateGeneratedCertificateStatus(certificate, "Entregado")}
+          studentName={studentName}
+          studentDeliveryType={studentDeliveryType}
+          bulkStudentsText={bulkStudentsText}
+          bulkStudentsDeliveryType={bulkStudentsDeliveryType}
+          savingStudents={savingStudents}
+          generatingStudentId={generatingStudentId}
+          reprintCertificateStudentId={reprintCertificateStudentId}
+          onSelectRequest={selectRequest}
+          onRequestSearchChange={setRequestSearch}
+          onRequestStatusFilterChange={setRequestStatusFilter}
+          onRequestPriorityFilterChange={setRequestPriorityFilter}
+          onStudentNameChange={setStudentName}
+          onStudentDeliveryTypeChange={setStudentDeliveryType}
+          onBulkStudentsTextChange={setBulkStudentsText}
+          onBulkStudentsDeliveryTypeChange={setBulkStudentsDeliveryType}
+          onAddSingleStudent={addSingleRequestStudent}
+          onAddBulkStudents={addBulkRequestStudents}
+          onUpdateStudent={updateRequestStudent}
+          onDeleteStudent={deleteRequestStudent}
+          onGenerateStudentFolio={generateStudentFolio}
+          onGenerateAllStudentFolios={generateAllStudentFolios}
+          onRegisterGeneratedCertificate={registerGeneratedCertificate}
+          onRegisterStandaloneGeneratedCertificate={registerStandaloneGeneratedCertificate}
+          onLogPrintshopAction={createPrintshopLog}
+          onMarkRequestInProduction={markRequestInProduction}
+          onMarkRequestReadyForDelivery={markRequestReadyForDelivery}
+          onCertificateSearchChange={setGeneratedCertificateSearch}
+          onCertificateStatusFilterChange={setGeneratedCertificateStatusFilter}
+          onCertificateYearFilterChange={setGeneratedCertificateYearFilter}
+          onCertificateCampusFilterChange={setGeneratedCertificateCampusFilter}
+          onCertificateTeacherFilterChange={setGeneratedCertificateTeacherFilter}
+          onCertificateLevelFilterChange={setGeneratedCertificateLevelFilter}
+          onMarkCertificateDelivered={(certificate) => updateGeneratedCertificateStatus(certificate, "Entregado")}
           onCancelCertificate={(certificate) => updateGeneratedCertificateStatus(certificate, "Cancelado")}
-          onOpenRequest={openRequestFromGeneratedCertificate}
+          onOpenCertificateRequest={openRequestFromGeneratedCertificate}
           onReprintCertificate={reprintGeneratedCertificate}
           onSoftDeleteCertificate={(certificate) => softDeletePrintshopRecord("generatedCertificates", certificate, {
             module: "certificates",
             sectionLabel: "Historial de certificados",
             label: certificate.folio || certificate.studentName,
+          })}
+          onOpenRequests={() => setActiveSection("requests")}
+        />
+      ) : activeSection === "credentials" ? (
+        <CredentialsView
+          variant="generator"
+          templates={credentialTemplates}
+          activeTemplates={activeCredentialTemplates}
+          loadingTemplates={loadingCredentialTemplates}
+          templatesError={credentialTemplatesError}
+          templateForm={credentialTemplateForm}
+          selectedTemplate={selectedCredentialTemplate}
+          selectedTemplateId={selectedCredentialTemplateId}
+          frontFile={credentialFrontFile}
+          backFile={credentialBackFile}
+          savingTemplate={savingCredentialTemplate}
+          templateMessage={credentialTemplateMessage}
+          credentialForm={credentialForm}
+          generatedCredentials={generatedCredentials}
+          loadingGeneratedCredentials={loadingGeneratedCredentials}
+          generatedCredentialsError={generatedCredentialsError}
+          savingCredential={savingCredential}
+          credentialMessage={credentialMessage}
+          activeUsers={activeUsers}
+          usersError={usersError}
+          isAdmin={isAdmin}
+          onTemplateInputChange={handleCredentialTemplateInputChange}
+          onTemplatePositionChange={handleCredentialTemplatePositionChange}
+          onTemplateEditorLayerMove={handleCredentialEditorLayerMove}
+          onTemplateCustomTextChange={handleCredentialCustomTextChange}
+          onAddTemplateCustomText={addCredentialCustomText}
+          onRemoveTemplateCustomText={removeCredentialCustomText}
+          onTemplateCustomTextSegmentChange={handleCredentialCustomTextSegmentChange}
+          onAddTemplateCustomTextSegment={addCredentialCustomTextSegment}
+          onRemoveTemplateCustomTextSegment={removeCredentialCustomTextSegment}
+          onAddTemplateCustomImage={addCredentialCustomImage}
+          onTemplateCustomImageChange={handleCredentialCustomImageChange}
+          onRemoveTemplateCustomImage={removeCredentialCustomImage}
+          onResetTemplatePositions={resetCredentialTemplatePositions}
+          onFrontFileChange={setCredentialFrontFile}
+          onBackFileChange={setCredentialBackFile}
+          onSaveTemplate={saveCredentialTemplate}
+          onSelectTemplate={selectCredentialTemplate}
+          onResetTemplateForm={resetCredentialTemplateForm}
+          onToggleTemplateStatus={toggleCredentialTemplateStatus}
+          onCredentialInputChange={handleCredentialInputChange}
+          onGenerateCredential={generateCredentialRecord}
+          onSoftDeleteTemplate={(template) => softDeletePrintshopRecord("credentialTemplates", template, {
+            module: "credentials",
+            sectionLabel: "Plantillas de credenciales",
+            label: template.name,
+          })}
+          onSoftDeleteCredential={(credential) => softDeletePrintshopRecord("generatedCredentials", credential, {
+            module: "credentials",
+            sectionLabel: "Credenciales generadas",
+            label: credential.folio || credential.fullName,
           })}
         />
       ) : activeSection === "logs" ? (
@@ -6922,44 +8049,100 @@ export default function PrintShop() {
           onTypeFilterChange={setPrintshopLogTypeFilter}
         />
       ) : activeSection === "templates" && isAdmin ? (
-        <CertificateTemplatesView
-          templates={certificateTemplates}
-          loadingTemplates={loadingTemplates}
-          templatesError={templatesError}
-          templateForm={templateForm}
-          selectedTemplate={selectedTemplate}
-          selectedTemplateId={selectedTemplateId}
-          templateFile={templateFile}
-          savingTemplate={savingTemplate}
-          templateMessage={templateMessage}
-          isAdmin={isAdmin}
-          onTemplateInputChange={handleTemplateInputChange}
-          onTemplateBodySegmentChange={handleTemplateBodySegmentChange}
-          onAddTemplateBodySegment={addTemplateBodySegment}
-          onRemoveTemplateBodySegment={removeTemplateBodySegment}
-          onResetTemplateBodySegments={resetTemplateBodySegments}
-          onTemplateCustomTextChange={handleTemplateCustomTextChange}
-          onAddTemplateCustomText={addTemplateCustomText}
-          onRemoveTemplateCustomText={removeTemplateCustomText}
-          onTemplateCustomTextSegmentChange={handleTemplateCustomTextSegmentChange}
-          onAddTemplateCustomTextSegment={addTemplateCustomTextSegment}
-          onRemoveTemplateCustomTextSegment={removeTemplateCustomTextSegment}
-          onAddTemplateCustomImage={addTemplateCustomImage}
-          onTemplateCustomImageChange={handleTemplateCustomImageChange}
-          onRemoveTemplateCustomImage={removeTemplateCustomImage}
-          onTemplatePositionChange={handleTemplatePositionChange}
-          onTemplateEditorLayerMove={handleTemplateEditorLayerMove}
-          onResetTemplatePositions={resetTemplatePositions}
-          onTemplateFileChange={setTemplateFile}
-          onSaveTemplate={saveCertificateTemplate}
-          onSelectTemplate={selectTemplate}
-          onResetTemplateForm={resetTemplateForm}
-          onToggleTemplateStatus={toggleTemplateStatus}
-          onSoftDeleteTemplate={(template) => softDeletePrintshopRecord("certificateTemplates", template, {
-            module: "templates",
-            sectionLabel: "Plantillas",
-            label: template.name,
-          })}
+        <PrintshopTemplatesView
+          certificateTemplatesProps={{
+            templates: certificateTemplates,
+            loadingTemplates,
+            templatesError,
+            templateForm,
+            selectedTemplate,
+            selectedTemplateId,
+            templateFile,
+            savingTemplate,
+            templateMessage,
+            isAdmin,
+            onTemplateInputChange: handleTemplateInputChange,
+            onTemplateBodySegmentChange: handleTemplateBodySegmentChange,
+            onAddTemplateBodySegment: addTemplateBodySegment,
+            onRemoveTemplateBodySegment: removeTemplateBodySegment,
+            onResetTemplateBodySegments: resetTemplateBodySegments,
+            onTemplateCustomTextChange: handleTemplateCustomTextChange,
+            onAddTemplateCustomText: addTemplateCustomText,
+            onRemoveTemplateCustomText: removeTemplateCustomText,
+            onTemplateCustomTextSegmentChange: handleTemplateCustomTextSegmentChange,
+            onAddTemplateCustomTextSegment: addTemplateCustomTextSegment,
+            onRemoveTemplateCustomTextSegment: removeTemplateCustomTextSegment,
+            onAddTemplateCustomImage: addTemplateCustomImage,
+            onTemplateCustomImageChange: handleTemplateCustomImageChange,
+            onRemoveTemplateCustomImage: removeTemplateCustomImage,
+            onTemplatePositionChange: handleTemplatePositionChange,
+            onTemplateEditorLayerMove: handleTemplateEditorLayerMove,
+            onResetTemplatePositions: resetTemplatePositions,
+            onTemplateFileChange: setTemplateFile,
+            onSaveTemplate: saveCertificateTemplate,
+            onSelectTemplate: selectTemplate,
+            onResetTemplateForm: resetTemplateForm,
+            onToggleTemplateStatus: toggleTemplateStatus,
+            onSoftDeleteTemplate: (template) => softDeletePrintshopRecord("certificateTemplates", template, {
+              module: "templates",
+              sectionLabel: "Plantillas",
+              label: template.name,
+            }),
+          }}
+          credentialTemplatesProps={{
+            variant: "templates",
+            templates: credentialTemplates,
+            activeTemplates: activeCredentialTemplates,
+            loadingTemplates: loadingCredentialTemplates,
+            templatesError: credentialTemplatesError,
+            templateForm: credentialTemplateForm,
+            selectedTemplate: selectedCredentialTemplate,
+            selectedTemplateId: selectedCredentialTemplateId,
+            frontFile: credentialFrontFile,
+            backFile: credentialBackFile,
+            savingTemplate: savingCredentialTemplate,
+            templateMessage: credentialTemplateMessage,
+            credentialForm,
+            generatedCredentials,
+            loadingGeneratedCredentials,
+            generatedCredentialsError,
+            savingCredential,
+            credentialMessage,
+            activeUsers,
+            usersError,
+            isAdmin,
+            onTemplateInputChange: handleCredentialTemplateInputChange,
+            onTemplatePositionChange: handleCredentialTemplatePositionChange,
+            onTemplateEditorLayerMove: handleCredentialEditorLayerMove,
+            onTemplateCustomTextChange: handleCredentialCustomTextChange,
+            onAddTemplateCustomText: addCredentialCustomText,
+            onRemoveTemplateCustomText: removeCredentialCustomText,
+            onTemplateCustomTextSegmentChange: handleCredentialCustomTextSegmentChange,
+            onAddTemplateCustomTextSegment: addCredentialCustomTextSegment,
+            onRemoveTemplateCustomTextSegment: removeCredentialCustomTextSegment,
+            onAddTemplateCustomImage: addCredentialCustomImage,
+            onTemplateCustomImageChange: handleCredentialCustomImageChange,
+            onRemoveTemplateCustomImage: removeCredentialCustomImage,
+            onResetTemplatePositions: resetCredentialTemplatePositions,
+            onFrontFileChange: setCredentialFrontFile,
+            onBackFileChange: setCredentialBackFile,
+            onSaveTemplate: saveCredentialTemplate,
+            onSelectTemplate: selectCredentialTemplate,
+            onResetTemplateForm: resetCredentialTemplateForm,
+            onToggleTemplateStatus: toggleCredentialTemplateStatus,
+            onCredentialInputChange: handleCredentialInputChange,
+            onGenerateCredential: generateCredentialRecord,
+            onSoftDeleteTemplate: (template) => softDeletePrintshopRecord("credentialTemplates", template, {
+              module: "templates",
+              sectionLabel: "Plantillas de credenciales",
+              label: template.name,
+            }),
+            onSoftDeleteCredential: (credential) => softDeletePrintshopRecord("generatedCredentials", credential, {
+              module: "credentials",
+              sectionLabel: "Credenciales generadas",
+              label: credential.folio || credential.fullName,
+            }),
+          }}
         />
       ) : activeSection === "signers" && isAdmin ? (
         <CertificateSignersView
@@ -10289,6 +11472,16 @@ function PrintRequestsView({
   activeTeacherSigners,
   activeCertificateTemplates,
   generatedCertificates,
+  filteredCertificates,
+  loadingCertificates,
+  certificatesError,
+  certificateSearch,
+  certificateStatusFilter,
+  certificateYearFilter,
+  certificateCampusFilter,
+  certificateTeacherFilter,
+  certificateLevelFilter,
+  updatingCertificateId,
   loadingRequests,
   requestsError,
   requestStats,
@@ -10330,9 +11523,11 @@ function PrintRequestsView({
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
   onRegisterGeneratedCertificate,
+  onRegisterStandaloneGeneratedCertificate,
   onLogPrintshopAction,
   onMarkRequestInProduction,
   onMarkRequestReadyForDelivery,
+  onOpenCertificateRequest,
   onSoftDeleteRequest,
 }) {
   const requestProducts = products.filter(
@@ -10380,6 +11575,11 @@ function PrintRequestsView({
   }, [requestPage, requestTotalPages]);
 
   function openRequestFocus(request = null) {
+    if (request && isRequestCertificateLike(request.requestType) && typeof onOpenCertificateRequest === "function") {
+      onOpenCertificateRequest(request);
+      return;
+    }
+
     if (request) {
       onSelectRequest(request);
       onMarkRequestInProduction?.(request);
@@ -11191,6 +12391,687 @@ function RequestPreviewPanel({ request, onOpen }) {
           Ver información completa
         </button>
       </div>
+    </section>
+  );
+}
+
+function CertificatesWorkspaceView({
+  certificateRequests,
+  filteredCertificateRequests,
+  selectedRequest,
+  activePrincipalSigners,
+  activeTeacherSigners,
+  activeCertificateTemplates,
+  generatedCertificates,
+  filteredCertificates,
+  loadingCertificates,
+  certificatesError,
+  certificateSearch,
+  certificateStatusFilter,
+  certificateYearFilter,
+  certificateCampusFilter,
+  certificateTeacherFilter,
+  certificateLevelFilter,
+  updatingCertificateId,
+  loadingRequests,
+  requestsError,
+  requestSearch,
+  requestStatusFilter,
+  requestPriorityFilter,
+  isAdmin,
+  currentUserUid,
+  studentName,
+  studentDeliveryType,
+  bulkStudentsText,
+  bulkStudentsDeliveryType,
+  savingStudents,
+  generatingStudentId,
+  reprintCertificateStudentId,
+  onSelectRequest,
+  onRequestSearchChange,
+  onRequestStatusFilterChange,
+  onRequestPriorityFilterChange,
+  onStudentNameChange,
+  onStudentDeliveryTypeChange,
+  onBulkStudentsTextChange,
+  onBulkStudentsDeliveryTypeChange,
+  onAddSingleStudent,
+  onAddBulkStudents,
+  onUpdateStudent,
+  onDeleteStudent,
+  onGenerateStudentFolio,
+  onGenerateAllStudentFolios,
+  onRegisterGeneratedCertificate,
+  onRegisterStandaloneGeneratedCertificate,
+  onLogPrintshopAction,
+  onMarkRequestInProduction,
+  onMarkRequestReadyForDelivery,
+  onCertificateSearchChange,
+  onCertificateStatusFilterChange,
+  onCertificateYearFilterChange,
+  onCertificateCampusFilterChange,
+  onCertificateTeacherFilterChange,
+  onCertificateLevelFilterChange,
+  onMarkCertificateDelivered,
+  onCancelCertificate,
+  onOpenCertificateRequest,
+  onReprintCertificate,
+  onSoftDeleteCertificate,
+  onOpenRequests,
+}) {
+  const activeRequest = isRequestCertificateLike(selectedRequest?.requestType)
+    ? selectedRequest
+    : filteredCertificateRequests[0] || certificateRequests[0] || null;
+  const selectedRole = activeRequest
+    ? isAdmin
+      ? "admin"
+      : isSameUid(currentUserUid, activeRequest.responsibleUid)
+        ? "responsible"
+        : "viewer"
+    : isAdmin
+      ? "admin"
+      : "viewer";
+  const canManageStudents = isAdmin || selectedRole === "responsible";
+  const generatedCount = generatedCertificates.filter((certificate) =>
+    certificateRequests.some((request) => request.id === certificate.requestId)
+  ).length;
+  const safeFilteredCertificates = Array.isArray(filteredCertificates) ? filteredCertificates : [];
+  const pendingRequests = certificateRequests.filter(
+    (request) => !["Lista para entrega", "Entregada", "Cancelada"].includes(request.status)
+  ).length;
+  const [certificateGeneratorOpen, setCertificateGeneratorOpen] = useState(false);
+  const [certificateGeneratorForm, setCertificateGeneratorForm] = useState(() => createStandaloneCertificateForm());
+  const [standalonePreview, setStandalonePreview] = useState(null);
+  const [standaloneMessage, setStandaloneMessage] = useState("");
+  const [standaloneWorking, setStandaloneWorking] = useState(false);
+  const [certificateHistoryOpen, setCertificateHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!activeRequest?.id || activeRequest.id === selectedRequest?.id) return;
+    onSelectRequest(activeRequest);
+  }, [activeRequest?.id, selectedRequest?.id, onSelectRequest]);
+
+  function openCertificateRequest(request) {
+    if (!request) return;
+    onSelectRequest(request);
+    onMarkRequestInProduction?.(request);
+  }
+
+  function openCertificateGenerator(mode = "request") {
+    setCertificateHistoryOpen(false);
+    setCertificateGeneratorForm((current) => ({
+      ...current,
+      mode,
+      requestId: activeRequest?.id || current.requestId || filteredCertificateRequests[0]?.id || "",
+    }));
+    setStandalonePreview(null);
+    setStandaloneMessage("");
+    setCertificateGeneratorOpen(true);
+  }
+
+  function closeCertificateGenerator() {
+    setCertificateGeneratorOpen(false);
+    setStandaloneMessage("");
+  }
+
+  function openCertificateHistory() {
+    setCertificateGeneratorOpen(false);
+    setCertificateHistoryOpen(true);
+  }
+
+  function handleCertificateGeneratorInputChange(event) {
+    const { name, value } = event.target;
+    setStandalonePreview(null);
+    setStandaloneMessage("");
+    setCertificateGeneratorForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function handleOpenSelectedRequestForGeneration(event) {
+    event.preventDefault();
+    const request = certificateRequests.find((item) => item.id === certificateGeneratorForm.requestId) || activeRequest;
+
+    if (!request) {
+      setStandaloneMessage("Selecciona una solicitud de certificado.");
+      return;
+    }
+
+    openCertificateRequest(request);
+    setCertificateGeneratorOpen(false);
+  }
+
+  async function prepareStandaloneCertificate(event) {
+    event.preventDefault();
+    setStandaloneMessage("");
+
+    const studentName = certificateGeneratorForm.studentName.trim();
+    const certificateTemplate = activeCertificateTemplates.find((template) => template.id === certificateGeneratorForm.templateId) || null;
+    const principalSigner = activePrincipalSigners.find((signer) => signer.id === certificateGeneratorForm.principalSignerId) || null;
+    const teacherSigner = activeTeacherSigners.find((signer) => signer.id === certificateGeneratorForm.teacherSignerId) || null;
+
+    if (!studentName) {
+      setStandaloneMessage("Indica el nombre de la persona.");
+      return;
+    }
+
+    if (!certificateTemplate) {
+      setStandaloneMessage("Selecciona una plantilla activa.");
+      return;
+    }
+
+    try {
+      setStandaloneWorking(true);
+      const requestId = `individual-${Date.now()}`;
+      const request = {
+        id: requestId,
+        folio: `IND-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+        requestType: certificateGeneratorForm.requestType || "Certificado",
+        productName: `${certificateGeneratorForm.requestType || "Certificado"} individual`,
+        campus: certificateGeneratorForm.campus || "Plaza Estrella",
+        deliveryType: "Digital",
+        requestedQuantity: 1,
+        deliveredQuantity: 0,
+        status: "Solicitud recibida",
+        certificateIssueDate: certificateGeneratorForm.certificateIssueDate,
+        certificateTemplateId: certificateTemplate.id,
+        certificateTemplateName: certificateTemplate.name,
+        certificateTemplateLevel: certificateTemplate.level,
+        certificateTemplateProgramName: certificateTemplate.programName,
+        certificateTemplateAudience: certificateTemplate.audience,
+        certificateTemplateBodyText: certificateTemplate.bodyText,
+        certificateTemplateBodySegments: certificateTemplate.bodySegments,
+        certificateTemplateCustomTexts: certificateTemplate.customTexts,
+        certificateTemplateCustomImages: certificateTemplate.customImages,
+        certificateTemplateImageUrl: certificateTemplate.templateImageUrl,
+        certificateTemplateImageDataUrl: certificateTemplate.templateImageDataUrl,
+        certificateTemplateStoragePath: certificateTemplate.storagePath,
+        certificateTemplatePositions: certificateTemplate.positions,
+        level: certificateGeneratorForm.level || certificateTemplate.level || "No aplica",
+        group: certificateGeneratorForm.group,
+        teacherName: certificateGeneratorForm.teacherName || teacherSigner?.name || "",
+        schedule: certificateGeneratorForm.schedule,
+        notes: certificateGeneratorForm.notes,
+        principalSignerId: principalSigner?.id || "",
+        principalSignerName: principalSigner?.name || "",
+        principalSignerRole: principalSigner?.role || "Principal",
+        principalSignatureUrl: principalSigner?.signatureUrl || "",
+        principalSignatureDataUrl: principalSigner?.signatureDataUrl || "",
+        teacherSignerId: teacherSigner?.id || "",
+        teacherSignerName: teacherSigner?.name || certificateGeneratorForm.teacherName || "",
+        teacherSignerRole: teacherSigner?.role || "Teacher",
+        teacherSignatureUrl: teacherSigner?.signatureUrl || "",
+        teacherSignatureDataUrl: teacherSigner?.signatureDataUrl || "",
+        students: [],
+      };
+      const certificateFolio = buildCertificateStudentFolio(request, 1);
+      const validationCode = buildValidationCode(certificateFolio);
+      const validationUrl = buildValidationUrl(validationCode);
+      const qrDataUrl = await QRCode.toDataURL(validationUrl, {
+        margin: 2,
+        width: 220,
+        errorCorrectionLevel: "M",
+      });
+      const student = {
+        id: `individual-student-${Date.now()}`,
+        name: studentName,
+        deliveryType: "Digital",
+        status: "Folio generado",
+        certificateFolio,
+        validationCode,
+        validationUrl,
+        qrDataUrl,
+      };
+
+      request.students = [student];
+      setStandalonePreview({
+        request,
+        student,
+        principalSigner,
+        teacherSigner,
+        certificateTemplate,
+      });
+      setStandaloneMessage("Certificado listo. Revisa la vista previa y descarga el PDF para registrarlo en el historial.");
+    } catch (error) {
+      console.error("No se pudo preparar el certificado individual:", error);
+      setStandaloneMessage(error?.message || "No se pudo preparar el certificado individual.");
+    } finally {
+      setStandaloneWorking(false);
+    }
+  }
+
+  return (
+    <section className="printshop-certificates-workspace printshop-tab-redesign">
+      <div className="printshop-section-heading">
+        <div>
+          <p className="section-kicker printshop-kicker">Certificados</p>
+          <h2>Generador de certificados por solicitud</h2>
+          <p>
+            Abre una solicitud de certificado, agrega alumnos pendientes y genera folios, QR y PDF desde una vista enfocada.
+          </p>
+        </div>
+
+        <div className="credential-heading-actions">
+          <button type="button" className="visual-primary-button" onClick={() => openCertificateGenerator("request")}>
+            Generar certificado
+          </button>
+          <button type="button" className="visual-outline-button" onClick={openCertificateHistory}>
+            Historial de certificados
+          </button>
+          <button type="button" className="visual-outline-button" onClick={onOpenRequests}>
+            Ver solicitudes
+          </button>
+        </div>
+      </div>
+
+      <div className="catalog-metrics-grid template-metrics-grid">
+        <CatalogMetric tone="blue" icon="requests" label="Solicitudes" value={certificateRequests.length} />
+        <CatalogMetric tone="orange" icon="urgent" label="Pendientes" value={pendingRequests} />
+        <CatalogMetric tone="green" icon="certificates" label="Generados" value={generatedCount} />
+        <CatalogMetric tone="teal" icon="templates" label="Plantillas activas" value={activeCertificateTemplates.length} />
+      </div>
+
+      {certificateHistoryOpen ? (
+        <div className="certificate-history-embedded">
+          <div className="printshop-focused-header certificate-generator-header">
+            <button type="button" className="visual-outline-button" onClick={() => setCertificateHistoryOpen(false)}>
+              Regresar a certificados
+            </button>
+            <span>Historial de certificados</span>
+          </div>
+
+          <Panel title="Historial de certificados generados" icon="history" actionLabel={`${safeFilteredCertificates.length} registros`}>
+            <div className="catalog-toolbar request-toolbar request-toolbar-redesign">
+              <label className="visual-search catalog-search request-search-redesign">
+                <span><PrintshopIcon name="search" /></span>
+                <input
+                  type="search"
+                  placeholder="Buscar folio, alumno, grupo, maestro o plantel"
+                  value={certificateSearch}
+                  onChange={(event) => onCertificateSearchChange?.(event.target.value)}
+                />
+              </label>
+
+              <select value={certificateStatusFilter || "Todos"} onChange={(event) => onCertificateStatusFilterChange?.(event.target.value)}>
+                <option>Todos</option>
+                {generatedCertificateStatuses.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+            </div>
+
+            {certificatesError ? (
+              <div className="message-box">{certificatesError}</div>
+            ) : loadingCertificates ? (
+              <div className="empty-state small">
+                <p>Cargando certificados...</p>
+              </div>
+            ) : safeFilteredCertificates.length === 0 ? (
+              <div className="empty-state small">
+                <p>No hay certificados generados con los filtros seleccionados.</p>
+              </div>
+            ) : (
+              <div className="certificate-history-card-list">
+                {safeFilteredCertificates.map((certificate) => {
+                  const canManageCertificate =
+                    isAdmin || isSameUid(currentUserUid, certificate.responsibleUid);
+                  const updating = updatingCertificateId === certificate.id;
+
+                  return (
+                    <article key={certificate.id} className="certificate-history-card">
+                      <div>
+                        <strong>{certificate.studentName || "Sin alumno"}</strong>
+                        <span>{certificate.folio || "Sin folio"} / {certificate.requestFolio || "Individual"}</span>
+                      </div>
+                      <div>
+                        <StatusBadge tone={getGeneratedCertificateStatusTone(certificate.status)}>
+                          {certificate.status}
+                        </StatusBadge>
+                        <small>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</small>
+                      </div>
+                      <div className="certificate-history-card-actions">
+                        <button
+                          type="button"
+                          className="visual-outline-button"
+                          disabled={!certificate.pdfUrl}
+                          onClick={() => {
+                            if (certificate.pdfUrl) {
+                              window.open(certificate.pdfUrl, "_blank", "noopener,noreferrer");
+                            }
+                          }}
+                        >
+                          PDF original
+                        </button>
+                        <button type="button" className="visual-outline-button" onClick={() => onReprintCertificate?.(certificate)}>
+                          Reimprimir
+                        </button>
+                        {certificate.requestId && (
+                          <button type="button" onClick={() => onOpenCertificateRequest?.(certificate)}>
+                            Ver solicitud
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={!canManageCertificate || updating || certificate.status === "Entregado"}
+                          onClick={() => onMarkCertificateDelivered?.(certificate)}
+                        >
+                          Entregado
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-table-button"
+                          disabled={!canManageCertificate || updating || certificate.status === "Cancelado"}
+                          onClick={() => onCancelCertificate?.(certificate)}
+                        >
+                          Cancelar
+                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            className="danger-table-button"
+                            disabled={updating}
+                            onClick={() => onSoftDeleteCertificate?.(certificate)}
+                          >
+                            Eliminar
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+      ) : certificateGeneratorOpen ? (
+        <div className="certificate-generator-focused-panel">
+          <div className="printshop-focused-header certificate-generator-header">
+            <button type="button" className="visual-outline-button" onClick={closeCertificateGenerator}>
+              Regresar a certificados
+            </button>
+            <span>Generacion de certificado</span>
+          </div>
+
+          <Panel title="Generar certificado" icon="certificates" actionLabel={certificateGeneratorForm.mode === "request" ? "Solicitud" : "Individual"}>
+            <div className="certificate-generator-mode-tabs">
+              <button
+                type="button"
+                className={certificateGeneratorForm.mode === "request" ? "active" : ""}
+                onClick={() => setCertificateGeneratorForm((current) => ({ ...current, mode: "request" }))}
+              >
+                Desde solicitud
+              </button>
+              <button
+                type="button"
+                className={certificateGeneratorForm.mode === "individual" ? "active" : ""}
+                onClick={() => setCertificateGeneratorForm((current) => ({ ...current, mode: "individual" }))}
+              >
+                Individual
+              </button>
+            </div>
+
+            {certificateGeneratorForm.mode === "request" ? (
+              <form className="printshop-product-form certificate-generator-request-form" onSubmit={handleOpenSelectedRequestForGeneration}>
+                <label className="full">
+                  <span>Solicitud</span>
+                  <select name="requestId" value={certificateGeneratorForm.requestId} onChange={handleCertificateGeneratorInputChange}>
+                    <option value="">Selecciona solicitud</option>
+                    {certificateRequests.map((request) => (
+                      <option key={request.id} value={request.id}>
+                        {request.folio || "Sin folio"} - {request.group || getRequestProductLabel(request)} - {request.campus || "Sin plantel"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {standaloneMessage && <div className="message-box full">{standaloneMessage}</div>}
+
+                <div className="printshop-form-actions full">
+                  <button type="submit" className="visual-primary-button">
+                    Abrir generador de la solicitud
+                  </button>
+                  <button type="button" className="visual-outline-button" onClick={() => setCertificateGeneratorForm((current) => ({ ...current, mode: "individual" }))}>
+                    Generar individual
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="certificate-generator-individual-layout">
+                <form className="printshop-product-form certificate-generator-individual-form" onSubmit={prepareStandaloneCertificate}>
+                  <label className="full">
+                    <span>Nombre de la persona</span>
+                    <input name="studentName" value={certificateGeneratorForm.studentName} onChange={handleCertificateGeneratorInputChange} placeholder="Nombre completo" />
+                  </label>
+
+                  <label>
+                    <span>Tipo</span>
+                    <select name="requestType" value={certificateGeneratorForm.requestType} onChange={handleCertificateGeneratorInputChange}>
+                      <option>Certificado</option>
+                      <option>Diploma</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Plantilla</span>
+                    <select name="templateId" value={certificateGeneratorForm.templateId} onChange={handleCertificateGeneratorInputChange}>
+                      <option value="">Seleccionar plantilla</option>
+                      {activeCertificateTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name} - {template.level} - {template.audience}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Nivel</span>
+                    <select name="level" value={certificateGeneratorForm.level} onChange={handleCertificateGeneratorInputChange}>
+                      {levels.map((level) => (
+                        <option key={level}>{level}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Grupo</span>
+                    <input name="group" value={certificateGeneratorForm.group} onChange={handleCertificateGeneratorInputChange} placeholder="Ej. Grupo Teacher Samantha" />
+                  </label>
+
+                  <label>
+                    <span>Plantel</span>
+                    <select name="campus" value={certificateGeneratorForm.campus} onChange={handleCertificateGeneratorInputChange}>
+                      {printCampuses.map((campus) => (
+                        <option key={campus}>{campus}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Fecha</span>
+                    <input type="date" name="certificateIssueDate" value={certificateGeneratorForm.certificateIssueDate} onChange={handleCertificateGeneratorInputChange} />
+                  </label>
+
+                  <label>
+                    <span>Firmante principal</span>
+                    <select name="principalSignerId" value={certificateGeneratorForm.principalSignerId} onChange={handleCertificateGeneratorInputChange}>
+                      <option value="">Firma base</option>
+                      {activePrincipalSigners.map((signer) => (
+                        <option key={signer.id} value={signer.id}>{signer.name} - {signer.role}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Teacher</span>
+                    <select name="teacherSignerId" value={certificateGeneratorForm.teacherSignerId} onChange={handleCertificateGeneratorInputChange}>
+                      <option value="">Firma base</option>
+                      {activeTeacherSigners.map((signer) => (
+                        <option key={signer.id} value={signer.id}>{signer.name} - {signer.role}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Nombre visible teacher</span>
+                    <input name="teacherName" value={certificateGeneratorForm.teacherName} onChange={handleCertificateGeneratorInputChange} placeholder="Opcional" />
+                  </label>
+
+                  <label>
+                    <span>Horario</span>
+                    <input name="schedule" value={certificateGeneratorForm.schedule} onChange={handleCertificateGeneratorInputChange} placeholder="Opcional" />
+                  </label>
+
+                  <label className="full">
+                    <span>Notas</span>
+                    <textarea name="notes" value={certificateGeneratorForm.notes} onChange={handleCertificateGeneratorInputChange} placeholder="Notas internas" />
+                  </label>
+
+                  {standaloneMessage && <div className="message-box full">{standaloneMessage}</div>}
+
+                  <div className="printshop-form-actions full">
+                    <button type="submit" className="visual-primary-button" disabled={standaloneWorking}>
+                      {standaloneWorking ? "Preparando..." : "Preparar certificado"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="certificate-generator-preview-panel">
+                  {standalonePreview ? (
+                    <CertificatePreviewCard
+                      request={standalonePreview.request}
+                      student={standalonePreview.student}
+                      principalSigner={standalonePreview.principalSigner}
+                      teacherSigner={standalonePreview.teacherSigner}
+                      certificateTemplate={standalonePreview.certificateTemplate}
+                      onCertificateGenerated={onRegisterStandaloneGeneratedCertificate}
+                    />
+                  ) : (
+                    <div className="empty-state small">
+                      <div><PrintshopIcon name="certificates" /></div>
+                      <p>Completa los datos y prepara el certificado para ver la vista previa.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </Panel>
+        </div>
+      ) : null}
+
+      {!certificateGeneratorOpen && !certificateHistoryOpen && (
+      <div className="printshop-batches-layout certificate-workspace-layout printshop-focused-layout">
+        <div className="printshop-batches-main certificate-request-list-panel">
+          <Panel title="Solicitudes de certificados" icon="requests" actionLabel={`${filteredCertificateRequests.length} visibles`}>
+            <div className="catalog-toolbar request-toolbar request-toolbar-redesign">
+              <label className="visual-search catalog-search request-search-redesign">
+                <span><PrintshopIcon name="search" /></span>
+                <input
+                  type="search"
+                  placeholder="Buscar folio, alumno, grupo, maestro o plantel"
+                  value={requestSearch}
+                  onChange={(event) => onRequestSearchChange(event.target.value)}
+                />
+              </label>
+
+              <select value={requestStatusFilter} onChange={(event) => onRequestStatusFilterChange(event.target.value)}>
+                <option>Todos</option>
+                {printRequestStatuses.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+
+              <select value={requestPriorityFilter} onChange={(event) => onRequestPriorityFilterChange(event.target.value)}>
+                <option>Todas</option>
+                {printRequestPriorities.map((priority) => (
+                  <option key={priority}>{priority}</option>
+                ))}
+              </select>
+            </div>
+
+            {requestsError ? (
+              <div className="form-error">{requestsError}</div>
+            ) : loadingRequests ? (
+              <div className="empty-state small">
+                <p>Cargando solicitudes de certificados...</p>
+              </div>
+            ) : filteredCertificateRequests.length === 0 ? (
+              <div className="empty-state small">
+                <div><PrintshopIcon name="certificates" /></div>
+                <p>No hay solicitudes de certificados con los filtros seleccionados.</p>
+              </div>
+            ) : (
+              <div className="certificate-request-list">
+                {filteredCertificateRequests.map((request) => {
+                  const students = normalizeRequestStudents(request.students);
+                  const generatedForRequest = generatedCertificates.filter((certificate) => certificate.requestId === request.id).length;
+                  const active = activeRequest?.id === request.id;
+
+                  return (
+                    <article
+                      key={request.id}
+                      className={`certificate-request-card ${active ? "active" : ""}`}
+                      onClick={() => openCertificateRequest(request)}
+                    >
+                      <div>
+                        <strong>{request.folio || "Sin folio"}</strong>
+                        <span>{request.group || getRequestProductLabel(request)}</span>
+                      </div>
+                      <div>
+                        <small>{request.campus || "Sin plantel"}</small>
+                        <small>{request.teacherName || request.teacherSignerName || "Sin maestro"}</small>
+                      </div>
+                      <div className="certificate-request-card-footer">
+                        <StatusBadge tone={getRequestStatusTone(request.status)}>{request.status || "Solicitud recibida"}</StatusBadge>
+                        <span>{generatedForRequest} / {students.length} generados</span>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        <aside className="printshop-batches-side certificate-workspace-detail">
+          {activeRequest ? (
+            <RequestDetailCard
+              request={activeRequest}
+              selectedRole={selectedRole}
+              activePrincipalSigners={activePrincipalSigners}
+              activeTeacherSigners={activeTeacherSigners}
+              activeCertificateTemplates={activeCertificateTemplates}
+              generatedCertificates={generatedCertificates}
+              canManageStudents={canManageStudents}
+              studentName={studentName}
+              studentDeliveryType={studentDeliveryType}
+              bulkStudentsText={bulkStudentsText}
+              bulkStudentsDeliveryType={bulkStudentsDeliveryType}
+              savingStudents={savingStudents}
+              generatingStudentId={generatingStudentId}
+              reprintCertificateStudentId={reprintCertificateStudentId}
+              onStudentNameChange={onStudentNameChange}
+              onStudentDeliveryTypeChange={onStudentDeliveryTypeChange}
+              onBulkStudentsTextChange={onBulkStudentsTextChange}
+              onBulkStudentsDeliveryTypeChange={onBulkStudentsDeliveryTypeChange}
+              onAddSingleStudent={onAddSingleStudent}
+              onAddBulkStudents={onAddBulkStudents}
+              onUpdateStudent={onUpdateStudent}
+              onDeleteStudent={onDeleteStudent}
+              onGenerateStudentFolio={onGenerateStudentFolio}
+              onGenerateAllStudentFolios={onGenerateAllStudentFolios}
+              onRegisterGeneratedCertificate={onRegisterGeneratedCertificate}
+              onLogPrintshopAction={onLogPrintshopAction}
+              onMarkRequestReadyForDelivery={onMarkRequestReadyForDelivery}
+            />
+          ) : (
+            <Panel title="Generador de certificados" icon="certificates" actionLabel="Sin solicitud">
+              <div className="empty-state small">
+                <div><PrintshopIcon name="certificates" /></div>
+                <p>Selecciona una solicitud de certificado para generar folios, QR y PDF.</p>
+              </div>
+            </Panel>
+          )}
+        </aside>
+      </div>
+      )}
     </section>
   );
 }
@@ -12304,6 +14185,33 @@ function normalizeGeneratedCertificate(certificate) {
   };
 }
 
+function normalizeGeneratedCredential(credential) {
+  return {
+    id: credential?.id || "",
+    folio: String(credential?.folio || ""),
+    validationCode: String(credential?.validationCode || ""),
+    validationUrl: String(credential?.validationUrl || ""),
+    qrDataUrl: String(credential?.qrDataUrl || ""),
+    fullName: String(credential?.fullName || ""),
+    department: String(credential?.department || ""),
+    position: String(credential?.position || ""),
+    employeeId: String(credential?.employeeId || ""),
+    templateId: String(credential?.templateId || ""),
+    templateName: String(credential?.templateName || ""),
+    issueDate: String(credential?.issueDate || ""),
+    expiryDate: String(credential?.expiryDate || ""),
+    status: generatedCertificateStatuses.includes(credential?.status)
+      ? credential.status
+      : "Generado",
+    notes: String(credential?.notes || ""),
+    generatedAt: credential?.generatedAt || "",
+    generatedByUid: String(credential?.generatedByUid || ""),
+    generatedByName: String(credential?.generatedByName || ""),
+    generatedByEmail: String(credential?.generatedByEmail || ""),
+    updatedAt: credential?.updatedAt || "",
+  };
+}
+
 function buildPublicCertificateValidationPayload(certificate, overrides = {}) {
   const source = {
     ...(certificate || {}),
@@ -12329,6 +14237,29 @@ function buildPublicCertificateValidationPayload(certificate, overrides = {}) {
     status: generatedCertificateStatuses.includes(source.status) ? source.status : "Generado",
     institution: "Active English School",
     requestId: String(source.requestId || ""),
+    updatedAt: serverTimestamp(),
+  };
+}
+
+function buildPublicCredentialValidationPayload(credential, overrides = {}) {
+  const source = {
+    ...(credential || {}),
+    ...(overrides || {}),
+  };
+
+  return {
+    validationCode: String(source.validationCode || ""),
+    folio: String(source.folio || ""),
+    validationUrl: String(source.validationUrl || buildCredentialValidationUrl(source.validationCode || "")),
+    fullName: String(source.fullName || ""),
+    department: String(source.department || ""),
+    position: String(source.position || ""),
+    employeeId: String(source.employeeId || ""),
+    templateName: String(source.templateName || ""),
+    issueDate: String(source.issueDate || ""),
+    expiryDate: String(source.expiryDate || ""),
+    status: generatedCertificateStatuses.includes(source.status) ? source.status : "Generado",
+    institution: "Active English School",
     updatedAt: serverTimestamp(),
   };
 }
@@ -13033,6 +14964,43 @@ function DetailItem({ label, value, helper = "", badgeTone = "" }) {
   );
 }
 
+function PrintshopTemplatesView({ certificateTemplatesProps, credentialTemplatesProps }) {
+  const [activeTemplateType, setActiveTemplateType] = useState("certificates");
+  const certificateCount = certificateTemplatesProps?.templates?.length || 0;
+  const credentialCount = credentialTemplatesProps?.templates?.length || 0;
+
+  return (
+    <section className="printshop-template-hub">
+      <div className="printshop-template-hub-tabs" role="tablist" aria-label="Tipos de plantillas de imprenta">
+        <button
+          type="button"
+          className={activeTemplateType === "certificates" ? "active" : ""}
+          onClick={() => setActiveTemplateType("certificates")}
+        >
+          <PrintshopIcon name="certificates" />
+          Certificados
+          <span>{certificateCount}</span>
+        </button>
+        <button
+          type="button"
+          className={activeTemplateType === "credentials" ? "active" : ""}
+          onClick={() => setActiveTemplateType("credentials")}
+        >
+          <PrintshopIcon name="credentials" />
+          Credenciales
+          <span>{credentialCount}</span>
+        </button>
+      </div>
+
+      {activeTemplateType === "certificates" ? (
+        <CertificateTemplatesView {...certificateTemplatesProps} />
+      ) : (
+        <CredentialsView {...credentialTemplatesProps} />
+      )}
+    </section>
+  );
+}
+
 function CertificateTemplatesView({
   templates,
   loadingTemplates,
@@ -13682,6 +15650,798 @@ function CertificateBodySegments({ segments }) {
   );
 }
 
+function CredentialsView({
+  variant = "full",
+  templates,
+  activeTemplates,
+  loadingTemplates,
+  templatesError,
+  templateForm,
+  selectedTemplateId,
+  frontFile,
+  backFile,
+  savingTemplate,
+  templateMessage,
+  credentialForm,
+  generatedCredentials,
+  loadingGeneratedCredentials,
+  generatedCredentialsError,
+  savingCredential,
+  credentialMessage,
+  activeUsers,
+  usersError,
+  isAdmin,
+  onTemplateInputChange,
+  onTemplatePositionChange,
+  onTemplateEditorLayerMove,
+  onTemplateCustomTextChange,
+  onAddTemplateCustomText,
+  onRemoveTemplateCustomText,
+  onTemplateCustomTextSegmentChange,
+  onAddTemplateCustomTextSegment,
+  onRemoveTemplateCustomTextSegment,
+  onAddTemplateCustomImage,
+  onTemplateCustomImageChange,
+  onRemoveTemplateCustomImage,
+  onResetTemplatePositions,
+  onFrontFileChange,
+  onBackFileChange,
+  onSaveTemplate,
+  onSelectTemplate,
+  onResetTemplateForm,
+  onToggleTemplateStatus,
+  onCredentialInputChange,
+  onGenerateCredential,
+  onSoftDeleteTemplate,
+  onSoftDeleteCredential,
+}) {
+  const templatesOnly = variant === "templates";
+  const generatorOnly = variant === "generator";
+  const [selectedSide, setSelectedSide] = useState("front");
+  const [selectedEditorElement, setSelectedEditorElement] = useState("fullName");
+  const [templateFocusOpen, setTemplateFocusOpen] = useState(false);
+  const [generatorFocusOpen, setGeneratorFocusOpen] = useState(false);
+  const [generatedCredential, setGeneratedCredential] = useState(null);
+  const [pdfWorking, setPdfWorking] = useState(false);
+  const frontPreviewRef = useRef(null);
+  const backPreviewRef = useRef(null);
+  const generatorPanelRef = useRef(null);
+  const templateOrientation = normalizeCredentialOrientation(templateForm.orientation);
+
+  const editorPositions = normalizeCredentialTemplatePositions(templateForm.positions);
+  const customTexts = normalizeCredentialCustomTexts(templateForm.customTexts);
+  const customImages = normalizeCredentialCustomImages(templateForm.customImages, { keepFile: true });
+  const sideElements = credentialTemplateEditorElements.filter((element) => element.side === selectedSide);
+  const sideCustomTexts = customTexts.filter((customText) => customText.side === selectedSide);
+  const sideCustomImages = customImages.filter((image) => image.side === selectedSide);
+  const selectedCustomTextId = isTemplateCustomTextKey(selectedEditorElement)
+    ? getTemplateCustomTextIdFromKey(selectedEditorElement)
+    : "";
+  const selectedCustomImageId = isTemplateCustomImageKey(selectedEditorElement)
+    ? getTemplateCustomImageIdFromKey(selectedEditorElement)
+    : "";
+  const selectedCustomText = sideCustomTexts.find((customText) => customText.id === selectedCustomTextId) || null;
+  const selectedCustomImage = sideCustomImages.find((image) => image.id === selectedCustomImageId) || null;
+  const selectedEditorMeta = selectedCustomText
+    ? { key: selectedEditorElement, label: selectedCustomText.label || "Texto personalizado", kind: "customText" }
+    : selectedCustomImage
+      ? { key: selectedEditorElement, label: selectedCustomImage.label || "Imagen personalizada", kind: "customImage" }
+      : sideElements.find((element) => element.key === selectedEditorElement) || sideElements[0];
+  const currentEditorPosition = selectedCustomText
+    ? selectedCustomText
+    : selectedCustomImage
+      ? selectedCustomImage
+      : editorPositions[selectedSide]?.[selectedEditorElement] ||
+        normalizeTemplatePosition(null, getDefaultCredentialTemplatePositions()[selectedSide]?.[selectedEditorElement]);
+  const editorElementOptions = [
+    ...sideElements,
+    ...sideCustomTexts.map((customText, index) => ({
+      key: getTemplateCustomTextKey(customText.id),
+      label: customText.label || `Texto adicional ${index + 1}`,
+      kind: "customText",
+    })),
+    ...sideCustomImages.map((image, index) => ({
+      key: getTemplateCustomImageKey(image.id),
+      label: image.label || `Imagen adicional ${index + 1}`,
+      kind: "customImage",
+    })),
+  ];
+  const selectedCredentialTemplate =
+    activeTemplates.find((template) => template.id === credentialForm.templateId) ||
+    templates.find((template) => template.id === credentialForm.templateId) ||
+    null;
+  const selectedPreviewOrientation = normalizeCredentialOrientation(
+    selectedCredentialTemplate?.orientation || templateOrientation
+  );
+  const previewCredential = generatedCredential || {
+    ...credentialForm,
+    folio: "CRED-2026-ACTIVE-00001",
+    validationCode: "CRED-2026-ACTIVE-00001-DEMO",
+    validationUrl: buildCredentialValidationUrl("CRED-2026-ACTIVE-00001-DEMO"),
+    qrDataUrl: "",
+  };
+
+  function openTemplateFocus(template = null) {
+    if (template) {
+      onSelectTemplate(template);
+    } else {
+      onResetTemplateForm();
+    }
+    setGeneratorFocusOpen(false);
+    setTemplateFocusOpen(true);
+  }
+
+  function closeTemplateFocus() {
+    onResetTemplateForm();
+    setTemplateFocusOpen(false);
+    setSelectedSide("front");
+    setSelectedEditorElement("fullName");
+  }
+
+  function changeSide(side) {
+    setSelectedSide(side);
+    setSelectedEditorElement(side === "front" ? "fullName" : "qr");
+  }
+
+  function updateSelectedPosition(field, value) {
+    if (selectedCustomText) {
+      onTemplateCustomTextChange(selectedCustomText.id, field, value);
+      return;
+    }
+
+    if (selectedCustomImage) {
+      onTemplateCustomImageChange(selectedCustomImage.id, field, value);
+      return;
+    }
+
+    onTemplatePositionChange(selectedSide, selectedEditorElement, field, value);
+  }
+
+  async function handleGenerateCredential(event) {
+    event.preventDefault();
+    const nextCredential = await onGenerateCredential(credentialForm);
+
+    if (nextCredential) {
+      setGeneratedCredential(nextCredential);
+    }
+  }
+
+  function handleCredentialFieldChange(event) {
+    setGeneratedCredential(null);
+    onCredentialInputChange(event);
+  }
+
+  function openGeneratorFocus() {
+    setTemplateFocusOpen(false);
+    setGeneratorFocusOpen(true);
+    window.setTimeout(() => {
+      generatorPanelRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
+  function closeGeneratorFocus() {
+    setGeneratorFocusOpen(false);
+  }
+
+  async function downloadGeneratedCredentialPdf() {
+    if (!frontPreviewRef.current || !backPreviewRef.current || !generatedCredential) return;
+
+    try {
+      setPdfWorking(true);
+      const pdfSize = getCredentialCanvasSize(selectedPreviewOrientation);
+      const pdf = new jsPDF({
+        orientation: pdfSize.pdfOrientation,
+        unit: "px",
+        format: [pdfSize.width, pdfSize.height],
+      });
+
+      await appendCredentialSideToPdf(pdf, frontPreviewRef.current, false, pdfSize);
+      await appendCredentialSideToPdf(pdf, backPreviewRef.current, true, pdfSize);
+
+      const blob = pdf.output("blob");
+      downloadBlobFile(blob, `${sanitizePdfFileName(generatedCredential.folio || generatedCredential.fullName || "credencial")}.pdf`);
+    } finally {
+      setPdfWorking(false);
+    }
+  }
+
+  function scrollToGenerator() {
+    openGeneratorFocus();
+  }
+
+  function loadCredentialForReprint(credential) {
+    if (!credential) return;
+
+    setGeneratedCredential(credential);
+    onCredentialInputChange({ target: { name: "templateId", value: credential.templateId || "" } });
+    onCredentialInputChange({ target: { name: "collaboratorId", value: "" } });
+    onCredentialInputChange({ target: { name: "fullName", value: credential.fullName || "" } });
+    onCredentialInputChange({ target: { name: "department", value: credential.department || "" } });
+    onCredentialInputChange({ target: { name: "position", value: credential.position || "" } });
+    onCredentialInputChange({ target: { name: "employeeId", value: credential.employeeId || "" } });
+    onCredentialInputChange({ target: { name: "issueDate", value: credential.issueDate || "" } });
+    onCredentialInputChange({ target: { name: "expiryDate", value: credential.expiryDate || "" } });
+    onCredentialInputChange({ target: { name: "notes", value: credential.notes || "" } });
+    openGeneratorFocus();
+  }
+
+  function getCollaboratorOptionLabel(person) {
+    const department = person.area || person.departmentNames?.[0] || person.department || "Sin area";
+    return `${person.name || person.email || "Colaborador"} / ${department}`;
+  }
+
+  function getCollaboratorEmployeeId(person) {
+    return String(
+      person.employeeId ||
+      person.employeeNumber ||
+      person.collaboratorNumber ||
+      person.staffNumber ||
+      person.uid ||
+      person.id ||
+      ""
+    );
+  }
+
+  function getCollaboratorPosition(person) {
+    return String(
+      person.position ||
+      person.jobTitle ||
+      person.title ||
+      person.roleLabel ||
+      (person.role === "admin" ? "Administrador" : person.role === "requester" ? "Solicitante" : "Colaborador")
+    );
+  }
+
+  function handleCollaboratorChange(event) {
+    const collaboratorId = event.target.value;
+    const collaborator = (activeUsers || []).find(
+      (person) => person.uid === collaboratorId || person.id === collaboratorId
+    );
+
+    setGeneratedCredential(null);
+    onCredentialInputChange({ target: { name: "collaboratorId", value: collaboratorId } });
+
+    if (!collaborator) return;
+
+    onCredentialInputChange({ target: { name: "fullName", value: collaborator.name || "" } });
+    onCredentialInputChange({
+      target: {
+        name: "department",
+        value: collaborator.area || collaborator.departmentNames?.[0] || collaborator.department || "",
+      },
+    });
+    onCredentialInputChange({ target: { name: "position", value: getCollaboratorPosition(collaborator) } });
+    onCredentialInputChange({ target: { name: "employeeId", value: getCollaboratorEmployeeId(collaborator) } });
+  }
+
+  function handleAddCustomImage(event) {
+    const file = event.target.files?.[0] || null;
+    onAddTemplateCustomImage(selectedSide, file);
+    event.target.value = "";
+  }
+
+  const latestCredentials = generatedCredentials.slice(0, 6);
+
+  return (
+    <section className="certificate-templates-section credentials-section printshop-tab-redesign templates-redesign-page">
+      <div className="printshop-section-heading">
+        <div>
+          <p className="section-kicker printshop-kicker">{templatesOnly ? "Plantillas" : "Credenciales"}</p>
+          <h2>{templatesOnly ? "Plantillas de credenciales" : "Generador de credenciales"}</h2>
+          <p>
+            {templatesOnly
+              ? "Administra plantillas frente/reverso para que el generador de credenciales las pueda reutilizar."
+              : "Genera credenciales con datos de colaboradores, vista previa y QR publico de validacion."}
+          </p>
+        </div>
+
+        <div className="credential-heading-actions">
+          {!templatesOnly && (
+            <button type="button" className="visual-primary-button credential-generate-top-button" onClick={scrollToGenerator}>
+              Generar credencial
+            </button>
+          )}
+          {!generatorOnly && isAdmin && (
+            <button type="button" className="visual-outline-button" onClick={() => openTemplateFocus()}>
+              + Nueva plantilla
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="catalog-metrics-grid template-metrics-grid">
+        <CatalogMetric tone="blue" icon="credentials" label="Plantillas" value={templates.length} />
+        <CatalogMetric tone="green" icon="active" label="Activas" value={activeTemplates.length} />
+        {templatesOnly ? (
+          <>
+            <CatalogMetric tone="teal" icon="target" label="Verticales" value={templates.filter((template) => normalizeCredentialOrientation(template.orientation) === "vertical").length} />
+            <CatalogMetric tone="orange" icon="templates" label="Horizontales" value={templates.filter((template) => normalizeCredentialOrientation(template.orientation) === "horizontal").length} />
+          </>
+        ) : (
+          <>
+            <CatalogMetric tone="teal" icon="certificates" label="Generadas" value={generatedCredentials.length} />
+            <CatalogMetric tone="orange" icon="qr" label="Con QR" value={generatedCredentials.filter((item) => item.validationCode).length} />
+          </>
+        )}
+      </div>
+
+      <div className={`printshop-batches-layout template-admin-layout credentials-layout ${templateFocusOpen ? "printshop-focused-layout" : ""} ${generatorFocusOpen ? "credential-generator-focused printshop-focused-layout" : ""}`}>
+        <div className="printshop-batches-main">
+          {!generatorOnly && (
+          <Panel title="Plantillas de credencial" icon="credentials" actionLabel={`${templates.length} plantillas`}>
+            {loadingTemplates ? (
+              <div className="empty-state small">
+                <div><PrintshopIcon name="dashboard" /></div>
+                <p>Cargando plantillas...</p>
+              </div>
+            ) : templatesError ? (
+              <div className="message-box">{templatesError}</div>
+            ) : templates.length === 0 ? (
+              <div className="empty-state small">
+                <div><PrintshopIcon name="credentials" /></div>
+                <p>No hay plantillas de credencial registradas.</p>
+              </div>
+            ) : (
+              <div className="template-cards-grid credential-template-cards-grid">
+                {templates.map((template) => (
+                  <article
+                    key={template.id}
+                    className={`template-card credential-template-card ${template.active === false ? "inactive" : ""}`}
+                  >
+                    <div className="credential-template-card-previews">
+                      <div className="template-card-preview credential-card-preview">
+                        {template.frontImageDataUrl || template.frontImageUrl ? (
+                          <img src={template.frontImageDataUrl || template.frontImageUrl} alt={`${template.name} frente`} />
+                        ) : (
+                          <span>Frente</span>
+                        )}
+                      </div>
+                      <div className="template-card-preview credential-card-preview">
+                        {template.backImageDataUrl || template.backImageUrl ? (
+                          <img src={template.backImageDataUrl || template.backImageUrl} alt={`${template.name} reverso`} />
+                        ) : (
+                          <span>Reverso</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="template-card-body">
+                      <div>
+                        <strong>{template.name}</strong>
+                        <p>{template.notes || "Plantilla para credenciales"}</p>
+                      </div>
+                      <div className="template-card-badges">
+                        <StatusBadge tone={template.active === false ? "red" : "green"}>
+                          {template.active === false ? "Inactiva" : "Activa"}
+                        </StatusBadge>
+                        <StatusBadge tone="blue">Frente y reverso</StatusBadge>
+                        <StatusBadge tone="teal">{normalizeCredentialOrientation(template.orientation) === "vertical" ? "Vertical" : "Horizontal"}</StatusBadge>
+                      </div>
+                      <div className="table-actions">
+                        <button type="button" onClick={() => openTemplateFocus(template)}>
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          className={template.active === false ? "" : "danger-table-button"}
+                          onClick={() => onToggleTemplateStatus(template)}
+                        >
+                          {template.active === false ? "Activar" : "Desactivar"}
+                        </button>
+                        <button type="button" className="danger-table-button" onClick={() => onSoftDeleteTemplate(template)}>
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </Panel>
+          )}
+
+          {!generatorOnly && (
+          <Panel title="Editor visual de credencial" icon="target" actionLabel={selectedTemplateId ? "Arrastrar" : "Vista previa"}>
+            <div className="credential-side-toggle">
+              <button type="button" className={selectedSide === "front" ? "active" : ""} onClick={() => changeSide("front")}>
+                Frente
+              </button>
+              <button type="button" className={selectedSide === "back" ? "active" : ""} onClick={() => changeSide("back")}>
+                Reverso
+              </button>
+            </div>
+
+            <div className="certificate-template-editor credential-template-editor">
+              <div className="certificate-template-editor-preview">
+                <CredentialTemplateEditorPreview
+                  side={selectedSide}
+                  orientation={templateOrientation}
+                  templateImageUrl={
+                    selectedSide === "front"
+                      ? templateForm.frontImageDataUrl || templateForm.frontImageUrl
+                      : templateForm.backImageDataUrl || templateForm.backImageUrl
+                  }
+                  positions={editorPositions[selectedSide]}
+                  customTexts={sideCustomTexts}
+                  customImages={sideCustomImages}
+                  selectedElement={selectedEditorElement}
+                  onSelectElement={setSelectedEditorElement}
+                  onLayerMove={onTemplateEditorLayerMove}
+                  disabled={!isAdmin}
+                />
+              </div>
+
+              <div className="certificate-template-editor-controls">
+                <label>
+                  <span>Elemento</span>
+                  <select
+                    value={selectedEditorElement}
+                    onChange={(event) => setSelectedEditorElement(event.target.value)}
+                    disabled={!isAdmin}
+                  >
+                    {editorElementOptions.map((element) => (
+                      <option key={element.key} value={element.key}>
+                        {element.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="template-editor-actions-row">
+                  <button type="button" className="visual-primary-button" onClick={() => onAddTemplateCustomText(selectedSide)} disabled={!isAdmin}>
+                    Agregar texto
+                  </button>
+                  {selectedCustomText && (
+                    <button type="button" className="danger-table-button" onClick={() => onRemoveTemplateCustomText(selectedCustomText.id)} disabled={!isAdmin}>
+                      Quitar texto
+                    </button>
+                  )}
+                </div>
+
+                <div className="template-editor-actions-row">
+                  <label className="visual-outline-button template-image-upload-button">
+                    Agregar imagen
+                    <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAddCustomImage} disabled={!isAdmin} />
+                  </label>
+                  {selectedCustomImage && (
+                    <button type="button" className="danger-table-button" onClick={() => onRemoveTemplateCustomImage(selectedCustomImage.id)} disabled={!isAdmin}>
+                      Quitar imagen
+                    </button>
+                  )}
+                </div>
+
+                {selectedCustomText && (
+                  <>
+                    <label>
+                      <span>Etiqueta del cuadro</span>
+                      <input
+                        value={selectedCustomText.label}
+                        onChange={(event) => onTemplateCustomTextChange(selectedCustomText.id, "label", event.target.value)}
+                        disabled={!isAdmin}
+                      />
+                    </label>
+                    <div className="template-editor-mini-grid">
+                      <label>
+                        <span>Color</span>
+                        <input
+                          type="color"
+                          value={selectedCustomText.color || "#111827"}
+                          onChange={(event) => onTemplateCustomTextChange(selectedCustomText.id, "color", event.target.value)}
+                          disabled={!isAdmin}
+                        />
+                      </label>
+                      <label>
+                        <span>Alineacion</span>
+                        <select
+                          value={selectedCustomText.textAlign || "center"}
+                          onChange={(event) => onTemplateCustomTextChange(selectedCustomText.id, "textAlign", event.target.value)}
+                          disabled={!isAdmin}
+                        >
+                          <option value="left">Izquierda</option>
+                          <option value="center">Centro</option>
+                          <option value="right">Derecha</option>
+                        </select>
+                      </label>
+                    </div>
+                  </>
+                )}
+
+                {selectedCustomImage && (
+                  <>
+                    <label>
+                      <span>Etiqueta de la imagen</span>
+                      <input
+                        value={selectedCustomImage.label}
+                        onChange={(event) => onTemplateCustomImageChange(selectedCustomImage.id, "label", event.target.value)}
+                        disabled={!isAdmin}
+                      />
+                    </label>
+                    <div className="template-editor-mini-grid">
+                      <TemplatePositionNumberInput label="Alto" value={selectedCustomImage.height} onChange={(value) => onTemplateCustomImageChange(selectedCustomImage.id, "height", value)} disabled={!isAdmin} />
+                      <TemplatePositionNumberInput label="Opacidad" value={selectedCustomImage.opacity} onChange={(value) => onTemplateCustomImageChange(selectedCustomImage.id, "opacity", value)} disabled={!isAdmin} />
+                      <TemplatePositionNumberInput label="Capa" value={selectedCustomImage.zIndex} onChange={(value) => onTemplateCustomImageChange(selectedCustomImage.id, "zIndex", value)} disabled={!isAdmin} />
+                    </div>
+                  </>
+                )}
+
+                <div className="template-editor-mini-grid">
+                  <TemplatePositionNumberInput label="X" value={currentEditorPosition.x} onChange={(value) => updateSelectedPosition("x", value)} disabled={!isAdmin} />
+                  <TemplatePositionNumberInput label="Y" value={currentEditorPosition.y} onChange={(value) => updateSelectedPosition("y", value)} disabled={!isAdmin} />
+                  {selectedEditorMeta.kind === "qr" ? (
+                    <TemplatePositionNumberInput label="Tamano" value={currentEditorPosition.size} onChange={(value) => updateSelectedPosition("size", value)} disabled={!isAdmin} />
+                  ) : (
+                    <TemplatePositionNumberInput label="Ancho" value={currentEditorPosition.width} onChange={(value) => updateSelectedPosition("width", value)} disabled={!isAdmin} />
+                  )}
+                  {(selectedEditorMeta.kind === "text" || selectedEditorMeta.kind === "customText") && (
+                    <TemplatePositionNumberInput label="Fuente" value={currentEditorPosition.fontSize} onChange={(value) => updateSelectedPosition("fontSize", value)} disabled={!isAdmin} />
+                  )}
+                </div>
+
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={currentEditorPosition.active !== false}
+                    onChange={(event) => updateSelectedPosition("active", event.target.checked)}
+                    disabled={!isAdmin}
+                  />
+                  <span>Mostrar este elemento</span>
+                </label>
+
+                <div className="template-editor-nudge-grid">
+                  <button type="button" onClick={() => updateSelectedPosition("y", Number(currentEditorPosition.y) - 1)} disabled={!isAdmin}>Arriba</button>
+                  <button type="button" onClick={() => updateSelectedPosition("x", Number(currentEditorPosition.x) - 1)} disabled={!isAdmin}>Izq.</button>
+                  <button type="button" onClick={() => updateSelectedPosition("x", Number(currentEditorPosition.x) + 1)} disabled={!isAdmin}>Der.</button>
+                  <button type="button" onClick={() => updateSelectedPosition("y", Number(currentEditorPosition.y) + 1)} disabled={!isAdmin}>Abajo</button>
+                </div>
+
+                {selectedCustomText && (
+                  <TemplateBodySegmentsEditor
+                    title="Texto personalizado"
+                    description="Edita el texto seleccionado por segmentos."
+                    segments={selectedCustomText.segments}
+                    disabled={!isAdmin}
+                    onSegmentChange={(segmentId, field, value) => onTemplateCustomTextSegmentChange(selectedCustomText.id, segmentId, field, value)}
+                    onAddSegment={() => onAddTemplateCustomTextSegment(selectedCustomText.id)}
+                    onRemoveSegment={(segmentId) => onRemoveTemplateCustomTextSegment(selectedCustomText.id, segmentId)}
+                    onResetSegments={() => {}}
+                  />
+                )}
+
+                <button type="button" className="visual-outline-button" onClick={onResetTemplatePositions} disabled={!isAdmin}>
+                  Restaurar posiciones
+                </button>
+              </div>
+            </div>
+          </Panel>
+          )}
+
+          {!templatesOnly && (
+          <Panel title="Credenciales generadas" icon="history" actionLabel={`${generatedCredentials.length} registros`}>
+            {loadingGeneratedCredentials ? (
+              <div className="empty-state small"><p>Cargando credenciales...</p></div>
+            ) : generatedCredentialsError ? (
+              <div className="message-box">{generatedCredentialsError}</div>
+            ) : latestCredentials.length === 0 ? (
+              <div className="empty-state small"><p>Aun no hay credenciales generadas.</p></div>
+            ) : (
+              <div className="generated-credentials-list">
+                {latestCredentials.map((credential) => (
+                  <article key={credential.id} className="generated-credential-row">
+                    <div>
+                      <strong>{credential.fullName}</strong>
+                      <span>{credential.department || "Sin departamento"} / {credential.folio}</span>
+                    </div>
+                    <StatusBadge tone={getGeneratedCertificateStatusTone(credential.status)}>{credential.status}</StatusBadge>
+                    <button type="button" className="visual-outline-button" onClick={() => loadCredentialForReprint(credential)}>
+                      Reimprimir
+                    </button>
+                    <button type="button" className="danger-table-button" onClick={() => onSoftDeleteCredential(credential)}>
+                      Eliminar
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+          </Panel>
+          )}
+        </div>
+
+        <aside className="printshop-batches-side">
+          {!generatorOnly && templateFocusOpen && (
+            <div className="printshop-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeTemplateFocus}>
+                Regresar a credenciales
+              </button>
+              <span>{selectedTemplateId ? "Edicion de plantilla" : "Nueva plantilla"}</span>
+            </div>
+          )}
+
+          {!templatesOnly && generatorFocusOpen && (
+            <div className="printshop-focused-header credential-generator-focused-header">
+              <button type="button" className="visual-outline-button" onClick={closeGeneratorFocus}>
+                Regresar a credenciales
+              </button>
+              <span>{generatedCredential ? "Reimpresion de credencial" : "Generacion enfocada"}</span>
+            </div>
+          )}
+
+          {!generatorOnly && (
+          <div className="credential-template-form-panel">
+            <Panel title={selectedTemplateId ? "Editar plantilla" : "Nueva plantilla"} icon={selectedTemplateId ? "edit" : "plus"} actionLabel="Plantilla">
+              <form className="printshop-product-form template-form credential-template-form" onSubmit={onSaveTemplate}>
+              <label className="full">
+                <span>Nombre de plantilla</span>
+                <input name="name" value={templateForm.name} onChange={onTemplateInputChange} placeholder="Ej. Credencial colaboradores" disabled={!isAdmin} />
+              </label>
+
+              <label className="full">
+                <span>Formato</span>
+                <select name="orientation" value={templateForm.orientation} onChange={onTemplateInputChange} disabled={!isAdmin}>
+                  <option value="horizontal">Horizontal</option>
+                  <option value="vertical">Vertical</option>
+                </select>
+                <small>Usa vertical si tu diseno de credencial esta girado tipo gafete.</small>
+              </label>
+
+              <label className="full">
+                <span>Imagen frontal</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => onFrontFileChange(event.target.files?.[0] || null)} disabled={!isAdmin} />
+                <small>PNG, JPG o WEBP. Se ajustara al formato seleccionado.</small>
+              </label>
+
+              <label className="full">
+                <span>Imagen reverso</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => onBackFileChange(event.target.files?.[0] || null)} disabled={!isAdmin} />
+                <small>El QR se coloca sobre este lado.</small>
+              </label>
+
+              {(frontFile || templateForm.frontImageDataUrl || templateForm.frontImageUrl || backFile || templateForm.backImageDataUrl || templateForm.backImageUrl) && (
+                <div className="template-selected-preview credential-selected-preview full">
+                  <span>{frontFile ? frontFile.name : "Frente actual"}</span>
+                  <span>{backFile ? backFile.name : "Reverso actual"}</span>
+                </div>
+              )}
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea name="notes" value={templateForm.notes} onChange={onTemplateInputChange} placeholder="Notas internas sobre esta plantilla" disabled={!isAdmin} />
+              </label>
+
+              <label className="toggle-row full">
+                <input type="checkbox" name="active" checked={templateForm.active} onChange={onTemplateInputChange} disabled={!isAdmin} />
+                <span>Plantilla activa</span>
+              </label>
+
+              {templateMessage && <div className="message-box full">{templateMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                {selectedTemplateId && (
+                  <button type="button" className="visual-outline-button" onClick={onResetTemplateForm}>
+                    Nueva plantilla
+                  </button>
+                )}
+                <button type="submit" className="visual-primary-button" disabled={savingTemplate || !isAdmin}>
+                  {savingTemplate ? "Guardando..." : selectedTemplateId ? "Guardar cambios" : "Crear plantilla"}
+                </button>
+              </div>
+              </form>
+            </Panel>
+          </div>
+          )}
+
+          {!templatesOnly && (
+          <div ref={generatorPanelRef} className="credential-generator-panel">
+            <Panel title="Generar credencial" icon="credentials" actionLabel="QR">
+              <form className="printshop-product-form credential-generator-form" onSubmit={handleGenerateCredential}>
+              <label className="full">
+                <span>Plantilla</span>
+                <select name="templateId" value={credentialForm.templateId} onChange={handleCredentialFieldChange}>
+                  <option value="">Selecciona plantilla</option>
+                  {activeTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>{template.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="full">
+                <span>Colaborador registrado</span>
+                <select name="collaboratorId" value={credentialForm.collaboratorId} onChange={handleCollaboratorChange}>
+                  <option value="">Captura manual</option>
+                  {(activeUsers || []).map((person) => (
+                    <option key={person.uid || person.id} value={person.uid || person.id}>
+                      {getCollaboratorOptionLabel(person)}
+                    </option>
+                  ))}
+                </select>
+                <small>Si eliges un colaborador del sistema, se llenan sus datos y puedes ajustarlos antes de generar.</small>
+              </label>
+
+              {usersError && <div className="message-box full">{usersError}</div>}
+
+              <label className="full">
+                <span>Nombre de la persona</span>
+                <input name="fullName" value={credentialForm.fullName} onChange={handleCredentialFieldChange} placeholder="Nombre completo" />
+              </label>
+
+              <label>
+                <span>Departamento</span>
+                <input name="department" value={credentialForm.department} onChange={handleCredentialFieldChange} placeholder="Ej. Imprenta" />
+              </label>
+
+              <label>
+                <span>Puesto</span>
+                <input name="position" value={credentialForm.position} onChange={handleCredentialFieldChange} placeholder="Ej. Coordinacion" />
+              </label>
+
+              <label>
+                <span>ID colaborador</span>
+                <input name="employeeId" value={credentialForm.employeeId} onChange={handleCredentialFieldChange} placeholder="Opcional" />
+              </label>
+
+              <label>
+                <span>Emision</span>
+                <input type="date" name="issueDate" value={credentialForm.issueDate} onChange={handleCredentialFieldChange} />
+              </label>
+
+              <label>
+                <span>Vigencia</span>
+                <input type="date" name="expiryDate" value={credentialForm.expiryDate} onChange={handleCredentialFieldChange} />
+              </label>
+
+              <label className="full">
+                <span>Notas</span>
+                <textarea name="notes" value={credentialForm.notes} onChange={handleCredentialFieldChange} placeholder="Notas internas" />
+              </label>
+
+              {credentialMessage && <div className="message-box full">{credentialMessage}</div>}
+
+              <div className="printshop-form-actions full">
+                <button type="submit" className="visual-primary-button" disabled={savingCredential || !credentialForm.templateId}>
+                  {savingCredential ? "Generando..." : "Generar credencial"}
+                </button>
+                <button type="button" className="visual-outline-button" onClick={downloadGeneratedCredentialPdf} disabled={!generatedCredential || pdfWorking}>
+                  {pdfWorking ? "Preparando..." : "Descargar PDF"}
+                </button>
+              </div>
+              </form>
+            </Panel>
+          </div>
+          )}
+
+          {!templatesOnly && (
+          <div className="credential-preview-panel">
+            <Panel title="Vista previa generada" icon="certificates" actionLabel={generatedCredential ? generatedCredential.folio : "Borrador"}>
+              {selectedCredentialTemplate ? (
+                <div className="credential-generated-preview">
+                  <CredentialStaticStage
+                    refProp={frontPreviewRef}
+                    side="front"
+                    template={selectedCredentialTemplate}
+                    credential={previewCredential}
+                    orientation={selectedPreviewOrientation}
+                  />
+                  <CredentialStaticStage
+                    refProp={backPreviewRef}
+                    side="back"
+                    template={selectedCredentialTemplate}
+                    credential={previewCredential}
+                    orientation={selectedPreviewOrientation}
+                  />
+                </div>
+              ) : (
+                <div className="empty-state small">
+                  <p>Selecciona una plantilla para ver la credencial.</p>
+                </div>
+              )}
+            </Panel>
+          </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function TemplateBodySegmentsEditor({
   title = "Texto del certificado por segmentos",
   description = "Divide el texto en partes y aplica negritas, cursiva o subrayado solo donde lo necesites.",
@@ -13799,6 +16559,266 @@ function TemplatePositionNumberInput({ label, value, onChange, disabled }) {
       />
     </label>
   );
+}
+
+function CredentialTemplateEditorPreview({
+  side,
+  orientation = "horizontal",
+  templateImageUrl,
+  positions,
+  customTexts,
+  customImages,
+  selectedElement,
+  onSelectElement,
+  onLayerMove,
+  disabled,
+}) {
+  const stageRef = useRef(null);
+  const sampleQr = "data:image/svg+xml;utf8," + encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+      <rect width="80" height="80" fill="white"/>
+      <rect x="8" y="8" width="18" height="18" fill="#111827"/>
+      <rect x="54" y="8" width="18" height="18" fill="#111827"/>
+      <rect x="8" y="54" width="18" height="18" fill="#111827"/>
+      <rect x="34" y="16" width="8" height="8" fill="#111827"/>
+      <rect x="46" y="34" width="8" height="8" fill="#111827"/>
+      <rect x="30" y="50" width="10" height="10" fill="#111827"/>
+      <rect x="54" y="54" width="8" height="8" fill="#111827"/>
+    </svg>
+  `);
+
+  function handleLayerPointerDown(event, elementKey) {
+    if (disabled || !stageRef.current) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectElement(elementKey);
+
+    const stage = stageRef.current;
+    const pointerId = event.pointerId;
+    stage.setPointerCapture?.(pointerId);
+
+    function moveLayer(moveEvent) {
+      const rect = stage.getBoundingClientRect();
+      const nextX = Math.min(100, Math.max(0, ((moveEvent.clientX - rect.left) / rect.width) * 100));
+      const nextY = Math.min(100, Math.max(0, ((moveEvent.clientY - rect.top) / rect.height) * 100));
+
+      onLayerMove(side, elementKey, {
+        x: Number(nextX.toFixed(2)),
+        y: Number(nextY.toFixed(2)),
+      });
+    }
+
+    function stopDrag() {
+      stage.releasePointerCapture?.(pointerId);
+      window.removeEventListener("pointermove", moveLayer);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+    }
+
+    moveLayer(event);
+    window.addEventListener("pointermove", moveLayer);
+    window.addEventListener("pointerup", stopDrag);
+    window.addEventListener("pointercancel", stopDrag);
+  }
+
+  return (
+    <div className={`certificate-template-editor-stage credential-editor-stage ${normalizeCredentialOrientation(orientation)}`} ref={stageRef}>
+      {templateImageUrl ? (
+        <img src={templateImageUrl} alt={`Plantilla ${side}`} draggable="false" />
+      ) : (
+        <div className="credential-empty-template-side">
+          {side === "front" ? "Frente de credencial" : "Reverso de credencial"}
+        </div>
+      )}
+
+      {side === "front" ? (
+        <>
+          <EditorTemplateLayer elementKey="fullName" selectedElement={selectedElement} position={positions.fullName} className="editor-layer-text strong" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            Nombre de la persona
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="department" selectedElement={selectedElement} position={positions.department} className="editor-layer-text" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            Departamento
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="position" selectedElement={selectedElement} position={positions.position} className="editor-layer-text small" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            Puesto
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="employeeId" selectedElement={selectedElement} position={positions.employeeId} className="editor-layer-text folio" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            ID AES-001
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="credentialId" selectedElement={selectedElement} position={positions.credentialId} className="editor-layer-text folio" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            CRED-2026-001
+          </EditorTemplateLayer>
+        </>
+      ) : (
+        <>
+          <EditorTemplateLayer elementKey="issueDate" selectedElement={selectedElement} position={positions.issueDate} className="editor-layer-text folio" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            Emision 2026-06-26
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="expiryDate" selectedElement={selectedElement} position={positions.expiryDate} className="editor-layer-text folio" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            Vigencia 2027-06-26
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="qr" selectedElement={selectedElement} position={positions.qr} className="editor-layer-qr" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown} isQr>
+            <img src={sampleQr} alt="QR de muestra" draggable="false" />
+          </EditorTemplateLayer>
+          <EditorTemplateLayer elementKey="validationCode" selectedElement={selectedElement} position={positions.validationCode} className="editor-layer-text folio" onSelectElement={onSelectElement} onPointerDown={handleLayerPointerDown}>
+            Codigo de validacion
+          </EditorTemplateLayer>
+        </>
+      )}
+
+      {normalizeCredentialCustomImages(customImages).map((image) => (
+        <EditorCustomImageLayer
+          key={image.id}
+          customImage={image}
+          selectedElement={selectedElement}
+          onSelectElement={onSelectElement}
+          onPointerDown={handleLayerPointerDown}
+        />
+      ))}
+
+      {normalizeCredentialCustomTexts(customTexts).map((customText) => (
+        <EditorCustomTextLayer
+          key={customText.id}
+          customText={customText}
+          programLabel=""
+          selectedElement={selectedElement}
+          onSelectElement={onSelectElement}
+          onPointerDown={handleLayerPointerDown}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CredentialStaticStage({ refProp, side, template, credential, orientation = "horizontal", pdfMode = false }) {
+  const positions = normalizeCredentialTemplatePositions(template?.positions)[side];
+  const templateImageUrl = side === "front"
+    ? template?.frontImageDataUrl || template?.frontImageUrl
+    : template?.backImageDataUrl || template?.backImageUrl;
+  const customTexts = normalizeCredentialCustomTexts(template?.customTexts).filter((customText) => customText.side === side);
+  const customImages = normalizeCredentialCustomImages(template?.customImages).filter((image) => image.side === side);
+
+  return (
+    <div
+      ref={refProp}
+      className={`credential-static-stage ${normalizeCredentialOrientation(orientation)} ${pdfMode ? "pdf-export-mode" : ""}`}
+    >
+      {templateImageUrl ? (
+        <img className="credential-template-background" src={templateImageUrl} alt={`Credencial ${side}`} />
+      ) : (
+        <div className="credential-empty-template-side">{side === "front" ? "Frente" : "Reverso"}</div>
+      )}
+
+      <CredentialTemplateOverlay
+        side={side}
+        positions={positions}
+        credential={credential}
+        customTexts={customTexts}
+        customImages={customImages}
+      />
+    </div>
+  );
+}
+
+function CredentialTemplateOverlay({ side, positions, credential, customTexts, customImages }) {
+  const qrDataUrl = credential.qrDataUrl || "";
+
+  return (
+    <>
+      {side === "front" ? (
+        <>
+          <CredentialTextLayer className="credential-layer-name" position={positions.fullName}>
+            {credential.fullName || "Nombre de la persona"}
+          </CredentialTextLayer>
+          <CredentialTextLayer position={positions.department}>
+            {credential.department || "Departamento"}
+          </CredentialTextLayer>
+          <CredentialTextLayer position={positions.position}>
+            {credential.position || "Puesto"}
+          </CredentialTextLayer>
+          <CredentialTextLayer position={positions.employeeId}>
+            {credential.employeeId ? `ID ${credential.employeeId}` : "ID colaborador"}
+          </CredentialTextLayer>
+          <CredentialTextLayer position={positions.credentialId}>
+            {credential.folio || "CRED-2026-0001"}
+          </CredentialTextLayer>
+        </>
+      ) : (
+        <>
+          <CredentialTextLayer position={positions.issueDate}>
+            {credential.issueDate ? `Emision ${credential.issueDate}` : "Emision pendiente"}
+          </CredentialTextLayer>
+          <CredentialTextLayer position={positions.expiryDate}>
+            {credential.expiryDate ? `Vigencia ${credential.expiryDate}` : "Vigencia pendiente"}
+          </CredentialTextLayer>
+          {positions.qr?.active !== false && (
+            <img
+              className="credential-template-qr"
+              src={qrDataUrl || "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'%3E%3Crect width='80' height='80' fill='white'/%3E%3Crect x='8' y='8' width='18' height='18' fill='%23111827'/%3E%3Crect x='54' y='8' width='18' height='18' fill='%23111827'/%3E%3Crect x='8' y='54' width='18' height='18' fill='%23111827'/%3E%3C/svg%3E"}
+              alt="QR de validacion"
+              style={getTemplateElementStyle(positions.qr, { size: true })}
+            />
+          )}
+          <CredentialTextLayer position={positions.validationCode}>
+            {credential.validationCode || "Codigo de validacion"}
+          </CredentialTextLayer>
+        </>
+      )}
+
+      {normalizeCredentialCustomImages(customImages).map((image) => (
+        image.active === false || !image.imageDataUrl && !image.imageUrl ? null : (
+          <img
+            key={image.id}
+            className="certificate-template-custom-image"
+            src={image.imageDataUrl || image.imageUrl}
+            alt={image.label}
+            style={getTemplateCustomImageStyle(image)}
+          />
+        )
+      ))}
+
+      {normalizeCredentialCustomTexts(customTexts).map((customText) => (
+        customText.active === false ? null : (
+          <div
+            key={customText.id}
+            className="certificate-template-custom-text"
+            style={getTemplateCustomTextStyle(customText)}
+          >
+            <CertificateBodySegments segments={customText.segments} />
+          </div>
+        )
+      ))}
+    </>
+  );
+}
+
+function CredentialTextLayer({ position, className = "", children }) {
+  const normalized = normalizeTemplatePosition(position, {});
+  if (normalized.active === false) return null;
+
+  return (
+    <div className={`credential-template-text ${className}`} style={getTemplateTextStyle(normalized)}>
+      {children}
+    </div>
+  );
+}
+
+async function appendCredentialSideToPdf(pdf, element, addPage = false, pdfSize = getCredentialCanvasSize()) {
+  await waitForCertificateAssets(element);
+
+  const canvas = await html2canvas(element, {
+    scale: 3,
+    backgroundColor: "#ffffff",
+    useCORS: true,
+  });
+  const imageData = canvas.toDataURL("image/jpeg", 0.95);
+
+  if (addPage) {
+    pdf.addPage([pdfSize.width, pdfSize.height], pdfSize.pdfOrientation);
+  }
+
+  pdf.addImage(imageData, "JPEG", 0, 0, pdfSize.width, pdfSize.height);
 }
 
 function CertificateTemplateEditorPreview({
@@ -14813,15 +17833,16 @@ function ProductCatalogView({
 function getPrintshopTabs(isAdmin) {
   return [
     { key: "dashboard", label: "Inicio", icon: "dashboard" },
-    { key: "catalog", label: "Cat\u00e1logo de productos", icon: "catalog" },
-    { key: "inventory", label: "Inventario terminado", icon: "inventory" },
-    { key: "supplies", label: "Insumos", icon: "supplies" },
     { key: "requests", label: "Solicitudes", icon: "requests" },
+    { key: "certificates", label: "Certificados", icon: "certificates" },
+    { key: "credentials", label: "Credenciales", icon: "credentials" },
+    { key: "inventory", label: "Inventario terminado", icon: "inventory" },
     { key: "batches", label: "Lotes de producci\u00f3n", icon: "batches" },
-    { key: "certificates", label: "Historial de certificados", icon: "certificates" },
-    { key: "logs", label: "Bit\u00e1cora", icon: "logs" },
+    { key: "supplies", label: "Insumos", icon: "supplies" },
+    { key: "catalog", label: "Cat\u00e1logo de productos", icon: "catalog" },
     { key: "templates", label: "Plantillas", icon: "templates", adminOnly: true },
     { key: "signers", label: "Firmas", icon: "signers", adminOnly: true },
+    { key: "logs", label: "Bit\u00e1cora", icon: "logs" },
   ].filter((tab) => !tab.adminOnly || isAdmin);
 }
 
@@ -14950,6 +17971,25 @@ function PrintshopIcon({ name }) {
         <path d="M6 4h12v16H6z" />
         <path d="M9 9h6" />
         <path d="M9 13l2 2 4-5" />
+      </>
+    ),
+    credentials: (
+      <>
+        <rect x="3.5" y="6" width="17" height="12" rx="2" />
+        <circle cx="8.5" cy="11" r="2" />
+        <path d="M6 15c.8-1.4 4.2-1.4 5 0" />
+        <path d="M13.5 10h4" />
+        <path d="M13.5 13h3" />
+      </>
+    ),
+    qr: (
+      <>
+        <rect x="4" y="4" width="6" height="6" rx="1" />
+        <rect x="14" y="4" width="6" height="6" rx="1" />
+        <rect x="4" y="14" width="6" height="6" rx="1" />
+        <path d="M14 14h2v2h-2z" />
+        <path d="M18 14h2v6h-6v-2" />
+        <path d="M14 20h.01" />
       </>
     ),
     logs: (

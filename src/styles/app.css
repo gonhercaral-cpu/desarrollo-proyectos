@@ -20443,6 +20443,485 @@ body:has(.field-mode-page) .main-content {
   width: 100%;
 }
 
+/* ===== Credential templates ===== */
+.credentials-section {
+  display: grid;
+  gap: 18px;
+}
+
+.credential-heading-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.credential-generate-top-button {
+  box-shadow: 0 12px 24px rgba(29, 95, 209, 0.18);
+}
+
+.credential-template-cards-grid {
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+}
+
+.credential-template-card-previews {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: #dbe7f5;
+}
+
+.credential-card-preview {
+  height: 116px;
+}
+
+.credential-card-preview img {
+  object-fit: cover;
+}
+
+.credential-side-toggle {
+  display: inline-flex;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 4px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.credential-side-toggle button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: transparent;
+  color: #526176;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.credential-side-toggle button.active {
+  background: #ffffff;
+  color: #17345f;
+  box-shadow: 0 6px 16px rgba(21, 42, 74, 0.1);
+}
+
+.credential-template-editor .template-editor-nudge-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.credential-template-editor .template-editor-nudge-grid button:first-child,
+.credential-template-editor .template-editor-nudge-grid button:nth-child(4) {
+  grid-column: auto;
+}
+
+.credential-editor-stage,
+.credential-static-stage {
+  aspect-ratio: 1012 / 638;
+}
+
+.credential-editor-stage.vertical,
+.credential-static-stage.vertical {
+  aspect-ratio: 638 / 1012;
+}
+
+.credential-editor-stage {
+  width: min(100%, 640px);
+}
+
+.credential-editor-stage.vertical {
+  width: min(100%, 420px);
+}
+
+.credential-empty-template-side {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f8fbff, #eef5ff);
+  color: #60708a;
+  font-weight: 800;
+}
+
+.credential-selected-preview {
+  grid-template-columns: 1fr 1fr;
+}
+
+.printshop-template-hub {
+  display: grid;
+  gap: 18px;
+}
+
+.printshop-template-hub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.printshop-template-hub-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #49617f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.printshop-template-hub-tabs button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.printshop-template-hub-tabs button span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #e7eef8;
+  color: #17345f;
+  font-size: 12px;
+}
+
+.printshop-template-hub-tabs button.active {
+  border-color: #b8cbe4;
+  background: #ffffff;
+  color: #17345f;
+  box-shadow: 0 8px 18px rgba(23, 52, 95, 0.08);
+}
+
+.certificate-workspace-layout {
+  grid-template-columns: minmax(300px, 0.42fr) minmax(520px, 1fr);
+  align-items: start;
+}
+
+.certificate-request-list-panel,
+.certificate-workspace-detail {
+  min-width: 0;
+}
+
+.certificate-request-list {
+  display: grid;
+  gap: 10px;
+}
+
+.certificate-request-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.certificate-request-card:hover,
+.certificate-request-card.active {
+  border-color: #9db8d8;
+  box-shadow: 0 12px 26px rgba(23, 52, 95, 0.1);
+  transform: translateY(-1px);
+}
+
+.certificate-request-card strong,
+.certificate-request-card span,
+.certificate-request-card small {
+  display: block;
+}
+
+.certificate-request-card strong {
+  color: #17345f;
+  font-size: 14px;
+}
+
+.certificate-request-card span,
+.certificate-request-card small {
+  color: #60708a;
+  font-size: 12px;
+}
+
+.certificate-request-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.certificate-history-embedded,
+.certificate-history-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.certificate-history-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.certificate-history-card strong,
+.certificate-history-card span,
+.certificate-history-card small {
+  display: block;
+}
+
+.certificate-history-card strong {
+  color: #17345f;
+  font-size: 14px;
+}
+
+.certificate-history-card span,
+.certificate-history-card small {
+  margin-top: 3px;
+  color: #60708a;
+  font-size: 12px;
+}
+
+.certificate-history-card-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.credential-generated-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.credentials-layout.credential-generator-focused {
+  grid-template-columns: 1fr !important;
+}
+
+.credentials-layout.credential-generator-focused .printshop-batches-main,
+.credentials-layout.credential-generator-focused .credential-template-form-panel {
+  display: none !important;
+}
+
+.credentials-layout.credential-generator-focused .printshop-batches-side {
+  display: grid !important;
+  grid-template-columns: minmax(320px, 0.72fr) minmax(420px, 1fr);
+  gap: 18px;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.credentials-layout.credential-generator-focused .credential-generator-focused-header {
+  grid-column: 1 / -1;
+}
+
+.credentials-layout.credential-generator-focused .credential-generator-panel,
+.credentials-layout.credential-generator-focused .credential-preview-panel {
+  min-width: 0;
+}
+
+.credentials-layout.credential-generator-focused .credential-generated-preview {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.credentials-layout.credential-generator-focused .credential-static-stage.vertical {
+  max-width: 330px;
+  margin: 0 auto;
+}
+
+.credential-static-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 12px 24px rgba(17, 31, 61, 0.08);
+}
+
+.credential-static-stage.pdf-export-mode {
+  width: 1012px !important;
+  height: 638px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.credential-static-stage.vertical.pdf-export-mode {
+  width: 638px !important;
+  height: 1012px !important;
+}
+
+.credential-template-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.credential-template-text {
+  z-index: 5;
+  color: #111827;
+  font-family: "Montserrat", Arial, sans-serif;
+  font-weight: 700;
+  line-height: 1.12;
+  pointer-events: none;
+  word-break: break-word;
+}
+
+.credential-layer-name {
+  font-weight: 850;
+}
+
+.credential-template-qr {
+  z-index: 6;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  padding: 4px;
+  border: 1px solid rgba(20, 40, 70, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.generated-credentials-list {
+  display: grid;
+  gap: 10px;
+}
+
+.generated-credential-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.generated-credential-row strong,
+.generated-credential-row span {
+  display: block;
+}
+
+.generated-credential-row strong {
+  color: #17345f;
+  font-size: 13px;
+}
+
+.generated-credential-row span {
+  margin-top: 2px;
+  color: #60708a;
+  font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  .certificate-workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-template-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .credentials-layout.credential-generator-focused .printshop-batches-side,
+  .credentials-layout.credential-generator-focused .credential-generated-preview {
+    grid-template-columns: 1fr !important;
+  }
+
+  .generated-credential-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+.certificate-generator-focused-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.certificate-generator-header {
+  margin-bottom: 0;
+}
+
+.certificate-generator-mode-tabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 6px;
+  padding: 6px;
+  margin-bottom: 14px;
+  border: 1px solid #dbe7f5;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.certificate-generator-mode-tabs button {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #49617f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.certificate-generator-mode-tabs button.active {
+  border-color: #b8cbe4;
+  background: #ffffff;
+  color: #17345f;
+  box-shadow: 0 8px 18px rgba(23, 52, 95, 0.08);
+}
+
+.certificate-generator-individual-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.64fr) minmax(460px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.certificate-generator-preview-panel {
+  min-width: 0;
+}
+
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  grid-template-columns: minmax(360px, 0.58fr) minmax(520px, 1fr) !important;
+}
+
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-generator-panel,
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-preview-panel {
+  width: 100% !important;
+}
+
+@media (max-width: 1100px) {
+  .certificate-generator-individual-layout,
+  .credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* ===== Certificate template custom images ===== */
 .template-image-upload-button {
   display: inline-flex;
@@ -54055,6 +54534,7 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero,
 .printshop-page .printshop-logs-section > .printshop-section-heading,
 .printshop-page .certificate-templates-section > .printshop-section-heading,
+.printshop-page .credentials-section > .printshop-section-heading,
 .printshop-page .printshop-signers-section > .printshop-section-heading {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) auto !important;
@@ -54086,6 +54566,7 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero > div:first-child,
 .printshop-page .printshop-logs-section > .printshop-section-heading > div:first-child,
 .printshop-page .certificate-templates-section > .printshop-section-heading > div:first-child,
+.printshop-page .credentials-section > .printshop-section-heading > div:first-child,
 .printshop-page .printshop-signers-section > .printshop-section-heading > div:first-child {
   min-width: 0 !important;
   display: grid !important;
@@ -54109,6 +54590,8 @@ body {
 .printshop-page .printshop-logs-section > .printshop-section-heading .printshop-kicker,
 .printshop-page .certificate-templates-section > .printshop-section-heading .section-kicker,
 .printshop-page .certificate-templates-section > .printshop-section-heading .printshop-kicker,
+.printshop-page .credentials-section > .printshop-section-heading .section-kicker,
+.printshop-page .credentials-section > .printshop-section-heading .printshop-kicker,
 .printshop-page .printshop-signers-section > .printshop-section-heading .section-kicker,
 .printshop-page .printshop-signers-section > .printshop-section-heading .printshop-kicker {
   display: none !important;
@@ -54129,6 +54612,7 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero h2,
 .printshop-page .printshop-logs-section > .printshop-section-heading h2,
 .printshop-page .certificate-templates-section > .printshop-section-heading h2,
+.printshop-page .credentials-section > .printshop-section-heading h2,
 .printshop-page .printshop-signers-section > .printshop-section-heading h2 {
   margin: 0 0 5px !important;
   color: #0f2442 !important;
@@ -54146,6 +54630,7 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero p:not(.section-kicker),
 .printshop-page .printshop-logs-section > .printshop-section-heading p:not(.section-kicker),
 .printshop-page .certificate-templates-section > .printshop-section-heading p:not(.section-kicker),
+.printshop-page .credentials-section > .printshop-section-heading p:not(.section-kicker),
 .printshop-page .printshop-signers-section > .printshop-section-heading p:not(.section-kicker) {
   display: -webkit-box !important;
   -webkit-box-orient: vertical !important;
@@ -54224,6 +54709,8 @@ body {
 .printshop-page .printshop-batches-page > .batches-hero .visual-outline-button,
 .printshop-page .certificate-templates-section > .printshop-section-heading .visual-primary-button,
 .printshop-page .certificate-templates-section > .printshop-section-heading .visual-outline-button,
+.printshop-page .credentials-section > .printshop-section-heading .visual-primary-button,
+.printshop-page .credentials-section > .printshop-section-heading .visual-outline-button,
 .printshop-page .printshop-signers-section > .printshop-section-heading .visual-primary-button,
 .printshop-page .printshop-signers-section > .printshop-section-heading .visual-outline-button {
   min-width: auto !important;
@@ -54260,6 +54747,7 @@ body {
   .printshop-page .generated-certificates-redesign > .certificates-clean-hero,
   .printshop-page .printshop-logs-section > .printshop-section-heading,
   .printshop-page .certificate-templates-section > .printshop-section-heading,
+  .printshop-page .credentials-section > .printshop-section-heading,
   .printshop-page .printshop-signers-section > .printshop-section-heading {
     grid-template-columns: 1fr !important;
     height: auto !important;
@@ -54277,6 +54765,7 @@ body {
   .printshop-page .generated-certificates-redesign > .certificates-clean-hero p:not(.section-kicker),
   .printshop-page .printshop-logs-section > .printshop-section-heading p:not(.section-kicker),
   .printshop-page .certificate-templates-section > .printshop-section-heading p:not(.section-kicker),
+  .printshop-page .credentials-section > .printshop-section-heading p:not(.section-kicker),
   .printshop-page .printshop-signers-section > .printshop-section-heading p:not(.section-kicker) {
     -webkit-line-clamp: 2 !important;
     line-clamp: 2 !important;
@@ -62294,4 +62783,690 @@ body {
     grid-template-columns: 1fr !important;
     min-height: auto !important;
   }
+}
+
+/* Ajuste final: el generador enfocado de credenciales debe ocupar todo el ancho del modulo. */
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
+  position: static !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(480px, 0.96fr) minmax(480px, 1fr) !important;
+}
+
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-generator-panel,
+.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-preview-panel {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+@media (max-width: 1100px) {
+  .credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ===== Gestor de suscripciones ===== */
+.subscription-manager-page {
+  box-sizing: border-box;
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 34px 34px 20px;
+}
+
+.subscription-topbar {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px);
+  align-items: center;
+  gap: 22px;
+  width: 100%;
+  min-height: 153px;
+  margin: 0;
+  padding: 22px 28px;
+  border: 1px solid rgba(185, 205, 250, 0.22);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%);
+  color: #ffffff;
+  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+.subscription-topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 62%, rgba(255, 255, 255, 0.07) 62% 100%),
+    radial-gradient(circle at 97% 70%, rgba(255, 255, 255, 0.1), transparent 24%);
+  opacity: 0.95;
+}
+
+.subscription-topbar::after {
+  content: "";
+  position: absolute;
+  right: -26px;
+  bottom: -50px;
+  width: 300px;
+  height: 210px;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  border-radius: 34px;
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+
+.subscription-topbar > div {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.subscription-topbar-main {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.subscription-topbar-module-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.subscription-topbar-icon-svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.subscription-topbar p,
+.subscription-topbar h1,
+.subscription-topbar span {
+  margin: 0;
+}
+
+.subscription-topbar p {
+  display: block;
+  margin: 0 0 6px;
+  color: #d7e6ff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.subscription-topbar h1 {
+  margin: 0 0 6px;
+  color: #ffffff;
+  font-size: clamp(28px, 2.6vw, 38px);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.045em;
+}
+
+.subscription-topbar span {
+  display: block;
+  max-width: 780px;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.subscription-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.subscription-metric-card,
+.subscription-main-panel,
+.subscription-form-panel {
+  border: 1px solid #dbe7f5;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(17, 31, 61, 0.08);
+}
+
+.subscription-metric-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+}
+
+.subscription-metric-card span,
+.subscription-metric-card p {
+  color: #60708a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.subscription-metric-card strong {
+  color: #17345f;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.subscription-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  gap: 18px;
+  align-items: start;
+}
+
+.subscription-main-panel,
+.subscription-form-panel {
+  padding: 18px;
+  min-width: 0;
+}
+
+.subscription-toolbar,
+.subscription-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.subscription-toolbar {
+  grid-template-columns: minmax(260px, 1fr) 170px 190px;
+  margin-bottom: 14px;
+}
+
+.subscription-toolbar label,
+.subscription-form label {
+  display: grid;
+  gap: 6px;
+  color: #17345f;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.subscription-toolbar input,
+.subscription-toolbar select,
+.subscription-form input,
+.subscription-form select,
+.subscription-form textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #dbe7f5;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #17345f;
+  background: #ffffff;
+}
+
+.subscription-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.subscription-form .full,
+.subscription-form-actions.full {
+  grid-column: 1 / -1;
+}
+
+.subscription-list {
+  display: grid;
+  gap: 10px;
+}
+
+.subscription-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.subscription-card.active {
+  border-color: #9db8d8;
+  box-shadow: 0 10px 22px rgba(23, 52, 95, 0.1);
+}
+
+.subscription-card > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.subscription-card strong,
+.subscription-card span,
+.subscription-card b,
+.subscription-card small {
+  display: block;
+}
+
+.subscription-card strong,
+.subscription-card b {
+  color: #17345f;
+}
+
+.subscription-card span,
+.subscription-card small {
+  color: #60708a;
+  font-size: 12px;
+}
+
+.subscription-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.subscription-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #e7eef8;
+  color: #17345f;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.subscription-status-pill.green {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.subscription-status-pill.orange {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.subscription-status-pill.red {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.subscription-status-pill.blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.subscription-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #e5eef8;
+}
+
+.subscription-panel-header span {
+  color: #0f4fc4;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.subscription-panel-header h2 {
+  margin: 4px 0 0;
+  color: #17345f;
+  font-size: 20px;
+}
+
+@media (max-width: 1100px) {
+  .subscription-metrics-grid,
+  .subscription-layout,
+  .subscription-toolbar,
+  .subscription-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Encabezados azules principales uniformes ===== */
+.workspace-dashboard-page,
+.internal-messages-page.chat-messages-page.department-chat-page,
+.team-agenda-page,
+.ideas-incubator-page,
+.my-projects-redesign,
+.all-projects-redesign,
+.project-history-redesign,
+.create-project-redesign,
+.technical-support-page,
+.printshop-page,
+.collaborators-admin-page,
+.departments-admin-redesign,
+.purchase-requests-page,
+.bug-reports-page,
+.subscription-manager-page {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  padding: 0 34px 34px 20px !important;
+  gap: 16px !important;
+}
+
+.printshop-topbar,
+.module-topbar,
+.technical-support-redesign-v5 .technical-page-topbar,
+.subscription-topbar {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px) !important;
+  align-items: center !important;
+  gap: 22px !important;
+  width: 100% !important;
+  min-height: 153px !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 22px 28px !important;
+  border: 1px solid rgba(185, 205, 250, 0.22) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.18) !important;
+  overflow: hidden !important;
+}
+
+.printshop-topbar::before,
+.module-topbar::before,
+.technical-support-redesign-v5 .technical-page-topbar::before,
+.subscription-topbar::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(115deg, transparent 0 62%, rgba(255, 255, 255, 0.07) 62% 100%),
+    radial-gradient(circle at 97% 70%, rgba(255, 255, 255, 0.1), transparent 24%) !important;
+  opacity: 0.95 !important;
+}
+
+.printshop-topbar::after,
+.module-topbar::after,
+.technical-support-redesign-v5 .technical-page-topbar::after,
+.subscription-topbar::after {
+  content: "" !important;
+  position: absolute !important;
+  right: -26px !important;
+  bottom: -50px !important;
+  width: 300px !important;
+  height: 210px !important;
+  border: 3px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 34px !important;
+  transform: rotate(-8deg) !important;
+  pointer-events: none !important;
+}
+
+.printshop-topbar-main,
+.module-topbar-main,
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child,
+.subscription-topbar-main {
+  position: relative !important;
+  z-index: 1 !important;
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+  gap: 18px !important;
+  align-items: center !important;
+  padding-left: 0 !important;
+}
+
+.printshop-topbar-main::before,
+.module-topbar-main::before,
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child::before,
+.subscription-topbar-main::before {
+  content: none !important;
+  display: none !important;
+}
+
+.printshop-topbar-module-icon,
+.module-topbar-module-icon,
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child > span,
+.subscription-topbar-module-icon {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 21px !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+}
+
+.printshop-topbar-module-icon svg,
+.module-topbar-module-icon svg,
+.module-topbar-module-icon .nav-svg-icon,
+.module-topbar-module-icon .my-projects-menu-svg,
+.module-topbar-svg-icon,
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child > span svg,
+.subscription-topbar-icon-svg {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.printshop-topbar .printshop-kicker,
+.printshop-topbar .section-kicker,
+.module-topbar .module-topbar-kicker,
+.module-topbar .section-kicker,
+.technical-support-redesign-v5 .technical-page-topbar .section-kicker,
+.subscription-topbar p {
+  display: block !important;
+  margin: 0 0 6px !important;
+  color: #d7e6ff !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+}
+
+.printshop-topbar h1,
+.module-topbar h1,
+.module-topbar .module-topbar-title-row h1,
+.technical-support-redesign-v5 .technical-page-topbar h1,
+.subscription-topbar h1 {
+  margin: 0 0 6px !important;
+  color: #ffffff !important;
+  font-family: inherit !important;
+  font-size: clamp(28px, 2.6vw, 38px) !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.045em !important;
+}
+
+.printshop-topbar p:not(.section-kicker):not(.printshop-kicker),
+.module-topbar p:not(.section-kicker):not(.module-topbar-kicker),
+.technical-support-redesign-v5 .technical-page-topbar span:not(.technical-global-search span),
+.subscription-topbar span {
+  display: block !important;
+  max-width: 780px !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  color: #e7f0ff !important;
+  font-family: inherit !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+.module-topbar-search,
+.printshop-topbar .printshop-search,
+.technical-support-redesign-v5 .technical-global-search {
+  position: relative !important;
+  z-index: 1 !important;
+  min-height: 52px !important;
+  height: 52px !important;
+  border-radius: 15px !important;
+}
+
+@media (max-width: 1320px) {
+  .printshop-topbar,
+  .module-topbar,
+  .technical-support-redesign-v5 .technical-page-topbar,
+  .subscription-topbar {
+    grid-template-columns: 1fr !important;
+    min-height: 153px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .workspace-dashboard-page,
+  .internal-messages-page.chat-messages-page.department-chat-page,
+  .team-agenda-page,
+  .ideas-incubator-page,
+  .my-projects-redesign,
+  .all-projects-redesign,
+  .project-history-redesign,
+  .create-project-redesign,
+  .technical-support-page,
+  .printshop-page,
+  .collaborators-admin-page,
+  .departments-admin-redesign,
+  .purchase-requests-page,
+  .bug-reports-page,
+  .subscription-manager-page {
+    padding: 0 14px 24px !important;
+  }
+
+  .printshop-topbar,
+  .module-topbar,
+  .technical-support-redesign-v5 .technical-page-topbar,
+  .subscription-topbar {
+    padding: 18px !important;
+    border-radius: 18px !important;
+  }
+}
+
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child {
+  position: relative !important;
+  z-index: 1 !important;
+  display: block !important;
+  min-width: 0 !important;
+  padding-left: 74px !important;
+}
+
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 50% !important;
+  width: 64px !important;
+  height: 64px !important;
+  transform: translateY(-50%) !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 21px !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+}
+
+.technical-support-redesign-v5 .technical-page-topbar > div:first-child > span {
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: block !important;
+  margin: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #e7f0ff !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  font-weight: 400 !important;
+}
+
+.departments-module-topbar.printshop-topbar,
+.bug-module-topbar.printshop-topbar {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px) !important;
+  gap: 22px !important;
+  width: 100% !important;
+  height: 153px !important;
+  min-height: 153px !important;
+  padding: 22px 28px !important;
+  border-radius: 22px !important;
+}
+
+.departments-module-topbar .printshop-topbar-main,
+.bug-module-topbar .printshop-topbar-main {
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+  gap: 18px !important;
+}
+
+.departments-module-topbar .printshop-topbar-module-icon,
+.bug-module-topbar .printshop-topbar-module-icon {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  border-radius: 21px !important;
+}
+
+.departments-module-topbar .printshop-topbar-module-icon svg,
+.departments-module-topbar .departments-svg-icon,
+.bug-module-topbar .printshop-topbar-module-icon svg,
+.bug-topbar-icon .bug-svg-icon,
+.bug-topbar-icon .printshop-svg-icon {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.departments-module-topbar .printshop-topbar-copy h1,
+.bug-module-topbar .printshop-topbar-copy h1 {
+  margin: 0 0 6px !important;
+  color: #ffffff !important;
+  font-family: inherit !important;
+  font-size: clamp(28px, 2.6vw, 38px) !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.045em !important;
+}
+
+.departments-module-topbar .printshop-kicker,
+.bug-module-topbar .printshop-kicker {
+  margin: 0 0 6px !important;
+  color: #d7e6ff !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.12em !important;
+}
+
+.departments-module-topbar .printshop-topbar-copy p:not(.printshop-kicker),
+.bug-module-topbar .printshop-topbar-copy p:not(.printshop-kicker) {
+  max-width: 780px !important;
+  margin: 0 !important;
+  color: #e7f0ff !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
 }

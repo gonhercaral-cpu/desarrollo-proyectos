@@ -401,10 +401,42 @@ service firebase.storage {
     }
 
     /*
-      Imágenes personalizadas de plantillas:
+      Plantillas base para credenciales:
+      printshop/credential-templates/front/{userUid}/{fileName}
+      printshop/credential-templates/back/{userUid}/{fileName}
+    */
+    match /printshop/credential-templates/{side}/{userUid}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if signedIn()
+        && isAdmin()
+        && request.auth.uid == userUid
+        && side in ["front", "back"]
+        && validCertificateTemplateImage();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      Imagenes personalizadas de plantillas:
       printshop/template-assets/{userUid}/{fileName}
     */
     match /printshop/template-assets/{userUid}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if signedIn()
+        && isAdmin()
+        && request.auth.uid == userUid
+        && validCertificateTemplateImage();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      Imagenes personalizadas de credenciales:
+      printshop/credential-assets/{userUid}/{fileName}
+    */
+    match /printshop/credential-assets/{userUid}/{fileName} {
       allow read: if canAccessPrintshop();
 
       allow create, update: if signedIn()
