@@ -525,6 +525,7 @@ export default function TeamAgenda() {
     const savedSchedule = scheduleMap[getScheduleKey(userId, dayOfWeek)];
 
     setSaveMessage("");
+    setActivePanel("base");
 
     setScheduleForm({
       userId,

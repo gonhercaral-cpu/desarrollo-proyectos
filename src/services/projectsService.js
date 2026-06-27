@@ -116,6 +116,45 @@ function isHistoricalProject(project) {
   );
 }
 
+function isVisibleProject(project) {
+  if (!project) {
+    return false;
+  }
+
+  const status = String(project.status || "").trim().toLowerCase();
+
+  return (
+    project.deleted !== true &&
+    project.active !== false &&
+    status !== "inactive" &&
+    status !== "inactivo"
+  );
+}
+
+function isDashboardActiveProject(project) {
+  if (!isVisibleProject(project)) {
+    return false;
+  }
+
+  const status = String(project.status || "").trim().toLowerCase();
+
+  return [
+    "por iniciar",
+    "en planeación",
+    "en planeacion",
+    "en espera de información",
+    "en espera de informacion",
+    PROJECT_STATUS.PENDING.toLowerCase(),
+    PROJECT_STATUS.IN_PROGRESS.toLowerCase(),
+    PROJECT_STATUS.READY_FOR_REVIEW.toLowerCase(),
+    "correcciones solicitadas",
+    "aprobado para entrega",
+    "en proceso",
+    "listo para revisión",
+    "listo para revision",
+  ].includes(status);
+}
+
 function canAccessProject(project, currentUser) {
   const uid = getCurrentUserUid(currentUser);
 
@@ -397,7 +436,7 @@ function buildWorkloadByArea(projects) {
 }
 
 function buildExecutiveAlerts(projects) {
-  const activeProjects = projects.filter((project) => !isHistoricalProject(project));
+  const activeProjects = projects.filter(isDashboardActiveProject);
 
   const overdueProjects = activeProjects.filter(isProjectOverdue);
   const reviewProjects = activeProjects.filter(isProjectReadyForReview);
@@ -1605,16 +1644,15 @@ export async function getExecutiveDashboardData() {
   const rawRecentLogs = await getRecentProjectLogs(60);
 
   const now = new Date();
+  const visibleProjects = projects.filter(isVisibleProject);
 
-  const activeProjects = projects.filter(
-    (project) => !isHistoricalProject(project)
-  );
+  const activeProjects = visibleProjects.filter(isDashboardActiveProject);
   const activeProjectIds = new Set(activeProjects.map((project) => project.id));
   const recentLogs = rawRecentLogs
     .filter((log) => log.projectId && activeProjectIds.has(log.projectId))
     .slice(0, 20);
 
-  const historicalProjects = projects.filter((project) =>
+  const historicalProjects = visibleProjects.filter((project) =>
     isHistoricalProject(project)
   );
 

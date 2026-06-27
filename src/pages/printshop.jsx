@@ -2173,6 +2173,20 @@ function isVisiblePrintshopRecord(record) {
   return Boolean(record) && record.deleted !== true && record.active !== false;
 }
 
+function isVisibleFinishedInventoryItem(item, products = []) {
+  if (!isVisiblePrintshopRecord(item)) return false;
+
+  const productId = String(item.productId || "");
+  if (!productId) return false;
+
+  const productReference = products.find((product) => product.id === productId);
+  return isVisiblePrintshopRecord(productReference);
+}
+
+function isVisibleSupplyItem(item) {
+  return Boolean(item) && item.deleted !== true && item.active !== false;
+}
+
 function normalizePrintshopLog(log) {
   return {
     id: log?.id || "",
@@ -2397,9 +2411,14 @@ function getSupplyMovementConsumptionQuantity(movement) {
 function getBatchSupplyConsumptionRows(batch, supplyMovements, supplyItems = [], products = []) {
   if (!batch) return [];
 
-  const relatedMovements = (supplyMovements || []).filter((movement) =>
-    isSupplyMovementForBatch(movement, batch)
-  );
+  const relatedMovements = (supplyMovements || []).filter((movement) => {
+    if (!isSupplyMovementForBatch(movement, batch)) return false;
+
+    const supplyReference =
+      (supplyItems || []).find((item) => item.id === movement.supplyId) || null;
+
+    return isVisibleSupplyItem(supplyReference);
+  });
   const batchProduct =
     (products || []).find((product) => product.id === batch.productId) || null;
   const groups = new Map();
@@ -3346,8 +3365,32 @@ export default function PrintShop() {
     };
   }, [products]);
 
+  const visibleInventoryItems = useMemo(
+    () => inventoryItems.filter((item) => isVisibleFinishedInventoryItem(item, products)),
+    [inventoryItems, products]
+  );
+
+  const visibleInventoryMovements = useMemo(() => {
+    const visibleInventoryIds = new Set(visibleInventoryItems.map((item) => item.id));
+    const visibleProductIds = new Set(
+      visibleInventoryItems.map((item) => item.productId).filter(Boolean)
+    );
+
+    return inventoryMovements.filter((movement) => {
+      if (movement.deleted === true) return false;
+
+      const inventoryId = String(movement.inventoryId || "");
+      const productId = String(movement.productId || "");
+
+      if (inventoryId) return visibleInventoryIds.has(inventoryId);
+      if (productId) return visibleProductIds.has(productId);
+
+      return false;
+    });
+  }, [inventoryMovements, visibleInventoryItems]);
+
   const inventoryStats = useMemo(() => {
-    const activeInventory = inventoryItems.filter((item) => item.active !== false);
+    const activeInventory = visibleInventoryItems;
     const lowStock = activeInventory.filter((item) => {
       const currentStock = Number(item.currentStock || 0);
       const minStock = Number(item.minStock || 0);
@@ -3367,10 +3410,10 @@ export default function PrintShop() {
       critical: critical.length,
       totalStock,
     };
-  }, [inventoryItems]);
+  }, [visibleInventoryItems]);
 
   const supplyStats = useMemo(() => {
-    const activeSupplies = supplyItems.filter((item) => item.active !== false);
+    const activeSupplies = supplyItems.filter(isVisibleSupplyItem);
     const lowStock = activeSupplies.filter((item) => {
       const currentStock = Number(item.currentStock || 0);
       const minStock = Number(item.minStock || 0);
@@ -3386,7 +3429,10 @@ export default function PrintShop() {
       total: activeSupplies.length,
       lowStock: lowStock.length,
       critical: critical.length,
-      movements: supplyMovements.length,
+      movements: supplyMovements.filter((movement) =>
+        movement.deleted !== true &&
+        isVisibleSupplyItem(supplyItems.find((item) => item.id === movement.supplyId))
+      ).length,
       totalValue,
     };
   }, [supplyItems, supplyMovements]);
@@ -3394,7 +3440,7 @@ export default function PrintShop() {
   const filteredSupplyItems = useMemo(() => {
     const normalizedSearch = supplySearch.trim().toLowerCase();
 
-    return supplyItems.filter((item) => {
+    return supplyItems.filter(isVisibleSupplyItem).filter((item) => {
       const status = getSupplyStatus(item);
       const matchesSearch =
         !normalizedSearch ||
@@ -3417,7 +3463,7 @@ export default function PrintShop() {
   }, [supplyItems, supplySearch, supplyCategoryFilter, supplyStatusFilter]);
 
   const selectedSupply = useMemo(
-    () => supplyItems.find((item) => item.id === selectedSupplyId) || null,
+    () => supplyItems.find((item) => item.id === selectedSupplyId && isVisibleSupplyItem(item)) || null,
     [supplyItems, selectedSupplyId]
   );
 
@@ -3432,13 +3478,13 @@ export default function PrintShop() {
 
   const productsWithoutInventory = useMemo(() => {
     const inventoryProductIds = new Set(
-      inventoryItems.map((item) => item.productId).filter(Boolean)
+      visibleInventoryItems.map((item) => item.productId).filter(Boolean)
     );
 
     return inventoryProducts.filter(
       (product) => !inventoryProductIds.has(product.id)
     );
-  }, [inventoryProducts, inventoryItems]);
+  }, [inventoryProducts, visibleInventoryItems]);
 
 
   const batchStats = useMemo(() => {
@@ -6835,7 +6881,9 @@ export default function PrintShop() {
     }
 
     const alreadyExists = inventoryItems.some(
-      (item) => item.productId === selectedProduct.id
+      (item) =>
+        item.productId === selectedProduct.id &&
+        isVisibleFinishedInventoryItem(item, products)
     );
 
     if (alreadyExists) {
@@ -7978,7 +8026,7 @@ export default function PrintShop() {
         <DashboardView
           products={products}
           productStats={productStats}
-          inventoryItems={inventoryItems}
+          inventoryItems={visibleInventoryItems}
           inventoryStats={inventoryStats}
           productionBatches={productionBatches}
           batchStats={batchStats}
@@ -8031,8 +8079,8 @@ export default function PrintShop() {
         <FinishedInventoryView
           productsWithoutInventory={productsWithoutInventory}
           inventoryProducts={inventoryProducts}
-          inventoryItems={inventoryItems}
-          inventoryMovements={inventoryMovements}
+          inventoryItems={visibleInventoryItems}
+          inventoryMovements={visibleInventoryMovements}
           loadingInventory={loadingInventory}
           inventoryError={inventoryError}
           inventoryStats={inventoryStats}
@@ -8437,7 +8485,7 @@ export default function PrintShop() {
       ) : (
         <ProductionBatchesView
           inventoryProducts={inventoryProducts}
-          inventoryItems={inventoryItems}
+          inventoryItems={visibleInventoryItems}
           productionBatches={productionBatches}
           supplyMovements={supplyMovements}
           supplyItems={supplyItems}
@@ -10435,9 +10483,17 @@ function SupplyInventoryView({
   onRegisterSupplyMovement,
   onSoftDeleteSupplyItem,
 }) {
-  const latestMovements = supplyMovements.slice(0, 10);
+  const activeSupplyItems = supplyItems.filter(isVisibleSupplyItem);
+  const visibleMovements = supplyMovements.filter((movement) => {
+    if (movement.deleted === true) return false;
+
+    const supplyReference = supplyItems.find((item) => item.id === movement.supplyId);
+
+    return isVisibleSupplyItem(supplyReference);
+  });
+  const latestMovements = visibleMovements.slice(0, 10);
   const selectedMovementSupply =
-    supplyItems.find((item) => item.id === supplyMovementForm.supplyId) || null;
+    activeSupplyItems.find((item) => item.id === supplyMovementForm.supplyId) || null;
   const estimatedYield =
     selectedMovementSupply && Number(selectedMovementSupply.expectedYield || 0) > 0
       ? Math.floor(Number(supplyMovementForm.quantity || 0) * Number(selectedMovementSupply.expectedYield || 0))
@@ -10755,7 +10811,6 @@ function SupplyInventoryView({
     );
   }
 
-  const activeSupplyItems = supplyItems.filter((item) => item.active !== false);
   const supplyAlertItems = activeSupplyItems
     .filter((item) => {
       const currentStock = Number(item.currentStock || 0);
@@ -11626,7 +11681,7 @@ function SupplyInventoryView({
                 <span>Insumo</span>
                 <select name="supplyId" value={supplyMovementForm.supplyId} onChange={onSupplyMovementInputChange} disabled={savingSupplyMovement}>
                   <option value="">Seleccionar insumo</option>
-                  {supplyItems.filter((item) => item.active !== false && item.deleted !== true).map((item) => (
+                  {supplyItems.filter(isVisibleSupplyItem).map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name} · {item.currentStock} {item.stockUnit}
                     </option>
@@ -11943,10 +11998,10 @@ function PrintRequestsView({
       <div className="request-metrics-grid request-metrics-redesign">
         {requestMetricCards.map((metric) => (
           <article key={metric.label} className={`request-metric-card ${metric.tone}`}>
-            <div>{renderPrintshopIcon(metric.icon)}</div>
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-            <p>{metric.helper}</p>
+            <div className="printshop-info-card-icon">{renderPrintshopIcon(metric.icon)}</div>
+            <strong className="printshop-info-card-value">{metric.value}</strong>
+            <span className="printshop-info-card-label">{metric.label}</span>
+            <p className="printshop-info-card-helper">{metric.helper}</p>
           </article>
         ))}
       </div>
@@ -18278,7 +18333,7 @@ function ProductCatalogView({
                       onChange={onInputChange}
                     >
                       <option value="">Seleccionar insumo</option>
-                      {supplyItems.filter((item) => item.active !== false && item.deleted !== true).map((item) => (
+                      {supplyItems.filter(isVisibleSupplyItem).map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name} · {item.stockUnit}
                         </option>
@@ -18841,9 +18896,9 @@ function RequirementChips({ product }) {
 function CatalogMetric({ tone, icon, label, value }) {
   return (
     <article className={`catalog-metric-card ${tone}`}>
-      <div>{renderPrintshopIcon(icon)}</div>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <div className="printshop-info-card-icon">{renderPrintshopIcon(icon)}</div>
+      <strong className="printshop-info-card-value">{value}</strong>
+      <span className="printshop-info-card-label">{label}</span>
     </article>
   );
 }

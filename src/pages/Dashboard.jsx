@@ -310,7 +310,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
   return page;
 }
 
-export default function Dashboard() {
+export default function Dashboard({ theme = "light", onToggleTheme }) {
   const { profile, logout, isAdmin } = useAuth();
   const userDepartmentNames = getProfileDepartmentNames(profile);
   const canUsePrintShop =
@@ -864,6 +864,8 @@ export default function Dashboard() {
           profile={profile}
           isAdmin={isAdmin}
           activeTitle={isAdmin ? "Desarrollo de Proyectos" : "Mi panel"}
+          theme={theme}
+          onToggleTheme={onToggleTheme}
           unreadMessagesCount={unreadMessagesCount}
           unreadAnnouncementsCount={unreadAnnouncementsCount}
           profileMenuOpen={profileMenuOpen}
@@ -5066,6 +5068,8 @@ function TopProfileBar({
   profile,
   isAdmin,
   activeTitle = "Desarrollo de Proyectos",
+  theme = "light",
+  onToggleTheme,
   unreadMessagesCount = 0,
   unreadAnnouncementsCount = 0,
   profileMenuOpen,
@@ -5223,6 +5227,32 @@ function TopProfileBar({
       </div>
 
       <div className="topbar-actions">
+        {onToggleTheme && (
+          <button
+            type="button"
+            className="theme-toggle-button topbar-theme-toggle"
+            onClick={onToggleTheme}
+            aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+            title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          >
+            <span className="theme-toggle-icon" aria-hidden="true">
+              {theme === "dark" ? (
+                <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                  <circle cx="12" cy="12" r="4.25" />
+                  <path d="M12 2.75v2.1M12 19.15v2.1M4.85 4.85l1.48 1.48M17.67 17.67l1.48 1.48M2.75 12h2.1M19.15 12h2.1M4.85 19.15l1.48-1.48M17.67 6.33l1.48-1.48" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                  <path d="M20.25 14.05A7.7 7.7 0 0 1 9.95 3.75a8.4 8.4 0 1 0 10.3 10.3Z" />
+                </svg>
+              )}
+            </span>
+            <span className="theme-toggle-copy">
+              <strong>{theme === "dark" ? "Claro" : "Oscuro"}</strong>
+            </span>
+          </button>
+        )}
+
         <div className="notification-menu-wrapper">
           <button
             type="button"

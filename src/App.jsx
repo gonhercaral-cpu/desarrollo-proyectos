@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 
@@ -9,6 +10,31 @@ import PublicCertificateRequest from "./pages/PublicCertificateRequest";
 import PublicCertificateStatus from "./pages/PublicCertificateStatus";
 
 import "./styles/app.css";
+
+const THEME_STORAGE_KEY = "dp.ui.theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+
+  if (storedTheme === "light" || storedTheme === "dark") {
+    return storedTheme;
+  }
+
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}
 
 function CertificateValidationRoute() {
   const params = useParams();
@@ -24,7 +50,7 @@ function CredentialValidationRoute() {
   return <CredentialValidation validationCode={validationCode} />;
 }
 
-function ProtectedSystem() {
+function ProtectedSystem({ theme, onToggleTheme }) {
   const { firebaseUser, profile, loading } = useAuth();
 
   if (loading) {
@@ -59,35 +85,54 @@ function ProtectedSystem() {
     );
   }
 
-  return <Dashboard />;
+  return <Dashboard theme={theme} onToggleTheme={onToggleTheme} />;
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(getInitialTheme);
+
+  useEffect(() => {
+    applyTheme(theme);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    }
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
+  }
+
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          path="/solicitar-certificados"
-          element={<PublicCertificateRequest />}
-        />
+    <div className="app-root">
+      <BrowserRouter>
+        <Routes>
+          <Route
+            path="/solicitar-certificados"
+            element={<PublicCertificateRequest />}
+          />
 
-        <Route
-          path="/certificados/seguimiento/:requestId"
-          element={<PublicCertificateStatus />}
-        />
+          <Route
+            path="/certificados/seguimiento/:requestId"
+            element={<PublicCertificateStatus />}
+          />
 
-        <Route
-          path="/validar-certificado/*"
-          element={<CertificateValidationRoute />}
-        />
+          <Route
+            path="/validar-certificado/*"
+            element={<CertificateValidationRoute />}
+          />
 
-        <Route
-          path="/validar-credencial/*"
-          element={<CredentialValidationRoute />}
-        />
+          <Route
+            path="/validar-credencial/*"
+            element={<CredentialValidationRoute />}
+          />
 
-        <Route path="/*" element={<ProtectedSystem />} />
-      </Routes>
-    </BrowserRouter>
+          <Route
+            path="/*"
+            element={<ProtectedSystem theme={theme} onToggleTheme={toggleTheme} />}
+          />
+        </Routes>
+      </BrowserRouter>
+    </div>
   );
 }

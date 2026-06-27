@@ -8464,7 +8464,7 @@ function closeCompletionForm(options = {}) {
       <section className="technical-page-topbar">
         <div className="technical-topbar-main">
           <span className="technical-topbar-module-icon">
-            <TechnicalTabIcon name="maintenance" />
+            <TechnicalTabIcon name="technical" />
           </span>
           <div className="technical-topbar-copy">
             <p className="section-kicker">Soporte Técnico</p>
@@ -12468,6 +12468,13 @@ function TechnicalTabIcon({ name }) {
         <rect x="14" y="4" width="6" height="6" rx="1.5" />
         <rect x="4" y="14" width="6" height="6" rx="1.5" />
         <rect x="14" y="14" width="6" height="6" rx="1.5" />
+      </>
+    ),
+    technical: (
+      <>
+        <path d="M14.5 5.5l4 4" />
+        <path d="M4 20l6.5-6.5" />
+        <path d="M12.5 3.5l8 8-2.5 2.5-8-8z" />
       </>
     ),
     maintenance: (

@@ -153,7 +153,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
   const moduleSummary = useMemo(() => buildModuleSummary(modules), [modules]);
 
   const averageProgress = useMemo(() => {
-    const activeProjects = projects.active || [];
+    const activeProjects = (projects.active || []).filter(isVisibleProject);
 
     if (activeProjects.length === 0) {
       return 0;
@@ -163,7 +163,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
   }, [projects.active]);
 
   const dueSoonProjects = useMemo(() => {
-    const activeProjects = projects.active || [];
+    const activeProjects = (projects.active || []).filter(isVisibleProject);
 
     return activeProjects
       .filter((project) => {
@@ -233,7 +233,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
       tone: "green",
       icon: "status",
       label: "Completados",
-      value: metrics.finishedThisMonth || projects.recentlyClosed?.length || 0,
+      value: metrics.finishedThisMonth || 0,
       trend: "este mes",
       direction: "up",
     },
@@ -243,7 +243,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
     { key: "active", label: "Activos", value: metrics.active || 0, tone: "teal" },
     { key: "pending", label: "Pendientes", value: Math.max(metrics.overdue || 0, dueSoonProjects.length), tone: "gold" },
     { key: "review", label: "En revisión", value: metrics.review || 0, tone: "blue" },
-    { key: "completed", label: "Completados", value: metrics.finishedThisMonth || projects.recentlyClosed?.length || 0, tone: "green" },
+    { key: "completed", label: "Completados", value: metrics.finishedThisMonth || 0, tone: "green" },
   ];
 
   const projectStatusTotal = projectStatusData.reduce((sum, item) => sum + item.value, 0) || 1;
@@ -471,7 +471,7 @@ function buildDonutStyle(items = []) {
   });
 
   return {
-    background: `radial-gradient(circle, white 0 49%, transparent 50%), conic-gradient(${segments.join(", ")})`,
+    background: `radial-gradient(circle, var(--surface) 0 49%, transparent 50%), conic-gradient(${segments.join(", ")})`,
   };
 }
 
@@ -571,6 +571,8 @@ function buildModuleSummary(modules) {
   const printBatches = modules.printProductionBatches || [];
   const printSupplyItems = modules.printSupplyItems || [];
   const printInventoryItems = modules.printFinishedInventory || [];
+  const visiblePrintSupplyItems = printSupplyItems.filter(isVisibleModuleRecord);
+  const visiblePrintInventoryItems = printInventoryItems.filter(isVisibleModuleRecord);
 
   const technicalAssets = modules.technicalAssets || [];
   const technicalMaintenances = modules.technicalMaintenances || [];
@@ -614,7 +616,7 @@ function buildModuleSummary(modules) {
       activeBatches: printBatches.filter(
         (batch) => !FINAL_PRINT_BATCH_STATUSES.has(batch.status)
       ).length,
-      lowStock: [...printSupplyItems, ...printInventoryItems].filter((item) =>
+      lowStock: [...visiblePrintSupplyItems, ...visiblePrintInventoryItems].filter((item) =>
         isLowStockItem(item)
       ).length,
     },
@@ -1365,6 +1367,25 @@ function isLowStockItem(item) {
   );
 
   return minStock > 0 && currentStock <= minStock;
+}
+
+function isVisibleProject(project) {
+  if (!project) {
+    return false;
+  }
+
+  const status = String(project.status || "").trim().toLowerCase();
+
+  return (
+    project.deleted !== true &&
+    project.active !== false &&
+    status !== "inactive" &&
+    status !== "inactivo"
+  );
+}
+
+function isVisibleModuleRecord(record) {
+  return Boolean(record) && record.deleted !== true && record.active !== false;
 }
 
 function getInitials(name = "") {
