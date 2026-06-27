@@ -20443,485 +20443,6 @@ body:has(.field-mode-page) .main-content {
   width: 100%;
 }
 
-/* ===== Credential templates ===== */
-.credentials-section {
-  display: grid;
-  gap: 18px;
-}
-
-.credential-heading-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.credential-generate-top-button {
-  box-shadow: 0 12px 24px rgba(29, 95, 209, 0.18);
-}
-
-.credential-template-cards-grid {
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-}
-
-.credential-template-card-previews {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px;
-  background: #dbe7f5;
-}
-
-.credential-card-preview {
-  height: 116px;
-}
-
-.credential-card-preview img {
-  object-fit: cover;
-}
-
-.credential-side-toggle {
-  display: inline-flex;
-  gap: 6px;
-  margin: 0 0 14px;
-  padding: 4px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #f8fbff;
-}
-
-.credential-side-toggle button {
-  min-height: 34px;
-  border: 0;
-  border-radius: 10px;
-  padding: 0 14px;
-  background: transparent;
-  color: #526176;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.credential-side-toggle button.active {
-  background: #ffffff;
-  color: #17345f;
-  box-shadow: 0 6px 16px rgba(21, 42, 74, 0.1);
-}
-
-.credential-template-editor .template-editor-nudge-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.credential-template-editor .template-editor-nudge-grid button:first-child,
-.credential-template-editor .template-editor-nudge-grid button:nth-child(4) {
-  grid-column: auto;
-}
-
-.credential-editor-stage,
-.credential-static-stage {
-  aspect-ratio: 1012 / 638;
-}
-
-.credential-editor-stage.vertical,
-.credential-static-stage.vertical {
-  aspect-ratio: 638 / 1012;
-}
-
-.credential-editor-stage {
-  width: min(100%, 640px);
-}
-
-.credential-editor-stage.vertical {
-  width: min(100%, 420px);
-}
-
-.credential-empty-template-side {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, #f8fbff, #eef5ff);
-  color: #60708a;
-  font-weight: 800;
-}
-
-.credential-selected-preview {
-  grid-template-columns: 1fr 1fr;
-}
-
-.printshop-template-hub {
-  display: grid;
-  gap: 18px;
-}
-
-.printshop-template-hub-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 8px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #f8fbff;
-}
-
-.printshop-template-hub-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: #49617f;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.printshop-template-hub-tabs button svg {
-  width: 18px;
-  height: 18px;
-}
-
-.printshop-template-hub-tabs button span {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: #e7eef8;
-  color: #17345f;
-  font-size: 12px;
-}
-
-.printshop-template-hub-tabs button.active {
-  border-color: #b8cbe4;
-  background: #ffffff;
-  color: #17345f;
-  box-shadow: 0 8px 18px rgba(23, 52, 95, 0.08);
-}
-
-.certificate-workspace-layout {
-  grid-template-columns: minmax(300px, 0.42fr) minmax(520px, 1fr);
-  align-items: start;
-}
-
-.certificate-request-list-panel,
-.certificate-workspace-detail {
-  min-width: 0;
-}
-
-.certificate-request-list {
-  display: grid;
-  gap: 10px;
-}
-
-.certificate-request-card {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #ffffff;
-  cursor: pointer;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.certificate-request-card:hover,
-.certificate-request-card.active {
-  border-color: #9db8d8;
-  box-shadow: 0 12px 26px rgba(23, 52, 95, 0.1);
-  transform: translateY(-1px);
-}
-
-.certificate-request-card strong,
-.certificate-request-card span,
-.certificate-request-card small {
-  display: block;
-}
-
-.certificate-request-card strong {
-  color: #17345f;
-  font-size: 14px;
-}
-
-.certificate-request-card span,
-.certificate-request-card small {
-  color: #60708a;
-  font-size: 12px;
-}
-
-.certificate-request-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.certificate-history-embedded,
-.certificate-history-card-list {
-  display: grid;
-  gap: 12px;
-}
-
-.certificate-history-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #ffffff;
-}
-
-.certificate-history-card strong,
-.certificate-history-card span,
-.certificate-history-card small {
-  display: block;
-}
-
-.certificate-history-card strong {
-  color: #17345f;
-  font-size: 14px;
-}
-
-.certificate-history-card span,
-.certificate-history-card small {
-  margin-top: 3px;
-  color: #60708a;
-  font-size: 12px;
-}
-
-.certificate-history-card-actions {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.credential-generated-preview {
-  display: grid;
-  gap: 12px;
-}
-
-.credentials-layout.credential-generator-focused {
-  grid-template-columns: 1fr !important;
-}
-
-.credentials-layout.credential-generator-focused .printshop-batches-main,
-.credentials-layout.credential-generator-focused .credential-template-form-panel {
-  display: none !important;
-}
-
-.credentials-layout.credential-generator-focused .printshop-batches-side {
-  display: grid !important;
-  grid-template-columns: minmax(320px, 0.72fr) minmax(420px, 1fr);
-  gap: 18px;
-  width: 100% !important;
-  max-width: none !important;
-}
-
-.credentials-layout.credential-generator-focused .credential-generator-focused-header {
-  grid-column: 1 / -1;
-}
-
-.credentials-layout.credential-generator-focused .credential-generator-panel,
-.credentials-layout.credential-generator-focused .credential-preview-panel {
-  min-width: 0;
-}
-
-.credentials-layout.credential-generator-focused .credential-generated-preview {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-}
-
-.credentials-layout.credential-generator-focused .credential-static-stage.vertical {
-  max-width: 330px;
-  margin: 0 auto;
-}
-
-.credential-static-stage {
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #ffffff;
-  box-shadow: 0 12px 24px rgba(17, 31, 61, 0.08);
-}
-
-.credential-static-stage.pdf-export-mode {
-  width: 1012px !important;
-  height: 638px !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-
-.credential-static-stage.vertical.pdf-export-mode {
-  width: 638px !important;
-  height: 1012px !important;
-}
-
-.credential-template-background {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.credential-template-text {
-  z-index: 5;
-  color: #111827;
-  font-family: "Montserrat", Arial, sans-serif;
-  font-weight: 700;
-  line-height: 1.12;
-  pointer-events: none;
-  word-break: break-word;
-}
-
-.credential-layer-name {
-  font-weight: 850;
-}
-
-.credential-template-qr {
-  z-index: 6;
-  aspect-ratio: 1 / 1;
-  object-fit: contain;
-  padding: 4px;
-  border: 1px solid rgba(20, 40, 70, 0.14);
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.generated-credentials-list {
-  display: grid;
-  gap: 10px;
-}
-
-.generated-credential-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #ffffff;
-}
-
-.generated-credential-row strong,
-.generated-credential-row span {
-  display: block;
-}
-
-.generated-credential-row strong {
-  color: #17345f;
-  font-size: 13px;
-}
-
-.generated-credential-row span {
-  margin-top: 2px;
-  color: #60708a;
-  font-size: 12px;
-}
-
-@media (max-width: 980px) {
-  .certificate-workspace-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .credential-template-editor {
-    grid-template-columns: 1fr;
-  }
-
-  .credentials-layout.credential-generator-focused .printshop-batches-side,
-  .credentials-layout.credential-generator-focused .credential-generated-preview {
-    grid-template-columns: 1fr !important;
-  }
-
-  .generated-credential-row {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-}
-
-.certificate-generator-focused-panel {
-  display: grid;
-  gap: 14px;
-}
-
-.certificate-generator-header {
-  margin-bottom: 0;
-}
-
-.certificate-generator-mode-tabs {
-  display: inline-flex;
-  width: fit-content;
-  gap: 6px;
-  padding: 6px;
-  margin-bottom: 14px;
-  border: 1px solid #dbe7f5;
-  border-radius: 12px;
-  background: #f8fbff;
-}
-
-.certificate-generator-mode-tabs button {
-  min-height: 36px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: transparent;
-  color: #49617f;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.certificate-generator-mode-tabs button.active {
-  border-color: #b8cbe4;
-  background: #ffffff;
-  color: #17345f;
-  box-shadow: 0 8px 18px rgba(23, 52, 95, 0.08);
-}
-
-.certificate-generator-individual-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.64fr) minmax(460px, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.certificate-generator-preview-panel {
-  min-width: 0;
-}
-
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout {
-  grid-template-columns: minmax(0, 1fr) !important;
-  width: 100% !important;
-  max-width: none !important;
-}
-
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
-  width: 100% !important;
-  max-width: none !important;
-  margin: 0 !important;
-  grid-template-columns: minmax(360px, 0.58fr) minmax(520px, 1fr) !important;
-}
-
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-generator-panel,
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-preview-panel {
-  width: 100% !important;
-}
-
-@media (max-width: 1100px) {
-  .certificate-generator-individual-layout,
-  .credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
-    grid-template-columns: 1fr !important;
-  }
-}
-
 /* ===== Certificate template custom images ===== */
 .template-image-upload-button {
   display: inline-flex;
@@ -54534,7 +54055,6 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero,
 .printshop-page .printshop-logs-section > .printshop-section-heading,
 .printshop-page .certificate-templates-section > .printshop-section-heading,
-.printshop-page .credentials-section > .printshop-section-heading,
 .printshop-page .printshop-signers-section > .printshop-section-heading {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) auto !important;
@@ -54566,7 +54086,6 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero > div:first-child,
 .printshop-page .printshop-logs-section > .printshop-section-heading > div:first-child,
 .printshop-page .certificate-templates-section > .printshop-section-heading > div:first-child,
-.printshop-page .credentials-section > .printshop-section-heading > div:first-child,
 .printshop-page .printshop-signers-section > .printshop-section-heading > div:first-child {
   min-width: 0 !important;
   display: grid !important;
@@ -54590,8 +54109,6 @@ body {
 .printshop-page .printshop-logs-section > .printshop-section-heading .printshop-kicker,
 .printshop-page .certificate-templates-section > .printshop-section-heading .section-kicker,
 .printshop-page .certificate-templates-section > .printshop-section-heading .printshop-kicker,
-.printshop-page .credentials-section > .printshop-section-heading .section-kicker,
-.printshop-page .credentials-section > .printshop-section-heading .printshop-kicker,
 .printshop-page .printshop-signers-section > .printshop-section-heading .section-kicker,
 .printshop-page .printshop-signers-section > .printshop-section-heading .printshop-kicker {
   display: none !important;
@@ -54612,7 +54129,6 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero h2,
 .printshop-page .printshop-logs-section > .printshop-section-heading h2,
 .printshop-page .certificate-templates-section > .printshop-section-heading h2,
-.printshop-page .credentials-section > .printshop-section-heading h2,
 .printshop-page .printshop-signers-section > .printshop-section-heading h2 {
   margin: 0 0 5px !important;
   color: #0f2442 !important;
@@ -54630,7 +54146,6 @@ body {
 .printshop-page .generated-certificates-redesign > .certificates-clean-hero p:not(.section-kicker),
 .printshop-page .printshop-logs-section > .printshop-section-heading p:not(.section-kicker),
 .printshop-page .certificate-templates-section > .printshop-section-heading p:not(.section-kicker),
-.printshop-page .credentials-section > .printshop-section-heading p:not(.section-kicker),
 .printshop-page .printshop-signers-section > .printshop-section-heading p:not(.section-kicker) {
   display: -webkit-box !important;
   -webkit-box-orient: vertical !important;
@@ -54709,8 +54224,6 @@ body {
 .printshop-page .printshop-batches-page > .batches-hero .visual-outline-button,
 .printshop-page .certificate-templates-section > .printshop-section-heading .visual-primary-button,
 .printshop-page .certificate-templates-section > .printshop-section-heading .visual-outline-button,
-.printshop-page .credentials-section > .printshop-section-heading .visual-primary-button,
-.printshop-page .credentials-section > .printshop-section-heading .visual-outline-button,
 .printshop-page .printshop-signers-section > .printshop-section-heading .visual-primary-button,
 .printshop-page .printshop-signers-section > .printshop-section-heading .visual-outline-button {
   min-width: auto !important;
@@ -54747,7 +54260,6 @@ body {
   .printshop-page .generated-certificates-redesign > .certificates-clean-hero,
   .printshop-page .printshop-logs-section > .printshop-section-heading,
   .printshop-page .certificate-templates-section > .printshop-section-heading,
-  .printshop-page .credentials-section > .printshop-section-heading,
   .printshop-page .printshop-signers-section > .printshop-section-heading {
     grid-template-columns: 1fr !important;
     height: auto !important;
@@ -54765,7 +54277,6 @@ body {
   .printshop-page .generated-certificates-redesign > .certificates-clean-hero p:not(.section-kicker),
   .printshop-page .printshop-logs-section > .printshop-section-heading p:not(.section-kicker),
   .printshop-page .certificate-templates-section > .printshop-section-heading p:not(.section-kicker),
-  .printshop-page .credentials-section > .printshop-section-heading p:not(.section-kicker),
   .printshop-page .printshop-signers-section > .printshop-section-heading p:not(.section-kicker) {
     -webkit-line-clamp: 2 !important;
     line-clamp: 2 !important;
@@ -62785,223 +62296,1350 @@ body {
   }
 }
 
-/* Ajuste final: el generador enfocado de credenciales debe ocupar todo el ancho del modulo. */
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout {
-  grid-template-columns: minmax(0, 1fr) !important;
-  width: 100% !important;
-  max-width: none !important;
+
+/* =========================================================
+   IMPRENTA - ACCIONES DE CERTIFICADOS
+   Botones modernos para pestaña Certificados e Historial
+========================================================= */
+
+.certificate-actions-modern,
+.generated-certificate-actions.certificate-actions-modern,
+.certificate-history-card-actions.certificate-actions-modern {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
-  position: static !important;
-  width: 100% !important;
-  max-width: none !important;
-  margin: 0 !important;
+.generated-certificate-actions.certificate-actions-modern {
+  min-width: 430px;
+}
+
+.certificate-history-card-actions.certificate-actions-modern {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e8eef7;
+}
+
+.table-actions .certificate-action-button,
+.certificate-actions-modern .certificate-action-button {
+  min-height: 34px !important;
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  border-radius: 999px !important;
+  padding: 8px 12px !important;
+  font-size: 11.5px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  border: 1px solid transparent !important;
+  background: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+  white-space: nowrap !important;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease !important;
+}
+
+.table-actions .certificate-action-button:hover:not(:disabled),
+.certificate-actions-modern .certificate-action-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1) !important;
+}
+
+.table-actions .certificate-action-button:disabled,
+.certificate-actions-modern .certificate-action-button:disabled {
+  opacity: 0.48 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.certificate-action-button .printshop-svg-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  stroke-width: 2.25;
+}
+
+.certificate-action-button span {
+  display: inline-block;
+}
+
+.table-actions .certificate-action-secondary,
+.certificate-actions-modern .certificate-action-secondary {
+  color: #0f4fc4 !important;
+  background: #f8fbff !important;
+  border-color: #cfe0ff !important;
+}
+
+.table-actions .certificate-action-secondary:hover:not(:disabled),
+.certificate-actions-modern .certificate-action-secondary:hover:not(:disabled) {
+  background: #eef5ff !important;
+  border-color: #b9cdfa !important;
+}
+
+.table-actions .certificate-action-view,
+.certificate-actions-modern .certificate-action-view {
+  color: #0f4fc4 !important;
+  background: #eaf2ff !important;
+  border-color: #bad0ff !important;
+}
+
+.table-actions .certificate-action-view:hover:not(:disabled),
+.certificate-actions-modern .certificate-action-view:hover:not(:disabled) {
+  background: #dceaff !important;
+  border-color: #9fbdf8 !important;
+}
+
+.table-actions .certificate-action-success,
+.certificate-actions-modern .certificate-action-success {
+  color: #15803d !important;
+  background: #dcfce7 !important;
+  border-color: #bbf7d0 !important;
+}
+
+.table-actions .certificate-action-success:hover:not(:disabled),
+.certificate-actions-modern .certificate-action-success:hover:not(:disabled) {
+  background: #c8f7d8 !important;
+  border-color: #86efac !important;
+}
+
+.table-actions .certificate-action-warning,
+.certificate-actions-modern .certificate-action-warning {
+  color: #c2410c !important;
+  background: #fff7ed !important;
+  border-color: #fed7aa !important;
+}
+
+.table-actions .certificate-action-warning:hover:not(:disabled),
+.certificate-actions-modern .certificate-action-warning:hover:not(:disabled) {
+  background: #ffedd5 !important;
+  border-color: #fdba74 !important;
+}
+
+.table-actions .certificate-action-danger,
+.certificate-actions-modern .certificate-action-danger {
+  color: #b42318 !important;
+  background: #fff1f1 !important;
+  border-color: #fecaca !important;
+}
+
+.table-actions .certificate-action-danger:hover:not(:disabled),
+.certificate-actions-modern .certificate-action-danger:hover:not(:disabled) {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+
+@media (max-width: 900px) {
+  .generated-certificate-actions.certificate-actions-modern {
+    min-width: 0;
+  }
+
+  .certificate-actions-modern .certificate-action-button {
+    flex: 1 1 132px;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - HISTORIAL DE CERTIFICADOS MÁS LEGIBLE
+   Convierte el historial en tarjetas limpias con más aire visual
+========================================================= */
+
+.certificate-history-embedded .card,
+.certificate-history-embedded .printshop-panel,
+.certificate-history-embedded [class*="panel"] {
+  overflow: visible;
+}
+
+.certificate-history-card-list {
   display: grid !important;
-  grid-template-columns: minmax(480px, 0.96fr) minmax(480px, 1fr) !important;
+  gap: 14px !important;
+  margin-top: 18px !important;
 }
 
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-generator-panel,
-.credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .credential-preview-panel {
-  width: 100% !important;
+.certificate-history-card-redesign,
+.certificate-history-card-list .certificate-history-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #dbe6f4 !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #ffffff, #fbfdff) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.055) !important;
+  overflow: hidden !important;
+}
+
+.certificate-history-card-redesign:hover,
+.certificate-history-card-list .certificate-history-card:hover {
+  border-color: #b9cdfa !important;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08) !important;
+  transform: translateY(-1px);
+  transition: 0.16s ease;
+}
+
+.certificate-history-card-main {
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) !important;
+  gap: 14px !important;
+  align-items: start !important;
+  padding: 16px 18px 14px !important;
+}
+
+.certificate-history-card-icon {
+  width: 50px !important;
+  height: 50px !important;
+  border-radius: 15px !important;
+  display: grid !important;
+  place-items: center !important;
+  background: #eaf2ff !important;
+  color: #0f4fc4 !important;
+  flex: 0 0 50px !important;
+}
+
+.certificate-history-card-icon .printshop-svg-icon,
+.certificate-history-card-icon svg {
+  width: 25px !important;
+  height: 25px !important;
+  stroke-width: 2.15 !important;
+}
+
+.certificate-history-card-content {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 12px !important;
+}
+
+.certificate-history-title-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+}
+
+.certificate-history-title-row > div {
   min-width: 0 !important;
 }
 
-@media (max-width: 1100px) {
-  .credentials-layout.credential-generator-focused.template-admin-layout.printshop-focused-layout .printshop-batches-side {
+.certificate-history-title-row strong {
+  display: block !important;
+  margin: 0 0 4px !important;
+  color: #0f2442 !important;
+  font-size: 15px !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.01em !important;
+  overflow-wrap: anywhere !important;
+}
+
+.certificate-history-title-row span {
+  display: block !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.certificate-history-title-row .status-badge,
+.certificate-history-title-row [class*="status"] {
+  flex: 0 0 auto !important;
+}
+
+.certificate-history-meta-grid {
+  display: grid !important;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(120px, 0.75fr) minmax(220px, 1.25fr) minmax(90px, 0.55fr) !important;
+  gap: 10px !important;
+}
+
+.certificate-history-meta-grid > div {
+  min-width: 0 !important;
+  border: 1px solid #edf2f8 !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+  padding: 10px 11px !important;
+}
+
+.certificate-history-meta-grid small {
+  display: block !important;
+  margin: 0 0 4px !important;
+  color: #7b8ca3 !important;
+  font-size: 10.5px !important;
+  line-height: 1.2 !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.certificate-history-meta-grid strong {
+  display: block !important;
+  color: #0f2442 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.certificate-history-card-actions.certificate-actions-modern {
+  margin-top: 0 !important;
+  padding: 13px 18px 15px !important;
+  border-top: 1px solid #e8eef7 !important;
+  background: #f8fbff !important;
+}
+
+.certificate-history-card-actions.certificate-actions-modern .certificate-action-button {
+  min-height: 35px !important;
+}
+
+@media (max-width: 1500px) {
+  .certificate-history-meta-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .certificate-history-card-main {
+    grid-template-columns: 1fr !important;
+  }
+
+  .certificate-history-card-icon {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  .certificate-history-title-row {
+    flex-direction: column !important;
+  }
+
+  .certificate-history-meta-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .certificate-history-card-actions.certificate-actions-modern {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .certificate-history-card-actions.certificate-actions-modern .certificate-action-button {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .certificate-history-card-actions.certificate-actions-modern {
     grid-template-columns: 1fr !important;
   }
 }
 
-/* ===== Gestor de suscripciones ===== */
+/* =========================================================
+   IMPRENTA - GENERADOR DE CERTIFICADOS Y CREDENCIALES
+   Ajustes visuales para tabs y listado tipo historial
+========================================================= */
+
+.certificate-generator-mode-tabs {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 5px !important;
+  margin: 0 0 16px !important;
+  border: 1px solid #dbe6f4 !important;
+  border-radius: 999px !important;
+  background: #eef4fb !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
+}
+
+.certificate-generator-mode-tabs button {
+  min-height: 36px !important;
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  border: 1px solid transparent !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #526176 !important;
+  padding: 9px 16px !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease !important;
+}
+
+.certificate-generator-mode-tabs button:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.65) !important;
+  color: #0f4fc4 !important;
+}
+
+.certificate-generator-mode-tabs button.active {
+  background: #0f4fc4 !important;
+  border-color: #0f4fc4 !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 20px rgba(15, 79, 196, 0.18) !important;
+}
+
+.certificate-generator-mode-tabs button.active:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 12px 24px rgba(15, 79, 196, 0.23) !important;
+}
+
+.credential-history-card-list {
+  display: grid !important;
+  gap: 14px !important;
+  margin-top: 18px !important;
+}
+
+.credential-history-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.credential-history-card-main {
+  display: grid !important;
+}
+
+.credential-history-card-icon {
+  background: #eaf2ff !important;
+  color: #0f4fc4 !important;
+}
+
+.credential-history-card-icon .printshop-svg-icon,
+.credential-history-card-icon svg {
+  width: 25px !important;
+  height: 25px !important;
+}
+
+.credential-history-meta-grid {
+  grid-template-columns: minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(120px, 0.75fr) minmax(220px, 1.25fr) minmax(90px, 0.55fr) !important;
+}
+
+.credential-history-card-actions.certificate-actions-modern {
+  margin-top: 0 !important;
+  padding: 13px 18px 15px !important;
+  border-top: 1px solid #e8eef7 !important;
+  background: #f8fbff !important;
+}
+
+.credential-history-card-actions.certificate-actions-modern .certificate-action-button {
+  min-height: 35px !important;
+}
+
+@media (max-width: 1500px) {
+  .credential-history-meta-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .certificate-generator-mode-tabs {
+    width: 100% !important;
+  }
+
+  .certificate-generator-mode-tabs button {
+    flex: 1 1 0 !important;
+  }
+
+  .credential-history-meta-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .credential-history-card-actions.certificate-actions-modern {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .credential-history-card-actions.certificate-actions-modern .certificate-action-button {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .credential-history-card-actions.certificate-actions-modern {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - GENERADOR DE CREDENCIAL EN VISTA AMPLIA
+   Evita que la vista previa y el formulario se encimen
+========================================================= */
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 18px !important;
+  align-items: start !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-main {
+  display: none !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-side {
+  display: grid !important;
+  grid-template-columns: minmax(430px, 0.82fr) minmax(0, 1.18fr) !important;
+  gap: 18px !important;
+  align-items: start !important;
+  width: min(1480px, 100%) !important;
+  max-width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-focused-header {
+  grid-column: 1 / -1 !important;
+  position: static !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-template-form-panel {
+  display: none !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-panel {
+  grid-column: 1 !important;
+  min-width: 0 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel {
+  grid-column: 2 !important;
+  min-width: 0 !important;
+  align-self: start !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-panel .printshop-panel,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel .printshop-panel {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form .full,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form .message-box.full,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form .printshop-form-actions.full {
+  grid-column: 1 / -1 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form label {
+  min-width: 0 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form input,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form select,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form textarea {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.credential-generated-preview {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(250px, 1fr)) !important;
+  gap: 16px !important;
+  align-items: start !important;
+}
+
+.credential-static-stage {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 520px !important;
+  aspect-ratio: 1012 / 638 !important;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+  border: 1px solid #dbe7f5 !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.1) !important;
+  isolation: isolate !important;
+}
+
+.credential-static-stage.vertical {
+  max-width: 320px !important;
+  aspect-ratio: 638 / 1012 !important;
+}
+
+.credential-static-stage.pdf-export-mode {
+  width: 1012px !important;
+  height: 638px !important;
+  max-width: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+.credential-static-stage.vertical.pdf-export-mode {
+  width: 638px !important;
+  height: 1012px !important;
+}
+
+.credential-static-stage .credential-template-background {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  z-index: 1 !important;
+}
+
+.credential-empty-template-side {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #eef5ff, #ffffff);
+  color: #64748b;
+  font-weight: 900;
+}
+
+.credential-static-stage .credential-template-text,
+.credential-static-stage .certificate-template-custom-text {
+  z-index: 5 !important;
+  color: #111827 !important;
+  font-family: "Segoe UI", Arial, sans-serif !important;
+  line-height: 1.15 !important;
+  pointer-events: none !important;
+  overflow-wrap: anywhere !important;
+}
+
+.credential-static-stage .credential-layer-name {
+  font-weight: 900 !important;
+  letter-spacing: -0.03em !important;
+}
+
+.credential-static-stage:not(.pdf-export-mode) .credential-template-text,
+.credential-static-stage:not(.pdf-export-mode) .certificate-template-custom-text {
+  transform: translate(-50%, -50%) scale(0.58) !important;
+  transform-origin: center center !important;
+}
+
+.credential-static-stage .credential-template-qr {
+  z-index: 6 !important;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: contain !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(20, 40, 70, 0.16) !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  pointer-events: none !important;
+}
+
+.credential-static-stage:not(.pdf-export-mode) .credential-template-qr {
+  max-width: 34% !important;
+}
+
+.credential-static-stage .certificate-template-custom-image {
+  z-index: 4 !important;
+  pointer-events: none !important;
+  object-fit: contain !important;
+}
+
+@media (max-width: 1320px) {
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-side {
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: min(1040px, 100%) !important;
+  }
+
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-panel,
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel {
+    grid-column: 1 / -1 !important;
+  }
+
+  .credential-generated-preview {
+    grid-template-columns: repeat(2, minmax(240px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form,
+  .credential-generated-preview {
+    grid-template-columns: 1fr !important;
+  }
+
+  .credential-static-stage {
+    max-width: 100% !important;
+  }
+
+  .credential-static-stage.vertical {
+    max-width: min(320px, 100%) !important;
+  }
+}
+
+/* =========================================================
+   IMPRENTA - CREDENCIALES EN VISTA LATERAL ESTABLE
+   Generar y reimprimir: formulario a la izquierda, vista previa a la derecha
+========================================================= */
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-main {
+  display: none !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-side {
+  position: static !important;
+  top: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(470px, 0.92fr) minmax(460px, 1.08fr) !important;
+  gap: 20px !important;
+  align-items: start !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-focused-header {
+  grid-column: 1 / -1 !important;
+  position: static !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-template-form-panel {
+  display: none !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-panel {
+  grid-column: 1 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel {
+  grid-column: 2 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  align-self: start !important;
+  position: sticky !important;
+  top: 18px !important;
+  overflow: hidden !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-panel .printshop-panel,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel .printshop-panel {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px 14px !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form .full,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form .message-box.full,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form .printshop-form-actions.full {
+  grid-column: 1 / -1 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form label,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form input,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form select,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form textarea {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form input,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form select {
+  height: 46px !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form textarea {
+  min-height: 88px !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generated-preview {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  align-items: start !important;
+  overflow: hidden !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage {
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  aspect-ratio: 1012 / 638 !important;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+  contain: layout paint !important;
+  isolation: isolate !important;
+  border: 1px solid #dbe7f5 !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.1) !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage.vertical {
+  max-width: min(320px, 100%) !important;
+  aspect-ratio: 638 / 1012 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage .credential-template-background {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage:not(.pdf-export-mode) .credential-template-text,
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage:not(.pdf-export-mode) .certificate-template-custom-text {
+  transform: translate(-50%, -50%) scale(0.54) !important;
+  transform-origin: center center !important;
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  z-index: 5 !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage:not(.pdf-export-mode) .credential-template-qr {
+  width: clamp(78px, 28%, 150px) !important;
+  height: auto !important;
+  max-width: 32% !important;
+  max-height: 46% !important;
+  object-fit: contain !important;
+  z-index: 6 !important;
+  background: #ffffff !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage .certificate-template-custom-image {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+}
+
+.credentials-layout.credential-generator-focused.printshop-focused-layout.credential-reprint-active .credential-generator-focused-header span {
+  background: #eef5ff !important;
+  color: #0f4fc4 !important;
+  border-radius: 999px !important;
+  padding: 7px 12px !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+@media (max-width: 1440px) {
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-side {
+    grid-template-columns: minmax(430px, 0.9fr) minmax(420px, 1.1fr) !important;
+    gap: 16px !important;
+  }
+
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generated-preview {
+    grid-template-columns: 1fr !important;
+  }
+
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-static-stage {
+    max-width: 520px !important;
+  }
+}
+
+@media (max-width: 1080px) {
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .printshop-batches-side {
+    grid-template-columns: 1fr !important;
+  }
+
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-panel,
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel {
+    grid-column: 1 / -1 !important;
+  }
+
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-preview-panel {
+    position: static !important;
+  }
+
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generated-preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generator-form,
+  .credentials-layout.credential-generator-focused.printshop-focused-layout .credential-generated-preview {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ===== Imprenta · Plantillas: botones de Certificados / Credenciales ===== */
+.printshop-template-hub {
+  display: grid;
+  gap: 16px;
+}
+
+.printshop-template-hub-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 0;
+}
+
+.printshop-template-hub-tabs button {
+  appearance: none;
+  border: 1px solid #cfdaf1;
+  background: #ffffff;
+  color: #17305f;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 6px 16px rgba(24, 49, 96, 0.06);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease,
+    background-color 0.18s ease, color 0.18s ease;
+  cursor: pointer;
+}
+
+.printshop-template-hub-tabs button:hover {
+  transform: translateY(-1px);
+  border-color: #9fb8f2;
+  box-shadow: 0 10px 24px rgba(33, 82, 195, 0.12);
+}
+
+.printshop-template-hub-tabs button:focus-visible {
+  outline: 3px solid rgba(34, 98, 255, 0.18);
+  outline-offset: 2px;
+}
+
+.printshop-template-hub-tabs button svg,
+.printshop-template-hub-tabs button .printshop-icon,
+.printshop-template-hub-tabs button i {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.printshop-template-hub-tabs button > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #edf3ff;
+  color: #2456c7;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.printshop-template-hub-tabs button.active {
+  background: linear-gradient(135deg, #1b59d8 0%, #1448b7 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 14px 28px rgba(23, 74, 191, 0.22);
+}
+
+.printshop-template-hub-tabs button.active > span {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.printshop-template-hub-tabs button.active svg,
+.printshop-template-hub-tabs button.active .printshop-icon,
+.printshop-template-hub-tabs button.active i {
+  color: currentColor;
+}
+
+@media (max-width: 768px) {
+  .printshop-template-hub-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .printshop-template-hub-tabs button {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* =========================================================
+   Gestor de suscripciones · rediseño visual uniforme
+   ========================================================= */
 .subscription-manager-page {
-  box-sizing: border-box;
+  width: min(100%, 1680px);
+  margin: 0 auto;
+  padding: 24px 24px 42px;
   display: grid;
   gap: 18px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  padding: 0 34px 34px 20px;
+  color: #071d3d;
 }
 
 .subscription-topbar {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px);
-  align-items: center;
-  gap: 22px;
-  width: 100%;
-  min-height: 153px;
-  margin: 0;
-  padding: 22px 28px;
-  border: 1px solid rgba(185, 205, 250, 0.22);
+  min-height: 132px;
   border-radius: 22px;
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
   background:
-    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
-    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
-    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%);
-  color: #ffffff;
-  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.18);
+    radial-gradient(circle at 92% 10%, rgba(255,255,255,0.16) 0 90px, transparent 92px),
+    linear-gradient(115deg, #123f88 0%, #1555ce 58%, #3f477d 100%);
+  border: 1px solid rgba(255,255,255,0.24);
+  box-shadow: 0 18px 38px rgba(17, 44, 92, 0.16);
   overflow: hidden;
+  position: relative;
 }
 
 .subscription-topbar::before {
   content: "";
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(115deg, transparent 0 62%, rgba(255, 255, 255, 0.07) 62% 100%),
-    radial-gradient(circle at 97% 70%, rgba(255, 255, 255, 0.1), transparent 24%);
-  opacity: 0.95;
-}
-
-.subscription-topbar::after {
-  content: "";
-  position: absolute;
-  right: -26px;
-  bottom: -50px;
-  width: 300px;
-  height: 210px;
-  border: 3px solid rgba(255, 255, 255, 0.08);
-  border-radius: 34px;
-  transform: rotate(-8deg);
+  background: linear-gradient(110deg, transparent 0 60%, rgba(255,255,255,0.08) 60% 78%, transparent 78%);
   pointer-events: none;
 }
 
-.subscription-topbar > div {
+.subscription-topbar-main,
+.subscription-topbar-button {
   position: relative;
   z-index: 1;
-  min-width: 0;
 }
 
 .subscription-topbar-main {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 18px;
+  display: flex;
   align-items: center;
+  gap: 18px;
+  min-width: 0;
 }
 
 .subscription-topbar-module-icon {
-  width: 64px;
-  height: 64px;
-  display: grid;
-  place-items: center;
-  border-radius: 21px;
-  background: rgba(255, 255, 255, 0.15);
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  background: rgba(255,255,255,0.13);
+  border: 1px solid rgba(255,255,255,0.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
-.subscription-topbar-icon-svg {
-  width: 32px;
-  height: 32px;
+.subscription-topbar-copy {
+  min-width: 0;
+}
+
+.subscription-topbar-copy p {
+  margin: 0 0 6px;
+  color: rgba(255,255,255,0.84);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.subscription-topbar-copy h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(28px, 2.4vw, 42px);
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.subscription-topbar-copy span {
   display: block;
+  margin-top: 8px;
+  color: rgba(255,255,255,0.92);
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+  max-width: 760px;
+}
+
+.subscription-topbar-button,
+.subscription-primary-button,
+.subscription-outline-button,
+.subscription-delete-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+  white-space: nowrap;
+}
+
+.subscription-topbar-button,
+.subscription-primary-button {
+  background: #ffffff;
+  color: #1555ce;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.14);
+}
+
+.subscription-primary-button {
+  background: linear-gradient(135deg, #1b5bd7 0%, #1447b6 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(21, 85, 206, 0.22);
+}
+
+.subscription-outline-button {
+  background: #ffffff;
+  color: #1555ce;
+  border: 1px solid #cddaf3;
+  box-shadow: 0 8px 20px rgba(34, 67, 120, 0.06);
+}
+
+.subscription-delete-button {
+  background: #fff5f5;
+  color: #d93030;
+  border: 1px solid #ffc8c8;
+  box-shadow: none;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.subscription-topbar-button:hover,
+.subscription-primary-button:hover,
+.subscription-outline-button:hover,
+.subscription-delete-button:hover {
+  transform: translateY(-1px);
+}
+
+.subscription-icon-svg {
+  width: 20px;
+  height: 20px;
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  flex: 0 0 auto;
 }
 
-.subscription-topbar p,
-.subscription-topbar h1,
-.subscription-topbar span {
-  margin: 0;
-}
-
-.subscription-topbar p {
-  display: block;
-  margin: 0 0 6px;
-  color: #d7e6ff;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.subscription-topbar h1 {
-  margin: 0 0 6px;
-  color: #ffffff;
-  font-size: clamp(28px, 2.6vw, 38px);
-  line-height: 1;
-  font-weight: 900;
-  letter-spacing: -0.045em;
-}
-
-.subscription-topbar span {
-  display: block;
-  max-width: 780px;
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 14px;
-  line-height: 1.45;
+.subscription-topbar-module-icon .subscription-icon-svg {
+  width: 26px;
+  height: 26px;
 }
 
 .subscription-metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.subscription-metric-card,
-.subscription-main-panel,
-.subscription-form-panel {
-  border: 1px solid #dbe7f5;
-  border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 14px 34px rgba(17, 31, 61, 0.08);
+  gap: 16px;
 }
 
 .subscription-metric-card {
-  display: grid;
-  gap: 6px;
-  padding: 16px;
+  min-height: 116px;
+  padding: 20px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #d8e3f6;
+  box-shadow: 0 16px 34px rgba(23, 46, 82, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
 }
 
-.subscription-metric-card span,
-.subscription-metric-card p {
-  color: #60708a;
-  font-size: 12px;
+.subscription-metric-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: #1555ce;
+}
+
+.subscription-metric-card.green::after { background: #16a34a; }
+.subscription-metric-card.orange::after { background: #f97316; }
+.subscription-metric-card.teal::after { background: #14b8a6; }
+.subscription-metric-card.red::after { background: #ef4444; }
+
+.subscription-metric-icon,
+.subscription-section-icon,
+.subscription-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1555ce;
+  background: #edf4ff;
+  flex: 0 0 auto;
+}
+
+.subscription-metric-card.green .subscription-metric-icon { color: #16a34a; background: #dcfce7; }
+.subscription-metric-card.orange .subscription-metric-icon { color: #f97316; background: #ffedd5; }
+.subscription-metric-card.teal .subscription-metric-icon { color: #0f9f90; background: #ccfbf1; }
+.subscription-metric-card.red .subscription-metric-icon { color: #ef4444; background: #fee2e2; }
+
+.subscription-metric-card span:not(.subscription-metric-icon) {
+  display: block;
+  color: #071d3d;
+  font-size: 13px;
   font-weight: 800;
 }
 
 .subscription-metric-card strong {
-  color: #17345f;
-  font-size: 26px;
+  display: block;
+  margin-top: 3px;
+  color: #021a3c;
+  font-size: 30px;
   line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.subscription-metric-card p {
+  margin: 6px 0 0;
+  color: #65748d;
+  font-size: 13px;
+  line-height: 1.25;
 }
 
 .subscription-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  grid-template-columns: minmax(0, 1fr) 420px;
   gap: 18px;
   align-items: start;
 }
 
 .subscription-main-panel,
 .subscription-form-panel {
-  padding: 18px;
-  min-width: 0;
+  background: #ffffff;
+  border: 1px solid #d8e3f6;
+  border-radius: 20px;
+  box-shadow: 0 18px 34px rgba(23, 46, 82, 0.08);
+  overflow: hidden;
 }
 
-.subscription-toolbar,
-.subscription-form {
+.subscription-main-panel {
+  padding: 18px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
+}
+
+.subscription-panel-title-row,
+.subscription-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #dfe8f7;
+}
+
+.subscription-panel-title-row > div,
+.subscription-panel-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.subscription-panel-title-row h2,
+.subscription-panel-header h2 {
+  margin: 0;
+  color: #071d3d;
+  font-size: 20px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.subscription-panel-title-row p,
+.subscription-panel-header p {
+  margin: 6px 0 0;
+  color: #65748d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.subscription-panel-title-row > strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #1555ce;
+  background: #edf4ff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.subscription-section-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
 }
 
 .subscription-toolbar {
-  grid-template-columns: minmax(260px, 1fr) 170px 190px;
-  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 180px 220px;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid #d8e3f6;
+  background: #f8fbff;
 }
 
 .subscription-toolbar label,
 .subscription-form label {
   display: grid;
-  gap: 6px;
-  color: #17345f;
+  gap: 7px;
+  min-width: 0;
+}
+
+.subscription-toolbar label span,
+.subscription-form label span {
+  color: #071d3d;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .subscription-toolbar input,
@@ -63011,224 +63649,548 @@ body {
 .subscription-form textarea {
   width: 100%;
   min-height: 42px;
-  border: 1px solid #dbe7f5;
   border-radius: 12px;
-  padding: 10px 12px;
-  color: #17345f;
+  border: 1px solid #cfdaf1;
   background: #ffffff;
+  color: #071d3d;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .subscription-form textarea {
   min-height: 96px;
+  padding-top: 12px;
   resize: vertical;
 }
 
-.subscription-form .full,
-.subscription-form-actions.full {
-  grid-column: 1 / -1;
+.subscription-toolbar input:focus,
+.subscription-toolbar select:focus,
+.subscription-form input:focus,
+.subscription-form select:focus,
+.subscription-form textarea:focus {
+  border-color: #1555ce;
+  box-shadow: 0 0 0 4px rgba(21, 85, 206, 0.1);
 }
 
 .subscription-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .subscription-card {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #f8fbff;
+  border: 1px solid #d8e3f6;
+  border-radius: 18px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.subscription-card:hover,
+.subscription-card.active {
+  border-color: #9fb8f2;
+  box-shadow: 0 14px 28px rgba(21, 85, 206, 0.12);
+  transform: translateY(-1px);
 }
 
 .subscription-card.active {
-  border-color: #9db8d8;
-  box-shadow: 0 10px 22px rgba(23, 52, 95, 0.1);
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
 }
 
-.subscription-card > button {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+.subscription-card-main {
   width: 100%;
-  border: none;
+  border: 0;
   background: transparent;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
   text-align: left;
   cursor: pointer;
 }
 
-.subscription-card strong,
-.subscription-card span,
-.subscription-card b,
-.subscription-card small {
+.subscription-card-copy strong {
   display: block;
+  color: #071d3d;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
-.subscription-card strong,
-.subscription-card b {
-  color: #17345f;
-}
-
-.subscription-card span,
-.subscription-card small {
-  color: #60708a;
+.subscription-card-copy span,
+.subscription-card-copy small,
+.subscription-card-cost small {
+  display: block;
+  margin-top: 4px;
+  color: #65748d;
   font-size: 12px;
+  line-height: 1.35;
+}
+
+.subscription-card-cost {
+  text-align: right;
+}
+
+.subscription-card-cost b {
+  color: #071d3d;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .subscription-card-footer {
+  border-top: 1px solid #e5edf8;
+  background: #fbfdff;
+  padding: 12px 16px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.subscription-status-pill {
+.subscription-status-pill,
+.subscription-seats-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 4px 9px;
+  justify-content: center;
+  min-height: 28px;
   border-radius: 999px;
-  background: #e7eef8;
-  color: #17345f;
+  padding: 0 10px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
+  border: 1px solid transparent;
 }
 
-.subscription-status-pill.green {
-  background: #dcfce7;
-  color: #166534;
+.subscription-status-pill.green { color: #0f8a3d; background: #dcfce7; border-color: #bbf7d0; }
+.subscription-status-pill.orange { color: #c45c09; background: #ffedd5; border-color: #fed7aa; }
+.subscription-status-pill.red { color: #dc2626; background: #fee2e2; border-color: #fecaca; }
+.subscription-status-pill.blue { color: #1555ce; background: #edf4ff; border-color: #cfe0ff; }
+.subscription-status-pill.neutral,
+.subscription-seats-pill { color: #526176; background: #f1f5f9; border-color: #dbe5f0; }
+
+.subscription-delete-button {
+  margin-left: auto;
 }
 
-.subscription-status-pill.orange {
-  background: #ffedd5;
-  color: #9a3412;
+.subscription-delete-button .subscription-icon-svg {
+  width: 15px;
+  height: 15px;
 }
 
-.subscription-status-pill.red {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.subscription-status-pill.blue {
-  background: #dbeafe;
-  color: #1d4ed8;
+.subscription-form-panel {
+  padding: 18px;
+  position: sticky;
+  top: 18px;
 }
 
 .subscription-panel-header {
-  display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  padding-bottom: 14px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid #e5eef8;
 }
 
-.subscription-panel-header span {
-  color: #0f4fc4;
-  font-size: 12px;
+.subscription-panel-header > div > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #1555ce;
+  font-size: 11px;
   font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.subscription-panel-header h2 {
-  margin: 4px 0 0;
-  color: #17345f;
-  font-size: 20px;
+.subscription-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 16px;
 }
 
-@media (max-width: 1100px) {
-  .subscription-metrics-grid,
-  .subscription-layout,
-  .subscription-toolbar,
-  .subscription-form {
+.subscription-form .full {
+  grid-column: 1 / -1;
+}
+
+.subscription-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.subscription-empty-state {
+  min-height: 220px;
+  border: 1px dashed #c6d7f2;
+  border-radius: 18px;
+  background: #f8fbff;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+  color: #65748d;
+  padding: 28px;
+}
+
+.subscription-empty-state span {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1555ce;
+  background: #edf4ff;
+}
+
+.subscription-empty-state strong {
+  color: #071d3d;
+  font-size: 15px;
+}
+
+.subscription-empty-state p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.subscription-access-message {
+  margin-top: 12px;
+}
+
+@media (max-width: 1240px) {
+  .subscription-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-form-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 980px) {
+  .subscription-manager-page {
+    padding: 18px 14px 36px;
+  }
+
+  .subscription-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    min-height: auto;
+    padding: 24px;
+  }
+
+  .subscription-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .subscription-toolbar {
     grid-template-columns: 1fr;
   }
 }
 
-/* ===== Encabezados azules principales uniformes ===== */
-.workspace-dashboard-page,
-.internal-messages-page.chat-messages-page.department-chat-page,
-.team-agenda-page,
-.ideas-incubator-page,
-.my-projects-redesign,
-.all-projects-redesign,
-.project-history-redesign,
-.create-project-redesign,
-.technical-support-page,
-.printshop-page,
-.collaborators-admin-page,
-.departments-admin-redesign,
-.purchase-requests-page,
-.bug-reports-page,
+@media (max-width: 640px) {
+  .subscription-metrics-grid,
+  .subscription-form {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-card-main {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .subscription-card-cost {
+    grid-column: 1 / -1;
+    text-align: left;
+    padding-left: 56px;
+  }
+
+  .subscription-form-actions {
+    flex-direction: column-reverse;
+  }
+
+  .subscription-form-actions button,
+  .subscription-topbar-button {
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   Gestor de suscripciones · ajuste final de espaciado
+   ========================================================= */
 .subscription-manager-page {
-  box-sizing: border-box !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  padding: 0 34px 34px 20px !important;
-  gap: 16px !important;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 0 32px 42px;
 }
 
-.printshop-topbar,
-.module-topbar,
-.technical-support-redesign-v5 .technical-page-topbar,
 .subscription-topbar {
-  position: relative !important;
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px) !important;
-  align-items: center !important;
-  gap: 22px !important;
-  width: 100% !important;
-  min-height: 153px !important;
-  height: auto !important;
-  margin: 0 !important;
-  padding: 22px 28px !important;
-  border: 1px solid rgba(185, 205, 250, 0.22) !important;
-  border-radius: 22px !important;
-  background:
-    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
-    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
-    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%) !important;
-  color: #ffffff !important;
-  box-shadow: 0 22px 52px rgba(15, 23, 42, 0.18) !important;
-  overflow: hidden !important;
+  margin-top: 0;
 }
 
-.printshop-topbar::before,
-.module-topbar::before,
-.technical-support-redesign-v5 .technical-page-topbar::before,
-.subscription-topbar::before {
-  content: "" !important;
-  position: absolute !important;
-  inset: 0 !important;
-  pointer-events: none !important;
-  background:
-    linear-gradient(115deg, transparent 0 62%, rgba(255, 255, 255, 0.07) 62% 100%),
-    radial-gradient(circle at 97% 70%, rgba(255, 255, 255, 0.1), transparent 24%) !important;
-  opacity: 0.95 !important;
+.subscription-layout,
+.subscription-metrics-grid,
+.subscription-topbar {
+  box-sizing: border-box;
 }
 
-.printshop-topbar::after,
-.module-topbar::after,
-.technical-support-redesign-v5 .technical-page-topbar::after,
-.subscription-topbar::after {
-  content: "" !important;
-  position: absolute !important;
-  right: -26px !important;
-  bottom: -50px !important;
-  width: 300px !important;
-  height: 210px !important;
-  border: 3px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 34px !important;
-  transform: rotate(-8deg) !important;
-  pointer-events: none !important;
+@media (max-width: 980px) {
+  .subscription-manager-page {
+    padding: 0 18px 36px;
+  }
 }
 
-.printshop-topbar-main,
-.module-topbar-main,
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child,
-.subscription-topbar-main {
+@media (max-width: 640px) {
+  .subscription-manager-page {
+    padding: 0 14px 32px;
+  }
+}
+
+/* =========================================================
+   IMPRENTA · CERTIFICADOS: DETALLE OPERATIVO Y PRODUCCIÓN
+========================================================= */
+
+.request-production-edit-card {
+  margin: 16px 0 18px;
+  padding: 16px;
+  border: 1px solid #dbe7ff;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.request-production-edit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid #e5eaf2;
+  margin-bottom: 14px;
+}
+
+.request-production-edit-header strong {
+  display: block;
+  color: #0f2442;
+  font-size: 15px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.request-production-edit-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.request-production-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.request-production-edit-grid label {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.request-production-edit-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.request-production-edit-grid label > span {
+  color: #0f2442;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.request-production-edit-grid input,
+.request-production-edit-grid select,
+.request-production-edit-grid textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d9e2ef;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.request-production-edit-grid textarea {
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.request-production-edit-grid input:focus,
+.request-production-edit-grid select:focus,
+.request-production-edit-grid textarea:focus {
+  outline: none;
+  border-color: #0f4fc4;
+  box-shadow: 0 0 0 3px rgba(15, 79, 196, 0.1);
+}
+
+.request-production-edit-grid input:disabled,
+.request-production-edit-grid select:disabled,
+.request-production-edit-grid textarea:disabled {
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.request-production-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.request-production-edit-actions .visual-primary-button {
+  padding: 10px 14px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.request-production-message {
+  margin: 14px 0 0;
+}
+
+.certificate-template-match-note {
+  margin: 14px 0 0;
+}
+
+.certificate-template-match-note strong {
+  display: block;
+  color: #92400e;
+  margin-bottom: 4px;
+}
+
+.certificate-template-match-note p {
+  margin: 0;
+  color: #7c5c16;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.request-detail-redesign-card .request-detail-certificate {
+  margin-top: 14px;
+}
+
+.request-detail-redesign-card .request-students-card {
+  margin-top: 16px;
+}
+
+@media (max-width: 980px) {
+  .request-production-edit-header {
+    flex-direction: column;
+  }
+
+  .request-production-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .request-production-edit-actions .visual-primary-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* =========================================================
+   IMPRENTA · SOLICITUDES DE CERTIFICADOS AUTOMATIZADAS
+========================================================= */
+.request-detail-tabs {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.request-detail-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.request-detail-redesign-card.detail-view-production .request-production-edit-card {
+  margin-top: 0;
+}
+
+.request-detail-redesign-card.detail-view-production .request-production-edit-header strong::before {
+  content: "⚙ ";
+}
+
+.request-detail-redesign-card.detail-view-production {
+  border-color: #dbe7ff;
+}
+
+.certificate-request-card.priority-urgent,
+.certificate-request-card.priority-urgente,
+.request-table-redesign tr.priority-urgent,
+.request-table-redesign tr.priority-urgente {
+  border-left: 5px solid #ed1c24 !important;
+  background: linear-gradient(90deg, #fff1f1 0%, #ffffff 34%) !important;
+}
+
+.certificate-request-card.priority-alta,
+.request-table-redesign tr.priority-alta {
+  border-left: 5px solid #f97316 !important;
+  background: linear-gradient(90deg, #fff7ed 0%, #ffffff 34%) !important;
+}
+
+.certificate-request-card.priority-normal,
+.request-table-redesign tr.priority-normal {
+  border-left: 5px solid #0f4fc4;
+}
+
+.certificate-request-card.priority-baja,
+.request-table-redesign tr.priority-baja {
+  border-left: 5px solid #0f9488;
+}
+
+.certificate-request-card.priority-urgent::before,
+.certificate-request-card.priority-urgente::before,
+.certificate-request-card.priority-alta::before {
+  content: "Prioridad";
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.certificate-request-card.priority-urgent::before,
+.certificate-request-card.priority-urgente::before {
+  content: "Urgente";
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+.certificate-request-card.priority-alta::before {
+  content: "Alta prioridad";
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fed7aa;
+}
+
+@media (max-width: 760px) {
+  .request-detail-tabs {
+    width: 100%;
+  }
+
+  .request-detail-tabs button {
+    flex: 1 1 100%;
+  }
+}
+
+/* ===== Ajustes finales: iconos y tarjetas operativas ===== */
+.technical-support-redesign-v5 .technical-page-topbar .technical-topbar-main {
   position: relative !important;
   z-index: 1 !important;
   min-width: 0 !important;
@@ -63239,18 +64201,996 @@ body {
   padding-left: 0 !important;
 }
 
-.printshop-topbar-main::before,
+.technical-support-redesign-v5 .technical-page-topbar .technical-topbar-main::before {
+  content: none !important;
+  display: none !important;
+}
+
+.technical-support-redesign-v5 .technical-topbar-module-icon {
+  width: 64px !important;
+  height: 64px !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 21px !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
+}
+
+.technical-support-redesign-v5 .technical-topbar-module-icon svg {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.technical-support-redesign-v5 .technical-topbar-copy span {
+  display: block !important;
+  max-width: 780px !important;
+  margin: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #e7f0ff !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  font-weight: 400 !important;
+}
+
+.subscription-topbar-module-icon {
+  display: grid !important;
+  place-items: center !important;
+}
+
+.subscription-topbar-module-icon .subscription-icon-svg {
+  width: 32px !important;
+  height: 32px !important;
+  display: block !important;
+  margin: 0 !important;
+}
+
+.certificate-history-card-actions.certificate-actions-modern {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.certificate-history-card-actions.certificate-actions-modern .certificate-action-button {
+  min-height: 36px !important;
+  border-radius: 12px !important;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+.generated-credentials-list {
+  display: grid !important;
+  gap: 14px !important;
+}
+
+.generated-credential-card {
+  display: grid !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #dbe6f4 !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #ffffff, #fbfdff) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.055) !important;
+  overflow: hidden !important;
+}
+
+.generated-credential-card:hover {
+  border-color: #b9cdfa !important;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08) !important;
+  transform: translateY(-1px);
+  transition: 0.16s ease;
+}
+
+.generated-credential-card-main {
+  display: grid !important;
+  grid-template-columns: 58px minmax(0, 1fr) !important;
+  gap: 14px !important;
+  align-items: start !important;
+  padding: 16px 18px 14px !important;
+}
+
+.generated-credential-avatar {
+  width: 50px !important;
+  height: 50px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 15px !important;
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+}
+
+.generated-credential-avatar svg {
+  width: 25px !important;
+  height: 25px !important;
+}
+
+.generated-credential-content {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 12px !important;
+}
+
+.generated-credential-title-row {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.generated-credential-title-row strong {
+  display: block !important;
+  margin: 0 0 4px !important;
+  color: #0f2442 !important;
+  font-size: 15px !important;
+  line-height: 1.25 !important;
+}
+
+.generated-credential-title-row span {
+  display: block !important;
+  color: #64748b !important;
+  font-size: 12px !important;
+}
+
+.generated-credential-meta {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.generated-credential-meta > div {
+  min-width: 0 !important;
+  border: 1px solid #edf2f8 !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+  padding: 10px 11px !important;
+}
+
+.generated-credential-meta small {
+  display: block !important;
+  margin: 0 0 4px !important;
+  color: #7b8ca3 !important;
+  font-size: 10.5px !important;
+  line-height: 1.2 !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.generated-credential-meta b {
+  display: block !important;
+  color: #0f2442 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.generated-credential-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  padding: 13px 18px 15px !important;
+  border-top: 1px solid #e8eef7 !important;
+  background: #f8fbff !important;
+}
+
+.generated-credential-actions button {
+  min-height: 36px !important;
+  border-radius: 12px !important;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+.attendance-visual-location-help-card {
+  grid-column: 2 !important;
+  background: linear-gradient(180deg, #f8fbff, #ffffff) !important;
+}
+
+.attendance-visual-locations-card {
+  grid-row: span 2 !important;
+}
+
+.attendance-visual-location-form {
+  grid-column: 2 !important;
+}
+
+.attendance-visual-location-help-card p,
+.attendance-visual-location-help-card ul {
+  margin: 0 !important;
+  color: #526176 !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+.attendance-visual-location-help-card ul {
+  display: grid !important;
+  gap: 6px !important;
+  padding-left: 18px !important;
+  margin-top: 10px !important;
+}
+
+@media (max-width: 980px) {
+  .generated-credential-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ===== Ajuste final: solicitud/seguimiento publicos y suscripciones ===== */
+.subscription-manager-page {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 34px 34px 20px !important;
+  gap: 16px !important;
+}
+
+.subscription-topbar {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 153px !important;
+  margin: 0 !important;
+  padding: 22px 28px !important;
+  border-radius: 22px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px) !important;
+  align-items: center !important;
+  gap: 22px !important;
+  background:
+    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%) !important;
+}
+
+.subscription-topbar-copy h1 {
+  font-size: clamp(28px, 2.6vw, 38px) !important;
+  font-weight: 700 !important;
+  line-height: 1.05 !important;
+  letter-spacing: 0 !important;
+}
+
+.subscription-topbar-main {
+  display: grid !important;
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+  gap: 18px !important;
+}
+
+.subscription-topbar-module-icon {
+  width: 64px !important;
+  height: 64px !important;
+  flex-basis: 64px !important;
+  border-radius: 21px !important;
+}
+
+.certificate-public-page {
+  font-family: inherit !important;
+  background:
+    radial-gradient(circle at 9% 8%, rgba(15, 79, 196, 0.08), transparent 26%),
+    linear-gradient(180deg, #f8fbff 0%, #f3f6fb 100%) !important;
+}
+
+.certificate-public-page .tracking-topbar {
+  min-height: 78px !important;
+  padding: 16px 34px !important;
+  border-bottom-width: 3px !important;
+}
+
+.certificate-public-page .tracking-brand-logo {
+  max-height: 48px !important;
+  width: auto !important;
+}
+
+.certificate-public-page .tracking-hero {
+  width: min(1400px, calc(100% - 48px)) !important;
+  min-height: 142px !important;
+  margin: 24px auto 18px !important;
+  padding: 22px 28px !important;
+  border: 1px solid rgba(185, 205, 250, 0.22) !important;
+  border-radius: 22px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px) !important;
+  align-items: center !important;
+  gap: 22px !important;
+  color: #ffffff !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%) !important;
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.14) !important;
+}
+
+.certificate-public-page .tracking-eyebrow {
+  color: #dbeafe !important;
+  letter-spacing: 0.12em !important;
+}
+
+.certificate-public-page .tracking-hero h1 {
+  margin: 0 0 6px !important;
+  color: #ffffff !important;
+  font-size: clamp(28px, 2.6vw, 38px) !important;
+  line-height: 1.05 !important;
+  font-weight: 850 !important;
+  letter-spacing: 0 !important;
+}
+
+.certificate-public-page .tracking-hero p {
+  max-width: 780px !important;
+  color: #e7f0ff !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}
+
+.certificate-public-page .cap-line,
+.certificate-public-page .diploma-line,
+.certificate-public-page .building-line {
+  border-color: rgba(255, 255, 255, 0.32) !important;
+}
+
+.certificate-public-page .building-line::before,
+.certificate-public-page .building-line::after {
+  background: rgba(255, 255, 255, 0.32) !important;
+}
+
+.certificate-public-page .tracking-main-card,
+.certificate-public-page .request-main-card,
+.certificate-public-page .success-request-card {
+  width: min(1400px, calc(100% - 48px)) !important;
+  border-radius: 22px !important;
+  padding: 20px !important;
+  border-color: #dbe6f4 !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08) !important;
+}
+
+.certificate-public-page .request-layout,
+.certificate-public-page .tracking-content-layout {
+  gap: 16px !important;
+}
+
+.certificate-public-page .tracking-info-panel,
+.certificate-public-page .tracking-students-panel,
+.certificate-public-page .request-form-panel,
+.certificate-public-page .request-side-panel,
+.certificate-public-page .request-review-panel,
+.certificate-public-page .tracking-edit-panel,
+.certificate-public-page .request-process-card,
+.certificate-public-page .tracking-progress-card {
+  border-radius: 18px !important;
+  border-color: #dbe6f4 !important;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.055) !important;
+}
+
+.certificate-public-page .tracking-panel-title > span {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 14px !important;
+  background: #eaf2ff !important;
+}
+
+.certificate-public-page .tracking-panel-title h2 {
+  font-size: 19px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0 !important;
+}
+
+.certificate-public-page .form-grid label,
+.certificate-public-page .full-field,
+.certificate-public-page .student-row label {
+  color: #344256 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+}
+
+.certificate-public-page input,
+.certificate-public-page select,
+.certificate-public-page textarea {
+  min-height: 44px !important;
+  border-radius: 12px !important;
+  border: 1px solid #cfdbee !important;
+  background: #ffffff !important;
+  color: #0f2442 !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+}
+
+.certificate-public-page textarea {
+  min-height: 96px !important;
+}
+
+.certificate-public-page .request-process-grid {
+  gap: 10px !important;
+}
+
+.certificate-public-page .request-process-step {
+  border-radius: 14px !important;
+  background: #ffffff !important;
+}
+
+.certificate-public-page .request-process-step.current,
+.certificate-public-page .request-process-step.completed {
+  background: #eef5ff !important;
+}
+
+.certificate-public-page .tracking-info-card,
+.certificate-public-page .tracking-student-item,
+.certificate-public-page .request-summary-box,
+.certificate-public-page .request-summary-total,
+.certificate-public-page .review-item {
+  border-radius: 14px !important;
+}
+
+.certificate-public-page .tracking-actions button,
+.certificate-public-page .form-actions button,
+.certificate-public-page .public-card button {
+  min-height: 42px !important;
+  border-radius: 12px !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+}
+
+@media (max-width: 920px) {
+  .subscription-manager-page {
+    padding: 0 18px 28px !important;
+  }
+
+  .subscription-topbar,
+  .certificate-public-page .tracking-hero {
+    grid-template-columns: 1fr !important;
+  }
+
+  .certificate-public-page .tracking-hero-art {
+    display: none !important;
+  }
+}
+
+/* ===== Ajuste final de cierre: responsive app, documentos y revision visual ===== */
+.profile-chip-button em {
+  width: 28px !important;
+  height: 28px !important;
+  display: grid !important;
+  place-items: center !important;
+  border-radius: 10px !important;
+  background: #eef4ff !important;
+  color: #0f4fc4 !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.profile-chip-button em::before {
+  content: "" !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-right: 2px solid currentColor !important;
+  border-bottom: 2px solid currentColor !important;
+  transform: translateY(-2px) rotate(45deg) !important;
+}
+
+.profile-chip-button:hover em {
+  background: #dbeafe !important;
+}
+
+.ideas-modern-list-card,
+.subscription-main-panel,
+.project-detail-redesign .visual-card {
+  min-width: 0 !important;
+}
+
+.ideas-modern-filters,
+.subscription-toolbar {
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow: visible !important;
+}
+
+.ideas-modern-filters > *,
+.subscription-toolbar > *,
+.subscription-toolbar input,
+.subscription-toolbar select {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.project-documents-card {
+  padding: 22px !important;
+}
+
+.project-documents-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e8eef6;
+  margin-bottom: 16px;
+}
+
+.project-documents-header p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-documents-upload-button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #cfe0ff;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f4fc4;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.project-documents-upload-button input {
+  display: none;
+}
+
+.project-documents-upload-button .project-svg-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.project-documents-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.project-document-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #dbe6f4;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  padding: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.project-document-card:hover {
+  border-color: #b9cdfa;
+  box-shadow: 0 12px 28px rgba(15, 79, 196, 0.08);
+}
+
+.project-document-card strong,
+.project-document-card small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project-document-card strong {
+  color: #0f2442;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.project-document-card small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.review-item.visual-review-item {
+  align-items: stretch !important;
+  border-radius: 18px !important;
+}
+
+.visual-review-item.correction-pending {
+  border-color: #fecaca !important;
+  background: linear-gradient(180deg, #ffffff, #fff7f7) !important;
+}
+
+.visual-review-item.correction-accepted {
+  border-color: #bbf7d0 !important;
+  background: linear-gradient(180deg, #ffffff, #f0fdf4) !important;
+}
+
+.visual-review-item.correction-clean {
+  border-color: #dbe6f4 !important;
+}
+
+.review-name-compare {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.review-name-current,
+.review-name-final {
+  min-width: 0;
+  border: 1px solid #e5eaf2;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 11px 12px;
+}
+
+.visual-review-item.correction-pending .review-name-current {
+  border-color: #fecaca;
+  background: #fffafa;
+}
+
+.visual-review-item.correction-accepted .review-name-final {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.review-name-current strong,
+.review-name-final strong {
+  display: block;
+  color: #0f2442;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.review-name-arrow {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.review-status-pill {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.review-status-pill.pending {
+  color: #b42318;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+.review-status-pill.accepted {
+  color: #0f8a3d;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+}
+
+.review-status-pill.clean {
+  color: #0f4fc4;
+  background: #eaf2ff;
+  border: 1px solid #bad0ff;
+}
+
+.review-delivery-note,
+.review-suggestion-alert {
+  grid-column: 1 / -1;
+}
+
+.review-suggestion-alert {
+  width: fit-content;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: #fee2e2;
+  color: #991b1b !important;
+  border: 1px solid #fecaca;
+  font-weight: 800;
+}
+
+@media (max-width: 1280px) {
+  .ideas-modern-filters {
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(132px, 1fr)) !important;
+  }
+
+  .ideas-modern-clear {
+    width: 100%;
+    border: 1px solid #d9e4f2 !important;
+    border-radius: 12px !important;
+    background: #f8fbff !important;
+  }
+
+  .subscription-toolbar {
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(132px, 0.36fr)) !important;
+  }
+}
+
+@media (max-width: 1120px) {
+  .redesigned-detail-layout,
+  .project-detail-layout.redesigned-detail-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .redesigned-detail-side,
+  .project-detail-side.redesigned-detail-side {
+    position: static !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+  }
+
+  .redesigned-detail-side .visual-card,
+  .redesigned-detail-side .side-compact-card,
+  .redesigned-detail-side .admin-review-visual-card {
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 820px) {
+  .ideas-modern-filters,
+  .subscription-toolbar {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ideas-modern-search,
+  .ideas-modern-filters select,
+  .ideas-modern-clear,
+  .subscription-toolbar label,
+  .subscription-toolbar input,
+  .subscription-toolbar select {
+    width: 100% !important;
+  }
+
+  .redesigned-detail-side,
+  .project-detail-side.redesigned-detail-side,
+  .project-documents-grid,
+  .project-document-card,
+  .review-name-compare {
+    grid-template-columns: 1fr !important;
+  }
+
+  .project-documents-header {
+    flex-direction: column;
+  }
+
+  .project-documents-upload-button,
+  .project-document-card .visual-badge {
+    width: 100%;
+  }
+
+  .review-name-arrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+
+  .certificate-public-page .request-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .certificate-public-page .request-side-panel {
+    order: -1;
+    position: static !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .certificate-public-page .request-side-panel .tracking-panel-title,
+  .certificate-public-page .request-side-panel .request-summary-total,
+  .certificate-public-page .request-side-panel .request-summary-text {
+    grid-column: 1 / -1;
+  }
+
+  .certificate-public-page .request-side-panel .request-summary-box,
+  .certificate-public-page .request-side-panel .request-summary-total {
+    margin-bottom: 0 !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell,
+  .main-content {
+    min-width: 0 !important;
+  }
+
+  .main-content {
+    padding: 12px 12px 86px !important;
+  }
+
+  .redesigned-topbar.top-profile-bar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 30 !important;
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    gap: 10px !important;
+    padding: 10px 0 12px !important;
+    margin-bottom: 12px !important;
+    background: rgba(248, 251, 255, 0.94) !important;
+    backdrop-filter: blur(14px) !important;
+  }
+
+  .topbar-title-area,
+  .topbar-search-wrapper {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+
+  .topbar-actions {
+    position: absolute !important;
+    top: 8px !important;
+    right: 0 !important;
+  }
+
+  .profile-chip-button strong {
+    display: none !important;
+  }
+
+  .profile-chip-avatar,
+  .notification-bell-button {
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .profile-chip-button {
+    gap: 6px !important;
+  }
+
+  .profile-chip-button em {
+    width: 24px !important;
+    height: 24px !important;
+  }
+
+  .notifications-dropdown,
+  .topbar-profile-wrapper .profile-dropdown {
+    position: fixed !important;
+    top: 76px !important;
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  .ideas-incubator-modern,
+  .project-screen-page,
+  .subscription-manager-page {
+    padding-bottom: 86px !important;
+  }
+
+  .ideas-modern-hero,
+  .subscription-topbar,
+  .project-screen-topbar.printshop-topbar,
+  .certificate-public-page .tracking-hero {
+    border-radius: 18px !important;
+    padding: 18px !important;
+  }
+
+  .ideas-modern-metrics-grid,
+  .subscription-metrics-grid,
+  .project-detail-redesign .hero-meta-grid,
+  .redesigned-indicator-grid,
+  .certificate-public-page .request-side-panel {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ideas-modern-item-main {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+  }
+
+  .ideas-modern-item-side {
+    grid-column: 1 / -1 !important;
+    justify-items: start !important;
+  }
+
+  .ideas-status-dots {
+    width: 100% !important;
+    max-width: 160px !important;
+  }
+
+  .subscription-card-main {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+  }
+
+  .subscription-card-footer {
+    align-items: stretch !important;
+  }
+
+  .subscription-delete-button {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+
+  .certificate-public-page .tracking-main-card,
+  .certificate-public-page .request-main-card,
+  .certificate-public-page .success-request-card,
+  .certificate-public-page .tracking-hero {
+    width: calc(100% - 24px) !important;
+  }
+}
+
+/* ===== Cierre visual: encabezados uniformes, estado ejecutivo y solicitud amplia ===== */
+.my-projects-redesign,
+.ideas-incubator-page,
+.team-agenda-page,
+.workspace-dashboard-page,
+.internal-messages-page.chat-messages-page.department-chat-page,
+.all-projects-redesign,
+.project-history-redesign,
+.create-project-redesign,
+.purchase-requests-page.purchase-redesign {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 34px 34px 20px !important;
+}
+
+.printshop-topbar,
+.module-topbar,
+.module-topbar-dashboard,
+.module-topbar-messages,
+.module-topbar-agenda,
+.module-topbar-ideas,
+.module-topbar-my-projects,
+.workspace-module-topbar,
+.messages-module-topbar,
+.subscription-topbar,
+.technical-support-redesign-v5 .technical-page-topbar {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 142px !important;
+  height: 142px !important;
+  max-height: 142px !important;
+  margin: 0 0 18px !important;
+  padding: 22px 28px !important;
+  border: 1px solid rgba(185, 205, 250, 0.22) !important;
+  border-radius: 22px !important;
+  align-items: center !important;
+  gap: 22px !important;
+  color: #ffffff !important;
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at 11% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 90% 28%, rgba(82, 133, 255, 0.22), transparent 26%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 46%, #202060 100%) !important;
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.16) !important;
+}
+
+.printshop-topbar-main,
+.module-topbar-main,
+.subscription-topbar-main,
+.technical-support-redesign-v5 .technical-topbar-main {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+  gap: 18px !important;
+  align-items: center !important;
+  padding-left: 0 !important;
+}
+
+.printshop-topbar > div.printshop-topbar-main::before,
 .module-topbar-main::before,
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child::before,
-.subscription-topbar-main::before {
+.subscription-topbar-main::before,
+.technical-support-redesign-v5 .technical-topbar-main::before {
   content: none !important;
   display: none !important;
 }
 
 .printshop-topbar-module-icon,
 .module-topbar-module-icon,
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child > span,
-.subscription-topbar-module-icon {
+.subscription-topbar-module-icon,
+.technical-support-redesign-v5 .technical-topbar-module-icon {
   width: 64px !important;
   height: 64px !important;
   min-width: 64px !important;
@@ -63264,29 +65204,32 @@ body {
 }
 
 .printshop-topbar-module-icon svg,
+.printshop-topbar-module-icon .printshop-svg-icon,
 .module-topbar-module-icon svg,
 .module-topbar-module-icon .nav-svg-icon,
 .module-topbar-module-icon .my-projects-menu-svg,
 .module-topbar-svg-icon,
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child > span svg,
-.subscription-topbar-icon-svg {
+.subscription-topbar-module-icon svg,
+.subscription-topbar-module-icon .subscription-icon-svg,
+.technical-support-redesign-v5 .technical-topbar-module-icon svg {
   width: 32px !important;
   height: 32px !important;
+  display: block !important;
+  stroke-width: 1.85 !important;
 }
 
 .printshop-topbar .printshop-kicker,
 .printshop-topbar .section-kicker,
 .module-topbar .module-topbar-kicker,
 .module-topbar .section-kicker,
-.technical-support-redesign-v5 .technical-page-topbar .section-kicker,
-.subscription-topbar p {
-  display: block !important;
+.subscription-topbar-copy > span,
+.technical-support-redesign-v5 .technical-page-topbar .section-kicker {
   margin: 0 0 6px !important;
   color: #d7e6ff !important;
   font-family: inherit !important;
   font-size: 12px !important;
   line-height: 1.2 !important;
-  font-weight: 900 !important;
+  font-weight: 800 !important;
   letter-spacing: 0.12em !important;
   text-transform: uppercase !important;
 }
@@ -63294,179 +65237,284 @@ body {
 .printshop-topbar h1,
 .module-topbar h1,
 .module-topbar .module-topbar-title-row h1,
-.technical-support-redesign-v5 .technical-page-topbar h1,
-.subscription-topbar h1 {
+.subscription-topbar-copy h1,
+.technical-support-redesign-v5 .technical-page-topbar h1 {
   margin: 0 0 6px !important;
   color: #ffffff !important;
   font-family: inherit !important;
   font-size: clamp(28px, 2.6vw, 38px) !important;
   line-height: 1 !important;
-  font-weight: 900 !important;
-  letter-spacing: -0.045em !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
 }
 
-.printshop-topbar p:not(.section-kicker):not(.printshop-kicker),
+.printshop-topbar p:not(.section-kicker),
 .module-topbar p:not(.section-kicker):not(.module-topbar-kicker),
-.technical-support-redesign-v5 .technical-page-topbar span:not(.technical-global-search span),
-.subscription-topbar span {
-  display: block !important;
+.subscription-topbar-copy p,
+.technical-support-redesign-v5 .technical-topbar-copy span {
   max-width: 780px !important;
   margin: 0 !important;
-  overflow: visible !important;
   color: #e7f0ff !important;
   font-family: inherit !important;
-  font-size: 14px !important;
-  line-height: 1.45 !important;
-}
-
-.module-topbar-search,
-.printshop-topbar .printshop-search,
-.technical-support-redesign-v5 .technical-global-search {
-  position: relative !important;
-  z-index: 1 !important;
-  min-height: 52px !important;
-  height: 52px !important;
-  border-radius: 15px !important;
-}
-
-@media (max-width: 1320px) {
-  .printshop-topbar,
-  .module-topbar,
-  .technical-support-redesign-v5 .technical-page-topbar,
-  .subscription-topbar {
-    grid-template-columns: 1fr !important;
-    min-height: 153px !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .workspace-dashboard-page,
-  .internal-messages-page.chat-messages-page.department-chat-page,
-  .team-agenda-page,
-  .ideas-incubator-page,
-  .my-projects-redesign,
-  .all-projects-redesign,
-  .project-history-redesign,
-  .create-project-redesign,
-  .technical-support-page,
-  .printshop-page,
-  .collaborators-admin-page,
-  .departments-admin-redesign,
-  .purchase-requests-page,
-  .bug-reports-page,
-  .subscription-manager-page {
-    padding: 0 14px 24px !important;
-  }
-
-  .printshop-topbar,
-  .module-topbar,
-  .technical-support-redesign-v5 .technical-page-topbar,
-  .subscription-topbar {
-    padding: 18px !important;
-    border-radius: 18px !important;
-  }
-}
-
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child {
-  position: relative !important;
-  z-index: 1 !important;
-  display: block !important;
-  min-width: 0 !important;
-  padding-left: 74px !important;
-}
-
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child::before {
-  content: "" !important;
-  position: absolute !important;
-  left: 0 !important;
-  top: 50% !important;
-  width: 64px !important;
-  height: 64px !important;
-  transform: translateY(-50%) !important;
-  display: grid !important;
-  place-items: center !important;
-  border-radius: 21px !important;
-  background: rgba(255, 255, 255, 0.15) !important;
-  color: #ffffff !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16) !important;
-}
-
-.technical-support-redesign-v5 .technical-page-topbar > div:first-child > span {
-  width: auto !important;
-  height: auto !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  display: block !important;
-  margin: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  color: #e7f0ff !important;
   font-size: 14px !important;
   line-height: 1.45 !important;
   font-weight: 400 !important;
+  letter-spacing: 0 !important;
 }
 
-.departments-module-topbar.printshop-topbar,
-.bug-module-topbar.printshop-topbar {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 396px) !important;
-  gap: 22px !important;
+.status-panel {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.status-summary-layout {
+  width: min(100%, 520px) !important;
+  max-width: 100% !important;
+  grid-template-columns: minmax(136px, 168px) minmax(0, 1fr) !important;
+  gap: clamp(14px, 2vw, 22px) !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin: 4px auto 0 !important;
+}
+
+.status-donut {
+  width: clamp(136px, 13vw, 168px) !important;
+  height: clamp(136px, 13vw, 168px) !important;
+  margin: 0 auto !important;
+  flex: 0 0 auto !important;
+}
+
+.status-donut strong {
+  font-size: clamp(28px, 2.4vw, 34px) !important;
+}
+
+.status-donut span {
+  margin-top: 5px !important;
+  font-size: 13px !important;
+}
+
+.status-legend-list {
   width: 100% !important;
-  height: 153px !important;
-  min-height: 153px !important;
-  padding: 22px 28px !important;
-  border-radius: 22px !important;
+  min-width: 0 !important;
+  max-width: 300px !important;
+  gap: 10px !important;
 }
 
-.departments-module-topbar .printshop-topbar-main,
-.bug-module-topbar .printshop-topbar-main {
-  grid-template-columns: 64px minmax(0, 1fr) !important;
-  gap: 18px !important;
+.status-legend-row {
+  min-width: 0 !important;
+  grid-template-columns: 11px minmax(0, 1fr) minmax(28px, auto) minmax(38px, auto) !important;
+  gap: 9px !important;
 }
 
-.departments-module-topbar .printshop-topbar-module-icon,
-.bug-module-topbar .printshop-topbar-module-icon {
-  width: 64px !important;
-  height: 64px !important;
-  min-width: 64px !important;
-  min-height: 64px !important;
-  border-radius: 21px !important;
+.status-legend-row span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
-.departments-module-topbar .printshop-topbar-module-icon svg,
-.departments-module-topbar .departments-svg-icon,
-.bug-module-topbar .printshop-topbar-module-icon svg,
-.bug-topbar-icon .bug-svg-icon,
-.bug-topbar-icon .printshop-svg-icon {
-  width: 32px !important;
-  height: 32px !important;
+.status-legend-row span,
+.status-legend-row small {
+  font-size: 13px !important;
 }
 
-.departments-module-topbar .printshop-topbar-copy h1,
-.bug-module-topbar .printshop-topbar-copy h1 {
-  margin: 0 0 6px !important;
-  color: #ffffff !important;
-  font-family: inherit !important;
-  font-size: clamp(28px, 2.6vw, 38px) !important;
-  line-height: 1 !important;
-  font-weight: 900 !important;
-  letter-spacing: -0.045em !important;
-}
-
-.departments-module-topbar .printshop-kicker,
-.bug-module-topbar .printshop-kicker {
-  margin: 0 0 6px !important;
-  color: #d7e6ff !important;
-  font-size: 12px !important;
-  line-height: 1.2 !important;
-  font-weight: 900 !important;
-  letter-spacing: 0.12em !important;
-}
-
-.departments-module-topbar .printshop-topbar-copy p:not(.printshop-kicker),
-.bug-module-topbar .printshop-topbar-copy p:not(.printshop-kicker) {
-  max-width: 780px !important;
-  margin: 0 !important;
-  color: #e7f0ff !important;
+.status-legend-row strong {
   font-size: 14px !important;
-  line-height: 1.45 !important;
+  text-align: right !important;
+}
+
+.certificate-public-page .request-main-card {
+  width: min(1560px, calc(100% - 48px)) !important;
+  display: grid !important;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr) !important;
+  gap: 16px !important;
+  align-items: start !important;
+}
+
+.certificate-public-page .form-error,
+.certificate-public-page .request-process-card,
+.certificate-public-page .request-layout,
+.certificate-public-page .request-review-panel {
+  grid-column: 1 / -1 !important;
+}
+
+.certificate-public-page .request-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.42fr) minmax(320px, 0.58fr) !important;
+  align-items: start !important;
+}
+
+.certificate-public-page .request-layout .request-form-panel .form-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.certificate-public-page .request-side-panel {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  align-content: start !important;
+  align-self: start !important;
+  gap: 10px !important;
+  position: sticky !important;
+  top: 16px !important;
+}
+
+.certificate-public-page .request-side-panel .tracking-panel-title,
+.certificate-public-page .request-side-panel .request-summary-total,
+.certificate-public-page .request-side-panel .request-summary-text {
+  grid-column: 1 / -1 !important;
+}
+
+.certificate-public-page .request-side-panel .tracking-panel-title {
+  margin-bottom: 8px !important;
+}
+
+.certificate-public-page .request-side-panel .request-summary-box,
+.certificate-public-page .request-side-panel .request-summary-total {
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  gap: 3px !important;
+}
+
+.certificate-public-page .request-side-panel .request-summary-box strong,
+.certificate-public-page .request-side-panel .request-summary-total strong {
+  font-size: 22px !important;
+  line-height: 1.05 !important;
+}
+
+.certificate-public-page .request-side-panel .request-summary-text strong {
+  font-size: 15px !important;
+  line-height: 1.25 !important;
+}
+
+.certificate-public-page .request-main-card > .request-form-panel {
+  min-width: 0 !important;
+  align-self: stretch !important;
+}
+
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(1) {
+  grid-column: 1 !important;
+}
+
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) {
+  grid-column: 2 !important;
+  display: grid !important;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr) !important;
+  gap: 14px !important;
+}
+
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) .request-section-title,
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) > .form-actions {
+  grid-column: 1 / -1 !important;
+}
+
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) .request-bulk-box,
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) .students-list {
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+.certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) .students-list {
+  max-height: 560px !important;
+  overflow: auto !important;
+  padding-right: 4px !important;
+}
+
+.certificate-public-page .public-student-row {
+  grid-template-columns: minmax(180px, 1.35fr) minmax(110px, 0.55fr) minmax(150px, 1fr) auto !important;
+}
+
+@media (max-width: 1180px) {
+  .certificate-public-page .request-main-card,
+  .certificate-public-page .request-layout,
+  .certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .certificate-public-page .request-main-card > .request-form-panel:nth-of-type(1),
+  .certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) {
+    grid-column: 1 / -1 !important;
+  }
+
+  .certificate-public-page .request-layout .request-form-panel .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .certificate-public-page .request-side-panel {
+    position: static !important;
+  }
+}
+
+@media (max-width: 820px) {
+  .printshop-topbar,
+  .module-topbar,
+  .module-topbar-dashboard,
+  .module-topbar-messages,
+  .module-topbar-agenda,
+  .module-topbar-ideas,
+  .module-topbar-my-projects,
+  .workspace-module-topbar,
+  .messages-module-topbar,
+  .subscription-topbar,
+  .technical-support-redesign-v5 .technical-page-topbar {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 132px !important;
+    padding: 18px !important;
+    border-radius: 18px !important;
+  }
+
+  .printshop-topbar-main,
+  .module-topbar-main,
+  .subscription-topbar-main,
+  .technical-support-redesign-v5 .technical-topbar-main {
+    grid-template-columns: 52px minmax(0, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  .printshop-topbar-module-icon,
+  .module-topbar-module-icon,
+  .subscription-topbar-module-icon,
+  .technical-support-redesign-v5 .technical-topbar-module-icon {
+    width: 52px !important;
+    height: 52px !important;
+    min-width: 52px !important;
+    min-height: 52px !important;
+    border-radius: 18px !important;
+  }
+
+  .printshop-topbar-module-icon svg,
+  .printshop-topbar-module-icon .printshop-svg-icon,
+  .module-topbar-module-icon svg,
+  .module-topbar-module-icon .nav-svg-icon,
+  .module-topbar-module-icon .my-projects-menu-svg,
+  .module-topbar-svg-icon,
+  .subscription-topbar-module-icon svg,
+  .subscription-topbar-module-icon .subscription-icon-svg,
+  .technical-support-redesign-v5 .technical-topbar-module-icon svg {
+    width: 27px !important;
+    height: 27px !important;
+  }
+
+  .status-summary-layout {
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  .status-legend-list {
+    max-width: 100% !important;
+  }
+
+  .certificate-public-page .request-layout .request-form-panel .form-grid,
+  .certificate-public-page .request-side-panel,
+  .certificate-public-page .public-student-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .certificate-public-page .request-main-card > .request-form-panel:nth-of-type(2) .students-list {
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
 }

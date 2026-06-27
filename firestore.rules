@@ -109,13 +109,31 @@ service cloud.firestore {
       return hasProfile() && userDoc().data.area is string;
     }
 
+    function userHasDepartmentName(departmentName) {
+      return hasProfile()
+        && departmentName is string
+        && (
+          userDoc().data.area == departmentName ||
+          userDoc().data.department == departmentName ||
+          userDoc().data.departmentName == departmentName ||
+          userDoc().data.team == departmentName ||
+          (
+            userDoc().data.departmentNames is list
+            && departmentName in userDoc().data.departmentNames
+          ) ||
+          (
+            userDoc().data.departments is list
+            && departmentName in userDoc().data.departments
+          )
+        );
+    }
+
     function isTechnicalSupportUser() {
       return hasProfile()
-        && hasUserArea()
         && (
-          userDoc().data.area == "Soporte Técnico" ||
-          userDoc().data.area == "Soporte tecnico" ||
-          userDoc().data.area == "Soporte técnico"
+          userHasDepartmentName("Soporte Técnico") ||
+          userHasDepartmentName("Soporte tecnico") ||
+          userHasDepartmentName("Soporte técnico")
         );
     }
 
@@ -125,14 +143,13 @@ service cloud.firestore {
 
     function isPrintshopUser() {
       return hasProfile()
-        && hasUserArea()
         && (
-          userDoc().data.area == "Imprenta" ||
-          userDoc().data.area == "Impresión" ||
-          userDoc().data.area == "Impresion" ||
-          userDoc().data.area == "Soporte Técnico" ||
-          userDoc().data.area == "Soporte tecnico" ||
-          userDoc().data.area == "Soporte técnico"
+          userHasDepartmentName("Imprenta") ||
+          userHasDepartmentName("Impresión") ||
+          userHasDepartmentName("Impresion") ||
+          userHasDepartmentName("Soporte Técnico") ||
+          userHasDepartmentName("Soporte tecnico") ||
+          userHasDepartmentName("Soporte técnico")
         );
     }
 
@@ -531,7 +548,10 @@ service cloud.firestore {
       return hasProfile()
         && request.resource.data.projectId is string
         && projectExists(request.resource.data.projectId)
-        && canWorkOnProjectId(request.resource.data.projectId);
+        && (
+          isAdmin() ||
+          canWorkOnProjectId(request.resource.data.projectId)
+        );
     }
 
     function validEvidenceCreate() {
@@ -1052,8 +1072,17 @@ service cloud.firestore {
       return request.resource.data.folio is string
         && request.resource.data.folio.size() > 0
         && request.resource.data.productId is string
-        && request.resource.data.productId.size() > 0
-        && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+        && (
+          (
+            request.resource.data.productId.size() > 0
+            && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+          )
+          || (
+            request.resource.data.publicRequestSource == "certificate-public-form"
+            && request.resource.data.requestType == "Certificado"
+            && request.resource.data.productId == ""
+          )
+        )
         && request.resource.data.productName is string
         && request.resource.data.productName.size() > 0
         && request.resource.data.category is string
@@ -1320,6 +1349,24 @@ service cloud.firestore {
       ];
     }
 
+    function validPrintRequestLevel(level) {
+      return level in [
+        "No aplica",
+        "A1",
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "Smile 1",
+        "Smile 2",
+        "Smile 3",
+        "Smile 4",
+        "Smile 5",
+        "Mega Flash",
+        "Otro"
+      ];
+    }
+
     function isCertificateOrDiplomaRequest() {
       return request.resource.data.requestType in [
         "Certificado",
@@ -1331,8 +1378,17 @@ service cloud.firestore {
       return request.resource.data.folio is string
         && request.resource.data.folio.size() > 0
         && request.resource.data.productId is string
-        && request.resource.data.productId.size() > 0
-        && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+        && (
+          (
+            request.resource.data.productId.size() > 0
+            && exists(/databases/$(database)/documents/printProducts/$(request.resource.data.productId))
+          )
+          || (
+            request.resource.data.publicRequestSource == "certificate-public-form"
+            && request.resource.data.requestType == "Certificado"
+            && request.resource.data.productId == ""
+          )
+        )
         && request.resource.data.productName is string
         && request.resource.data.productName.size() > 0
         && request.resource.data.requestType is string
@@ -1378,15 +1434,7 @@ service cloud.firestore {
         && (!("certificateTemplatePositions" in request.resource.data) || request.resource.data.certificateTemplatePositions is map)
         && request.resource.data.notes is string
         && request.resource.data.level is string
-        && request.resource.data.level in [
-          "No aplica",
-          "A1",
-          "A2",
-          "B1",
-          "B2",
-          "C1",
-          "Otro"
-        ]
+        && validPrintRequestLevel(request.resource.data.level)
         && request.resource.data.group is string
         && request.resource.data.teacherName is string
         && request.resource.data.schedule is string
@@ -1435,6 +1483,34 @@ service cloud.firestore {
         && resource.data.responsibleUid == request.auth.uid;
     }
 
+    function validPrintRequestAutoAssignUpdate() {
+      return isAdmin()
+        && resource.data.publicRequestSource == "certificate-public-form"
+        && resource.data.requestType == "Certificado"
+        && resource.data.responsibleUid == ""
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "responsibleUid",
+          "responsibleName",
+          "responsibleEmail",
+          "defaultResponsibleName",
+          "responsibleAutoAssigned",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.responsibleUid is string
+        && request.resource.data.responsibleUid.size() > 0
+        && request.resource.data.responsibleName is string
+        && request.resource.data.responsibleName.size() > 0
+        && request.resource.data.responsibleEmail is string
+        && request.resource.data.defaultResponsibleName is string
+        && request.resource.data.responsibleAutoAssigned == true
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
+    }
+
     function responsiblePrintRequestUpdate() {
       return isPrintRequestResponsible()
         && validPrintRequestData()
@@ -1443,6 +1519,36 @@ service cloud.firestore {
           "deliveredQuantity",
           "notes",
           "students",
+          "certificateIssueDate",
+          "certificateTemplateId",
+          "certificateTemplateName",
+          "certificateTemplateLevel",
+          "certificateTemplateProgramName",
+          "certificateTemplateAudience",
+          "certificateTemplateBodyText",
+          "certificateTemplateBodySegments",
+          "certificateTemplateCustomTexts",
+          "certificateTemplateCustomImages",
+          "certificateTemplateImageUrl",
+          "certificateTemplateImageDataUrl",
+          "certificateTemplateStoragePath",
+          "certificateTemplatePositions",
+          "level",
+          "group",
+          "teacherName",
+          "schedule",
+          "printedQuantity",
+          "digitalQuantity",
+          "principalSignerId",
+          "principalSignerName",
+          "principalSignerRole",
+          "principalSignatureUrl",
+          "principalSignatureDataUrl",
+          "teacherSignerId",
+          "teacherSignerName",
+          "teacherSignerRole",
+          "teacherSignatureUrl",
+          "teacherSignatureDataUrl",
           "updatedAt",
           "updatedByUid",
           "updatedByName",
@@ -2481,12 +2587,12 @@ service cloud.firestore {
         || responsibleInventoryBatchApplyUpdate()
         || validPrintshopSoftDeleteUpdate();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
 
     match /certificateSigners/{signerId} {
-      allow read: if canAccessPrintshop();
+      allow read: if true;
 
       allow create: if isAdmin()
         && validCertificateSignerData();
@@ -2557,7 +2663,7 @@ service cloud.firestore {
         )
         || validPrintshopSoftDeleteUpdate();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /printshopLogs/{logId} {
@@ -2589,135 +2695,48 @@ service cloud.firestore {
 
 
 
+    function validPublicCertificateFormCreate() {
+      return request.resource.data.keys().hasAll([
+          "folio",
+          "publicTrackingEnabled"
+        ])
+        && request.resource.data.folio is string
+        && request.resource.data.folio.size() > 0
+        && request.resource.data.publicTrackingEnabled == true
+        && (
+          (
+            request.resource.data.keys().hasAll([
+              "publicRequestSource",
+              "requestType",
+              "status",
+              "createdByUid"
+            ])
+            && request.resource.data.publicRequestSource == "certificate-public-form"
+            && request.resource.data.requestType == "Certificado"
+            && request.resource.data.status in ["Solicitud recibida", "received"]
+            && request.resource.data.createdByUid == "public-form"
+          )
+          ||
+          (
+            request.resource.data.keys().hasAll([
+              "certificateType",
+              "status",
+              "createdBy"
+            ])
+            && request.resource.data.certificateType == "Certificado"
+            && request.resource.data.status in ["Solicitud recibida", "received"]
+            && request.resource.data.createdBy in ["public-form", "public-certificate-form"]
+          )
+        );
+    }
+
     function validPublicPrintRequestCreate() {
-      return request.resource.data.keys().hasOnly([
-        "folio",
-        "productId",
-        "productName",
-        "requestType",
-        "requesterName",
-        "requesterArea",
-        "campus",
-        "responsibleUid",
-        "responsibleName",
-        "responsibleEmail",
-        "priority",
-        "requestedQuantity",
-        "deliveredQuantity",
-        "deliveryType",
-        "status",
-        "requestDate",
-        "dueDate",
-        "requestedDeliveryDate",
-        "certificateIssueDate",
-        "certificateTemplateId",
-        "certificateTemplateName",
-        "certificateTemplateLevel",
-        "certificateTemplateProgramName",
-        "certificateTemplateAudience",
-        "certificateTemplateBodyText",
-        "certificateTemplateBodySegments",
-        "certificateTemplateCustomTexts",
-        "certificateTemplateCustomImages",
-        "certificateTemplateImageUrl",
-        "certificateTemplateImageDataUrl",
-        "certificateTemplateStoragePath",
-        "certificateTemplatePositions",
-        "notes",
-        "level",
-        "group",
-        "teacherName",
-        "schedule",
-        "printedQuantity",
-        "digitalQuantity",
-        "principalSignerId",
-        "principalSignerName",
-        "principalSignerRole",
-        "principalSignatureUrl",
-        "teacherSignerId",
-        "teacherSignerName",
-        "teacherSignerRole",
-        "teacherSignatureUrl",
-        "students",
-        "publicTrackingEnabled",
-        "publicRequestSource",
-        "academicDirector",
-        "certificateDirectorName",
-        "courseLevel",
-        "statusLabel",
-        "createdAt",
-        "updatedAt",
-        "createdBy",
-        "createdByUid",
-        "createdByName",
-        "createdByEmail",
-        "updatedByUid",
-        "updatedByName",
-        "updatedByEmail"
-      ])
-      && request.resource.data.folio is string
-      && request.resource.data.folio.size() > 0
-      && request.resource.data.productId == ""
-      && request.resource.data.productName == "Certificado"
-      && request.resource.data.requestType == "Certificado"
-      && request.resource.data.requesterName is string
-      && request.resource.data.requesterName.size() > 0
-      && request.resource.data.requesterArea == "Dirección Académica"
-      && request.resource.data.campus in [
-        "Plaza Estrella",
-        "Plaza Bugambilias",
-        "Plaza Aranjuez",
-        "Online"
-      ]
-      && request.resource.data.responsibleUid == ""
-      && request.resource.data.responsibleName == ""
-      && request.resource.data.responsibleEmail == ""
-      && request.resource.data.priority == "Normal"
-      && request.resource.data.requestedQuantity is number
-      && request.resource.data.requestedQuantity > 0
-      && request.resource.data.requestedQuantity <= 100
-      && request.resource.data.deliveredQuantity == 0
-      && request.resource.data.deliveryType in [
-        "Impresa",
-        "Digital",
-        "Ambas"
-      ]
-      && request.resource.data.status == "Solicitud recibida"
-      && request.resource.data.requestDate is string
-      && request.resource.data.dueDate is string
-      && request.resource.data.requestedDeliveryDate is string
-      && request.resource.data.notes is string
-      && request.resource.data.level in [
-        "No aplica",
-        "A1",
-        "A2",
-        "B1",
-        "B2",
-        "C1",
-        "Otro"
-      ]
-      && request.resource.data.group is string
-      && request.resource.data.group.size() > 0
-      && request.resource.data.teacherName == ""
-      && request.resource.data.schedule == ""
-      && request.resource.data.printedQuantity is number
-      && request.resource.data.printedQuantity >= 0
-      && request.resource.data.digitalQuantity is number
-      && request.resource.data.digitalQuantity >= 0
-      && request.resource.data.printedQuantity + request.resource.data.digitalQuantity == request.resource.data.requestedQuantity
-      && request.resource.data.students is list
-      && request.resource.data.students.size() == request.resource.data.requestedQuantity
-      && request.resource.data.principalSignerName is string
-      && request.resource.data.principalSignerName.size() > 0
-      && request.resource.data.principalSignerRole == "Director"
-      && request.resource.data.certificateDirectorName is string
-      && request.resource.data.certificateDirectorName == request.resource.data.principalSignerName
-      && request.resource.data.academicDirector == request.resource.data.principalSignerName
-      && request.resource.data.publicTrackingEnabled == true
-      && request.resource.data.publicRequestSource == "certificate-public-form"
-      && request.resource.data.createdBy == "public-certificate-form"
-      && request.resource.data.createdByUid == "public-form"
-      && request.resource.data.updatedByUid == "public-form";
+      return validPublicCertificateFormCreate()
+        && request.resource.data.keys().hasAll([
+          "publicRequestSource",
+          "requestType",
+          "createdByUid"
+        ]);
     }
 
     function isPublicCertificateRequestEditable() {
@@ -2744,13 +2763,29 @@ service cloud.firestore {
           "digitalQuantity",
           "deliveryType",
           "students",
+          "productName",
           "level",
           "group",
           "courseLevel",
+          "courseProgramName",
+          "courseAudience",
+          "certificateTemplateLevel",
+          "certificateTemplateProgramName",
+          "certificateTemplateAudience",
+          "teacherName",
+          "schedule",
+          "teacherSignerId",
+          "teacherSignerName",
+          "teacherSignerRole",
+          "teacherSignatureUrl",
+          "teacherSignatureDataUrl",
           "academicDirector",
           "certificateDirectorName",
+          "principalSignerId",
           "principalSignerName",
           "principalSignerRole",
+          "principalSignatureUrl",
+          "principalSignatureDataUrl",
           "updatedAt",
           "updatedByUid",
           "updatedByName",
@@ -2759,7 +2794,8 @@ service cloud.firestore {
         && request.resource.data.status == resource.data.status
         && request.resource.data.publicTrackingEnabled == true
         && request.resource.data.publicRequestSource == "certificate-public-form"
-        && request.resource.data.productName == "Certificado"
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() > 0
         && request.resource.data.requestType == "Certificado"
         && request.resource.data.requesterName is string
         && request.resource.data.requesterName.size() > 0
@@ -2775,7 +2811,7 @@ service cloud.firestore {
         && request.resource.data.notes is string
         && request.resource.data.requestedQuantity is number
         && request.resource.data.requestedQuantity > 0
-        && request.resource.data.requestedQuantity <= 100
+        && request.resource.data.requestedQuantity <= 150
         && request.resource.data.printedQuantity is number
         && request.resource.data.printedQuantity >= 0
         && request.resource.data.digitalQuantity is number
@@ -2788,24 +2824,18 @@ service cloud.firestore {
         ]
         && request.resource.data.students is list
         && request.resource.data.students.size() == request.resource.data.requestedQuantity
-        && request.resource.data.level in [
-          "No aplica",
-          "A1",
-          "A2",
-          "B1",
-          "B2",
-          "C1",
-          "Otro"
-        ]
+        && request.resource.data.level is string
         && request.resource.data.group is string
         && request.resource.data.group.size() > 0
         && request.resource.data.courseLevel is string
         && request.resource.data.courseLevel.size() > 0
+        && request.resource.data.teacherName is string
+        && request.resource.data.schedule is string
+        && request.resource.data.teacherSignerName is string
         && request.resource.data.principalSignerName is string
-        && request.resource.data.principalSignerName.size() > 0
-        && request.resource.data.principalSignerRole == "Director"
-        && request.resource.data.certificateDirectorName == request.resource.data.principalSignerName
-        && request.resource.data.academicDirector == request.resource.data.principalSignerName
+        && request.resource.data.principalSignerRole is string
+        && request.resource.data.certificateDirectorName is string
+        && request.resource.data.academicDirector is string
         && request.resource.data.updatedByUid == "public-form"
         && request.resource.data.updatedByName is string
         && request.resource.data.updatedByName.size() > 0;
@@ -2813,8 +2843,10 @@ service cloud.firestore {
 
 
 
+
     match /certificateRequests/{requestId} {
-      allow create: if validCertificateRequestCreate();
+      allow create: if validCertificateRequestCreate()
+        || validPublicCertificateFormCreate();
 
       allow get: if resource.data.publicTrackingEnabled == true
         || canAccessPrintshop();
@@ -2832,22 +2864,23 @@ service cloud.firestore {
 
       allow list: if canAccessPrintshop();
 
-      allow create: if (
+      allow create: if validPublicPrintRequestCreate()
+        || (
           isAdmin()
           && validPrintRequestData()
           && request.resource.data.createdByUid == request.auth.uid
-        )
-        || validPublicPrintRequestCreate();
+        );
 
       allow update: if (
           isAdmin()
           && validPrintRequestData()
         )
         || responsiblePrintRequestUpdate()
+        || validPrintRequestAutoAssignUpdate()
         || validPublicPrintRequestUpdate()
         || validPrintshopSoftDeleteUpdate();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /technicalAssets/{assetId} {

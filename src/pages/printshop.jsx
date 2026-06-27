@@ -7,6 +7,7 @@ import { jsPDF } from "jspdf";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -221,6 +222,8 @@ const printRequestStatuses = [
   "Entregada",
   "Cancelada",
 ];
+
+const REQUEST_READY_FOR_DELIVERY_DELAY_MS = 60 * 60 * 1000;
 
 const printRequestPriorities = ["Baja", "Normal", "Alta", "Urgente"];
 
@@ -948,6 +951,15 @@ function getPriorityTone(priority) {
   return "blue";
 }
 
+function getPriorityClassName(priority = "Normal") {
+  return `priority-${String(priority || "Normal")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")}`;
+}
+
 function parseRequestDate(value) {
   if (!value) return null;
 
@@ -970,6 +982,84 @@ function calculateRequestPriority({ requestDate, dueDate, createdAt } = {}) {
   if (daysToDeliver <= 3) return "Urgente";
   if (daysToDeliver <= 7) return "Alta";
   return "Normal";
+}
+
+function normalizeCertificateMatchText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/discovery/g, "discover")
+    .replace(/new horizons/g, "newhorizons")
+    .replace(/mega flash/g, "megaflash")
+    .replace(/smile\s+/g, "smile")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function certificateTextMatches(source = "", target = "") {
+  const sourceText = normalizeCertificateMatchText(source);
+  const targetText = normalizeCertificateMatchText(target);
+
+  if (!sourceText || !targetText) return false;
+
+  return sourceText === targetText || sourceText.includes(targetText) || targetText.includes(sourceText);
+}
+
+function getCertificateRequestTemplateTargets(form = {}, selectedProduct = null) {
+  const rawLevel = form.level && form.level !== "No aplica"
+    ? form.level
+    : form.certificateTemplateLevel || selectedProduct?.level || "";
+  const rawProgram =
+    form.certificateTemplateProgramName ||
+    form.courseProgramName ||
+    form.courseLevel ||
+    form.group ||
+    selectedProduct?.name ||
+    form.productName ||
+    "";
+  const rawAudience = form.certificateTemplateAudience || form.courseAudience || "";
+  const rawType = isRequestCertificateLike(form.requestType)
+    ? form.requestType
+    : selectedProduct?.category || form.requestType || "";
+
+  return {
+    targetLevel: String(rawLevel || "").trim(),
+    targetProgram: String(rawProgram || "").trim(),
+    targetAudience: String(rawAudience || "").trim(),
+    targetType: String(rawType || "").trim(),
+  };
+}
+
+function findMatchingCertificateTemplateInList(templates = [], form = {}, selectedProduct = null) {
+  const activeTemplates = (templates || []).filter((template) => template?.active !== false);
+  const { targetLevel, targetProgram, targetAudience, targetType } = getCertificateRequestTemplateTargets(form, selectedProduct);
+
+  const hasTarget = Boolean(targetLevel || targetProgram || targetAudience || targetType);
+  if (!hasTarget) return null;
+
+  return activeTemplates.find((template) => {
+    const matchesLevel = targetLevel ? certificateTextMatches(template.level, targetLevel) : false;
+    const matchesProgram = targetProgram
+      ? certificateTextMatches(template.programName, targetProgram) ||
+        certificateTextMatches(template.name, targetProgram) ||
+        certificateTextMatches(`${template.level || ""} ${template.programName || ""}`, targetProgram)
+      : false;
+    const matchesAudience = targetAudience ? certificateTextMatches(template.audience, targetAudience) : true;
+    const matchesType = targetType
+      ? certificateTextMatches(template.certificateType, targetType) || certificateTextMatches(template.audience, targetType)
+      : true;
+
+    return (matchesLevel || matchesProgram) && matchesAudience && matchesType;
+  }) || activeTemplates.find((template) => {
+    if (targetLevel && certificateTextMatches(template.level, targetLevel)) return true;
+    if (!targetProgram) return false;
+
+    return (
+      certificateTextMatches(template.programName, targetProgram) ||
+      certificateTextMatches(template.name, targetProgram) ||
+      certificateTextMatches(`${template.level || ""} ${template.programName || ""}`, targetProgram)
+    );
+  }) || null;
 }
 
 function normalizePrintRequestStatus(status) {
@@ -1395,6 +1485,7 @@ function normalizeCertificateTemplate(template) {
     certificateType: certificateTemplateTypes.includes(template?.certificateType)
       ? template.certificateType
       : "Certificado",
+    deleted: template?.deleted === true,
     bodyText: String(template?.bodyText || DEFAULT_CERTIFICATE_BODY_TEXT),
     bodySegments: normalizeCertificateBodySegments(template?.bodySegments, template?.bodyText),
     customTexts: normalizeTemplateCustomTexts(template?.customTexts),
@@ -1419,6 +1510,7 @@ function normalizeCredentialTemplate(template) {
     name: String(template?.name || "").trim(),
     orientation: template?.orientation === "vertical" ? "vertical" : "horizontal",
     active: template?.active !== false,
+    deleted: template?.deleted === true,
     notes: String(template?.notes || ""),
     frontImageUrl: String(template?.frontImageUrl || ""),
     frontImageDataUrl: String(template?.frontImageDataUrl || ""),
@@ -1800,9 +1892,19 @@ function getStudentDeliveryCounts(students) {
 
 function getStudentValidationSummary(request) {
   const counts = getStudentDeliveryCounts(request?.students);
-  const requestedQuantity = Number(request?.requestedQuantity || 0);
-  const printedQuantity = Number(request?.printedQuantity || 0);
-  const digitalQuantity = Number(request?.digitalQuantity || 0);
+  const rawRequestedQuantity = Number(request?.requestedQuantity || 0);
+  const rawPrintedQuantity = Number(request?.printedQuantity || 0);
+  const rawDigitalQuantity = Number(request?.digitalQuantity || 0);
+  const shouldUseStudentCounts =
+    counts.total > 0 &&
+    (
+      rawRequestedQuantity === 0 ||
+      rawRequestedQuantity !== counts.total ||
+      rawPrintedQuantity + rawDigitalQuantity === 0
+    );
+  const requestedQuantity = shouldUseStudentCounts ? counts.total : rawRequestedQuantity;
+  const printedQuantity = shouldUseStudentCounts ? counts.printed : rawPrintedQuantity;
+  const digitalQuantity = shouldUseStudentCounts ? counts.digital : rawDigitalQuantity;
 
   return {
     ...counts,
@@ -1958,6 +2060,36 @@ function getRequestProgress(status) {
   return statusProgress[status] ?? 0;
 }
 
+function getDateValueMs(value) {
+  if (!value) return 0;
+  if (value?.toDate) return value.toDate().getTime();
+  if (value instanceof Date) return value.getTime();
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getEffectiveRequestStatus(request) {
+  if (!request) return "Solicitud recibida";
+
+  const status = request.status || "Solicitud recibida";
+  const readyAtMs = getDateValueMs(request.readyForDeliveryAt);
+
+  if (status === "En producción" && readyAtMs > 0 && readyAtMs <= Date.now()) {
+    return "Lista para entrega";
+  }
+
+  return status;
+}
+
+function getEffectiveRequestStatusTone(request) {
+  return getRequestStatusTone(getEffectiveRequestStatus(request));
+}
+
+function getEffectiveRequestProgress(request) {
+  return getRequestProgress(getEffectiveRequestStatus(request));
+}
+
 function getRequestDueLabel(request) {
   if (!request?.dueDate) return "Sin compromiso";
 
@@ -2035,6 +2167,10 @@ function getPrintshopLogTone(type) {
   if (String(type || "").includes("ZIP") || String(type || "").includes("BULK")) return "teal";
   if (String(type || "").includes("UPDATED")) return "orange";
   return "blue";
+}
+
+function isVisiblePrintshopRecord(record) {
+  return Boolean(record) && record.deleted !== true && record.active !== false;
 }
 
 function normalizePrintshopLog(log) {
@@ -2539,6 +2675,19 @@ function isSameText(a, b) {
   return Boolean(first) && Boolean(second) && first === second;
 }
 
+function findDefaultCertificateResponsibleUser(users = []) {
+  const normalizedTonyNames = ["tony", "toni", "tony campos", "toni campos"];
+
+  return (users || []).find((person) => {
+    const name = normalizeComparable(getUserDisplayName(person));
+    const email = normalizeComparable(getUserEmail(person));
+
+    return normalizedTonyNames.some((target) => name === target || name.includes(target)) ||
+      email.includes("tony") ||
+      email.includes("toni");
+  }) || null;
+}
+
 function toDateInputValue(value) {
   if (!value) return "";
 
@@ -2927,7 +3076,7 @@ export default function PrintShop() {
             id: batchDoc.id,
             ...batchDoc.data(),
           }))
-          .filter((batch) => batch.deleted !== true);
+          .filter(isVisiblePrintshopRecord);
 
         setProductionBatches(nextBatches);
         setLoadingBatches(false);
@@ -2961,7 +3110,7 @@ export default function PrintShop() {
             id: requestDoc.id,
             ...requestDoc.data(),
           }))
-          .filter((request) => request.deleted !== true);
+          .filter(isVisiblePrintshopRecord);
 
         setPrintRequests(nextRequests);
         setLoadingRequests(false);
@@ -3065,7 +3214,7 @@ export default function PrintShop() {
               ...certificateDoc.data(),
             })
           )
-          .filter((certificate) => certificate.deleted !== true);
+          .filter(isVisiblePrintshopRecord);
 
         setGeneratedCertificates(nextCertificates);
         setLoadingGeneratedCertificates(false);
@@ -3133,7 +3282,7 @@ export default function PrintShop() {
               ...credentialDoc.data(),
             })
           )
-          .filter((credential) => credential.deleted !== true);
+          .filter(isVisiblePrintshopRecord);
 
         setGeneratedCredentials(nextCredentials);
         setLoadingGeneratedCredentials(false);
@@ -3318,9 +3467,9 @@ export default function PrintShop() {
   }, [productionBatches]);
 
   const requestStats = useMemo(() => {
-    const pending = printRequests.filter((request) => isRequestPending(request.status)).length;
-    const inProduction = printRequests.filter((request) => request.status === "En producción").length;
-    const ready = printRequests.filter((request) => request.status === "Lista para entrega").length;
+    const pending = printRequests.filter((request) => isRequestPending(getEffectiveRequestStatus(request))).length;
+    const inProduction = printRequests.filter((request) => getEffectiveRequestStatus(request) === "En producción").length;
+    const ready = printRequests.filter((request) => getEffectiveRequestStatus(request) === "Lista para entrega").length;
     const urgent = printRequests.filter(
       (request) => request.priority === "Urgente" && request.status !== "Entregada" && request.status !== "Cancelada"
     ).length;
@@ -3534,6 +3683,11 @@ export default function PrintShop() {
     [certificateSigners]
   );
 
+  const defaultCertificateResponsible = useMemo(
+    () => findDefaultCertificateResponsibleUser(activeUsers),
+    [activeUsers]
+  );
+
   const activeCertificateTemplates = useMemo(
     () => certificateTemplates.filter((template) => template.active !== false),
     [certificateTemplates]
@@ -3621,20 +3775,20 @@ export default function PrintShop() {
 
     if (!confirmed) return;
 
-    try {
-      await updateDoc(doc(db, collectionName, record.id), {
-        active: false,
-        deleted: true,
-        deletedAt: serverTimestamp(),
-        deletedByUid: auditUser.uid,
-        deletedByName: auditUser.name,
-        deletedByEmail: auditUser.email,
-        updatedAt: serverTimestamp(),
-        updatedByUid: auditUser.uid,
-        updatedByName: auditUser.name,
-        updatedByEmail: auditUser.email,
-      });
+    const removeFromLocalState = () => {
+      if (collectionName === "printProducts") setProducts((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "printFinishedInventory") setInventoryItems((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "printSupplyItems") setSupplyItems((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "printProductionBatches") setProductionBatches((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "printRequests") setPrintRequests((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "certificateTemplates") setCertificateTemplates((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "credentialTemplates") setCredentialTemplates((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "certificateSigners") setCertificateSigners((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "generatedCertificates") setGeneratedCertificates((current) => current.filter((item) => item.id !== record.id));
+      if (collectionName === "generatedCredentials") setGeneratedCredentials((current) => current.filter((item) => item.id !== record.id));
+    };
 
+    const resetSelectionIfNeeded = () => {
       if (collectionName === "printProducts" && selectedProductId === record.id) resetProductForm();
       if (collectionName === "printSupplyItems" && selectedSupplyId === record.id) resetSupplyForm();
       if (collectionName === "printProductionBatches" && selectedBatchId === record.id) resetBatchForm();
@@ -3642,7 +3796,41 @@ export default function PrintShop() {
       if (collectionName === "certificateTemplates" && selectedTemplateId === record.id) resetTemplateForm();
       if (collectionName === "credentialTemplates" && selectedCredentialTemplateId === record.id) resetCredentialTemplateForm();
       if (collectionName === "certificateSigners" && selectedSignerId === record.id) resetSignerForm();
+    };
 
+    const canUseHardDeleteFallback = [
+      "printRequests",
+      "printProductionBatches",
+      "generatedCredentials",
+    ].includes(collectionName);
+
+    try {
+      try {
+        await updateDoc(doc(db, collectionName, record.id), {
+          active: false,
+          deleted: true,
+          deletedAt: serverTimestamp(),
+          deletedByUid: auditUser.uid,
+          deletedByName: auditUser.name,
+          deletedByEmail: auditUser.email,
+          updatedAt: serverTimestamp(),
+          updatedByUid: auditUser.uid,
+          updatedByName: auditUser.name,
+          updatedByEmail: auditUser.email,
+        });
+      } catch (softDeleteError) {
+        if (!canUseHardDeleteFallback) {
+          throw softDeleteError;
+        }
+
+        console.warn("La baja logica fue bloqueada; se usara eliminacion directa de administrador:", softDeleteError);
+        await deleteDoc(doc(db, collectionName, record.id));
+      }
+
+      removeFromLocalState();
+      resetSelectionIfNeeded();
+
+      try {
       await createPrintshopLog({
         type: "DELETE",
         module: options.module || "general",
@@ -3663,6 +3851,9 @@ export default function PrintShop() {
         campus: record.campus || "",
         level: record.level || "",
       });
+      } catch (logError) {
+        console.warn("El registro se elimino, pero no se pudo guardar la bitacora de eliminacion:", logError);
+      }
     } catch (error) {
       console.error("No se pudo eliminar el registro de Imprenta:", error);
       alert("No se pudo eliminar el registro. Revisa las reglas de Firestore o intenta de nuevo.");
@@ -3870,17 +4061,7 @@ export default function PrintShop() {
     const directTemplate = findCertificateTemplate(form.certificateTemplateId);
     if (directTemplate) return directTemplate;
 
-    const targetLevel = form.level && form.level !== "No aplica"
-      ? form.level
-      : selectedProduct?.level || "";
-    const targetType = isRequestCertificateLike(form.requestType) ? form.requestType : selectedProduct?.category || "";
-
-    return activeCertificateTemplates.find((template) => {
-      const matchesLevel = !targetLevel || isSameText(template.level, targetLevel);
-      const matchesType = !targetType || isSameText(template.certificateType, targetType) || isSameText(template.audience, targetType);
-
-      return matchesLevel && matchesType;
-    }) || activeCertificateTemplates.find((template) => !targetLevel || isSameText(template.level, targetLevel)) || null;
+    return findMatchingCertificateTemplateInList(activeCertificateTemplates, form, selectedProduct);
   }
 
   function findMatchingCertificateSigner(signerId, signerName, type) {
@@ -5177,6 +5358,54 @@ export default function PrintShop() {
   }
 
   function selectRequest(request) {
+    const requestLevel = request.level || request.certificateTemplateLevel || "No aplica";
+    const requestGroup = request.group || request.courseLevel || request.certificateTemplateProgramName || "";
+    const requestStudentCounts = getStudentDeliveryCounts(request.students || []);
+    const resolvedRequestedQuantity = Number(request.requestedQuantity || requestStudentCounts.total || 0);
+    const resolvedPrintedQuantity = Number(request.printedQuantity || (requestStudentCounts.total ? requestStudentCounts.printed : 0));
+    const resolvedDigitalQuantity = Number(request.digitalQuantity || (requestStudentCounts.total ? requestStudentCounts.digital : 0));
+    const matchingTemplate =
+      request.certificateTemplateId
+        ? findCertificateTemplate(request.certificateTemplateId)
+        : findMatchingCertificateTemplate(
+            {
+              ...requestFormInitialState,
+              requestType: request.requestType || "Certificado",
+              certificateTemplateId: request.certificateTemplateId || "",
+              certificateTemplateLevel: request.certificateTemplateLevel || requestLevel,
+              certificateTemplateProgramName: request.certificateTemplateProgramName || request.courseProgramName || request.courseLevel || requestGroup,
+              certificateTemplateAudience: request.certificateTemplateAudience || request.courseAudience || "",
+              courseProgramName: request.courseProgramName || "",
+              courseLevel: request.courseLevel || "",
+              courseAudience: request.courseAudience || "",
+              productName: request.productName || "",
+              level: requestLevel,
+              group: requestGroup,
+            },
+            {
+              id: request.productId || "",
+              name: request.productName || "",
+              category: request.requestType || "Certificado",
+              level: requestLevel,
+            }
+          );
+    const defaultResponsible = findDefaultCertificateResponsibleUser(activeUsers);
+    const automaticPriority = calculateRequestPriority({
+      requestDate: request.requestDate,
+      dueDate: request.dueDate || request.requestedDeliveryDate,
+      createdAt: request.createdAt,
+    });
+    const matchingPrincipalSigner = findMatchingCertificateSigner(
+      request.principalSignerId,
+      request.principalSignerName || request.certificateDirectorName || request.academicDirector,
+      "Principal"
+    );
+    const matchingTeacherSigner = findMatchingCertificateSigner(
+      request.teacherSignerId,
+      request.teacherSignerName || request.teacherName,
+      "Teacher"
+    );
+
     setSelectedRequestId(request.id);
     setReprintCertificateStudentId("");
     setRequestMessage("");
@@ -5186,50 +5415,50 @@ export default function PrintShop() {
       requesterName: request.requesterName || "",
       requesterArea: request.requesterArea || "",
       campus: request.campus || "Plaza Estrella",
-      responsibleUid: request.responsibleUid || "",
-      responsibleName: request.responsibleName || "",
-      responsibleEmail: request.responsibleEmail || "",
-      priority: request.priority || (request.dueDate ? calculateRequestPriority(request) : "Normal"),
-      requestedQuantity: Number(request.requestedQuantity || 0),
+      responsibleUid: request.responsibleUid || defaultResponsible?.uid || "",
+      responsibleName: request.responsibleName || defaultResponsible?.name || "Tony Campos",
+      responsibleEmail: request.responsibleEmail || defaultResponsible?.email || "",
+      priority: automaticPriority || request.priority || "Normal",
+      requestedQuantity: resolvedRequestedQuantity,
       deliveredQuantity: Number(request.deliveredQuantity || 0),
       deliveryType: request.deliveryType || "Impresa",
       status: normalizePrintRequestStatus(request.status),
       requestDate: request.requestDate || "",
       dueDate: request.dueDate || request.requestedDeliveryDate || "",
-      certificateIssueDate: request.certificateIssueDate || "",
-      certificateTemplateId: request.certificateTemplateId || "",
-      certificateTemplateName: request.certificateTemplateName || "",
-      certificateTemplateLevel: request.certificateTemplateLevel || "",
-      certificateTemplateProgramName: request.certificateTemplateProgramName || "",
-      certificateTemplateAudience: request.certificateTemplateAudience || "",
-      certificateTemplateBodyText: request.certificateTemplateBodyText || "",
+      certificateIssueDate: request.certificateIssueDate || request.dueDate || request.requestedDeliveryDate || "",
+      certificateTemplateId: request.certificateTemplateId || matchingTemplate?.id || "",
+      certificateTemplateName: request.certificateTemplateName || matchingTemplate?.name || "",
+      certificateTemplateLevel: request.certificateTemplateLevel || matchingTemplate?.level || "",
+      certificateTemplateProgramName: request.certificateTemplateProgramName || matchingTemplate?.programName || "",
+      certificateTemplateAudience: request.certificateTemplateAudience || matchingTemplate?.audience || "",
+      certificateTemplateBodyText: request.certificateTemplateBodyText || matchingTemplate?.bodyText || "",
       certificateTemplateBodySegments: normalizeCertificateBodySegments(
-        request.certificateTemplateBodySegments,
-        request.certificateTemplateBodyText
+        request.certificateTemplateBodySegments || matchingTemplate?.bodySegments,
+        request.certificateTemplateBodyText || matchingTemplate?.bodyText
       ),
-      certificateTemplateCustomTexts: normalizeTemplateCustomTexts(request.certificateTemplateCustomTexts),
-      certificateTemplateCustomImages: normalizeTemplateCustomImages(request.certificateTemplateCustomImages),
-      certificateTemplateImageUrl: request.certificateTemplateImageUrl || "",
-      certificateTemplateImageDataUrl: request.certificateTemplateImageDataUrl || "",
-      certificateTemplateStoragePath: request.certificateTemplateStoragePath || "",
-      certificateTemplatePositions: normalizeCertificateTemplatePositions(request.certificateTemplatePositions),
+      certificateTemplateCustomTexts: normalizeTemplateCustomTexts(request.certificateTemplateCustomTexts || matchingTemplate?.customTexts),
+      certificateTemplateCustomImages: normalizeTemplateCustomImages(request.certificateTemplateCustomImages || matchingTemplate?.customImages),
+      certificateTemplateImageUrl: request.certificateTemplateImageUrl || matchingTemplate?.templateImageUrl || "",
+      certificateTemplateImageDataUrl: request.certificateTemplateImageDataUrl || matchingTemplate?.templateImageDataUrl || "",
+      certificateTemplateStoragePath: request.certificateTemplateStoragePath || matchingTemplate?.storagePath || "",
+      certificateTemplatePositions: normalizeCertificateTemplatePositions(request.certificateTemplatePositions || matchingTemplate?.positions),
       notes: request.notes || "",
-      level: request.level || "No aplica",
-      group: request.group || "",
-      teacherName: request.teacherName || "",
+      level: requestLevel || matchingTemplate?.level || "No aplica",
+      group: requestGroup,
+      teacherName: request.teacherName || request.teacherSignerName || "",
       schedule: request.schedule || "",
-      printedQuantity: Number(request.printedQuantity || 0),
-      digitalQuantity: Number(request.digitalQuantity || 0),
-      principalSignerId: request.principalSignerId || "",
-      principalSignerName: request.principalSignerName || request.certificateDirectorName || request.academicDirector || "",
-      principalSignerRole: request.principalSignerRole || "Principal",
-      principalSignatureUrl: request.principalSignatureUrl || "",
-      principalSignatureDataUrl: request.principalSignatureDataUrl || "",
-      teacherSignerId: request.teacherSignerId || "",
-      teacherSignerName: request.teacherSignerName || request.teacherName || "",
-      teacherSignerRole: request.teacherSignerRole || "Teacher",
-      teacherSignatureUrl: request.teacherSignatureUrl || "",
-      teacherSignatureDataUrl: request.teacherSignatureDataUrl || "",
+      printedQuantity: resolvedPrintedQuantity,
+      digitalQuantity: resolvedDigitalQuantity,
+      principalSignerId: matchingPrincipalSigner?.id || request.principalSignerId || "",
+      principalSignerName: matchingPrincipalSigner?.name || request.principalSignerName || request.certificateDirectorName || request.academicDirector || "",
+      principalSignerRole: matchingPrincipalSigner?.role || request.principalSignerRole || "Principal",
+      principalSignatureUrl: matchingPrincipalSigner?.signatureUrl || request.principalSignatureUrl || "",
+      principalSignatureDataUrl: matchingPrincipalSigner?.signatureDataUrl || request.principalSignatureDataUrl || "",
+      teacherSignerId: matchingTeacherSigner?.id || request.teacherSignerId || "",
+      teacherSignerName: matchingTeacherSigner?.name || request.teacherSignerName || request.teacherName || "",
+      teacherSignerRole: matchingTeacherSigner?.role || request.teacherSignerRole || "Teacher",
+      teacherSignatureUrl: matchingTeacherSigner?.signatureUrl || request.teacherSignatureUrl || "",
+      teacherSignatureDataUrl: matchingTeacherSigner?.signatureDataUrl || request.teacherSignatureDataUrl || "",
     });
   }
 
@@ -5332,14 +5561,15 @@ export default function PrintShop() {
       requesterName: requestForm.requesterName.trim(),
       requesterArea: requestForm.requesterArea.trim(),
       campus: requestForm.campus,
-      responsibleUid: requestForm.responsibleUid || "",
-      responsibleName: requestForm.responsibleName || "",
-      responsibleEmail: requestForm.responsibleEmail || "",
-      priority: requestForm.priority || automaticPriority,
+      responsibleUid: requestForm.responsibleUid || defaultCertificateResponsible?.uid || "",
+      responsibleName: requestForm.responsibleName || defaultCertificateResponsible?.name || "Tony Campos",
+      responsibleEmail: requestForm.responsibleEmail || defaultCertificateResponsible?.email || "",
+      priority: automaticPriority || requestForm.priority || "Normal",
       requestedQuantity,
       deliveredQuantity,
       deliveryType: requestForm.deliveryType,
       status: normalizePrintRequestStatus(requestForm.status),
+      statusLabel: normalizePrintRequestStatus(requestForm.status),
       requestDate: requestForm.requestDate,
       dueDate: requestForm.dueDate,
       certificateIssueDate: requestForm.certificateIssueDate || "",
@@ -5483,7 +5713,7 @@ export default function PrintShop() {
         type: "REQUEST_UPDATED",
         module: "requests",
         title: "Solicitud enviada a producción",
-        description: `Se abrió el detalle de la solicitud ${request.folio || request.id}.`,
+        description: `Se generaron folios o códigos QR para la solicitud ${request.folio || request.id}.`,
         referenceType: "request",
         referenceId: request.id,
         requestId: request.id,
@@ -5501,18 +5731,23 @@ export default function PrintShop() {
   async function markRequestReadyForDelivery(request, reason = "Certificados preparados para impresión") {
     if (
       !request?.id ||
-      ["Lista para entrega", "Entregada", "Cancelada"].includes(request.status) ||
+      ["Entregada", "Cancelada"].includes(request.status) ||
       !canCurrentUserEditRequest(request)
     ) {
       return;
     }
 
     const auditUser = getAuditUser();
+    const readyForDeliveryAt = new Date(Date.now() + REQUEST_READY_FOR_DELIVERY_DELAY_MS).toISOString();
 
     try {
       await updateDoc(doc(db, "printRequests", request.id), {
-        status: "Lista para entrega",
-        readyForDeliveryAt: serverTimestamp(),
+        status: "En producción",
+        statusLabel: "En producción",
+        printPdfOpenedAt: serverTimestamp(),
+        readyForDeliveryAt,
+        readyForDeliveryDelayMinutes: 60,
+        productionStartedAt: request.productionStartedAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
         updatedByUid: auditUser.uid,
         updatedByName: auditUser.name,
@@ -5522,8 +5757,8 @@ export default function PrintShop() {
       await createPrintshopLog({
         type: "REQUEST_UPDATED",
         module: "requests",
-        title: "Solicitud lista para entrega",
-        description: `${reason}: ${request.folio || request.id}.`,
+        title: "Entrega de certificados programada",
+        description: `${reason}; la solicitud ${request.folio || request.id} quedará lista para entrega una hora después.`,
         referenceType: "request",
         referenceId: request.id,
         requestId: request.id,
@@ -5534,7 +5769,7 @@ export default function PrintShop() {
         level: request.level || "",
       });
     } catch (error) {
-      console.error("No se pudo cambiar la solicitud a lista para entrega:", error);
+      console.error("No se pudo programar la solicitud como lista para entrega:", error);
     }
   }
 
@@ -5572,8 +5807,32 @@ export default function PrintShop() {
       setSavingStudents(true);
       setRequestMessage("");
 
+      const hasGeneratedFolios = normalizedStudents.some(
+        (student) => student.qrGenerated === true || Boolean(student.certificateFolio)
+      );
+      const shouldMoveToProduction =
+        hasGeneratedFolios &&
+        ["Solicitud recibida", "Datos incompletos", "En revisión", "Aprobada"].includes(currentRequest.status);
+      const deliveryCounts = getStudentDeliveryCounts(normalizedStudents);
+      const deliveryType = deliveryCounts.printed > 0 && deliveryCounts.digital > 0
+        ? "Ambas"
+        : deliveryCounts.digital > 0
+          ? "Digital"
+          : "Impresa";
+
       await updateDoc(doc(db, "printRequests", selectedRequestId), {
         students: normalizedStudents,
+        requestedQuantity: deliveryCounts.total,
+        printedQuantity: deliveryCounts.printed,
+        digitalQuantity: deliveryCounts.digital,
+        deliveryType,
+        ...(shouldMoveToProduction
+          ? {
+              status: "En producción",
+              statusLabel: "En producción",
+              productionStartedAt: currentRequest.productionStartedAt || serverTimestamp(),
+            }
+          : {}),
         updatedAt: serverTimestamp(),
         updatedByUid: auditUser.uid,
         updatedByName: auditUser.name,
@@ -5952,7 +6211,6 @@ export default function PrintShop() {
     if (!request) return;
 
     selectRequest(request);
-    markRequestInProduction(request);
     setActiveSection("certificates");
   }
 
@@ -7935,6 +8193,11 @@ export default function PrintShop() {
           requestSearch={requestSearch}
           requestStatusFilter={requestStatusFilter}
           requestPriorityFilter={requestPriorityFilter}
+          requestForm={requestForm}
+          selectedRequestId={selectedRequestId}
+          savingRequest={savingRequest}
+          requestMessage={requestMessage}
+          activeUsers={activeUsers}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
           studentName={studentName}
@@ -7948,6 +8211,9 @@ export default function PrintShop() {
           onRequestSearchChange={setRequestSearch}
           onRequestStatusFilterChange={setRequestStatusFilter}
           onRequestPriorityFilterChange={setRequestPriorityFilter}
+          onRequestInputChange={handleRequestInputChange}
+          onRequestNumberInputChange={handleRequestNumberInputChange}
+          onSavePrintRequest={savePrintRequest}
           onStudentNameChange={setStudentName}
           onStudentDeliveryTypeChange={setStudentDeliveryType}
           onBulkStudentsTextChange={setBulkStudentsText}
@@ -7983,7 +8249,7 @@ export default function PrintShop() {
       ) : activeSection === "credentials" ? (
         <CredentialsView
           variant="generator"
-          templates={credentialTemplates}
+          templates={activeCredentialTemplates}
           activeTemplates={activeCredentialTemplates}
           loadingTemplates={loadingCredentialTemplates}
           templatesError={credentialTemplatesError}
@@ -8051,7 +8317,7 @@ export default function PrintShop() {
       ) : activeSection === "templates" && isAdmin ? (
         <PrintshopTemplatesView
           certificateTemplatesProps={{
-            templates: certificateTemplates,
+            templates: activeCertificateTemplates,
             loadingTemplates,
             templatesError,
             templateForm,
@@ -8091,7 +8357,7 @@ export default function PrintShop() {
           }}
           credentialTemplatesProps={{
             variant: "templates",
-            templates: credentialTemplates,
+            templates: activeCredentialTemplates,
             activeTemplates: activeCredentialTemplates,
             loadingTemplates: loadingCredentialTemplates,
             templatesError: credentialTemplatesError,
@@ -8733,27 +8999,30 @@ function DashboardView({
       ].includes(metric.label)
     );
 
-  const dashboardRequests = printRequests.length
-    ? printRequests.slice(0, 4).map((request) => ({
+  const visibleDashboardRequests = printRequests.filter(isVisiblePrintshopRecord);
+  const visibleDashboardBatches = productionBatches.filter(isVisiblePrintshopRecord);
+
+  const dashboardRequests = visibleDashboardRequests
+    .slice(0, 4)
+    .map((request) => ({
         folio: request.folio || "Sin folio",
         product: getRequestProductLabel(request),
         requester: request.requesterName || request.requesterArea || "Sin solicitante",
         status: request.status || "Solicitud recibida",
         statusTone: getRequestStatusTone(request.status),
         delivery: getRequestDueLabel(request),
-      }))
-    : requests;
+      }));
 
-  const dashboardBatches = productionBatches.length
-    ? productionBatches.slice(0, 3).map((batch) => ({
+  const dashboardBatches = visibleDashboardBatches
+    .slice(0, 3)
+    .map((batch) => ({
         folio: batch.folio || "Sin folio",
         product: batch.productName || "Producto sin nombre",
         progress: getBatchProgress(batch),
         status: batch.status || "Planeado",
         statusTone: getBatchStatusTone(batch.status),
         quantity: `${Number(batch.approvedQuantity || 0)} aprobados / ${Number(batch.plannedQuantity || 0)} planeados`,
-      }))
-    : batches;
+      }));
 
   return (
     <>
@@ -8776,7 +9045,12 @@ function DashboardView({
               </div>
 
               <div className="printshop-request-card-list">
-                {dashboardRequests.map((request) => (
+                {dashboardRequests.length === 0 ? (
+                  <div className="printshop-small-empty">
+                    <strong>Sin solicitudes activas</strong>
+                    <span>No hay solicitudes recientes para mostrar.</span>
+                  </div>
+                ) : dashboardRequests.map((request) => (
                   <button
                     type="button"
                     className="printshop-request-card home-clickable-card"
@@ -8814,7 +9088,12 @@ function DashboardView({
               </div>
 
               <div className="printshop-batch-card-list">
-                {dashboardBatches.map((batch) => (
+                {dashboardBatches.length === 0 ? (
+                  <div className="printshop-small-empty">
+                    <strong>Sin lotes activos</strong>
+                    <span>No hay lotes de produccion recientes para mostrar.</span>
+                  </div>
+                ) : dashboardBatches.map((batch) => (
                   <button
                     type="button"
                     className="printshop-batch-card home-clickable-card"
@@ -11544,6 +11823,8 @@ function PrintRequestsView({
       : "viewer";
   const canEditAdministrativeFields = isAdmin;
   const canEditOperationalFields = isAdmin || selectedRole === "responsible";
+  const canEditCertificateProductionFields =
+    canEditAdministrativeFields || canEditOperationalFields;
   const canCreateRequest = isAdmin;
   const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
   const isEditingExistingRequest = Boolean(selectedRequestId);
@@ -11759,13 +12040,14 @@ function PrintRequestsView({
                     </thead>
                     <tbody>
                       {visibleRequests.map((request) => {
-                        const progress = getRequestProgress(request.status);
+                        const effectiveStatus = getEffectiveRequestStatus(request);
+                        const progress = getEffectiveRequestProgress(request);
                         const isActiveRow = previewRequestId === request.id;
 
                         return (
                           <tr
                             key={request.id}
-                            className={isActiveRow ? "selected-user-row request-selected-row" : ""}
+                            className={`${isActiveRow ? "selected-user-row request-selected-row" : ""} ${getPriorityClassName(request.priority)}`}
                             onClick={() => handlePreviewRequest(request)}
                           >
                             <td>
@@ -11785,7 +12067,7 @@ function PrintRequestsView({
                               <small>{request.responsibleName ? `Resp. ${request.responsibleName}` : "Sin responsable"}</small>
                             </td>
                             <td>
-                              <StatusBadge tone={getRequestStatusTone(request.status)}>{request.status || "Solicitud recibida"}</StatusBadge>
+                              <StatusBadge tone={getRequestStatusTone(effectiveStatus)}>{effectiveStatus}</StatusBadge>
                               <small>{progress}% completado</small>
                             </td>
                             <td>
@@ -11907,6 +12189,14 @@ function PrintRequestsView({
               activeTeacherSigners={activeTeacherSigners}
               activeCertificateTemplates={activeCertificateTemplates}
               generatedCertificates={generatedCertificates}
+              activeUsers={activeUsers}
+              requestForm={requestForm}
+              selectedRequestId={selectedRequestId}
+              savingRequest={savingRequest}
+              requestMessage={requestMessage}
+              onRequestInputChange={onRequestInputChange}
+              onRequestNumberInputChange={onRequestNumberInputChange}
+              onSavePrintRequest={onSavePrintRequest}
               canManageStudents={canEditOperationalFields}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
@@ -11943,7 +12233,7 @@ function PrintRequestsView({
                   <strong>Datos importados desde Dirección Académica</strong>
                   <p>
                     {sourceFieldsLocked
-                      ? "La información se cargó desde la solicitud original. En tu rol solo puedes ajustar responsable, seguimiento, entrega y observaciones operativas."
+                      ? "La información se cargó desde la solicitud original. En tu rol puedes ajustar seguimiento, entrega, observaciones y datos de producción del certificado."
                       : "La información se cargó automáticamente desde la solicitud original de certificados. Como administrador puedes corregir cualquier campo antes de continuar con la producción."}
                   </p>
                 </div>
@@ -12154,7 +12444,7 @@ function PrintRequestsView({
                       name="certificateTemplateId"
                       value={requestForm.certificateTemplateId}
                       onChange={onRequestInputChange}
-                      disabled={sourceFieldsLocked || !canEditAdministrativeFields || activeCertificateTemplates.length === 0}
+                      disabled={!canEditCertificateProductionFields || activeCertificateTemplates.length === 0}
                     >
                       <option value="">Seleccionar plantilla</option>
                       {activeCertificateTemplates.map((template) => (
@@ -12167,7 +12457,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Nivel</span>
-                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={sourceFieldsLocked || !canEditAdministrativeFields}>
+                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields}>
                       {levels.map((level) => (
                         <option key={level}>{level}</option>
                       ))}
@@ -12176,7 +12466,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Grupo</span>
-                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
+                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditCertificateProductionFields} />
                   </label>
 
                   <label>
@@ -12185,7 +12475,7 @@ function PrintRequestsView({
                       name="principalSignerId"
                       value={requestForm.principalSignerId}
                       onChange={onRequestInputChange}
-                      disabled={sourceFieldsLocked || !canEditAdministrativeFields || activePrincipalSigners.length === 0}
+                      disabled={!canEditCertificateProductionFields || activePrincipalSigners.length === 0}
                     >
                       <option value="">Seleccionar principal</option>
                       {activePrincipalSigners.map((signer) => (
@@ -12202,7 +12492,7 @@ function PrintRequestsView({
                       name="teacherSignerId"
                       value={requestForm.teacherSignerId}
                       onChange={onRequestInputChange}
-                      disabled={sourceFieldsLocked || !canEditAdministrativeFields || activeTeacherSigners.length === 0}
+                      disabled={!canEditCertificateProductionFields || activeTeacherSigners.length === 0}
                     >
                       <option value="">Seleccionar teacher</option>
                       {activeTeacherSigners.map((signer) => (
@@ -12215,12 +12505,12 @@ function PrintRequestsView({
 
                   <label>
                     <span>Maestro / nombre visible</span>
-                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
+                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditCertificateProductionFields} />
                   </label>
 
                   <label>
                     <span>Horario</span>
-                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
+                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditCertificateProductionFields} />
                   </label>
 
                   <label>
@@ -12230,18 +12520,18 @@ function PrintRequestsView({
                       name="certificateIssueDate"
                       value={requestForm.certificateIssueDate}
                       onChange={onRequestInputChange}
-                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
+                  disabled={!canEditCertificateProductionFields}
                     />
                   </label>
 
                   <label>
                     <span>Impresos</span>
-                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
                   </label>
 
                   <label>
                     <span>Digitales</span>
-                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={sourceFieldsLocked || !canEditAdministrativeFields} />
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
                   </label>
                 </div>
               )}
@@ -12325,7 +12615,8 @@ function RequestPreviewPanel({ request, onOpen }) {
     );
   }
 
-  const progress = getRequestProgress(request.status);
+  const effectiveStatus = getEffectiveRequestStatus(request);
+  const progress = getEffectiveRequestProgress(request);
   const requestedQuantity = Number(request.requestedQuantity || 0);
   const deliveredQuantity = Number(request.deliveredQuantity || 0);
   const progressLabel = `${progress}% completado`;
@@ -12343,8 +12634,8 @@ function RequestPreviewPanel({ request, onOpen }) {
       <div className="request-preview-content">
         <div className="request-preview-title-row">
           <span className="request-preview-folio">{request.folio || "Sin folio"}</span>
-          <StatusBadge tone={getRequestStatusTone(request.status)}>
-            {request.status || "Solicitud recibida"}
+          <StatusBadge tone={getRequestStatusTone(effectiveStatus)}>
+            {effectiveStatus}
           </StatusBadge>
         </div>
 
@@ -12373,7 +12664,7 @@ function RequestPreviewPanel({ request, onOpen }) {
             <span>Progreso</span>
             <strong>{progress}%</strong>
           </div>
-          <ProgressBar value={progress} tone={getRequestStatusTone(request.status)} />
+          <ProgressBar value={progress} tone={getRequestStatusTone(effectiveStatus)} />
           <small>{progressLabel}</small>
         </div>
 
@@ -12418,6 +12709,11 @@ function CertificatesWorkspaceView({
   requestSearch,
   requestStatusFilter,
   requestPriorityFilter,
+  requestForm,
+  selectedRequestId,
+  savingRequest,
+  requestMessage,
+  activeUsers,
   isAdmin,
   currentUserUid,
   studentName,
@@ -12431,6 +12727,9 @@ function CertificatesWorkspaceView({
   onRequestSearchChange,
   onRequestStatusFilterChange,
   onRequestPriorityFilterChange,
+  onRequestInputChange,
+  onRequestNumberInputChange,
+  onSavePrintRequest,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -12494,7 +12793,6 @@ function CertificatesWorkspaceView({
   function openCertificateRequest(request) {
     if (!request) return;
     onSelectRequest(request);
-    onMarkRequestInProduction?.(request);
   }
 
   function openCertificateGenerator(mode = "request") {
@@ -12716,21 +13014,49 @@ function CertificatesWorkspaceView({
                   const updating = updatingCertificateId === certificate.id;
 
                   return (
-                    <article key={certificate.id} className="certificate-history-card">
-                      <div>
-                        <strong>{certificate.studentName || "Sin alumno"}</strong>
-                        <span>{certificate.folio || "Sin folio"} / {certificate.requestFolio || "Individual"}</span>
+                    <article key={certificate.id} className="certificate-history-card certificate-history-card-redesign">
+                      <div className="certificate-history-card-main">
+                        <div className="certificate-history-card-icon">
+                          <PrintshopIcon name="certificates" />
+                        </div>
+                        <div className="certificate-history-card-content">
+                          <div className="certificate-history-title-row">
+                            <div>
+                              <strong>{certificate.studentName || "Sin alumno"}</strong>
+                              <span>{certificate.folio || "Sin folio"} / {certificate.requestFolio || "Individual"}</span>
+                            </div>
+                            <StatusBadge tone={getGeneratedCertificateStatusTone(certificate.status)}>
+                              {certificate.status}
+                            </StatusBadge>
+                          </div>
+                          <div className="certificate-history-meta-grid">
+                            <div>
+                              <small>Fecha</small>
+                              <strong>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</strong>
+                            </div>
+                            <div>
+                              <small>Maestro</small>
+                              <strong>{certificate.teacherName || "Sin maestro"}</strong>
+                            </div>
+                            <div>
+                              <small>Nivel</small>
+                              <strong>{certificate.level || "Sin nivel"}</strong>
+                            </div>
+                            <div>
+                              <small>Grupo / Plantel</small>
+                              <strong>{certificate.group || "Sin grupo"} · {certificate.campus || "Sin plantel"}</strong>
+                            </div>
+                            <div>
+                              <small>QR</small>
+                              <strong>{certificate.validationCode ? "Validable" : "Pendiente"}</strong>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <StatusBadge tone={getGeneratedCertificateStatusTone(certificate.status)}>
-                          {certificate.status}
-                        </StatusBadge>
-                        <small>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</small>
-                      </div>
-                      <div className="certificate-history-card-actions">
+                      <div className="certificate-history-card-actions certificate-actions-modern">
                         <button
                           type="button"
-                          className="visual-outline-button"
+                          className="visual-outline-button certificate-action-button"
                           disabled={!certificate.pdfUrl}
                           onClick={() => {
                             if (certificate.pdfUrl) {
@@ -12740,16 +13066,17 @@ function CertificatesWorkspaceView({
                         >
                           PDF original
                         </button>
-                        <button type="button" className="visual-outline-button" onClick={() => onReprintCertificate?.(certificate)}>
+                        <button type="button" className="visual-outline-button certificate-action-button" onClick={() => onReprintCertificate?.(certificate)}>
                           Reimprimir
                         </button>
                         {certificate.requestId && (
-                          <button type="button" onClick={() => onOpenCertificateRequest?.(certificate)}>
+                          <button type="button" className="certificate-action-button" onClick={() => onOpenCertificateRequest?.(certificate)}>
                             Ver solicitud
                           </button>
                         )}
                         <button
                           type="button"
+                          className="certificate-action-button"
                           disabled={!canManageCertificate || updating || certificate.status === "Entregado"}
                           onClick={() => onMarkCertificateDelivered?.(certificate)}
                         >
@@ -12757,7 +13084,7 @@ function CertificatesWorkspaceView({
                         </button>
                         <button
                           type="button"
-                          className="danger-table-button"
+                          className="danger-table-button certificate-action-button"
                           disabled={!canManageCertificate || updating || certificate.status === "Cancelado"}
                           onClick={() => onCancelCertificate?.(certificate)}
                         >
@@ -12766,7 +13093,7 @@ function CertificatesWorkspaceView({
                         {isAdmin && (
                           <button
                             type="button"
-                            className="danger-table-button"
+                            className="danger-table-button certificate-action-button"
                             disabled={updating}
                             onClick={() => onSoftDeleteCertificate?.(certificate)}
                           >
@@ -13003,11 +13330,12 @@ function CertificatesWorkspaceView({
                   const students = normalizeRequestStudents(request.students);
                   const generatedForRequest = generatedCertificates.filter((certificate) => certificate.requestId === request.id).length;
                   const active = activeRequest?.id === request.id;
+                  const effectiveStatus = getEffectiveRequestStatus(request);
 
                   return (
                     <article
                       key={request.id}
-                      className={`certificate-request-card ${active ? "active" : ""}`}
+                      className={`certificate-request-card ${active ? "active" : ""} ${getPriorityClassName(request.priority)}`}
                       onClick={() => openCertificateRequest(request)}
                     >
                       <div>
@@ -13019,7 +13347,7 @@ function CertificatesWorkspaceView({
                         <small>{request.teacherName || request.teacherSignerName || "Sin maestro"}</small>
                       </div>
                       <div className="certificate-request-card-footer">
-                        <StatusBadge tone={getRequestStatusTone(request.status)}>{request.status || "Solicitud recibida"}</StatusBadge>
+                        <StatusBadge tone={getRequestStatusTone(effectiveStatus)}>{effectiveStatus}</StatusBadge>
                         <span>{generatedForRequest} / {students.length} generados</span>
                       </div>
                     </article>
@@ -13039,6 +13367,14 @@ function CertificatesWorkspaceView({
               activeTeacherSigners={activeTeacherSigners}
               activeCertificateTemplates={activeCertificateTemplates}
               generatedCertificates={generatedCertificates}
+              activeUsers={activeUsers}
+              requestForm={requestForm}
+              selectedRequestId={selectedRequestId}
+              savingRequest={savingRequest}
+              requestMessage={requestMessage}
+              onRequestInputChange={onRequestInputChange}
+              onRequestNumberInputChange={onRequestNumberInputChange}
+              onSavePrintRequest={onSavePrintRequest}
               canManageStudents={canManageStudents}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
@@ -13084,6 +13420,14 @@ function RequestDetailCard({
   activeTeacherSigners,
   activeCertificateTemplates,
   generatedCertificates,
+  activeUsers = [],
+  requestForm = requestFormInitialState,
+  selectedRequestId = "",
+  savingRequest = false,
+  requestMessage = "",
+  onRequestInputChange,
+  onRequestNumberInputChange,
+  onSavePrintRequest,
   canManageStudents,
   studentName,
   studentDeliveryType,
@@ -13141,12 +13485,15 @@ function RequestDetailCard({
   if (!request) return null;
 
   const isCertificateLike = isRequestCertificateLike(request.requestType);
-  const requestedQuantity = Number(request.requestedQuantity || 0);
-  const deliveredQuantity = Number(request.deliveredQuantity || 0);
-  const printedQuantity = Number(request.printedQuantity || 0);
-  const digitalQuantity = Number(request.digitalQuantity || 0);
-  const pendingQuantity = Math.max(requestedQuantity - deliveredQuantity, 0);
   const studentSummary = getStudentValidationSummary(request);
+  const requestedQuantity = studentSummary.requestedQuantity;
+  const deliveredQuantity = Number(request.deliveredQuantity || 0);
+  const printedQuantity = studentSummary.printedQuantity;
+  const digitalQuantity = studentSummary.digitalQuantity;
+  const pendingQuantity = Math.max(requestedQuantity - deliveredQuantity, 0);
+  const effectiveStatus = getEffectiveRequestStatus(request);
+  const effectiveStatusTone = getRequestStatusTone(effectiveStatus);
+  const effectiveProgress = getEffectiveRequestProgress(request);
   const studentListComplete =
     studentSummary.totalMatches &&
     studentSummary.printedMatches &&
@@ -13160,7 +13507,27 @@ function RequestDetailCard({
   const selectedTeacherSigner =
     (activeTeacherSigners || []).find((signer) => signer.id === request.teacherSignerId) || null;
   const selectedCertificateTemplate =
-    (activeCertificateTemplates || []).find((template) => template.id === request.certificateTemplateId) || null;
+    (activeCertificateTemplates || []).find((template) => template.id === request.certificateTemplateId) ||
+    findMatchingCertificateTemplateInList(activeCertificateTemplates, request, {
+      id: request.productId || "",
+      name: request.productName || "",
+      category: request.requestType || "Certificado",
+      level: request.level || request.certificateTemplateLevel || "",
+    });
+  const canEditAdministrativeFields = selectedRole === "admin";
+  const canEditOperationalFields = selectedRole === "admin" || selectedRole === "responsible";
+  const canEditCertificateProductionFields =
+    canEditAdministrativeFields || canEditOperationalFields;
+  const canEditRequestDetails = Boolean(
+    selectedRequestId &&
+    typeof onSavePrintRequest === "function" &&
+    (canEditAdministrativeFields || canEditOperationalFields)
+  );
+  const automaticPriority = calculateRequestPriority({
+    requestDate: request.requestDate,
+    dueDate: request.dueDate || request.requestedDeliveryDate,
+    createdAt: request.createdAt,
+  });
   const certificateStudentsWithFolios = students.filter(
     (student) => Boolean(student.certificateFolio) && Boolean(student.validationCode)
   );
@@ -13490,10 +13857,10 @@ function RequestDetailCard({
             <p>{request.requestType || "Solicitud"} · {request.deliveryType || "Sin tipo de entrega"}</p>
           </div>
           <div className="request-detail-status-stack">
-            <StatusBadge tone={getRequestStatusTone(request.status)}>
-              {request.status || "Solicitud recibida"}
+            <StatusBadge tone={effectiveStatusTone}>
+              {effectiveStatus}
             </StatusBadge>
-            <small>{getRequestProgress(request.status)}% completado</small>
+            <small>{effectiveProgress}% completado</small>
           </div>
         </div>
 
@@ -13512,7 +13879,7 @@ function RequestDetailCard({
           </div>
           <div className="request-detail-progress-cell">
             <span>Avance</span>
-            <ProgressBar value={getRequestProgress(request.status)} tone={getRequestStatusTone(request.status)} />
+            <ProgressBar value={effectiveProgress} tone={effectiveStatusTone} />
           </div>
         </div>
 
@@ -13532,19 +13899,195 @@ function RequestDetailCard({
             >
               Alumnos y certificados
             </button>
+            <button
+              type="button"
+              className={detailActiveTab === "production" ? "active" : ""}
+              onClick={() => setDetailActiveTab("production")}
+            >
+              Datos de producción
+            </button>
           </nav>
         )}
 
-        <div className="request-detail-grid">
-          <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} · ${request.campus || "Sin plantel"}`} />
-          <DetailItem label="Responsable" value={request.responsibleName || "Sin asignar"} helper={request.responsibleEmail || ""} />
-          <DetailItem label="Prioridad" value={request.priority || "Normal"} badgeTone={getPriorityTone(request.priority)} />
-          <DetailItem label="Compromiso" value={getRequestDueLabel(request)} helper={request.requestDate ? `Solicitado: ${request.requestDate}` : "Sin fecha solicitada"} />
-          <DetailItem label="Cantidad solicitada" value={requestedQuantity} helper={`Pendiente: ${pendingQuantity}`} />
-          <DetailItem label="Cantidad entregada" value={deliveredQuantity} helper="Actualizable por el responsable" />
-        </div>
+        {(!isCertificateLike || detailActiveTab === "summary") && (
+          <>
+            <div className="request-detail-grid">
+              <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} · ${request.campus || "Sin plantel"}`} />
+              <DetailItem label="Responsable" value={request.responsibleName || requestForm.responsibleName || "Sin asignar"} helper={request.responsibleEmail || requestForm.responsibleEmail || ""} />
+              <DetailItem label="Prioridad" value={request.priority || automaticPriority || "Normal"} badgeTone={getPriorityTone(request.priority || automaticPriority)} />
+              <DetailItem label="Compromiso" value={getRequestDueLabel(request)} helper={request.requestDate ? `Solicitado: ${request.requestDate}` : "Sin fecha solicitada"} />
+              <DetailItem label="Cantidad solicitada" value={requestedQuantity} helper={`Pendiente: ${pendingQuantity}`} />
+              <DetailItem label="Cantidad entregada" value={deliveredQuantity} helper="Actualizable por el responsable" />
+            </div>
 
-        {isCertificateLike && (
+            {isCertificateLike && !selectedCertificateTemplate && (
+              <div className="request-detail-note important certificate-template-match-note">
+                <strong>Falta seleccionar plantilla</strong>
+                <p>La solicitud trae nivel y grupo, pero no se encontró una plantilla activa compatible. Selecciona una plantilla en los datos de producción antes de generar PDFs.</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {((!isCertificateLike && canEditRequestDetails) || (isCertificateLike && detailActiveTab === "production")) && (
+          <form className="request-production-edit-card" onSubmit={onSavePrintRequest}>
+            <div className="request-production-edit-header">
+              <div>
+                <strong>Actualizar datos de producción</strong>
+                <p>Corrige responsable, cantidades, fechas, plantilla y firmantes sin salir del detalle de certificados.</p>
+              </div>
+              {automaticPriority && (
+                <StatusBadge tone={getPriorityTone(automaticPriority)}>Prioridad automática: {automaticPriority}</StatusBadge>
+              )}
+            </div>
+
+            <div className="request-production-edit-grid">
+              <label>
+                <span>Responsable</span>
+                <select name="responsibleUid" value={requestForm.responsibleUid || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields || activeUsers.length === 0}>
+                  <option value="">Seleccionar responsable</option>
+                  {activeUsers.map((person) => (
+                    <option key={person.uid || person.id} value={person.uid || person.id}>
+                      {person.name} · {person.email || "sin correo"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Estado</span>
+                <select name="status" value={requestForm.status || "Solicitud recibida"} onChange={onRequestInputChange} disabled={!canEditOperationalFields}>
+                  {printRequestStatuses.map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Prioridad</span>
+                <select name="priority" value={requestForm.priority || automaticPriority || "Normal"} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields}>
+                  {printRequestPriorities.map((priority) => (
+                    <option key={priority}>{priority}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Cantidad solicitada</span>
+                <input type="number" name="requestedQuantity" min="0" value={requestForm.requestedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+              </label>
+
+              <label>
+                <span>Cantidad entregada</span>
+                <input type="number" name="deliveredQuantity" min="0" value={requestForm.deliveredQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditOperationalFields} />
+              </label>
+
+              <label>
+                <span>Fecha solicitada</span>
+                <input type="date" name="requestDate" value={requestForm.requestDate || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
+              </label>
+
+              <label>
+                <span>Fecha compromiso</span>
+                <input type="date" name="dueDate" value={requestForm.dueDate || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
+              </label>
+
+              {isCertificateLike && (
+                <>
+                  <label className="wide">
+                    <span>Plantilla de certificado</span>
+                    <select name="certificateTemplateId" value={requestForm.certificateTemplateId || selectedCertificateTemplate?.id || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields || activeCertificateTemplates.length === 0}>
+                      <option value="">Seleccionar plantilla</option>
+                      {activeCertificateTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name} · {template.level} · {template.audience}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Nivel</span>
+                    <select name="level" value={requestForm.level || "No aplica"} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields}>
+                      {levels.map((level) => (
+                        <option key={level}>{level}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Grupo / curso</span>
+                    <input name="group" value={requestForm.group || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                  </label>
+
+                  <label>
+                    <span>Maestro</span>
+                    <input name="teacherName" value={requestForm.teacherName || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                  </label>
+
+                  <label>
+                    <span>Horario</span>
+                    <input name="schedule" value={requestForm.schedule || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                  </label>
+
+                  <label>
+                    <span>Fecha del certificado</span>
+                    <input type="date" name="certificateIssueDate" value={requestForm.certificateIssueDate || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                  </label>
+
+                  <label>
+                    <span>Impresos</span>
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
+                  </label>
+
+                  <label>
+                    <span>Digitales</span>
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
+                  </label>
+
+                  <label>
+                    <span>Firmante principal</span>
+                    <select name="principalSignerId" value={requestForm.principalSignerId || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields || activePrincipalSigners.length === 0}>
+                      <option value="">Seleccionar principal</option>
+                      {activePrincipalSigners.map((signer) => (
+                        <option key={signer.id} value={signer.id}>
+                          {signer.name} · {signer.role}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Teacher / firma</span>
+                    <select name="teacherSignerId" value={requestForm.teacherSignerId || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields || activeTeacherSigners.length === 0}>
+                      <option value="">Seleccionar teacher</option>
+                      {activeTeacherSigners.map((signer) => (
+                        <option key={signer.id} value={signer.id}>
+                          {signer.name} · {signer.role}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+
+              <label className="wide">
+                <span>Observaciones</span>
+                <textarea name="notes" value={requestForm.notes || ""} onChange={onRequestInputChange} disabled={!canEditOperationalFields} placeholder="Notas internas, ajustes de entrega o instrucciones para imprenta" />
+              </label>
+            </div>
+
+            {requestMessage && <div className="message-box request-production-message">{requestMessage}</div>}
+
+            <div className="request-production-edit-actions">
+              <button type="submit" className="visual-primary-button" disabled={savingRequest || !canEditRequestDetails}>
+                {savingRequest ? "Guardando..." : "Guardar datos de producción"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {isCertificateLike && detailActiveTab === "students" && (
           <div className="request-detail-certificate">
             <div className="request-detail-certificate-header">
               <strong>Datos para generar certificados / diplomas</strong>
@@ -14181,6 +14724,8 @@ function normalizeGeneratedCertificate(certificate) {
     cancelledByUid: String(certificate?.cancelledByUid || ""),
     cancelledByName: String(certificate?.cancelledByName || ""),
     cancelledByEmail: String(certificate?.cancelledByEmail || ""),
+    active: certificate?.active !== false,
+    deleted: certificate?.deleted === true,
     updatedAt: certificate?.updatedAt || "",
   };
 }
@@ -14204,6 +14749,8 @@ function normalizeGeneratedCredential(credential) {
       ? credential.status
       : "Generado",
     notes: String(credential?.notes || ""),
+    active: credential?.active !== false,
+    deleted: credential?.deleted === true,
     generatedAt: credential?.generatedAt || "",
     generatedByUid: String(credential?.generatedByUid || ""),
     generatedByName: String(credential?.generatedByName || ""),
@@ -15054,7 +15601,7 @@ function CertificateTemplatesView({
     setSelectedEditorElement("studentName");
   }
 
-  const activeTemplates = templates.filter((template) => template.active !== false);
+  const activeTemplates = templates.filter((template) => template.deleted !== true && template.active !== false);
   const adultTemplates = activeTemplates.filter((template) => template.audience === "Adultos");
   const kidsTemplates = activeTemplates.filter((template) => template.audience === "Kids");
   const editorPositions = normalizeCertificateTemplatePositions(templateForm.positions);
@@ -15920,7 +16467,8 @@ function CredentialsView({
     event.target.value = "";
   }
 
-  const latestCredentials = generatedCredentials.slice(0, 6);
+  const visibleGeneratedCredentials = generatedCredentials.filter(isVisiblePrintshopRecord);
+  const latestCredentials = visibleGeneratedCredentials.slice(0, 6);
 
   return (
     <section className="certificate-templates-section credentials-section printshop-tab-redesign templates-redesign-page">
@@ -15959,8 +16507,8 @@ function CredentialsView({
           </>
         ) : (
           <>
-            <CatalogMetric tone="teal" icon="certificates" label="Generadas" value={generatedCredentials.length} />
-            <CatalogMetric tone="orange" icon="qr" label="Con QR" value={generatedCredentials.filter((item) => item.validationCode).length} />
+            <CatalogMetric tone="teal" icon="certificates" label="Generadas" value={visibleGeneratedCredentials.length} />
+            <CatalogMetric tone="orange" icon="qr" label="Con QR" value={visibleGeneratedCredentials.filter((item) => item.validationCode).length} />
           </>
         )}
       </div>
@@ -16216,7 +16764,7 @@ function CredentialsView({
           )}
 
           {!templatesOnly && (
-          <Panel title="Credenciales generadas" icon="history" actionLabel={`${generatedCredentials.length} registros`}>
+          <Panel title="Credenciales generadas" icon="history" actionLabel={`${visibleGeneratedCredentials.length} registros`}>
             {loadingGeneratedCredentials ? (
               <div className="empty-state small"><p>Cargando credenciales...</p></div>
             ) : generatedCredentialsError ? (
@@ -16226,18 +16774,47 @@ function CredentialsView({
             ) : (
               <div className="generated-credentials-list">
                 {latestCredentials.map((credential) => (
-                  <article key={credential.id} className="generated-credential-row">
-                    <div>
-                      <strong>{credential.fullName}</strong>
-                      <span>{credential.department || "Sin departamento"} / {credential.folio}</span>
+                  <article key={credential.id} className="generated-credential-card">
+                    <div className="generated-credential-card-main">
+                      <div className="generated-credential-avatar">
+                        <PrintshopIcon name="credentials" />
+                      </div>
+                      <div className="generated-credential-content">
+                        <div className="generated-credential-title-row">
+                          <div>
+                            <strong>{credential.fullName || "Sin nombre"}</strong>
+                            <span>{credential.folio || "Sin folio"}</span>
+                          </div>
+                          <StatusBadge tone={getGeneratedCertificateStatusTone(credential.status)}>{credential.status}</StatusBadge>
+                        </div>
+                        <div className="generated-credential-meta">
+                          <div>
+                            <small>Departamento</small>
+                            <b>{credential.department || "Sin departamento"}</b>
+                          </div>
+                          <div>
+                            <small>Puesto</small>
+                            <b>{credential.position || "Sin puesto"}</b>
+                          </div>
+                          <div>
+                            <small>No. empleado</small>
+                            <b>{credential.employeeId || "Sin numero"}</b>
+                          </div>
+                          <div>
+                            <small>Validacion</small>
+                            <b>{credential.validationCode ? "QR activo" : "Pendiente"}</b>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <StatusBadge tone={getGeneratedCertificateStatusTone(credential.status)}>{credential.status}</StatusBadge>
-                    <button type="button" className="visual-outline-button" onClick={() => loadCredentialForReprint(credential)}>
-                      Reimprimir
-                    </button>
-                    <button type="button" className="danger-table-button" onClick={() => onSoftDeleteCredential(credential)}>
-                      Eliminar
-                    </button>
+                    <div className="generated-credential-actions">
+                      <button type="button" className="visual-outline-button" onClick={() => loadCredentialForReprint(credential)}>
+                        Reimprimir
+                      </button>
+                      <button type="button" className="danger-table-button" onClick={() => onSoftDeleteCredential(credential)}>
+                        Eliminar
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>

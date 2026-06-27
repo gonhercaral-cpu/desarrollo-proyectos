@@ -231,6 +231,8 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
 
   items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects", section: "Operación" });
 
+  items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Operación" });
+
   if (canUsePrintShop) {
     items.push({ page: "print-shop", label: "Imprenta", mobileLabel: "Imprenta", icon: "print", section: "Operación" });
   }
@@ -249,7 +251,6 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "project-history", label: "Historial de proyectos", mobileLabel: "Historial", icon: "history", section: "Administración" });
     items.push({ page: "collaborators-admin", label: "Colaboradores", mobileLabel: "Equipo", icon: "collaborators", section: "Administración" });
     items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
-    items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Administración" });
     items.push({ page: "subscription-manager", label: "Gestor de suscripciones", mobileLabel: "Suscripciones", icon: "subscriptions", section: "Administración" });
     items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Administración" });
   }
@@ -5460,6 +5461,15 @@ function getDashboardSearchableModules(isAdmin) {
     { type: "module", route: "bug-reports", title: "Reporte de errores", description: "Registro y seguimiento de incidencias del sistema", icon: "🐞", tone: "red" },
   ];
 
+  baseModules.push({
+    type: "module",
+    route: "purchase-requests",
+    title: "Solicitudes de compra",
+    description: "Solicita compras y consulta su seguimiento",
+    icon: "🛒",
+    tone: "gold",
+  });
+
   if (!isAdmin) return baseModules;
 
   return [
@@ -5470,7 +5480,6 @@ function getDashboardSearchableModules(isAdmin) {
     { type: "module", route: "project-history", title: "Historial de proyectos", description: "Proyectos terminados o eliminados", icon: "↶", tone: "gold" },
     { type: "module", route: "collaborators-admin", title: "Colaboradores", description: "Gestión de usuarios y permisos", icon: "👥", tone: "green" },
     { type: "module", route: "departments-admin", title: "Departamentos", description: "Gestión de departamentos y áreas", icon: "▦", tone: "blue" },
-    { type: "module", route: "purchase-requests", title: "Solicitudes de compra", description: "Solicitudes y aprobaciones administrativas", icon: "🛒", tone: "gold" },
   ];
 }
 

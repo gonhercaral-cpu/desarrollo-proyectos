@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
+import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
   acceptStudentSuggestion,
@@ -18,6 +18,20 @@ const CERTIFICATE_TYPE = "Certificado";
 const PUBLIC_REQUESTER_AREA = "Dirección Académica";
 const STUDENT_DELIVERY_TYPES = ["Impreso", "Digital"];
 
+const CERTIFICATE_LEVEL_OPTIONS = [
+  { value: "A1 Journey", level: "A1", programName: "Journey", audience: "Adultos", productName: "Certificado A1 Journey" },
+  { value: "A2 Explore", level: "A2", programName: "Explore", audience: "Adultos", productName: "Certificado A2 Explore" },
+  { value: "B1 Discovery", level: "B1", programName: "Discovery", audience: "Adultos", productName: "Certificado B1 Discovery" },
+  { value: "B2", level: "B2", programName: "B2", audience: "Adultos", productName: "Certificado B2" },
+  { value: "C1 New Horizons", level: "C1", programName: "New Horizons", audience: "Adultos", productName: "Certificado C1 New Horizons" },
+  { value: "Smile 1", level: "Smile 1", programName: "Smile 1", audience: "Kids", productName: "Certificado Smile 1" },
+  { value: "Smile 2", level: "Smile 2", programName: "Smile 2", audience: "Kids", productName: "Certificado Smile 2" },
+  { value: "Smile 3", level: "Smile 3", programName: "Smile 3", audience: "Kids", productName: "Certificado Smile 3" },
+  { value: "Smile 4", level: "Smile 4", programName: "Smile 4", audience: "Kids", productName: "Certificado Smile 4" },
+  { value: "Smile 5", level: "Smile 5", programName: "Smile 5", audience: "Kids", productName: "Certificado Smile 5" },
+  { value: "Mega Flash", level: "Mega Flash", programName: "Mega Flash", audience: "Kids", productName: "Certificado Mega Flash" }
+];
+
 function createFolio() {
   const year = new Date().getFullYear();
   const random = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -33,12 +47,91 @@ function getTodayInputDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function calculatePublicRequestPriority(requestDate, dueDate) {
+  if (!dueDate) return "Normal";
+
+  const startDate = requestDate ? new Date(`${requestDate}T00:00:00`) : new Date();
+  const endDate = new Date(`${dueDate}T00:00:00`);
+
+  if (Number.isNaN(endDate.getTime())) return "Normal";
+
+  const safeStartDate = Number.isNaN(startDate.getTime()) ? new Date() : startDate;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysToDeliver = Math.ceil((endDate.getTime() - safeStartDate.getTime()) / dayMs);
+
+  if (daysToDeliver <= 3) return "Urgente";
+  if (daysToDeliver <= 7) return "Alta";
+  return "Normal";
+}
+
+function getCertificateLevelOption(value = "") {
+  const cleanValue = String(value || "").trim();
+
+  return CERTIFICATE_LEVEL_OPTIONS.find(
+    (option) => option.value.toLowerCase() === cleanValue.toLowerCase()
+  ) || null;
+}
+
+function normalizePublicComparable(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizePublicSigner(signer) {
+  return {
+    id: signer?.id || "",
+    name: String(signer?.name || "").trim(),
+    role: String(signer?.role || "").trim(),
+    type: signer?.type === "Principal" ? "Principal" : "Teacher",
+    campus: String(signer?.campus || ""),
+    active: signer?.active !== false,
+    deleted: signer?.deleted === true,
+    signatureUrl: String(signer?.signatureUrl || ""),
+    signatureDataUrl: String(signer?.signatureDataUrl || "")
+  };
+}
+
+function getUniqueSignerNames(signers = []) {
+  const seen = new Set();
+
+  return signers
+    .map((signer) => signer.name)
+    .filter(Boolean)
+    .filter((name) => {
+      const key = normalizePublicComparable(name);
+
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function findPublicSignerByName(signers = [], name = "") {
+  const normalizedName = normalizePublicComparable(name);
+
+  if (!normalizedName) return null;
+
+  return (signers || []).find((signer) => normalizePublicComparable(signer.name) === normalizedName) || null;
+}
+
+
 function inferLevelFromCourse(value = "") {
+  const selectedOption = getCertificateLevelOption(value);
+
+  if (selectedOption?.level) return selectedOption.level;
+
   const match = String(value).toUpperCase().match(/\b(A1|A2|B1|B2|C1)\b/);
-  return match?.[1] || "No aplica";
+  return match?.[1] || String(value || "").trim() || "No aplica";
 }
 
 function buildCertificateProductName(value = "") {
+  const selectedOption = getCertificateLevelOption(value);
+
+  if (selectedOption?.productName) return selectedOption.productName;
+
   const cleanValue = String(value || "").trim();
 
   if (!cleanValue) return CERTIFICATE_TYPE;
@@ -92,7 +185,10 @@ export default function PublicCertificateRequest() {
   const [certificateDirectorName, setCertificateDirectorName] = useState("");
   const [requestedDeliveryDate, setRequestedDeliveryDate] = useState("");
   const [courseLevel, setCourseLevel] = useState("");
+  const [teacherName, setTeacherName] = useState("");
+  const [schedule, setSchedule] = useState("");
   const [notes, setNotes] = useState("");
+  const [certificateSigners, setCertificateSigners] = useState([]);
 
   const [defaultStudentDeliveryType, setDefaultStudentDeliveryType] = useState("Impreso");
   const [bulkNames, setBulkNames] = useState("");
@@ -110,6 +206,44 @@ export default function PublicCertificateRequest() {
     if (!trackingId) return "";
     return `${window.location.origin}/certificados/seguimiento/${trackingId}`;
   }, [trackingId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCertificateSigners() {
+      try {
+        const snapshot = await getDocs(collection(db, "certificateSigners"));
+        const nextSigners = snapshot.docs
+          .map((signerDoc) => normalizePublicSigner({ id: signerDoc.id, ...signerDoc.data() }))
+          .filter((signer) => signer.active && !signer.deleted && signer.name);
+
+        if (active) {
+          setCertificateSigners(nextSigners);
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar las firmas públicas:", err);
+        if (active) {
+          setCertificateSigners([]);
+        }
+      }
+    }
+
+    loadCertificateSigners();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const activePrincipalSigners = useMemo(
+    () => certificateSigners.filter((signer) => signer.type === "Principal"),
+    [certificateSigners]
+  );
+
+  const activeTeacherSigners = useMemo(
+    () => certificateSigners.filter((signer) => signer.type === "Teacher"),
+    [certificateSigners]
+  );
 
   const currentDeliverySummary = useMemo(() => {
     return getDeliverySummary(students.filter((student) => student.fullName.trim()));
@@ -198,9 +332,9 @@ export default function PublicCertificateRequest() {
       }))
       .filter((student) => student.fullName);
 
-    if (!campus || !requesterName || !certificateDirectorName || !courseLevel) {
+    if (!campus || !requesterName || !certificateDirectorName || !courseLevel || !teacherName || !schedule) {
       setError(
-        "Completa plantel, nombre del solicitante, director para certificados y nivel, curso o grupo."
+        "Completa plantel, solicitante, director, nivel, maestro y horario."
       );
       return;
     }
@@ -263,11 +397,17 @@ export default function PublicCertificateRequest() {
       const { printedQuantity, digitalQuantity, deliveryType } =
         getDeliverySummary(preparedStudents);
       const cleanCourseLevel = courseLevel.trim();
+      const selectedCourseOption = getCertificateLevelOption(cleanCourseLevel);
       const level = inferLevelFromCourse(cleanCourseLevel);
       const publicProductName = buildCertificateProductName(cleanCourseLevel);
       const requestDate = getTodayInputDate();
       const cleanRequesterName = requesterName.trim();
       const cleanCertificateDirectorName = certificateDirectorName.trim();
+      const cleanTeacherName = teacherName.trim();
+      const cleanSchedule = schedule.trim();
+      const matchedPrincipalSigner = findPublicSignerByName(activePrincipalSigners, cleanCertificateDirectorName);
+      const matchedTeacherSigner = findPublicSignerByName(activeTeacherSigners, cleanTeacherName);
+      const certificateIssueDate = requestedDeliveryDate || requestDate;
 
       const docRef = await addDoc(collection(db, "printRequests"), {
         folio,
@@ -280,10 +420,12 @@ export default function PublicCertificateRequest() {
         campus,
 
         responsibleUid: "",
-        responsibleName: "",
+        responsibleName: "Tony Campos",
         responsibleEmail: "",
+        defaultResponsibleName: "Tony Campos",
+        responsibleAutoAssigned: true,
 
-        priority: "Normal",
+        priority: calculatePublicRequestPriority(requestDate, requestedDeliveryDate),
         requestedQuantity,
         deliveredQuantity: 0,
         deliveryType,
@@ -293,12 +435,12 @@ export default function PublicCertificateRequest() {
         dueDate: requestedDeliveryDate || "",
         requestedDeliveryDate: requestedDeliveryDate || "",
 
-        certificateIssueDate: "",
+        certificateIssueDate,
         certificateTemplateId: "",
         certificateTemplateName: "",
-        certificateTemplateLevel: "",
-        certificateTemplateProgramName: "",
-        certificateTemplateAudience: "",
+        certificateTemplateLevel: level,
+        certificateTemplateProgramName: selectedCourseOption?.programName || cleanCourseLevel,
+        certificateTemplateAudience: selectedCourseOption?.audience || "Adultos",
         certificateTemplateBodyText: "",
         certificateTemplateBodySegments: [],
         certificateTemplateCustomTexts: [],
@@ -311,19 +453,23 @@ export default function PublicCertificateRequest() {
         notes: notes.trim(),
         level,
         group: cleanCourseLevel,
-        teacherName: "",
-        schedule: "",
+        courseProgramName: selectedCourseOption?.programName || cleanCourseLevel,
+        courseAudience: selectedCourseOption?.audience || "Adultos",
+        teacherName: cleanTeacherName,
+        schedule: cleanSchedule,
         printedQuantity,
         digitalQuantity,
 
-        principalSignerId: "",
-        principalSignerName: cleanCertificateDirectorName,
-        principalSignerRole: "Director",
-        principalSignatureUrl: "",
-        teacherSignerId: "",
-        teacherSignerName: "",
-        teacherSignerRole: "Teacher",
-        teacherSignatureUrl: "",
+        principalSignerId: matchedPrincipalSigner?.id || "",
+        principalSignerName: matchedPrincipalSigner?.name || cleanCertificateDirectorName,
+        principalSignerRole: matchedPrincipalSigner?.role || "Director",
+        principalSignatureUrl: matchedPrincipalSigner?.signatureUrl || "",
+        principalSignatureDataUrl: matchedPrincipalSigner?.signatureDataUrl || "",
+        teacherSignerId: matchedTeacherSigner?.id || "",
+        teacherSignerName: matchedTeacherSigner?.name || cleanTeacherName,
+        teacherSignerRole: matchedTeacherSigner?.role || "Teacher",
+        teacherSignatureUrl: matchedTeacherSigner?.signatureUrl || "",
+        teacherSignatureDataUrl: matchedTeacherSigner?.signatureDataUrl || "",
 
         students: preparedStudents,
 
@@ -358,7 +504,7 @@ export default function PublicCertificateRequest() {
   }
 
   const completedGeneralFields = Boolean(
-    campus && requesterName && certificateDirectorName && courseLevel
+    campus && requesterName && certificateDirectorName && courseLevel && teacherName && schedule
   );
   const hasStudentNames = students.some((student) => student.fullName.trim());
   const requestProgressIndex =
@@ -495,6 +641,18 @@ export default function PublicCertificateRequest() {
               </div>
             </div>
 
+            <datalist id="public-principal-signer-options">
+              {activePrincipalSigners.map((signer) => (
+                <option key={signer.id || signer.name} value={signer.name} />
+              ))}
+            </datalist>
+
+            <datalist id="public-teacher-signer-options">
+              {activeTeacherSigners.map((signer) => (
+                <option key={signer.id || signer.name} value={signer.name} />
+              ))}
+            </datalist>
+
             <div className="form-grid">
               <label>
                 Plantel
@@ -510,20 +668,32 @@ export default function PublicCertificateRequest() {
 
               <label>
                 Nombre del solicitante
-                <input
+                <select
                   value={requesterName}
                   onChange={(e) => setRequesterName(e.target.value)}
-                  placeholder="Nombre de quien solicita"
-                />
+                >
+                  <option value="">Seleccionar solicitante</option>
+                  {activePrincipalSigners.map((signer) => (
+                    <option key={signer.id || signer.name} value={signer.name}>
+                      {signer.name} {signer.role ? `- ${signer.role}` : ""}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label>
                 Director que aparecerá en los certificados
-                <input
+                <select
                   value={certificateDirectorName}
                   onChange={(e) => setCertificateDirectorName(e.target.value)}
-                  placeholder="Nombre del director"
-                />
+                >
+                  <option value="">Seleccionar director</option>
+                  {activePrincipalSigners.map((signer) => (
+                    <option key={signer.id || signer.name} value={signer.name}>
+                      {signer.name} {signer.role ? `- ${signer.role}` : ""}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label>
@@ -542,10 +712,40 @@ export default function PublicCertificateRequest() {
 
               <label>
                 Nivel, curso o grupo
-                <input
+                <select
                   value={courseLevel}
                   onChange={(e) => setCourseLevel(e.target.value)}
-                  placeholder="Ej. A2, B1, Grupo Teacher Samantha, Teens"
+                >
+                  <option value="">Seleccionar nivel</option>
+                  {CERTIFICATE_LEVEL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Nombre del maestro
+                <select
+                  value={teacherName}
+                  onChange={(e) => setTeacherName(e.target.value)}
+                >
+                  <option value="">Seleccionar maestro</option>
+                  {activeTeacherSigners.map((signer) => (
+                    <option key={signer.id || signer.name} value={signer.name}>
+                      {signer.name} {signer.role ? `- ${signer.role}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Horario
+                <input
+                  value={schedule}
+                  onChange={(e) => setSchedule(e.target.value)}
+                  placeholder="Ej. Lunes y miércoles 6:00 p.m."
                 />
               </label>
             </div>
@@ -586,6 +786,17 @@ export default function PublicCertificateRequest() {
                 {currentDeliverySummary.printedQuantity +
                   currentDeliverySummary.digitalQuantity}
               </strong>
+            </div>
+
+            <div className="request-summary-box request-summary-text">
+              <span>Nivel seleccionado</span>
+              <strong>{courseLevel || "Pendiente"}</strong>
+            </div>
+
+            <div className="request-summary-box request-summary-text">
+              <span>Maestro / horario</span>
+              <strong>{teacherName || "Maestro pendiente"}</strong>
+              <small>{schedule || "Horario pendiente"}</small>
             </div>
           </aside>
         </div>
@@ -757,21 +968,51 @@ Angel Lopez`}
 
             <div className="review-list">
               {reviewStudents.map((student, index) => (
-                <div className="review-item visual-review-item" key={`review-${index}`}>
-                  <div>
-                    <p className="review-label">Nombre final:</p>
-                    <strong>{student.finalName}</strong>
+                <div
+                  className={`review-item visual-review-item ${
+                    student.hasSuggestion
+                      ? student.correctionAccepted
+                        ? "correction-accepted"
+                        : "correction-pending"
+                      : "correction-clean"
+                  }`}
+                  key={`review-${index}`}
+                >
+                  <div className="review-name-compare">
+                    <div className="review-name-current">
+                      <p className="review-label">Nombre capturado</p>
+                      <strong>{student.originalName}</strong>
+                    </div>
 
-                    <p className="muted-text">
+                    <span className="review-name-arrow">→</span>
+
+                    <div className="review-name-final">
+                      <p className="review-label">
+                        {student.correctionAccepted ? "Corrección aceptada" : "Nombre final"}
+                      </p>
+                      <strong>{student.finalName}</strong>
+                    </div>
+
+                    <div className="review-name-status">
+                      {student.hasSuggestion ? (
+                        student.correctionAccepted ? (
+                          <span className="review-status-pill accepted">Aceptada</span>
+                        ) : (
+                          <span className="review-status-pill pending">Revisar</span>
+                        )
+                      ) : (
+                        <span className="review-status-pill clean">Correcto</span>
+                      )}
+                    </div>
+
+                    <p className="muted-text review-delivery-note">
                       Entrega: <strong>{student.deliveryType}</strong>
                     </p>
 
-                    {student.hasSuggestion ? (
-                      <p className="suggestion-text">
+                    {student.hasSuggestion && !student.correctionAccepted && (
+                      <p className="suggestion-text review-suggestion-alert">
                         Sugerencia: <strong>{student.suggestedName}</strong>
                       </p>
-                    ) : (
-                      <p className="muted-text">Sin sugerencias.</p>
                     )}
                   </div>
 
@@ -808,4 +1049,3 @@ Angel Lopez`}
     </main>
   );
 }
-

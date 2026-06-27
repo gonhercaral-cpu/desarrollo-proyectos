@@ -1134,6 +1134,65 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             </div>
           </section>
 
+          <section className="visual-card project-documents-card">
+            <div className="project-documents-header">
+              <div>
+                <SectionTitle
+                  icon={<SvgIcon name="attachment" />}
+                  title="Documentos del proyecto"
+                  color="green"
+                  count={evidenceFiles.length}
+                />
+                <p>
+                  Evidencias, archivos adjuntos y documentos subidos al proyecto en un solo lugar.
+                </p>
+              </div>
+
+              <label className="project-documents-upload-button">
+                <SvgIcon name="attachment" />
+                Agregar documento
+                <input
+                  type="file"
+                  multiple
+                  disabled={uploading || projectIsHistorical}
+                  onChange={handleUploadEvidence}
+                />
+              </label>
+            </div>
+
+            {evidenceFiles.length === 0 ? (
+              <EmptyState text="Aún no hay documentos registrados en este proyecto." small />
+            ) : (
+              <div className="project-documents-grid">
+                {evidenceFiles.map((file, index) => (
+                  <a
+                    key={`${getFileName(file)}-${index}`}
+                    className="project-document-card"
+                    href={getFileUrl(file) || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-disabled={!getFileUrl(file)}
+                  >
+                    <span className={`file-type-icon file-${getFileType(file)}`}>
+                      {getFileType(file).toUpperCase()}
+                    </span>
+
+                    <div>
+                      <strong>{getFileName(file)}</strong>
+                      <small>
+                        {getFileUrl(file) ? "Abrir archivo" : "Sin enlace disponible"}
+                      </small>
+                    </div>
+
+                    <Badge color={getEvidenceReviewBadgeColor(file.reviewStatus)}>
+                      {getEvidenceReviewLabel(file.reviewStatus)}
+                    </Badge>
+                  </a>
+                ))}
+              </div>
+            )}
+          </section>
+
           <section className="visual-card advances-card">
             <div className="advances-header">
               <div>

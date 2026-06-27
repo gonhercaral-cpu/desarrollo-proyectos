@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   orderBy,
@@ -254,6 +255,16 @@ export async function updateTechnicalLocation(
     id: locationId,
     ...updatedLocation,
   };
+}
+
+export async function deleteTechnicalLocation(locationId) {
+  if (!locationId) {
+    throw new Error("Falta el ID de la ubicacion tecnica.");
+  }
+
+  await deleteDoc(doc(db, TECHNICAL_LOCATIONS_COLLECTION, locationId));
+
+  return { id: locationId, deleted: true };
 }
 
 export async function updateTechnicalLocationChecklist(

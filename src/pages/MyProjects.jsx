@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
+import {
+  getActiveProjects,
+  softDeleteProject,
+} from "../services/projectsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
 
 const PROJECTS_COLLECTION = "projects";
@@ -29,6 +33,7 @@ export default function MyProjects({ onOpenProject }) {
   const [activeProjectView, setActiveProjectView] = useState("Todos");
   const [searchText, setSearchText] = useState("");
   const [message, setMessage] = useState("");
+  const [deletingProjectId, setDeletingProjectId] = useState("");
 
   const [showFullAgenda, setShowFullAgenda] = useState(false);
   const [showFullActivity, setShowFullActivity] = useState(false);
@@ -57,17 +62,21 @@ export default function MyProjects({ onOpenProject }) {
         return;
       }
 
-      const allProjects = await getMyAllowedProjects(userId, isAdmin);
+      const allProjects = isAdmin
+        ? await getActiveProjects()
+        : await getMyAllowedProjects(userId, false);
 
       const activeProjects = allProjects.filter((project) => {
         return !isHistoricalProject(project);
       });
 
-      const assigned = activeProjects.filter((project) => {
-        return isProjectAssignedToUser(project, userId);
-      });
+      const assigned = isAdmin
+        ? activeProjects
+        : activeProjects.filter((project) => {
+            return isProjectAssignedToUser(project, userId);
+          });
 
-      const collaborations = activeProjects.filter((project) => {
+      const collaborations = isAdmin ? [] : activeProjects.filter((project) => {
         const alreadyAssigned = assigned.some(
           (assignedProject) => assignedProject.id === project.id
         );
@@ -96,6 +105,33 @@ export default function MyProjects({ onOpenProject }) {
     profile?.id,
     isAdmin,
   ]);
+
+  async function handleDeleteProject(project) {
+    if (!isAdmin) {
+      setMessage("No tienes permiso para eliminar proyectos.");
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `¿Seguro que deseas eliminar el proyecto "${project.title}"?\n\nNo se borrará definitivamente. Se moverá al historial y podrás restaurarlo después.`
+    );
+
+    if (!confirmDelete) return;
+
+    setDeletingProjectId(project.id);
+    setMessage("");
+
+    try {
+      await softDeleteProject(project.id, profile);
+      await loadProjects();
+      setMessage("El proyecto fue movido al historial correctamente.");
+    } catch (error) {
+      console.error(error);
+      setMessage(error.message || "No se pudo eliminar el proyecto.");
+    } finally {
+      setDeletingProjectId("");
+    }
+  }
 
   const allMyProjects = useMemo(() => {
     return [
@@ -364,6 +400,9 @@ export default function MyProjects({ onOpenProject }) {
             <ProjectList
               projects={visibleProjects}
               onOpenProject={onOpenProject}
+              isAdmin={isAdmin}
+              deletingProjectId={deletingProjectId}
+              onDeleteProject={handleDeleteProject}
             />
           </section>
         </main>
@@ -502,7 +541,13 @@ async function getMyAllowedProjects(userId, isAdmin) {
   return removeDuplicatedProjects(results);
 }
 
-function ProjectList({ projects, onOpenProject }) {
+function ProjectList({
+  projects,
+  onOpenProject,
+  isAdmin = false,
+  deletingProjectId = "",
+  onDeleteProject,
+}) {
   return (
     <div className="my-project-card-list-v2">
       {projects.length === 0 ? (
@@ -575,6 +620,16 @@ function ProjectList({ projects, onOpenProject }) {
                   >
                     Ver detalle <span>›</span>
                   </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="danger-table-button my-project-delete-button-v2"
+                      disabled={deletingProjectId === project.id}
+                      onClick={() => onDeleteProject?.(project)}
+                    >
+                      {deletingProjectId === project.id ? "Eliminando..." : "Eliminar"}
+                    </button>
+                  )}
                 </div>
               </div>
             </article>

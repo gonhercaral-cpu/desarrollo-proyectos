@@ -109,31 +109,102 @@ function formatDateLabel(value) {
   }).format(date);
 }
 
-function MetricCard({ label, value, helper, tone = "blue" }) {
+function SubscriptionIcon({ name = "calendar" }) {
+  const icons = {
+    calendar: (
+      <>
+        <rect x="4" y="5" width="16" height="15" rx="3" />
+        <path d="M8 3v4" />
+        <path d="M16 3v4" />
+        <path d="M4 10h16" />
+        <path d="M8 14h3" />
+        <path d="M13 14h3" />
+      </>
+    ),
+    list: (
+      <>
+        <path d="M9 7h10" />
+        <path d="M9 12h10" />
+        <path d="M9 17h10" />
+        <path d="M5 7h.01" />
+        <path d="M5 12h.01" />
+        <path d="M5 17h.01" />
+      </>
+    ),
+    check: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="m8.5 12.2 2.2 2.2 4.8-5" />
+      </>
+    ),
+    warning: (
+      <>
+        <path d="M12 4 3.5 19h17L12 4Z" />
+        <path d="M12 9v4" />
+        <path d="M12 16h.01" />
+      </>
+    ),
+    money: (
+      <>
+        <rect x="4" y="6" width="16" height="12" rx="3" />
+        <circle cx="12" cy="12" r="2.5" />
+        <path d="M7 9h.01" />
+        <path d="M17 15h.01" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="6" />
+        <path d="m16 16 4 4" />
+      </>
+    ),
+    edit: (
+      <>
+        <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+        <path d="m13.5 7.5 3 3" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4 7h16" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M6 7l1 13h10l1-13" />
+        <path d="M9 7V4h6v3" />
+      </>
+    ),
+    plus: (
+      <>
+        <path d="M12 5v14" />
+        <path d="M5 12h14" />
+      </>
+    ),
+  };
+
+  return (
+    <svg className="subscription-icon-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {icons[name] || icons.calendar}
+    </svg>
+  );
+}
+
+function MetricCard({ label, value, helper, tone = "blue", icon = "list" }) {
   return (
     <article className={`subscription-metric-card ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <p>{helper}</p>
+      <span className="subscription-metric-icon">
+        <SubscriptionIcon name={icon} />
+      </span>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <p>{helper}</p>
+      </div>
     </article>
   );
 }
 
 function StatusPill({ tone = "blue", children }) {
   return <span className={`subscription-status-pill ${tone}`}>{children}</span>;
-}
-
-function SubscriptionIcon() {
-  return (
-    <svg className="subscription-topbar-icon-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="5" width="16" height="14" rx="3" />
-      <path d="M8 9h8" />
-      <path d="M8 13h5" />
-      <path d="M16 16h.01" />
-      <path d="M7 3v4" />
-      <path d="M17 3v4" />
-    </svg>
-  );
 }
 
 export default function SubscriptionManager() {
@@ -172,7 +243,7 @@ export default function SubscriptionManager() {
       },
       (snapshotError) => {
         console.error("No se pudieron cargar las suscripciones:", snapshotError);
-        setError("No se pudieron cargar las suscripciones. Revisa permisos o conexion.");
+        setError("No se pudieron cargar las suscripciones. Revisa permisos o conexión.");
         setLoading(false);
       }
     );
@@ -262,7 +333,7 @@ export default function SubscriptionManager() {
     const amount = Number(form.amount || 0);
 
     if (!name || !provider) {
-      setMessage("Indica nombre y proveedor de la suscripcion.");
+      setMessage("Indica nombre y proveedor de la suscripción.");
       return;
     }
 
@@ -296,7 +367,7 @@ export default function SubscriptionManager() {
 
       if (selectedId) {
         await updateDoc(doc(db, "subscriptions", selectedId), payload);
-        setMessage("Suscripcion actualizada correctamente.");
+        setMessage("Suscripción actualizada correctamente.");
       } else {
         await addDoc(collection(db, "subscriptions"), {
           ...payload,
@@ -305,13 +376,13 @@ export default function SubscriptionManager() {
           createdByName: auditName,
           createdByEmail: profile?.email || "",
         });
-        setMessage("Suscripcion registrada correctamente.");
+        setMessage("Suscripción registrada correctamente.");
       }
 
       resetForm();
     } catch (saveError) {
-      console.error("No se pudo guardar la suscripcion:", saveError);
-      setMessage("No se pudo guardar la suscripcion. Revisa permisos o conexion.");
+      console.error("No se pudo guardar la suscripción:", saveError);
+      setMessage("No se pudo guardar la suscripción. Revisa permisos o conexión.");
     } finally {
       setSaving(false);
     }
@@ -320,15 +391,15 @@ export default function SubscriptionManager() {
   async function deleteSubscription(subscription) {
     if (!subscription?.id) return;
 
-    const confirmed = window.confirm(`Eliminar la suscripcion ${subscription.name}?`);
+    const confirmed = window.confirm(`¿Eliminar la suscripción ${subscription.name}?`);
     if (!confirmed) return;
 
     try {
       await deleteDoc(doc(db, "subscriptions", subscription.id));
       if (selectedId === subscription.id) resetForm();
     } catch (deleteError) {
-      console.error("No se pudo eliminar la suscripcion:", deleteError);
-      setMessage("No se pudo eliminar la suscripcion.");
+      console.error("No se pudo eliminar la suscripción:", deleteError);
+      setMessage("No se pudo eliminar la suscripción.");
     }
   }
 
@@ -338,15 +409,16 @@ export default function SubscriptionManager() {
         <div className="subscription-topbar">
           <div className="subscription-topbar-main">
             <span className="subscription-topbar-module-icon">
-              <SubscriptionIcon />
+              <SubscriptionIcon name="calendar" />
             </span>
             <div className="subscription-topbar-copy">
-              <p>ADMINISTRACION</p>
+              <p>ADMINISTRACIÓN</p>
               <h1>Gestor de suscripciones</h1>
-              <span>Solo administradores pueden acceder a este modulo.</span>
+              <span>Solo administradores pueden acceder a este módulo.</span>
             </div>
           </div>
         </div>
+        {error && <div className="message-box subscription-access-message">{error}</div>}
       </section>
     );
   }
@@ -356,33 +428,49 @@ export default function SubscriptionManager() {
       <div className="subscription-topbar">
         <div className="subscription-topbar-main">
           <span className="subscription-topbar-module-icon">
-            <SubscriptionIcon />
+            <SubscriptionIcon name="calendar" />
           </span>
           <div className="subscription-topbar-copy">
-            <p>ADMINISTRACION</p>
+            <p>ADMINISTRACIÓN</p>
             <h1>Gestor de suscripciones</h1>
-            <span>Controla suscripciones activas, renovaciones y gasto mensual estimado del area.</span>
+            <span>Controla suscripciones activas, renovaciones y gasto mensual estimado del área.</span>
           </div>
         </div>
+
+        <button type="button" className="subscription-topbar-button" onClick={resetForm}>
+          <SubscriptionIcon name="plus" />
+          Nueva suscripción
+        </button>
       </div>
 
       <div className="subscription-metrics-grid">
-        <MetricCard tone="blue" label="Suscripciones" value={stats.total} helper="Registradas" />
-        <MetricCard tone="green" label="Activas" value={stats.active} helper="En uso actualmente" />
-        <MetricCard tone="orange" label="Renovaciones" value={stats.upcomingRenewals} helper="Vencidas o proximas" />
-        <MetricCard tone="teal" label="Gasto mensual" value={monthlySummary} helper="Estimado por moneda" />
+        <MetricCard tone="blue" icon="list" label="Suscripciones" value={stats.total} helper="Registradas" />
+        <MetricCard tone="green" icon="check" label="Activas" value={stats.active} helper="En uso actualmente" />
+        <MetricCard tone="orange" icon="warning" label="Renovaciones" value={stats.upcomingRenewals} helper="Vencidas o próximas" />
+        <MetricCard tone="teal" icon="money" label="Gasto mensual" value={monthlySummary} helper="Estimado por moneda" />
       </div>
 
       <div className="subscription-layout">
         <div className="subscription-main-panel">
+          <div className="subscription-panel-title-row">
+            <span className="subscription-section-icon">
+              <SubscriptionIcon name="search" />
+            </span>
+            <div>
+              <h2>Suscripciones registradas</h2>
+              <p>Filtra, revisa y selecciona una suscripción para actualizar su información.</p>
+            </div>
+            <strong>{filteredSubscriptions.length} visibles</strong>
+          </div>
+
           <div className="subscription-toolbar">
-            <label>
+            <label className="subscription-search-field">
               <span>Buscar</span>
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Nombre, proveedor, area o categoria"
+                placeholder="Nombre, proveedor, área o categoría"
               />
             </label>
 
@@ -397,7 +485,7 @@ export default function SubscriptionManager() {
             </label>
 
             <label>
-              <span>Categoria</span>
+              <span>Categoría</span>
               <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
                 <option>Todas</option>
                 {subscriptionCategories.map((category) => (
@@ -410,56 +498,77 @@ export default function SubscriptionManager() {
           {error && <div className="message-box">{error}</div>}
 
           {loading ? (
-            <div className="empty-state small">
-              <p>Cargando suscripciones...</p>
+            <div className="subscription-empty-state">
+              <span><SubscriptionIcon name="calendar" /></span>
+              <strong>Cargando suscripciones...</strong>
             </div>
           ) : filteredSubscriptions.length === 0 ? (
-            <div className="empty-state small">
-              <p>No hay suscripciones con los filtros seleccionados.</p>
+            <div className="subscription-empty-state">
+              <span><SubscriptionIcon name="list" /></span>
+              <strong>No hay suscripciones con los filtros seleccionados.</strong>
+              <p>Registra una nueva suscripción o ajusta los filtros de búsqueda.</p>
             </div>
           ) : (
             <div className="subscription-list">
-              {filteredSubscriptions.map((subscription) => (
-                <article
-                  key={subscription.id}
-                  className={`subscription-card ${selectedId === subscription.id ? "active" : ""}`}
-                >
-                  <button type="button" onClick={() => selectSubscription(subscription)}>
-                    <div>
-                      <strong>{subscription.name}</strong>
-                      <span>{subscription.provider} / {subscription.category}</span>
-                    </div>
-                    <div>
-                      <b>{formatMoney(subscription.amount, subscription.currency)}</b>
-                      <small>{subscription.billingCycle}</small>
-                    </div>
-                  </button>
+              {filteredSubscriptions.map((subscription) => {
+                const renewalTone = getRenewalTone(subscription.renewalDate);
 
-                  <div className="subscription-card-footer">
-                    <StatusPill tone={subscription.status === "Activa" ? "green" : subscription.status === "Pausada" ? "orange" : "red"}>
-                      {subscription.status}
-                    </StatusPill>
-                    <StatusPill tone={getRenewalTone(subscription.renewalDate)}>
-                      {formatDateLabel(subscription.renewalDate)}
-                    </StatusPill>
-                    <button type="button" className="danger-table-button" onClick={() => deleteSubscription(subscription)}>
-                      Eliminar
+                return (
+                  <article
+                    key={subscription.id}
+                    className={`subscription-card ${selectedId === subscription.id ? "active" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      className="subscription-card-main"
+                      onClick={() => selectSubscription(subscription)}
+                    >
+                      <span className="subscription-card-icon">
+                        <SubscriptionIcon name="calendar" />
+                      </span>
+                      <div className="subscription-card-copy">
+                        <strong>{subscription.name}</strong>
+                        <span>{subscription.provider} · {subscription.category}</span>
+                        <small>{subscription.ownerArea}</small>
+                      </div>
+                      <div className="subscription-card-cost">
+                        <b>{formatMoney(subscription.amount, subscription.currency)}</b>
+                        <small>{subscription.billingCycle}</small>
+                      </div>
                     </button>
-                  </div>
-                </article>
-              ))}
+
+                    <div className="subscription-card-footer">
+                      <StatusPill tone={subscription.status === "Activa" ? "green" : subscription.status === "Pausada" ? "orange" : "red"}>
+                        {subscription.status}
+                      </StatusPill>
+                      <StatusPill tone={renewalTone}>
+                        {formatDateLabel(subscription.renewalDate)}
+                      </StatusPill>
+                      <span className="subscription-seats-pill">{subscription.seats || 1} licencia(s)</span>
+                      <button type="button" className="subscription-delete-button" onClick={() => deleteSubscription(subscription)}>
+                        <SubscriptionIcon name="trash" />
+                        Eliminar
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>
 
         <aside className="subscription-form-panel">
           <div className="subscription-panel-header">
+            <span className="subscription-section-icon">
+              <SubscriptionIcon name="edit" />
+            </span>
             <div>
               <span>{selectedId ? "Editar" : "Nueva"}</span>
-              <h2>{selectedId ? "Editar suscripcion" : "Nueva suscripcion"}</h2>
+              <h2>{selectedId ? "Editar suscripción" : "Nueva suscripción"}</h2>
+              <p>{selectedId ? "Actualiza los datos de la suscripción seleccionada." : "Registra una nueva herramienta, servicio o licencia."}</p>
             </div>
             {selectedId && (
-              <button type="button" className="visual-outline-button" onClick={resetForm}>
+              <button type="button" className="subscription-outline-button" onClick={resetForm}>
                 Nueva
               </button>
             )}
@@ -477,7 +586,7 @@ export default function SubscriptionManager() {
             </label>
 
             <label>
-              <span>Categoria</span>
+              <span>Categoría</span>
               <select name="category" value={form.category} onChange={handleInputChange}>
                 {subscriptionCategories.map((category) => (
                   <option key={category}>{category}</option>
@@ -518,7 +627,7 @@ export default function SubscriptionManager() {
             </label>
 
             <label>
-              <span>Renovacion</span>
+              <span>Renovación</span>
               <input type="date" name="renewalDate" value={form.renewalDate} onChange={handleInputChange} />
             </label>
 
@@ -527,26 +636,29 @@ export default function SubscriptionManager() {
               <input type="number" min="1" name="seats" value={form.seats} onChange={handleInputChange} />
             </label>
 
-            <label>
-              <span>Area responsable</span>
+            <label className="full">
+              <span>Área responsable</span>
               <input name="ownerArea" value={form.ownerArea} onChange={handleInputChange} />
             </label>
 
             <label className="full">
-              <span>Metodo de pago</span>
+              <span>Método de pago</span>
               <input name="paymentMethod" value={form.paymentMethod} onChange={handleInputChange} placeholder="Tarjeta, transferencia, cuenta..." />
             </label>
 
             <label className="full">
               <span>Notas</span>
-              <textarea name="notes" value={form.notes} onChange={handleInputChange} placeholder="Uso, responsable, restricciones o datos de renovacion" />
+              <textarea name="notes" value={form.notes} onChange={handleInputChange} placeholder="Uso, responsable, restricciones o datos de renovación" />
             </label>
 
             {message && <div className="message-box full">{message}</div>}
 
             <div className="subscription-form-actions full">
-              <button type="submit" className="visual-primary-button" disabled={saving}>
-                {saving ? "Guardando..." : selectedId ? "Guardar cambios" : "Registrar suscripcion"}
+              <button type="button" className="subscription-outline-button" onClick={resetForm}>
+                Limpiar
+              </button>
+              <button type="submit" className="subscription-primary-button" disabled={saving}>
+                {saving ? "Guardando..." : selectedId ? "Guardar cambios" : "Registrar suscripción"}
               </button>
             </div>
           </form>

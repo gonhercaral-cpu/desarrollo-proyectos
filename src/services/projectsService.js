@@ -1602,13 +1602,17 @@ export async function getDashboardProjects() {
 
 export async function getExecutiveDashboardData() {
   const projects = await getAllProjects();
-  const recentLogs = await getRecentProjectLogs(20);
+  const rawRecentLogs = await getRecentProjectLogs(60);
 
   const now = new Date();
 
   const activeProjects = projects.filter(
     (project) => !isHistoricalProject(project)
   );
+  const activeProjectIds = new Set(activeProjects.map((project) => project.id));
+  const recentLogs = rawRecentLogs
+    .filter((log) => log.projectId && activeProjectIds.has(log.projectId))
+    .slice(0, 20);
 
   const historicalProjects = projects.filter((project) =>
     isHistoricalProject(project)

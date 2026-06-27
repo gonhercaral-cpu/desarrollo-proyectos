@@ -20,6 +20,7 @@ import {
 import {
   createTechnicalLocation,
   createTechnicalLocationReview,
+  deleteTechnicalLocation,
   getDefaultTechnicalLocationChecklist,
   getTechnicalLocationReviews,
   getTechnicalLocations,
@@ -878,6 +879,7 @@ export default function TechnicalSupport() {
   const [locationForm, setLocationForm] = useState(EMPTY_LOCATION_FORM);
   const [locationFormError, setLocationFormError] = useState("");
   const [savingLocation, setSavingLocation] = useState(false);
+  const [deletingLocationId, setDeletingLocationId] = useState("");
 
   const [showChecklistEditor, setShowChecklistEditor] = useState(false);
   const [checklistEditorItems, setChecklistEditorItems] = useState([]);
@@ -3676,6 +3678,44 @@ function closeCompletionForm(options = {}) {
       );
     } finally {
       setSavingLocation(false);
+    }
+  }
+
+  async function handleDeleteLocation(location) {
+    if (!location?.id || !isCurrentUserAdmin()) return;
+
+    const relatedAssets = visibleAssets.filter((asset) =>
+      isAssetAssignedToTechnicalLocation(asset, location)
+    );
+    const confirmDelete = window.confirm(
+      `¿Eliminar la ubicación técnica "${location.name || "seleccionada"}"?\n\n${
+        relatedAssets.length > 0
+          ? `Tiene ${relatedAssets.length} equipo(s) relacionado(s). La ubicación se eliminará, pero los equipos conservarán su historial.`
+          : "Esta acción quitará la ubicación del catálogo."
+      }`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      setDeletingLocationId(location.id);
+      setPageError("");
+      await deleteTechnicalLocation(location.id);
+      setTechnicalLocations((current) => current.filter((item) => item.id !== location.id));
+      setSelectedLocationId((current) => {
+        if (current !== location.id) return current;
+
+        const nextLocation = technicalLocations.find((item) => item.id !== location.id);
+        return nextLocation?.id || "";
+      });
+      closeLocationForm();
+      closeChecklistEditor();
+      closeLocationReviewForm();
+    } catch (error) {
+      console.error("No se pudo eliminar la ubicacion tecnica:", error);
+      setPageError("No se pudo eliminar la ubicación técnica. Revisa tus permisos o intenta de nuevo.");
+    } finally {
+      setDeletingLocationId("");
     }
   }
 
@@ -8422,10 +8462,15 @@ function closeCompletionForm(options = {}) {
       } ${focusedSupportViewActive ? "technical-focused-view" : ""}`}
     >
       <section className="technical-page-topbar">
-        <div>
-          <p className="section-kicker">Soporte Técnico</p>
-          <h1>Soporte Técnico</h1>
-          <span>Gestión de equipos y mantenimientos</span>
+        <div className="technical-topbar-main">
+          <span className="technical-topbar-module-icon">
+            <TechnicalTabIcon name="maintenance" />
+          </span>
+          <div className="technical-topbar-copy">
+            <p className="section-kicker">Soporte Técnico</p>
+            <h1>Soporte Técnico</h1>
+            <span>Gestión de equipos y mantenimientos</span>
+          </div>
         </div>
 
         <label className="technical-global-search">
@@ -10905,6 +10950,19 @@ function closeCompletionForm(options = {}) {
                     >
                       Editar ubicación
                     </button>
+
+                    {isCurrentUserAdmin() && (
+                      <button
+                        className="danger-table-button"
+                        type="button"
+                        disabled={deletingLocationId === selectedTechnicalLocation.id}
+                        onClick={() => handleDeleteLocation(selectedTechnicalLocation)}
+                      >
+                        {deletingLocationId === selectedTechnicalLocation.id
+                          ? "Eliminando..."
+                          : "Eliminar ubicación"}
+                      </button>
+                    )}
                   </div>
 
                   <div className="location-detail-grid location-detail-grid-balanced">

@@ -2440,6 +2440,24 @@ function AttendanceControlPanel({
           )}
         </section>
 
+        <section className="attendance-visual-card attendance-visual-location-help-card">
+          <div className="attendance-visual-card-header no-border">
+            <div>
+              <span>?</span>
+              <h4>Asignacion de sede</h4>
+            </div>
+          </div>
+          <p>
+            No necesitas asignar una sede a cada persona. Las sedes activas funcionan como ubicaciones autorizadas generales:
+            cuando alguien inicia jornada dentro del radio permitido de cualquier sede activa, ese tiempo se contabiliza.
+          </p>
+          <ul>
+            <li>Agrega o actualiza sedes desde esta misma seccion.</li>
+            <li>El colaborador debe permitir ubicacion al iniciar jornada.</li>
+            <li>Si inicia fuera del radio, la asistencia aparece como alerta y no cuenta como jornada valida.</li>
+          </ul>
+        </section>
+
         <form className="attendance-visual-card attendance-visual-location-form" onSubmit={onSaveLocation}>
           <div className="attendance-visual-card-header no-border">
             <div>

@@ -617,9 +617,9 @@ function HistoryIcon({ name }) {
   const icons = {
     history: (
       <svg {...commonProps}>
-        <path d="M5.2 4.8h13.6v14.4H5.2V4.8Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-        <path d="M8.2 8.2h7.6M8.2 12h7.6M8.2 15.8h4.7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M3.8 7.4h2.5M3.8 12h2.5M3.8 16.6h2.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M7 7h7a6 6 0 1 1-5.2 9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 7V3" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 7H3" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
     search: (
