@@ -349,6 +349,7 @@ service firebase.storage {
       allow create: if signedIn()
         && hasProfile()
         && request.auth.uid == userUid
+        && canAccessProject(projectId)
         && validEvidenceSize();
 
       allow update, delete: if false;
@@ -363,6 +364,7 @@ service firebase.storage {
 
       allow create: if signedIn()
         && hasProfile()
+        && canAccessProject(projectId)
         && validEvidenceSize();
 
       allow update, delete: if false;

@@ -602,6 +602,21 @@ service cloud.firestore {
 
     function validBugReportCreate() {
       return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "id",
+          "title",
+          "module",
+          "description",
+          "priority",
+          "status",
+          "evidenceFiles",
+          "reporterUid",
+          "reporterName",
+          "reporterEmail",
+          "createdAt",
+          "updatedAt",
+          "lastActivityAt"
+        ])
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.title.size() > 0
@@ -2360,11 +2375,10 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if signedIn() && (
         userId == request.auth.uid ||
-        isAdmin() ||
-        hasProfile()
+        isAdmin()
       );
 
-      allow list: if hasProfile();
+      allow list: if isAdmin();
 
       allow create: if isAdmin();
 
@@ -2376,7 +2390,7 @@ service cloud.firestore {
     match /projects/{projectId} {
       allow get: if canAccessProject();
 
-      allow list: if hasProfile();
+      allow list: if isAdmin() || canAccessProject();
 
       allow create: if adminValidProjectCreate();
 
@@ -2592,7 +2606,7 @@ service cloud.firestore {
 
 
     match /certificateSigners/{signerId} {
-      allow read: if true;
+      allow read: if canAccessPrintshop();
 
       allow create: if isAdmin()
         && validCertificateSignerData();
@@ -2884,7 +2898,7 @@ service cloud.firestore {
     }
 
     match /technicalAssets/{assetId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create, update: if canManageTechnicalSupport();
 
@@ -2892,7 +2906,7 @@ service cloud.firestore {
     }
 
     match /technicalAssetLogs/{logId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create: if canManageTechnicalSupport();
 
@@ -2900,7 +2914,7 @@ service cloud.firestore {
     }
 
     match /technicalMaintenances/{maintenanceId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create, update: if canManageTechnicalSupport();
 
@@ -2908,7 +2922,7 @@ service cloud.firestore {
     }
 
     match /technicalLocations/{locationId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create: if validTechnicalLocationCreate();
 
@@ -2918,7 +2932,7 @@ service cloud.firestore {
     }
 
     match /technicalLocationReviews/{reviewId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create: if validTechnicalLocationReviewCreate();
 
@@ -2928,7 +2942,7 @@ service cloud.firestore {
     }
 
     match /technicalSpareParts/{partId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create, update: if canManageTechnicalSupport();
 
@@ -2936,7 +2950,7 @@ service cloud.firestore {
     }
 
     match /technicalSparePartMovements/{movementId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create: if canManageTechnicalSupport();
 
@@ -2944,7 +2958,7 @@ service cloud.firestore {
     }
 
     match /technicalInstallationTemplates/{templateId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create, update: if canManageTechnicalSupport();
 
@@ -2973,7 +2987,7 @@ service cloud.firestore {
     }
 
     match /technicalInstallations/{installationId} {
-      allow read: if hasProfile();
+      allow read: if canAccessTechnicalSupport();
 
       allow create: if canManageTechnicalSupport();
 
@@ -3009,6 +3023,21 @@ service cloud.firestore {
 
     function validIdeaCreate() {
       return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "title",
+          "category",
+          "currentProblem",
+          "proposedIdea",
+          "expectedBenefit",
+          "evidenceFiles",
+          "evidenceCount",
+          "status",
+          "createdByUid",
+          "createdByName",
+          "createdByEmail",
+          "createdAt",
+          "updatedAt"
+        ])
         && request.resource.data.createdByUid == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.title.size() > 0
@@ -3074,7 +3103,7 @@ service cloud.firestore {
     match /purchaseRequests/{requestId} {
       allow get: if canReadPurchaseRequest();
 
-      allow list: if hasProfile();
+      allow list: if isAdmin() || canReadPurchaseRequest();
 
       allow create: if validPurchaseRequestCreate();
 
