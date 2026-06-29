@@ -328,6 +328,12 @@ export default function PublicCertificateStatus() {
 
       const data = snap.data();
 
+      if (data.deleted === true) {
+        setError("Esta solicitud fue eliminada por Imprenta y ya no tiene seguimiento disponible.");
+        setRequest(null);
+        return;
+      }
+
       if (data.publicTrackingEnabled !== true) {
         setError("Esta solicitud no tiene seguimiento público habilitado.");
         setRequest(null);

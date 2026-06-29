@@ -82,6 +82,16 @@ export async function createUserByAdmin(userData) {
   return result.data;
 }
 
+export async function updateUserByAdmin(userId, data) {
+  const updateUserFunction = httpsCallable(functions, "updateUserByAdmin");
+  const result = await updateUserFunction({
+    uid: userId,
+    ...data,
+  });
+
+  return result.data;
+}
+
 export async function updateUserProfile(userId, data, currentUserProfile) {
   if (!userId) {
     throw new Error("Falta el ID del usuario.");

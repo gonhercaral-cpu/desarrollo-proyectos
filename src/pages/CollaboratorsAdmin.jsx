@@ -8,6 +8,7 @@ import {
   restoreUserProfile,
   sendUserPasswordReset,
   softDeleteUserProfile,
+  updateUserByAdmin,
   updateUserProfile,
 } from "../services/usersService";
 
@@ -478,7 +479,7 @@ export default function CollaboratorsAdmin() {
     setMessage("");
 
     try {
-      await updateUserProfile(
+      await updateUserByAdmin(
         selectedUser.id,
         {
           name: selectedUserDraft.name.trim(),
@@ -493,8 +494,7 @@ export default function CollaboratorsAdmin() {
           privilege: selectedUserDraft.privilege || selectedUserDraft.role,
           active: selectedUserDraft.active,
           notes: selectedUserDraft.notes.trim(),
-        },
-        profile
+        }
       );
 
       if (selectedUser.id === profile?.uid || selectedUser.id === profile?.id) {
@@ -505,7 +505,7 @@ export default function CollaboratorsAdmin() {
       await loadUsers(selectedUser.id);
     } catch (saveError) {
       console.error("No se pudieron guardar los cambios:", saveError);
-      setError("No se pudieron guardar los cambios del colaborador.");
+      setError(saveError?.message || "No se pudieron guardar los cambios del colaborador.");
     } finally {
       setSaving(false);
     }

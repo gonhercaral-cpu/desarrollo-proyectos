@@ -1420,7 +1420,16 @@ service cloud.firestore {
         && request.resource.data.priority is string
         && validPrintRequestPriority(request.resource.data.priority)
         && request.resource.data.requestedQuantity is number
-        && request.resource.data.requestedQuantity > 0
+        && (
+          request.resource.data.requestedQuantity > 0
+          || (
+            isCertificateOrDiplomaRequest()
+            && request.resource.data.students is list
+            && request.resource.data.students.size() == 0
+            && request.resource.data.printedQuantity == 0
+            && request.resource.data.digitalQuantity == 0
+          )
+        )
         && request.resource.data.deliveredQuantity is number
         && request.resource.data.deliveredQuantity >= 0
         && request.resource.data.deliveredQuantity <= request.resource.data.requestedQuantity
@@ -1531,7 +1540,9 @@ service cloud.firestore {
         && validPrintRequestData()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status",
+          "requestedQuantity",
           "deliveredQuantity",
+          "deliveryType",
           "notes",
           "students",
           "certificateIssueDate",

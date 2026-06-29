@@ -73,6 +73,7 @@ function createTemporaryPassword() {
 exports.createUserByAdmin = onCall(
   {
     region: "us-central1",
+    cors: true,
   },
   async (request) => {
     const adminProfile = await assertAdmin(request);
@@ -176,6 +177,118 @@ exports.createUserByAdmin = onCall(
       throw new HttpsError(
         "internal",
         error.message || "No se pudo crear el usuario."
+      );
+    }
+  }
+);
+
+exports.updateUserByAdmin = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+  },
+  async (request) => {
+    const adminProfile = await assertAdmin(request);
+    const data = request.data || {};
+
+    const uid = cleanString(data.uid);
+    const name = cleanString(data.name);
+    const email = cleanString(data.email).toLowerCase();
+    const area = cleanString(data.area);
+    const role = cleanString(data.role) || "collaborator";
+    const privilege = cleanString(data.privilege) || role;
+    const notes = cleanString(data.notes);
+    const active = data.active !== false;
+    const department = cleanString(data.department);
+    const departmentName = cleanString(data.departmentName);
+    const primaryDepartmentId = cleanString(data.primaryDepartmentId);
+    const departmentIds = Array.isArray(data.departmentIds)
+      ? data.departmentIds.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const departmentNames = Array.isArray(data.departmentNames)
+      ? data.departmentNames.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+
+    if (!uid) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Falta el ID del usuario."
+      );
+    }
+
+    if (!name) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El nombre del usuario es obligatorio."
+      );
+    }
+
+    if (!email || !email.includes("@")) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El correo electrÃ³nico no es vÃ¡lido."
+      );
+    }
+
+    if (!ALLOWED_ROLES.includes(role) || !ALLOWED_ROLES.includes(privilege)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "El privilegio seleccionado no es vÃ¡lido."
+      );
+    }
+
+    try {
+      await getAuth().updateUser(uid, {
+        email,
+        displayName: name,
+        disabled: !active,
+      });
+
+      await db.collection("users").doc(uid).update({
+        name,
+        email,
+        area,
+        department,
+        departmentName,
+        departmentIds,
+        departmentNames,
+        primaryDepartmentId,
+        role,
+        privilege,
+        active,
+        notes,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedByUid: adminProfile.uid,
+        updatedByName: adminProfile.name || "",
+        updatedByEmail: adminProfile.email || "",
+      });
+
+      return {
+        ok: true,
+        uid,
+        email,
+        message: "Usuario actualizado correctamente.",
+      };
+    } catch (error) {
+      console.error("Error actualizando usuario:", error);
+
+      if (error.code === "auth/email-already-exists") {
+        throw new HttpsError(
+          "already-exists",
+          "Ya existe un usuario con ese correo electrÃ³nico."
+        );
+      }
+
+      if (error.code === "auth/user-not-found") {
+        throw new HttpsError(
+          "not-found",
+          "No existe este usuario en Firebase Authentication."
+        );
+      }
+
+      throw new HttpsError(
+        "internal",
+        error.message || "No se pudo actualizar el usuario."
       );
     }
   }

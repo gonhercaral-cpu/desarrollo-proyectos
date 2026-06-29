@@ -3845,7 +3845,6 @@ export default function PrintShop() {
     };
 
     const canUseHardDeleteFallback = [
-      "printRequests",
       "printProductionBatches",
       "generatedCredentials",
     ].includes(collectionName);
