@@ -167,6 +167,12 @@ export default function TeamAgenda() {
   const [activePanel, setActivePanel] = useState("");
 
   useEffect(() => {
+    if (!isAdmin) {
+      setTeamUsers([]);
+      setLoadingUsers(false);
+      return undefined;
+    }
+
     setLoadingUsers(true);
     setLoadError("");
 
@@ -191,7 +197,7 @@ export default function TeamAgenda() {
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     setLoadingSchedules(true);
@@ -404,8 +410,19 @@ export default function TeamAgenda() {
     return map;
   }, [currentWeek, scheduleAdjustments]);
 
+  const agendaUsers = useMemo(() => {
+    if (isAdmin) return teamUsers;
+
+    return buildTeamUsersFromPublicScheduleData({
+      workSchedules,
+      scheduleAdjustments,
+      profile,
+      currentUserId,
+    });
+  }, [currentUserId, isAdmin, profile, scheduleAdjustments, teamUsers, workSchedules]);
+
   const team = useMemo(() => {
-    return teamUsers.map((user) => {
+    return agendaUsers.map((user) => {
       const schedules = DAYS.reduce((map, day, index) => {
         const dateValue = currentWeek[index]?.dateValue || "";
         const savedSchedule = scheduleMap[getScheduleKey(user.id, day.key)];
@@ -425,7 +442,7 @@ export default function TeamAgenda() {
         schedules,
       };
     });
-  }, [adjustmentMap, currentWeek, scheduleMap, teamUsers]);
+  }, [adjustmentMap, agendaUsers, currentWeek, scheduleMap]);
 
   const loading = loadingUsers || loadingSchedules || loadingAdjustments;
 
@@ -3116,6 +3133,66 @@ function normalizeUser(id, data = {}) {
     role: data.role || data.privilege || "collaborator",
     active: data.active,
   };
+}
+
+function buildTeamUsersFromPublicScheduleData({
+  workSchedules = [],
+  scheduleAdjustments = [],
+  profile,
+  currentUserId,
+}) {
+  const usersById = new Map();
+
+  function upsertUser(userId, data = {}) {
+    if (!userId) return;
+
+    const id = String(userId);
+    const current = usersById.get(id) || {
+      id,
+      uid: id,
+      docId: id,
+      name: "Usuario sin nombre",
+      email: "",
+      area: "Sin área",
+      role: "collaborator",
+      active: true,
+    };
+
+    usersById.set(id, {
+      ...current,
+      name: data.name || data.userName || current.name,
+      email: data.email || data.userEmail || current.email,
+      area: data.area || data.userArea || current.area,
+      role: data.role || current.role,
+      active: data.active ?? current.active,
+    });
+  }
+
+  workSchedules.forEach((schedule) => {
+    if (schedule?.isActive === false) return;
+
+    upsertUser(schedule.userId, schedule);
+  });
+
+  scheduleAdjustments.forEach((adjustment) => {
+    if (adjustment?.isActive === false) return;
+
+    upsertUser(adjustment.userId, adjustment);
+  });
+
+  if (currentUserId) {
+    upsertUser(currentUserId, {
+      name: profile?.name || profile?.displayName || profile?.email,
+      email: profile?.email || "",
+      area: profile?.area || profile?.department || profile?.departmentName,
+      role: profile?.role || profile?.privilege,
+      active: profile?.active,
+    });
+  }
+
+  return [...usersById.values()]
+    .filter((user) => user.active !== false)
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
 }
 
 function getScheduleKey(userId, dayOfWeek) {
