@@ -69197,3 +69197,307 @@ body #root .main-content .bug-reports-redesign > .bug-module-topbar.printshop-to
     margin-right: 0 !important;
   }
 }
+
+/* Imprenta: detalle de solicitudes en modo oscuro */
+html[data-theme="dark"] .main-content .request-detail-redesign-card {
+  background: var(--bg) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-hero,
+  .request-detail-progress-strip > div,
+  .request-detail-tabs,
+  .request-detail-item,
+  .request-detail-note,
+  .request-role-summary,
+  .request-detail-certificate,
+  .request-detail-certificate-header,
+  .request-students-card,
+  .request-students-summary-pill,
+  .request-bulk-certificate-actions,
+  .request-students-table-wrap,
+  .request-student-validation-card,
+  .request-student-no-folio,
+  .request-certificate-preview-block,
+  .request-certificate-preview-header
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-progress-strip > div,
+  .request-detail-item,
+  .request-students-summary-pill,
+  .request-students-table-wrap,
+  .request-student-validation-card,
+  .request-detail-tabs,
+  .request-bulk-certificate-actions
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-hero span,
+  .request-detail-hero p,
+  .request-detail-status-stack small,
+  .request-detail-progress-strip span,
+  .request-detail-item span,
+  .request-detail-item small,
+  .request-detail-note p,
+  .request-students-header p,
+  .request-students-summary-pill span,
+  .request-student-locked-note,
+  .request-certificate-preview-header p
+) {
+  color: var(--muted) !important;
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-hero strong,
+  .request-detail-progress-strip strong,
+  .request-detail-item strong,
+  .request-detail-note strong,
+  .request-students-header strong,
+  .request-students-summary-pill strong,
+  .request-student-validation-card strong,
+  .request-certificate-preview-header strong
+) {
+  color: var(--text) !important;
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-students-table,
+  .request-students-table thead,
+  .request-students-table tbody,
+  .request-students-table tr,
+  .request-students-table th,
+  .request-students-table td
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-students-table :is(input, select),
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-student-inline-form :is(input, select),
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-student-bulk-form :is(textarea, select) {
+  background: #0b1220 !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-students-table :is(input:disabled, select:disabled) {
+  background: #111827 !important;
+  color: #dbeafe !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-detail-tabs button {
+  background: transparent !important;
+  color: var(--muted) !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-detail-tabs button.active {
+  background: rgba(96, 165, 250, 0.22) !important;
+  color: #dbeafe !important;
+  border-color: rgba(147, 197, 253, 0.34) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shell {
+  background: transparent !important;
+  background-image: none !important;
+  color: inherit !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-stage {
+  background: #f7f8f8 !important;
+  background-image: none !important;
+  color: #0d1f3d !important;
+  border-color: #d5dfe9 !important;
+  box-shadow: 0 20px 55px rgba(2, 8, 23, 0.32) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-stage :is(
+  .certificate-preview-body,
+  .certificate-preview-kicker,
+  .certificate-preview-title,
+  .certificate-preview-to,
+  .certificate-preview-name,
+  .certificate-preview-text,
+  .certificate-preview-date,
+  .certificate-signature-block,
+  .certificate-signature-block strong,
+  .certificate-signature-block span
+) {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-kicker,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-to {
+  color: #202020 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-title,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-name,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-date,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-signature-block,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-signature-block strong {
+  color: #000000 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-text {
+  color: #101010 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-signature-block span {
+  color: #222222 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-copy,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-copy strong,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-copy span {
+  background: transparent !important;
+  color: #183359 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-qr {
+  background: #ffffff !important;
+  border-color: rgba(21, 43, 78, 0.14) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-course-bar {
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shape.shape-one {
+  background: #d5e3d9 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shape.shape-two {
+  background: #cddbcf !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shape.shape-three {
+  background: #e1e9e2 !important;
+}
+
+/* Imprenta: historial de certificados en modo oscuro */
+html[data-theme="dark"] .main-content .generated-certificates-redesign,
+html[data-theme="dark"] .main-content .certificate-history-embedded {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .generated-certificates-redesign .printshop-panel,
+  .generated-certificates-redesign .generated-certificates-toolbar,
+  .generated-certificates-redesign .generated-certificates-toolbar.enhanced,
+  .generated-certificates-redesign .generated-certificates-insights-grid > *,
+  .certificate-history-embedded .card,
+  .certificate-history-embedded .printshop-panel,
+  .certificate-history-card-redesign,
+  .certificate-history-card-list .certificate-history-card,
+  .certificate-history-card-main,
+  .certificate-history-card-content,
+  .certificate-history-title-row,
+  .certificate-history-meta-grid,
+  .certificate-history-card-actions.certificate-actions-modern
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .certificate-history-meta-grid > div,
+  .certificate-history-card-icon,
+  .generated-certificates-redesign .generated-certificates-toolbar label,
+  .generated-certificates-redesign .generated-certificates-toolbar input,
+  .generated-certificates-redesign .generated-certificates-toolbar select
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .certificate-history-title-row strong,
+  .certificate-history-meta-grid strong
+) {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .certificate-history-title-row span,
+  .certificate-history-meta-grid small
+) {
+  background: transparent !important;
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .certificate-history-meta-grid > div:is(:hover, :focus-within) {
+  background: #111827 !important;
+}
+
+html[data-theme="dark"] .main-content .certificate-history-card-actions.certificate-actions-modern .certificate-action-button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Imprenta: Inicio / Trabajo actual en modo oscuro */
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout :is(
+  .printshop-request-card.home-clickable-card,
+  .printshop-request-card,
+  .printshop-small-empty,
+  .printshop-home-footer-link
+) {
+  background: var(--surface-2) !important;
+  background-color: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout .printshop-request-card.home-clickable-card:hover,
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout .printshop-home-footer-link:hover {
+  background: #111827 !important;
+  border-color: rgba(147, 197, 253, 0.34) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout :is(
+  .printshop-request-card strong,
+  .printshop-small-empty strong,
+  .printshop-home-footer-link
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout :is(
+  .printshop-request-card span,
+  .printshop-request-card small,
+  .printshop-small-empty span
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout .printshop-workboard-column + .printshop-workboard-column {
+  border-left-color: var(--border) !important;
+}
