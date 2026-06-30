@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   getProjectHistory,
+  hideProjectFromHistory,
   restoreProject,
 } from "../services/projectsService";
 import {
@@ -16,6 +17,7 @@ export default function ProjectHistory({ onOpenProject }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [restoringProjectId, setRestoringProjectId] = useState("");
+  const [hidingProjectId, setHidingProjectId] = useState("");
 
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
@@ -65,6 +67,33 @@ export default function ProjectHistory({ onOpenProject }) {
       setMessage(error.message || "No se pudo restaurar el proyecto.");
     } finally {
       setRestoringProjectId("");
+    }
+  }
+
+  async function handleHideProjectFromHistory(project) {
+    if (!isAdmin) {
+      setMessage("No tienes permiso para eliminar proyectos del historial.");
+      return;
+    }
+
+    const confirmHide = window.confirm(
+      `Â¿Seguro que deseas eliminar definitivamente el proyecto "${project.title}" del historial?\n\nNo se borrarÃ¡ de Firebase, pero ya no aparecerÃ¡ en el historial ni en los listados del sistema.`
+    );
+
+    if (!confirmHide) return;
+
+    setHidingProjectId(project.id);
+    setMessage("");
+
+    try {
+      await hideProjectFromHistory(project.id, profile);
+      await loadHistory();
+      setMessage("El proyecto fue eliminado definitivamente del historial.");
+    } catch (error) {
+      console.error(error);
+      setMessage(error.message || "No se pudo eliminar el proyecto del historial.");
+    } finally {
+      setHidingProjectId("");
     }
   }
 
@@ -437,16 +466,29 @@ export default function ProjectHistory({ onOpenProject }) {
                             </button>
 
                             {isAdmin && historyType === "Eliminado" && (
-                              <button
-                                type="button"
-                                className="restore-table-button"
-                                disabled={restoringProjectId === project.id}
-                                onClick={() => handleRestoreProject(project)}
-                              >
-                                {restoringProjectId === project.id
-                                  ? "Restaurando..."
-                                  : "Restaurar"}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="restore-table-button"
+                                  disabled={restoringProjectId === project.id}
+                                  onClick={() => handleRestoreProject(project)}
+                                >
+                                  {restoringProjectId === project.id
+                                    ? "Restaurando..."
+                                    : "Restaurar"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="danger-table-button"
+                                  disabled={hidingProjectId === project.id}
+                                  onClick={() => handleHideProjectFromHistory(project)}
+                                >
+                                  {hidingProjectId === project.id
+                                    ? "Eliminando..."
+                                    : "Eliminar definitivamente"}
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>

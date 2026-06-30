@@ -208,7 +208,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   async function handleStatusChange(nextStatus) {
     if (!project || !nextStatus || nextStatus === project.status) return;
 
-    if (isHistoricalProject(project)) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se puede cambiar el estado de un proyecto que está en historial.");
       return;
     }
@@ -241,6 +241,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       if (isClosingStatus) {
         updateData.closedAt = project.closedAt || now;
         updateData.closedByUid = firebaseUser?.uid || "";
+        updateData.closedByEmail = firebaseUser?.email || "";
         updateData.closedByName =
           profile?.name || firebaseUser?.email || "Usuario";
       }
@@ -248,7 +249,16 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       if (isAdmin && !isClosingStatus) {
         updateData.closedAt = null;
         updateData.closedByUid = "";
+        updateData.closedByEmail = "";
         updateData.closedByName = "";
+        updateData.finishedAt = null;
+        updateData.finishedByUid = "";
+        updateData.finishedByEmail = "";
+        updateData.finishedByName = "";
+        updateData.cancelledAt = null;
+        updateData.cancelledByUid = "";
+        updateData.cancelledByEmail = "";
+        updateData.cancelledByName = "";
       }
 
       await updateDoc(projectRef, updateData);
@@ -288,7 +298,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     if (!files.length || !project) return;
 
-    if (isHistoricalProject(project)) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden subir evidencias a un proyecto que está en historial.");
       event.target.value = "";
       return;
@@ -410,7 +420,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     if (!cleanComment || !project) return;
 
-    if (isHistoricalProject(project)) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden agregar comentarios a un proyecto que está en historial.");
       return;
     }
@@ -488,7 +498,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     if (!project || (!cleanAdvance && advanceFiles.length === 0)) return;
 
-    if (isHistoricalProject(project)) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden publicar avances en un proyecto que está en historial.");
       return;
     }
@@ -625,7 +635,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     if (!cleanComment || !project || !targetId) return;
 
-    if (isHistoricalProject(project)) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden agregar comentarios a un proyecto que está en historial.");
       return;
     }
@@ -692,7 +702,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   async function handleReviewEvidence(file, reviewStatus) {
     if (!project || !file || !isAdmin) return;
 
-    if (projectIsHistorical) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se puede revisar evidencia de un proyecto que está en historial.");
       return;
     }
@@ -729,7 +739,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   async function handleSaveInternalNotes() {
     if (!project || !isAdmin) return;
 
-    if (isHistoricalProject(project)) {
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden agregar notas internas a un proyecto que está en historial.");
       return;
     }
@@ -932,6 +942,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
   const daysDifference = getDaysDifference(project?.deadline);
   const projectIsHistorical = isHistoricalProject(project);
+  const canEditClosedProject = canAdministrativelyCorrectProject(project, isAdmin);
   const isClosed = CLOSED_STATUSES.includes(project?.status) || projectIsHistorical;
   const isOverdue = daysDifference !== null && daysDifference < 0 && !isClosed;
   const automaticProgress = calculateAutomaticProgress(project);
@@ -994,11 +1005,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           <select
             className="status-change-select status-pill-select project-screen-status-select"
             value={project.status || ""}
-            disabled={changingStatus || projectIsHistorical}
+            disabled={changingStatus || !canEditClosedProject}
             onChange={(event) => handleStatusChange(event.target.value)}
           >
             <option value="">
-              {projectIsHistorical ? "Proyecto en historial" : "Cambiar estado"}
+              {!canEditClosedProject ? "Proyecto en historial" : "Cambiar estado"}
             </option>
 
             {availableStatuses.map((status) => (
@@ -1008,7 +1019,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
             ))}
           </select>
 
-          {isAdmin && !projectIsHistorical && (
+          {isAdmin && canEditClosedProject && (
             <button
               type="button"
               className="visual-primary-button"
@@ -1028,7 +1039,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
       {message && <div className="message-box">{message}</div>}
 
-      {projectIsHistorical && (
+      {projectIsHistorical && !canEditClosedProject && (
         <div className="history-warning-card">
           <div>
             <strong>Este proyecto está en historial</strong>
@@ -1154,7 +1165,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 <input
                   type="file"
                   multiple
-                  disabled={uploading || projectIsHistorical}
+                  disabled={uploading || !canEditClosedProject}
                   onChange={handleUploadEvidence}
                 />
               </label>
@@ -1217,10 +1228,10 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               <div className="advance-composer-box">
                 <textarea
                   value={newAdvance}
-                  disabled={publishingAdvance || projectIsHistorical}
+                  disabled={publishingAdvance || !canEditClosedProject}
                   onChange={(event) => setNewAdvance(event.target.value)}
                   placeholder={
-                    projectIsHistorical
+                    !canEditClosedProject
                       ? "Los avances están deshabilitados porque el proyecto está en historial."
                       : "Describe tu avance..."
                   }
@@ -1233,7 +1244,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     <input
                       type="file"
                       multiple
-                      disabled={publishingAdvance || projectIsHistorical}
+                      disabled={publishingAdvance || !canEditClosedProject}
                       onChange={handleAdvanceFilesChange}
                     />
                   </label>
@@ -1247,7 +1258,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     className="visual-primary-button publish-advance-button"
                     disabled={
                       publishingAdvance ||
-                      projectIsHistorical ||
+                      !canEditClosedProject ||
                       (!newAdvance.trim() && advanceFiles.length === 0)
                     }
                   >
@@ -1309,7 +1320,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                           <button
                             type="button"
                             className="advance-comment-toggle"
-                            disabled={projectIsHistorical}
+                            disabled={!canEditClosedProject}
                             onClick={() => {
                               setActiveCommentTarget(
                                 activeCommentTarget === advance.id ? null : advance.id
@@ -1366,7 +1377,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                                     )}
                                   </div>
 
-                                  {isAdmin && !projectIsHistorical && (
+                                  {isAdmin && canEditClosedProject && (
                                     <div className="evidence-review-actions">
                                       <button
                                         type="button"
@@ -1428,7 +1439,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                             <textarea
                               rows={2}
                               value={advanceCommentDraft}
-                              disabled={addingAdvanceComment || projectIsHistorical}
+                              disabled={addingAdvanceComment || !canEditClosedProject}
                               onChange={(event) =>
                                 setAdvanceCommentDraft(event.target.value)
                               }
@@ -1441,7 +1452,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                                 className="visual-primary-button"
                                 disabled={
                                   addingAdvanceComment ||
-                                  projectIsHistorical ||
+                                  !canEditClosedProject ||
                                   !advanceCommentDraft.trim()
                                 }
                               >
@@ -1581,7 +1592,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               <div className="section-header-with-action compact-action-header">
                 <SectionTitle icon={<SvgIcon name="note" />} title="Notas internas" color="purple" />
 
-                {!editingInternalNotes && !projectIsHistorical && (
+                {!editingInternalNotes && canEditClosedProject && (
                   <button
                     type="button"
                     className="visual-outline-button"
@@ -1605,7 +1616,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     rows={5}
                     maxLength={500}
                     value={internalNotesDraft}
-                    disabled={savingInternalNotes || projectIsHistorical}
+                    disabled={savingInternalNotes || !canEditClosedProject}
                     onChange={(event) =>
                       setInternalNotesDraft(event.target.value)
                     }
@@ -1622,7 +1633,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                       className="visual-primary-button"
                       disabled={
                         savingInternalNotes ||
-                        projectIsHistorical ||
+                        !canEditClosedProject ||
                         !internalNotesDraft.trim()
                       }
                       onClick={handleSaveInternalNotes}
@@ -1776,7 +1787,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           </section>
 
           {isAdmin &&
-            !projectIsHistorical &&
+            canEditClosedProject &&
             project.status === "Listo para revisión" && (
             <section className="admin-review-visual-card">
               <div>
@@ -1810,7 +1821,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           )}
 
           {isAdmin &&
-            !projectIsHistorical &&
+            canEditClosedProject &&
             project.status === "Aprobado para entrega" && (
             <section className="admin-review-visual-card">
               <div>
@@ -2399,6 +2410,24 @@ function isHistoricalProject(project) {
     Boolean(project?.cancelledAt) ||
     Boolean(project?.archivedAt)
   );
+}
+
+function isArchivedOrDeletedProject(project) {
+  return (
+    project?.deleted === true ||
+    project?.archived === true ||
+    project?.status === "Eliminado" ||
+    project?.status === "Archivado" ||
+    Boolean(project?.deletedAt) ||
+    Boolean(project?.archivedAt)
+  );
+}
+
+function canAdministrativelyCorrectProject(project, isAdmin) {
+  if (!project) return false;
+  if (!isHistoricalProject(project)) return true;
+
+  return isAdmin && !isArchivedOrDeletedProject(project);
 }
 
 function normalizeLegacyLogType(type = "") {

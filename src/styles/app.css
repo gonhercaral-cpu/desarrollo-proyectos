@@ -2173,6 +2173,7 @@ select:focus {
 .table-actions {
   display: flex;
   gap: 7px;
+  flex-wrap: wrap;
 }
 
 .table-actions button {
@@ -4777,6 +4778,16 @@ body {
 .danger-table-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.table-actions .danger-table-button {
+  color: #b42318 !important;
+  border-color: #fecdca !important;
+  background: #fff5f5 !important;
+}
+
+.table-actions .danger-table-button:hover {
+  background: #fee4e2 !important;
 }
 
 .table-actions .restore-table-button {
@@ -67191,6 +67202,81 @@ html[data-theme="dark"] .main-content :is(
   color: var(--muted) !important;
 }
 
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-documents-card,
+  .project-document-card,
+  .advances-card,
+  .advance-entry,
+  .advance-file-review-card,
+  .internal-notes-admin-card,
+  .internal-notes-editor,
+  .internal-note-history-item,
+  .internal-note-preview,
+  .legacy-internal-note,
+  .empty-state
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: 0 12px 28px rgba(2, 8, 23, 0.28) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .advance-composer-box,
+  .advance-comment-form,
+  .advance-comment,
+  .advance-file-chip,
+  .project-documents-upload-button,
+  .attach-evidence-chip,
+  .selected-advance-files,
+  .internal-notes-editor textarea,
+  .advance-composer-box textarea,
+  .advance-comment-form textarea
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-documents-header,
+  .internal-notes-history-header
+) {
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-document-card strong,
+  .advance-entry-header strong,
+  .advance-file-chip strong,
+  .advance-comment strong,
+  .internal-note-history-top strong,
+  .internal-notes-history-header strong,
+  .internal-note-preview p,
+  .advance-entry > p
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-documents-header p,
+  .project-document-card small,
+  .advances-header p,
+  .advance-entry-meta small,
+  .advance-file-chip small,
+  .advance-entry-actions,
+  .advance-help-text,
+  .advance-comment p,
+  .advance-comment small,
+  .internal-notes-admin-help,
+  .internal-note-history-top small,
+  .empty-state p
+) {
+  color: var(--muted) !important;
+}
+
 html[data-theme="dark"] .main-content :is(
   .subscription-topbar-main,
   .subscription-topbar-copy,
@@ -69651,4 +69737,102 @@ body #root .main-content .project-detail-page .project-screen-topbar .project-sc
   body #root .main-content .my-projects-redesign .my-project-delete-button-v2 {
     width: 100% !important;
   }
+}
+
+/* Project detail dark mode: keep nested cards and editors from falling back to white. */
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .visual-card,
+  .project-hero-overview,
+  .description-focus-card,
+  .project-documents-card,
+  .advances-card,
+  .formal-log-card,
+  .side-compact-card,
+  .internal-notes-admin-card,
+  .admin-review-visual-card
+) {
+  background: linear-gradient(180deg, #121826, #0f172a) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  color: #e5edf8 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .advance-composer-box,
+  .advance-entry,
+  .advance-file-review-card,
+  .advance-file-chip,
+  .advance-comment-form,
+  .advance-comment,
+  .selected-advance-files,
+  .project-document-card,
+  .internal-notes-editor,
+  .internal-note-history-item,
+  .internal-note-preview,
+  .legacy-internal-note,
+  .formal-log-table-row,
+  .info-item,
+  .responsible-item,
+  .action-item,
+  .comment-item
+) {
+  background: #111827 !important;
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  color: #e5edf8 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  input,
+  select,
+  textarea,
+  .status-pill-select,
+  .advance-comment-toggle,
+  .attach-evidence-chip,
+  .project-documents-upload-button
+) {
+  background: #0b1220 !important;
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  h2,
+  h3,
+  h4,
+  strong,
+  .detail-section-title h3,
+  .advance-entry-header strong,
+  .advance-file-chip strong,
+  .project-document-card strong,
+  .internal-notes-history-header strong,
+  .internal-note-history-top strong
+) {
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  p,
+  small,
+  .prominent-description,
+  .advances-header p,
+  .advance-entry > p,
+  .advance-entry-meta small,
+  .advance-file-chip small,
+  .advance-help-text,
+  .internal-notes-admin-help,
+  .internal-note-history-item p,
+  .formal-log-table-row > span,
+  .formal-log-table-row p
+) {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .description-focus-icon,
+  .project-document-icon,
+  .legacy-note-icon,
+  .internal-note-preview span
+) {
+  background: rgba(96, 165, 250, 0.16) !important;
+  color: #bfdbfe !important;
 }

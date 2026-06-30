@@ -125,6 +125,8 @@ function isVisibleProject(project) {
 
   return (
     project.deleted !== true &&
+    project.hiddenFromHistory !== true &&
+    project.permanentlyHiddenFromHistory !== true &&
     project.active !== false &&
     status !== "inactive" &&
     status !== "inactivo"
@@ -747,6 +749,8 @@ export async function createProject(projectData, currentUser) {
     assignedToName: projectData.assignedToName || "",
 
     deleted: false,
+    hiddenFromHistory: false,
+    permanentlyHiddenFromHistory: false,
     deletedAt: null,
     deletedByUid: "",
     deletedByEmail: "",
@@ -814,10 +818,16 @@ export async function getAllProjects() {
 
   const snapshot = await getDocs(q);
 
-  return snapshot.docs.map((document) => ({
-    id: document.id,
-    ...document.data(),
-  }));
+  return snapshot.docs
+    .map((document) => ({
+      id: document.id,
+      ...document.data(),
+    }))
+    .filter(
+      (project) =>
+        project.hiddenFromHistory !== true &&
+        project.permanentlyHiddenFromHistory !== true
+    );
 }
 
 export async function getActiveProjects() {
@@ -983,12 +993,28 @@ export async function updateProjectStatus(projectId, updateData, currentUser) {
     ...(shouldCloseProject
       ? {
           closedAt: serverTimestamp(),
+          closedByUid: currentUserUid,
+          closedByEmail: currentUser.email || "",
+          closedByName: currentUser.name || "",
           finishedAt: serverTimestamp(),
           finishedByUid: currentUserUid,
           finishedByEmail: currentUser.email || "",
           finishedByName: currentUser.name || "",
         }
-      : {}),
+      : {
+          closedAt: null,
+          closedByUid: "",
+          closedByEmail: "",
+          closedByName: "",
+          finishedAt: null,
+          finishedByUid: "",
+          finishedByEmail: "",
+          finishedByName: "",
+          cancelledAt: null,
+          cancelledByUid: "",
+          cancelledByEmail: "",
+          cancelledByName: "",
+        }),
   });
 
   await addProjectUpdate({
@@ -1074,6 +1100,47 @@ export async function softDeleteProject(projectId, currentUser) {
   });
 }
 
+export async function hideProjectFromHistory(projectId, currentUser) {
+  requireAdmin(currentUser);
+
+  const project = await getProjectById(projectId);
+
+  if (!project) {
+    throw new Error("Proyecto no encontrado.");
+  }
+
+  if (!isHistoricalProject(project)) {
+    throw new Error("Solo se pueden ocultar proyectos que ya estÃ¡n en historial.");
+  }
+
+  const userAuditData = getUserAuditData(currentUser);
+  const projectRef = doc(db, PROJECTS_COLLECTION, projectId);
+
+  await updateDoc(projectRef, {
+    hiddenFromHistory: true,
+    permanentlyHiddenFromHistory: true,
+    hiddenFromHistoryAt: serverTimestamp(),
+    hiddenFromHistoryByUid: userAuditData.uid,
+    hiddenFromHistoryByEmail: userAuditData.email,
+    hiddenFromHistoryByName: userAuditData.name,
+    updatedAt: serverTimestamp(),
+  });
+
+  await addProjectLog({
+    projectId,
+    type: PROJECT_LOG_TYPES.PROJECT_DELETED,
+    title: "Proyecto oculto del historial",
+    description: `${
+      userAuditData.name || userAuditData.email || "Un administrador"
+    } eliminÃ³ definitivamente el proyecto de los Ã­ndices visibles.`,
+    currentUser,
+    metadata: {
+      oldStatus: project.status || "",
+      hiddenFromHistory: true,
+    },
+  });
+}
+
 export async function restoreProject(projectId, currentUser) {
   requireAdmin(currentUser);
 
@@ -1091,6 +1158,12 @@ export async function restoreProject(projectId, currentUser) {
   await updateDoc(projectRef, {
     status: restoredStatus,
     deleted: false,
+    hiddenFromHistory: false,
+    permanentlyHiddenFromHistory: false,
+    hiddenFromHistoryAt: null,
+    hiddenFromHistoryByUid: "",
+    hiddenFromHistoryByEmail: "",
+    hiddenFromHistoryByName: "",
     deletedAt: null,
     deletedByUid: "",
     deletedByEmail: "",
@@ -1582,12 +1655,28 @@ export async function updateProjectAdmin(projectId, projectData, currentUser) {
     ...(shouldCloseProject
       ? {
           closedAt: serverTimestamp(),
+          closedByUid: getCurrentUserUid(currentUser),
+          closedByEmail: currentUser.email || "",
+          closedByName: currentUser.name || "",
           finishedAt: serverTimestamp(),
           finishedByUid: getCurrentUserUid(currentUser),
           finishedByEmail: currentUser.email || "",
           finishedByName: currentUser.name || "",
         }
-      : {}),
+      : {
+          closedAt: null,
+          closedByUid: "",
+          closedByEmail: "",
+          closedByName: "",
+          finishedAt: null,
+          finishedByUid: "",
+          finishedByEmail: "",
+          finishedByName: "",
+          cancelledAt: null,
+          cancelledByUid: "",
+          cancelledByEmail: "",
+          cancelledByName: "",
+        }),
   });
 
   await addProjectUpdate({
