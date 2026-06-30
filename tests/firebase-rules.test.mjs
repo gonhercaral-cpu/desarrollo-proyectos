@@ -68,6 +68,14 @@ async function seedBaseData() {
         active: true,
         area: "Soporte Técnico",
       }),
+      setDoc(doc(db, "users", "printer"), {
+        name: "Printer",
+        email: "printer@test.local",
+        role: "collaborator",
+        active: true,
+        area: "Imprenta",
+        departments: ["Imprenta"],
+      }),
       setDoc(doc(db, "users", "inactive"), {
         name: "Inactive",
         email: "inactive@test.local",
@@ -104,6 +112,13 @@ async function seedBaseData() {
       setDoc(doc(db, "technicalAssets", "asset-1"), {
         name: "Router",
         status: "Activo",
+      }),
+      setDoc(doc(db, "printRequests", "cert-request-1"), {
+        folio: "IMP-2026-0001",
+        requestType: "Certificado",
+        responsibleUid: "printer",
+        status: "En producciÃ³n",
+        deleted: false,
       }),
     ]);
   });
@@ -143,6 +158,143 @@ function validIdea(overrides = {}) {
     createdByEmail: "requester@test.local",
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
+    ...overrides,
+  };
+}
+
+function validStandaloneCertificate(overrides = {}) {
+  return {
+    folio: "CERT-2026-IND-00001",
+    validationCode: "CERT-2026-IND-00001-DEMO",
+    validationUrl: "https://active.test/validar-certificado/CERT-2026-IND-00001-DEMO",
+    studentId: "individual-student-1",
+    studentName: "Alumno Demo",
+    studentDeliveryType: "Digital",
+    campus: "Plaza Estrella",
+    group: "",
+    requestId: "",
+    requestFolio: "IND-2026-00001",
+    generationMode: "individual",
+    requestType: "Certificado",
+    productId: "",
+    productName: "Certificado individual",
+    responsibleUid: "printer",
+    responsibleName: "Printer",
+    responsibleEmail: "printer@test.local",
+    level: "A1",
+    programName: "Journey",
+    templateId: "template-1",
+    templateName: "Certificado Journey",
+    issueDate: "2026-06-30",
+    issueYear: "2026",
+    generatedYear: "2026",
+    principalName: "Principal Demo",
+    teacherName: "Teacher Demo",
+    status: "Generado",
+    pdfFileName: "CERT-2026-IND-00001.pdf",
+    pdfUrl: "",
+    pdfStoragePath: "",
+    generatedAt: Timestamp.now(),
+    generatedByUid: "printer",
+    generatedByName: "Printer",
+    generatedByEmail: "printer@test.local",
+    updatedAt: Timestamp.now(),
+    updatedByUid: "printer",
+    updatedByName: "Printer",
+    updatedByEmail: "printer@test.local",
+    ...overrides,
+  };
+}
+
+function validStandaloneCertificateValidation(overrides = {}) {
+  const certificate = validStandaloneCertificate();
+
+  return {
+    validationCode: certificate.validationCode,
+    folio: certificate.folio,
+    validationUrl: certificate.validationUrl,
+    studentName: certificate.studentName,
+    level: certificate.level,
+    programName: certificate.programName,
+    requestType: certificate.requestType,
+    productName: certificate.productName,
+    templateName: certificate.templateName,
+    issueDate: certificate.issueDate,
+    issueYear: certificate.issueYear,
+    campus: certificate.campus,
+    teacherName: certificate.teacherName,
+    status: certificate.status,
+    institution: "Active English School",
+    requestId: "",
+    generationMode: "individual",
+    updatedAt: Timestamp.now(),
+    ...overrides,
+  };
+}
+
+function validGeneratedCertificate(overrides = {}) {
+  return {
+    folio: "CERT-2026-A1-0001-001",
+    validationCode: "CERT-2026-A1-0001-001-ABC123",
+    validationUrl: "https://active-english-school.web.app/validar-certificado/CERT-2026-A1-0001-001-ABC123",
+    studentId: "student-1",
+    studentName: "Alumno Prueba",
+    studentDeliveryType: "Digital",
+    campus: "Plaza Estrella",
+    group: "Grupo Teacher",
+    requestId: "cert-request-1",
+    requestFolio: "IMP-2026-0001",
+    requestType: "Certificado",
+    productId: "",
+    productName: "Certificado A1",
+    responsibleUid: "printer",
+    responsibleName: "Printer",
+    responsibleEmail: "printer@test.local",
+    level: "A1",
+    programName: "Journey",
+    templateId: "template-1",
+    templateName: "Plantilla A1",
+    issueDate: "2026-06-30",
+    issueYear: "2026",
+    generatedYear: "2026",
+    principalName: "Principal",
+    teacherName: "Teacher",
+    status: "Generado",
+    pdfFileName: "certificado.pdf",
+    pdfUrl: "",
+    pdfStoragePath: "",
+    generatedAt: Timestamp.now(),
+    generatedByUid: "printer",
+    generatedByName: "Printer",
+    generatedByEmail: "printer@test.local",
+    updatedAt: Timestamp.now(),
+    updatedByUid: "printer",
+    updatedByName: "Printer",
+    updatedByEmail: "printer@test.local",
+    ...overrides,
+  };
+}
+
+function validPublicCertificateValidation(overrides = {}) {
+  return {
+    validationCode: "CERT-2026-A1-0001-001-ABC123",
+    folio: "CERT-2026-A1-0001-001",
+    validationUrl: "https://active-english-school.web.app/validar-certificado/CERT-2026-A1-0001-001-ABC123",
+    studentName: "Alumno Prueba",
+    level: "A1",
+    programName: "Journey",
+    requestType: "Certificado",
+    productName: "Certificado A1",
+    templateName: "Plantilla A1",
+    issueDate: "2026-06-30",
+    issueYear: "2026",
+    campus: "Plaza Estrella",
+    teacherName: "Teacher",
+    status: "Generado",
+    institution: "Active English School",
+    requestId: "cert-request-1",
+    updatedAt: Timestamp.now(),
+    publishedAt: Timestamp.now(),
     ...overrides,
   };
 }
@@ -254,6 +406,114 @@ describe("mass assignment", () => {
         approvedBy: "requester",
         deleted: true,
       })
+    );
+  });
+});
+
+describe("certificados individuales", () => {
+  it("permite registrar historial y validacion publica sin solicitud", async () => {
+    const db = auth("printer");
+    const certificateId = "CERT-2026-IND-00001-DEMO";
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "generatedCertificates", certificateId),
+        validStandaloneCertificate()
+      )
+    );
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "publicCertificateValidations", certificateId),
+        validStandaloneCertificateValidation()
+      )
+    );
+
+    await assertSucceeds(
+      getDoc(doc(unauth(), "publicCertificateValidations", certificateId))
+    );
+  });
+
+  it("rechaza certificado individual sin generationMode", async () => {
+    const db = auth("printer");
+
+    await assertFails(
+      setDoc(
+        doc(db, "generatedCertificates", "missing-generation-mode"),
+        validStandaloneCertificate({ generationMode: "" })
+      )
+    );
+  });
+});
+
+describe("certificados de imprenta", () => {
+  it("permite registrar certificado ligado a solicitud y su validacion publica", async () => {
+    const db = auth("printer");
+    const certificateId = "CERT-2026-A1-0001-001-ABC123";
+
+    await assertSucceeds(
+      setDoc(doc(db, "generatedCertificates", certificateId), validGeneratedCertificate())
+    );
+
+    await assertSucceeds(
+      setDoc(doc(db, "publicCertificateValidations", certificateId), validPublicCertificateValidation())
+    );
+
+    await assertSucceeds(getDoc(doc(unauth(), "publicCertificateValidations", certificateId)));
+  });
+
+  it("permite registrar certificado individual sin solicitud y validarlo por QR", async () => {
+    const db = auth("printer");
+    const certificateId = "CERT-2026-A1-IND-001-XYZ789";
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "generatedCertificates", certificateId),
+        validGeneratedCertificate({
+          folio: "CERT-2026-A1-IND-001",
+          validationCode: certificateId,
+          validationUrl: `https://active-english-school.web.app/validar-certificado/${certificateId}`,
+          studentId: "individual-student-1",
+          requestId: "",
+          requestFolio: "Individual",
+          generationMode: "individual",
+          productName: "Certificado individual",
+        })
+      )
+    );
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "publicCertificateValidations", certificateId),
+        validPublicCertificateValidation({
+          folio: "CERT-2026-A1-IND-001",
+          validationCode: certificateId,
+          validationUrl: `https://active-english-school.web.app/validar-certificado/${certificateId}`,
+          requestId: "",
+          generationMode: "individual",
+          productName: "Certificado individual",
+        })
+      )
+    );
+
+    await assertSucceeds(getDoc(doc(unauth(), "publicCertificateValidations", certificateId)));
+  });
+
+  it("bloquea certificado individual a usuario sin acceso a imprenta", async () => {
+    const db = auth("collab");
+
+    await assertFails(
+      setDoc(
+        doc(db, "generatedCertificates", "CERT-2026-A1-IND-002-XYZ789"),
+        validGeneratedCertificate({
+          folio: "CERT-2026-A1-IND-002",
+          validationCode: "CERT-2026-A1-IND-002-XYZ789",
+          requestId: "",
+          requestFolio: "Individual",
+          generationMode: "individual",
+          productName: "Certificado individual",
+        })
+      )
     );
   });
 });

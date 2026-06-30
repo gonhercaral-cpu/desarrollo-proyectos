@@ -6070,6 +6070,7 @@ export default function PrintShop() {
       group: request.group || "",
       requestId: "",
       requestFolio: request.folio || "Individual",
+      generationMode: "individual",
       requestType: request.requestType || "Certificado",
       productId: request.productId || "",
       productName: request.productName || "Certificado individual",
@@ -14744,6 +14745,7 @@ function normalizeGeneratedCertificate(certificate) {
     group: String(certificate?.group || ""),
     requestId: String(certificate?.requestId || ""),
     requestFolio: String(certificate?.requestFolio || ""),
+    generationMode: certificate?.generationMode === "individual" ? "individual" : "request",
     requestType: String(certificate?.requestType || "Certificado"),
     productId: String(certificate?.productId || ""),
     productName: String(certificate?.productName || ""),
@@ -14838,6 +14840,7 @@ function buildPublicCertificateValidationPayload(certificate, overrides = {}) {
     status: generatedCertificateStatuses.includes(source.status) ? source.status : "Generado",
     institution: "Active English School",
     requestId: String(source.requestId || ""),
+    generationMode: source.generationMode === "individual" ? "individual" : "request",
     updatedAt: serverTimestamp(),
   };
 }

@@ -1613,6 +1613,8 @@ service cloud.firestore {
 
     function canManageGeneratedCertificateRequest(requestId) {
       return hasProfile()
+        && requestId is string
+        && requestId.size() > 0
         && printRequestExists(requestId)
         && (
           isAdmin() ||
@@ -1621,6 +1623,40 @@ service cloud.firestore {
             && printRequestData(requestId).responsibleUid == request.auth.uid
           )
         );
+    }
+
+    function isStandaloneGeneratedCertificateData() {
+      return request.resource.data.requestId == ""
+        && request.resource.data.generationMode == "individual";
+    }
+
+    function isStandaloneGeneratedCertificateResource() {
+      return resource.data.requestId == ""
+        && resource.data.generationMode == "individual";
+    }
+
+    function canManageGeneratedCertificateData() {
+      return canManageGeneratedCertificateRequest(request.resource.data.requestId)
+        || (
+          canAccessPrintshop()
+          && isStandaloneGeneratedCertificateData()
+        );
+    }
+
+    function canManageGeneratedCertificateResource() {
+      return canManageGeneratedCertificateRequest(resource.data.requestId)
+        || (
+          canAccessPrintshop()
+          && isStandaloneGeneratedCertificateResource()
+        );
+    }
+
+    function validGeneratedCertificateRequestReference() {
+      return (
+          request.resource.data.requestId.size() > 0
+          && printRequestExists(request.resource.data.requestId)
+        )
+        || isStandaloneGeneratedCertificateData();
     }
 
     function validGeneratedCertificateStatus(status) {
@@ -1643,8 +1679,9 @@ service cloud.firestore {
         && request.resource.data.studentName.size() > 0
         && request.resource.data.studentDeliveryType is string
         && request.resource.data.requestId is string
-        && printRequestExists(request.resource.data.requestId)
+        && validGeneratedCertificateRequestReference()
         && request.resource.data.requestFolio is string
+        && (!("generationMode" in request.resource.data) || request.resource.data.generationMode in ["request", "individual"])
         && request.resource.data.requestType is string
         && request.resource.data.productId is string
         && request.resource.data.productName is string
@@ -1699,7 +1736,17 @@ service cloud.firestore {
         && validGeneratedCertificateStatus(request.resource.data.status)
         && request.resource.data.institution is string
         && request.resource.data.requestId is string
-        && printRequestExists(request.resource.data.requestId);
+        && (
+          (
+            request.resource.data.requestId.size() > 0
+            && printRequestExists(request.resource.data.requestId)
+          )
+          || (
+            request.resource.data.requestId == ""
+            && request.resource.data.generationMode == "individual"
+          )
+        )
+        && (!("generationMode" in request.resource.data) || request.resource.data.generationMode in ["request", "individual"]);
     }
 
     function validGeneratedCredentialData() {
@@ -2672,11 +2719,11 @@ service cloud.firestore {
     match /generatedCertificates/{certificateId} {
       allow read: if canAccessPrintshop();
 
-      allow create: if canManageGeneratedCertificateRequest(request.resource.data.requestId)
+      allow create: if canManageGeneratedCertificateData()
         && validGeneratedCertificateData();
 
       allow update: if (
-          canManageGeneratedCertificateRequest(resource.data.requestId)
+          canManageGeneratedCertificateResource()
           && validGeneratedCertificateData()
         )
         || validPrintshopSoftDeleteUpdate();
@@ -2711,7 +2758,7 @@ service cloud.firestore {
     match /publicCertificateValidations/{validationId} {
       allow read: if true;
 
-      allow create, update: if canManageGeneratedCertificateRequest(request.resource.data.requestId)
+      allow create, update: if canManageGeneratedCertificateData()
         && validPublicCertificateValidationData();
 
       allow delete: if false;
