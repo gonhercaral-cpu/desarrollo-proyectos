@@ -2920,7 +2920,7 @@ function InternalMessages({ profile, isAdmin = false }) {
     if (!currentUserId) return undefined;
 
     return onSnapshot(
-      collection(db, "users"),
+      query(collection(db, "users"), where("active", "==", true)),
       (snapshot) => {
         const nextCollaborators = snapshot.docs
           .map((userDoc) => ({ id: userDoc.id, ...userDoc.data() }))

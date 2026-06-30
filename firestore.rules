@@ -2389,7 +2389,11 @@ service cloud.firestore {
         isAdmin()
       );
 
-      allow list: if isAdmin();
+      allow list: if isAdmin()
+        || (
+          hasProfile()
+          && resource.data.active == true
+        );
 
       allow create: if isAdmin();
 
