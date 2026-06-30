@@ -141,6 +141,10 @@ service cloud.firestore {
       return isAdmin() || isTechnicalSupportUser();
     }
 
+    function canAccessTechnicalSupport() {
+      return canManageTechnicalSupport();
+    }
+
     function isPrintshopUser() {
       return hasProfile()
         && (

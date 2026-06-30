@@ -239,12 +239,7 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
     },
   ];
 
-  const projectStatusData = [
-    { key: "active", label: "Activos", value: metrics.active || 0, tone: "teal" },
-    { key: "pending", label: "Pendientes", value: Math.max(metrics.overdue || 0, dueSoonProjects.length), tone: "gold" },
-    { key: "review", label: "En revisión", value: metrics.review || 0, tone: "blue" },
-    { key: "completed", label: "Completados", value: metrics.finishedThisMonth || 0, tone: "green" },
-  ];
+  const projectStatusData = buildCurrentProjectStatusData(projects.active || []);
 
   const projectStatusTotal = projectStatusData.reduce((sum, item) => sum + item.value, 0) || 1;
 
@@ -473,6 +468,73 @@ function buildDonutStyle(items = []) {
   return {
     background: `radial-gradient(circle, var(--surface) 0 49%, transparent 50%), conic-gradient(${segments.join(", ")})`,
   };
+}
+
+function buildCurrentProjectStatusData(projects = []) {
+  const counts = {
+    active: 0,
+    pending: 0,
+    review: 0,
+    completed: 0,
+  };
+
+  projects.filter(isVisibleProject).forEach((project) => {
+    const status = normalizeProjectStatus(project?.status);
+
+    if (isCompletedProjectStatus(status)) {
+      counts.completed += 1;
+      return;
+    }
+
+    if (isReviewProjectStatus(status)) {
+      counts.review += 1;
+      return;
+    }
+
+    if (isPendingProjectStatus(status)) {
+      counts.pending += 1;
+      return;
+    }
+
+    counts.active += 1;
+  });
+
+  return [
+    { key: "active", label: "Activos", value: counts.active, tone: "teal" },
+    { key: "pending", label: "Pendientes", value: counts.pending, tone: "gold" },
+    { key: "review", label: "En revisión", value: counts.review, tone: "blue" },
+    { key: "completed", label: "Completados", value: counts.completed, tone: "green" },
+  ];
+}
+
+function normalizeProjectStatus(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isPendingProjectStatus(status = "") {
+  return [
+    "pendiente de aprobacion",
+    "pendiente administrativo",
+    "bloqueado",
+  ].includes(status);
+}
+
+function isReviewProjectStatus(status = "") {
+  return [
+    "listo para revision",
+    "en revision",
+    "revision",
+    "por revisar",
+    "correcciones solicitadas",
+  ].includes(status);
+}
+
+function isCompletedProjectStatus(status = "") {
+  return ["finalizado", "terminado", "completado", "completed"].includes(status);
 }
 
 function getActionDateParts(value) {

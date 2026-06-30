@@ -3,7 +3,6 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
 import {
-  getActiveProjects,
   softDeleteProject,
 } from "../services/projectsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
@@ -18,6 +17,18 @@ function MyProjectsMenuIcon({ className = "" }) {
       <path d="M8 9h8" />
       <path d="M8 13h6" />
       <path d="M8 17h4" />
+    </svg>
+  );
+}
+
+function MyProjectsTrashIcon({ className = "" }) {
+  return (
+    <svg className={`my-projects-menu-svg ${className}`.trim()} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 7h16" />
+      <path d="M9 7V5h6v2" />
+      <path d="M7 7l1 13h8l1-13" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
     </svg>
   );
 }
@@ -62,9 +73,7 @@ export default function MyProjects({ onOpenProject }) {
         return;
       }
 
-      const allProjects = isAdmin
-        ? await getActiveProjects()
-        : await getMyAllowedProjects(userId, false);
+      const allProjects = await getMyAllowedProjects(userId);
 
       const activeProjects = allProjects.filter((project) => {
         return !isHistoricalProject(project);
@@ -484,7 +493,7 @@ export default function MyProjects({ onOpenProject }) {
   );
 }
 
-async function getMyAllowedProjects(userId, isAdmin) {
+async function getMyAllowedProjects(userId) {
   const projectsRef = collection(db, PROJECTS_COLLECTION);
 
   const projectQueries = [
@@ -503,26 +512,34 @@ async function getMyAllowedProjects(userId, isAdmin) {
         where("collaboratorIds", "array-contains", userId)
       ),
     },
+    {
+      name: "collaboratorUids",
+      queryRef: query(
+        projectsRef,
+        where("collaboratorUids", "array-contains", userId)
+      ),
+    },
+    {
+      name: "collaboratorsIds",
+      queryRef: query(
+        projectsRef,
+        where("collaboratorsIds", "array-contains", userId)
+      ),
+    },
+    {
+      name: "collaborators",
+      queryRef: query(
+        projectsRef,
+        where("collaborators", "array-contains", userId)
+      ),
+    },
   ];
 
-  if (isAdmin) {
-    projectQueries.push({
-      name: "createdByUid",
-      queryRef: query(projectsRef, where("createdByUid", "==", userId)),
-    });
-  }
-
   const results = [];
-
-  console.log("UID usado en Mis proyectos:", userId);
 
   for (const item of projectQueries) {
     try {
       const snapshot = await getDocs(item.queryRef);
-
-      console.log(
-        `Consulta ${item.name}: ${snapshot.docs.length} proyecto(s) encontrados`
-      );
 
       snapshot.docs.forEach((document) => {
         results.push({
@@ -627,6 +644,7 @@ function ProjectList({
                       disabled={deletingProjectId === project.id}
                       onClick={() => onDeleteProject?.(project)}
                     >
+                      <MyProjectsTrashIcon />
                       {deletingProjectId === project.id ? "Eliminando..." : "Eliminar"}
                     </button>
                   )}
@@ -748,7 +766,12 @@ function isProjectAssignedToUser(project, userId) {
 }
 
 function isUserCollaboratorInProject(project, userId) {
-  const collaboratorIds = normalizeArray(project?.collaboratorIds);
+  const collaboratorIds = [
+    ...normalizeArray(project?.collaboratorIds),
+    ...normalizeArray(project?.collaboratorUids),
+    ...normalizeArray(project?.collaboratorsIds),
+    ...normalizeArray(project?.collaborators),
+  ];
 
   return collaboratorIds.includes(userId);
 }
