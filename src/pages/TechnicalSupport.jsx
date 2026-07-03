@@ -59,6 +59,60 @@ import {
 
 const HTML5_QRCODE_SCRIPT_ID = "html5-qrcode-camera-scanner";
 const HTML5_QRCODE_CDN_URL = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+const TECHNICAL_QR_PRINT_STYLE_ID = "technical-qr-label-print-size";
+
+function removeTechnicalQrPrintStyle() {
+  if (typeof document === "undefined") return;
+
+  document.getElementById(TECHNICAL_QR_PRINT_STYLE_ID)?.remove();
+}
+
+function ensureTechnicalQrPrintStyle() {
+  if (typeof document === "undefined") return;
+
+  removeTechnicalQrPrintStyle();
+
+  const style = document.createElement("style");
+  style.id = TECHNICAL_QR_PRINT_STYLE_ID;
+  style.textContent = `
+    @media print {
+      @page {
+        size: 50mm 30mm;
+        margin: 0;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function waitForTechnicalQrPrintAssets() {
+  if (typeof document === "undefined") return Promise.resolve();
+
+  const printImages = Array.from(
+    document.querySelectorAll(
+      ".technical-qr-single-print-area img, .technical-qr-batch-print-area img"
+    )
+  );
+
+  if (printImages.length === 0) return Promise.resolve();
+
+  return Promise.race([
+    Promise.all(
+      printImages.map((image) => {
+        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+        if (typeof image.decode === "function") {
+          return image.decode().catch(() => undefined);
+        }
+
+        return new Promise((resolve) => {
+          image.addEventListener("load", resolve, { once: true });
+          image.addEventListener("error", resolve, { once: true });
+        });
+      })
+    ),
+    new Promise((resolve) => window.setTimeout(resolve, 350)),
+  ]);
+}
 
 function loadHtml5QrcodeLibrary() {
   if (typeof window === "undefined") {
@@ -933,6 +987,7 @@ export default function TechnicalSupport() {
         "technical-print-single-label",
         "technical-print-all-labels"
       );
+      removeTechnicalQrPrintStyle();
     }
 
     window.addEventListener("afterprint", cleanPrintModeClasses);
@@ -2574,22 +2629,25 @@ export default function TechnicalSupport() {
     prepareQrPrint("all");
   }
 
-  function prepareQrPrint(mode) {
+  async function prepareQrPrint(mode) {
     const printClass =
       mode === "all"
         ? "technical-print-all-labels"
         : "technical-print-single-label";
 
     setQrPrintMode(mode);
+    ensureTechnicalQrPrintStyle();
     document.body.classList.remove(
       "technical-print-single-label",
       "technical-print-all-labels"
     );
     document.body.classList.add(printClass);
 
+    await waitForTechnicalQrPrintAssets();
+
     window.setTimeout(() => {
       window.print();
-    }, 80);
+    }, 120);
   }
 
   function renderQrLabel(asset) {
@@ -2598,7 +2656,13 @@ export default function TechnicalSupport() {
     return (
       <article className="technical-qr-label">
         <div className="technical-qr-label-header">
-          <strong>Active English School</strong>
+          <div className="technical-qr-brand">
+            <img src="/active-logo.png" alt="" aria-hidden="true" />
+            <strong>
+              <span>Active English</span>
+              <span>School</span>
+            </strong>
+          </div>
           <span>Soporte Técnico</span>
         </div>
 
@@ -8461,6 +8525,20 @@ function closeCompletionForm(options = {}) {
         fieldActionModeActive ? "field-action-mode" : ""
       } ${focusedSupportViewActive ? "technical-focused-view" : ""}`}
     >
+      {selectedQrAsset && (
+        <div className="technical-qr-single-print-area" aria-hidden="true">
+          {renderQrLabel(selectedQrAsset)}
+        </div>
+      )}
+
+      <div className="technical-qr-batch-print-area" aria-hidden="true">
+        {visibleAssets.map((asset) => (
+          <div className="technical-qr-batch-item" key={`qr-print-${asset.id}`}>
+            {renderQrLabel(asset)}
+          </div>
+        ))}
+      </div>
+
       <section className="technical-page-topbar">
         <div className="technical-topbar-main">
           <span className="technical-topbar-module-icon">
@@ -8622,14 +8700,6 @@ function closeCompletionForm(options = {}) {
         </section>
       )}
 
-
-      <div className="technical-qr-batch-print-area" aria-hidden="true">
-        {visibleAssets.map((asset) => (
-          <div className="technical-qr-batch-item" key={`qr-print-${asset.id}`}>
-            {renderQrLabel(asset)}
-          </div>
-        ))}
-      </div>
 
       {selectedQuickAsset && !focusedSubActionActive && (
         <section className="technical-panel technical-quick-asset-panel technical-focused-panel">
