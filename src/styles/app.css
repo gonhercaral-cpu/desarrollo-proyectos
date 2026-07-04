@@ -46526,6 +46526,88 @@ body {
   margin-top: 3px;
 }
 
+.attendance-collaborator-summary-card {
+  min-width: 0;
+}
+
+.attendance-collaborator-summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.attendance-collaborator-summary-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(220px, 1fr);
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.attendance-collaborator-summary-tools select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #dbe3ec;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #071f4f;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.attendance-collaborator-summary-row {
+  display: grid;
+  grid-template-columns: 40px minmax(145px, 1fr) repeat(5, minmax(86px, 0.72fr));
+  align-items: center;
+  gap: 11px;
+  border: 1px solid #edf2f7;
+  border-radius: 16px;
+  background: #fbfdff;
+  padding: 11px;
+  min-width: 0;
+}
+
+.attendance-collaborator-summary-row small {
+  display: block;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.attendance-collaborator-summary-row b,
+.attendance-collaborator-person strong {
+  display: block;
+  color: #071f4f;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.attendance-collaborator-summary-row b.positive {
+  color: #16a34a;
+}
+
+.attendance-collaborator-summary-row b.negative {
+  color: #dc2626;
+}
+
+.attendance-collaborator-person {
+  min-width: 0;
+}
+
+.attendance-collaborator-person span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.25;
+  margin-top: 3px;
+}
+
+.attendance-collaborator-summary-row b,
+.attendance-collaborator-person strong,
+.attendance-collaborator-person span {
+  overflow-wrap: anywhere;
+}
+
 .attendance-visual-row-card .attendance-status {
   justify-self: end;
   white-space: nowrap;
@@ -46707,6 +46789,14 @@ body {
     grid-template-columns: 40px minmax(0, 1fr) auto;
   }
 
+  .attendance-collaborator-summary-row {
+    grid-template-columns: 40px minmax(0, 1fr) repeat(2, minmax(90px, 1fr));
+  }
+
+  .attendance-collaborator-summary-row > div:not(.attendance-collaborator-person):not(.team-person-avatar) {
+    grid-column: span 1;
+  }
+
   .attendance-visual-row-card > div:not(.attendance-visual-row-person) {
     grid-column: 2 / -1;
   }
@@ -46719,6 +46809,7 @@ body {
 
 @media (max-width: 760px) {
   .attendance-visual-metrics,
+  .attendance-collaborator-summary-tools,
   .attendance-visual-location-two-cols,
   .attendance-visual-location-actions {
     grid-template-columns: 1fr;
@@ -46726,6 +46817,7 @@ body {
 
   .attendance-visual-metric,
   .attendance-visual-row-card,
+  .attendance-collaborator-summary-row,
   .attendance-visual-alert-card,
   .attendance-visual-location-card {
     grid-template-columns: 1fr;
@@ -70225,4 +70317,552 @@ html[data-theme="dark"] body #root .main-content .project-detail-page :is(
 
 .internal-messages-page.chat-messages-page .chat-bubble .attachment-gallery.compact:has(.audio-message-card) {
   margin-top: 8px !important;
+}
+
+/* =========================================================
+   MENSAJES - COMPACTAR CABECERAS Y COMPOSER
+========================================================= */
+
+.internal-messages-page.chat-messages-page .chat-sidebar-header {
+  padding: 10px 12px 6px !important;
+  gap: 10px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-sidebar-header h3 {
+  font-size: 17px !important;
+  line-height: 1.15 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-sidebar-header button {
+  min-height: 34px !important;
+  padding: 7px 10px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-mode-tabs {
+  margin: 0 12px 8px !important;
+  padding: 3px !important;
+  border-radius: 13px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-mode-tabs button {
+  min-height: 31px !important;
+  padding: 5px 8px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-new-conversation-box {
+  margin: 0 12px 8px !important;
+  padding: 10px !important;
+  gap: 8px !important;
+  border-radius: 14px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-search-box {
+  margin: 0 12px 8px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-search-box input {
+  min-height: 38px !important;
+  border-radius: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header {
+  grid-template-columns: 42px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding: 10px 14px !important;
+  min-height: 0 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-avatar {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 14px !important;
+  font-size: 13px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header h3 {
+  margin: 0 !important;
+  font-size: 16px !important;
+  line-height: 1.15 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header small {
+  display: block !important;
+  margin-top: 2px !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header .presence-badge,
+.internal-messages-page.chat-messages-page .department-thread-header .department-chat-label {
+  margin-top: 4px !important;
+  min-height: 20px !important;
+  padding: 2px 7px !important;
+  font-size: 10px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer {
+  display: grid !important;
+  grid-template-columns: 38px 38px minmax(0, 1fr) 42px !important;
+  gap: 7px !important;
+  align-items: center !important;
+  padding: 9px 12px !important;
+  border-top: 1px solid #edf1f7 !important;
+  background: #ffffff !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer textarea {
+  grid-column: 3 !important;
+  grid-row: 1 !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  max-height: 80px !important;
+  padding: 10px 12px !important;
+  border-radius: 13px !important;
+  resize: none !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer-tools {
+  display: contents !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .attachment-picker {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  width: 38px !important;
+  height: 40px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .attachment-picker-dropzone {
+  width: 38px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .dropzone-icon {
+  font-size: 17px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+  font-size: 17px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-send-icon-button {
+  grid-column: 4 !important;
+  grid-row: 1 !important;
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .attachment-draft-list,
+.internal-messages-page.chat-messages-page .chat-reply-preview {
+  grid-column: 1 / -1 !important;
+}
+
+/* =========================================================
+   FIX ANDROID: SCROLL TACTIL NORMAL EN LAYOUT MOVIL
+========================================================= */
+
+@media (max-width: 1050px) {
+  html,
+  body,
+  #root,
+  .app-root {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+  }
+
+  body {
+    min-height: 100dvh !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .main-content,
+  .redesigned-main-content {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* =========================================================
+   DARK MODE - SUPERFICIES ESPECIFICAS
+========================================================= */
+
+html[data-theme="dark"] body {
+  background: var(--bg) !important;
+}
+
+html[data-theme="dark"] .sidebar-nav button.active,
+html[data-theme="dark"] .sidebar-nav button.sidebar-featured-item.active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(14, 165, 233, 0.85)) !important;
+  color: #f8fbff !important;
+  border-color: rgba(96, 165, 250, 0.55) !important;
+}
+
+html[data-theme="dark"] .sidebar-nav button.active .nav-icon,
+html[data-theme="dark"] .sidebar-nav button.active .nav-svg-icon,
+html[data-theme="dark"] .sidebar-nav button.active svg {
+  color: #f8fbff !important;
+  stroke: #f8fbff !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .chat-info-expanded-files,
+  .chat-expanded-files-list,
+  .chat-shared-file,
+  .attendance-visual-intro,
+  .attendance-visual-score-card,
+  .attendance-visual-metric,
+  .attendance-visual-card,
+  .attendance-visual-row-card,
+  .attendance-visual-alert-card,
+  .attendance-collaborator-summary-row,
+  .team-agenda-request-card,
+  .agenda-modern-request-card,
+  .team-agenda-admin-comment,
+  .team-agenda-admin-comment-box,
+  .team-agenda-info-alert,
+  .request-detail-card,
+  .request-students-card,
+  .request-student-validation-card,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .batch-quality-checklist,
+  .batch-quality-field,
+  .product-recipe-box,
+  .product-recipe-empty,
+  .product-recipe-item,
+  .product-requirements,
+  .product-requirement-card,
+  .supply-quick-scan-card,
+  .supply-quick-scan-card-redesign,
+  .supply-presentation-card,
+  .supply-card,
+  .supply-detail-card,
+  .supply-stock-card,
+  .supply-movement-card,
+  .registered-supply-card,
+  .maintenance-clean-card,
+  .maintenance-clean-row,
+  .technical-panel,
+  .technical-focused-panel,
+  .technical-quick-asset-panel,
+  .technical-quick-info-grid article,
+  .technical-quick-maintenance-card,
+  .technical-quick-maintenance-item,
+  .technical-related-installations-card,
+  .technical-history-panel,
+  .technical-asset-details,
+  .technical-qr-label-panel,
+  .technical-qr-help-card,
+  .technical-qr-print-area,
+  .technical-qr-single-print-area,
+  .technical-qr-batch-print-area,
+  .maintenance-checklist-box,
+  .visual-checklist-box,
+  .visual-checklist-item,
+  .editable-maintenance-checklist-item,
+  .checklist-score-card,
+  .all-projects-panel,
+  .all-projects-side-panel,
+  .all-projects-department-row,
+  .all-projects-recent-card,
+  .project-detail-card,
+  .project-detail-overview-card,
+  .project-detail-info-card,
+  .project-detail-meta-card,
+  .project-summary-card,
+  .edit-project-section-card,
+  .edit-side-card,
+  .edit-preview-card,
+  .edit-summary-strip,
+  .edit-impact-card,
+  .preview-details > div
+) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-shared-file-icon,
+  .chat-info-quick-actions button,
+  .attendance-visual-location-card,
+  .attendance-visual-empty-mini,
+  .attendance-collaborator-summary-tools,
+  .team-agenda-request-info,
+  .agenda-request-detail-info,
+  .printshop-workboard-column,
+  .printshop-batch-card,
+  .printshop-batch-card.home-clickable-card,
+  .printshop-request-card,
+  .request-detail-note,
+  .certificate-template-match-note,
+  .batch-quality-checklist label,
+  .product-recipe-inputs,
+  .product-recipe-inputs label,
+  .product-recipe-actions,
+  .product-recipe-tip,
+  .requirement-chip-list span,
+  .maintenance-clean-metrics article,
+  .maintenance-clean-meta,
+  .technical-panel-header,
+  .technical-form,
+  .technical-form-grid,
+  .technical-quick-asset-hero,
+  .technical-quick-actions,
+  .technical-qr-label,
+  .technical-qr-batch-item,
+  .technical-quick-maintenance-list,
+  .technical-quick-main,
+  .all-projects-table-wrap,
+  .all-projects-modern-table,
+  .area-progress-track,
+  .edit-required-list div,
+  .attached-file-item
+) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .chat-info-expanded-files,
+  .chat-shared-file,
+  .attendance-visual-panel,
+  .attendance-visual-card,
+  .attendance-collaborator-summary-card,
+  .team-agenda-request-card,
+  .team-agenda-admin-comment-box,
+  .request-detail-card,
+  .request-students-card,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .maintenance-clean-card,
+  .technical-panel,
+  .technical-quick-asset-panel,
+  .technical-qr-label-panel,
+  .all-projects-panel,
+  .all-projects-side-panel,
+  .project-detail-card,
+  .edit-project-section-card,
+  .edit-side-card
+) :is(h1, h2, h3, h4, h5, strong, b, label) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .chat-info-expanded-files,
+  .chat-shared-file,
+  .attendance-visual-panel,
+  .attendance-visual-card,
+  .attendance-collaborator-summary-card,
+  .team-agenda-request-card,
+  .team-agenda-admin-comment-box,
+  .request-detail-card,
+  .request-students-card,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .maintenance-clean-card,
+  .technical-panel,
+  .technical-quick-asset-panel,
+  .technical-qr-label-panel,
+  .all-projects-panel,
+  .all-projects-side-panel,
+  .project-detail-card,
+  .edit-project-section-card,
+  .edit-side-card
+) :is(p, small, span, li, em) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] :is(
+  .attendance-visual-kicker,
+  .attendance-visual-card-header > div > span,
+  .attendance-visual-location-card > div > span,
+  .maintenance-clean-card-header > span,
+  .technical-quick-info-grid span,
+  .project-code-badge,
+  .all-projects-count-badge
+) {
+  color: #bfdbfe !important;
+  background: rgba(37, 99, 235, 0.18) !important;
+  border-color: rgba(96, 165, 250, 0.35) !important;
+}
+
+html[data-theme="dark"] :is(
+  .attendance-visual-metric.blue > span,
+  .attendance-visual-metric.green > span,
+  .attendance-visual-metric.gold > span,
+  .attendance-visual-metric.red > span,
+  .attendance-status,
+  .visual-badge,
+  .asset-tag,
+  .status-badge,
+  .priority-badge,
+  .all-projects-recent-card > span
+) {
+  color: #f8fbff !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .attendance-visual-panel,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .technical-panel,
+  .maintenance-clean-card,
+  .edit-project-redesign-page,
+  .all-projects-redesign
+) :is(input, select, textarea) {
+  background: var(--surface-3) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .attendance-visual-panel,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .technical-panel,
+  .maintenance-clean-card,
+  .edit-project-redesign-page,
+  .all-projects-redesign
+) :is(input, select, textarea)::placeholder {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-composer {
+  background: var(--surface) !important;
+  border-top-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-composer textarea {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .attachment-picker-dropzone,
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-voice-button,
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-send-icon-button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-send-icon-button {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .printshop-batch-card-list,
+html[data-theme="dark"] .product-recipe-list,
+html[data-theme="dark"] .maintenance-clean-list,
+html[data-theme="dark"] .attendance-visual-row-list,
+html[data-theme="dark"] .attendance-visual-alert-list,
+html[data-theme="dark"] .all-projects-department-list,
+html[data-theme="dark"] .all-projects-recent-list {
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .batch-quality-checklist label.checked,
+html[data-theme="dark"] .visual-checklist-item.checked,
+html[data-theme="dark"] .editable-maintenance-checklist-item.checked {
+  background: rgba(34, 197, 94, 0.16) !important;
+  border-color: rgba(74, 222, 128, 0.45) !important;
+}
+
+html[data-theme="dark"] .maintenance-clean-row.urgency-overdue,
+html[data-theme="dark"] .technical-quick-maintenance-item.urgency-overdue {
+  background: rgba(248, 113, 113, 0.16) !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+}
+
+html[data-theme="dark"] .maintenance-clean-row.urgency-today,
+html[data-theme="dark"] .technical-quick-maintenance-item.urgency-today {
+  background: rgba(251, 191, 36, 0.16) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+html[data-theme="dark"] .maintenance-clean-row.urgency-week,
+html[data-theme="dark"] .maintenance-clean-row.urgency-soon,
+html[data-theme="dark"] .technical-quick-maintenance-item.urgency-soon {
+  background: rgba(59, 130, 246, 0.16) !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+}
+
+html[data-theme="dark"] .technical-qr-code {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="dark"] .technical-qr-code svg {
+  color: #0f172a !important;
+  stroke: currentColor;
+}
+
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar.printshop-topbar {
+  align-items: center !important;
+}
+
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar .printshop-topbar-main,
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar .printshop-topbar-copy,
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar .project-screen-actions {
+  align-self: center !important;
 }

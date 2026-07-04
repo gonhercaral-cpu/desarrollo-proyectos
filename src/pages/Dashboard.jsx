@@ -2500,6 +2500,13 @@ function isAudioOnlyMessage(message) {
     && String(message?.message || "").trim().toLowerCase() === "archivo adjunto";
 }
 
+function isRecordedVoiceAttachment(attachment) {
+  const name = String(attachment?.name || "").toLowerCase();
+
+  return attachment?.source === "recordedVoice" ||
+    /^audio-\d{4}-\d{2}-\d{2}t.+\.webm$/i.test(name);
+}
+
 const BOARD_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
@@ -2562,6 +2569,7 @@ function normalizeStoredAttachments(value) {
       contentType: attachment.contentType || "",
       size: Number(attachment.size) || 0,
       type: attachment.type || getAttachmentType(attachment.contentType, attachment.name),
+      source: attachment.source || "",
       status: "stored",
     }))
     .filter((attachment) => attachment.url || attachment.path);
@@ -2574,13 +2582,14 @@ function markStoredAttachment(attachment) {
   };
 }
 
-function createDraftAttachment(file) {
+function createDraftAttachment(file, metadata = {}) {
   return {
     id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     name: file.name,
     size: file.size || 0,
     contentType: file.type || guessContentTypeFromName(file.name),
     type: getAttachmentType(file.type, file.name),
+    source: metadata.source || "",
     file,
     previewUrl: file.type?.startsWith("image/") ? URL.createObjectURL(file) : "",
     status: "draft",
@@ -2633,6 +2642,7 @@ async function uploadBoardAttachments(items, { folder, ownerUid }) {
       contentType: item.contentType || "",
       size: Number(item.size) || 0,
       type: item.type || getAttachmentType(item.contentType, item.name),
+      source: item.source || "",
     }));
 
   const drafts = items.filter((item) => item.status === "draft" && item.file);
@@ -2657,6 +2667,7 @@ async function uploadBoardAttachments(items, { folder, ownerUid }) {
         contentType: item.contentType || "",
         size: Number(item.size) || 0,
         type: item.type || getAttachmentType(item.contentType, item.name),
+        source: item.source || "",
       };
     })
   );
@@ -3336,7 +3347,7 @@ function InternalMessages({ profile, isAdmin = false }) {
       createdAt: message.createdAt,
       fromUserName: message.fromUserName || "Usuario",
     }))
-  );
+  ).filter((attachment) => !isRecordedVoiceAttachment(attachment));
   const activeSharedAttachments = activeAllSharedAttachments.slice(0, 6);
   const activeChatTypeLabel = conversationType === "department" ? "Chat por departamento" : "Chat individual";
   const activeChatKey =
@@ -3667,7 +3678,7 @@ function InternalMessages({ profile, isAdmin = false }) {
         const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`, {
           type: mimeType,
         });
-        const draft = createDraftAttachment(file);
+        const draft = createDraftAttachment(file, { source: "recordedVoice" });
 
         if (type === "department") {
           setDepartmentAttachments((current) => [...current, draft].slice(0, 6));

@@ -165,6 +165,7 @@ export default function TeamAgenda() {
   });
 
   const [activePanel, setActivePanel] = useState("");
+  const [weeklyDepartmentFilter, setWeeklyDepartmentFilter] = useState("all");
 
   useEffect(() => {
     if (!isAdmin) {
@@ -444,6 +445,22 @@ export default function TeamAgenda() {
     });
   }, [adjustmentMap, agendaUsers, currentWeek, scheduleMap]);
 
+  const weeklyDepartmentOptions = useMemo(() => {
+    const departments = team.flatMap((person) => getUserDepartmentNames(person));
+    return getUniqueDepartmentNames(departments);
+  }, [team]);
+
+  const weeklyTeam = useMemo(() => {
+    if (weeklyDepartmentFilter === "all") return team;
+
+    return team.filter((person) =>
+      getUserDepartmentNames(person).some(
+        (departmentName) =>
+          normalizeComparableText(departmentName) === weeklyDepartmentFilter
+      )
+    );
+  }, [team, weeklyDepartmentFilter]);
+
   const loading = loadingUsers || loadingSchedules || loadingAdjustments;
 
   const summary = useMemo(() => {
@@ -491,11 +508,13 @@ export default function TeamAgenda() {
     () =>
       buildAttendanceInsights({
         team,
+        workSchedules,
         workSessions,
+        requests,
         attendanceLocations,
         currentWeek,
       }),
-    [attendanceLocations, currentWeek, team, workSessions]
+    [attendanceLocations, currentWeek, requests, team, workSchedules, workSessions]
   );
 
   function handleChange(event) {
@@ -1238,16 +1257,28 @@ export default function TeamAgenda() {
               </div>
 
               <div className="agenda-modern-tools">
-                <select aria-label="Filtrar colaboradores" defaultValue="all">
+                <select
+                  aria-label="Filtrar colaboradores"
+                  value={weeklyDepartmentFilter}
+                  onChange={(event) => setWeeklyDepartmentFilter(event.target.value)}
+                >
                   <option value="all">Todos los colaboradores</option>
+                  {weeklyDepartmentOptions.map((departmentName) => (
+                    <option
+                      key={departmentName}
+                      value={normalizeComparableText(departmentName)}
+                    >
+                      {departmentName}
+                    </option>
+                  ))}
                 </select>
-                <span>{team.length} colaborador(es)</span>
+                <span>{weeklyTeam.length} colaborador(es)</span>
               </div>
             </div>
 
             {loading ? (
               <div className="team-agenda-empty">Cargando agenda del equipo...</div>
-            ) : team.length === 0 ? (
+            ) : weeklyTeam.length === 0 ? (
               <div className="team-agenda-empty">
                 No hay colaboradores activos registrados para mostrar en la agenda.
               </div>
@@ -1268,7 +1299,7 @@ export default function TeamAgenda() {
                   </thead>
 
                   <tbody>
-                    {team.map((person) => (
+                    {weeklyTeam.map((person) => (
                       <tr key={person.id}>
                         <td>
                           <div className="team-person-cell agenda-modern-person-cell">
@@ -1334,6 +1365,18 @@ export default function TeamAgenda() {
                     : "Configura horarios para calcularlo"
                 }
                 tone="green"
+              />
+
+              <AgendaQuickCard
+                icon={"\u2193"}
+                label={"D\u00eda con menor cobertura"}
+                value={agendaInsights.lowestCoverageDay?.label || "Sin datos"}
+                detail={
+                  agendaInsights.lowestCoverageDay
+                    ? `${formatHours(agendaInsights.lowestCoverageDay.hours)} \u00b7 ${agendaInsights.lowestCoverageDay.value} colaborador(es)`
+                    : "Configura horarios para calcularlo"
+                }
+                tone="red"
               />
 
               {isAdmin && (
@@ -2308,6 +2351,40 @@ function AttendanceControlPanel({
     : 0;
   const visibleRows = insights.rows.slice(0, 6);
   const visibleAlerts = insights.alerts.slice(0, 4);
+  const collaboratorSummaryRows = insights.collaboratorRows || [];
+  const [collaboratorDepartmentFilter, setCollaboratorDepartmentFilter] = useState("all");
+  const [collaboratorSort, setCollaboratorSort] = useState("scheduled-desc");
+  const collaboratorDepartmentOptions = useMemo(() => {
+    const departments = collaboratorSummaryRows.flatMap((row) =>
+      row.departmentNames?.length ? row.departmentNames : [row.area]
+    );
+
+    return getUniqueDepartmentNames(departments);
+  }, [collaboratorSummaryRows]);
+  const filteredCollaboratorSummaryRows = useMemo(() => {
+    const filteredRows =
+      collaboratorDepartmentFilter === "all"
+        ? collaboratorSummaryRows
+        : collaboratorSummaryRows.filter((row) =>
+            (row.departmentNames?.length ? row.departmentNames : [row.area]).some(
+              (departmentName) =>
+                normalizeComparableText(departmentName) === collaboratorDepartmentFilter
+            )
+          );
+
+    const [field, direction] = collaboratorSort.split("-");
+    const multiplier = direction === "asc" ? 1 : -1;
+
+    return [...filteredRows].sort((a, b) => {
+      const diff =
+        getCollaboratorSummarySortValue(a, field) -
+        getCollaboratorSummarySortValue(b, field);
+
+      if (diff !== 0) return diff * multiplier;
+
+      return String(a.userName || "").localeCompare(String(b.userName || ""), "es");
+    });
+  }, [collaboratorDepartmentFilter, collaboratorSort, collaboratorSummaryRows]);
 
   return (
     <section className="attendance-visual-panel">
@@ -2362,6 +2439,95 @@ function AttendanceControlPanel({
           detail="Requieren atención"
         />
       </div>
+
+      <section className="attendance-visual-card attendance-collaborator-summary-card">
+        <div className="attendance-visual-card-header">
+          <div>
+            <span>{"\u2261"}</span>
+            <h4>Resumen por colaborador</h4>
+          </div>
+          <small>{filteredCollaboratorSummaryRows.length} colaborador(es)</small>
+        </div>
+
+        <div className="attendance-collaborator-summary-tools">
+          <select
+            aria-label="Filtrar resumen por departamento"
+            value={collaboratorDepartmentFilter}
+            onChange={(event) => setCollaboratorDepartmentFilter(event.target.value)}
+          >
+            <option value="all">Todos los departamentos</option>
+            {collaboratorDepartmentOptions.map((departmentName) => (
+              <option
+                key={departmentName}
+                value={normalizeComparableText(departmentName)}
+              >
+                {departmentName}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Ordenar resumen por colaborador"
+            value={collaboratorSort}
+            onChange={(event) => setCollaboratorSort(event.target.value)}
+          >
+            <option value="scheduled-desc">M{"\u00e1"}s horas programadas</option>
+            <option value="scheduled-asc">Menos horas programadas</option>
+            <option value="registered-desc">M{"\u00e1"}s horas registradas</option>
+            <option value="registered-asc">Menos horas registradas</option>
+            <option value="difference-desc">Mayor diferencia de horas</option>
+            <option value="difference-asc">Menor diferencia de horas</option>
+            <option value="permissionsWeek-desc">M{"\u00e1"}s permisos semana</option>
+            <option value="permissionsWeek-asc">Menos permisos semana</option>
+            <option value="permissionsMonth-desc">M{"\u00e1"}s permisos mes</option>
+            <option value="permissionsMonth-asc">Menos permisos mes</option>
+          </select>
+        </div>
+
+        {loading ? (
+          <div className="team-agenda-empty compact">Cargando resumen por colaborador...</div>
+        ) : filteredCollaboratorSummaryRows.length === 0 ? (
+          <div className="team-agenda-empty compact">
+            No hay datos reales de horarios, asistencia o permisos para resumir.
+          </div>
+        ) : (
+          <div className="attendance-collaborator-summary-list">
+            {filteredCollaboratorSummaryRows.map((row) => (
+              <article key={row.userId} className="attendance-collaborator-summary-row">
+                <div className="team-person-avatar agenda-modern-avatar small">
+                  {getInitials(row.userName)}
+                </div>
+                <div className="attendance-collaborator-person">
+                  <strong>{row.userName}</strong>
+                  <span>{row.area || "Sin \u00e1rea"}</span>
+                </div>
+                <div>
+                  <small>Programadas semana</small>
+                  <b>{formatMinutesAsHours(row.scheduledMinutesWeek)}</b>
+                </div>
+                <div>
+                  <small>Registradas semana</small>
+                  <b>{formatMinutesAsHours(row.registeredMinutesWeek)}</b>
+                </div>
+                <div>
+                  <small>Diferencia</small>
+                  <b className={row.differenceMinutes < 0 ? "negative" : "positive"}>
+                    {formatSignedMinutesAsHours(row.differenceMinutes)}
+                  </b>
+                </div>
+                <div>
+                  <small>Permisos semana</small>
+                  <b>{row.permissionsWeek}</b>
+                </div>
+                <div>
+                  <small>Permisos mes</small>
+                  <b>{row.permissionsMonth}</b>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {message && <div className="team-agenda-info-alert attendance-visual-message">{message}</div>}
 
@@ -3161,9 +3327,60 @@ function normalizeUser(id, data = {}) {
       "Usuario sin nombre",
     email: data.email || "",
     area: data.area || data.department || data.departmentName || "Sin área",
+    department: data.department || "",
+    departmentName: data.departmentName || "",
+    departmentIds: normalizeStringArray(data.departmentIds),
+    departmentNames: normalizeStringArray(data.departmentNames),
+    primaryDepartmentId: data.primaryDepartmentId || "",
     role: data.role || data.privilege || "collaborator",
     active: data.active,
   };
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeComparableText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function getUserDepartmentNames(user = {}) {
+  const names = [
+    ...normalizeStringArray(user.departmentNames),
+    user.departmentName,
+    user.department,
+    user.area,
+  ]
+    .filter(Boolean)
+    .map((name) => String(name).trim())
+    .filter(Boolean);
+
+  return getUniqueDepartmentNames(names);
+}
+
+function getUniqueDepartmentNames(names = []) {
+  return names.filter((name, index, array) => {
+    const normalizedName = normalizeComparableText(name);
+
+    return (
+      normalizedName &&
+      array.findIndex(
+        (item) => normalizeComparableText(item) === normalizedName
+      ) === index
+    );
+  });
 }
 
 function buildTeamUsersFromPublicScheduleData({
@@ -3352,6 +3569,14 @@ function getDateValue(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getMonthStartValue(date) {
+  return getDateValue(new Date(date.getFullYear(), date.getMonth(), 1, 12));
+}
+
+function getMonthEndValue(date) {
+  return getDateValue(new Date(date.getFullYear(), date.getMonth() + 1, 0, 12));
+}
+
 function isDateInRangeValue(dateValue, startDate, endDate) {
   if (!dateValue || !startDate) return false;
 
@@ -3361,10 +3586,21 @@ function isDateInRangeValue(dateValue, startDate, endDate) {
   return dateValue >= start && dateValue <= end;
 }
 
-function buildAttendanceInsights({ team, workSessions, attendanceLocations, currentWeek }) {
+function buildAttendanceInsights({
+  team,
+  workSchedules,
+  workSessions,
+  requests,
+  attendanceLocations,
+  currentWeek,
+}) {
   const today = new Date();
   const todayDate = getDateValue(today);
   const todayKey = getTodayKey();
+  const weekStart = currentWeek[0]?.dateValue || todayDate;
+  const weekEnd = currentWeek[6]?.dateValue || todayDate;
+  const monthStart = getMonthStartValue(today);
+  const monthEnd = getMonthEndValue(today);
   const activeLocations = attendanceLocations.filter(
     (location) => location.isActive !== false
   );
@@ -3421,6 +3657,70 @@ function buildAttendanceInsights({ team, workSessions, attendanceLocations, curr
       message: row.alertMessage,
     }));
 
+  const baseSchedulesByUser = (workSchedules || []).reduce((map, schedule) => {
+    if (!schedule.userId || schedule.isActive === false) return map;
+
+    const userKey = String(schedule.userId);
+    map[userKey] = [...(map[userKey] || []), schedule];
+    return map;
+  }, {});
+
+  const weekSessionsByUser = (workSessions || []).reduce((map, session) => {
+    if (!session.userId || !isDateInRangeValue(session.date, weekStart, weekEnd)) {
+      return map;
+    }
+
+    const userKey = String(session.userId);
+    map[userKey] = (map[userKey] || 0) + getSessionWorkedMinutes(session);
+    return map;
+  }, {});
+
+  const activePermissionRequests = (requests || []).filter(
+    (request) =>
+      request.type === "permission" &&
+      !["cancelled", "rejected"].includes(request.status)
+  );
+
+  const collaboratorRows = team
+    .map((person) => {
+      const userKeys = [person.id, person.uid].filter(Boolean).map(String);
+      const scheduledMinutesWeek = userKeys.reduce((total, userKey, index) => {
+        if (index > 0 && userKey === userKeys[0]) return total;
+
+        return (
+          total +
+          (baseSchedulesByUser[userKey] || []).reduce(
+            (sum, schedule) => sum + getBaseScheduleExpectedMinutes(schedule),
+            0
+          )
+        );
+      }, 0);
+      const registeredMinutesWeek = userKeys.reduce((total, userKey, index) => {
+        if (index > 0 && userKey === userKeys[0]) return total;
+        return total + (weekSessionsByUser[userKey] || 0);
+      }, 0);
+      const personPermissionRequests = activePermissionRequests.filter((request) =>
+        userKeys.includes(String(request.userId || ""))
+      );
+
+      return {
+        userId: person.id,
+        userName: person.name,
+        area: person.area || "Sin Ã¡rea",
+        departmentNames: getUserDepartmentNames(person),
+        scheduledMinutesWeek,
+        registeredMinutesWeek,
+        differenceMinutes: registeredMinutesWeek - scheduledMinutesWeek,
+        permissionsWeek: personPermissionRequests.filter((request) =>
+          requestOverlapsRange(request, weekStart, weekEnd)
+        ).length,
+        permissionsMonth: personPermissionRequests.filter((request) =>
+          requestOverlapsRange(request, monthStart, monthEnd)
+        ).length,
+      };
+    })
+    .sort((a, b) => String(a.userName || "").localeCompare(String(b.userName || ""), "es"));
+
   return {
     todayDate,
     activeLocationCount: activeLocations.length,
@@ -3431,6 +3731,7 @@ function buildAttendanceInsights({ team, workSessions, attendanceLocations, curr
     outsideLocationCount: rows.filter((row) => row.alertType === "outsideLocation").length,
     rows,
     alerts,
+    collaboratorRows,
   };
 }
 
@@ -3449,6 +3750,30 @@ function getScheduleExpectedMinutes(schedule) {
   if (end >= start) return end - start;
 
   return 24 * 60 - start + end;
+}
+
+function getBaseScheduleExpectedMinutes(schedule) {
+  if (!schedule || schedule.isActive === false || schedule.isRestDay) {
+    return 0;
+  }
+
+  const start = timeToMinutes(schedule.startTime);
+  const end = timeToMinutes(schedule.endTime);
+
+  if (start === null || end === null) return 0;
+
+  if (end >= start) return end - start;
+
+  return 24 * 60 - start + end;
+}
+
+function requestOverlapsRange(request, startDate, endDate) {
+  if (!request?.startDate || !startDate || !endDate) return false;
+
+  const requestStart = request.startDate;
+  const requestEnd = request.endDate || request.startDate;
+
+  return requestStart <= endDate && requestEnd >= startDate;
 }
 
 function getNoExpectedScheduleLabel(schedule) {
@@ -3603,6 +3928,25 @@ function formatMinutesAsHours(minutes = 0) {
   return `${rounded} h`;
 }
 
+function formatSignedMinutesAsHours(minutes = 0) {
+  if (!minutes) return "0 h";
+
+  const sign = minutes > 0 ? "+" : "-";
+  return `${sign}${formatMinutesAsHours(Math.abs(minutes))}`;
+}
+
+function getCollaboratorSummarySortValue(row, field) {
+  const values = {
+    scheduled: row.scheduledMinutesWeek,
+    registered: row.registeredMinutesWeek,
+    difference: row.differenceMinutes,
+    permissionsWeek: row.permissionsWeek,
+    permissionsMonth: row.permissionsMonth,
+  };
+
+  return Number(values[field] || 0);
+}
+
 function buildAgendaInsights({
   team,
   requests,
@@ -3610,14 +3954,20 @@ function buildAgendaInsights({
   includeRestrictedInsights = true,
 }) {
   const coverageByDay = DAYS.map((day) => {
-    const value = team.filter((person) =>
-      isWorkingSchedule(person.schedules?.[day.key])
-    ).length;
+    const daySchedules = team
+      .map((person) => person.schedules?.[day.key])
+      .filter((schedule) => isWorkingSchedule(schedule));
+    const value = daySchedules.length;
+    const hours = daySchedules.reduce(
+      (total, schedule) => total + getScheduleHours(schedule),
+      0
+    );
 
     return {
       key: day.key,
       label: day.label,
       value,
+      hours,
     };
   });
 
@@ -3627,6 +3977,7 @@ function buildAgendaInsights({
       hoursByPerson: [],
       requestsByType: [],
       busiestDay: getTopItem(coverageByDay),
+      lowestCoverageDay: getLowestCoverageItem(coverageByDay),
       topHoursPerson: null,
       topAbsencePerson: null,
       topChangePerson: null,
@@ -3680,6 +4031,7 @@ function buildAgendaInsights({
     hoursByPerson,
     requestsByType,
     busiestDay: getTopItem(coverageByDay),
+    lowestCoverageDay: getLowestCoverageItem(coverageByDay),
     topHoursPerson: getTopItem(hoursByPerson),
     topAbsencePerson: getTopItem(absenceCounts),
     topChangePerson: getTopItem(changeCounts),
@@ -3731,6 +4083,19 @@ function getTopItem(items) {
   const sorted = [...items].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
 
   return sorted[0] || null;
+}
+
+function getLowestCoverageItem(items) {
+  const hasCoverage = items.some((item) => item.value > 0 || item.hours > 0);
+
+  if (!hasCoverage) return null;
+
+  return [...items].sort((a, b) => {
+    const hoursDiff = (a.hours || 0) - (b.hours || 0);
+    if (hoursDiff !== 0) return hoursDiff;
+
+    return (a.value || 0) - (b.value || 0);
+  })[0] || null;
 }
 
 function formatHours(value) {
