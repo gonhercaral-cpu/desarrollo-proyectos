@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -2446,6 +2446,17 @@ function AttachmentGallery({ attachments, compact = false }) {
     <div className={`attachment-gallery ${compact ? "compact" : ""}`}>
       {attachments.map((attachment) => {
         const type = getAttachmentType(attachment.contentType, attachment.name);
+        if (type === "audio") {
+          return (
+            <article
+              key={attachment.path || attachment.url || attachment.name}
+              className="attachment-card type-audio audio-message-card"
+            >
+              <audio src={attachment.url} controls preload="metadata" />
+            </article>
+          );
+        }
+
         return (
           <article key={attachment.path || attachment.url || attachment.name} className={`attachment-card type-${type}`}>
             {type === "image" ? (
@@ -2480,6 +2491,13 @@ function AttachmentGallery({ attachments, compact = false }) {
       })}
     </div>
   );
+}
+
+function isAudioOnlyMessage(message) {
+  const attachments = normalizeStoredAttachments(message?.attachments);
+  return attachments.length > 0
+    && attachments.every((attachment) => getAttachmentType(attachment.contentType, attachment.name) === "audio")
+    && String(message?.message || "").trim().toLowerCase() === "archivo adjunto";
 }
 
 const BOARD_ATTACHMENT_ACCEPT = [
@@ -2677,10 +2695,13 @@ async function deleteStoredAttachments(attachments) {
 function getAttachmentType(contentType, fileName = "") {
   const lowerType = String(contentType || "").toLowerCase();
   const lowerName = String(fileName || "").toLowerCase();
+  const looksLikeRecordedAudio = /^audio-\d{4}-\d{2}-\d{2}t.+\.webm$/i.test(lowerName)
+    || /^audio-.*\.(webm|weba)$/i.test(lowerName);
 
+  if (looksLikeRecordedAudio) return "audio";
   if (lowerType.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(lowerName)) return "image";
+  if (lowerType.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac|weba)$/i.test(lowerName)) return "audio";
   if (lowerType.startsWith("video/") || /\.(mp4|mov|avi|mkv|webm)$/i.test(lowerName)) return "video";
-  if (lowerType.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac)$/i.test(lowerName)) return "audio";
   return "document";
 }
 
@@ -2891,30 +2912,104 @@ function buildMessageTypingStateId(chatKey, userId) {
   return `${chatKey || "chat"}__${userId || "user"}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 180);
 }
 
-function playMessageNotificationSound() {
+let messageNotificationAudioContext = null;
+
+function getMessageNotificationAudioContext() {
+  if (typeof window === "undefined") return;
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  if (!messageNotificationAudioContext) {
+    messageNotificationAudioContext = new AudioContextClass();
+  }
+
+  return messageNotificationAudioContext;
+}
+
+async function primeMessageNotificationSound() {
+  try {
+    const audioContext = getMessageNotificationAudioContext();
+    if (!audioContext) return;
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0.001, audioContext.currentTime);
+    gain.connect(audioContext.destination);
+    gain.disconnect();
+  } catch (error) {
+    console.warn("No se pudo preparar sonido de mensaje:", error);
+  }
+}
+
+async function playMessageNotificationSound() {
   if (typeof window === "undefined") return;
 
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
+    const audioContext = getMessageNotificationAudioContext();
+    if (!audioContext) return;
 
-    const audioContext = new AudioContextClass();
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
 
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(660, audioContext.currentTime + 0.16);
-    gain.gain.setValueAtTime(0.001, audioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.16, audioContext.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.22);
-    oscillator.connect(gain);
-    gain.connect(audioContext.destination);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.24);
+    [
+      { start: 0, frequency: 880, endFrequency: 660, duration: 0.18 },
+      { start: 0.24, frequency: 1040, endFrequency: 780, duration: 0.2 },
+    ].forEach((tone) => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const startAt = audioContext.currentTime + tone.start;
+      const stopAt = startAt + tone.duration;
+
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(tone.frequency, startAt);
+      oscillator.frequency.exponentialRampToValueAtTime(tone.endFrequency, stopAt);
+      gain.gain.setValueAtTime(0.001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.34, startAt + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, stopAt);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(startAt);
+      oscillator.stop(stopAt + 0.02);
+    });
   } catch (error) {
     console.warn("No se pudo reproducir sonido de mensaje:", error);
   }
+}
+
+function canUseBrowserNotifications() {
+  return typeof window !== "undefined"
+    && "Notification" in window
+    && (window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+}
+
+async function requestBrowserMessageNotificationPermission() {
+  if (!canUseBrowserNotifications() || window.Notification.permission !== "default") return;
+
+  try {
+    await window.Notification.requestPermission();
+  } catch (error) {
+    console.warn("No se pudo pedir permiso de notificaciones:", error);
+  }
+}
+
+function showBrowserMessageNotification(messageInfo) {
+  if (!canUseBrowserNotifications() || window.Notification.permission !== "granted") return;
+
+  const notification = new window.Notification(messageInfo.title || "Nuevo mensaje", {
+    body: messageInfo.body || "Tienes un mensaje nuevo.",
+    tag: messageInfo.tag || "dashboard-message",
+    renotify: true,
+    silent: false,
+  });
+
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
 }
 
 
@@ -2947,12 +3042,17 @@ function InternalMessages({ profile, isAdmin = false }) {
   const [mutedChats, setMutedChats] = useState({});
   const [replyTarget, setReplyTarget] = useState(null);
   const [typingStates, setTypingStates] = useState([]);
+  const [voiceRecordingType, setVoiceRecordingType] = useState("");
+  const threadMessagesRef = useRef(null);
   const threadEndRef = useRef(null);
   const directComposerRef = useRef(null);
   const departmentComposerRef = useRef(null);
   const unreadMessageIdsRef = useRef(new Set());
   const notificationReadyRef = useRef(false);
   const typingTimeoutRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const voiceChunksRef = useRef([]);
+  const voiceStreamRef = useRef(null);
   const pageTitleRef = useRef(typeof document === "undefined" ? "Mensajes" : document.title);
 
   useEffect(() => {
@@ -3147,6 +3247,15 @@ function InternalMessages({ profile, isAdmin = false }) {
     return () => revokeDraftAttachmentPreviews(departmentAttachments);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
   const departmentOptions = buildDepartmentChatOptions({
     departments,
     collaborators,
@@ -3169,8 +3278,7 @@ function InternalMessages({ profile, isAdmin = false }) {
   );
   const selectedConversation =
     filteredConversations.find((conversation) => conversation.participantId === selectedConversationId) ||
-    filteredConversations[0] ||
-    null;
+    (!selectedConversationId ? filteredConversations[0] : null);
   const selectedDepartmentConversation =
     filteredDepartmentConversations.find((conversation) => conversation.departmentId === selectedDepartmentId) ||
     filteredDepartmentConversations[0] ||
@@ -3199,7 +3307,7 @@ function InternalMessages({ profile, isAdmin = false }) {
         name: selectedConversation.participantName,
         email: selectedConversation.participantEmail,
       }
-    : collaborators.find((user) => user.id === messageForm.toUserId) || null;
+    : collaborators.find((user) => user.id === (messageForm.toUserId || selectedConversationId)) || null;
   const selectedPresenceStatus = getPresenceStatus(
     selectedRecipient ? presenceByUserId[selectedRecipient.id] : null,
     presenceNow
@@ -3211,6 +3319,10 @@ function InternalMessages({ profile, isAdmin = false }) {
   const activeFilteredMessages = conversationType === "department"
     ? selectedDepartmentMessages
     : selectedMessages;
+  const activeLastMessage = activeFilteredMessages[activeFilteredMessages.length - 1] || null;
+  const activeLastMessageKey = activeLastMessage
+    ? `${activeLastMessage.id || ""}:${getMillisFromFirestoreDate(activeLastMessage.createdAt)}:${getMillisFromFirestoreDate(activeLastMessage.updatedAt)}`
+    : "";
   const activeChatTitle = conversationType === "department"
     ? selectedDepartmentConversation?.departmentName || "Departamento"
     : selectedRecipient?.name || selectedRecipient?.email || "Conversación";
@@ -3246,12 +3358,33 @@ function InternalMessages({ profile, isAdmin = false }) {
         ? `${activeTypingUsers[0].userName || "Alguien"} está escribiendo...`
         : "Varias personas están escribiendo...";
 
+  function scrollActiveThreadToBottom(behavior = "smooth") {
+    if (typeof window === "undefined") return;
+
+    const scrollNow = () => {
+      const thread = threadMessagesRef.current;
+      if (thread) {
+        thread.scrollTo({
+          top: thread.scrollHeight,
+          behavior,
+        });
+      }
+      threadEndRef.current?.scrollIntoView({ behavior, block: "end" });
+    };
+
+    window.requestAnimationFrame(() => {
+      scrollNow();
+      window.setTimeout(scrollNow, 90);
+      window.setTimeout(scrollNow, 240);
+    });
+  }
+
   useEffect(() => {
     if (conversationType !== "direct") return;
-    if (!selectedConversation && filteredConversations[0]?.participantId) {
+    if (!selectedConversationId && !selectedConversation && filteredConversations[0]?.participantId) {
       setSelectedConversationId(filteredConversations[0].participantId);
     }
-  }, [conversationType, filteredConversations.length, selectedConversation?.participantId]);
+  }, [conversationType, filteredConversations.length, selectedConversationId, selectedConversation?.participantId]);
 
   useEffect(() => {
     if (conversationType !== "department") return;
@@ -3283,9 +3416,9 @@ function InternalMessages({ profile, isAdmin = false }) {
     };
   }, [activeChatKey]);
 
-  useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [activeChatKey, activeFilteredMessages.length]);
+  useLayoutEffect(() => {
+    scrollActiveThreadToBottom("auto");
+  }, [activeChatKey, activeLastMessageKey, activeFilteredMessages.length]);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -3304,17 +3437,45 @@ function InternalMessages({ profile, isAdmin = false }) {
   }, [totalUnreadCount]);
 
   useEffect(() => {
-    const unreadIds = [
+    if (typeof window === "undefined") return undefined;
+
+    const prepareNotifications = () => {
+      primeMessageNotificationSound();
+      requestBrowserMessageNotificationPermission();
+    };
+
+    window.addEventListener("pointerdown", prepareNotifications, { once: true });
+    window.addEventListener("keydown", prepareNotifications, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", prepareNotifications);
+      window.removeEventListener("keydown", prepareNotifications);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unreadItems = [
       ...inboxMessages
         .filter((message) => !message.read)
-        .map((message) => `direct:${message.id}`),
+        .map((message) => ({
+          key: `direct:${message.id}`,
+          title: `Nuevo mensaje de ${message.fromUserName || "un colaborador"}`,
+          body: truncateNotificationText(message.message || "Archivo adjunto", 120),
+          tag: `message-direct-${message.id}`,
+        })),
       ...departmentMessages
         .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
-        .map((message) => `department:${message.id}`),
+        .map((message) => ({
+          key: `department:${message.id}`,
+          title: `Nuevo mensaje en ${message.departmentName || "departamento"}`,
+          body: `${message.fromUserName || "Un colaborador"}: ${truncateNotificationText(message.message || "Archivo adjunto", 100)}`,
+          tag: `message-department-${message.id}`,
+        })),
     ];
+    const unreadIds = unreadItems.map((item) => item.key);
     const nextUnreadSet = new Set(unreadIds);
     const previousUnreadSet = unreadMessageIdsRef.current;
-    const hasNewUnread = unreadIds.some((messageId) => !previousUnreadSet.has(messageId));
+    const newUnreadItems = unreadItems.filter((item) => !previousUnreadSet.has(item.key));
 
     unreadMessageIdsRef.current = nextUnreadSet;
 
@@ -3323,8 +3484,9 @@ function InternalMessages({ profile, isAdmin = false }) {
       return;
     }
 
-    if (hasNewUnread) {
+    if (newUnreadItems.length > 0) {
       playMessageNotificationSound();
+      showBrowserMessageNotification(newUnreadItems[0]);
     }
   }, [inboxMessages, departmentMessages, currentUserId]);
 
@@ -3467,11 +3629,84 @@ function InternalMessages({ profile, isAdmin = false }) {
     });
   }
 
+  async function handleStartVoiceRecording(type) {
+    if (voiceRecordingType) return;
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMessageError("Este navegador no permite grabar audio desde aquÃ­.");
+      return;
+    }
+
+    const currentCount = type === "department" ? departmentAttachments.length : messageAttachments.length;
+    if (currentCount >= 6) {
+      setMessageError("Solo puedes adjuntar hasta 6 archivos por mensaje.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredMimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+      const recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
+      voiceChunksRef.current = [];
+      voiceStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size > 0) {
+          voiceChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const mimeType = "audio/webm";
+        const blob = new Blob(voiceChunksRef.current, { type: mimeType });
+        const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`, {
+          type: mimeType,
+        });
+        const draft = createDraftAttachment(file);
+
+        if (type === "department") {
+          setDepartmentAttachments((current) => [...current, draft].slice(0, 6));
+        } else {
+          setMessageAttachments((current) => [...current, draft].slice(0, 6));
+        }
+
+        voiceChunksRef.current = [];
+        voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+        voiceStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        setVoiceRecordingType("");
+      };
+
+      recorder.start();
+      setVoiceRecordingType(type);
+      setMessageError("");
+    } catch (error) {
+      console.error("No se pudo iniciar la grabaciÃ³n de audio:", error);
+      setMessageError("No se pudo acceder al micrÃ³fono.");
+      voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+      voiceStreamRef.current = null;
+      mediaRecorderRef.current = null;
+      setVoiceRecordingType("");
+    }
+  }
+
+  function handleStopVoiceRecording() {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }
+
   function handleStartConversation(userId) {
     if (!userId) return;
     setConversationType("direct");
     setSelectedConversationId(userId);
     setMessageForm({ toUserId: userId, message: "" });
+    setConversationSearchTerm("");
     setThreadSearchTerm("");
     setShowChatFilesPanel(false);
     setNewConversationOpen(false);
@@ -3538,6 +3773,7 @@ function InternalMessages({ profile, isAdmin = false }) {
       setSelectedConversationId(recipient.id);
       writeTypingState(false);
       resetMessageComposer();
+      scrollActiveThreadToBottom("smooth");
     } catch (error) {
       console.error("No se pudo enviar el mensaje:", error);
       setMessageError("No se pudo enviar el mensaje.");
@@ -3601,6 +3837,7 @@ function InternalMessages({ profile, isAdmin = false }) {
       setSelectedDepartmentId(department.id);
       writeTypingState(false);
       resetDepartmentComposer();
+      scrollActiveThreadToBottom("smooth");
     } catch (error) {
       console.error("No se pudo enviar el mensaje por departamento:", error);
       setMessageError("No se pudo enviar el mensaje al departamento.");
@@ -3960,7 +4197,7 @@ function InternalMessages({ profile, isAdmin = false }) {
                   </small>
                 </div>
 
-                <div className="chat-thread-messages">
+                <div className="chat-thread-messages" ref={threadMessagesRef}>
                   {selectedConversationTotalMessages === 0 ? (
                     <div className="chat-date-separator">Todavía no hay mensajes en esta conversación.</div>
                   ) : selectedMessages.length === 0 ? (
@@ -3984,7 +4221,7 @@ function InternalMessages({ profile, isAdmin = false }) {
                                 <p>{message.replyToMessage || "Mensaje citado"}</p>
                               </div>
                             )}
-                            {message.message && <p>{message.message}</p>}
+                            {message.message && !isAudioOnlyMessage(message) && <p>{message.message}</p>}
                             <AttachmentGallery attachments={message.attachments} compact />
                             <div className="chat-bubble-status">
                               {outgoing ? (message.read ? "Leído" : "Enviado") : "Recibido"}
@@ -4046,6 +4283,21 @@ function InternalMessages({ profile, isAdmin = false }) {
                     />
 
                     <button
+                      type="button"
+                      className={`chat-voice-button ${voiceRecordingType === "direct" ? "recording" : ""}`}
+                      onClick={() =>
+                        voiceRecordingType === "direct"
+                          ? handleStopVoiceRecording()
+                          : handleStartVoiceRecording("direct")
+                      }
+                      disabled={Boolean(voiceRecordingType && voiceRecordingType !== "direct")}
+                      title={voiceRecordingType === "direct" ? "Detener audio" : "Grabar audio"}
+                      aria-label={voiceRecordingType === "direct" ? "Detener audio" : "Grabar audio"}
+                    >
+                      {voiceRecordingType === "direct" ? "■" : "🎙"}
+                    </button>
+
+                    <button
                       type="submit"
                       className="workspace-primary-button chat-send-icon-button"
                       disabled={messageSaving}
@@ -4094,7 +4346,7 @@ function InternalMessages({ profile, isAdmin = false }) {
                 </small>
               </div>
 
-              <div className="chat-thread-messages">
+              <div className="chat-thread-messages" ref={threadMessagesRef}>
                 {selectedDepartmentTotalMessages === 0 ? (
                   <div className="chat-date-separator">Todavía no hay mensajes en este departamento.</div>
                 ) : selectedDepartmentMessages.length === 0 ? (
@@ -4118,7 +4370,7 @@ function InternalMessages({ profile, isAdmin = false }) {
                               <p>{message.replyToMessage || "Mensaje citado"}</p>
                             </div>
                           )}
-                          {message.message && <p>{message.message}</p>}
+                          {message.message && !isAudioOnlyMessage(message) && <p>{message.message}</p>}
                           <AttachmentGallery attachments={message.attachments} compact />
                           <div className="chat-bubble-status">
                             {outgoing
@@ -4176,6 +4428,21 @@ function InternalMessages({ profile, isAdmin = false }) {
                     helper="Imagen, documento, audio o video. Máximo 6 archivos."
                     onChange={handleDepartmentFileSelection}
                   />
+
+                  <button
+                    type="button"
+                    className={`chat-voice-button ${voiceRecordingType === "department" ? "recording" : ""}`}
+                    onClick={() =>
+                      voiceRecordingType === "department"
+                        ? handleStopVoiceRecording()
+                        : handleStartVoiceRecording("department")
+                    }
+                    disabled={Boolean(voiceRecordingType && voiceRecordingType !== "department")}
+                    title={voiceRecordingType === "department" ? "Detener audio" : "Grabar audio"}
+                    aria-label={voiceRecordingType === "department" ? "Detener audio" : "Grabar audio"}
+                  >
+                    {voiceRecordingType === "department" ? "■" : "🎙"}
+                  </button>
 
                   <button
                     type="submit"

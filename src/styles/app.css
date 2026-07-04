@@ -37265,12 +37265,14 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
   padding: 8px 10px;
   border-left: 3px solid #0f4fc4;
   border-radius: 10px;
-  background: rgba(15, 79, 196, 0.08);
+  background: #eef5ff;
+  box-shadow: inset 0 0 0 1px rgba(15, 79, 196, 0.08);
 }
 
 .chat-bubble-row.outgoing .chat-reply-reference {
-  border-left-color: rgba(255, 255, 255, 0.82);
-  background: rgba(255, 255, 255, 0.16);
+  border-left-color: #facc15;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
 }
 
 .chat-reply-reference span,
@@ -37283,17 +37285,18 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
 
 .chat-bubble-row.outgoing .chat-reply-reference span,
 .chat-bubble-row.outgoing .chat-reply-reference p {
-  color: #ffffff;
+  color: #0f2442;
 }
 
 .chat-reply-reference p,
 .chat-reply-preview p {
   margin: 2px 0 0;
-  max-height: 42px;
+  max-height: none;
   overflow: hidden;
   color: #475569;
   font-size: 12px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .chat-reply-button {
@@ -37313,15 +37316,17 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
 }
 
 .chat-reply-preview {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 12px;
   border: 1px solid #d9e2ef;
   border-left: 4px solid #0f4fc4;
   border-radius: 12px;
   background: #f8fbff;
-  padding: 10px 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 12px 14px;
 }
 
 .chat-reply-preview > div {
@@ -37329,6 +37334,7 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
 }
 
 .chat-reply-preview button {
+  align-self: start;
   border: 0;
   border-radius: 999px;
   background: #e2e8f0;
@@ -37339,6 +37345,7 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
   line-height: 1;
   min-height: 26px;
   min-width: 26px;
+  flex: 0 0 auto;
 }
 
 .chat-typing-indicator {
@@ -37388,7 +37395,7 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
 
 .chat-composer-tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: end;
 }
@@ -70141,4 +70148,81 @@ html[data-theme="dark"] body #root .main-content .project-detail-page :is(
 ) {
   background: rgba(96, 165, 250, 0.16) !important;
   color: #bfdbfe !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer-tools {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 44px 56px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  grid-column: 1 / -1 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer textarea {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-reply-preview {
+  width: 100% !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-column: 1 / -1 !important;
+  min-height: 46px !important;
+  max-height: 78px !important;
+  align-items: start !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-reply-preview p {
+  max-height: 34px !important;
+  overflow: hidden !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button {
+  border: 1px solid #cbd7e6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f4fc4;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 900;
+  height: 44px;
+  min-height: 44px;
+  width: 44px;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button.recording {
+  border-color: #ef4444;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.internal-messages-page.chat-messages-page .audio-message-card {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.internal-messages-page.chat-messages-page .audio-message-card audio {
+  display: block;
+  width: min(280px, 100%);
+}
+
+.internal-messages-page.chat-messages-page .chat-bubble .attachment-gallery.compact:has(.audio-message-card) {
+  margin-top: 8px !important;
 }

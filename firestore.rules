@@ -2548,7 +2548,9 @@ service cloud.firestore {
     }
 
     match /messageTypingStates/{stateId} {
-      allow get, list: if canReadMessageTypingState();
+      allow get: if canReadMessageTypingState();
+
+      allow list: if hasProfile();
 
       allow create: if validMessageTypingStateWrite();
 
