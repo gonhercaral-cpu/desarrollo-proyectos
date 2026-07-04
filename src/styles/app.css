@@ -37252,6 +37252,104 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
   color: rgba(255, 255, 255, 0.78);
 }
 
+.chat-bubble-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-reply-reference {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #0f4fc4;
+  border-radius: 10px;
+  background: rgba(15, 79, 196, 0.08);
+}
+
+.chat-bubble-row.outgoing .chat-reply-reference {
+  border-left-color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.chat-reply-reference span,
+.chat-reply-preview span {
+  display: block;
+  color: #0f4fc4;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.chat-bubble-row.outgoing .chat-reply-reference span,
+.chat-bubble-row.outgoing .chat-reply-reference p {
+  color: #ffffff;
+}
+
+.chat-reply-reference p,
+.chat-reply-preview p {
+  margin: 2px 0 0;
+  max-height: 42px;
+  overflow: hidden;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.chat-reply-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  opacity: 0.85;
+  padding: 0;
+}
+
+.chat-reply-button:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.chat-reply-preview {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #d9e2ef;
+  border-left: 4px solid #0f4fc4;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 10px 12px;
+}
+
+.chat-reply-preview > div {
+  min-width: 0;
+}
+
+.chat-reply-preview button {
+  border: 0;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+  min-height: 26px;
+  min-width: 26px;
+}
+
+.chat-typing-indicator {
+  border-top: 1px solid #e5eaf2;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 18px 0;
+}
+
 .chat-bubble .attachment-gallery {
   margin-top: 10px;
   margin-bottom: 6px;

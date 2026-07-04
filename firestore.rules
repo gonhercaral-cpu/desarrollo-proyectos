@@ -696,6 +696,21 @@ service cloud.firestore {
         && request.resource.data.notes is string;
     }
 
+    function validPrintProductStatusUpdate() {
+      return canAccessPrintshop()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "active",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.active is bool
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
+    }
+
 
     function validPrintFinishedInventoryData() {
       return request.resource.data.productId is string
@@ -1606,6 +1621,21 @@ service cloud.firestore {
         && request.resource.data.updatedByUid == request.auth.uid;
     }
 
+    function validPrintSupplyStatusUpdate() {
+      return canAccessPrintshop()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "active",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.active is bool
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
+    }
+
     function printshopCertificateStudentsUpdate() {
       return (canAccessPrintshop() || isPrintRequestResponsible() || isPrintRequestCollaborator())
         && validPrintRequestData()
@@ -2264,6 +2294,10 @@ service cloud.firestore {
           "subject",
           "message",
           "attachments",
+          "replyToMessageId",
+          "replyToFromUserId",
+          "replyToFromUserName",
+          "replyToMessage",
           "read",
           "createdAt",
           "updatedAt"
@@ -2288,6 +2322,14 @@ service cloud.firestore {
         && request.resource.data.message.size() <= 1200
         && request.resource.data.attachments is list
         && request.resource.data.attachments.size() <= 6
+        && request.resource.data.replyToMessageId is string
+        && request.resource.data.replyToMessageId.size() <= 180
+        && request.resource.data.replyToFromUserId is string
+        && request.resource.data.replyToFromUserId.size() <= 180
+        && request.resource.data.replyToFromUserName is string
+        && request.resource.data.replyToFromUserName.size() <= 120
+        && request.resource.data.replyToMessage is string
+        && request.resource.data.replyToMessage.size() <= 240
         && request.resource.data.read == false
         && request.resource.data.createdAt is timestamp
         && request.resource.data.updatedAt is timestamp;
@@ -2347,6 +2389,10 @@ service cloud.firestore {
           "fromUserEmail",
           "message",
           "attachments",
+          "replyToMessageId",
+          "replyToFromUserId",
+          "replyToFromUserName",
+          "replyToMessage",
           "memberIds",
           "readBy",
           "createdAt",
@@ -2372,6 +2418,14 @@ service cloud.firestore {
         && request.resource.data.message.size() <= 1200
         && request.resource.data.attachments is list
         && request.resource.data.attachments.size() <= 6
+        && request.resource.data.replyToMessageId is string
+        && request.resource.data.replyToMessageId.size() <= 180
+        && request.resource.data.replyToFromUserId is string
+        && request.resource.data.replyToFromUserId.size() <= 180
+        && request.resource.data.replyToFromUserName is string
+        && request.resource.data.replyToFromUserName.size() <= 120
+        && request.resource.data.replyToMessage is string
+        && request.resource.data.replyToMessage.size() <= 240
         && request.resource.data.memberIds is list
         && request.resource.data.memberIds.size() <= 80
         && request.auth.uid in request.resource.data.memberIds
@@ -2422,6 +2476,40 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+    function canReadMessageTypingState() {
+      return hasProfile()
+        && request.auth.uid in resource.data.memberIds;
+    }
+
+    function validMessageTypingStateWrite() {
+      return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "chatKey",
+          "chatType",
+          "targetId",
+          "userId",
+          "userName",
+          "memberIds",
+          "isTyping",
+          "updatedAt"
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.chatKey is string
+        && request.resource.data.chatKey.size() > 0
+        && request.resource.data.chatKey.size() <= 180
+        && request.resource.data.chatType in ["direct", "department"]
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 180
+        && request.resource.data.userName is string
+        && request.resource.data.userName.size() <= 120
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() <= 80
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.isTyping is bool
+        && request.resource.data.updatedAt is timestamp;
+    }
+
     match /announcements/{announcementId} {
       allow read: if hasProfile();
 
@@ -2455,6 +2543,17 @@ service cloud.firestore {
       allow get, list: if hasProfile();
 
       allow create, update: if validUserPresenceWrite(userId);
+
+      allow delete: if false;
+    }
+
+    match /messageTypingStates/{stateId} {
+      allow get, list: if canReadMessageTypingState();
+
+      allow create: if validMessageTypingStateWrite();
+
+      allow update: if resource.data.userId == request.auth.uid
+        && validMessageTypingStateWrite();
 
       allow delete: if false;
     }
@@ -2630,13 +2729,14 @@ service cloud.firestore {
     match /printProducts/{productId} {
       allow read: if canAccessPrintshop();
 
-      allow create: if isAdmin()
+      allow create: if canAccessPrintshop()
         && validPrintProductData();
 
       allow update: if (
-          isAdmin()
+          canAccessPrintshop()
           && validPrintProductData()
         )
+        || validPrintProductStatusUpdate()
         || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
@@ -2675,14 +2775,15 @@ service cloud.firestore {
     match /printSupplyItems/{supplyId} {
       allow read: if canAccessPrintshop();
 
-      allow create: if isAdmin()
+      allow create: if canAccessPrintshop()
         && validPrintSupplyItemData();
 
       allow update: if (
-          isAdmin()
+          canAccessPrintshop()
           && validPrintSupplyItemData()
         )
         || validSupplyStockMovementUpdate()
+        || validPrintSupplyStatusUpdate()
         || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;

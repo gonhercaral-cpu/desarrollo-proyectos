@@ -7271,8 +7271,8 @@ export default function PrintShop() {
     event.preventDefault();
     setSupplyMessage("");
 
-    if (!isAdmin) {
-      setSupplyMessage("Solo los administradores pueden crear o editar insumos.");
+    if (!canManagePrintshopOperations) {
+      setSupplyMessage("No tienes permiso para crear o editar insumos.");
       return;
     }
 
@@ -7371,7 +7371,7 @@ export default function PrintShop() {
   }
 
   async function toggleSupplyStatus(item) {
-    if (!item?.id || !isAdmin) return;
+    if (!item?.id || !canManagePrintshopOperations) return;
 
     const auditUser = getAuditUser();
 
@@ -8212,6 +8212,7 @@ export default function PrintShop() {
           typeFilter={typeFilter}
           statusFilter={statusFilter}
           isAdmin={isAdmin}
+          canManageCatalog={canManagePrintshopOperations}
           onSearchChange={setProductSearch}
           onCategoryFilterChange={setCategoryFilter}
           onTypeFilterChange={setTypeFilter}
@@ -8283,6 +8284,7 @@ export default function PrintShop() {
           savingSupplyMovement={savingSupplyMovement}
           supplyMovementMessage={supplyMovementMessage}
           isAdmin={isAdmin}
+          canManageSupplyItems={canManagePrintshopOperations}
           onSearchChange={setSupplySearch}
           onCategoryFilterChange={setSupplyCategoryFilter}
           onStatusFilterChange={setSupplyStatusFilter}
@@ -9437,9 +9439,12 @@ function ProductionBatchesView({
   const canEditAdministrativeFields = isAdmin;
   const canEditProductionFields = isAdmin || selectedRole === "responsible";
   const canEditQualityFields = isAdmin || selectedRole === "auditor";
+  const [batchFocusMode, setBatchFocusMode] = useState("edit");
+  const isBatchDetailMode = batchFocusMode === "detail";
   const canSaveBatch =
-    (!selectedBatchId && canCreateBatch) ||
-    (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole));
+    !isBatchDetailMode &&
+    ((!selectedBatchId && canCreateBatch) ||
+      (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole)));
   const availableStatusOptions = isAdmin
     ? productionBatchStatuses
     : selectedRole === "responsible"
@@ -9487,6 +9492,7 @@ function ProductionBatchesView({
   }, [productionBatches, batchSearchTerm, batchStatusFilter, batchSummaryFrom, batchSummaryTo]);
 
   function openBatchFocus(batch = null) {
+    setBatchFocusMode("edit");
     if (batch) {
       onSelectBatch(batch);
     } else {
@@ -9498,10 +9504,13 @@ function ProductionBatchesView({
   function closeBatchFocus() {
     onResetBatchForm();
     setBatchFocusOpen(false);
+    setBatchFocusMode("edit");
   }
 
   function openBatchDetails(batch) {
     onSelectBatch(batch);
+    setBatchFocusMode("detail");
+    setBatchFocusOpen(true);
 
     window.setTimeout(() => {
       const detailsPanel =
@@ -9899,12 +9908,12 @@ function ProductionBatchesView({
               <button type="button" className="visual-outline-button" onClick={closeBatchFocus}>
                 ← Regresar a lotes
               </button>
-              <span>{selectedBatch ? "Vista enfocada de edición" : "Vista enfocada de alta"}</span>
+              <span>{isBatchDetailMode ? "Vista enfocada de detalle" : selectedBatch ? "Vista enfocada de edicion" : "Vista enfocada de alta"}</span>
             </div>
           )}
 
           <Panel
-            title={selectedBatch ? "Editar lote" : "Nuevo lote"}
+            title={isBatchDetailMode ? "Detalle de lote" : selectedBatch ? "Editar lote" : "Nuevo lote"}
             icon={selectedBatch ? "✎" : "＋"}
             actionLabel={selectedBatch ? "Editando" : "Alta"}
           >
@@ -10127,6 +10136,7 @@ function ProductionBatchesView({
 
               {batchMessage && <div className="message-box full">{batchMessage}</div>}
 
+              {!isBatchDetailMode && (
               <div className="printshop-form-actions full">
                 {selectedBatchId && (
                   <button type="button" className="visual-outline-button" onClick={onResetBatchForm}>
@@ -10146,6 +10156,7 @@ function ProductionBatchesView({
                       : "Crear lote"}
                 </button>
               </div>
+              )}
 
               {inventoryProducts.length === 0 && (
                 <p className="inventory-side-help full">
@@ -10625,6 +10636,7 @@ function SupplyInventoryView({
   savingSupplyMovement,
   supplyMovementMessage,
   isAdmin,
+  canManageSupplyItems = isAdmin,
   onSearchChange,
   onCategoryFilterChange,
   onStatusFilterChange,
@@ -11000,7 +11012,7 @@ function SupplyInventoryView({
         </div>
 
         <div className="printshop-hero-actions compact-actions supplies-hero-actions-redesign">
-          {isAdmin && (
+          {canManageSupplyItems && (
             <button type="button" className="visual-primary-button" onClick={() => openSupplyFormFocus()}>
               + Nuevo insumo
             </button>
@@ -11016,7 +11028,9 @@ function SupplyInventoryView({
         <CatalogMetric tone="blue" icon="▧" label="Insumos" value={supplyStats.total} />
         <CatalogMetric tone="orange" icon="!" label="Stock bajo" value={supplyStats.lowStock} />
         <CatalogMetric tone="red" icon="×" label="Críticos" value={supplyStats.critical} />
-        <CatalogMetric tone="green" icon="$" label="Valor aprox." value={formatCurrency(supplyStats.totalValue)} />
+        {isAdmin && (
+          <CatalogMetric tone="green" icon="$" label="Valor aprox." value={formatCurrency(supplyStats.totalValue)} />
+        )}
         <CatalogMetric tone="purple" icon="↕" label="Movimientos" value={supplyStats.movements} />
       </div>
 
@@ -11281,10 +11295,12 @@ function SupplyInventoryView({
                     <span>Total de insumos</span>
                     <strong>{supplyStats.total}</strong>
                   </div>
-                  <div>
-                    <span>Valor aproximado</span>
-                    <strong>{formatCurrency(supplyStats.totalValue)}</strong>
-                  </div>
+                  {isAdmin && (
+                    <div>
+                      <span>Valor aproximado</span>
+                      <strong>{formatCurrency(supplyStats.totalValue)}</strong>
+                    </div>
+                  )}
                   <div>
                     <span>Unidades en stock</span>
                     <strong>{totalSupplyUnits}</strong>
@@ -11423,7 +11439,7 @@ function SupplyInventoryView({
                               <button type="button" onClick={() => openSupplyMovementFocus(item, "Merma")}>
                                 Merma
                               </button>
-                              {isAdmin && (
+                              {canManageSupplyItems && (
                                 <>
                                   <button type="button" onClick={() => openSupplyFormFocus(item)}>
                                     Editar
@@ -11435,13 +11451,15 @@ function SupplyInventoryView({
                                   >
                                     {item.active === false ? "Activar" : "Desactivar"}
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="danger-table-button request-action-button request-action-delete"
-                                    onClick={() => onSoftDeleteSupplyItem(item)}
-                                  >
-                                    Eliminar
-                                  </button>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      className="danger-table-button request-action-button request-action-delete"
+                                      onClick={() => onSoftDeleteSupplyItem(item)}
+                                    >
+                                      Eliminar
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -11533,13 +11551,13 @@ function SupplyInventoryView({
                   value={supplyForm.name}
                   onChange={onSupplyInputChange}
                   placeholder="Ej. Papel bond carta para libros"
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
               <label>
                 <span>Categoría</span>
-                <select name="category" value={supplyForm.category} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                <select name="category" value={supplyForm.category} onChange={onSupplyInputChange} disabled={!canManageSupplyItems || savingSupply}>
                   {supplyCategories.map((category) => (
                     <option key={category}>{category}</option>
                   ))}
@@ -11548,7 +11566,7 @@ function SupplyInventoryView({
 
               <label>
                 <span>Unidad de stock</span>
-                <select name="stockUnit" value={supplyForm.stockUnit} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                <select name="stockUnit" value={supplyForm.stockUnit} onChange={onSupplyInputChange} disabled={!canManageSupplyItems || savingSupply}>
                   {supplyUnits.map((unit) => (
                     <option key={unit}>{unit}</option>
                   ))}
@@ -11563,7 +11581,7 @@ function SupplyInventoryView({
                   name="currentStock"
                   value={supplyForm.currentStock}
                   onChange={onSupplyNumberInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
@@ -11575,7 +11593,7 @@ function SupplyInventoryView({
                   name="minStock"
                   value={supplyForm.minStock}
                   onChange={onSupplyNumberInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
@@ -11587,7 +11605,7 @@ function SupplyInventoryView({
                   name="idealStock"
                   value={supplyForm.idealStock}
                   onChange={onSupplyNumberInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
@@ -11599,13 +11617,13 @@ function SupplyInventoryView({
                   name="contentQuantity"
                   value={supplyForm.contentQuantity}
                   onChange={onSupplyNumberInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
               <label>
                 <span>Unidad de contenido</span>
-                <select name="contentUnit" value={supplyForm.contentUnit} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                <select name="contentUnit" value={supplyForm.contentUnit} onChange={onSupplyInputChange} disabled={!canManageSupplyItems || savingSupply}>
                   {supplyContentUnits.map((unit) => (
                     <option key={unit}>{unit}</option>
                   ))}
@@ -11620,13 +11638,13 @@ function SupplyInventoryView({
                   name="expectedYield"
                   value={supplyForm.expectedYield}
                   onChange={onSupplyNumberInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
               <label>
                 <span>Unidad de rendimiento</span>
-                <select name="expectedYieldUnit" value={supplyForm.expectedYieldUnit} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply}>
+                <select name="expectedYieldUnit" value={supplyForm.expectedYieldUnit} onChange={onSupplyInputChange} disabled={!canManageSupplyItems || savingSupply}>
                   {supplyYieldUnits.map((unit) => (
                     <option key={unit}>{unit}</option>
                   ))}
@@ -11635,22 +11653,22 @@ function SupplyInventoryView({
 
               <label>
                 <span>Color</span>
-                <input name="color" value={supplyForm.color} onChange={onSupplyInputChange} placeholder="Ej. Blanco" disabled={!isAdmin || savingSupply} />
+                <input name="color" value={supplyForm.color} onChange={onSupplyInputChange} placeholder="Ej. Blanco" disabled={!canManageSupplyItems || savingSupply} />
               </label>
 
               <label>
                 <span>Medida</span>
-                <input name="size" value={supplyForm.size} onChange={onSupplyInputChange} placeholder="Ej. Carta" disabled={!isAdmin || savingSupply} />
+                <input name="size" value={supplyForm.size} onChange={onSupplyInputChange} placeholder="Ej. Carta" disabled={!canManageSupplyItems || savingSupply} />
               </label>
 
               <label>
                 <span>Gramaje / tipo</span>
-                <input name="weight" value={supplyForm.weight} onChange={onSupplyInputChange} placeholder="Ej. 75 g" disabled={!isAdmin || savingSupply} />
+                <input name="weight" value={supplyForm.weight} onChange={onSupplyInputChange} placeholder="Ej. 75 g" disabled={!canManageSupplyItems || savingSupply} />
               </label>
 
               <label>
                 <span>Proveedor</span>
-                <input name="supplier" value={supplyForm.supplier} onChange={onSupplyInputChange} placeholder="Proveedor" disabled={!isAdmin || savingSupply} />
+                <input name="supplier" value={supplyForm.supplier} onChange={onSupplyInputChange} placeholder="Proveedor" disabled={!canManageSupplyItems || savingSupply} />
               </label>
 
               <label>
@@ -11661,13 +11679,13 @@ function SupplyInventoryView({
                   name="approximateCost"
                   value={supplyForm.approximateCost}
                   onChange={onSupplyNumberInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
 
               <label>
                 <span>Código principal / compatibilidad</span>
-                <input name="barcode" value={supplyForm.barcode} onChange={onSupplyInputChange} placeholder="Se puede generar automático" disabled={!isAdmin || savingSupply} />
+                <input name="barcode" value={supplyForm.barcode} onChange={onSupplyInputChange} placeholder="Se puede generar automático" disabled={!canManageSupplyItems || savingSupply} />
               </label>
 
               <div className="supply-presentations-editor full">
@@ -11711,7 +11729,7 @@ function SupplyInventoryView({
                             type="button"
                             className="visual-outline-button"
                             onClick={() => togglePresentationFromSupplyForm(presentation.id)}
-                            disabled={!isAdmin || savingSupply}
+                            disabled={!canManageSupplyItems || savingSupply}
                           >
                             {presentation.active === false ? "Activar" : "Desactivar"}
                           </button>
@@ -11719,7 +11737,7 @@ function SupplyInventoryView({
                             type="button"
                             className="visual-outline-button"
                             onClick={() => removePresentationFromSupplyForm(presentation.id)}
-                            disabled={!isAdmin || savingSupply}
+                            disabled={!canManageSupplyItems || savingSupply}
                           >
                             Quitar
                           </button>
@@ -11737,7 +11755,7 @@ function SupplyInventoryView({
                       value={supplyForm.presentationName}
                       onChange={onSupplyInputChange}
                       placeholder="Ej. Caja de 10 resmas"
-                      disabled={!isAdmin || savingSupply}
+                      disabled={!canManageSupplyItems || savingSupply}
                     />
                   </label>
                   <label>
@@ -11747,7 +11765,7 @@ function SupplyInventoryView({
                       value={supplyForm.presentationBarcode}
                       onChange={onSupplyInputChange}
                       placeholder="Ej. 7501234567890"
-                      disabled={!isAdmin || savingSupply}
+                      disabled={!canManageSupplyItems || savingSupply}
                     />
                   </label>
                   <label>
@@ -11759,7 +11777,7 @@ function SupplyInventoryView({
                       name="presentationQuantity"
                       value={supplyForm.presentationQuantity}
                       onChange={onSupplyNumberInputChange}
-                      disabled={!isAdmin || savingSupply}
+                      disabled={!canManageSupplyItems || savingSupply}
                     />
                   </label>
                   <label>
@@ -11769,7 +11787,7 @@ function SupplyInventoryView({
                       value={supplyForm.presentationUnit || supplyForm.stockUnit}
                       onChange={onSupplyInputChange}
                       placeholder={supplyForm.stockUnit}
-                      disabled={!isAdmin || savingSupply}
+                      disabled={!canManageSupplyItems || savingSupply}
                     />
                   </label>
                   <label className="full">
@@ -11779,14 +11797,14 @@ function SupplyInventoryView({
                       value={supplyForm.presentationNotes}
                       onChange={onSupplyInputChange}
                       placeholder="Ej. Código de caja, proveedor alterno, paquete anterior..."
-                      disabled={!isAdmin || savingSupply}
+                      disabled={!canManageSupplyItems || savingSupply}
                     />
                   </label>
                   <button
                     type="button"
                     className="visual-outline-button full"
                     onClick={addPresentationToSupplyForm}
-                    disabled={!isAdmin || savingSupply}
+                    disabled={!canManageSupplyItems || savingSupply}
                   >
                     Agregar presentación
                   </button>
@@ -11799,14 +11817,14 @@ function SupplyInventoryView({
                   name="active"
                   checked={supplyForm.active !== false}
                   onChange={onSupplyInputChange}
-                  disabled={!isAdmin || savingSupply}
+                  disabled={!canManageSupplyItems || savingSupply}
                 />
                 <span>Insumo activo</span>
               </label>
 
               <label className="full">
                 <span>Notas</span>
-                <textarea name="notes" value={supplyForm.notes} onChange={onSupplyInputChange} disabled={!isAdmin || savingSupply} />
+                <textarea name="notes" value={supplyForm.notes} onChange={onSupplyInputChange} disabled={!canManageSupplyItems || savingSupply} />
               </label>
 
               {supplyMessage && <div className="message-box full">{supplyMessage}</div>}
@@ -11817,14 +11835,14 @@ function SupplyInventoryView({
                     Nuevo insumo
                   </button>
                 )}
-                <button type="submit" className="visual-primary-button" disabled={!isAdmin || savingSupply}>
+                <button type="submit" className="visual-primary-button" disabled={!canManageSupplyItems || savingSupply}>
                   {savingSupply ? "Guardando..." : selectedSupplyId ? "Guardar cambios" : "Crear insumo"}
                 </button>
               </div>
 
-              {!isAdmin && (
+              {!canManageSupplyItems && (
                 <p className="inventory-side-help full">
-                  Solo los administradores pueden crear o editar insumos.
+                  No tienes permiso para crear o editar insumos.
                 </p>
               )}
             </form>
@@ -18136,6 +18154,7 @@ function ProductCatalogView({
   typeFilter,
   statusFilter,
   isAdmin,
+  canManageCatalog = isAdmin,
   supplyItems,
   onSearchChange,
   onCategoryFilterChange,
@@ -18260,7 +18279,7 @@ function ProductCatalogView({
                 </select>
               </label>
 
-              {isAdmin && (
+              {canManageCatalog && (
                 <button
                   type="button"
                   className="visual-primary-button printshop-toolbar-action"
@@ -18566,7 +18585,7 @@ function ProductCatalogView({
                     type="button"
                     className="visual-outline-button"
                     onClick={onAddRecipeItem}
-                    disabled={!isAdmin || !productForm.recipeSupplyId}
+                    disabled={!canManageCatalog || !productForm.recipeSupplyId}
                   >
                     Agregar a receta
                   </button>
@@ -18591,7 +18610,7 @@ function ProductCatalogView({
                           type="button"
                           className="danger-table-button"
                           onClick={() => onRemoveRecipeItem(item.id)}
-                          disabled={!isAdmin}
+                          disabled={!canManageCatalog}
                         >
                           Quitar
                         </button>
@@ -18632,7 +18651,7 @@ function ProductCatalogView({
                 <button
                   type="submit"
                   className="visual-primary-button"
-                  disabled={savingProduct || !isAdmin}
+                  disabled={savingProduct || !canManageCatalog}
                 >
                   {savingProduct
                     ? "Guardando..."

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -2887,6 +2887,36 @@ function matchesMessageSearch(message, searchTerm) {
   return textIncludesSearchTerm(searchableText, searchTerm);
 }
 
+function buildMessageTypingStateId(chatKey, userId) {
+  return `${chatKey || "chat"}__${userId || "user"}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 180);
+}
+
+function playMessageNotificationSound() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const audioContext = new AudioContextClass();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(660, audioContext.currentTime + 0.16);
+    gain.gain.setValueAtTime(0.001, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16, audioContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.22);
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.24);
+  } catch (error) {
+    console.warn("No se pudo reproducir sonido de mensaje:", error);
+  }
+}
+
 
 function InternalMessages({ profile, isAdmin = false }) {
   const currentUserId = getCurrentUserId(profile);
@@ -2915,6 +2945,15 @@ function InternalMessages({ profile, isAdmin = false }) {
   const [threadSearchTerm, setThreadSearchTerm] = useState("");
   const [showChatFilesPanel, setShowChatFilesPanel] = useState(false);
   const [mutedChats, setMutedChats] = useState({});
+  const [replyTarget, setReplyTarget] = useState(null);
+  const [typingStates, setTypingStates] = useState([]);
+  const threadEndRef = useRef(null);
+  const directComposerRef = useRef(null);
+  const departmentComposerRef = useRef(null);
+  const unreadMessageIdsRef = useRef(new Set());
+  const notificationReadyRef = useRef(false);
+  const typingTimeoutRef = useRef(null);
+  const pageTitleRef = useRef(typeof document === "undefined" ? "Mensajes" : document.title);
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -2982,6 +3021,30 @@ function InternalMessages({ profile, isAdmin = false }) {
       },
       (error) => {
         console.error("No se pudo cargar la presencia de colaboradores:", error);
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const typingQuery = query(
+      collection(db, "messageTypingStates"),
+      where("memberIds", "array-contains", currentUserId)
+    );
+
+    return onSnapshot(
+      typingQuery,
+      (snapshot) => {
+        const nextStates = snapshot.docs.map((typingDoc) => ({
+          id: typingDoc.id,
+          ...typingDoc.data(),
+        }));
+
+        setTypingStates(nextStates);
+      },
+      (error) => {
+        console.error("No se pudo cargar el estado de escritura:", error);
       }
     );
   }, [currentUserId]);
@@ -3169,6 +3232,19 @@ function InternalMessages({ profile, isAdmin = false }) {
       ? `department:${selectedDepartmentConversation?.departmentId || ""}`
       : `direct:${selectedConversation?.participantId || selectedRecipient?.id || ""}`;
   const activeChatMuted = Boolean(mutedChats[activeChatKey]);
+  const activeTypingUsers = typingStates.filter((typingState) => {
+    if (!typingState?.isTyping || typingState.userId === currentUserId) return false;
+    if (typingState.chatKey !== activeChatKey) return false;
+
+    const updatedAt = getMillisFromFirestoreDate(typingState.updatedAt);
+    return updatedAt > 0 && Date.now() - updatedAt <= 8000;
+  });
+  const activeTypingLabel =
+    activeTypingUsers.length === 0
+      ? ""
+      : activeTypingUsers.length === 1
+        ? `${activeTypingUsers[0].userName || "Alguien"} está escribiendo...`
+        : "Varias personas están escribiendo...";
 
   useEffect(() => {
     if (conversationType !== "direct") return;
@@ -3198,6 +3274,60 @@ function InternalMessages({ profile, isAdmin = false }) {
     markDepartmentConversationMessagesAsRead(selectedDepartmentConversation.messages);
   }, [conversationType, selectedDepartmentConversation?.departmentId, selectedDepartmentConversation?.unreadCount]);
 
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        window.clearTimeout(typingTimeoutRef.current);
+      }
+      writeTypingState(false);
+    };
+  }, [activeChatKey]);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [activeChatKey, activeFilteredMessages.length]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const baseTitle = pageTitleRef.current.replace(/^\(\d+\)\s+Mensajes -\s+/, "");
+
+    if (totalUnreadCount > 0) {
+      document.title = `(${totalUnreadCount}) Mensajes - ${baseTitle}`;
+    } else {
+      document.title = baseTitle;
+    }
+
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [totalUnreadCount]);
+
+  useEffect(() => {
+    const unreadIds = [
+      ...inboxMessages
+        .filter((message) => !message.read)
+        .map((message) => `direct:${message.id}`),
+      ...departmentMessages
+        .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
+        .map((message) => `department:${message.id}`),
+    ];
+    const nextUnreadSet = new Set(unreadIds);
+    const previousUnreadSet = unreadMessageIdsRef.current;
+    const hasNewUnread = unreadIds.some((messageId) => !previousUnreadSet.has(messageId));
+
+    unreadMessageIdsRef.current = nextUnreadSet;
+
+    if (!notificationReadyRef.current) {
+      notificationReadyRef.current = true;
+      return;
+    }
+
+    if (hasNewUnread) {
+      playMessageNotificationSound();
+    }
+  }, [inboxMessages, departmentMessages, currentUserId]);
+
   function resetMessageComposer() {
     revokeDraftAttachmentPreviews(messageAttachments);
     setMessageForm((current) => ({
@@ -3205,12 +3335,80 @@ function InternalMessages({ profile, isAdmin = false }) {
       message: "",
     }));
     setMessageAttachments([]);
+    setReplyTarget(null);
   }
 
   function resetDepartmentComposer() {
     revokeDraftAttachmentPreviews(departmentAttachments);
     setDepartmentForm({ message: "" });
     setDepartmentAttachments([]);
+    setReplyTarget(null);
+  }
+
+  async function writeTypingState(isTyping) {
+    if (!currentUserId || !activeChatKey) return;
+
+    const isDepartmentChat = conversationType === "department";
+    const targetId = isDepartmentChat
+      ? selectedDepartmentConversation?.departmentId
+      : selectedRecipient?.id;
+
+    if (!targetId) return;
+
+    const memberIds = isDepartmentChat
+      ? getDepartmentMemberIds(selectedDepartmentConversation, collaborators, profile, currentUserId)
+      : [currentUserId, targetId].filter(Boolean);
+
+    try {
+      await setDoc(
+        doc(db, "messageTypingStates", buildMessageTypingStateId(activeChatKey, currentUserId)),
+        {
+          chatKey: activeChatKey,
+          chatType: conversationType,
+          targetId,
+          userId: currentUserId,
+          userName: profile?.name || profile?.email || "Usuario",
+          memberIds,
+          isTyping,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.warn("No se pudo actualizar estado escribiendo:", error);
+    }
+  }
+
+  function scheduleTypingState(isTyping) {
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current);
+    }
+
+    writeTypingState(isTyping);
+
+    if (isTyping) {
+      typingTimeoutRef.current = window.setTimeout(() => {
+        writeTypingState(false);
+      }, 1800);
+    }
+  }
+
+  function handleReplyToMessage(message, type = conversationType) {
+    setReplyTarget({
+      type,
+      messageId: message.id,
+      fromUserId: message.fromUserId || "",
+      fromUserName: message.fromUserId === currentUserId ? "Tú" : message.fromUserName || "Usuario",
+      message: message.message || "Archivo adjunto",
+      createdAt: message.createdAt || null,
+    });
+  }
+
+  function handleComposerKeyDown(event, formRef) {
+    if (event.key !== "Enter" || event.shiftKey) return;
+
+    event.preventDefault();
+    formRef.current?.requestSubmit();
   }
 
   function handleMessageFileSelection(event) {
@@ -3328,13 +3526,17 @@ function InternalMessages({ profile, isAdmin = false }) {
         subject: `Conversación con ${recipientName}`.slice(0, 120),
         message: cleanMessage || "Archivo adjunto",
         attachments,
+        replyToMessageId: replyTarget?.type === "direct" ? replyTarget.messageId : "",
+        replyToFromUserId: replyTarget?.type === "direct" ? replyTarget.fromUserId : "",
+        replyToFromUserName: replyTarget?.type === "direct" ? replyTarget.fromUserName : "",
+        replyToMessage: replyTarget?.type === "direct" ? replyTarget.message.slice(0, 240) : "",
         read: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
       setSelectedConversationId(recipient.id);
-      setMessageStatus("Mensaje enviado.");
+      writeTypingState(false);
       resetMessageComposer();
     } catch (error) {
       console.error("No se pudo enviar el mensaje:", error);
@@ -3384,6 +3586,10 @@ function InternalMessages({ profile, isAdmin = false }) {
         fromUserEmail: profile?.email || "",
         message: cleanMessage || "Archivo adjunto",
         attachments,
+        replyToMessageId: replyTarget?.type === "department" ? replyTarget.messageId : "",
+        replyToFromUserId: replyTarget?.type === "department" ? replyTarget.fromUserId : "",
+        replyToFromUserName: replyTarget?.type === "department" ? replyTarget.fromUserName : "",
+        replyToMessage: replyTarget?.type === "department" ? replyTarget.message.slice(0, 240) : "",
         memberIds,
         readBy: {
           [currentUserId]: serverTimestamp(),
@@ -3393,7 +3599,7 @@ function InternalMessages({ profile, isAdmin = false }) {
       });
 
       setSelectedDepartmentId(department.id);
-      setMessageStatus("Mensaje enviado al departamento.");
+      writeTypingState(false);
       resetDepartmentComposer();
     } catch (error) {
       console.error("No se pudo enviar el mensaje por departamento:", error);
@@ -3452,6 +3658,8 @@ function InternalMessages({ profile, isAdmin = false }) {
     setShowChatFilesPanel(false);
     setMessageStatus("");
     setMessageError("");
+    setReplyTarget(null);
+    writeTypingState(false);
     markConversationMessagesAsRead(conversation.messages);
   }
 
@@ -3462,6 +3670,8 @@ function InternalMessages({ profile, isAdmin = false }) {
     setShowChatFilesPanel(false);
     setMessageStatus("");
     setMessageError("");
+    setReplyTarget(null);
+    writeTypingState(false);
     markDepartmentConversationMessagesAsRead(conversation.messages);
   }
 
@@ -3768,28 +3978,62 @@ function InternalMessages({ profile, isAdmin = false }) {
                               <strong>{outgoing ? "Tú" : message.fromUserName || "Usuario"}</strong>
                               <small>{formatDateTime(message.createdAt)}</small>
                             </div>
+                            {message.replyToMessageId && (
+                              <div className="chat-reply-reference">
+                                <span>{message.replyToFromUserName || "Mensaje citado"}</span>
+                                <p>{message.replyToMessage || "Mensaje citado"}</p>
+                              </div>
+                            )}
                             {message.message && <p>{message.message}</p>}
                             <AttachmentGallery attachments={message.attachments} compact />
                             <div className="chat-bubble-status">
                               {outgoing ? (message.read ? "Leído" : "Enviado") : "Recibido"}
+                              <button
+                                type="button"
+                                className="chat-reply-button"
+                                onClick={() => handleReplyToMessage(message, "direct")}
+                              >
+                                Responder
+                              </button>
                             </div>
                           </div>
                         </article>
                       );
                     })
                   )}
+                  <div ref={threadEndRef} aria-hidden="true" />
                 </div>
 
-                <form className="chat-composer" onSubmit={handleMessageSubmit}>
+                {activeTypingLabel && <div className="chat-typing-indicator">{activeTypingLabel}</div>}
+
+                <form className="chat-composer" onSubmit={handleMessageSubmit} ref={directComposerRef}>
+                  {replyTarget?.type === "direct" && (
+                    <div className="chat-reply-preview">
+                      <div>
+                        <span>Respondiendo a {replyTarget.fromUserName}</span>
+                        <p>{replyTarget.message}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReplyTarget(null)}
+                        aria-label="Cancelar respuesta"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                   <textarea
                     value={messageForm.message}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextMessage = event.target.value;
                       setMessageForm((current) => ({
                         ...current,
                         toUserId: selectedRecipient.id,
-                        message: event.target.value,
-                      }))
-                    }
+                        message: nextMessage,
+                      }));
+                      scheduleTypingState(Boolean(nextMessage.trim()));
+                    }}
+                    onKeyDown={(event) => handleComposerKeyDown(event, directComposerRef)}
                     placeholder={`Escribe un mensaje para ${selectedRecipient.name || "este colaborador"}...`}
                     maxLength={1200}
                   />
@@ -3868,24 +4112,60 @@ function InternalMessages({ profile, isAdmin = false }) {
                             <strong>{outgoing ? "Tú" : message.fromUserName || "Usuario"}</strong>
                             <small>{formatDateTime(message.createdAt)}</small>
                           </div>
+                          {message.replyToMessageId && (
+                            <div className="chat-reply-reference">
+                              <span>{message.replyToFromUserName || "Mensaje citado"}</span>
+                              <p>{message.replyToMessage || "Mensaje citado"}</p>
+                            </div>
+                          )}
                           {message.message && <p>{message.message}</p>}
                           <AttachmentGallery attachments={message.attachments} compact />
                           <div className="chat-bubble-status">
                             {outgoing
                               ? `Enviado · visto por ${Math.max(Object.keys(message.readBy || {}).length - 1, 0)}`
                               : "Recibido"}
+                            <button
+                              type="button"
+                              className="chat-reply-button"
+                              onClick={() => handleReplyToMessage(message, "department")}
+                            >
+                              Responder
+                            </button>
                           </div>
                         </div>
                       </article>
                     );
                   })
                 )}
+                <div ref={threadEndRef} aria-hidden="true" />
               </div>
 
-              <form className="chat-composer" onSubmit={handleDepartmentMessageSubmit}>
+              {activeTypingLabel && <div className="chat-typing-indicator">{activeTypingLabel}</div>}
+
+              <form className="chat-composer" onSubmit={handleDepartmentMessageSubmit} ref={departmentComposerRef}>
+                {replyTarget?.type === "department" && (
+                  <div className="chat-reply-preview">
+                    <div>
+                      <span>Respondiendo a {replyTarget.fromUserName}</span>
+                      <p>{replyTarget.message}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyTarget(null)}
+                      aria-label="Cancelar respuesta"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 <textarea
                   value={departmentForm.message}
-                  onChange={(event) => setDepartmentForm({ message: event.target.value })}
+                  onChange={(event) => {
+                    const nextMessage = event.target.value;
+                    setDepartmentForm({ message: nextMessage });
+                    scheduleTypingState(Boolean(nextMessage.trim()));
+                  }}
+                  onKeyDown={(event) => handleComposerKeyDown(event, departmentComposerRef)}
                   placeholder={`Escribe un mensaje para ${selectedDepartmentConversation.departmentName}...`}
                   maxLength={1200}
                 />
