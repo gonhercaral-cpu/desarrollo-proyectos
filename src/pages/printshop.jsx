@@ -15,6 +15,7 @@ import {
   runTransaction,
   serverTimestamp,
   updateDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { getBytes, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
@@ -403,6 +404,9 @@ const requestFormInitialState = {
   responsibleUid: "",
   responsibleName: "",
   responsibleEmail: "",
+  collaboratorUid: "",
+  collaboratorName: "",
+  collaboratorEmail: "",
   priority: "Normal",
   requestedQuantity: 1,
   deliveredQuantity: 0,
@@ -2750,8 +2754,42 @@ function buildBatchFolio(product) {
   return `LOTE-${productCode}-${year}-${suffix}`;
 }
 
+function normalizeProfileAccessText(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function getProfileDepartmentNames(profile) {
+  return [
+    profile?.area,
+    profile?.department,
+    profile?.departmentName,
+    profile?.position,
+    profile?.team,
+    ...(Array.isArray(profile?.departmentNames) ? profile.departmentNames : []),
+    ...(Array.isArray(profile?.departments) ? profile.departments : []),
+  ]
+    .filter(Boolean)
+    .map(normalizeProfileAccessText)
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index);
+}
+
+function canProfileAccessPrintshop(profile, isAdmin) {
+  if (isAdmin) return true;
+
+  return getProfileDepartmentNames(profile).some(
+    (departmentName) =>
+      departmentName === "imprenta" || departmentName === "soporte tecnico"
+  );
+}
+
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
+  const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin);
 
   const [activeSection, setActiveSection] = useState("dashboard");
   const [products, setProducts] = useState([]);
@@ -2890,7 +2928,10 @@ export default function PrintShop() {
     setLoadingUsers(true);
     setUsersError("");
 
-    const usersQuery = query(collection(db, "users"), orderBy("name", "asc"));
+    const usersQuery = query(
+      collection(db, "users"),
+      where("active", "==", true)
+    );
 
     const unsubscribe = onSnapshot(
       usersQuery,
@@ -2906,7 +2947,10 @@ export default function PrintShop() {
             uid: getUserUid(person),
             name: getUserDisplayName(person),
             email: getUserEmail(person),
-          }));
+          }))
+          .sort((firstPerson, secondPerson) =>
+            firstPerson.name.localeCompare(secondPerson.name, "es", { sensitivity: "base" })
+          );
 
         setActiveUsers(nextUsers);
         setLoadingUsers(false);
@@ -3971,8 +4015,18 @@ export default function PrintShop() {
     );
   }
 
+  function isPrintRequestCollaborator(request, auditUser = getAuditUser()) {
+    if (!request) return false;
+
+    return (
+      isSameUid(auditUser.uid, request.collaboratorUid) ||
+      isSameText(auditUser.email, request.collaboratorEmail) ||
+      isSameText(auditUser.name, request.collaboratorName)
+    );
+  }
+
   function canCurrentUserEditRequest(request = selectedRequest) {
-    return isAdmin || isPrintRequestResponsible(request);
+    return isAdmin || isPrintRequestResponsible(request) || isPrintRequestCollaborator(request);
   }
 
   function handleRequestInputChange(event) {
@@ -3988,6 +4042,17 @@ export default function PrintShop() {
           responsibleUid: value,
           responsibleName: selectedUser ? getUserDisplayName(selectedUser) : "",
           responsibleEmail: selectedUser ? getUserEmail(selectedUser) : "",
+        };
+      }
+
+      if (name === "collaboratorUid") {
+        const selectedUser = findAssignableUser(value);
+
+        return {
+          ...current,
+          collaboratorUid: value,
+          collaboratorName: selectedUser ? getUserDisplayName(selectedUser) : "",
+          collaboratorEmail: selectedUser ? getUserEmail(selectedUser) : "",
         };
       }
 
@@ -5454,6 +5519,9 @@ export default function PrintShop() {
     setSelectedRequestId(request.id);
     setReprintCertificateStudentId("");
     setRequestMessage("");
+    publishRequestStudentValidations(request).catch((error) => {
+      console.error("No se pudo publicar la validaciÃ³n de folios existentes:", error);
+    });
     setRequestForm({
       productId: request.productId || "",
       requestType: request.requestType || "Volante",
@@ -5463,6 +5531,9 @@ export default function PrintShop() {
       responsibleUid: request.responsibleUid || defaultResponsible?.uid || "",
       responsibleName: request.responsibleName || defaultResponsible?.name || "Tony Campos",
       responsibleEmail: request.responsibleEmail || defaultResponsible?.email || "",
+      collaboratorUid: request.collaboratorUid || "",
+      collaboratorName: request.collaboratorName || "",
+      collaboratorEmail: request.collaboratorEmail || "",
       priority: automaticPriority || request.priority || "Normal",
       requestedQuantity: resolvedRequestedQuantity,
       deliveredQuantity: Number(request.deliveredQuantity || 0),
@@ -5609,6 +5680,9 @@ export default function PrintShop() {
       responsibleUid: requestForm.responsibleUid || defaultCertificateResponsible?.uid || "",
       responsibleName: requestForm.responsibleName || defaultCertificateResponsible?.name || "Tony Campos",
       responsibleEmail: requestForm.responsibleEmail || defaultCertificateResponsible?.email || "",
+      collaboratorUid: requestForm.collaboratorUid || "",
+      collaboratorName: requestForm.collaboratorName || "",
+      collaboratorEmail: requestForm.collaboratorEmail || "",
       priority: automaticPriority || requestForm.priority || "Normal",
       requestedQuantity,
       deliveredQuantity,
@@ -5823,8 +5897,73 @@ export default function PrintShop() {
       request &&
       selectedRequestId &&
       isRequestCertificateLike(request.requestType) &&
-      canCurrentUserEditRequest(request)
+      canManagePrintshopOperations
     );
+  }
+
+  function getRequestStudentValidationId(request, student) {
+    return sanitizeGeneratedCertificateId(
+      student.validationCode ||
+        student.certificateFolio ||
+        `${request.id}-${student.id}`
+    );
+  }
+
+  function buildRequestStudentPublicValidationPayload(request, student) {
+    return buildPublicCertificateValidationPayload(
+      {
+        folio: student.certificateFolio,
+        validationCode: student.validationCode,
+        validationUrl:
+          student.validationUrl || buildValidationUrl(student.validationCode),
+        studentName: student.name,
+        campus: request.campus || "Sin plantel",
+        requestId: request.id,
+        requestFolio: request.folio || "",
+        requestType: request.requestType || "Certificado",
+        productName: request.productName || "",
+        level: request.level || "No aplica",
+        programName:
+          request.certificateTemplateProgramName ||
+          getCertificateTrackLabel(request),
+        templateName:
+          request.certificateTemplateName ||
+          "Plantilla no especificada",
+        issueDate: getCertificateIssueDate(request),
+        teacherName:
+          request.teacherSignerName ||
+          request.teacherName ||
+          "",
+        status: "Generado",
+      },
+      {
+        generationMode: "request",
+      }
+    );
+  }
+
+  async function publishRequestStudentValidations(request) {
+    if (!canManagePrintshopOperations || !isRequestCertificateLike(request?.requestType)) {
+      return;
+    }
+
+    const studentsWithFolios = normalizeRequestStudents(request.students || []).filter(
+      (student) => student.certificateFolio && student.validationCode
+    );
+
+    if (studentsWithFolios.length === 0) return;
+
+    const batch = writeBatch(db);
+
+    studentsWithFolios.forEach((student) => {
+      batch.set(
+        doc(db, "publicCertificateValidations", getRequestStudentValidationId(request, student)),
+        buildRequestStudentPublicValidationPayload(request, student),
+        { merge: true }
+      );
+    });
+
+    await batch.commit();
   }
 
   async function updateSelectedRequestStudents(nextStudents, successMessage = "Lista de alumnos actualizada.") {
@@ -5865,7 +6004,10 @@ export default function PrintShop() {
           ? "Digital"
           : "Impresa";
 
-      await updateDoc(doc(db, "printRequests", selectedRequestId), {
+      const requestRef = doc(db, "printRequests", selectedRequestId);
+      const batch = writeBatch(db);
+
+      batch.update(requestRef, {
         students: normalizedStudents,
         requestedQuantity: deliveryCounts.total,
         printedQuantity: deliveryCounts.printed,
@@ -5884,6 +6026,21 @@ export default function PrintShop() {
         updatedByEmail: auditUser.email,
       });
 
+      normalizedStudents
+        .filter((student) => student.certificateFolio && student.validationCode)
+        .forEach((student) => {
+          batch.set(
+            doc(
+              db,
+              "publicCertificateValidations",
+              getRequestStudentValidationId(currentRequest, student)
+            ),
+            buildRequestStudentPublicValidationPayload(currentRequest, student),
+            { merge: true }
+          );
+        });
+
+      await batch.commit();
       setRequestMessage(successMessage);
     } catch (error) {
       console.error("No se pudo actualizar la lista de alumnos:", error);
@@ -7400,7 +7557,7 @@ export default function PrintShop() {
           type: "SUPPLY_MOVEMENT_CREATED",
           module: "supplies",
           title: "Movimiento de insumo registrado",
-          description: `${movementLogPayload.type} de ${movementLogPayload.quantity} ${movementLogPayload.stockUnit} · ${movementLogPayload.supplyName}.`,
+          description: `${movementLogPayload.type} de ${movementLogPayload.quantity} ${movementLogPayload.stockUnit} - ${movementLogPayload.supplyName}.`,
           referenceType: "supply",
           referenceId: movementLogPayload.supplyId,
           productName: movementLogPayload.supplyName,
@@ -8642,7 +8799,7 @@ function PrintshopLogsView({
                   <div className="printshop-log-title-row">
                     <div>
                       <strong>{log.title || getPrintshopLogTypeLabel(log.type)}</strong>
-                      <span>{getPrintshopLogTypeLabel(log.type)} · {getPrintshopLogModuleLabel(log.module)}</span>
+                      <span>{getPrintshopLogTypeLabel(log.type)} - {getPrintshopLogModuleLabel(log.module)}</span>
                     </div>
                     <small>{formatDate(log.createdAt)}</small>
                   </div>
@@ -8887,7 +9044,7 @@ function GeneratedCertificatesView({
                       <td className="certificate-issue-cell">
                         <strong>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</strong>
                         <small>{certificate.campus || "Sin plantel"}</small>
-                        <small>{certificate.teacherName || "Sin maestro"} · {certificate.group || "Sin grupo"}</small>
+                        <small>{certificate.teacherName || "Sin maestro"} - {certificate.group || "Sin grupo"}</small>
                       </td>
                       <td>
                         <button
@@ -9107,7 +9264,7 @@ function DashboardView({
                   >
                     <div>
                       <strong>{request.product}</strong>
-                      <span>{request.folio} · {request.requester}</span>
+                      <span>{request.folio} - {request.requester}</span>
                     </div>
                     <div>
                       <StatusBadge tone={request.statusTone}>{request.status}</StatusBadge>
@@ -9192,7 +9349,7 @@ function DashboardView({
                   >
                     <div>
                       <strong>{item.productName}</strong>
-                      <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
+                      <span>Stock {Number(item.currentStock || 0)} - mínimo {Number(item.minStock || 0)}</span>
                     </div>
                     <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                   </button>
@@ -9211,7 +9368,7 @@ function DashboardView({
                   >
                     <div>
                       <strong>{item.productName}</strong>
-                      <span>Stock {Number(item.currentStock || 0)} · mínimo {Number(item.minStock || 0)}</span>
+                      <span>Stock {Number(item.currentStock || 0)} - mínimo {Number(item.minStock || 0)}</span>
                     </div>
                     <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
                   </button>
@@ -9516,7 +9673,7 @@ function ProductionBatchesView({
                           </td>
                           <td className="batch-product-cell">
                             <strong>{batch.productName}</strong>
-                            <span>{batch.level || "No aplica"} · {batch.unit || "Libro"}</span>
+                            <span>{batch.level || "No aplica"} - {batch.unit || "Libro"}</span>
                           </td>
                           <td>{formatDate(batch.createdAt)}</td>
                           <td className="batch-progress-cell">
@@ -9683,7 +9840,7 @@ function ProductionBatchesView({
                           </td>
                           <td>
                             <span>Salida: {row.salida}</span>
-                            <small>Merma: {row.merma} · Dev.: {row.devolucion}</small>
+                            <small>Merma: {row.merma} - Dev.: {row.devolucion}</small>
                           </td>
                           <td>
                             {row.hasProductRecipe ? (
@@ -9763,7 +9920,7 @@ function ProductionBatchesView({
                   <option value="">Seleccionar libro</option>
                   {inventoryProducts.map((product) => (
                     <option key={product.id} value={product.id}>
-                      {product.name} · {product.level || "No aplica"}
+                      {product.name} - {product.level || "No aplica"}
                     </option>
                   ))}
                 </select>
@@ -9844,7 +10001,7 @@ function ProductionBatchesView({
                   </option>
                   {activeUsers.map((person) => (
                     <option key={person.uid || person.id} value={person.uid || person.id}>
-                      {person.name} · {person.email || "sin correo"}
+                      {person.name} - {person.email || "sin correo"}
                     </option>
                   ))}
                 </select>
@@ -9863,7 +10020,7 @@ function ProductionBatchesView({
                   </option>
                   {activeUsers.map((person) => (
                     <option key={person.uid || person.id} value={person.uid || person.id}>
-                      {person.name} · {person.email || "sin correo"}
+                      {person.name} - {person.email || "sin correo"}
                     </option>
                   ))}
                 </select>
@@ -10125,7 +10282,7 @@ function FinishedInventoryView({
                         <tr key={item.id}>
                           <td>
                             <strong>{item.productName}</strong>
-                            <span>{item.level || "No aplica"} · {item.unit || "Pieza"}</span>
+                            <span>{item.level || "No aplica"} - {item.unit || "Pieza"}</span>
                           </td>
                           <td>
                             <strong>{Number(item.currentStock || 0)}</strong>
@@ -10182,7 +10339,7 @@ function FinishedInventoryView({
                     <div>
                       <strong>{movement.productName}</strong>
                       <p>
-                        {movement.type} de {Number(movement.quantity || 0)} · {movement.reason || "Ajuste"}
+                        {movement.type} de {Number(movement.quantity || 0)} - {movement.reason || "Ajuste"}
                       </p>
                       <span>
                         Stock {Number(movement.previousStock || 0)} → {Number(movement.newStock || 0)}
@@ -10220,7 +10377,7 @@ function FinishedInventoryView({
                   <option value="">Seleccionar producto</option>
                   {productsWithoutInventory.map((product) => (
                     <option key={product.id} value={product.id}>
-                      {product.name} · {product.level || "No aplica"}
+                      {product.name} - {product.level || "No aplica"}
                     </option>
                   ))}
                 </select>
@@ -10317,7 +10474,7 @@ function FinishedInventoryView({
                   <option value="">Seleccionar inventario</option>
                   {inventoryItems.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.productName} · stock {Number(item.currentStock || 0)}
+                      {item.productName} - stock {Number(item.currentStock || 0)}
                     </option>
                   ))}
                 </select>
@@ -10782,7 +10939,7 @@ function SupplyInventoryView({
     onSupplyInputChange({ target: { name: "presentationUnit", value: supplyForm.stockUnit || "Pieza", type: "text" } });
     onSupplyInputChange({ target: { name: "presentationNotes", value: "", type: "text" } });
 
-    setBarcodeScanMessage(`Presentación agregada: ${nextPresentation.name} · ${nextPresentation.quantity} ${nextPresentation.unit}.`);
+    setBarcodeScanMessage(`Presentación agregada: ${nextPresentation.name} - ${nextPresentation.quantity} ${nextPresentation.unit}.`);
   }
 
   function removePresentationFromSupplyForm(presentationId) {
@@ -10924,7 +11081,7 @@ function SupplyInventoryView({
                       <span>{barcodeScanResult.supply.category}</span>
                       {barcodeScanResult.presentation && (
                         <span>
-                          Presentación: {barcodeScanResult.presentation.name} · equivale a {barcodeScanResult.presentation.quantity} {barcodeScanResult.supply.stockUnit}
+                          Presentación: {barcodeScanResult.presentation.name} - equivale a {barcodeScanResult.presentation.quantity} {barcodeScanResult.supply.stockUnit}
                         </span>
                       )}
                       <span>
@@ -11008,7 +11165,7 @@ function SupplyInventoryView({
                         <option value="">Sin lote</option>
                         {activeProductionBatches.map((batch) => (
                           <option key={batch.id} value={batch.id}>
-                            {batch.folio} · {batch.productName}
+                            {batch.folio} - {batch.productName}
                           </option>
                         ))}
                       </select>
@@ -11212,7 +11369,7 @@ function SupplyInventoryView({
                             <strong>{item.name}</strong>
                             <small>{item.category}</small>
                             <small>
-                              {[item.color, item.size, item.weight].filter(Boolean).join(" · ") || "Sin características"}
+                              {[item.color, item.size, item.weight].filter(Boolean).join(" - ") || "Sin características"}
                             </small>
                           </td>
                           <td>
@@ -11253,7 +11410,7 @@ function SupplyInventoryView({
                           </td>
                           <td>
                             {formatDate(item.updatedAt || item.createdAt)}
-                            {item.lastMovementType && <small>{item.lastMovementType} · {item.lastMovementReason}</small>}
+                            {item.lastMovementType && <small>{item.lastMovementType} - {item.lastMovementReason}</small>}
                           </td>
                           <td>
                             <div className="table-actions supply-actions supplies-actions-redesign">
@@ -11683,7 +11840,7 @@ function SupplyInventoryView({
                   <option value="">Seleccionar insumo</option>
                   {supplyItems.filter(isVisibleSupplyItem).map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name} · {item.currentStock} {item.stockUnit}
+                      {item.name} - {item.currentStock} {item.stockUnit}
                     </option>
                   ))}
                 </select>
@@ -11738,7 +11895,7 @@ function SupplyInventoryView({
                   <option value="">Sin lote</option>
                   {activeProductionBatches.map((batch) => (
                     <option key={batch.id} value={batch.id}>
-                      {batch.folio} · {batch.productName}
+                      {batch.folio} - {batch.productName}
                     </option>
                   ))}
                 </select>
@@ -11872,14 +12029,18 @@ function PrintRequestsView({
       ? "admin"
       : isSameUid(currentUserUid, selectedRequest.responsibleUid)
         ? "responsible"
+        : isSameUid(currentUserUid, selectedRequest.collaboratorUid)
+          ? "collaborator"
         : "viewer"
     : isAdmin
       ? "admin"
       : "viewer";
   const canEditAdministrativeFields = isAdmin;
-  const canEditOperationalFields = isAdmin || selectedRole === "responsible";
+  const canEditOperationalFields =
+    isAdmin || selectedRole === "responsible" || selectedRole === "collaborator";
   const canEditCertificateProductionFields =
     canEditAdministrativeFields || canEditOperationalFields;
+  const canGenerateFolios = Boolean(currentUserUid);
   const canCreateRequest = isAdmin;
   const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
   const isEditingExistingRequest = Boolean(selectedRequestId);
@@ -12253,6 +12414,7 @@ function PrintRequestsView({
               onRequestNumberInputChange={onRequestNumberInputChange}
               onSavePrintRequest={onSavePrintRequest}
               canManageStudents={canEditOperationalFields}
+              canGenerateFolios={canGenerateFolios}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
               bulkStudentsText={bulkStudentsText}
@@ -12304,12 +12466,12 @@ function PrintRequestsView({
                 >
                   <option value="">
                     {selectedRequest?.productName
-                      ? `${selectedRequest.productName} · ${selectedRequest.requestType || requestForm.requestType || "Servicio"}${selectedRequest.productId ? "" : " (sin catálogo)"}`
+                      ? `${selectedRequest.productName} - ${selectedRequest.requestType || requestForm.requestType || "Servicio"}${selectedRequest.productId ? "" : " (sin catálogo)"}`
                       : "Seleccionar producto del catálogo"}
                   </option>
                   {requestProducts.map((product) => (
                     <option key={product.id} value={product.id}>
-                      {product.name} · {product.category}
+                      {product.name} - {product.category}
                     </option>
                   ))}
                 </select>
@@ -12390,7 +12552,7 @@ function PrintRequestsView({
                   <option value="">Seleccionar responsable</option>
                   {activeUsers.map((person) => (
                     <option key={person.uid || person.id} value={person.uid || person.id}>
-                      {person.name} · {person.email || "sin correo"}
+                      {person.name} - {person.email || "sin correo"}
                     </option>
                   ))}
                 </select>
@@ -12504,7 +12666,7 @@ function PrintRequestsView({
                       <option value="">Seleccionar plantilla</option>
                       {activeCertificateTemplates.map((template) => (
                         <option key={template.id} value={template.id}>
-                          {template.name} · {template.level} · {template.audience}
+                          {template.name} - {template.level} - {template.audience}
                         </option>
                       ))}
                     </select>
@@ -12535,7 +12697,7 @@ function PrintRequestsView({
                       <option value="">Seleccionar principal</option>
                       {activePrincipalSigners.map((signer) => (
                         <option key={signer.id} value={signer.id}>
-                          {signer.name} · {signer.role}
+                          {signer.name} - {signer.role}
                         </option>
                       ))}
                     </select>
@@ -12552,7 +12714,7 @@ function PrintRequestsView({
                       <option value="">Seleccionar teacher</option>
                       {activeTeacherSigners.map((signer) => (
                         <option key={signer.id} value={signer.id}>
-                          {signer.name} · {signer.role}
+                          {signer.name} - {signer.role}
                         </option>
                       ))}
                     </select>
@@ -12610,6 +12772,8 @@ function PrintRequestsView({
                       ? "Administrador"
                       : selectedRole === "responsible"
                         ? "Responsable asignado"
+                        : selectedRole === "collaborator"
+                          ? "Colaborador asignado"
                         : "Solo lectura"}
                   </strong>
                 </div>
@@ -12703,7 +12867,7 @@ function RequestPreviewPanel({ request, onOpen }) {
           </div>
           <div>
             <span>Área / Plantel</span>
-            <strong>{request.requesterArea || "Sin área"} · {request.campus || "Sin plantel"}</strong>
+            <strong>{request.requesterArea || "Sin área"} - {request.campus || "Sin plantel"}</strong>
           </div>
           <div>
             <span>Fechas</span>
@@ -12821,11 +12985,15 @@ function CertificatesWorkspaceView({
       ? "admin"
       : isSameUid(currentUserUid, activeRequest.responsibleUid)
         ? "responsible"
+        : isSameUid(currentUserUid, activeRequest.collaboratorUid)
+          ? "collaborator"
         : "viewer"
     : isAdmin
       ? "admin"
       : "viewer";
-  const canManageStudents = isAdmin || selectedRole === "responsible";
+  const canManageStudents =
+    isAdmin || selectedRole === "responsible" || selectedRole === "collaborator";
+  const canGenerateFolios = Boolean(currentUserUid);
   const generatedCount = generatedCertificates.filter((certificate) =>
     certificateRequests.some((request) => request.id === certificate.requestId)
   ).length;
@@ -13099,7 +13267,7 @@ function CertificatesWorkspaceView({
                             </div>
                             <div>
                               <small>Grupo / Plantel</small>
-                              <strong>{certificate.group || "Sin grupo"} · {certificate.campus || "Sin plantel"}</strong>
+                              <strong>{certificate.group || "Sin grupo"} - {certificate.campus || "Sin plantel"}</strong>
                             </div>
                             <div>
                               <small>QR</small>
@@ -13431,6 +13599,7 @@ function CertificatesWorkspaceView({
               onRequestNumberInputChange={onRequestNumberInputChange}
               onSavePrintRequest={onSavePrintRequest}
               canManageStudents={canManageStudents}
+              canGenerateFolios={canGenerateFolios}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
               bulkStudentsText={bulkStudentsText}
@@ -13484,6 +13653,7 @@ function RequestDetailCard({
   onRequestNumberInputChange,
   onSavePrintRequest,
   canManageStudents,
+  canGenerateFolios = canManageStudents,
   studentName,
   studentDeliveryType,
   bulkStudentsText,
@@ -13570,7 +13740,10 @@ function RequestDetailCard({
       level: request.level || request.certificateTemplateLevel || "",
     });
   const canEditAdministrativeFields = selectedRole === "admin";
-  const canEditOperationalFields = selectedRole === "admin" || selectedRole === "responsible";
+  const canEditOperationalFields =
+    selectedRole === "admin" ||
+    selectedRole === "responsible" ||
+    selectedRole === "collaborator";
   const canEditCertificateProductionFields =
     canEditAdministrativeFields || canEditOperationalFields;
   const canEditRequestDetails = Boolean(
@@ -13909,7 +14082,7 @@ function RequestDetailCard({
           <div>
             <span>Producto / servicio</span>
             <strong>{getRequestProductLabel(request)}</strong>
-            <p>{request.requestType || "Solicitud"} · {request.deliveryType || "Sin tipo de entrega"}</p>
+            <p>{request.requestType || "Solicitud"} - {request.deliveryType || "Sin tipo de entrega"}</p>
           </div>
           <div className="request-detail-status-stack">
             <StatusBadge tone={effectiveStatusTone}>
@@ -13967,7 +14140,7 @@ function RequestDetailCard({
         {(!isCertificateLike || detailActiveTab === "summary") && (
           <>
             <div className="request-detail-grid">
-              <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} · ${request.campus || "Sin plantel"}`} />
+              <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} - ${request.campus || "Sin plantel"}`} />
               <DetailItem label="Responsable" value={request.responsibleName || requestForm.responsibleName || "Sin asignar"} helper={request.responsibleEmail || requestForm.responsibleEmail || ""} />
               <DetailItem label="Prioridad" value={request.priority || automaticPriority || "Normal"} badgeTone={getPriorityTone(request.priority || automaticPriority)} />
               <DetailItem label="Compromiso" value={getRequestDueLabel(request)} helper={request.requestDate ? `Solicitado: ${request.requestDate}` : "Sin fecha solicitada"} />
@@ -14003,7 +14176,19 @@ function RequestDetailCard({
                   <option value="">Seleccionar responsable</option>
                   {activeUsers.map((person) => (
                     <option key={person.uid || person.id} value={person.uid || person.id}>
-                      {person.name} · {person.email || "sin correo"}
+                      {person.name} - {person.email || "sin correo"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Colaborador de apoyo</span>
+                <select name="collaboratorUid" value={requestForm.collaboratorUid || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields || activeUsers.length === 0}>
+                  <option value="">Sin colaborador asignado</option>
+                  {activeUsers.map((person) => (
+                    <option key={person.uid || person.id} value={person.uid || person.id}>
+                      {person.name} - {person.email || "sin correo"}
                     </option>
                   ))}
                 </select>
@@ -14055,7 +14240,7 @@ function RequestDetailCard({
                       <option value="">Seleccionar plantilla</option>
                       {activeCertificateTemplates.map((template) => (
                         <option key={template.id} value={template.id}>
-                          {template.name} · {template.level} · {template.audience}
+                          {template.name} - {template.level} - {template.audience}
                         </option>
                       ))}
                     </select>
@@ -14106,7 +14291,7 @@ function RequestDetailCard({
                       <option value="">Seleccionar principal</option>
                       {activePrincipalSigners.map((signer) => (
                         <option key={signer.id} value={signer.id}>
-                          {signer.name} · {signer.role}
+                          {signer.name} - {signer.role}
                         </option>
                       ))}
                     </select>
@@ -14118,7 +14303,7 @@ function RequestDetailCard({
                       <option value="">Seleccionar teacher</option>
                       {activeTeacherSigners.map((signer) => (
                         <option key={signer.id} value={signer.id}>
-                          {signer.name} · {signer.role}
+                          {signer.name} - {signer.role}
                         </option>
                       ))}
                     </select>
@@ -14178,7 +14363,7 @@ function RequestDetailCard({
                   <StatusBadge tone={studentListComplete ? "green" : "orange"}>
                     {studentListComplete ? "Lista completa" : "Pendiente"}
                   </StatusBadge>
-                  {canManageStudents && students.length > 0 && (
+                  {canGenerateFolios && students.length > 0 && (
                     <button
                       type="button"
                       className="visual-outline-button request-generate-all-button"
@@ -14418,7 +14603,7 @@ Mariana Torres`}
                                   type="button"
                                   className="visual-outline-button"
                                   disabled={
-                                    !canManageStudents ||
+                                    !canGenerateFolios ||
                                     savingStudents ||
                                     Boolean(generatingStudentId) ||
                                     !studentListComplete
@@ -15803,7 +15988,7 @@ function CertificateTemplatesView({
                       <div>
                         <strong>{template.name}</strong>
                         <p>
-                          {template.programName || "Sin programa"} · {template.level || "Sin nivel"} · {template.audience}
+                          {template.programName || "Sin programa"} - {template.level || "Sin nivel"} - {template.audience}
                         </p>
                       </div>
                       <div className="template-card-badges">
@@ -17803,7 +17988,7 @@ function CertificateSignersView({
                   <div className="signer-card-header">
                     <div>
                       <strong>{signer.name}</strong>
-                      <p>{signer.role} · {signer.campus || "Sin plantel"}</p>
+                      <p>{signer.role} - {signer.campus || "Sin plantel"}</p>
                     </div>
                     <StatusBadge tone={signer.type === "Principal" ? "blue" : "teal"}>{signer.type}</StatusBadge>
                   </div>
@@ -18337,7 +18522,7 @@ function ProductCatalogView({
                       <option value="">Seleccionar insumo</option>
                       {supplyItems.filter(isVisibleSupplyItem).map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name} · {item.stockUnit}
+                          {item.name} - {item.stockUnit}
                         </option>
                       ))}
                     </select>

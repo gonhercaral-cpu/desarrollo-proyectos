@@ -461,12 +461,18 @@ export default function TeamAgenda() {
       normalToday: todaySchedules.filter((item) =>
         ["normal", "active", "approved"].includes(item.today?.status)
       ).length,
-      absences: scheduleAdjustments.filter(
-        (adjustment) =>
-          ["absence", "permission", "dayOff"].includes(adjustment.publicStatus) &&
-          isDateInRangeValue(todayDate, adjustment.startDate, adjustment.endDate)
-      ).length,
-      pending: requests.filter((request) => request.status === "pending").length,
+      absences: isAdmin
+        ? scheduleAdjustments.filter(
+            (adjustment) =>
+              ["absence", "permission", "dayOff"].includes(
+                adjustment.publicStatus
+              ) &&
+              isDateInRangeValue(todayDate, adjustment.startDate, adjustment.endDate)
+          ).length
+        : 0,
+      pending: isAdmin
+        ? requests.filter((request) => request.status === "pending").length
+        : 0,
     };
   }, [isAdmin, requests, scheduleAdjustments, team]);
 
@@ -476,8 +482,9 @@ export default function TeamAgenda() {
         team,
         requests,
         scheduleAdjustments,
+        includeRestrictedInsights: isAdmin,
       }),
-    [requests, scheduleAdjustments, team]
+    [isAdmin, requests, scheduleAdjustments, team]
   );
 
   const attendanceInsights = useMemo(
@@ -1182,21 +1189,39 @@ export default function TeamAgenda() {
           tone="blue"
         />
 
-        <ModernAgendaSummaryCard
-          icon="👤"
-          label="Ausencias / permisos"
-          value={summary.absences}
-          detail="no disponibles hoy"
-          tone="red"
-        />
+        {!isAdmin && (
+          <ModernAgendaSummaryCard
+            icon="↗"
+            label="Mayor cobertura"
+            value={agendaInsights.busiestDay?.label || "Sin datos"}
+            detail={
+              agendaInsights.busiestDay
+                ? `${agendaInsights.busiestDay.value} colaboradores programados`
+                : "Configura horarios para calcularlo"
+            }
+            tone="green"
+          />
+        )}
 
-        <ModernAgendaSummaryCard
-          icon="↔"
-          label="Cambios pendientes"
-          value={summary.pending}
-          detail={isAdmin ? "solicitudes por revisar" : "tus solicitudes pendientes"}
-          tone="yellow"
-        />
+        {isAdmin && (
+          <ModernAgendaSummaryCard
+            icon="👤"
+            label="Ausencias / permisos"
+            value={summary.absences}
+            detail="no disponibles hoy"
+            tone="red"
+          />
+        )}
+
+        {isAdmin && (
+          <ModernAgendaSummaryCard
+            icon="↔"
+            label="Cambios pendientes"
+            value={summary.pending}
+            detail="solicitudes por revisar"
+            tone="yellow"
+          />
+        )}
       </section>
 
       <section className="agenda-modern-layout">
@@ -1289,7 +1314,8 @@ export default function TeamAgenda() {
             </div>
           </section>
 
-          <section className="agenda-modern-card agenda-modern-quick-summary">
+          {isAdmin && (
+            <section className="agenda-modern-card agenda-modern-quick-summary">
             <div className="agenda-modern-card-header compact">
               <div>
                 <h3>Resumen rápido</h3>
@@ -1310,31 +1336,36 @@ export default function TeamAgenda() {
                 tone="green"
               />
 
-              <AgendaQuickCard
-                icon="◷"
-                label="Más horas esta semana"
-                value={agendaInsights.topHoursPerson?.label || "Sin datos"}
-                detail={
-                  agendaInsights.topHoursPerson
-                    ? `${formatHours(agendaInsights.topHoursPerson.value)} programadas`
-                    : "Sin horarios suficientes"
-                }
-                tone="blue"
-              />
+              {isAdmin && (
+                <AgendaQuickCard
+                  icon="◷"
+                  label="Más horas esta semana"
+                  value={agendaInsights.topHoursPerson?.label || "Sin datos"}
+                  detail={
+                    agendaInsights.topHoursPerson
+                      ? `${formatHours(agendaInsights.topHoursPerson.value)} programadas`
+                      : "Sin horarios suficientes"
+                  }
+                  tone="blue"
+                />
+              )}
 
-              <AgendaQuickCard
-                icon="📋"
-                label="Solicitudes"
-                value={`${pendingRequests.length} pendiente(s)`}
-                detail={
-                  pendingRequests.length > 0
-                    ? "Requieren revisión administrativa"
-                    : "Sin solicitudes por revisar"
-                }
-                tone="yellow"
-              />
+              {isAdmin && (
+                <AgendaQuickCard
+                  icon="📋"
+                  label="Solicitudes"
+                  value={`${pendingRequests.length} pendiente(s)`}
+                  detail={
+                    pendingRequests.length > 0
+                      ? "Requieren revisión administrativa"
+                      : "Sin solicitudes por revisar"
+                  }
+                  tone="yellow"
+                />
+              )}
             </div>
-          </section>
+            </section>
+          )}
 
           <section className="agenda-modern-card agenda-modern-action-hub">
             <div className="agenda-modern-card-header compact agenda-modern-action-header">
@@ -3572,7 +3603,12 @@ function formatMinutesAsHours(minutes = 0) {
   return `${rounded} h`;
 }
 
-function buildAgendaInsights({ team, requests, scheduleAdjustments }) {
+function buildAgendaInsights({
+  team,
+  requests,
+  scheduleAdjustments,
+  includeRestrictedInsights = true,
+}) {
   const coverageByDay = DAYS.map((day) => {
     const value = team.filter((person) =>
       isWorkingSchedule(person.schedules?.[day.key])
@@ -3584,6 +3620,18 @@ function buildAgendaInsights({ team, requests, scheduleAdjustments }) {
       value,
     };
   });
+
+  if (!includeRestrictedInsights) {
+    return {
+      coverageByDay,
+      hoursByPerson: [],
+      requestsByType: [],
+      busiestDay: getTopItem(coverageByDay),
+      topHoursPerson: null,
+      topAbsencePerson: null,
+      topChangePerson: null,
+    };
+  }
 
   const hoursByPerson = team
     .map((person) => {
