@@ -2557,6 +2557,12 @@ service cloud.firestore {
       allow create, update, delete: if isAdminRole();
     }
 
+    match /driveDepartmentFolders/{folderId} {
+      allow get, list: if isAdminRole();
+
+      allow create, update, delete: if isAdminRole();
+    }
+
     match /messageTypingStates/{stateId} {
       allow get: if canReadMessageTypingState();
 

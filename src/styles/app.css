@@ -70915,6 +70915,7 @@ html[data-theme="dark"] body #root .main-content :is(
 
 .drive-control-panel,
 .drive-settings-panel,
+.drive-departments-panel,
 .drive-browser-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -70929,11 +70930,107 @@ html[data-theme="dark"] body #root .main-content :is(
   padding: 16px;
 }
 
+.drive-tabs {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.drive-tabs button {
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.drive-tabs button.active {
+  background: var(--blue-soft);
+  color: var(--primary);
+}
+
 .drive-settings-panel {
   display: grid;
   grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
   gap: 16px;
   padding: 16px;
+}
+
+.drive-departments-panel {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.drive-departments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.drive-departments-header span,
+.drive-department-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.drive-departments-header strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.drive-department-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.drive-department-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.drive-department-card strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-department-card small {
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.drive-department-card .drive-icon-button {
+  grid-column: 1 / -1;
+  justify-content: center;
 }
 
 .drive-settings-panel.setup {
@@ -71066,6 +71163,7 @@ html[data-theme="dark"] body #root .main-content :is(
 }
 
 .drive-error-box,
+.drive-success-box,
 .drive-loading-state {
   border-radius: 8px;
   padding: 14px 16px;
@@ -71076,6 +71174,12 @@ html[data-theme="dark"] body #root .main-content :is(
   border: 1px solid rgba(180, 35, 24, 0.28);
   background: var(--red-soft);
   color: var(--danger);
+}
+
+.drive-success-box {
+  border: 1px solid rgba(22, 163, 74, 0.28);
+  background: var(--green-soft);
+  color: var(--green);
 }
 
 .drive-loading-state {
@@ -71194,8 +71298,13 @@ html[data-theme="dark"] .drive-file-card:focus-visible {
 @media (max-width: 900px) {
   .drive-control-panel,
   .drive-settings-panel,
+  .drive-departments-header,
   .drive-browser-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .drive-departments-header {
+    display: grid;
   }
 
   .drive-breadcrumbs {
@@ -71215,6 +71324,7 @@ html[data-theme="dark"] .drive-file-card:focus-visible {
   .drive-root-form > div,
   .drive-create-form > div,
   .drive-current-root-card,
+  .drive-department-card,
   .drive-file-card {
     grid-template-columns: 1fr;
   }

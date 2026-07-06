@@ -565,6 +565,36 @@ describe("configuracion de Nube AES", () => {
 
     await assertSucceeds(getDoc(settingsRef));
   });
+
+  it("permite a admin leer mapa de carpeta por departamento", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "driveDepartmentFolders", "operations"), {
+        departmentId: "operations",
+        departmentName: "Operacion",
+        folderId: "drive-folder-operations",
+        folderName: "Operacion",
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+    });
+
+    await assertSucceeds(getDoc(doc(auth("admin"), "driveDepartmentFolders", "operations")));
+  });
+
+  it("bloquea mapa de carpeta por departamento a colaborador", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "driveDepartmentFolders", "operations"), {
+        departmentId: "operations",
+        departmentName: "Operacion",
+        folderId: "drive-folder-operations",
+        folderName: "Operacion",
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+    });
+
+    await assertFails(getDoc(doc(auth("collab"), "driveDepartmentFolders", "operations")));
+  });
 });
 
 describe("storage", () => {

@@ -10,6 +10,7 @@ setGlobalOptions({ maxInstances: 10, region: "us-central1" });
 
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+const DRIVE_SETTINGS_PATH = "systemSettings/drive";
 
 let driveClientPromise;
 
@@ -75,6 +76,46 @@ function normalizeDriveFile(file) {
   };
 }
 
+async function getRootFolderId() {
+  const settingsSnapshot = await admin.firestore().doc(DRIVE_SETTINGS_PATH).get();
+  const rootFolderId = String(settingsSnapshot.data()?.rootFolderId || "").trim();
+
+  if (!rootFolderId) {
+    throw new HttpsError("failed-precondition", "Falta systemSettings/drive.rootFolderId.");
+  }
+
+  return rootFolderId;
+}
+
+async function findFolderByName(drive, parentId, name) {
+  const response = await drive.files.list({
+    q:
+      `'${escapeDriveQueryValue(parentId)}' in parents and ` +
+      `mimeType = '${DRIVE_FOLDER_MIME_TYPE}' and ` +
+      `name = '${escapeDriveQueryValue(name)}' and trashed = false`,
+    fields: "files(id,name,webViewLink)",
+    pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  });
+
+  return response.data.files?.[0] || null;
+}
+
+async function createDriveFolder(drive, parentId, name) {
+  const response = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: DRIVE_FOLDER_MIME_TYPE,
+      parents: [parentId],
+    },
+    fields: "id,name,webViewLink",
+    supportsAllDrives: true,
+  });
+
+  return response.data;
+}
+
 exports.driveListFolder = onCall(async (request) => {
   await assertAdmin(request);
 
@@ -109,19 +150,84 @@ exports.driveCreateFolder = onCall(async (request) => {
   const name = requireString(request.data?.name, "name");
   const drive = await getDriveClient();
 
-  const response = await drive.files.create({
-    requestBody: {
-      name,
-      mimeType: DRIVE_FOLDER_MIME_TYPE,
-      parents: [parentId],
-    },
-    fields: "id,name,webViewLink",
-    supportsAllDrives: true,
-  });
+  const folder = await createDriveFolder(drive, parentId, name);
 
   return {
-    id: response.data.id || "",
-    name: response.data.name || "",
-    webViewLink: response.data.webViewLink || "",
+    id: folder.id || "",
+    name: folder.name || "",
+    webViewLink: folder.webViewLink || "",
+  };
+});
+
+exports.driveEnsureDepartmentFolders = onCall(async (request) => {
+  await assertAdmin(request);
+
+  const db = admin.firestore();
+  const [rootFolderId, departmentsSnapshot] = await Promise.all([
+    getRootFolderId(),
+    db.collection("departments").where("active", "==", true).get(),
+  ]);
+  const drive = await getDriveClient();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const results = [];
+
+  for (const departmentDoc of departmentsSnapshot.docs) {
+    const department = departmentDoc.data();
+
+    if (department.deleted === true) {
+      continue;
+    }
+
+    const departmentName = String(department.name || "").trim();
+
+    if (!departmentName) {
+      continue;
+    }
+
+    const folderRef = db.collection("driveDepartmentFolders").doc(departmentDoc.id);
+    const folderSnapshot = await folderRef.get();
+    const existingFolderId = String(folderSnapshot.data()?.folderId || "").trim();
+    let folderId = existingFolderId;
+    let folderName = String(folderSnapshot.data()?.folderName || departmentName).trim();
+    let webViewLink = String(folderSnapshot.data()?.webViewLink || "").trim();
+    let created = false;
+
+    if (!folderId) {
+      const existingFolder = await findFolderByName(drive, rootFolderId, departmentName);
+      const folder = existingFolder || (await createDriveFolder(drive, rootFolderId, departmentName));
+
+      folderId = folder.id || "";
+      folderName = folder.name || departmentName;
+      webViewLink = folder.webViewLink || "";
+      created = !existingFolder;
+    }
+
+    const payload = {
+      departmentId: departmentDoc.id,
+      departmentName,
+      folderId,
+      folderName,
+      webViewLink,
+      updatedAt: now,
+    };
+
+    if (!folderSnapshot.exists) {
+      payload.createdAt = now;
+    }
+
+    await folderRef.set(payload, { merge: true });
+
+    results.push({
+      ...payload,
+      created,
+      createdAt: null,
+      updatedAt: null,
+    });
+  }
+
+  return {
+    rootFolderId,
+    count: results.length,
+    folders: results,
   };
 });

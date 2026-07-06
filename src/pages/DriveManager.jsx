@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createDriveFolder,
   DRIVE_FOLDER_MIME_TYPE,
+  ensureDriveDepartmentFolders,
+  getDriveDepartmentFolders,
   getDriveRootSettings,
   listDriveFolder,
   saveDriveRootFolderId,
@@ -74,15 +76,22 @@ export default function DriveManager() {
   const [loading, setLoading] = useState(false);
   const [savingRoot, setSavingRoot] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [syncingDepartments, setSyncingDepartments] = useState(false);
+  const [departmentFoldersLoading, setDepartmentFoldersLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [activeTab, setActiveTab] = useState("files");
+  const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
+  const [departmentError, setDepartmentError] = useState("");
+  const [departmentSuccess, setDepartmentSuccess] = useState("");
 
   const currentFolderName = breadcrumbs.at(-1)?.name || "Sin carpeta cargada";
   const folderCount = useMemo(() => files.filter(isDriveFolder).length, [files]);
   const fileCount = files.length - folderCount;
   const hasRootFolder = Boolean(rootFolderId);
   const isBusy = settingsLoading || loading;
+  const departmentFoldersCount = departmentFolders.length;
 
   const loadFolder = useCallback(async (folderId, nextBreadcrumbs) => {
     const cleanFolderId = String(folderId || "").trim();
@@ -107,6 +116,20 @@ export default function DriveManager() {
       return false;
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadDepartmentFolders = useCallback(async () => {
+    setDepartmentFoldersLoading(true);
+    setDepartmentError("");
+
+    try {
+      const folders = await getDriveDepartmentFolders();
+      setDepartmentFolders(folders);
+    } catch (foldersError) {
+      setDepartmentError(getDriveErrorMessage(foldersError, "departmentSettings"));
+    } finally {
+      setDepartmentFoldersLoading(false);
     }
   }, []);
 
@@ -244,6 +267,54 @@ export default function DriveManager() {
     }
   }
 
+  async function handleSyncDepartmentFolders() {
+    if (!rootFolderId) {
+      setConfigOpen(true);
+      setDepartmentError("Configura la carpeta raiz antes de sincronizar departamentos.");
+      return;
+    }
+
+    setSyncingDepartments(true);
+    setDepartmentError("");
+    setDepartmentSuccess("");
+
+    try {
+      const result = await ensureDriveDepartmentFolders();
+      const folders = Array.isArray(result?.folders) ? result.folders : [];
+      setDepartmentFolders(folders.length ? folders : await getDriveDepartmentFolders());
+      setDepartmentSuccess(`Sincronizacion completa: ${result?.count || folders.length || 0} departamentos listos.`);
+    } catch (syncError) {
+      setDepartmentError(getDriveErrorMessage(syncError, "drive"));
+    } finally {
+      setSyncingDepartments(false);
+    }
+  }
+
+  function handleOpenDepartmentsTab() {
+    setActiveTab("departments");
+    setDepartmentSuccess("");
+
+    if (!departmentFolders.length) {
+      loadDepartmentFolders();
+    }
+  }
+
+  function handleOpenDepartmentFolder(folder) {
+    const folderId = String(folder?.folderId || "").trim();
+
+    if (!folderId) {
+      setDepartmentError("Este departamento todavia no tiene carpeta sincronizada.");
+      return;
+    }
+
+    setActiveTab("files");
+    setDepartmentError("");
+    loadFolder(folderId, [
+      { id: rootFolderId, name: "Raiz" },
+      { id: folderId, name: folder.departmentName || folder.folderName || "Departamento" },
+    ]);
+  }
+
   return (
     <div className="visual-page drive-manager-page">
       <div className="visual-page-header drive-manager-header">
@@ -256,6 +327,23 @@ export default function DriveManager() {
           <span>{hasRootFolder ? "Raiz configurada" : "Sin raiz"}</span>
           <strong>{folderCount} carpetas / {fileCount} archivos</strong>
         </div>
+      </div>
+
+      <div className="drive-tabs" role="tablist" aria-label="Secciones de Nube AES">
+        <button
+          className={activeTab === "files" ? "active" : ""}
+          type="button"
+          onClick={() => setActiveTab("files")}
+        >
+          Archivos
+        </button>
+        <button
+          className={activeTab === "departments" ? "active" : ""}
+          type="button"
+          onClick={handleOpenDepartmentsTab}
+        >
+          Departamentos
+        </button>
       </div>
 
       {!hasRootFolder && !settingsLoading ? (
@@ -275,7 +363,7 @@ export default function DriveManager() {
         </section>
       ) : null}
 
-      {hasRootFolder ? (
+      {hasRootFolder && activeTab === "files" ? (
         <section className="drive-control-panel">
           <form className="drive-create-form" onSubmit={handleCreateFolder}>
             <label htmlFor="drive-new-folder">Crear carpeta</label>
@@ -347,85 +435,151 @@ export default function DriveManager() {
         </section>
       ) : null}
 
-      <section className="drive-browser-panel">
-        <div className="drive-browser-toolbar">
-          <div>
-            <span>Carpeta actual</span>
-            <strong>{settingsLoading ? "Cargando configuracion..." : currentFolderName}</strong>
-          </div>
-
-          <nav className="drive-breadcrumbs" aria-label="Ruta de Google Drive">
-            {breadcrumbs.length === 0 ? (
-              <span>Sin ruta</span>
-            ) : (
-              breadcrumbs.map((breadcrumb, index) => (
-                <button
-                  key={`${breadcrumb.id}-${index}`}
-                  type="button"
-                  onClick={() => handleBreadcrumbClick(index)}
-                  disabled={breadcrumb.id === currentFolderId || isBusy}
-                >
-                  {breadcrumb.name}
-                </button>
-              ))
-            )}
-          </nav>
-        </div>
-
-        {error ? <div className="drive-error-box">{error}</div> : null}
-
-        {isBusy ? (
-          <div className="drive-loading-state">
-            {settingsLoading ? "Cargando configuracion de Nube AES..." : "Cargando contenido de Drive..."}
-          </div>
-        ) : null}
-
-        {!isBusy && !error && currentFolderId && files.length === 0 ? (
-          <div className="empty-state drive-empty-state">
+      {activeTab === "departments" ? (
+        <section className="drive-departments-panel">
+          <div className="drive-departments-header">
             <div>
-              <DriveIcon />
+              <span>Carpetas por departamento</span>
+              <strong>{departmentFoldersCount} vinculadas</strong>
             </div>
-            <p>Esta carpeta esta vacia.</p>
-          </div>
-        ) : null}
 
-        {!isBusy && !currentFolderId ? (
-          <div className="empty-state drive-empty-state">
-            <div>
-              <DriveIcon type="folder" />
+            <button
+              className="visual-primary-button drive-icon-button"
+              type="button"
+              onClick={handleSyncDepartmentFolders}
+              disabled={!hasRootFolder || syncingDepartments || settingsLoading}
+            >
+              <ActionIcon name="load" />
+              <span>{syncingDepartments ? "Sincronizando" : "Sincronizar carpetas de departamentos"}</span>
+            </button>
+          </div>
+
+          {departmentError ? <div className="drive-error-box">{departmentError}</div> : null}
+          {departmentSuccess ? <div className="drive-success-box">{departmentSuccess}</div> : null}
+
+          {departmentFoldersLoading ? (
+            <div className="drive-loading-state">Cargando carpetas de departamentos...</div>
+          ) : null}
+
+          {!departmentFoldersLoading && departmentFolders.length === 0 ? (
+            <div className="empty-state drive-empty-state">
+              <div>
+                <DriveIcon type="folder" />
+              </div>
+              <p>No hay carpetas de departamentos vinculadas.</p>
             </div>
-            <p>{hasRootFolder ? "No se pudo cargar la carpeta raiz." : "Configura la carpeta raiz para iniciar."}</p>
-          </div>
-        ) : null}
+          ) : null}
 
-        {!isBusy && files.length > 0 ? (
-          <div className="drive-file-grid">
-            {files.map((file) => (
-              <button
-                key={file.id}
-                className="drive-file-card"
-                type="button"
-                onClick={() => handleOpenItem(file)}
-              >
-                <span className={isDriveFolder(file) ? "drive-file-icon folder" : "drive-file-icon"}>
-                  <DriveIcon type={isDriveFolder(file) ? "folder" : "file"} />
-                </span>
-
-                <span className="drive-file-content">
-                  <strong>{file.name || "Archivo sin nombre"}</strong>
-                  <small>{getFileMeta(file)}</small>
-                </span>
-
-                {!isDriveFolder(file) && file.webViewLink ? (
-                  <span className="drive-open-indicator">
-                    <ActionIcon name="open" />
+          {!departmentFoldersLoading && departmentFolders.length > 0 ? (
+            <div className="drive-department-grid">
+              {departmentFolders.map((folder) => (
+                <article className="drive-department-card" key={folder.departmentId || folder.id}>
+                  <span className="drive-file-icon folder">
+                    <DriveIcon type="folder" />
                   </span>
-                ) : null}
-              </button>
-            ))}
+
+                  <div>
+                    <strong>{folder.departmentName || "Departamento"}</strong>
+                    <small>{folder.folderName || "Carpeta de Drive"}</small>
+                  </div>
+
+                  <button
+                    className="visual-outline-button drive-icon-button"
+                    type="button"
+                    onClick={() => handleOpenDepartmentFolder(folder)}
+                    disabled={!folder.folderId || loading}
+                  >
+                    <ActionIcon name="open" />
+                    <span>Abrir carpeta</span>
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {activeTab === "files" ? (
+        <section className="drive-browser-panel">
+          <div className="drive-browser-toolbar">
+            <div>
+              <span>Carpeta actual</span>
+              <strong>{settingsLoading ? "Cargando configuracion..." : currentFolderName}</strong>
+            </div>
+
+            <nav className="drive-breadcrumbs" aria-label="Ruta de Google Drive">
+              {breadcrumbs.length === 0 ? (
+                <span>Sin ruta</span>
+              ) : (
+                breadcrumbs.map((breadcrumb, index) => (
+                  <button
+                    key={`${breadcrumb.id}-${index}`}
+                    type="button"
+                    onClick={() => handleBreadcrumbClick(index)}
+                    disabled={breadcrumb.id === currentFolderId || isBusy}
+                  >
+                    {breadcrumb.name}
+                  </button>
+                ))
+              )}
+            </nav>
           </div>
-        ) : null}
-      </section>
+
+          {error ? <div className="drive-error-box">{error}</div> : null}
+
+          {isBusy ? (
+            <div className="drive-loading-state">
+              {settingsLoading ? "Cargando configuracion de Nube AES..." : "Cargando contenido de Drive..."}
+            </div>
+          ) : null}
+
+          {!isBusy && !error && currentFolderId && files.length === 0 ? (
+            <div className="empty-state drive-empty-state">
+              <div>
+                <DriveIcon />
+              </div>
+              <p>Esta carpeta esta vacia.</p>
+            </div>
+          ) : null}
+
+          {!isBusy && !currentFolderId ? (
+            <div className="empty-state drive-empty-state">
+              <div>
+                <DriveIcon type="folder" />
+              </div>
+              <p>{hasRootFolder ? "No se pudo cargar la carpeta raiz." : "Configura la carpeta raiz para iniciar."}</p>
+            </div>
+          ) : null}
+
+          {!isBusy && files.length > 0 ? (
+            <div className="drive-file-grid">
+              {files.map((file) => (
+                <button
+                  key={file.id}
+                  className="drive-file-card"
+                  type="button"
+                  onClick={() => handleOpenItem(file)}
+                >
+                  <span className={isDriveFolder(file) ? "drive-file-icon folder" : "drive-file-icon"}>
+                    <DriveIcon type={isDriveFolder(file) ? "folder" : "file"} />
+                  </span>
+
+                  <span className="drive-file-content">
+                    <strong>{file.name || "Archivo sin nombre"}</strong>
+                    <small>{getFileMeta(file)}</small>
+                  </span>
+
+                  {!isDriveFolder(file) && file.webViewLink ? (
+                    <span className="drive-open-indicator">
+                      <ActionIcon name="open" />
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -533,6 +687,10 @@ function getDriveErrorMessage(error, source = "drive") {
 
   if (source === "settings") {
     return error?.message || "No se pudo leer o guardar la configuracion de Nube AES.";
+  }
+
+  if (source === "departmentSettings") {
+    return error?.message || "No se pudieron cargar las carpetas de departamentos.";
   }
 
   return error?.message || "No se pudo completar la operacion en Google Drive.";
