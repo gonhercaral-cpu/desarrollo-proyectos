@@ -41,14 +41,186 @@ async function assertAdmin(context) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
   }
 
-  const userSnapshot = await admin.firestore().doc(`users/${uid}`).get();
-  const role = userSnapshot.exists ? userSnapshot.data()?.role : null;
+  const profile = await getUserProfile(uid);
 
-  if (role !== "admin") {
+  if (!isAdmin(profile)) {
     throw new HttpsError("permission-denied", "Solo administradores pueden usar Nube AES.");
   }
 
-  return uid;
+  return profile;
+}
+
+async function getUserProfile(uid) {
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
+  }
+
+  const userSnapshot = await admin.firestore().doc(`users/${uid}`).get();
+
+  if (!userSnapshot.exists) {
+    throw new HttpsError("permission-denied", "Tu usuario no tiene perfil en Firestore.");
+  }
+
+  return {
+    uid,
+    id: userSnapshot.id,
+    ...userSnapshot.data(),
+  };
+}
+
+function isAdmin(profile) {
+  return profile?.role === "admin";
+}
+
+function isCollaborator(profile) {
+  return profile?.role === "collaborator";
+}
+
+function normalizeString(value) {
+  return String(value || "").trim();
+}
+
+function normalizeText(value) {
+  return normalizeString(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value)
+    ? value.map(normalizeString).filter(Boolean)
+    : [];
+}
+
+function getUserDepartmentIds(profile) {
+  return [
+    ...normalizeStringArray(profile?.departmentIds),
+    normalizeString(profile?.primaryDepartmentId),
+  ].filter((value, index, array) => value && array.indexOf(value) === index);
+}
+
+function getUserDepartmentNames(profile) {
+  return [
+    ...normalizeStringArray(profile?.departmentNames),
+    normalizeString(profile?.area),
+    normalizeString(profile?.department),
+    normalizeString(profile?.departmentName),
+    normalizeString(profile?.team),
+    ...normalizeStringArray(profile?.departments),
+  ].filter((value, index, array) => value && array.indexOf(value) === index);
+}
+
+async function getAllowedDepartmentFolders(profile) {
+  const db = admin.firestore();
+
+  if (isAdmin(profile)) {
+    const snapshot = await db.collection("driveDepartmentFolders").orderBy("departmentName", "asc").get();
+    return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+  }
+
+  if (!isCollaborator(profile)) {
+    return [];
+  }
+
+  const departmentIds = getUserDepartmentIds(profile);
+  const departmentNames = getUserDepartmentNames(profile).map(normalizeText);
+  const folders = new Map();
+
+  await Promise.all(
+    departmentIds.map(async (departmentId) => {
+      const folderSnapshot = await db.collection("driveDepartmentFolders").doc(departmentId).get();
+
+      if (folderSnapshot.exists) {
+        folders.set(folderSnapshot.id, { id: folderSnapshot.id, ...folderSnapshot.data() });
+      }
+    })
+  );
+
+  if (departmentNames.length > 0) {
+    const snapshot = await db.collection("driveDepartmentFolders").get();
+
+    snapshot.docs.forEach((folderDoc) => {
+      const folder = { id: folderDoc.id, ...folderDoc.data() };
+      const folderName = normalizeText(folder.departmentName);
+
+      if (departmentNames.includes(folderName)) {
+        folders.set(folderDoc.id, folder);
+      }
+    });
+  }
+
+  return Array.from(folders.values()).sort((a, b) =>
+    String(a.departmentName || "").localeCompare(String(b.departmentName || ""), "es")
+  );
+}
+
+async function getAuthorizedFolderRoots(profile) {
+  if (isAdmin(profile)) {
+    return [await getRootFolderId()];
+  }
+
+  if (!isCollaborator(profile)) {
+    throw new HttpsError("permission-denied", "Tu rol no tiene acceso a Nube AES.");
+  }
+
+  const folders = await getAllowedDepartmentFolders(profile);
+  const folderIds = folders.map((folder) => normalizeString(folder.folderId)).filter(Boolean);
+
+  if (folderIds.length === 0) {
+    throw new HttpsError("permission-denied", "No tienes carpetas de departamento asignadas.");
+  }
+
+  return folderIds;
+}
+
+async function assertCanAccessDriveFolder({ profile, drive, folderId }) {
+  const cleanFolderId = requireString(folderId, "folderId");
+  const allowedRootIds = await getAuthorizedFolderRoots(profile);
+  const canAccess = await isFolderInsideAllowedRoots(drive, cleanFolderId, allowedRootIds);
+
+  if (!canAccess) {
+    throw new HttpsError("permission-denied", "No tienes permiso para acceder a esta carpeta de Nube AES.");
+  }
+
+  return cleanFolderId;
+}
+
+async function isFolderInsideAllowedRoots(drive, folderId, allowedRootIds) {
+  const allowed = new Set(allowedRootIds.filter(Boolean));
+  const pending = [folderId];
+  const visited = new Set();
+  let depth = 0;
+
+  while (pending.length > 0 && depth < 30) {
+    const currentId = pending.shift();
+
+    if (!currentId || visited.has(currentId)) {
+      continue;
+    }
+
+    if (allowed.has(currentId)) {
+      return true;
+    }
+
+    visited.add(currentId);
+    depth += 1;
+
+    try {
+      const response = await drive.files.get({
+        fileId: currentId,
+        fields: "id,parents",
+        supportsAllDrives: true,
+      });
+
+      const parents = Array.isArray(response.data.parents) ? response.data.parents : [];
+      pending.push(...parents);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function requireString(value, fieldName) {
@@ -173,10 +345,15 @@ async function createDriveFolder(drive, parentId, name) {
 }
 
 exports.driveListFolder = onCall(async (request) => {
-  await assertAdmin(request);
+  const uid = request.auth?.uid;
 
-  const folderId = requireString(request.data?.folderId, "folderId");
+  const profile = await getUserProfile(uid);
   const drive = await getDriveClient();
+  const folderId = await assertCanAccessDriveFolder({
+    profile,
+    drive,
+    folderId: request.data?.folderId,
+  });
   const files = [];
   let pageToken;
 
@@ -200,11 +377,16 @@ exports.driveListFolder = onCall(async (request) => {
 });
 
 exports.driveCreateFolder = onCall(async (request) => {
-  await assertAdmin(request);
+  const uid = request.auth?.uid;
 
-  const parentId = requireString(request.data?.parentId, "parentId");
-  const name = requireString(request.data?.name, "name");
+  const profile = await getUserProfile(uid);
   const drive = await getDriveClient();
+  const parentId = await assertCanAccessDriveFolder({
+    profile,
+    drive,
+    folderId: request.data?.parentId,
+  });
+  const name = requireString(request.data?.name, "name");
 
   const folder = await createDriveFolder(drive, parentId, name);
 
@@ -216,14 +398,19 @@ exports.driveCreateFolder = onCall(async (request) => {
 });
 
 exports.driveUploadFile = onCall(async (request) => {
-  await assertAdmin(request);
+  const uid = request.auth?.uid;
 
   try {
-    const folderId = requireString(request.data?.folderId, "folderId");
+    const profile = await getUserProfile(uid);
+    const drive = await getDriveClient();
+    const folderId = await assertCanAccessDriveFolder({
+      profile,
+      drive,
+      folderId: request.data?.folderId,
+    });
     const name = requireString(request.data?.name, "name");
     const mimeType = String(request.data?.mimeType || "application/octet-stream").trim();
     const fileBuffer = getBase64Buffer(request.data?.base64);
-    const drive = await getDriveClient();
 
     const response = await drive.files.create({
       requestBody: {
@@ -315,5 +502,22 @@ exports.driveEnsureDepartmentFolders = onCall(async (request) => {
     rootFolderId,
     count: results.length,
     folders: results,
+  };
+});
+
+exports.driveListAllowedDepartmentFolders = onCall(async (request) => {
+  const profile = await getUserProfile(request.auth?.uid);
+  const folders = await getAllowedDepartmentFolders(profile);
+
+  return {
+    isAdmin: isAdmin(profile),
+    folders: folders.map((folder) => ({
+      id: folder.id || folder.departmentId || "",
+      departmentId: folder.departmentId || folder.id || "",
+      departmentName: folder.departmentName || "",
+      folderId: folder.folderId || "",
+      folderName: folder.folderName || "",
+      webViewLink: folder.webViewLink || "",
+    })),
   };
 });

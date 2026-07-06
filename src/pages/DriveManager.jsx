@@ -3,12 +3,13 @@ import {
   createDriveFolder,
   DRIVE_FOLDER_MIME_TYPE,
   ensureDriveDepartmentFolders,
-  getDriveDepartmentFolders,
   getDriveRootSettings,
+  listAllowedDriveDepartmentFolders,
   listDriveFolder,
   saveDriveRootFolderId,
   uploadDriveFile,
 } from "../services/driveService";
+import { useAuth } from "../context/AuthContext";
 
 const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -80,6 +81,7 @@ function ActionIcon({ name }) {
 }
 
 export default function DriveManager() {
+  const { isAdmin } = useAuth();
   const [rootFolderId, setRootFolderId] = useState("");
   const [rootFolderDraft, setRootFolderDraft] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState("");
@@ -94,7 +96,7 @@ export default function DriveManager() {
   const [departmentFoldersLoading, setDepartmentFoldersLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [activeTab, setActiveTab] = useState("files");
+  const [activeTab, setActiveTab] = useState(() => (isAdmin ? "files" : "departments"));
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
@@ -108,6 +110,9 @@ export default function DriveManager() {
   const hasRootFolder = Boolean(rootFolderId);
   const isBusy = settingsLoading || loading;
   const departmentFoldersCount = departmentFolders.length;
+  const canUseRootSettings = isAdmin;
+  const canUseDepartmentSync = isAdmin;
+  const canUseCurrentFolderActions = Boolean(currentFolderId);
 
   const loadFolder = useCallback(async (folderId, nextBreadcrumbs) => {
     const cleanFolderId = String(folderId || "").trim();
@@ -140,8 +145,8 @@ export default function DriveManager() {
     setDepartmentError("");
 
     try {
-      const folders = await getDriveDepartmentFolders();
-      setDepartmentFolders(folders);
+      const result = await listAllowedDriveDepartmentFolders();
+      setDepartmentFolders(Array.isArray(result?.folders) ? result.folders : []);
     } catch (foldersError) {
       setDepartmentError(getDriveErrorMessage(foldersError, "departmentSettings"));
     } finally {
@@ -153,6 +158,16 @@ export default function DriveManager() {
     let isActive = true;
 
     async function loadRootFolderSetting() {
+      if (!canUseRootSettings) {
+        setSettingsLoading(false);
+        setRootFolderId("");
+        setRootFolderDraft("");
+        setCurrentFolderId("");
+        setBreadcrumbs([]);
+        setFiles([]);
+        return;
+      }
+
       setSettingsLoading(true);
       setError("");
 
@@ -192,7 +207,19 @@ export default function DriveManager() {
     return () => {
       isActive = false;
     };
-  }, [loadFolder]);
+  }, [canUseRootSettings, loadFolder]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      const timeoutId = window.setTimeout(() => {
+        loadDepartmentFolders();
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    return undefined;
+  }, [isAdmin, loadDepartmentFolders]);
 
   function handleReloadRoot() {
     if (!rootFolderId) {
@@ -351,7 +378,7 @@ export default function DriveManager() {
     try {
       const result = await ensureDriveDepartmentFolders();
       const folders = Array.isArray(result?.folders) ? result.folders : [];
-      setDepartmentFolders(folders.length ? folders : await getDriveDepartmentFolders());
+      setDepartmentFolders(folders.length ? folders : []);
       setDepartmentSuccess(`Sincronizacion completa: ${result?.count || folders.length || 0} departamentos listos.`);
     } catch (syncError) {
       setDepartmentError(getDriveErrorMessage(syncError, "drive"));
@@ -380,7 +407,7 @@ export default function DriveManager() {
     setActiveTab("files");
     setDepartmentError("");
     loadFolder(folderId, [
-      { id: rootFolderId, name: "Raiz" },
+      ...(rootFolderId ? [{ id: rootFolderId, name: "Raiz" }] : []),
       { id: folderId, name: folder.departmentName || folder.folderName || "Departamento" },
     ]);
   }
@@ -390,11 +417,11 @@ export default function DriveManager() {
       <div className="visual-page-header drive-manager-header">
         <div>
           <h2>Nube AES</h2>
-          <p>Explora carpetas y archivos conectados a Google Drive.</p>
+          <p>{isAdmin ? "Explora carpetas y archivos conectados a Google Drive." : "Accede a las carpetas vinculadas a tus departamentos."}</p>
         </div>
 
         <div className="drive-manager-summary">
-          <span>{hasRootFolder ? "Raiz configurada" : "Sin raiz"}</span>
+          <span>{isAdmin ? (hasRootFolder ? "Raiz configurada" : "Sin raiz") : "Mis carpetas"}</span>
           <strong>{folderCount} carpetas / {fileCount} archivos</strong>
         </div>
       </div>
@@ -412,11 +439,11 @@ export default function DriveManager() {
           type="button"
           onClick={handleOpenDepartmentsTab}
         >
-          Departamentos
+          {isAdmin ? "Departamentos" : "Mis carpetas"}
         </button>
       </div>
 
-      {!hasRootFolder && !settingsLoading ? (
+      {canUseRootSettings && !hasRootFolder && !settingsLoading ? (
         <section className="drive-settings-panel setup">
           <div className="drive-settings-copy">
             <span>Configuracion inicial</span>
@@ -433,7 +460,7 @@ export default function DriveManager() {
         </section>
       ) : null}
 
-      {hasRootFolder && activeTab === "files" ? (
+      {activeTab === "files" && (hasRootFolder || canUseCurrentFolderActions) ? (
         <section className="drive-control-panel">
           <form className="drive-create-form" onSubmit={handleCreateFolder}>
             <label htmlFor="drive-new-folder">Crear carpeta</label>
@@ -445,12 +472,12 @@ export default function DriveManager() {
                 onChange={(event) => setNewFolderName(event.target.value)}
                 placeholder="Nombre de carpeta"
                 autoComplete="off"
-                disabled={!currentFolderId || creatingFolder || isBusy}
+                disabled={!canUseCurrentFolderActions || creatingFolder || isBusy}
               />
               <button
                 className="visual-outline-button drive-icon-button"
                 type="submit"
-                disabled={!currentFolderId || creatingFolder || isBusy}
+                disabled={!canUseCurrentFolderActions || creatingFolder || isBusy}
               >
                 <ActionIcon name="add" />
                 <span>{creatingFolder ? "Creando" : "Crear"}</span>
@@ -470,20 +497,21 @@ export default function DriveManager() {
               className="drive-hidden-file-input"
               type="file"
               onChange={handleUploadFile}
-              disabled={!currentFolderId || uploadingFile || isBusy}
+              disabled={!canUseCurrentFolderActions || uploadingFile || isBusy}
             />
 
             <button
               className="visual-primary-button drive-icon-button"
               type="button"
               onClick={handleUploadClick}
-              disabled={!currentFolderId || uploadingFile || isBusy}
+              disabled={!canUseCurrentFolderActions || uploadingFile || isBusy}
             >
               <ActionIcon name="upload" />
               <span>{uploadingFile ? "Subiendo" : "Subir archivo"}</span>
             </button>
           </div>
 
+          {canUseRootSettings ? (
           <div className="drive-current-root-card">
             <div>
               <span>Carpeta raiz</span>
@@ -511,10 +539,11 @@ export default function DriveManager() {
               </button>
             </div>
           </div>
+          ) : null}
         </section>
       ) : null}
 
-      {hasRootFolder && configOpen ? (
+      {canUseRootSettings && hasRootFolder && configOpen ? (
         <section className="drive-settings-panel">
           <div className="drive-settings-copy">
             <span>Configuracion</span>
@@ -535,10 +564,11 @@ export default function DriveManager() {
         <section className="drive-departments-panel">
           <div className="drive-departments-header">
             <div>
-              <span>Carpetas por departamento</span>
+              <span>{isAdmin ? "Carpetas por departamento" : "Mis carpetas"}</span>
               <strong>{departmentFoldersCount} vinculadas</strong>
             </div>
 
+            {canUseDepartmentSync ? (
             <button
               className="visual-primary-button drive-icon-button"
               type="button"
@@ -548,6 +578,7 @@ export default function DriveManager() {
               <ActionIcon name="load" />
               <span>{syncingDepartments ? "Sincronizando" : "Sincronizar carpetas de departamentos"}</span>
             </button>
+            ) : null}
           </div>
 
           {departmentError ? <div className="drive-error-box">{departmentError}</div> : null}
@@ -562,7 +593,7 @@ export default function DriveManager() {
               <div>
                 <DriveIcon type="folder" />
               </div>
-              <p>No hay carpetas de departamentos vinculadas.</p>
+              <p>{isAdmin ? "No hay carpetas de departamentos vinculadas." : "No tienes carpetas de departamento asignadas."}</p>
             </div>
           ) : null}
 
@@ -648,7 +679,7 @@ export default function DriveManager() {
               <div>
                 <DriveIcon type="folder" />
               </div>
-              <p>{hasRootFolder ? "No se pudo cargar la carpeta raiz." : "Configura la carpeta raiz para iniciar."}</p>
+              <p>{isAdmin ? (hasRootFolder ? "No se pudo cargar la carpeta raiz." : "Configura la carpeta raiz para iniciar.") : "Abre una carpeta de Mis carpetas para navegar."}</p>
             </div>
           ) : null}
 

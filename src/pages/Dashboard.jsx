@@ -224,7 +224,7 @@ function renderDashboardNavIconPath(name) {
 }
 
 
-function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
+function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager }) {
   const items = [];
 
   if (isAdmin) {
@@ -248,6 +248,10 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
 
   if (canUseTechnicalSupport) {
     items.push({ page: "technical-support", label: "Soporte técnico", mobileLabel: "Soporte", icon: "technical", section: "Operación" });
+  }
+
+  if (canUseDriveManager && !isAdmin) {
+    items.push({ page: "drive-manager", label: "Nube AES", mobileLabel: "Nube", icon: "drive", section: "Operación" });
   }
 
   if (!isAdmin) {
@@ -299,7 +303,7 @@ function getMobilePrimaryNavigationItems(items, { isAdmin, canUsePrintShop, canU
   return [...preferred, ...fallback].slice(0, 4);
 }
 
-function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport }) {
+function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager }) {
   const defaultPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const adminOnlyPages = new Set([
     "executive-dashboard",
@@ -308,12 +312,12 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "create-project",
     "collaborators-admin",
     "departments-admin",
-    "drive-manager",
     "subscription-manager",
   ]);
 
   if (!page) return defaultPage;
   if (adminOnlyPages.has(page) && !isAdmin) return defaultPage;
+  if (page === "drive-manager" && !canUseDriveManager) return defaultPage;
   if (page === "print-shop" && !canUsePrintShop) return defaultPage;
   if (page === "technical-support" && !canUseTechnicalSupport) return defaultPage;
   if (page === "notifications-center") return "notifications-center";
@@ -332,6 +336,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     );
 
   const canUseTechnicalSupport = canAccessTechnicalSupport(profile, isAdmin);
+  const canUseDriveManager = isAdmin || profile?.role === "collaborator";
 
   const defaultDashboardPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const defaultReturnPage = isAdmin ? "all-projects" : "workspace-dashboard";
@@ -380,6 +385,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       isAdmin,
       canUsePrintShop,
       canUseTechnicalSupport,
+      canUseDriveManager,
     });
 
     if (safePage !== page) {
@@ -387,7 +393,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       setReturnPage(safePage);
       setPage(safePage);
     }
-  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport]);
+  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -420,6 +426,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       isAdmin,
       canUsePrintShop,
       canUseTechnicalSupport,
+      canUseDriveManager,
     });
 
     setSelectedProjectId(null);
@@ -557,7 +564,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       return <DepartmentsAdmin />;
     }
 
-    if (page === "drive-manager" && isAdmin) {
+    if (page === "drive-manager" && canUseDriveManager) {
       return <DriveManager />;
     }
 
@@ -741,6 +748,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     isAdmin,
     canUsePrintShop,
     canUseTechnicalSupport,
+    canUseDriveManager,
   }).map((item) => {
     if (item.page === "workspace-dashboard") {
       return { ...item, badgeCount: unreadAnnouncementsCount };

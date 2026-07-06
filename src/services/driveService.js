@@ -21,6 +21,10 @@ const driveEnsureDepartmentFoldersCallable = httpsCallable(
   functions,
   "driveEnsureDepartmentFolders"
 );
+const driveListAllowedDepartmentFoldersCallable = httpsCallable(
+  functions,
+  "driveListAllowedDepartmentFolders"
+);
 
 export async function listDriveFolder(folderId) {
   const response = await driveListFolderCallable({ folderId });
@@ -44,6 +48,11 @@ export async function uploadDriveFile({ folderId, name, mimeType, base64 }) {
 
 export async function ensureDriveDepartmentFolders() {
   const response = await driveEnsureDepartmentFoldersCallable();
+  return response.data;
+}
+
+export async function listAllowedDriveDepartmentFolders() {
+  const response = await driveListAllowedDepartmentFoldersCallable();
   return response.data;
 }
 
