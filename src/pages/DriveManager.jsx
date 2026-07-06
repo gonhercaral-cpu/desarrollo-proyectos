@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDriveFolder,
   DRIVE_FOLDER_MIME_TYPE,
@@ -7,7 +7,10 @@ import {
   getDriveRootSettings,
   listDriveFolder,
   saveDriveRootFolderId,
+  uploadDriveFile,
 } from "../services/driveService";
+
+const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
 
 function DriveIcon({ type = "file" }) {
   if (type === "folder") {
@@ -58,6 +61,16 @@ function ActionIcon({ name }) {
     );
   }
 
+  if (name === "upload") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 16V4" />
+        <path d="M7 9l5-5 5 5" />
+        <path d="M5 20h14" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7 17 17 7" />
@@ -76,6 +89,7 @@ export default function DriveManager() {
   const [loading, setLoading] = useState(false);
   const [savingRoot, setSavingRoot] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const [syncingDepartments, setSyncingDepartments] = useState(false);
   const [departmentFoldersLoading, setDepartmentFoldersLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
@@ -85,6 +99,8 @@ export default function DriveManager() {
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
   const [departmentSuccess, setDepartmentSuccess] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState("");
+  const fileInputRef = useRef(null);
 
   const currentFolderName = breadcrumbs.at(-1)?.name || "Sin carpeta cargada";
   const folderCount = useMemo(() => files.filter(isDriveFolder).length, [files]);
@@ -267,6 +283,60 @@ export default function DriveManager() {
     }
   }
 
+  function handleUploadClick() {
+    if (!currentFolderId) {
+      setError("Carga una carpeta antes de subir archivos.");
+      return;
+    }
+
+    setError("");
+    setUploadSuccess("");
+    fileInputRef.current?.click();
+  }
+
+  async function handleUploadFile(event) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!currentFolderId) {
+      setError("Carga una carpeta antes de subir archivos.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_FILE_BYTES) {
+      setError("El archivo supera el limite inicial de 25MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingFile(true);
+    setError("");
+    setUploadSuccess("");
+
+    try {
+      const base64 = await readFileAsBase64(file);
+
+      await uploadDriveFile({
+        folderId: currentFolderId,
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        base64,
+      });
+
+      setUploadSuccess(`Archivo subido: ${file.name}`);
+      await loadFolder(currentFolderId, breadcrumbs);
+    } catch (uploadError) {
+      setError(getDriveErrorMessage(uploadError, "upload"));
+    } finally {
+      setUploadingFile(false);
+      event.target.value = "";
+    }
+  }
+
   async function handleSyncDepartmentFolders() {
     if (!rootFolderId) {
       setConfigOpen(true);
@@ -387,6 +457,32 @@ export default function DriveManager() {
               </button>
             </div>
           </form>
+
+          <div className="drive-upload-card">
+            <div>
+              <span>Subida</span>
+              <strong>Archivo a carpeta actual</strong>
+              <small>Limite inicial 25MB</small>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              className="drive-hidden-file-input"
+              type="file"
+              onChange={handleUploadFile}
+              disabled={!currentFolderId || uploadingFile || isBusy}
+            />
+
+            <button
+              className="visual-primary-button drive-icon-button"
+              type="button"
+              onClick={handleUploadClick}
+              disabled={!currentFolderId || uploadingFile || isBusy}
+            >
+              <ActionIcon name="upload" />
+              <span>{uploadingFile ? "Subiendo" : "Subir archivo"}</span>
+            </button>
+          </div>
 
           <div className="drive-current-root-card">
             <div>
@@ -526,14 +622,19 @@ export default function DriveManager() {
           </div>
 
           {error ? <div className="drive-error-box">{error}</div> : null}
+          {uploadSuccess ? <div className="drive-success-box">{uploadSuccess}</div> : null}
 
-          {isBusy ? (
+          {isBusy || uploadingFile ? (
             <div className="drive-loading-state">
-              {settingsLoading ? "Cargando configuracion de Nube AES..." : "Cargando contenido de Drive..."}
+              {uploadingFile
+                ? "Subiendo archivo a Google Drive..."
+                : settingsLoading
+                  ? "Cargando configuracion de Nube AES..."
+                  : "Cargando contenido de Drive..."}
             </div>
           ) : null}
 
-          {!isBusy && !error && currentFolderId && files.length === 0 ? (
+          {!isBusy && !uploadingFile && !error && currentFolderId && files.length === 0 ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon />
@@ -542,7 +643,7 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBusy && !currentFolderId ? (
+          {!isBusy && !uploadingFile && !currentFolderId ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon type="folder" />
@@ -551,7 +652,7 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBusy && files.length > 0 ? (
+          {!isBusy && !uploadingFile && files.length > 0 ? (
             <div className="drive-file-grid">
               {files.map((file) => (
                 <button
@@ -668,13 +769,30 @@ function formatDate(value) {
   });
 }
 
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const [, base64 = ""] = result.split(",");
+      resolve(base64);
+    };
+
+    reader.onerror = () => reject(new Error("No se pudo leer el archivo seleccionado."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function getDriveErrorMessage(error, source = "drive") {
   if (error?.code === "permission-denied") {
     return "Sin permisos Firestore para leer o guardar systemSettings/drive. Tu usuario debe tener role admin en users/{uid}.";
   }
 
   if (error?.code === "functions/permission-denied") {
-    return "Sin permisos en la funcion de Drive. Revisa que users/{uid}.role sea admin y que la funcion use ese UID.";
+    return source === "upload"
+      ? "Sin permisos para subir a Drive. Revisa que users/{uid}.role sea admin y que la carpeta permita escritura."
+      : "Sin permisos en la funcion de Drive. Revisa que users/{uid}.role sea admin y que la funcion use ese UID.";
   }
 
   if (error?.code === "functions/unauthenticated" || error?.code === "unauthenticated") {
@@ -691,6 +809,10 @@ function getDriveErrorMessage(error, source = "drive") {
 
   if (source === "departmentSettings") {
     return error?.message || "No se pudieron cargar las carpetas de departamentos.";
+  }
+
+  if (source === "upload") {
+    return error?.message || "No se pudo subir el archivo a Google Drive.";
   }
 
   return error?.message || "No se pudo completar la operacion en Google Drive.";

@@ -70893,6 +70893,7 @@ html[data-theme="dark"] body #root .main-content :is(
 .drive-manager-summary span,
 .drive-browser-toolbar span,
 .drive-current-root-card span,
+.drive-upload-card span,
 .drive-settings-copy span,
 .drive-root-form label,
 .drive-create-form label {
@@ -70905,6 +70906,7 @@ html[data-theme="dark"] body #root .main-content :is(
 
 .drive-manager-summary strong,
 .drive-current-root-card strong,
+.drive-upload-card strong,
 .drive-settings-copy strong,
 .drive-browser-toolbar strong {
   display: block;
@@ -71045,7 +71047,8 @@ html[data-theme="dark"] body #root .main-content :is(
   line-height: 1.5;
 }
 
-.drive-current-root-card {
+.drive-current-root-card,
+.drive-upload-card {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto;
   gap: 12px;
@@ -71055,6 +71058,18 @@ html[data-theme="dark"] body #root .main-content :is(
   border-radius: 8px;
   padding: 12px;
   background: var(--surface-2);
+}
+
+.drive-upload-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.drive-hidden-file-input {
+  display: none;
 }
 
 .drive-root-actions {
@@ -71324,6 +71339,7 @@ html[data-theme="dark"] .drive-file-card:focus-visible {
   .drive-root-form > div,
   .drive-create-form > div,
   .drive-current-root-card,
+  .drive-upload-card,
   .drive-department-card,
   .drive-file-card {
     grid-template-columns: 1fr;

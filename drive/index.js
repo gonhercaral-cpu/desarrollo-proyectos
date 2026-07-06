@@ -3,7 +3,9 @@
 const { setGlobalOptions } = require("firebase-functions/v2");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { Buffer } = require("buffer");
 const { google } = require("googleapis");
+const { Readable } = require("stream");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10, region: "us-central1" });
@@ -11,6 +13,7 @@ setGlobalOptions({ maxInstances: 10, region: "us-central1" });
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DRIVE_SETTINGS_PATH = "systemSettings/drive";
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 let driveClientPromise;
 
@@ -74,6 +77,59 @@ function normalizeDriveFile(file) {
     size: file.size || "",
     parents: Array.isArray(file.parents) ? file.parents : [],
   };
+}
+
+function normalizeBase64(value) {
+  return String(value || "").replace(/^data:[^;]+;base64,/, "").trim();
+}
+
+function getBase64Buffer(base64) {
+  const cleanBase64 = normalizeBase64(base64);
+
+  if (!cleanBase64) {
+    throw new HttpsError("invalid-argument", "Falta base64.");
+  }
+
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(cleanBase64)) {
+    throw new HttpsError("invalid-argument", "base64 no es valido.");
+  }
+
+  const buffer = Buffer.from(cleanBase64, "base64");
+
+  if (!buffer.length) {
+    throw new HttpsError("invalid-argument", "Archivo vacio.");
+  }
+
+  if (buffer.length > MAX_UPLOAD_BYTES) {
+    throw new HttpsError("resource-exhausted", "El archivo supera el limite de 25MB.");
+  }
+
+  return buffer;
+}
+
+function getDriveUploadError(error) {
+  if (error instanceof HttpsError) {
+    return error;
+  }
+
+  const status = error?.code || error?.response?.status;
+
+  if (status === 403) {
+    return new HttpsError(
+      "permission-denied",
+      "La cuenta de servicio no tiene permiso para subir archivos en esta carpeta."
+    );
+  }
+
+  if (status === 404) {
+    return new HttpsError("not-found", "No se encontro la carpeta destino en Google Drive.");
+  }
+
+  return new HttpsError(
+    "internal",
+    "No se pudo subir el archivo a Google Drive.",
+    { message: error?.message || "" }
+  );
 }
 
 async function getRootFolderId() {
@@ -157,6 +213,36 @@ exports.driveCreateFolder = onCall(async (request) => {
     name: folder.name || "",
     webViewLink: folder.webViewLink || "",
   };
+});
+
+exports.driveUploadFile = onCall(async (request) => {
+  await assertAdmin(request);
+
+  try {
+    const folderId = requireString(request.data?.folderId, "folderId");
+    const name = requireString(request.data?.name, "name");
+    const mimeType = String(request.data?.mimeType || "application/octet-stream").trim();
+    const fileBuffer = getBase64Buffer(request.data?.base64);
+    const drive = await getDriveClient();
+
+    const response = await drive.files.create({
+      requestBody: {
+        name,
+        mimeType,
+        parents: [folderId],
+      },
+      media: {
+        mimeType,
+        body: Readable.from(fileBuffer),
+      },
+      fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
+      supportsAllDrives: true,
+    });
+
+    return normalizeDriveFile(response.data || {});
+  } catch (error) {
+    throw getDriveUploadError(error);
+  }
 });
 
 exports.driveEnsureDepartmentFolders = onCall(async (request) => {

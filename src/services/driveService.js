@@ -16,6 +16,7 @@ const DRIVE_DEPARTMENT_FOLDERS_COLLECTION = "driveDepartmentFolders";
 
 const driveListFolderCallable = httpsCallable(functions, "driveListFolder");
 const driveCreateFolderCallable = httpsCallable(functions, "driveCreateFolder");
+const driveUploadFileCallable = httpsCallable(functions, "driveUploadFile");
 const driveEnsureDepartmentFoldersCallable = httpsCallable(
   functions,
   "driveEnsureDepartmentFolders"
@@ -28,6 +29,16 @@ export async function listDriveFolder(folderId) {
 
 export async function createDriveFolder(parentId, name) {
   const response = await driveCreateFolderCallable({ parentId, name });
+  return response.data;
+}
+
+export async function uploadDriveFile({ folderId, name, mimeType, base64 }) {
+  const response = await driveUploadFileCallable({
+    folderId,
+    name,
+    mimeType,
+    base64,
+  });
   return response.data;
 }
 
