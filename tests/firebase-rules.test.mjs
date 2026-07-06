@@ -518,6 +518,55 @@ describe("certificados de imprenta", () => {
   });
 });
 
+describe("configuracion de Nube AES", () => {
+  it("permite a admin guardar y leer rootFolderId", async () => {
+    const db = auth("admin");
+    const settingsRef = doc(db, "systemSettings", "drive");
+
+    await assertSucceeds(
+      setDoc(settingsRef, {
+        rootFolderId: "drive-root-folder",
+        updatedAt: Timestamp.now(),
+      })
+    );
+
+    await assertSucceeds(getDoc(settingsRef));
+  });
+
+  it("bloquea systemSettings/drive a colaborador", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "systemSettings", "drive"), {
+        rootFolderId: "drive-root-folder",
+        updatedAt: Timestamp.now(),
+      });
+    });
+
+    const db = auth("collab");
+
+    await assertFails(getDoc(doc(db, "systemSettings", "drive")));
+    await assertFails(
+      setDoc(doc(db, "systemSettings", "drive"), {
+        rootFolderId: "other-root-folder",
+        updatedAt: Timestamp.now(),
+      })
+    );
+  });
+
+  it("permite systemSettings/drive a usuario con role admin aunque active no sea true", async () => {
+    const db = auth("inactive");
+    const settingsRef = doc(db, "systemSettings", "drive");
+
+    await assertSucceeds(
+      setDoc(settingsRef, {
+        rootFolderId: "drive-root-folder",
+        updatedAt: Timestamp.now(),
+      })
+    );
+
+    await assertSucceeds(getDoc(settingsRef));
+  });
+});
+
 describe("storage", () => {
   it("impide subir evidencia a proyecto ajeno", async () => {
     const storage = storageAuth("requester");

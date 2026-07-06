@@ -28,8 +28,12 @@ service cloud.firestore {
       return userDoc().data.role;
     }
 
+    function isAdminRole() {
+      return userExists() && role() == "admin";
+    }
+
     function isAdmin() {
-      return hasProfile() && role() == "admin";
+      return hasProfile() && isAdminRole();
     }
 
 
@@ -2545,6 +2549,12 @@ service cloud.firestore {
       allow create, update: if validUserPresenceWrite(userId);
 
       allow delete: if false;
+    }
+
+    match /systemSettings/{settingId} {
+      allow get, list: if isAdminRole();
+
+      allow create, update, delete: if isAdminRole();
     }
 
     match /messageTypingStates/{stateId} {

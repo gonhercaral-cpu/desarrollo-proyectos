@@ -27,6 +27,7 @@ import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
 import BugReports from "./BugReports";
 import SubscriptionManager from "./SubscriptionManager";
+import DriveManager from "./DriveManager";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -110,6 +111,14 @@ function renderDashboardNavIconPath(name) {
           <path d="M16 16h.01" />
           <path d="M7 3v4" />
           <path d="M17 3v4" />
+        </>
+      );
+    case "drive":
+      return (
+        <>
+          <path d="M6 18.5a4 4 0 0 1 .9-7.9 5.8 5.8 0 0 1 11.1 1.6A3.2 3.2 0 0 1 17.8 18.5H6z" />
+          <path d="M9 15h6" />
+          <path d="M12 12v6" />
         </>
       );
     case "ideas":
@@ -251,6 +260,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "project-history", label: "Historial de proyectos", mobileLabel: "Historial", icon: "history", section: "Administración" });
     items.push({ page: "collaborators-admin", label: "Colaboradores", mobileLabel: "Equipo", icon: "collaborators", section: "Administración" });
     items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
+    items.push({ page: "drive-manager", label: "Nube AES", mobileLabel: "Nube", icon: "drive", section: "Administración" });
     items.push({ page: "subscription-manager", label: "Gestor de suscripciones", mobileLabel: "Suscripciones", icon: "subscriptions", section: "Administración" });
     items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Administración" });
   }
@@ -298,6 +308,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "create-project",
     "collaborators-admin",
     "departments-admin",
+    "drive-manager",
     "subscription-manager",
   ]);
 
@@ -546,6 +557,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       return <DepartmentsAdmin />;
     }
 
+    if (page === "drive-manager" && isAdmin) {
+      return <DriveManager />;
+    }
+
     if (page === "technical-support" && canUseTechnicalSupport) {
       return <TechnicalSupport />;
     }
@@ -681,6 +696,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (navPage === "departments-admin") {
       return page === "departments-admin";
+    }
+
+    if (navPage === "drive-manager") {
+      return page === "drive-manager";
     }
 
     if (navPage === "technical-support") {
@@ -6068,6 +6087,7 @@ function getDashboardSearchableModules(isAdmin) {
     { type: "module", route: "project-history", title: "Historial de proyectos", description: "Proyectos terminados o eliminados", icon: "↶", tone: "gold" },
     { type: "module", route: "collaborators-admin", title: "Colaboradores", description: "Gestión de usuarios y permisos", icon: "👥", tone: "green" },
     { type: "module", route: "departments-admin", title: "Departamentos", description: "Gestión de departamentos y áreas", icon: "▦", tone: "blue" },
+    { type: "module", route: "drive-manager", title: "Nube AES", description: "Explorar carpetas y archivos de Google Drive", icon: "N", tone: "blue" },
   ];
 }
 
