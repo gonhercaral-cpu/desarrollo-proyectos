@@ -14,6 +14,7 @@ const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DRIVE_SETTINGS_PATH = "systemSettings/drive";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const DRIVE_SEARCH_TYPES = new Set(["todos", "carpetas", "documentos", "imagenes", "videos", "pdf"]);
 
 let driveClientPromise;
 
@@ -237,6 +238,64 @@ function escapeDriveQueryValue(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+function getDriveTypeQuery(type) {
+  const cleanType = String(type || "todos").trim().toLowerCase();
+
+  if (!DRIVE_SEARCH_TYPES.has(cleanType)) {
+    throw new HttpsError("invalid-argument", "Filtro de busqueda no valido.");
+  }
+
+  if (cleanType === "carpetas") {
+    return `mimeType = '${DRIVE_FOLDER_MIME_TYPE}'`;
+  }
+
+  if (cleanType === "documentos") {
+    return [
+      "mimeType contains 'document'",
+      "mimeType contains 'spreadsheet'",
+      "mimeType contains 'presentation'",
+      "mimeType = 'text/plain'",
+      "mimeType = 'application/msword'",
+      "mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
+      "mimeType = 'application/vnd.ms-excel'",
+      "mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
+      "mimeType = 'application/vnd.ms-powerpoint'",
+      "mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'",
+    ].join(" or ");
+  }
+
+  if (cleanType === "imagenes") {
+    return "mimeType contains 'image/'";
+  }
+
+  if (cleanType === "videos") {
+    return "mimeType contains 'video/'";
+  }
+
+  if (cleanType === "pdf") {
+    return "mimeType = 'application/pdf'";
+  }
+
+  return "";
+}
+
+function buildDriveSearchQuery({ query, type }) {
+  const conditions = ["trashed = false"];
+  const cleanQuery = String(query || "").trim().slice(0, 120);
+  const typeQuery = getDriveTypeQuery(type);
+
+  if (cleanQuery) {
+    const escapedQuery = escapeDriveQueryValue(cleanQuery);
+    conditions.push(`(name contains '${escapedQuery}' or fullText contains '${escapedQuery}')`);
+  }
+
+  if (typeQuery) {
+    conditions.push(`(${typeQuery})`);
+  }
+
+  return conditions.join(" and ");
+}
+
 function normalizeDriveFile(file) {
   return {
     id: file.id || "",
@@ -322,6 +381,24 @@ function getDriveMutationError(error, fallbackMessage) {
   return new HttpsError("internal", fallbackMessage, { message: error?.message || "" });
 }
 
+function getDriveSearchError(error) {
+  if (error instanceof HttpsError) {
+    return error;
+  }
+
+  const status = error?.code || error?.response?.status;
+
+  if (status === 403) {
+    return new HttpsError("permission-denied", "No tienes permiso para buscar en estas carpetas de Drive.");
+  }
+
+  if (status === 404) {
+    return new HttpsError("not-found", "No se encontro la carpeta para buscar en Google Drive.");
+  }
+
+  return new HttpsError("internal", "No se pudo buscar en Google Drive.", { message: error?.message || "" });
+}
+
 async function getRootFolderId() {
   const settingsSnapshot = await admin.firestore().doc(DRIVE_SETTINGS_PATH).get();
   const rootFolderId = String(settingsSnapshot.data()?.rootFolderId || "").trim();
@@ -382,6 +459,31 @@ async function assertCanAccessDriveItem({ profile, drive, fileId }) {
   }
 
   return cleanFileId;
+}
+
+async function getSearchAllowedRoots({ profile, drive, folderId }) {
+  const cleanFolderId = String(folderId || "").trim();
+
+  if (!cleanFolderId) {
+    return getAuthorizedFolderRoots(profile);
+  }
+
+  await assertCanAccessDriveFolder({ profile, drive, folderId: cleanFolderId });
+  return [cleanFolderId];
+}
+
+async function filterFilesInsideRoots({ drive, files, allowedRootIds }) {
+  const filtered = [];
+
+  for (const file of files) {
+    const canAccess = await isFolderInsideAllowedRoots(drive, file.id, allowedRootIds);
+
+    if (canAccess) {
+      filtered.push(file);
+    }
+  }
+
+  return filtered;
 }
 
 exports.driveListFolder = onCall(async (request) => {
@@ -547,6 +649,52 @@ exports.driveDeleteItem = onCall(async (request) => {
     return normalizeDriveFile(response.data || {});
   } catch (error) {
     throw getDriveMutationError(error, "No se pudo enviar el elemento a la papelera.");
+  }
+});
+
+exports.driveSearchFiles = onCall(async (request) => {
+  try {
+    const profile = await getUserProfile(request.auth?.uid);
+    const drive = await getDriveClient();
+    const allowedRootIds = await getSearchAllowedRoots({
+      profile,
+      drive,
+      folderId: request.data?.folderId,
+    });
+    const searchQuery = buildDriveSearchQuery({
+      query: request.data?.query,
+      type: request.data?.type,
+    });
+    const results = [];
+    let pageToken;
+    let pagesRead = 0;
+
+    do {
+      const response = await drive.files.list({
+        q: searchQuery,
+        fields:
+          "nextPageToken, files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents)",
+        orderBy: "folder,modifiedTime desc,name_natural",
+        pageSize: 100,
+        pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      const files = (response.data.files || []).map(normalizeDriveFile);
+      const allowedFiles = await filterFilesInsideRoots({ drive, files, allowedRootIds });
+
+      results.push(...allowedFiles);
+      pageToken = response.data.nextPageToken;
+      pagesRead += 1;
+    } while (pageToken && results.length < 100 && pagesRead < 5);
+
+    return {
+      files: results.slice(0, 100),
+      query: String(request.data?.query || "").trim().slice(0, 120),
+      type: String(request.data?.type || "todos").trim().toLowerCase(),
+    };
+  } catch (error) {
+    throw getDriveSearchError(error);
   }
 });
 

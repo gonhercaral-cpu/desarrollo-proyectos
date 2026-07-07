@@ -10,11 +10,20 @@ import {
   moveDriveItem,
   renameDriveItem,
   saveDriveRootFolderId,
+  searchDriveFiles,
   uploadDriveFile,
 } from "../services/driveService";
 import { useAuth } from "../context/AuthContext";
 
 const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
+const DRIVE_SEARCH_TYPES = [
+  { value: "todos", label: "Todos" },
+  { value: "carpetas", label: "Carpetas" },
+  { value: "documentos", label: "Documentos" },
+  { value: "imagenes", label: "Imagenes" },
+  { value: "videos", label: "Videos" },
+  { value: "pdf", label: "PDF" },
+];
 
 function DriveIcon({ type = "file" }) {
   if (type === "folder") {
@@ -111,6 +120,11 @@ export default function DriveManager() {
   const [newFolderName, setNewFolderName] = useState("");
   const [openActionsItemId, setOpenActionsItemId] = useState("");
   const [mutatingItemId, setMutatingItemId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState("todos");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(() => (isAdmin ? "files" : "departments"));
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
@@ -124,11 +138,14 @@ export default function DriveManager() {
   const fileCount = files.length - folderCount;
   const hasRootFolder = Boolean(rootFolderId);
   const isBusy = settingsLoading || loading;
+  const isBrowserLoading = isBusy || uploadingFile || searchLoading;
   const departmentFoldersCount = departmentFolders.length;
   const canUseRootSettings = isAdmin;
   const canUseDepartmentSync = isAdmin;
   const canUseCurrentFolderActions = Boolean(currentFolderId);
-  const canManageItems = Boolean(currentFolderId);
+  const canManageItems = Boolean(currentFolderId) || searchActive;
+  const visibleFiles = searchActive ? searchResults : files;
+  const visibleEmptyMessage = searchActive ? "No hay resultados para esta busqueda." : "Esta carpeta esta vacia.";
 
   const loadFolder = useCallback(async (folderId, nextBreadcrumbs) => {
     const cleanFolderId = String(folderId || "").trim();
@@ -244,6 +261,7 @@ export default function DriveManager() {
       return;
     }
 
+    clearDriveSearch();
     loadFolder(rootFolderId, [{ id: rootFolderId, name: "Raiz" }]);
   }
 
@@ -265,6 +283,7 @@ export default function DriveManager() {
       setRootFolderId(savedRootFolderId);
       setRootFolderDraft(savedRootFolderId);
       setConfigOpen(false);
+      clearDriveSearch();
       await loadFolder(savedRootFolderId, [{ id: savedRootFolderId, name: "Raiz" }]);
     } catch (saveError) {
       setError(getDriveErrorMessage(saveError, "settings"));
@@ -275,6 +294,7 @@ export default function DriveManager() {
 
   function handleOpenItem(file) {
     if (isDriveFolder(file)) {
+      clearDriveSearch();
       loadFolder(file.id, [...breadcrumbs, { id: file.id, name: file.name || "Carpeta" }]);
       return;
     }
@@ -291,6 +311,7 @@ export default function DriveManager() {
       return;
     }
 
+    clearDriveSearch();
     loadFolder(breadcrumb.id, breadcrumbs.slice(0, index + 1));
   }
 
@@ -334,6 +355,57 @@ export default function DriveManager() {
     await loadFolder(currentFolderId, breadcrumbs);
   }
 
+  async function reloadVisibleItems() {
+    if (searchActive) {
+      await runDriveSearch();
+      return;
+    }
+
+    await reloadCurrentFolder();
+  }
+
+  async function runDriveSearch() {
+    setSearchLoading(true);
+    setError("");
+    setUploadSuccess("");
+    setOpenActionsItemId("");
+
+    try {
+      const result = await searchDriveFiles({
+        query: searchQuery,
+        type: searchType,
+        folderId: currentFolderId,
+      });
+
+      setSearchResults(Array.isArray(result?.files) ? result.files : []);
+      setSearchActive(true);
+    } catch (searchError) {
+      setSearchResults([]);
+      setSearchActive(true);
+      setError(getDriveErrorMessage(searchError, "search"));
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  async function handleSearchFiles(event) {
+    event.preventDefault();
+
+    if (!currentFolderId && isAdmin && !rootFolderId) {
+      setError("Configura una carpeta raiz antes de buscar.");
+      return;
+    }
+
+    await runDriveSearch();
+  }
+
+  function clearDriveSearch() {
+    setSearchActive(false);
+    setSearchResults([]);
+    setSearchLoading(false);
+    setOpenActionsItemId("");
+  }
+
   async function handleRenameItem(item) {
     const currentName = item?.name || "";
     const nextName = window.prompt("Nuevo nombre", currentName);
@@ -351,7 +423,7 @@ export default function DriveManager() {
     try {
       await renameDriveItem(item.id, cleanName);
       setUploadSuccess(`Elemento renombrado: ${cleanName}`);
-      await reloadCurrentFolder();
+      await reloadVisibleItems();
     } catch (renameError) {
       setError(getDriveErrorMessage(renameError, "mutation"));
     } finally {
@@ -375,7 +447,7 @@ export default function DriveManager() {
     try {
       await moveDriveItem(item.id, cleanTargetFolderId);
       setUploadSuccess(`Elemento movido: ${item.name || "Archivo"}`);
-      await reloadCurrentFolder();
+      await reloadVisibleItems();
     } catch (moveError) {
       setError(getDriveErrorMessage(moveError, "mutation"));
     } finally {
@@ -399,7 +471,7 @@ export default function DriveManager() {
     try {
       await deleteDriveItem(item.id);
       setUploadSuccess(`Elemento enviado a papelera: ${itemName}`);
-      await reloadCurrentFolder();
+      await reloadVisibleItems();
     } catch (deleteError) {
       setError(getDriveErrorMessage(deleteError, "mutation"));
     } finally {
@@ -503,6 +575,7 @@ export default function DriveManager() {
 
     setActiveTab("files");
     setDepartmentError("");
+    clearDriveSearch();
     loadFolder(folderId, [
       ...(rootFolderId ? [{ id: rootFolderId, name: "Raiz" }] : []),
       { id: folderId, name: folder.departmentName || folder.folderName || "Departamento" },
@@ -727,8 +800,8 @@ export default function DriveManager() {
         <section className="drive-browser-panel">
           <div className="drive-browser-toolbar">
             <div>
-              <span>Carpeta actual</span>
-              <strong>{settingsLoading ? "Cargando configuracion..." : currentFolderName}</strong>
+              <span>{searchActive ? "Resultados" : "Carpeta actual"}</span>
+              <strong>{settingsLoading ? "Cargando configuracion..." : searchActive ? "Busqueda en Nube AES" : currentFolderName}</strong>
             </div>
 
             <nav className="drive-breadcrumbs" aria-label="Ruta de Google Drive">
@@ -749,12 +822,63 @@ export default function DriveManager() {
             </nav>
           </div>
 
+          <form className="drive-search-panel" onSubmit={handleSearchFiles}>
+            <label htmlFor="drive-search-query">Buscar</label>
+            <div>
+              <input
+                id="drive-search-query"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Nombre o contenido"
+                autoComplete="off"
+                disabled={isBrowserLoading}
+              />
+
+              <select
+                value={searchType}
+                onChange={(event) => setSearchType(event.target.value)}
+                disabled={isBrowserLoading}
+                aria-label="Filtro por tipo"
+              >
+                {DRIVE_SEARCH_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                className="visual-primary-button drive-icon-button"
+                type="submit"
+                disabled={isBrowserLoading}
+              >
+                <ActionIcon name="load" />
+                <span>{searchLoading ? "Buscando" : "Buscar"}</span>
+              </button>
+
+              {searchActive ? (
+                <button
+                  className="visual-outline-button drive-icon-button"
+                  type="button"
+                  onClick={clearDriveSearch}
+                  disabled={searchLoading}
+                >
+                  <ActionIcon name="settings" />
+                  <span>Limpiar busqueda</span>
+                </button>
+              ) : null}
+            </div>
+          </form>
+
           {error ? <div className="drive-error-box">{error}</div> : null}
           {uploadSuccess ? <div className="drive-success-box">{uploadSuccess}</div> : null}
 
-          {isBusy || uploadingFile ? (
+          {isBrowserLoading ? (
             <div className="drive-loading-state">
-              {uploadingFile
+              {searchLoading
+                ? "Buscando en Google Drive..."
+                : uploadingFile
                 ? "Subiendo archivo a Google Drive..."
                 : settingsLoading
                   ? "Cargando configuracion de Nube AES..."
@@ -762,16 +886,16 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBusy && !uploadingFile && !error && currentFolderId && files.length === 0 ? (
+          {!isBrowserLoading && !error && (currentFolderId || searchActive) && visibleFiles.length === 0 ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon />
               </div>
-              <p>Esta carpeta esta vacia.</p>
+              <p>{visibleEmptyMessage}</p>
             </div>
           ) : null}
 
-          {!isBusy && !uploadingFile && !currentFolderId ? (
+          {!isBrowserLoading && !searchActive && !currentFolderId ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon type="folder" />
@@ -780,9 +904,9 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBusy && !uploadingFile && files.length > 0 ? (
+          {!isBrowserLoading && visibleFiles.length > 0 ? (
             <div className="drive-file-grid">
-              {files.map((file) => (
+              {visibleFiles.map((file) => (
                 <article
                   key={file.id}
                   className="drive-file-card"
@@ -974,6 +1098,10 @@ function getDriveErrorMessage(error, source = "drive") {
 
   if (source === "mutation") {
     return error?.message || "No se pudo modificar el elemento en Google Drive.";
+  }
+
+  if (source === "search") {
+    return error?.message || "No se pudo buscar en Google Drive.";
   }
 
   return error?.message || "No se pudo completar la operacion en Google Drive.";

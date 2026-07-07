@@ -71151,6 +71151,47 @@ html[data-theme="dark"] body #root .main-content :is(
   align-items: center;
 }
 
+.drive-search-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.drive-search-panel label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.drive-search-panel > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 0.35fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.drive-search-panel input,
+.drive-search-panel select {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+}
+
+.drive-search-panel input:focus,
+.drive-search-panel select:focus {
+  outline: 3px solid rgba(15, 79, 196, 0.12);
+  border-color: rgba(15, 79, 196, 0.5);
+}
+
 .drive-breadcrumbs {
   display: flex;
   justify-content: flex-end;
@@ -71374,7 +71415,9 @@ html[data-theme="dark"] body #root .main-content :is(
 }
 
 html[data-theme="dark"] .drive-root-form input:focus,
-html[data-theme="dark"] .drive-create-form input:focus {
+html[data-theme="dark"] .drive-create-form input:focus,
+html[data-theme="dark"] .drive-search-panel input:focus,
+html[data-theme="dark"] .drive-search-panel select:focus {
   outline-color: rgba(96, 165, 250, 0.22);
 }
 
@@ -71388,7 +71431,8 @@ html[data-theme="dark"] .drive-file-card:focus-within {
   .drive-control-panel,
   .drive-settings-panel,
   .drive-departments-header,
-  .drive-browser-toolbar {
+  .drive-browser-toolbar,
+  .drive-search-panel > div {
     grid-template-columns: 1fr;
   }
 
