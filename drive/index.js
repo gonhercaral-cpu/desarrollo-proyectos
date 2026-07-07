@@ -304,6 +304,24 @@ function getDriveUploadError(error) {
   );
 }
 
+function getDriveMutationError(error, fallbackMessage) {
+  if (error instanceof HttpsError) {
+    return error;
+  }
+
+  const status = error?.code || error?.response?.status;
+
+  if (status === 403) {
+    return new HttpsError("permission-denied", "No tienes permiso para modificar este elemento de Drive.");
+  }
+
+  if (status === 404) {
+    return new HttpsError("not-found", "No se encontro el elemento de Google Drive.");
+  }
+
+  return new HttpsError("internal", fallbackMessage, { message: error?.message || "" });
+}
+
 async function getRootFolderId() {
   const settingsSnapshot = await admin.firestore().doc(DRIVE_SETTINGS_PATH).get();
   const rootFolderId = String(settingsSnapshot.data()?.rootFolderId || "").trim();
@@ -342,6 +360,28 @@ async function createDriveFolder(drive, parentId, name) {
   });
 
   return response.data;
+}
+
+async function getDriveItem(drive, fileId) {
+  const response = await drive.files.get({
+    fileId,
+    fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
+    supportsAllDrives: true,
+  });
+
+  return normalizeDriveFile(response.data || {});
+}
+
+async function assertCanAccessDriveItem({ profile, drive, fileId }) {
+  const cleanFileId = requireString(fileId, "fileId");
+  const allowedRootIds = await getAuthorizedFolderRoots(profile);
+  const canAccess = await isFolderInsideAllowedRoots(drive, cleanFileId, allowedRootIds);
+
+  if (!canAccess) {
+    throw new HttpsError("permission-denied", "No tienes permiso para modificar este elemento de Nube AES.");
+  }
+
+  return cleanFileId;
 }
 
 exports.driveListFolder = onCall(async (request) => {
@@ -429,6 +469,84 @@ exports.driveUploadFile = onCall(async (request) => {
     return normalizeDriveFile(response.data || {});
   } catch (error) {
     throw getDriveUploadError(error);
+  }
+});
+
+exports.driveRenameItem = onCall(async (request) => {
+  try {
+    const profile = await getUserProfile(request.auth?.uid);
+    const drive = await getDriveClient();
+    const fileId = await assertCanAccessDriveItem({
+      profile,
+      drive,
+      fileId: request.data?.fileId,
+    });
+    const name = requireString(request.data?.name, "name");
+
+    const response = await drive.files.update({
+      fileId,
+      requestBody: { name },
+      fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
+      supportsAllDrives: true,
+    });
+
+    return normalizeDriveFile(response.data || {});
+  } catch (error) {
+    throw getDriveMutationError(error, "No se pudo renombrar el elemento en Google Drive.");
+  }
+});
+
+exports.driveMoveItem = onCall(async (request) => {
+  try {
+    const profile = await getUserProfile(request.auth?.uid);
+    const drive = await getDriveClient();
+    const fileId = await assertCanAccessDriveItem({
+      profile,
+      drive,
+      fileId: request.data?.fileId,
+    });
+    const targetFolderId = await assertCanAccessDriveFolder({
+      profile,
+      drive,
+      folderId: request.data?.targetFolderId,
+    });
+    const currentItem = await getDriveItem(drive, fileId);
+    const previousParents = currentItem.parents.join(",");
+
+    const response = await drive.files.update({
+      fileId,
+      addParents: targetFolderId,
+      removeParents: previousParents || undefined,
+      fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
+      supportsAllDrives: true,
+    });
+
+    return normalizeDriveFile(response.data || {});
+  } catch (error) {
+    throw getDriveMutationError(error, "No se pudo mover el elemento en Google Drive.");
+  }
+});
+
+exports.driveDeleteItem = onCall(async (request) => {
+  try {
+    const profile = await getUserProfile(request.auth?.uid);
+    const drive = await getDriveClient();
+    const fileId = await assertCanAccessDriveItem({
+      profile,
+      drive,
+      fileId: request.data?.fileId,
+    });
+
+    const response = await drive.files.update({
+      fileId,
+      requestBody: { trashed: true },
+      fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
+      supportsAllDrives: true,
+    });
+
+    return normalizeDriveFile(response.data || {});
+  } catch (error) {
+    throw getDriveMutationError(error, "No se pudo enviar el elemento a la papelera.");
   }
 });
 

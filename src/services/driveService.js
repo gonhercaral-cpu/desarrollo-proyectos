@@ -17,6 +17,9 @@ const DRIVE_DEPARTMENT_FOLDERS_COLLECTION = "driveDepartmentFolders";
 const driveListFolderCallable = httpsCallable(functions, "driveListFolder");
 const driveCreateFolderCallable = httpsCallable(functions, "driveCreateFolder");
 const driveUploadFileCallable = httpsCallable(functions, "driveUploadFile");
+const driveRenameItemCallable = httpsCallable(functions, "driveRenameItem");
+const driveMoveItemCallable = httpsCallable(functions, "driveMoveItem");
+const driveDeleteItemCallable = httpsCallable(functions, "driveDeleteItem");
 const driveEnsureDepartmentFoldersCallable = httpsCallable(
   functions,
   "driveEnsureDepartmentFolders"
@@ -43,6 +46,21 @@ export async function uploadDriveFile({ folderId, name, mimeType, base64 }) {
     mimeType,
     base64,
   });
+  return response.data;
+}
+
+export async function renameDriveItem(fileId, name) {
+  const response = await driveRenameItemCallable({ fileId, name });
+  return response.data;
+}
+
+export async function moveDriveItem(fileId, targetFolderId) {
+  const response = await driveMoveItemCallable({ fileId, targetFolderId });
+  return response.data;
+}
+
+export async function deleteDriveItem(fileId) {
+  const response = await driveDeleteItemCallable({ fileId });
   return response.data;
 }
 

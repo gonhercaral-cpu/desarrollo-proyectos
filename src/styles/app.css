@@ -71225,7 +71225,7 @@ html[data-theme="dark"] body #root .main-content :is(
 
 .drive-file-card {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-height: 86px;
@@ -71235,15 +71235,33 @@ html[data-theme="dark"] body #root .main-content :is(
   background: var(--surface-2);
   color: var(--text);
   text-align: left;
-  cursor: pointer;
+  position: relative;
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .drive-file-card:hover,
-.drive-file-card:focus-visible {
+.drive-file-card:focus-within {
   border-color: rgba(15, 79, 196, 0.42);
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.1);
   transform: translateY(-1px);
+}
+
+.drive-file-main {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.drive-file-main:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .drive-file-icon {
@@ -71299,13 +71317,69 @@ html[data-theme="dark"] body #root .main-content :is(
   color: var(--primary);
 }
 
+.drive-item-actions {
+  position: relative;
+  align-self: center;
+}
+
+.drive-item-menu-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.drive-item-menu-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.drive-item-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 140px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.drive-item-menu button {
+  border: 0;
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.drive-item-menu button:hover,
+.drive-item-menu button:focus-visible {
+  background: var(--surface-2);
+}
+
 html[data-theme="dark"] .drive-root-form input:focus,
 html[data-theme="dark"] .drive-create-form input:focus {
   outline-color: rgba(96, 165, 250, 0.22);
 }
 
 html[data-theme="dark"] .drive-file-card:hover,
-html[data-theme="dark"] .drive-file-card:focus-visible {
+html[data-theme="dark"] .drive-file-card:focus-within {
   border-color: rgba(96, 165, 250, 0.52);
   box-shadow: 0 14px 28px rgba(2, 8, 23, 0.34);
 }

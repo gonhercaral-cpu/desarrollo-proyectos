@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDriveFolder,
   DRIVE_FOLDER_MIME_TYPE,
+  deleteDriveItem,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
   listAllowedDriveDepartmentFolders,
   listDriveFolder,
+  moveDriveItem,
+  renameDriveItem,
   saveDriveRootFolderId,
   uploadDriveFile,
 } from "../services/driveService";
@@ -72,6 +75,16 @@ function ActionIcon({ name }) {
     );
   }
 
+  if (name === "more") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="5" cy="12" r="1.8" />
+        <circle cx="12" cy="12" r="1.8" />
+        <circle cx="19" cy="12" r="1.8" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7 17 17 7" />
@@ -96,6 +109,8 @@ export default function DriveManager() {
   const [departmentFoldersLoading, setDepartmentFoldersLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [openActionsItemId, setOpenActionsItemId] = useState("");
+  const [mutatingItemId, setMutatingItemId] = useState("");
   const [activeTab, setActiveTab] = useState(() => (isAdmin ? "files" : "departments"));
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
@@ -113,6 +128,7 @@ export default function DriveManager() {
   const canUseRootSettings = isAdmin;
   const canUseDepartmentSync = isAdmin;
   const canUseCurrentFolderActions = Boolean(currentFolderId);
+  const canManageItems = Boolean(currentFolderId);
 
   const loadFolder = useCallback(async (folderId, nextBreadcrumbs) => {
     const cleanFolderId = String(folderId || "").trim();
@@ -307,6 +323,87 @@ export default function DriveManager() {
       setError(getDriveErrorMessage(createError, "drive"));
     } finally {
       setCreatingFolder(false);
+    }
+  }
+
+  async function reloadCurrentFolder() {
+    if (!currentFolderId) {
+      return;
+    }
+
+    await loadFolder(currentFolderId, breadcrumbs);
+  }
+
+  async function handleRenameItem(item) {
+    const currentName = item?.name || "";
+    const nextName = window.prompt("Nuevo nombre", currentName);
+    const cleanName = String(nextName || "").trim();
+
+    if (!cleanName || cleanName === currentName) {
+      return;
+    }
+
+    setMutatingItemId(item.id);
+    setError("");
+    setUploadSuccess("");
+    setOpenActionsItemId("");
+
+    try {
+      await renameDriveItem(item.id, cleanName);
+      setUploadSuccess(`Elemento renombrado: ${cleanName}`);
+      await reloadCurrentFolder();
+    } catch (renameError) {
+      setError(getDriveErrorMessage(renameError, "mutation"));
+    } finally {
+      setMutatingItemId("");
+    }
+  }
+
+  async function handleMoveItem(item) {
+    const targetFolderId = window.prompt("FolderId destino");
+    const cleanTargetFolderId = String(targetFolderId || "").trim();
+
+    if (!cleanTargetFolderId) {
+      return;
+    }
+
+    setMutatingItemId(item.id);
+    setError("");
+    setUploadSuccess("");
+    setOpenActionsItemId("");
+
+    try {
+      await moveDriveItem(item.id, cleanTargetFolderId);
+      setUploadSuccess(`Elemento movido: ${item.name || "Archivo"}`);
+      await reloadCurrentFolder();
+    } catch (moveError) {
+      setError(getDriveErrorMessage(moveError, "mutation"));
+    } finally {
+      setMutatingItemId("");
+    }
+  }
+
+  async function handleDeleteItem(item) {
+    const itemName = item?.name || "este elemento";
+    const confirmed = window.confirm(`Enviar "${itemName}" a la papelera de Drive?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMutatingItemId(item.id);
+    setError("");
+    setUploadSuccess("");
+    setOpenActionsItemId("");
+
+    try {
+      await deleteDriveItem(item.id);
+      setUploadSuccess(`Elemento enviado a papelera: ${itemName}`);
+      await reloadCurrentFolder();
+    } catch (deleteError) {
+      setError(getDriveErrorMessage(deleteError, "mutation"));
+    } finally {
+      setMutatingItemId("");
     }
   }
 
@@ -686,27 +783,56 @@ export default function DriveManager() {
           {!isBusy && !uploadingFile && files.length > 0 ? (
             <div className="drive-file-grid">
               {files.map((file) => (
-                <button
+                <article
                   key={file.id}
                   className="drive-file-card"
-                  type="button"
-                  onClick={() => handleOpenItem(file)}
                 >
-                  <span className={isDriveFolder(file) ? "drive-file-icon folder" : "drive-file-icon"}>
-                    <DriveIcon type={isDriveFolder(file) ? "folder" : "file"} />
-                  </span>
-
-                  <span className="drive-file-content">
-                    <strong>{file.name || "Archivo sin nombre"}</strong>
-                    <small>{getFileMeta(file)}</small>
-                  </span>
-
-                  {!isDriveFolder(file) && file.webViewLink ? (
-                    <span className="drive-open-indicator">
-                      <ActionIcon name="open" />
+                  <button
+                    className="drive-file-main"
+                    type="button"
+                    onClick={() => handleOpenItem(file)}
+                    disabled={mutatingItemId === file.id}
+                  >
+                    <span className={isDriveFolder(file) ? "drive-file-icon folder" : "drive-file-icon"}>
+                      <DriveIcon type={isDriveFolder(file) ? "folder" : "file"} />
                     </span>
+
+                    <span className="drive-file-content">
+                      <strong>{file.name || "Archivo sin nombre"}</strong>
+                      <small>{mutatingItemId === file.id ? "Actualizando..." : getFileMeta(file)}</small>
+                    </span>
+                  </button>
+
+                  {canManageItems ? (
+                    <div className="drive-item-actions">
+                      <button
+                        className="drive-item-menu-button"
+                        type="button"
+                        onClick={() =>
+                          setOpenActionsItemId((current) => (current === file.id ? "" : file.id))
+                        }
+                        disabled={mutatingItemId === file.id}
+                        aria-label={`Acciones para ${file.name || "archivo"}`}
+                      >
+                        <ActionIcon name="more" />
+                      </button>
+
+                      {openActionsItemId === file.id ? (
+                        <div className="drive-item-menu">
+                          <button type="button" onClick={() => handleRenameItem(file)}>
+                            Renombrar
+                          </button>
+                          <button type="button" onClick={() => handleMoveItem(file)}>
+                            Mover
+                          </button>
+                          <button type="button" onClick={() => handleDeleteItem(file)}>
+                            Eliminar
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
-                </button>
+                </article>
               ))}
             </div>
           ) : null}
@@ -844,6 +970,10 @@ function getDriveErrorMessage(error, source = "drive") {
 
   if (source === "upload") {
     return error?.message || "No se pudo subir el archivo a Google Drive.";
+  }
+
+  if (source === "mutation") {
+    return error?.message || "No se pudo modificar el elemento en Google Drive.";
   }
 
   return error?.message || "No se pudo completar la operacion en Google Drive.";
