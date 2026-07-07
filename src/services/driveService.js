@@ -21,6 +21,8 @@ const driveCreateResumableUploadCallable = httpsCallable(functions, "driveCreate
 const driveRenameItemCallable = httpsCallable(functions, "driveRenameItem");
 const driveMoveItemCallable = httpsCallable(functions, "driveMoveItem");
 const driveDeleteItemCallable = httpsCallable(functions, "driveDeleteItem");
+const driveListTrashCallable = httpsCallable(functions, "driveListTrash");
+const driveRestoreItemCallable = httpsCallable(functions, "driveRestoreItem");
 const driveSearchFilesCallable = httpsCallable(functions, "driveSearchFiles");
 const driveEnsureDepartmentFoldersCallable = httpsCallable(
   functions,
@@ -73,6 +75,16 @@ export async function moveDriveItem(fileId, targetFolderId) {
 
 export async function deleteDriveItem(fileId) {
   const response = await driveDeleteItemCallable({ fileId });
+  return response.data;
+}
+
+export async function listDriveTrash(folderId) {
+  const response = await driveListTrashCallable({ folderId });
+  return response.data;
+}
+
+export async function restoreDriveItem(fileId) {
+  const response = await driveRestoreItemCallable({ fileId });
   return response.data;
 }
 

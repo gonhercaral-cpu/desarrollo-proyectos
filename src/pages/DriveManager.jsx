@@ -6,10 +6,12 @@ import {
   deleteDriveItem,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
+  listDriveTrash,
   listAllowedDriveDepartmentFolders,
   listDriveFolder,
   moveDriveItem,
   renameDriveItem,
+  restoreDriveItem,
   saveDriveRootFolderId,
   searchDriveFiles,
 } from "../services/driveService";
@@ -165,6 +167,29 @@ function ActionIcon({ name }) {
     );
   }
 
+  if (name === "trash") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M6 7l1 14h10l1-14" />
+        <path d="M9 7V4h6v3" />
+      </svg>
+    );
+  }
+
+  if (name === "restore") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16" />
+        <path d="M6 7l1 14h10l1-14" />
+        <path d="M9 12h6" />
+        <path d="M12 9v6" />
+      </svg>
+    );
+  }
+
   if (name === "more") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -278,6 +303,12 @@ export default function DriveManager() {
   const [draggingItemId, setDraggingItemId] = useState("");
   const [dragOverFolderId, setDragOverFolderId] = useState("");
   const [activeTab, setActiveTab] = useState(() => (isAdmin ? "files" : "departments"));
+  const [trashActive, setTrashActive] = useState(false);
+  const [trashFolderId, setTrashFolderId] = useState("");
+  const [trashFiles, setTrashFiles] = useState([]);
+  const [trashLoading, setTrashLoading] = useState(false);
+  const [trashLoaded, setTrashLoaded] = useState(false);
+  const [trashError, setTrashError] = useState("");
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
@@ -292,15 +323,22 @@ export default function DriveManager() {
   const fileCount = files.length - folderCount;
   const hasRootFolder = Boolean(rootFolderId);
   const isBusy = settingsLoading || loading;
-  const isBrowserLoading = isBusy || uploadingFile || searchLoading;
+  const isBrowserLoading = isBusy || uploadingFile || searchLoading || trashLoading;
   const departmentFoldersCount = departmentFolders.length;
   const canUseRootSettings = isAdmin;
   const canUseDepartmentSync = isAdmin;
+  const canUseTrash = isAdmin;
   const canUseCurrentFolderActions = Boolean(currentFolderId);
-  const canManageItems = Boolean(currentFolderId) || searchActive;
+  const canManageItems = !trashActive && (Boolean(currentFolderId) || searchActive);
   const visibleFiles = searchActive ? searchResults : files;
-  const visibleEmptyMessage = searchActive ? "No hay resultados para esta busqueda." : "Esta carpeta esta vacia.";
-  const hasVisibleFiles = visibleFiles.length > 0;
+  const browserFiles = trashActive ? trashFiles : visibleFiles;
+  const browserError = trashActive ? trashError : error;
+  const visibleEmptyMessage = trashActive
+    ? "No hay archivos en la papelera."
+    : searchActive
+      ? "No hay resultados para esta busqueda."
+      : "Esta carpeta esta vacia.";
+  const hasVisibleFiles = browserFiles.length > 0;
   const visibleFolderCount = useMemo(() => visibleFiles.filter(isDriveFolder).length, [visibleFiles]);
   const visibleFileCount = visibleFiles.length - visibleFolderCount;
 
@@ -454,6 +492,7 @@ export default function DriveManager() {
       return;
     }
 
+    clearTrashView();
     clearDriveSearch();
     loadFolder(rootFolderId, [{ id: rootFolderId, name: "Raiz" }]);
   }
@@ -486,6 +525,8 @@ export default function DriveManager() {
   }
 
   function handleOpenItem(file) {
+    clearTrashView();
+
     if (isDriveFolder(file)) {
       clearDriveSearch();
       loadFolder(file.id, [...breadcrumbs, { id: file.id, name: file.name || "Carpeta" }]);
@@ -503,6 +544,7 @@ export default function DriveManager() {
     }
 
     clearDriveSearch();
+    clearTrashView();
     loadFolder(breadcrumb.id, breadcrumbs.slice(0, index + 1));
   }
 
@@ -587,6 +629,7 @@ export default function DriveManager() {
       return;
     }
 
+    clearTrashView();
     await runDriveSearch();
   }
 
@@ -595,6 +638,15 @@ export default function DriveManager() {
     setSearchResults([]);
     setSearchLoading(false);
     setOpenActionsItemId("");
+  }
+
+  function clearTrashView() {
+    setTrashActive(false);
+    setTrashFolderId("");
+    setTrashFiles([]);
+    setTrashLoading(false);
+    setTrashLoaded(false);
+    setTrashError("");
   }
 
   async function handleRenameItem(item) {
@@ -665,6 +717,89 @@ export default function DriveManager() {
       await reloadVisibleItems();
     } catch (deleteError) {
       setError(getDriveErrorMessage(deleteError, "mutation"));
+    } finally {
+      setMutatingItemId("");
+    }
+  }
+
+  function resolveTrashFolderId(folderId) {
+    return String(folderId || trashFolderId || currentFolderId || rootFolderId || "").trim();
+  }
+
+  async function loadTrash({ force = false, folderId } = {}) {
+    const cleanFolderId = resolveTrashFolderId(folderId);
+
+    if (!cleanFolderId) {
+      setTrashActive(true);
+      setTrashFiles([]);
+      setTrashLoaded(true);
+      setTrashError("Carga una carpeta antes de abrir la papelera.");
+      return false;
+    }
+
+    if (!force && trashActive && trashLoaded && trashFolderId === cleanFolderId) {
+      return true;
+    }
+
+    setActiveTab("files");
+    clearDriveSearch();
+    setTrashActive(true);
+    setTrashFolderId(cleanFolderId);
+    setTrashFiles([]);
+    setTrashLoaded(false);
+    setTrashLoading(true);
+    setTrashError("");
+    setError("");
+    setUploadSuccess("");
+    setOpenActionsItemId("");
+
+    try {
+      const result = await listDriveTrash(cleanFolderId);
+      setTrashFiles(Array.isArray(result?.files) ? result.files : []);
+      setTrashLoaded(true);
+      return true;
+    } catch (trashError) {
+      setTrashFiles([]);
+      setTrashLoaded(true);
+      setTrashError(getDriveErrorMessage(trashError, "trash"));
+      return false;
+    } finally {
+      setTrashLoading(false);
+    }
+  }
+
+  async function handleOpenTrash() {
+    setActiveTab("files");
+    await loadTrash({ force: true, folderId: rootFolderId || currentFolderId });
+  }
+
+  function handleCloseTrash() {
+    clearTrashView();
+    setError("");
+  }
+
+  async function handleRestoreTrashItem(item) {
+    const itemName = item?.name || "este elemento";
+    const confirmed = window.confirm(`Restaurar "${itemName}" desde la papelera de Drive?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMutatingItemId(item.id);
+    setError("");
+    setUploadSuccess("");
+
+    try {
+      await restoreDriveItem(item.id);
+      setUploadSuccess(`Elemento restaurado: ${itemName}`);
+      await loadTrash({ force: true, folderId: trashFolderId || rootFolderId || currentFolderId });
+
+      if (currentFolderId) {
+        await reloadCurrentFolder();
+      }
+    } catch (restoreError) {
+      setError(getDriveErrorMessage(restoreError, "mutation"));
     } finally {
       setMutatingItemId("");
     }
@@ -871,6 +1006,7 @@ export default function DriveManager() {
   }
 
   function handleOpenDepartmentsTab() {
+    clearTrashView();
     setActiveTab("departments");
     setDepartmentSuccess("");
 
@@ -888,6 +1024,7 @@ export default function DriveManager() {
     }
 
     setActiveTab("files");
+    clearTrashView();
     setDepartmentError("");
     clearDriveSearch();
     loadFolder(folderId, [
@@ -1068,6 +1205,76 @@ export default function DriveManager() {
             ) : null}
           </div>
         ) : null}
+      </article>
+    );
+  }
+
+  function renderTrashItem(file) {
+    const itemType = getDriveItemType(file);
+    const isFolder = itemType === "folder";
+    const isMutating = mutatingItemId === file.id;
+
+    return (
+      <article
+        key={file.id}
+        className={[
+          "drive-file-card",
+          "drive-trash-item",
+          `view-${viewMode}`,
+          `type-${itemType}`,
+        ].join(" ")}
+      >
+        <button
+          className="drive-file-main"
+          type="button"
+          onClick={() => file.webViewLink && window.open(file.webViewLink, "_blank", "noopener,noreferrer")}
+          disabled={isMutating || !file.webViewLink}
+        >
+          <span className="drive-file-preview">
+            {!isFolder && file.thumbnailLink ? (
+              <img src={file.thumbnailLink} alt="" loading="lazy" />
+            ) : (
+              <span className={`drive-file-icon ${itemType}`}>
+                <DriveIcon type={itemType} />
+              </span>
+            )}
+          </span>
+
+          <span className="drive-file-content">
+            <strong title={file.name || "Archivo sin nombre"}>{file.name || "Archivo sin nombre"}</strong>
+            <small>{isMutating ? "Restaurando..." : getFileMeta(file)}</small>
+          </span>
+
+          <span className="drive-file-column drive-file-type">{formatMimeType(file.mimeType)}</span>
+          <span className="drive-file-column">{formatDate(file.modifiedTime) || "Sin fecha"}</span>
+          <span className="drive-file-column">{file.size ? formatBytes(Number(file.size)) : "-"}</span>
+        </button>
+
+        <div className="drive-trash-actions">
+          <button
+            className="visual-primary-button drive-icon-button"
+            type="button"
+            onClick={() => handleRestoreTrashItem(file)}
+            disabled={isMutating}
+            title="Restaurar"
+            aria-label={`Restaurar ${file.name || "archivo"}`}
+          >
+            <ActionIcon name="restore" />
+            <span>Restaurar</span>
+          </button>
+
+          {file.webViewLink ? (
+            <a
+              className="visual-outline-button drive-icon-button"
+              href={file.webViewLink}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ActionIcon name="open" />
+              <span>Abrir en Drive</span>
+            </a>
+          ) : null}
+        </div>
       </article>
     );
   }
@@ -1255,6 +1462,22 @@ export default function DriveManager() {
             </div>
           </div>
 
+          {canUseTrash ? (
+          <div className="drive-trash-card">
+            <span>Papelera</span>
+            <button
+              className={trashActive ? "visual-primary-button drive-icon-button" : "visual-outline-button drive-icon-button"}
+              type="button"
+              onClick={handleOpenTrash}
+              disabled={trashLoading || (!rootFolderId && !currentFolderId)}
+              title={trashActive ? "Recargar papelera" : "Abrir papelera"}
+              aria-label={trashActive ? "Recargar papelera" : "Abrir papelera"}
+            >
+              <ActionIcon name="trash" />
+            </button>
+          </div>
+          ) : null}
+
           {canUseRootSettings ? (
           <div className="drive-current-root-card">
             <div>
@@ -1375,13 +1598,28 @@ export default function DriveManager() {
       {activeTab === "files" ? (
         <section className="drive-browser-panel">
           <div className="drive-path-card">
-            <span>{searchActive ? "Resultados" : "Carpeta actual"}</span>
+            <span>{trashActive ? "Papelera" : searchActive ? "Resultados" : "Carpeta actual"}</span>
             <strong>
-              {settingsLoading ? "Cargando configuracion..." : searchActive ? "Busqueda en Nube AES" : currentFolderName}
+              {settingsLoading
+                ? "Cargando configuracion..."
+                : trashActive
+                  ? "Elementos eliminados"
+                  : searchActive
+                    ? "Busqueda en Nube AES"
+                    : currentFolderName}
             </strong>
 
-            <nav className="drive-breadcrumbs" aria-label="Ruta de Google Drive">
-              {breadcrumbs.length === 0 ? (
+            <nav className="drive-breadcrumbs" aria-label={trashActive ? "Acciones de papelera" : "Ruta de Google Drive"}>
+              {trashActive ? (
+                <>
+                  <button type="button" onClick={handleCloseTrash} disabled={isBusy}>
+                    Volver a archivos
+                  </button>
+                  <button type="button" onClick={() => loadTrash({ force: true })} disabled={trashLoading}>
+                    {trashLoading ? "Cargando" : "Recargar papelera"}
+                  </button>
+                </>
+              ) : breadcrumbs.length === 0 ? (
                 <span>Sin ruta</span>
               ) : (
                 breadcrumbs.map((breadcrumb, index) => (
@@ -1398,7 +1636,7 @@ export default function DriveManager() {
             </nav>
           </div>
 
-          {error ? <div className="drive-error-box">{error}</div> : null}
+          {browserError ? <div className="drive-error-box">{browserError}</div> : null}
           {uploadSuccess ? <div className="drive-success-box">{uploadSuccess}</div> : null}
           {uploadStatus ? <DriveUploadProgress upload={uploadStatus} /> : null}
 
@@ -1410,7 +1648,11 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBrowserLoading && !error && (currentFolderId || searchActive) && visibleFiles.length === 0 ? (
+          {!isBrowserLoading &&
+          !browserError &&
+          (currentFolderId || searchActive || trashActive) &&
+          (!trashActive || trashLoaded) &&
+          browserFiles.length === 0 ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon />
@@ -1440,7 +1682,7 @@ export default function DriveManager() {
                 </div>
               ) : null}
 
-              {visibleFiles.map((file) => renderDriveItem(file))}
+              {browserFiles.map((file) => (trashActive ? renderTrashItem(file) : renderDriveItem(file)))}
             </div>
           ) : null}
         </section>
