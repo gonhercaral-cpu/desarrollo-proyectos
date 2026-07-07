@@ -216,6 +216,40 @@ function ActionIcon({ name }) {
   );
 }
 
+function DriveUploadProgress({ upload }) {
+  const progress = Math.max(0, Math.min(100, Math.round(Number(upload?.progress || 0))));
+  const status = upload?.status || "uploading";
+  const label = upload?.label || "Subiendo...";
+  const name = upload?.name || "Archivo";
+  const message = upload?.message || "";
+
+  return (
+    <article className="drive-upload-progress-card" data-status={status}>
+      <div className="drive-upload-progress-header">
+        <div>
+          <span>{label}</span>
+          <strong title={name}>{name}</strong>
+        </div>
+
+        <b>{progress}%</b>
+      </div>
+
+      <div
+        className="drive-upload-progress-track"
+        role="progressbar"
+        aria-label={`Progreso de subida de ${name}`}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={progress}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </div>
+
+      {message ? <small>{message}</small> : null}
+    </article>
+  );
+}
+
 export default function DriveManager() {
   const { isAdmin } = useAuth();
   const [rootFolderId, setRootFolderId] = useState("");
@@ -249,7 +283,9 @@ export default function DriveManager() {
   const [departmentError, setDepartmentError] = useState("");
   const [departmentSuccess, setDepartmentSuccess] = useState("");
   const [uploadSuccess, setUploadSuccess] = useState("");
+  const [uploadStatus, setUploadStatus] = useState(null);
   const fileInputRef = useRef(null);
+  const uploadClearTimeoutRef = useRef(null);
 
   const currentFolderName = breadcrumbs.at(-1)?.name || "Sin carpeta cargada";
   const folderCount = useMemo(() => files.filter(isDriveFolder).length, [files]);
@@ -382,6 +418,34 @@ export default function DriveManager() {
 
     return undefined;
   }, [isAdmin, loadDepartmentFolders]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadClearTimeoutRef.current) {
+        window.clearTimeout(uploadClearTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function setUploadStatusNow(nextStatus) {
+    if (uploadClearTimeoutRef.current) {
+      window.clearTimeout(uploadClearTimeoutRef.current);
+      uploadClearTimeoutRef.current = null;
+    }
+
+    setUploadStatus(nextStatus);
+  }
+
+  function clearUploadStatusSoon() {
+    if (uploadClearTimeoutRef.current) {
+      window.clearTimeout(uploadClearTimeoutRef.current);
+    }
+
+    uploadClearTimeoutRef.current = window.setTimeout(() => {
+      setUploadStatus(null);
+      uploadClearTimeoutRef.current = null;
+    }, 1800);
+  }
 
   function handleReloadRoot() {
     if (!rootFolderId) {
@@ -614,6 +678,7 @@ export default function DriveManager() {
 
     setError("");
     setUploadSuccess("");
+    setUploadStatusNow(null);
     fileInputRef.current?.click();
   }
 
@@ -632,7 +697,15 @@ export default function DriveManager() {
 
     setUploadingFile(true);
     setError("");
-    setUploadSuccess(`Preparando subida: ${file.name}. La subida puede tardar segun tu conexion.`);
+    setUploadSuccess("");
+    setUploadStatusNow({
+      name: file.name,
+      status: "preparing",
+      label: "Preparando...",
+      message: "La subida puede tardar segun tu conexion.",
+      progress: 0,
+    });
+    let uploadStartedAt = Date.now();
 
     try {
       const mimeType = file.type || "application/octet-stream";
@@ -643,27 +716,135 @@ export default function DriveManager() {
         size: file.size,
       });
 
-      setUploadSuccess(`Subiendo ${file.name}: 0%. La subida puede tardar segun tu conexion.`);
+      setUploadStatusNow({
+        name: file.name,
+        status: "uploading",
+        label: "Subiendo...",
+        message: "La subida puede tardar segun tu conexion.",
+        progress: 0,
+      });
+      uploadStartedAt = Date.now();
 
-      await uploadFileToDriveSession({
+      const uploadResult = await uploadFileToDriveSession({
         file,
         uploadUrl: session?.uploadUrl,
         mimeType,
         onProgress: (progress) => {
-          setUploadSuccess(`Subiendo ${file.name}: ${progress}%. La subida puede tardar segun tu conexion.`);
+          setUploadStatusNow({
+            name: file.name,
+            status: progress >= 100 ? "processing" : "uploading",
+            label: progress >= 100 ? "Procesando en Drive..." : "Subiendo...",
+            message:
+              progress >= 100
+                ? "Google Drive esta terminando de registrar el archivo."
+                : "La subida puede tardar segun tu conexion.",
+            progress,
+          });
         },
       });
 
-      setUploadSuccess(`Procesando ${file.name} en Google Drive...`);
-      await loadFolder(currentFolderId, breadcrumbs);
-      setUploadSuccess(`Completado: ${file.name}`);
+      setUploadStatusNow({
+        name: file.name,
+        status: uploadResult?.incomplete ? "verifying" : "processing",
+        label: uploadResult?.incomplete ? "Verificando en Drive..." : "Procesando en Drive...",
+        message: "Confirmando archivo en la carpeta actual.",
+        progress: 100,
+      });
+      const uploadFound = await reloadFolderAfterUpload({
+        name: file.name,
+        size: file.size,
+        startedAt: uploadStartedAt,
+      });
+
+      setUploadStatusNow({
+        name: file.name,
+        status: "completed",
+        label: "Completado",
+        message: uploadFound
+          ? "Archivo disponible en la carpeta actual."
+          : uploadResult?.incomplete
+            ? "Google Drive sigue procesando el archivo."
+            : "Google Drive puede tardar en mostrarlo.",
+        progress: 100,
+      });
+      clearUploadStatusSoon();
     } catch (uploadError) {
-      setError(getDriveErrorMessage(uploadError, "upload"));
-      setUploadSuccess("");
+      if (isLikelyCompletedUpload(uploadError)) {
+        setError("");
+        setUploadStatusNow({
+          name: file.name,
+          status: "verifying",
+          label: "Verificando en Drive...",
+          message: "La respuesta final no fue legible, revisando carpeta actual.",
+          progress: getUploadErrorProgress(uploadError),
+        });
+
+        try {
+          const uploadFound = await reloadFolderAfterUpload({
+            name: file.name,
+            size: file.size,
+            startedAt: uploadStartedAt,
+          });
+
+          if (uploadFound) {
+            setUploadStatusNow({
+              name: file.name,
+              status: "completed",
+              label: "Completado",
+              message: "Archivo disponible en la carpeta actual.",
+              progress: 100,
+            });
+            clearUploadStatusSoon();
+            return;
+          }
+        } catch (verificationError) {
+          setError("");
+          setUploadStatusNow({
+            name: file.name,
+            status: "error",
+            label: "Error",
+            message: getDriveErrorMessage(verificationError, "upload"),
+            progress: getUploadErrorProgress(uploadError),
+          });
+          return;
+        }
+      }
+
+      setError("");
+      setUploadStatusNow({
+        name: file.name,
+        status: "error",
+        label: "Error",
+        message: getDriveErrorMessage(uploadError, "upload"),
+        progress: getUploadErrorProgress(uploadError),
+      });
     } finally {
       setUploadingFile(false);
       event.target.value = "";
     }
+  }
+
+  async function reloadFolderAfterUpload(fileTarget) {
+    const target = normalizeUploadTarget(fileTarget);
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) {
+        await wait(900 * attempt);
+      }
+
+      const result = await listDriveFolder(currentFolderId);
+      const nextFiles = Array.isArray(result?.files) ? result.files : [];
+
+      setFiles(nextFiles);
+      setCurrentFolderId(currentFolderId);
+      setBreadcrumbs(breadcrumbs);
+
+      if (!target.name || nextFiles.some((file) => matchesUploadedFile(file, target))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async function handleSyncDepartmentFolders() {
@@ -1219,6 +1400,7 @@ export default function DriveManager() {
 
           {error ? <div className="drive-error-box">{error}</div> : null}
           {uploadSuccess ? <div className="drive-success-box">{uploadSuccess}</div> : null}
+          {uploadStatus ? <DriveUploadProgress upload={uploadStatus} /> : null}
 
           {isBrowserLoading ? (
             <div className={`drive-skeleton-grid view-${viewMode}`} aria-label="Cargando contenido">
@@ -1489,6 +1671,56 @@ function formatDate(value) {
   });
 }
 
+function normalizeUploadTarget(fileTarget) {
+  if (typeof fileTarget === "string") {
+    return {
+      name: fileTarget.trim(),
+      size: 0,
+      startedAt: 0,
+    };
+  }
+
+  return {
+    name: String(fileTarget?.name || "").trim(),
+    size: Number(fileTarget?.size || 0),
+    startedAt: Number(fileTarget?.startedAt || 0),
+  };
+}
+
+function matchesUploadedFile(file, target) {
+  if (file?.name !== target.name) {
+    return false;
+  }
+
+  const fileSize = Number(file?.size || 0);
+
+  if (target.size > 0 && fileSize === target.size) {
+    return true;
+  }
+
+  if (target.startedAt > 0) {
+    const modifiedTime = new Date(file?.modifiedTime || "").getTime();
+
+    return Number.isFinite(modifiedTime) && modifiedTime >= target.startedAt - 2 * 60 * 1000;
+  }
+
+  return target.size <= 0;
+}
+
+function isLikelyCompletedUpload(error) {
+  return Boolean(error?.maybeCompleted) || Number(error?.uploadProgress || 0) >= 98;
+}
+
+function getUploadErrorProgress(error) {
+  const progress = Number(error?.uploadProgress || 0);
+
+  if (Number.isFinite(progress) && progress > 0) {
+    return Math.max(0, Math.min(100, Math.round(progress)));
+  }
+
+  return error?.maybeCompleted ? 100 : 0;
+}
+
 function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
   return new Promise((resolve, reject) => {
     const cleanUploadUrl = String(uploadUrl || "").trim();
@@ -1499,6 +1731,15 @@ function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
     }
 
     const request = new XMLHttpRequest();
+    let lastProgress = 0;
+
+    const createUploadError = (message) => {
+      const error = new Error(message);
+      error.uploadProgress = lastProgress;
+      error.maybeCompleted = lastProgress >= 98;
+      error.status = request.status || 0;
+      return error;
+    };
 
     request.open("PUT", cleanUploadUrl);
     request.setRequestHeader("Content-Type", mimeType || "application/octet-stream");
@@ -1508,27 +1749,52 @@ function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
         return;
       }
 
-      const progress = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      const progress = Math.max(1, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      lastProgress = progress;
       onProgress?.(progress);
     };
 
     request.onload = () => {
-      if (request.status >= 200 && request.status < 300) {
+      const responseData = parseJsonSafely(request.responseText);
+
+      if (request.status === 200 || request.status === 201 || request.status === 204) {
         onProgress?.(100);
-        try {
-          resolve(request.responseText ? JSON.parse(request.responseText) : null);
-        } catch {
-          resolve(null);
-        }
+        resolve(responseData);
         return;
       }
 
-      reject(new Error(`Google Drive rechazo la subida (${request.status}).`));
+      if (request.status === 308) {
+        resolve({ incomplete: true, status: 308, uploadProgress: lastProgress });
+        return;
+      }
+
+      reject(createUploadError(`Google Drive rechazo la subida (${request.status}).`));
     };
 
-    request.onerror = () => reject(new Error("No se pudo subir el archivo a Google Drive."));
-    request.onabort = () => reject(new Error("La subida fue cancelada."));
+    request.onerror = () =>
+      reject(createUploadError("No se pudo confirmar la subida por CORS o red."));
+    request.onabort = () => reject(createUploadError("La subida fue cancelada."));
     request.send(file);
+  });
+}
+
+function parseJsonSafely(value) {
+  const cleanValue = String(value || "").trim();
+
+  if (!cleanValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(cleanValue);
+  } catch {
+    return null;
+  }
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
   });
 }
 

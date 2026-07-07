@@ -15,6 +15,12 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DRIVE_SETTINGS_PATH = "systemSettings/drive";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DRIVE_SEARCH_TYPES = new Set(["todos", "carpetas", "documentos", "imagenes", "videos", "pdf"]);
+const DRIVE_UPLOAD_ALLOWED_ORIGINS = new Set([
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://sistema-desarrollo-proyectos.web.app",
+  "https://sistema-desarrollo-proyectos.firebaseapp.com",
+]);
 
 let driveClientPromise;
 let driveAuthClientPromise;
@@ -417,6 +423,31 @@ function normalizeMimeType(value) {
   return mimeType.slice(0, 180);
 }
 
+function getAllowedDriveUploadOrigins() {
+  const origins = new Set(DRIVE_UPLOAD_ALLOWED_ORIGINS);
+  const envOrigins = String(process.env.DRIVE_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  envOrigins.forEach((origin) => origins.add(origin));
+  return origins;
+}
+
+function getValidatedDriveUploadOrigin(request) {
+  const origin = String(request.rawRequest?.headers?.origin || "").trim();
+
+  if (!origin) {
+    return "";
+  }
+
+  if (!getAllowedDriveUploadOrigins().has(origin)) {
+    throw new HttpsError("permission-denied", "Origen no autorizado para subida a Drive.");
+  }
+
+  return origin;
+}
+
 async function getDriveAccessToken() {
   const authClient = await getDriveAuthClient();
   const tokenResponse = await authClient.getAccessToken();
@@ -654,17 +685,24 @@ exports.driveCreateResumableUpload = onCall(async (request) => {
     const name = requireString(request.data?.name, "name");
     const mimeType = normalizeMimeType(request.data?.mimeType);
     const size = requireUploadSize(request.data?.size);
+    const validatedOrigin = getValidatedDriveUploadOrigin(request);
     const accessToken = await getDriveAccessToken();
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+      "X-Upload-Content-Type": mimeType,
+      "X-Upload-Content-Length": String(size),
+    };
+
+    if (validatedOrigin) {
+      headers.Origin = validatedOrigin;
+    }
+
     const response = await fetch(
       "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true",
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json; charset=UTF-8",
-          "X-Upload-Content-Type": mimeType,
-          "X-Upload-Content-Length": String(size),
-        },
+        headers,
         body: JSON.stringify({
           name,
           parents: [folderId],
