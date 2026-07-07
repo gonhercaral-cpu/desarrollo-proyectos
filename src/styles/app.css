@@ -71068,6 +71068,7 @@ html[data-theme="dark"] body #root .main-content :is(
 .drive-current-root-card span,
 .drive-upload-card span,
 .drive-trash-card span,
+.drive-activity-card span,
 .drive-settings-copy span,
 .drive-root-form label,
 .drive-create-form label {
@@ -71245,7 +71246,8 @@ html[data-theme="dark"] body #root .main-content :is(
 
 .drive-current-root-card,
 .drive-upload-card,
-.drive-trash-card {
+.drive-trash-card,
+.drive-activity-card {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto;
   gap: 10px;
@@ -71260,6 +71262,7 @@ html[data-theme="dark"] body #root .main-content :is(
 
 .drive-upload-card > div,
 .drive-trash-card > div,
+.drive-activity-card > div,
 .drive-current-root-card > div:first-child {
   min-width: 0;
   max-width: 100%;
@@ -71297,6 +71300,7 @@ html[data-theme="dark"] body #root .main-content :is(
 .drive-toolbar-panel .drive-create-form,
 .drive-toolbar-panel .drive-upload-card,
 .drive-toolbar-panel .drive-trash-card,
+.drive-toolbar-panel .drive-activity-card,
 .drive-toolbar-panel .drive-view-panel,
 .drive-toolbar-panel .drive-current-root-card {
   box-sizing: border-box;
@@ -71339,7 +71343,8 @@ html[data-theme="dark"] body #root .main-content :is(
   justify-content: space-between;
 }
 
-.drive-toolbar-panel .drive-trash-card {
+.drive-toolbar-panel .drive-trash-card,
+.drive-toolbar-panel .drive-activity-card {
   flex: 0 0 116px;
   min-width: 116px;
   display: flex;
@@ -71349,7 +71354,8 @@ html[data-theme="dark"] body #root .main-content :is(
   overflow: hidden;
 }
 
-.drive-toolbar-panel .drive-trash-card span {
+.drive-toolbar-panel .drive-trash-card span,
+.drive-toolbar-panel .drive-activity-card span {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -71373,7 +71379,7 @@ html[data-theme="dark"] body #root .main-content :is(
   overflow: hidden;
 }
 
-.drive-toolbar-panel :is(.drive-create-form label, .drive-search-panel label, .drive-upload-card span, .drive-trash-card span, .drive-view-panel > span, .drive-current-root-card span) {
+.drive-toolbar-panel :is(.drive-create-form label, .drive-search-panel label, .drive-upload-card span, .drive-trash-card span, .drive-activity-card span, .drive-view-panel > span, .drive-current-root-card span) {
   flex: 0 0 auto;
   margin: 0;
   font-size: 11px;
@@ -71433,14 +71439,15 @@ html[data-theme="dark"] body #root .main-content :is(
   flex: 0 0 auto;
 }
 
-.drive-toolbar-panel :is(.drive-upload-card, .drive-trash-card, .drive-current-root-card) .drive-icon-button {
+.drive-toolbar-panel :is(.drive-upload-card, .drive-trash-card, .drive-activity-card, .drive-current-root-card) .drive-icon-button {
   width: 38px;
   min-width: 38px;
   max-width: 38px;
   padding-inline: 0;
 }
 
-.drive-toolbar-panel .drive-trash-card .drive-icon-button {
+.drive-toolbar-panel .drive-trash-card .drive-icon-button,
+.drive-toolbar-panel .drive-activity-card .drive-icon-button {
   width: 32px;
   min-width: 32px;
   max-width: 32px;
@@ -71454,8 +71461,74 @@ html[data-theme="dark"] body #root .main-content :is(
 }
 
 .drive-toolbar-panel .drive-upload-card .visual-primary-button svg,
-.drive-toolbar-panel .drive-trash-card .visual-primary-button svg {
+.drive-toolbar-panel .drive-trash-card .visual-primary-button svg,
+.drive-toolbar-panel .drive-activity-card .visual-primary-button svg {
   stroke: #ffffff;
+}
+
+.drive-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.drive-activity-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.drive-activity-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--blue-soft);
+  color: var(--primary);
+}
+
+.drive-activity-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.drive-activity-item strong,
+.drive-activity-item p,
+.drive-activity-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drive-activity-item strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.drive-activity-item p {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.drive-activity-item small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .drive-file-card.drive-trash-item {
@@ -72407,6 +72480,7 @@ html[data-theme="dark"] .drive-toolbar-panel .drive-create-form,
 html[data-theme="dark"] .drive-toolbar-panel .drive-search-panel,
 html[data-theme="dark"] .drive-toolbar-panel .drive-upload-card,
 html[data-theme="dark"] .drive-toolbar-panel .drive-trash-card,
+html[data-theme="dark"] .drive-toolbar-panel .drive-activity-card,
 html[data-theme="dark"] .drive-toolbar-panel .drive-view-panel,
 html[data-theme="dark"] .drive-toolbar-panel .drive-current-root-card {
   background: var(--surface-2);
@@ -72483,6 +72557,7 @@ html[data-theme="dark"] .drive-upload-progress-card[data-status="error"] {
   .drive-toolbar-panel .drive-create-form,
   .drive-toolbar-panel .drive-upload-card,
   .drive-toolbar-panel .drive-trash-card,
+  .drive-toolbar-panel .drive-activity-card,
   .drive-toolbar-panel .drive-view-panel,
   .drive-toolbar-panel .drive-current-root-card {
     flex: 1 1 100%;

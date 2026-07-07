@@ -6,9 +6,11 @@ import {
   deleteDriveItem,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
+  listDriveActivityLogs,
   listDriveTrash,
   listAllowedDriveDepartmentFolders,
   listDriveFolder,
+  logDriveResumableUploadCompleted,
   moveDriveItem,
   renameDriveItem,
   restoreDriveItem,
@@ -309,6 +311,11 @@ export default function DriveManager() {
   const [trashLoading, setTrashLoading] = useState(false);
   const [trashLoaded, setTrashLoaded] = useState(false);
   const [trashError, setTrashError] = useState("");
+  const [activityActive, setActivityActive] = useState(false);
+  const [activityLogs, setActivityLogs] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityLoaded, setActivityLoaded] = useState(false);
+  const [activityError, setActivityError] = useState("");
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
@@ -323,16 +330,17 @@ export default function DriveManager() {
   const fileCount = files.length - folderCount;
   const hasRootFolder = Boolean(rootFolderId);
   const isBusy = settingsLoading || loading;
-  const isBrowserLoading = isBusy || uploadingFile || searchLoading || trashLoading;
+  const isBrowserLoading = isBusy || uploadingFile || searchLoading || trashLoading || activityLoading;
   const departmentFoldersCount = departmentFolders.length;
   const canUseRootSettings = isAdmin;
   const canUseDepartmentSync = isAdmin;
   const canUseTrash = isAdmin;
+  const canUseActivity = isAdmin;
   const canUseCurrentFolderActions = Boolean(currentFolderId);
   const canManageItems = !trashActive && (Boolean(currentFolderId) || searchActive);
   const visibleFiles = searchActive ? searchResults : files;
   const browserFiles = trashActive ? trashFiles : visibleFiles;
-  const browserError = trashActive ? trashError : error;
+  const browserError = activityActive ? activityError : trashActive ? trashError : error;
   const visibleEmptyMessage = trashActive
     ? "No hay archivos en la papelera."
     : searchActive
@@ -493,6 +501,7 @@ export default function DriveManager() {
     }
 
     clearTrashView();
+    clearActivityView();
     clearDriveSearch();
     loadFolder(rootFolderId, [{ id: rootFolderId, name: "Raiz" }]);
   }
@@ -526,6 +535,7 @@ export default function DriveManager() {
 
   function handleOpenItem(file) {
     clearTrashView();
+    clearActivityView();
 
     if (isDriveFolder(file)) {
       clearDriveSearch();
@@ -545,6 +555,7 @@ export default function DriveManager() {
 
     clearDriveSearch();
     clearTrashView();
+    clearActivityView();
     loadFolder(breadcrumb.id, breadcrumbs.slice(0, index + 1));
   }
 
@@ -630,6 +641,7 @@ export default function DriveManager() {
     }
 
     clearTrashView();
+    clearActivityView();
     await runDriveSearch();
   }
 
@@ -647,6 +659,14 @@ export default function DriveManager() {
     setTrashLoading(false);
     setTrashLoaded(false);
     setTrashError("");
+  }
+
+  function clearActivityView() {
+    setActivityActive(false);
+    setActivityLogs([]);
+    setActivityLoading(false);
+    setActivityLoaded(false);
+    setActivityError("");
   }
 
   async function handleRenameItem(item) {
@@ -770,11 +790,53 @@ export default function DriveManager() {
 
   async function handleOpenTrash() {
     setActiveTab("files");
+    clearActivityView();
     await loadTrash({ force: true, folderId: rootFolderId || currentFolderId });
   }
 
   function handleCloseTrash() {
     clearTrashView();
+    setError("");
+  }
+
+  async function loadActivity({ force = false } = {}) {
+    if (!force && activityActive && activityLoaded) {
+      return true;
+    }
+
+    setActiveTab("files");
+    clearDriveSearch();
+    clearTrashView();
+    setActivityActive(true);
+    setActivityLogs([]);
+    setActivityLoaded(false);
+    setActivityLoading(true);
+    setActivityError("");
+    setError("");
+    setUploadSuccess("");
+    setOpenActionsItemId("");
+
+    try {
+      const result = await listDriveActivityLogs({ limitCount: 50 });
+      setActivityLogs(Array.isArray(result?.logs) ? result.logs : []);
+      setActivityLoaded(true);
+      return true;
+    } catch (activityLoadError) {
+      setActivityLogs([]);
+      setActivityLoaded(true);
+      setActivityError(getDriveErrorMessage(activityLoadError, "activity"));
+      return false;
+    } finally {
+      setActivityLoading(false);
+    }
+  }
+
+  async function handleOpenActivity() {
+    await loadActivity({ force: true });
+  }
+
+  function handleCloseActivity() {
+    clearActivityView();
     setError("");
   }
 
@@ -890,6 +952,11 @@ export default function DriveManager() {
         size: file.size,
         startedAt: uploadStartedAt,
       });
+      await recordUploadCompleted({
+        file,
+        fileId: uploadResult?.id,
+        mimeType,
+      });
 
       setUploadStatusNow({
         name: file.name,
@@ -922,6 +989,10 @@ export default function DriveManager() {
           });
 
           if (uploadFound) {
+            await recordUploadCompleted({
+              file,
+              mimeType: file.type || "application/octet-stream",
+            });
             setUploadStatusNow({
               name: file.name,
               status: "completed",
@@ -982,6 +1053,20 @@ export default function DriveManager() {
     return false;
   }
 
+  async function recordUploadCompleted({ file, fileId = "", mimeType }) {
+    try {
+      await logDriveResumableUploadCompleted({
+        folderId: currentFolderId,
+        fileId,
+        name: file.name,
+        mimeType: mimeType || file.type || "application/octet-stream",
+        size: file.size,
+      });
+    } catch {
+      // Activity log should not block a completed Drive upload.
+    }
+  }
+
   async function handleSyncDepartmentFolders() {
     if (!rootFolderId) {
       setConfigOpen(true);
@@ -1007,6 +1092,7 @@ export default function DriveManager() {
 
   function handleOpenDepartmentsTab() {
     clearTrashView();
+    clearActivityView();
     setActiveTab("departments");
     setDepartmentSuccess("");
 
@@ -1025,6 +1111,7 @@ export default function DriveManager() {
 
     setActiveTab("files");
     clearTrashView();
+    clearActivityView();
     setDepartmentError("");
     clearDriveSearch();
     loadFolder(folderId, [
@@ -1478,6 +1565,22 @@ export default function DriveManager() {
           </div>
           ) : null}
 
+          {canUseActivity ? (
+          <div className="drive-activity-card">
+            <span>Actividad</span>
+            <button
+              className={activityActive ? "visual-primary-button drive-icon-button" : "visual-outline-button drive-icon-button"}
+              type="button"
+              onClick={handleOpenActivity}
+              disabled={activityLoading}
+              title={activityActive ? "Recargar actividad" : "Abrir actividad"}
+              aria-label={activityActive ? "Recargar actividad" : "Abrir actividad"}
+            >
+              <ActionIcon name="load" />
+            </button>
+          </div>
+          ) : null}
+
           {canUseRootSettings ? (
           <div className="drive-current-root-card">
             <div>
@@ -1598,19 +1701,30 @@ export default function DriveManager() {
       {activeTab === "files" ? (
         <section className="drive-browser-panel">
           <div className="drive-path-card">
-            <span>{trashActive ? "Papelera" : searchActive ? "Resultados" : "Carpeta actual"}</span>
+            <span>{activityActive ? "Actividad" : trashActive ? "Papelera" : searchActive ? "Resultados" : "Carpeta actual"}</span>
             <strong>
               {settingsLoading
                 ? "Cargando configuracion..."
-                : trashActive
+                : activityActive
+                  ? "Actividad reciente"
+                  : trashActive
                   ? "Elementos eliminados"
                   : searchActive
                     ? "Busqueda en Nube AES"
                     : currentFolderName}
             </strong>
 
-            <nav className="drive-breadcrumbs" aria-label={trashActive ? "Acciones de papelera" : "Ruta de Google Drive"}>
-              {trashActive ? (
+            <nav className="drive-breadcrumbs" aria-label={activityActive ? "Acciones de actividad" : trashActive ? "Acciones de papelera" : "Ruta de Google Drive"}>
+              {activityActive ? (
+                <>
+                  <button type="button" onClick={handleCloseActivity} disabled={isBusy}>
+                    Volver a archivos
+                  </button>
+                  <button type="button" onClick={() => loadActivity({ force: true })} disabled={activityLoading}>
+                    {activityLoading ? "Cargando" : "Recargar actividad"}
+                  </button>
+                </>
+              ) : trashActive ? (
                 <>
                   <button type="button" onClick={handleCloseTrash} disabled={isBusy}>
                     Volver a archivos
@@ -1650,18 +1764,19 @@ export default function DriveManager() {
 
           {!isBrowserLoading &&
           !browserError &&
-          (currentFolderId || searchActive || trashActive) &&
+          (currentFolderId || searchActive || trashActive || activityActive) &&
+          (!activityActive || activityLoaded) &&
           (!trashActive || trashLoaded) &&
-          browserFiles.length === 0 ? (
+          (activityActive ? activityLogs.length === 0 : browserFiles.length === 0) ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon />
               </div>
-              <p>{visibleEmptyMessage}</p>
+              <p>{activityActive ? "No hay actividad registrada." : visibleEmptyMessage}</p>
             </div>
           ) : null}
 
-          {!isBrowserLoading && !searchActive && !currentFolderId ? (
+          {!isBrowserLoading && !searchActive && !currentFolderId && !trashActive && !activityActive ? (
             <div className="empty-state drive-empty-state">
               <div>
                 <DriveIcon type="folder" />
@@ -1670,7 +1785,27 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBrowserLoading && hasVisibleFiles ? (
+          {!isBrowserLoading && activityActive && activityLogs.length > 0 ? (
+            <div className="drive-activity-list">
+              {activityLogs.map((log) => (
+                <article className="drive-activity-item" key={log.id}>
+                  <span className="drive-activity-icon">
+                    <ActionIcon name="load" />
+                  </span>
+
+                  <div>
+                    <strong>{getDriveActivityLabel(log.action)}</strong>
+                    <p>{getDriveActivitySummary(log)}</p>
+                    <small>
+                      {log.userName || log.userEmail || "Usuario"} - {formatActivityDate(log.createdAt) || "Sin fecha"}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+
+          {!isBrowserLoading && !activityActive && hasVisibleFiles ? (
             <div className={`drive-file-grid view-${viewMode}`}>
               {viewMode === "list" ? (
                 <div className="drive-file-list-head" aria-hidden="true">
@@ -1910,6 +2045,59 @@ function formatDate(value) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+  });
+}
+
+function getDriveActivityLabel(action) {
+  const labels = {
+    create_folder: "Creo carpeta",
+    upload_file: "Subio archivo",
+    upload_started: "Inicio subida",
+    upload_completed: "Subio archivo",
+    rename_item: "Renombro",
+    move_item: "Movio",
+    delete_item: "Envio a papelera",
+    restore_item: "Restauro",
+  };
+
+  return labels[action] || "Actividad";
+}
+
+function getDriveActivitySummary(log) {
+  const fileName = log?.fileName || "Elemento de Drive";
+  const metadata = log?.metadata || {};
+
+  if (log?.action === "rename_item") {
+    return `${metadata.previousName || "Nombre anterior"} -> ${metadata.newName || fileName}`;
+  }
+
+  if (log?.action === "move_item") {
+    return `${fileName} movido a carpeta ${metadata.targetFolderId || log.folderId || "destino"}.`;
+  }
+
+  if (log?.action === "upload_started") {
+    return `${fileName} preparado para subida grande.`;
+  }
+
+  if (log?.action === "create_folder") {
+    return `${fileName} en carpeta ${metadata.parentId || log.folderId || "raiz"}.`;
+  }
+
+  return fileName;
+}
+
+function formatActivityDate(value) {
+  const rawValue = value?.toDate ? value.toDate() : value?.seconds ? value.seconds * 1000 : value;
+  const date = new Date(rawValue);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 

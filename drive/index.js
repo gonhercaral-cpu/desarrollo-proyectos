@@ -13,6 +13,7 @@ setGlobalOptions({ maxInstances: 10, region: "us-central1" });
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DRIVE_SETTINGS_PATH = "systemSettings/drive";
+const DRIVE_ACTIVITY_LOGS_COLLECTION = "driveActivityLogs";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DRIVE_SEARCH_TYPES = new Set(["todos", "carpetas", "documentos", "imagenes", "videos", "pdf"]);
 const DRIVE_UPLOAD_ALLOWED_ORIGINS = new Set([
@@ -323,6 +324,103 @@ function normalizeDriveFile(file) {
     size: file.size || "",
     parents: Array.isArray(file.parents) ? file.parents : [],
     trashed: Boolean(file.trashed),
+  };
+}
+
+function getProfileName(profile) {
+  return (
+    normalizeString(profile?.displayName) ||
+    normalizeString(profile?.name) ||
+    normalizeString(profile?.fullName) ||
+    normalizeString(profile?.userName) ||
+    normalizeString(profile?.email) ||
+    "Usuario"
+  );
+}
+
+function getProfileEmail(profile) {
+  return normalizeString(profile?.email) || normalizeString(profile?.userEmail);
+}
+
+function cleanActivityMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return {};
+  }
+
+  return Object.entries(metadata).reduce((cleanMetadata, [key, value]) => {
+    if (value === undefined || value === null) {
+      return cleanMetadata;
+    }
+
+    if (typeof value === "string") {
+      cleanMetadata[key] = value.slice(0, 300);
+      return cleanMetadata;
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+      cleanMetadata[key] = value;
+      return cleanMetadata;
+    }
+
+    if (Array.isArray(value)) {
+      cleanMetadata[key] = value.slice(0, 10).map((item) => String(item || "").slice(0, 120));
+      return cleanMetadata;
+    }
+
+    return cleanMetadata;
+  }, {});
+}
+
+async function logDriveActivity({
+  uid,
+  profile,
+  action,
+  fileId = "",
+  fileName = "",
+  folderId = "",
+  metadata = {},
+}) {
+  try {
+    const cleanUid = normalizeString(uid);
+    const cleanAction = normalizeString(action);
+
+    if (!cleanUid || !cleanAction) {
+      return;
+    }
+
+    const activityProfile = profile || (await getUserProfile(cleanUid));
+
+    await admin.firestore().collection(DRIVE_ACTIVITY_LOGS_COLLECTION).add({
+      uid: cleanUid,
+      userName: getProfileName(activityProfile),
+      userEmail: getProfileEmail(activityProfile),
+      action: cleanAction,
+      fileId: normalizeString(fileId),
+      fileName: normalizeString(fileName),
+      folderId: normalizeString(folderId),
+      metadata: cleanActivityMetadata(metadata),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error) {
+    console.warn("No se pudo registrar actividad de Drive.", error?.message || error);
+  }
+}
+
+function normalizeDriveActivityLog(snapshot) {
+  const data = snapshot.data() || {};
+  const createdAt = data.createdAt?.toMillis ? data.createdAt.toMillis() : null;
+
+  return {
+    id: snapshot.id,
+    uid: data.uid || "",
+    userName: data.userName || "",
+    userEmail: data.userEmail || "",
+    action: data.action || "",
+    fileId: data.fileId || "",
+    fileName: data.fileName || "",
+    folderId: data.folderId || "",
+    metadata: data.metadata && typeof data.metadata === "object" ? data.metadata : {},
+    createdAt,
   };
 }
 
@@ -643,6 +741,16 @@ exports.driveCreateFolder = onCall(async (request) => {
 
   const folder = await createDriveFolder(drive, parentId, name);
 
+  await logDriveActivity({
+    uid,
+    profile,
+    action: "create_folder",
+    fileId: folder.id,
+    fileName: folder.name,
+    folderId: parentId,
+    metadata: { parentId },
+  });
+
   return {
     id: folder.id || "",
     name: folder.name || "",
@@ -678,8 +786,22 @@ exports.driveUploadFile = onCall(async (request) => {
       fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
       supportsAllDrives: true,
     });
+    const uploadedFile = normalizeDriveFile(response.data || {});
 
-    return normalizeDriveFile(response.data || {});
+    await logDriveActivity({
+      uid,
+      profile,
+      action: "upload_file",
+      fileId: uploadedFile.id,
+      fileName: uploadedFile.name,
+      folderId,
+      metadata: {
+        mimeType,
+        size: uploadedFile.size || fileBuffer.length,
+      },
+    });
+
+    return uploadedFile;
   } catch (error) {
     throw getDriveUploadError(error);
   }
@@ -733,6 +855,18 @@ exports.driveCreateResumableUpload = onCall(async (request) => {
       );
     }
 
+    await logDriveActivity({
+      uid,
+      profile,
+      action: "upload_started",
+      fileName: name,
+      folderId,
+      metadata: {
+        mimeType,
+        size,
+      },
+    });
+
     return {
       uploadUrl,
       sessionExpiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
@@ -752,6 +886,7 @@ exports.driveRenameItem = onCall(async (request) => {
       fileId: request.data?.fileId,
     });
     const name = requireString(request.data?.name, "name");
+    const currentItem = await getDriveItem(drive, fileId);
 
     const response = await drive.files.update({
       fileId,
@@ -759,8 +894,22 @@ exports.driveRenameItem = onCall(async (request) => {
       fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
       supportsAllDrives: true,
     });
+    const renamedItem = normalizeDriveFile(response.data || {});
 
-    return normalizeDriveFile(response.data || {});
+    await logDriveActivity({
+      uid: request.auth?.uid,
+      profile,
+      action: "rename_item",
+      fileId,
+      fileName: renamedItem.name,
+      folderId: renamedItem.parents[0] || currentItem.parents[0] || "",
+      metadata: {
+        previousName: currentItem.name,
+        newName: renamedItem.name,
+      },
+    });
+
+    return renamedItem;
   } catch (error) {
     throw getDriveMutationError(error, "No se pudo renombrar el elemento en Google Drive.");
   }
@@ -790,8 +939,22 @@ exports.driveMoveItem = onCall(async (request) => {
       fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
       supportsAllDrives: true,
     });
+    const movedItem = normalizeDriveFile(response.data || {});
 
-    return normalizeDriveFile(response.data || {});
+    await logDriveActivity({
+      uid: request.auth?.uid,
+      profile,
+      action: "move_item",
+      fileId,
+      fileName: movedItem.name,
+      folderId: targetFolderId,
+      metadata: {
+        previousParents: currentItem.parents,
+        targetFolderId,
+      },
+    });
+
+    return movedItem;
   } catch (error) {
     throw getDriveMutationError(error, "No se pudo mover el elemento en Google Drive.");
   }
@@ -813,8 +976,21 @@ exports.driveDeleteItem = onCall(async (request) => {
       fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents",
       supportsAllDrives: true,
     });
+    const deletedItem = normalizeDriveFile(response.data || {});
 
-    return normalizeDriveFile(response.data || {});
+    await logDriveActivity({
+      uid: request.auth?.uid,
+      profile,
+      action: "delete_item",
+      fileId,
+      fileName: deletedItem.name,
+      folderId: deletedItem.parents[0] || "",
+      metadata: {
+        trashed: true,
+      },
+    });
+
+    return deletedItem;
   } catch (error) {
     throw getDriveMutationError(error, "No se pudo enviar el elemento a la papelera.");
   }
@@ -895,10 +1071,96 @@ exports.driveRestoreItem = onCall(async (request) => {
       fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents,trashed",
       supportsAllDrives: true,
     });
+    const restoredItem = normalizeDriveFile(response.data || {});
 
-    return normalizeDriveFile(response.data || {});
+    await logDriveActivity({
+      uid: request.auth?.uid,
+      profile,
+      action: "restore_item",
+      fileId,
+      fileName: restoredItem.name,
+      folderId: restoredItem.parents[0] || "",
+      metadata: {
+        trashed: false,
+      },
+    });
+
+    return restoredItem;
   } catch (error) {
     throw getDriveMutationError(error, "No se pudo restaurar el elemento desde la papelera.");
+  }
+});
+
+exports.driveLogResumableUploadCompleted = onCall(async (request) => {
+  try {
+    const profile = await getUserProfile(request.auth?.uid);
+    const drive = await getDriveClient();
+    const folderId = await assertCanAccessDriveFolder({
+      profile,
+      drive,
+      folderId: request.data?.folderId,
+    });
+    const fileId = normalizeString(request.data?.fileId);
+
+    if (fileId) {
+      await assertCanAccessDriveItem({ profile, drive, fileId });
+    }
+
+    await logDriveActivity({
+      uid: request.auth?.uid,
+      profile,
+      action: "upload_completed",
+      fileId,
+      fileName: requireString(request.data?.name, "name"),
+      folderId,
+      metadata: {
+        mimeType: normalizeMimeType(request.data?.mimeType),
+        size: requireUploadSize(request.data?.size),
+      },
+    });
+
+    return { logged: true };
+  } catch (error) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+
+    throw new HttpsError("internal", "No se pudo registrar la subida completada.", {
+      message: error?.message || "",
+    });
+  }
+});
+
+exports.driveListActivityLogs = onCall(async (request) => {
+  try {
+    const profile = await getUserProfile(request.auth?.uid);
+
+    if (!isAdmin(profile)) {
+      throw new HttpsError("permission-denied", "La actividad de Nube AES esta disponible solo para administradores.");
+    }
+
+    const limitCount = Math.max(1, Math.min(100, Number(request.data?.limitCount || 50)));
+    const folderId = normalizeString(request.data?.folderId);
+    const snapshot = await admin
+      .firestore()
+      .collection(DRIVE_ACTIVITY_LOGS_COLLECTION)
+      .orderBy("createdAt", "desc")
+      .limit(folderId ? Math.min(200, limitCount * 4) : limitCount)
+      .get();
+    const logs = snapshot.docs
+      .map(normalizeDriveActivityLog)
+      .filter((log) => !folderId || log.folderId === folderId)
+      .slice(0, limitCount);
+
+    return { logs };
+  } catch (error) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+
+    throw new HttpsError("internal", "No se pudo cargar la actividad de Nube AES.", {
+      message: error?.message || "",
+    });
   }
 });
 

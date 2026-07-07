@@ -2563,6 +2563,12 @@ service cloud.firestore {
       allow create, update, delete: if isAdminRole();
     }
 
+    match /driveActivityLogs/{logId} {
+      allow get, list: if isAdminRole();
+
+      allow create, update, delete: if false;
+    }
+
     match /messageTypingStates/{stateId} {
       allow get: if canReadMessageTypingState();
 
