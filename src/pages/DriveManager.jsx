@@ -2,22 +2,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDriveResumableUpload,
   createDriveFolder,
+  createPrivateFolder,
   DRIVE_FOLDER_MIME_TYPE,
   deleteDriveItem,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
   getDriveStorageQuota,
   listDriveActivityLogs,
+  listDriveItemShares,
   listDriveTrash,
   listAllowedDriveDepartmentFolders,
   listDriveFolder,
+  listMyDrive,
+  listSharedWithMe,
   logDriveResumableUploadCompleted,
   moveDriveItem,
   renameDriveItem,
   restoreDriveItem,
   saveDriveRootFolderId,
   searchDriveFiles,
+  shareDriveItem,
+  unshareDriveItem,
 } from "../services/driveService";
+import { getActiveUsers } from "../services/usersService";
 import { useAuth } from "../context/AuthContext";
 
 const DRIVE_VIEW_STORAGE_KEY = "nubeAesViewMode";
@@ -368,7 +375,7 @@ function DriveUploadProgress({ upload }) {
 }
 
 export default function DriveManager() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, uid: currentUid } = useAuth();
   const [rootFolderId, setRootFolderId] = useState("");
   const [rootFolderDraft, setRootFolderDraft] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState("");
@@ -410,6 +417,17 @@ export default function DriveManager() {
   const [customShortcuts, setCustomShortcuts] = useState(() => getStoredDriveShortcuts());
   const [shortcutPickerOpen, setShortcutPickerOpen] = useState(false);
   const [shortcutWarning, setShortcutWarning] = useState("");
+  const [myDriveActive, setMyDriveActive] = useState(false);
+  const [sharedWithMeItems, setSharedWithMeItems] = useState([]);
+  const [sharedWithMeLoading, setSharedWithMeLoading] = useState(false);
+  const [sharedWithMeError, setSharedWithMeError] = useState("");
+  const [shareModalItem, setShareModalItem] = useState(null);
+  const [shareModalUsers, setShareModalUsers] = useState([]);
+  const [shareModalUsersLoading, setShareModalUsersLoading] = useState(false);
+  const [itemShares, setItemShares] = useState([]);
+  const [itemSharesLoading, setItemSharesLoading] = useState(false);
+  const [shareModalError, setShareModalError] = useState("");
+  const [shareModalSaving, setShareModalSaving] = useState(false);
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
   const [departmentSuccess, setDepartmentSuccess] = useState("");
@@ -632,19 +650,6 @@ export default function DriveManager() {
     }, 1800);
   }
 
-  function handleReloadRoot() {
-    if (!rootFolderId) {
-      setConfigOpen(true);
-      setError("Configura una carpeta raiz para usar Nube AES.");
-      return;
-    }
-
-    clearTrashView();
-    clearActivityView();
-    clearDriveSearch();
-    loadFolder(rootFolderId, [{ id: rootFolderId, name: "Raiz" }]);
-  }
-
   async function handleSaveRoot(event) {
     event.preventDefault();
 
@@ -686,6 +691,21 @@ export default function DriveManager() {
     setSelectedDetailFile(file);
   }
 
+  function handleOpenSharedItem(item) {
+    if (isDriveFolder(item)) {
+      clearTrashView();
+      clearActivityView();
+      clearDriveSearch();
+      setActiveTab("files");
+      setMyDriveActive(false);
+      setSelectedDetailFile(null);
+      loadFolder(item.id, [{ id: item.id, name: item.name || "Compartido" }]);
+      return;
+    }
+
+    setPreviewFile(item);
+  }
+
   function handleBreadcrumbClick(index) {
     const breadcrumb = breadcrumbs[index];
 
@@ -716,7 +736,11 @@ export default function DriveManager() {
     setError("");
 
     try {
-      await createDriveFolder(currentFolderId, cleanName);
+      if (myDriveActive) {
+        await createPrivateFolder({ name: cleanName, parentId: currentFolderId });
+      } else {
+        await createDriveFolder(currentFolderId, cleanName);
+      }
       await loadFolder(currentFolderId, breadcrumbs);
     } catch (createError) {
       setError(getDriveErrorMessage(createError, "drive"));
@@ -1228,6 +1252,7 @@ export default function DriveManager() {
     clearTrashView();
     clearActivityView();
     setActiveTab("departments");
+    setMyDriveActive(false);
     setDepartmentSuccess("");
 
     if (!departmentFolders.length) {
@@ -1235,22 +1260,49 @@ export default function DriveManager() {
     }
   }
 
-  function handleOpenSharedView() {
+  async function handleOpenSharedView() {
     clearTrashView();
     clearActivityView();
     clearDriveSearch();
     setActiveTab("shared");
+    setMyDriveActive(false);
     setDepartmentSuccess("");
     setSelectedDetailFile(null);
+    setSharedWithMeLoading(true);
+    setSharedWithMeError("");
 
-    if (!departmentFolders.length) {
-      loadDepartmentFolders();
+    try {
+      const result = await listSharedWithMe();
+      setSharedWithMeItems(Array.isArray(result?.items) ? result.items : []);
+    } catch (sharedError) {
+      setSharedWithMeError(getDriveErrorMessage(sharedError, "drive"));
+      setSharedWithMeItems([]);
+    } finally {
+      setSharedWithMeLoading(false);
     }
   }
 
-  function handleOpenMyDriveView() {
+  async function handleOpenMyDriveView() {
     setActiveTab("files");
-    handleReloadRoot();
+    clearTrashView();
+    clearActivityView();
+    clearDriveSearch();
+    setMyDriveActive(true);
+    setLoading(true);
+    setError("");
+
+    try {
+      const result = await listMyDrive();
+      const folderId = result?.folderId || "";
+      setCurrentFolderId(folderId);
+      setBreadcrumbs([{ id: folderId, name: "Mi unidad" }]);
+      setFiles(Array.isArray(result?.files) ? result.files : []);
+    } catch (myDriveError) {
+      setError(getDriveErrorMessage(myDriveError, "drive"));
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleOpenDepartmentFolder(folder) {
@@ -1266,10 +1318,78 @@ export default function DriveManager() {
     clearActivityView();
     setDepartmentError("");
     clearDriveSearch();
+    setMyDriveActive(false);
     loadFolder(folderId, [
       ...(rootFolderId ? [{ id: rootFolderId, name: "Raiz" }] : []),
       { id: folderId, name: folder.departmentName || folder.folderName || "Departamento" },
     ]);
+  }
+
+  async function handleOpenShareModal(item) {
+    setShareModalItem(item);
+    setShareModalError("");
+    setItemSharesLoading(true);
+
+    if (!shareModalUsers.length) {
+      setShareModalUsersLoading(true);
+      try {
+        const users = await getActiveUsers();
+        setShareModalUsers(users.filter((user) => user.uid !== currentUid));
+      } catch {
+        setShareModalError("No se pudieron cargar los colaboradores.");
+      } finally {
+        setShareModalUsersLoading(false);
+      }
+    }
+
+    try {
+      const result = await listDriveItemShares(item.id);
+      setItemShares(Array.isArray(result?.shares) ? result.shares : []);
+    } catch (sharesError) {
+      setShareModalError(getDriveErrorMessage(sharesError, "drive"));
+      setItemShares([]);
+    } finally {
+      setItemSharesLoading(false);
+    }
+  }
+
+  function handleCloseShareModal() {
+    setShareModalItem(null);
+    setItemShares([]);
+    setShareModalError("");
+  }
+
+  async function handleShareSubmit(sharedWithUid, role) {
+    if (!shareModalItem?.id || !sharedWithUid) return;
+
+    setShareModalSaving(true);
+    setShareModalError("");
+
+    try {
+      await shareDriveItem({ fileId: shareModalItem.id, sharedWithUid, role });
+      const result = await listDriveItemShares(shareModalItem.id);
+      setItemShares(Array.isArray(result?.shares) ? result.shares : []);
+    } catch (shareError) {
+      setShareModalError(getDriveErrorMessage(shareError, "drive"));
+    } finally {
+      setShareModalSaving(false);
+    }
+  }
+
+  async function handleRemoveShare(sharedWithUid) {
+    if (!shareModalItem?.id || !sharedWithUid) return;
+
+    setShareModalSaving(true);
+    setShareModalError("");
+
+    try {
+      await unshareDriveItem({ fileId: shareModalItem.id, sharedWithUid });
+      setItemShares((current) => current.filter((share) => share.sharedWithUid !== sharedWithUid));
+    } catch (unshareError) {
+      setShareModalError(getDriveErrorMessage(unshareError, "drive"));
+    } finally {
+      setShareModalSaving(false);
+    }
   }
 
   function handleAddShortcut(item) {
@@ -1767,27 +1887,27 @@ export default function DriveManager() {
             <section className="drive-folder-section">
               <div className="drive-section-heading">
                 <h3>Compartidos conmigo</h3>
-                <button type="button" onClick={loadDepartmentFolders} disabled={departmentFoldersLoading}>
-                  {departmentFoldersLoading ? "Cargando" : "Recargar"}
+                <button type="button" onClick={handleOpenSharedView} disabled={sharedWithMeLoading}>
+                  {sharedWithMeLoading ? "Cargando" : "Recargar"}
                 </button>
               </div>
-              {departmentError ? <div className="drive-error-box">{departmentError}</div> : null}
-              {departmentFoldersLoading ? (
+              {sharedWithMeError ? <div className="drive-error-box">{sharedWithMeError}</div> : null}
+              {sharedWithMeLoading ? (
                 <div className="drive-skeleton-grid view-small" aria-label="Cargando compartidos">
                   {Array.from({ length: 6 }).map((_, index) => (
                     <span className="drive-skeleton-card" key={`shared-skeleton-${index}`} />
                   ))}
                 </div>
-              ) : departmentFolders.length > 0 ? (
+              ) : sharedWithMeItems.length > 0 ? (
                 <div className="drive-department-grid">
-                  {departmentFolders.map((folder) => (
-                    <article className="drive-folder-tile" key={folder.departmentId || folder.id}>
-                      <span className="drive-folder-art"><DriveIcon type="folder" /></span>
+                  {sharedWithMeItems.map((item) => (
+                    <article className="drive-folder-tile" key={item.id}>
+                      <span className="drive-folder-art"><DriveIcon type={getDriveItemType(item)} /></span>
                       <div>
-                        <strong>{folder.departmentName || folder.folderName || "Carpeta compartida"}</strong>
-                        <small>{folder.folderName || "Disponible por permisos internos"}</small>
+                        <strong>{item.name || "Elemento compartido"}</strong>
+                        <small>{item.shareRole === "editor" ? "Puedes editar" : "Solo puedes ver"}</small>
                       </div>
-                      <button type="button" onClick={() => handleOpenDepartmentFolder(folder)} disabled={!folder.folderId || loading}>
+                      <button type="button" onClick={() => handleOpenSharedItem(item)}>
                         <ActionIcon name="open" />
                       </button>
                     </article>
@@ -1887,6 +2007,9 @@ export default function DriveManager() {
                           <button type="button" onClick={() => setPreviewFile(file)}>Vista previa</button>
                           <button type="button" onClick={() => handleRenameItem(file)}>Renombrar</button>
                           <button type="button" onClick={() => handleMoveItem(file)}>Mover</button>
+                          {myDriveActive && isDriveFolder(file) ? (
+                            <button type="button" onClick={() => handleOpenShareModal(file)}>Compartir</button>
+                          ) : null}
                           <button type="button" onClick={() => handleDeleteItem(file)}>Eliminar</button>
                         </div>
                       ) : null}
@@ -1976,6 +2099,21 @@ export default function DriveManager() {
           warning={shortcutWarning}
           onPick={handleAddShortcut}
           onClose={() => setShortcutPickerOpen(false)}
+        />
+      ) : null}
+
+      {shareModalItem ? (
+        <ShareModal
+          item={shareModalItem}
+          users={shareModalUsers}
+          usersLoading={shareModalUsersLoading}
+          shares={itemShares}
+          sharesLoading={itemSharesLoading}
+          error={shareModalError}
+          saving={shareModalSaving}
+          onShare={handleShareSubmit}
+          onUnshare={handleRemoveShare}
+          onClose={handleCloseShareModal}
         />
       ) : null}
     </div>
@@ -2120,6 +2258,98 @@ function ShortcutPickerModal({ candidates, existingItems, warning, onPick, onClo
                   </li>
                 );
               })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShareModal({ item, users, usersLoading, shares, sharesLoading, error, saving, onShare, onUnshare, onClose }) {
+  const [selectedUid, setSelectedUid] = useState("");
+  const [selectedRole, setSelectedRole] = useState("viewer");
+
+  const sharedUids = useMemo(() => new Set(shares.map((share) => share.sharedWithUid)), [shares]);
+  const availableUsers = useMemo(
+    () => users.filter((user) => !sharedUids.has(user.uid)),
+    [users, sharedUids]
+  );
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!selectedUid) return;
+    onShare(selectedUid, selectedRole);
+    setSelectedUid("");
+  }
+
+  return (
+    <div className="drive-preview-backdrop" role="dialog" aria-modal="true" aria-label="Compartir elemento">
+      <div className="drive-preview-modal drive-shortcut-picker-modal">
+        <header className="drive-preview-header">
+          <div>
+            <span>Compartir</span>
+            <strong title={item?.name}>{item?.name || "Elemento"}</strong>
+          </div>
+
+          <button className="drive-preview-close" type="button" onClick={onClose} aria-label="Cerrar">
+            <ActionIcon name="close" />
+          </button>
+        </header>
+
+        <div className="drive-preview-body drive-shortcut-picker-body">
+          {error ? <div className="drive-error-box">{error}</div> : null}
+
+          <form className="drive-share-form" onSubmit={handleSubmit}>
+            <select
+              value={selectedUid}
+              onChange={(event) => setSelectedUid(event.target.value)}
+              disabled={usersLoading || saving}
+            >
+              <option value="">{usersLoading ? "Cargando colaboradores..." : "Elige un colaborador"}</option>
+              {availableUsers.map((user) => (
+                <option key={user.uid} value={user.uid}>
+                  {user.name || user.email}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedRole}
+              onChange={(event) => setSelectedRole(event.target.value)}
+              disabled={saving}
+            >
+              <option value="viewer">Puede ver</option>
+              <option value="editor">Puede editar</option>
+            </select>
+
+            <button type="submit" className="visual-primary-button" disabled={!selectedUid || saving}>
+              Compartir
+            </button>
+          </form>
+
+          <h4 className="drive-share-list-title">Personas con acceso</h4>
+
+          {sharesLoading ? (
+            <p className="drive-shortcut-picker-empty">Cargando...</p>
+          ) : shares.length === 0 ? (
+            <p className="drive-shortcut-picker-empty">Todavia no compartiste este elemento.</p>
+          ) : (
+            <ul className="drive-share-chip-list">
+              {shares.map((share) => (
+                <li key={share.sharedWithUid} className="drive-share-chip">
+                  <span>{share.sharedWithEmail || share.sharedWithUid}</span>
+                  <em>{share.role === "editor" ? "Editor" : "Viewer"}</em>
+                  <button
+                    type="button"
+                    onClick={() => onUnshare(share.sharedWithUid)}
+                    disabled={saving}
+                    aria-label={`Quitar acceso de ${share.sharedWithEmail || share.sharedWithUid}`}
+                  >
+                    <ActionIcon name="close" />
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </div>

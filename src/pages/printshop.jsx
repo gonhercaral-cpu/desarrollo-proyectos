@@ -1075,9 +1075,9 @@ function getDefaultCertificateTemplatePositions() {
     studentName: { x: 50, y: 38, width: 78, fontSize: 34, active: true },
     bodyText: { x: 50, y: 49, width: 72, fontSize: 21, active: true },
     date: { x: 50, y: 58, width: 40, fontSize: 18, active: true },
-    principalSignature: { x: 24, y: 71, width: 25, active: true },
+    principalSignature: { x: 24, y: 71, width: 25, height: 50, active: true },
     principalName: { x: 24, y: 82, width: 28, fontSize: 12, active: true },
-    teacherSignature: { x: 76, y: 71, width: 25, active: true },
+    teacherSignature: { x: 76, y: 71, width: 25, height: 50, active: true },
     teacherName: { x: 76, y: 82, width: 28, fontSize: 12, active: true },
     qr: { x: 50, y: 76, size: 9.5, active: true },
     folio: { x: 50, y: 84, width: 34, fontSize: 7, active: true },
@@ -1092,6 +1092,7 @@ function normalizeTemplatePosition(position, fallback) {
     x: Number.isFinite(Number(current.x)) ? Number(current.x) : Number(safeFallback.x || 50),
     y: Number.isFinite(Number(current.y)) ? Number(current.y) : Number(safeFallback.y || 50),
     width: Number.isFinite(Number(current.width)) ? Number(current.width) : Number(safeFallback.width || 20),
+    height: Number.isFinite(Number(current.height)) ? Number(current.height) : Number(safeFallback.height || 0),
     size: Number.isFinite(Number(current.size)) ? Number(current.size) : Number(safeFallback.size || safeFallback.width || 10),
     fontSize: Number.isFinite(Number(current.fontSize)) ? Number(current.fontSize) : Number(safeFallback.fontSize || 12),
     active: current.active === false ? false : safeFallback.active !== false,
@@ -1143,6 +1144,7 @@ function normalizeCredentialTemplatePositions(positions) {
 }
 
 function getTemplateElementStyle(position, extra = {}) {
+  const { includeHeight, ...restExtra } = extra;
   const normalized = normalizeTemplatePosition(position, {});
   const width = extra.size ? normalized.size : normalized.width;
 
@@ -1151,9 +1153,10 @@ function getTemplateElementStyle(position, extra = {}) {
     left: `${normalized.x}%`,
     top: `${normalized.y}%`,
     width: `${width}%`,
+    ...(includeHeight && normalized.height > 0 ? { height: `${normalized.height}px` } : {}),
     transform: "translate(-50%, -50%)",
     textAlign: "center",
-    ...extra,
+    ...restExtra,
   };
 }
 
@@ -3891,7 +3894,10 @@ export default function PrintShop() {
     const canUseHardDeleteFallback = [
       "printProductionBatches",
       "generatedCredentials",
+      "printRequests",
     ].includes(collectionName);
+
+    let hardDeleted = false;
 
     try {
       try {
@@ -3914,6 +3920,7 @@ export default function PrintShop() {
 
         console.warn("La baja logica fue bloqueada; se usara eliminacion directa de administrador:", softDeleteError);
         await deleteDoc(doc(db, collectionName, record.id));
+        hardDeleted = true;
       }
 
       removeFromLocalState();
@@ -3924,7 +3931,9 @@ export default function PrintShop() {
         type: "DELETE",
         module: options.module || "general",
         title: `Registro eliminado: ${label}`,
-        description: `El registro se ocultó del módulo de Imprenta mediante eliminación lógica.`,
+        description: hardDeleted
+          ? "El registro se eliminó físicamente de Firestore (la baja lógica no fue posible)."
+          : "El registro se ocultó del módulo de Imprenta mediante eliminación lógica.",
         referenceType: collectionName,
         referenceId: record.id,
         requestId: collectionName === "printRequests" ? record.id : record.requestId || "",
@@ -3945,7 +3954,12 @@ export default function PrintShop() {
       }
     } catch (error) {
       console.error("No se pudo eliminar el registro de Imprenta:", error);
-      alert("No se pudo eliminar el registro. Revisa las reglas de Firestore o intenta de nuevo.");
+
+      if (error?.code === "permission-denied") {
+        alert("No tienes permisos para eliminar este registro. Verifica tu rol de administrador.");
+      } else {
+        alert(`No se pudo eliminar el registro: ${error?.message || "error desconocido"}.`);
+      }
     }
   }
 
@@ -15695,7 +15709,7 @@ function CertificateTemplateOverlay({
           src={principalSignatureUrl}
           alt={`Firma de ${principalName}`}
           className="certificate-template-signature"
-          style={getTemplateElementStyle(positions.principalSignature)}
+          style={getTemplateElementStyle(positions.principalSignature, { includeHeight: true })}
         />
       )}
 
@@ -15714,7 +15728,7 @@ function CertificateTemplateOverlay({
           src={teacherSignatureUrl}
           alt={`Firma de ${teacherName}`}
           className="certificate-template-signature"
-          style={getTemplateElementStyle(positions.teacherSignature)}
+          style={getTemplateElementStyle(positions.teacherSignature, { includeHeight: true })}
         />
       )}
 
@@ -16253,6 +16267,14 @@ function CertificateTemplatesView({
                       label="Fuente"
                       value={currentEditorPosition.fontSize}
                       onChange={(value) => updateSelectedPosition("fontSize", value)}
+                      disabled={!isAdmin}
+                    />
+                  )}
+                  {selectedEditorMeta.kind === "image" && (
+                    <TemplatePositionNumberInput
+                      label="Alto"
+                      value={currentEditorPosition.height}
+                      onChange={(value) => updateSelectedPosition("height", value)}
                       disabled={!isAdmin}
                     />
                   )}
@@ -17021,6 +17043,9 @@ function CredentialsView({
                   )}
                   {(selectedEditorMeta.kind === "text" || selectedEditorMeta.kind === "customText") && (
                     <TemplatePositionNumberInput label="Fuente" value={currentEditorPosition.fontSize} onChange={(value) => updateSelectedPosition("fontSize", value)} disabled={!isAdmin} />
+                  )}
+                  {selectedEditorMeta.kind === "image" && (
+                    <TemplatePositionNumberInput label="Alto" value={currentEditorPosition.height} onChange={(value) => updateSelectedPosition("height", value)} disabled={!isAdmin} />
                   )}
                 </div>
 
@@ -17802,6 +17827,7 @@ function CertificateTemplateEditorPreview({
         className="editor-layer-signature"
         onSelectElement={onSelectElement}
         onPointerDown={handleLayerPointerDown}
+        isImage
       >
         Firma principal
       </EditorTemplateLayer>
@@ -17825,6 +17851,7 @@ function CertificateTemplateEditorPreview({
         className="editor-layer-signature"
         onSelectElement={onSelectElement}
         onPointerDown={handleLayerPointerDown}
+        isImage
       >
         Firma teacher
       </EditorTemplateLayer>
@@ -17898,13 +17925,16 @@ function EditorTemplateLayer({
   onPointerDown,
   children,
   isQr = false,
+  isImage = false,
 }) {
   const normalized = normalizeTemplatePosition(position, {});
   if (normalized.active === false) return null;
 
   const style = isQr
     ? getTemplateElementStyle(normalized, { size: true })
-    : getTemplateTextStyle(normalized);
+    : isImage
+      ? getTemplateElementStyle(normalized, { includeHeight: true })
+      : getTemplateTextStyle(normalized);
 
   return (
     <button

@@ -2569,6 +2569,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /drivePrivateItems/{fileId} {
+      allow read, write: if false;
+    }
+
+    match /driveShares/{shareId} {
+      allow read, write: if false;
+    }
+
     match /messageTypingStates/{stateId} {
       allow get: if canReadMessageTypingState();
 

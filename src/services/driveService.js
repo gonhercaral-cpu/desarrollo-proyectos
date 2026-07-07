@@ -38,6 +38,12 @@ const driveListAllowedDepartmentFoldersCallable = httpsCallable(
   functions,
   "driveListAllowedDepartmentFolders"
 );
+const driveListMyDriveCallable = httpsCallable(functions, "driveListMyDrive");
+const driveCreatePrivateFolderCallable = httpsCallable(functions, "driveCreatePrivateFolder");
+const driveShareItemCallable = httpsCallable(functions, "driveShareItem");
+const driveUnshareItemCallable = httpsCallable(functions, "driveUnshareItem");
+const driveListSharedWithMeCallable = httpsCallable(functions, "driveListSharedWithMe");
+const driveListItemSharesCallable = httpsCallable(functions, "driveListItemShares");
 
 export async function listDriveFolder(folderId) {
   const response = await driveListFolderCallable({ folderId });
@@ -175,6 +181,36 @@ export async function getDriveDepartmentFolders() {
     id: folderDoc.id,
     ...folderDoc.data(),
   }));
+}
+
+export async function listMyDrive() {
+  const response = await driveListMyDriveCallable();
+  return response.data;
+}
+
+export async function createPrivateFolder({ name, parentId = "" }) {
+  const response = await driveCreatePrivateFolderCallable({ name, parentId });
+  return response.data;
+}
+
+export async function shareDriveItem({ fileId, sharedWithUid, role }) {
+  const response = await driveShareItemCallable({ fileId, sharedWithUid, role });
+  return response.data;
+}
+
+export async function unshareDriveItem({ fileId, sharedWithUid }) {
+  const response = await driveUnshareItemCallable({ fileId, sharedWithUid });
+  return response.data;
+}
+
+export async function listSharedWithMe() {
+  const response = await driveListSharedWithMeCallable();
+  return response.data;
+}
+
+export async function listDriveItemShares(fileId) {
+  const response = await driveListItemSharesCallable({ fileId });
+  return response.data;
 }
 
 export const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";

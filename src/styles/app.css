@@ -19768,6 +19768,7 @@ body:has(.field-mode-page) .main-content {
 
 /* ===== Certificate image-template rendering ===== */
 .certificate-preview-stage.template-mode {
+  height: 1060px;
   background: #ffffff;
 }
 
@@ -19813,7 +19814,8 @@ body:has(.field-mode-page) .main-content {
 
 .certificate-template-signature {
   z-index: 5;
-  max-height: 92px;
+  max-height: none;
+  min-height: 0;
   object-fit: contain;
   pointer-events: none;
 }
@@ -19892,10 +19894,6 @@ body:has(.field-mode-page) .main-content {
   word-break: break-word;
 }
 
-.certificate-template-signature {
-  max-height: 84px;
-}
-
 .certificate-template-qr {
   padding: 5px;
 }
@@ -19935,10 +19933,6 @@ body:has(.field-mode-page) .main-content {
   font-size: 0.95em;
   font-weight: 600;
   word-break: break-word;
-}
-
-.certificate-template-signature {
-  max-height: 84px;
 }
 
 .certificate-template-qr {
@@ -19995,10 +19989,6 @@ body:has(.field-mode-page) .main-content {
   font-size: 0.95em;
   font-weight: 600;
   word-break: break-word;
-}
-
-.certificate-template-signature {
-  max-height: 84px;
 }
 
 .certificate-template-qr {
@@ -20105,7 +20095,7 @@ body:has(.field-mode-page) .main-content {
 }
 
 .editor-layer-signature {
-  height: 34px;
+  min-height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -20443,7 +20433,7 @@ body:has(.field-mode-page) .main-content {
 }
 
 .editor-layer-signature {
-  height: 34px;
+  min-height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72521,6 +72511,96 @@ html[data-theme="dark"] body #root .main-content :is(
   font-weight: 800;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.drive-share-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px auto;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.drive-share-form select {
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.drive-share-form button {
+  height: 40px;
+  padding: 0 16px;
+}
+
+.drive-share-list-title {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.drive-share-chip-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.drive-share-chip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.drive-share-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drive-share-chip em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.drive-share-chip button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.drive-share-chip button:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.drive-share-chip button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
 }
 
 html[data-theme="dark"] .drive-root-form input:focus,

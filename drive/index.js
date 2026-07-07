@@ -14,6 +14,10 @@ const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DRIVE_SETTINGS_PATH = "systemSettings/drive";
 const DRIVE_ACTIVITY_LOGS_COLLECTION = "driveActivityLogs";
+const DRIVE_PRIVATE_ITEMS_COLLECTION = "drivePrivateItems";
+const DRIVE_SHARES_COLLECTION = "driveShares";
+const DRIVE_USERS_FOLDER_NAME = "Usuarios";
+const DRIVE_SHARE_ROLES = new Set(["viewer", "editor"]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DRIVE_SEARCH_TYPES = new Set(["todos", "carpetas", "documentos", "imagenes", "videos", "pdf"]);
 const DRIVE_UPLOAD_ALLOWED_ORIGINS = new Set([
@@ -172,9 +176,77 @@ async function getAllowedDepartmentFolders(profile) {
   );
 }
 
+async function getUserPrivateRootId(uid) {
+  const snapshot = await admin
+    .firestore()
+    .collection(DRIVE_PRIVATE_ITEMS_COLLECTION)
+    .where("ownerUid", "==", uid)
+    .where("isRoot", "==", true)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) {
+    return "";
+  }
+
+  return snapshot.docs[0].id;
+}
+
+function sanitizeUserFolderName(profile) {
+  const base =
+    normalizeString(profile?.displayName) ||
+    normalizeString(profile?.name) ||
+    normalizeString(profile?.email) ||
+    profile.uid;
+
+  return `${base} (${profile.uid.slice(0, 6)})`.slice(0, 120);
+}
+
+async function ensureUserPrivateRoot(profile) {
+  const existingId = await getUserPrivateRootId(profile.uid);
+
+  if (existingId) {
+    return existingId;
+  }
+
+  const db = admin.firestore();
+  const drive = await getDriveClient();
+  const rootFolderId = await getRootFolderId();
+
+  const usersFolder =
+    (await findFolderByName(drive, rootFolderId, DRIVE_USERS_FOLDER_NAME)) ||
+    (await createDriveFolder(drive, rootFolderId, DRIVE_USERS_FOLDER_NAME));
+
+  const userFolder =
+    (await findFolderByName(drive, usersFolder.id, profile.uid)) ||
+    (await createDriveFolder(drive, usersFolder.id, profile.uid));
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.collection(DRIVE_PRIVATE_ITEMS_COLLECTION).doc(userFolder.id).set(
+    {
+      fileId: userFolder.id,
+      name: sanitizeUserFolderName(profile),
+      mimeType: DRIVE_FOLDER_MIME_TYPE,
+      parentId: usersFolder.id,
+      ownerUid: profile.uid,
+      ownerName: getProfileName(profile),
+      visibility: "private",
+      isRoot: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  return userFolder.id;
+}
+
 async function getAuthorizedFolderRoots(profile) {
+  const privateRootId = await getUserPrivateRootId(profile.uid);
+
   if (isAdmin(profile)) {
-    return [await getRootFolderId()];
+    return [await getRootFolderId(), privateRootId].filter(Boolean);
   }
 
   if (!isCollaborator(profile)) {
@@ -184,6 +256,10 @@ async function getAuthorizedFolderRoots(profile) {
   const folders = await getAllowedDepartmentFolders(profile);
   const folderIds = folders.map((folder) => normalizeString(folder.folderId)).filter(Boolean);
 
+  if (privateRootId) {
+    folderIds.push(privateRootId);
+  }
+
   if (folderIds.length === 0) {
     throw new HttpsError("permission-denied", "No tienes carpetas de departamento asignadas.");
   }
@@ -191,23 +267,30 @@ async function getAuthorizedFolderRoots(profile) {
   return folderIds;
 }
 
-async function assertCanAccessDriveFolder({ profile, drive, folderId }) {
-  const cleanFolderId = requireString(folderId, "folderId");
-  const allowedRootIds = await getAuthorizedFolderRoots(profile);
-  const canAccess = await isFolderInsideAllowedRoots(drive, cleanFolderId, allowedRootIds);
+async function getShareRole({ itemId, uid }) {
+  if (!itemId || !uid) return null;
 
-  if (!canAccess) {
-    throw new HttpsError("permission-denied", "No tienes permiso para acceder a esta carpeta de Nube AES.");
-  }
+  const snapshot = await admin
+    .firestore()
+    .collection(DRIVE_SHARES_COLLECTION)
+    .where("itemId", "==", itemId)
+    .where("sharedWithUid", "==", uid)
+    .limit(1)
+    .get();
 
-  return cleanFolderId;
+  if (snapshot.empty) return null;
+
+  return snapshot.docs[0].data()?.role || "viewer";
 }
 
-async function isFolderInsideAllowedRoots(drive, folderId, allowedRootIds) {
+async function resolveFolderAccess(drive, folderId, allowedRootIds) {
   const allowed = new Set(allowedRootIds.filter(Boolean));
+  const db = admin.firestore();
   const pending = [folderId];
   const visited = new Set();
   let depth = 0;
+  let privacyRootId = null;
+  let ownerUid = null;
 
   while (pending.length > 0 && depth < 30) {
     const currentId = pending.shift();
@@ -216,12 +299,21 @@ async function isFolderInsideAllowedRoots(drive, folderId, allowedRootIds) {
       continue;
     }
 
-    if (allowed.has(currentId)) {
-      return true;
-    }
-
     visited.add(currentId);
     depth += 1;
+
+    if (privacyRootId === null) {
+      const privateDoc = await db.collection(DRIVE_PRIVATE_ITEMS_COLLECTION).doc(currentId).get();
+
+      if (privateDoc.exists) {
+        privacyRootId = currentId;
+        ownerUid = privateDoc.data()?.ownerUid || null;
+      }
+    }
+
+    if (allowed.has(currentId)) {
+      return { insideAllowedRoot: true, privacyRootId, ownerUid };
+    }
 
     try {
       const response = await drive.files.get({
@@ -233,11 +325,35 @@ async function isFolderInsideAllowedRoots(drive, folderId, allowedRootIds) {
       const parents = Array.isArray(response.data.parents) ? response.data.parents : [];
       pending.push(...parents);
     } catch {
-      return false;
+      return { insideAllowedRoot: false, privacyRootId, ownerUid };
     }
   }
 
-  return false;
+  return { insideAllowedRoot: false, privacyRootId, ownerUid };
+}
+
+async function assertCanAccessDriveFolder({ profile, drive, folderId, requireWrite = true }) {
+  const cleanFolderId = requireString(folderId, "folderId");
+  const allowedRootIds = await getAuthorizedFolderRoots(profile);
+  const access = await resolveFolderAccess(drive, cleanFolderId, allowedRootIds);
+
+  if (!access.insideAllowedRoot) {
+    throw new HttpsError("permission-denied", "No tienes permiso para acceder a esta carpeta de Nube AES.");
+  }
+
+  if (access.privacyRootId && access.ownerUid !== profile.uid) {
+    const role = await getShareRole({ itemId: access.privacyRootId, uid: profile.uid });
+
+    if (!role) {
+      throw new HttpsError("permission-denied", "No tienes acceso a este elemento privado de Nube AES.");
+    }
+
+    if (requireWrite && role !== "editor") {
+      throw new HttpsError("permission-denied", "Solo puedes ver este elemento compartido.");
+    }
+  }
+
+  return cleanFolderId;
 }
 
 function requireString(value, fieldName) {
@@ -658,13 +774,25 @@ async function getDriveRootContainer(drive, rootFolderId) {
   };
 }
 
-async function assertCanAccessDriveItem({ profile, drive, fileId }) {
+async function assertCanAccessDriveItem({ profile, drive, fileId, requireWrite = true }) {
   const cleanFileId = requireString(fileId, "fileId");
   const allowedRootIds = await getAuthorizedFolderRoots(profile);
-  const canAccess = await isFolderInsideAllowedRoots(drive, cleanFileId, allowedRootIds);
+  const access = await resolveFolderAccess(drive, cleanFileId, allowedRootIds);
 
-  if (!canAccess) {
+  if (!access.insideAllowedRoot) {
     throw new HttpsError("permission-denied", "No tienes permiso para modificar este elemento de Nube AES.");
+  }
+
+  if (access.privacyRootId && access.ownerUid !== profile.uid) {
+    const role = await getShareRole({ itemId: access.privacyRootId, uid: profile.uid });
+
+    if (!role) {
+      throw new HttpsError("permission-denied", "No tienes acceso a este elemento privado de Nube AES.");
+    }
+
+    if (requireWrite && role !== "editor") {
+      throw new HttpsError("permission-denied", "Solo puedes ver este elemento compartido.");
+    }
   }
 
   return cleanFileId;
@@ -677,19 +805,29 @@ async function getSearchAllowedRoots({ profile, drive, folderId }) {
     return getAuthorizedFolderRoots(profile);
   }
 
-  await assertCanAccessDriveFolder({ profile, drive, folderId: cleanFolderId });
+  await assertCanAccessDriveFolder({ profile, drive, folderId: cleanFolderId, requireWrite: false });
   return [cleanFolderId];
 }
 
-async function filterFilesInsideRoots({ drive, files, allowedRootIds }) {
+async function filterFilesInsideRoots({ drive, files, allowedRootIds, profile }) {
   const filtered = [];
 
   for (const file of files) {
-    const canAccess = await isFolderInsideAllowedRoots(drive, file.id, allowedRootIds);
+    const access = await resolveFolderAccess(drive, file.id, allowedRootIds);
 
-    if (canAccess) {
-      filtered.push(file);
+    if (!access.insideAllowedRoot) {
+      continue;
     }
+
+    if (access.privacyRootId && access.ownerUid !== profile.uid) {
+      const role = await getShareRole({ itemId: access.privacyRootId, uid: profile.uid });
+
+      if (!role) {
+        continue;
+      }
+    }
+
+    filtered.push(file);
   }
 
   return filtered;
@@ -704,6 +842,7 @@ exports.driveListFolder = onCall(async (request) => {
     profile,
     drive,
     folderId: request.data?.folderId,
+    requireWrite: false,
   });
   const files = [];
   let pageToken;
@@ -1045,7 +1184,7 @@ exports.driveListTrash = onCall(async (request) => {
     const requestedFolderId = String(request.data?.folderId || "").trim();
 
     if (requestedFolderId) {
-      await assertCanAccessDriveFolder({ profile, drive, folderId: requestedFolderId });
+      await assertCanAccessDriveFolder({ profile, drive, folderId: requestedFolderId, requireWrite: false });
     }
 
     const rootContainer = await getDriveRootContainer(drive, rootFolderId);
@@ -1078,6 +1217,7 @@ exports.driveListTrash = onCall(async (request) => {
         drive,
         files: pageFiles,
         allowedRootIds: [rootFolderId],
+        profile,
       });
 
       files.push(...allowedFiles);
@@ -1229,7 +1369,7 @@ exports.driveSearchFiles = onCall(async (request) => {
         includeItemsFromAllDrives: true,
       });
       const files = (response.data.files || []).map(normalizeDriveFile);
-      const allowedFiles = await filterFilesInsideRoots({ drive, files, allowedRootIds });
+      const allowedFiles = await filterFilesInsideRoots({ drive, files, allowedRootIds, profile });
 
       results.push(...allowedFiles);
       pageToken = response.data.nextPageToken;
@@ -1333,5 +1473,211 @@ exports.driveListAllowedDepartmentFolders = onCall(async (request) => {
       folderName: folder.folderName || "",
       webViewLink: folder.webViewLink || "",
     })),
+  };
+});
+
+exports.driveListMyDrive = onCall(async (request) => {
+  const profile = await getUserProfile(request.auth?.uid);
+  const drive = await getDriveClient();
+  const folderId = await ensureUserPrivateRoot(profile);
+  const files = [];
+  let pageToken;
+
+  do {
+    const response = await drive.files.list({
+      q: `'${escapeDriveQueryValue(folderId)}' in parents and trashed = false`,
+      fields:
+        "nextPageToken, files(id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents)",
+      orderBy: "folder,name_natural",
+      pageSize: 1000,
+      pageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+
+    files.push(...(response.data.files || []).map(normalizeDriveFile));
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
+
+  return { folderId, files };
+});
+
+exports.driveCreatePrivateFolder = onCall(async (request) => {
+  const uid = request.auth?.uid;
+
+  const profile = await getUserProfile(uid);
+  const drive = await getDriveClient();
+  const privateRootId = await ensureUserPrivateRoot(profile);
+  const requestedParentId = normalizeString(request.data?.parentId) || privateRootId;
+  const name = requireString(request.data?.name, "name");
+
+  const parentId =
+    requestedParentId === privateRootId
+      ? privateRootId
+      : await assertCanAccessDriveFolder({ profile, drive, folderId: requestedParentId, requireWrite: true });
+
+  const folder = await createDriveFolder(drive, parentId, name);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await admin
+    .firestore()
+    .collection(DRIVE_PRIVATE_ITEMS_COLLECTION)
+    .doc(folder.id)
+    .set({
+      fileId: folder.id,
+      name: folder.name || name,
+      mimeType: DRIVE_FOLDER_MIME_TYPE,
+      parentId,
+      ownerUid: profile.uid,
+      ownerName: getProfileName(profile),
+      visibility: "private",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+  await logDriveActivity({
+    uid,
+    profile,
+    action: "create_private_folder",
+    fileId: folder.id,
+    fileName: folder.name,
+    folderId: parentId,
+    metadata: { parentId },
+  });
+
+  return {
+    id: folder.id || "",
+    name: folder.name || "",
+    webViewLink: folder.webViewLink || "",
+  };
+});
+
+exports.driveShareItem = onCall(async (request) => {
+  const uid = request.auth?.uid;
+
+  const profile = await getUserProfile(uid);
+  const drive = await getDriveClient();
+  const fileId = requireString(request.data?.fileId, "fileId");
+  const sharedWithUid = requireString(request.data?.sharedWithUid, "sharedWithUid");
+  const role = normalizeString(request.data?.role).toLowerCase();
+
+  if (!DRIVE_SHARE_ROLES.has(role)) {
+    throw new HttpsError("invalid-argument", "El rol debe ser viewer o editor.");
+  }
+
+  if (sharedWithUid === uid) {
+    throw new HttpsError("invalid-argument", "No puedes compartir contigo mismo.");
+  }
+
+  const access = await resolveFolderAccess(drive, fileId, []);
+
+  if (!access.privacyRootId || access.privacyRootId !== fileId || access.ownerUid !== uid) {
+    throw new HttpsError("permission-denied", "Solo el propietario puede compartir este elemento.");
+  }
+
+  const sharedProfile = await getUserProfile(sharedWithUid);
+  const db = admin.firestore();
+  const shareId = `${fileId}_${sharedWithUid}`;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.collection(DRIVE_SHARES_COLLECTION).doc(shareId).set(
+    {
+      itemId: fileId,
+      sharedWithUid,
+      sharedWithEmail: getProfileEmail(sharedProfile),
+      role,
+      sharedByUid: uid,
+      createdAt: now,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  await logDriveActivity({
+    uid,
+    profile,
+    action: "share_item",
+    fileId,
+    fileName: "",
+    folderId: "",
+    metadata: { sharedWithUid, role },
+  });
+
+  return { shareId, itemId: fileId, sharedWithUid, role };
+});
+
+exports.driveUnshareItem = onCall(async (request) => {
+  const uid = request.auth?.uid;
+
+  await getUserProfile(uid);
+  const drive = await getDriveClient();
+  const fileId = requireString(request.data?.fileId, "fileId");
+  const sharedWithUid = requireString(request.data?.sharedWithUid, "sharedWithUid");
+
+  const access = await resolveFolderAccess(drive, fileId, []);
+
+  if (!access.privacyRootId || access.privacyRootId !== fileId || access.ownerUid !== uid) {
+    throw new HttpsError("permission-denied", "Solo el propietario puede quitar el acceso.");
+  }
+
+  await admin
+    .firestore()
+    .collection(DRIVE_SHARES_COLLECTION)
+    .doc(`${fileId}_${sharedWithUid}`)
+    .delete();
+
+  return { removed: true };
+});
+
+exports.driveListSharedWithMe = onCall(async (request) => {
+  const uid = request.auth?.uid;
+
+  await getUserProfile(uid);
+  const drive = await getDriveClient();
+  const db = admin.firestore();
+
+  const snapshot = await db
+    .collection(DRIVE_SHARES_COLLECTION)
+    .where("sharedWithUid", "==", uid)
+    .orderBy("createdAt", "desc")
+    .get();
+
+  const items = [];
+
+  for (const shareDoc of snapshot.docs) {
+    const share = shareDoc.data();
+
+    try {
+      const item = await getDriveItem(drive, share.itemId);
+      items.push({ ...item, shareRole: share.role || "viewer", sharedByUid: share.sharedByUid || "" });
+    } catch (error) {
+      console.warn("No se pudo cargar elemento compartido:", share.itemId, error?.message || error);
+    }
+  }
+
+  return { items };
+});
+
+exports.driveListItemShares = onCall(async (request) => {
+  const uid = request.auth?.uid;
+
+  await getUserProfile(uid);
+  const drive = await getDriveClient();
+  const fileId = requireString(request.data?.fileId, "fileId");
+
+  const access = await resolveFolderAccess(drive, fileId, []);
+
+  if (!access.privacyRootId || access.privacyRootId !== fileId || access.ownerUid !== uid) {
+    throw new HttpsError("permission-denied", "Solo el propietario puede ver los accesos.");
+  }
+
+  const snapshot = await admin
+    .firestore()
+    .collection(DRIVE_SHARES_COLLECTION)
+    .where("itemId", "==", fileId)
+    .get();
+
+  return {
+    shares: snapshot.docs.map((shareDoc) => ({ id: shareDoc.id, ...shareDoc.data() })),
   };
 });
