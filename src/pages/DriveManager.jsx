@@ -16,6 +16,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
+const DRIVE_VIEW_STORAGE_KEY = "nubeAesViewMode";
 const DRIVE_SEARCH_TYPES = [
   { value: "todos", label: "Todos" },
   { value: "carpetas", label: "Carpetas" },
@@ -23,6 +24,12 @@ const DRIVE_SEARCH_TYPES = [
   { value: "imagenes", label: "Imagenes" },
   { value: "videos", label: "Videos" },
   { value: "pdf", label: "PDF" },
+];
+const DRIVE_VIEW_OPTIONS = [
+  { value: "list", label: "Lista", icon: "viewList" },
+  { value: "small", label: "Pequenas", icon: "viewSmall" },
+  { value: "medium", label: "Medianas", icon: "viewMedium" },
+  { value: "large", label: "Grandes", icon: "viewLarge" },
 ];
 
 function DriveIcon({ type = "file" }) {
@@ -34,12 +41,87 @@ function DriveIcon({ type = "file" }) {
     );
   }
 
+  if (type === "pdf") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 3.5h8.5L19 8v12.5H6V3.5z" />
+        <path d="M14 3.5V8h5" />
+        <path d="M8.5 14h7" />
+        <path d="M8.5 17h5" />
+      </svg>
+    );
+  }
+
+  if (type === "image") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <circle cx="9" cy="10" r="1.5" />
+        <path d="m5 17 4.5-4.5 3.2 3.2 2.1-2.1L19 17" />
+      </svg>
+    );
+  }
+
+  if (type === "video") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="6" width="12" height="12" rx="2" />
+        <path d="m16 10 4-2.5v9L16 14" />
+      </svg>
+    );
+  }
+
+  if (type === "sheet") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 3.5h8.5L19 8v12.5H6V3.5z" />
+        <path d="M14 3.5V8h5" />
+        <path d="M8.5 12h7" />
+        <path d="M8.5 15h7" />
+        <path d="M11 12v6" />
+      </svg>
+    );
+  }
+
+  if (type === "presentation") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="5" width="16" height="12" rx="2" />
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+        <path d="M8 13l3-3 2 2 3-4" />
+      </svg>
+    );
+  }
+
+  if (type === "document") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 3.5h8.5L19 8v12.5H6V3.5z" />
+        <path d="M14 3.5V8h5" />
+        <path d="M9 12h6" />
+        <path d="M9 15h6" />
+        <path d="M9 18h4" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M6 3.5h8.5L19 8v12.5H6V3.5z" />
       <path d="M14 3.5V8h5" />
       <path d="M9 13h6" />
       <path d="M9 16h4" />
+    </svg>
+  );
+}
+
+function DriveModuleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 18.5a4 4 0 0 1 .9-7.9 5.8 5.8 0 0 1 11.1 1.6A3.2 3.2 0 0 1 17.8 18.5H6z" />
+      <path d="M9 15h6" />
+      <path d="M12 12v6" />
     </svg>
   );
 }
@@ -94,6 +176,39 @@ function ActionIcon({ name }) {
     );
   }
 
+  if (name === "close") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6l12 12" />
+        <path d="M18 6 6 18" />
+      </svg>
+    );
+  }
+
+  if (name === "viewList") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 6h12" />
+        <path d="M8 12h12" />
+        <path d="M8 18h12" />
+        <path d="M4 6h.01" />
+        <path d="M4 12h.01" />
+        <path d="M4 18h.01" />
+      </svg>
+    );
+  }
+
+  if (name === "viewSmall" || name === "viewMedium" || name === "viewLarge") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="4" width="6" height="6" rx="1.5" />
+        <rect x="14" y="4" width="6" height="6" rx="1.5" />
+        <rect x="4" y="14" width="6" height="6" rx="1.5" />
+        <rect x="14" y="14" width="6" height="6" rx="1.5" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7 17 17 7" />
@@ -125,6 +240,10 @@ export default function DriveManager() {
   const [searchResults, setSearchResults] = useState([]);
   const [searchActive, setSearchActive] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [viewMode, setViewMode] = useState(getStoredDriveViewMode);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [draggingItemId, setDraggingItemId] = useState("");
+  const [dragOverFolderId, setDragOverFolderId] = useState("");
   const [activeTab, setActiveTab] = useState(() => (isAdmin ? "files" : "departments"));
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [error, setError] = useState("");
@@ -146,6 +265,17 @@ export default function DriveManager() {
   const canManageItems = Boolean(currentFolderId) || searchActive;
   const visibleFiles = searchActive ? searchResults : files;
   const visibleEmptyMessage = searchActive ? "No hay resultados para esta busqueda." : "Esta carpeta esta vacia.";
+  const hasVisibleFiles = visibleFiles.length > 0;
+  const visibleFolderCount = useMemo(() => visibleFiles.filter(isDriveFolder).length, [visibleFiles]);
+  const visibleFileCount = visibleFiles.length - visibleFolderCount;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DRIVE_VIEW_STORAGE_KEY, viewMode);
+    } catch {
+      // Local preference only; ignore restricted storage.
+    }
+  }, [viewMode]);
 
   const loadFolder = useCallback(async (folderId, nextBreadcrumbs) => {
     const cleanFolderId = String(folderId || "").trim();
@@ -299,9 +429,7 @@ export default function DriveManager() {
       return;
     }
 
-    if (file.webViewLink) {
-      window.open(file.webViewLink, "_blank", "noopener,noreferrer");
-    }
+    setPreviewFile(file);
   }
 
   function handleBreadcrumbClick(index) {
@@ -582,36 +710,228 @@ export default function DriveManager() {
     ]);
   }
 
+  function getDraggedItem() {
+    return visibleFiles.find((file) => file.id === draggingItemId) || null;
+  }
+
+  function canDropOnFolder(targetFolder) {
+    const draggedItem = getDraggedItem();
+
+    if (!draggedItem || !isDriveFolder(targetFolder)) {
+      return false;
+    }
+
+    if (draggedItem.id === targetFolder.id) {
+      return false;
+    }
+
+    if (Array.isArray(draggedItem.parents) && draggedItem.parents.includes(targetFolder.id)) {
+      return false;
+    }
+
+    if (isDriveFolder(draggedItem) && isKnownDescendantOf(targetFolder, draggedItem.id, visibleFiles)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  function handleDragStart(event, item) {
+    if (mutatingItemId) {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.id);
+    setDraggingItemId(item.id);
+    setOpenActionsItemId("");
+    setUploadSuccess("");
+  }
+
+  function handleDragEnd() {
+    setDraggingItemId("");
+    setDragOverFolderId("");
+  }
+
+  function handleFolderDragOver(event, folder) {
+    if (!canDropOnFolder(folder)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverFolderId(folder.id);
+  }
+
+  function handleFolderDragLeave(event, folder) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setDragOverFolderId((current) => (current === folder.id ? "" : current));
+    }
+  }
+
+  async function handleFolderDrop(event, targetFolder) {
+    event.preventDefault();
+
+    const fileId = event.dataTransfer.getData("text/plain") || draggingItemId;
+    const draggedItem = visibleFiles.find((file) => file.id === fileId);
+
+    setDragOverFolderId("");
+
+    if (!draggedItem || !canDropOnFolder(targetFolder)) {
+      setError("No se puede mover el elemento a esa carpeta.");
+      setDraggingItemId("");
+      return;
+    }
+
+    setMutatingItemId(draggedItem.id);
+    setError("");
+    setUploadSuccess(`Moviendo ${draggedItem.name || "elemento"}...`);
+
+    try {
+      await moveDriveItem(draggedItem.id, targetFolder.id);
+      setUploadSuccess(`Movido correctamente: ${draggedItem.name || "elemento"}`);
+      await reloadVisibleItems();
+    } catch (moveError) {
+      setError(getDriveErrorMessage(moveError, "mutation"));
+      setUploadSuccess("");
+    } finally {
+      setMutatingItemId("");
+      setDraggingItemId("");
+    }
+  }
+
+  function renderDriveItem(file) {
+    const itemType = getDriveItemType(file);
+    const isFolder = itemType === "folder";
+    const isMutating = mutatingItemId === file.id;
+    const canDropHere = isFolder && canDropOnFolder(file);
+
+    return (
+      <article
+        key={file.id}
+        className={[
+          "drive-file-card",
+          `view-${viewMode}`,
+          `type-${itemType}`,
+          draggingItemId === file.id ? "is-dragging" : "",
+          dragOverFolderId === file.id && canDropHere ? "is-drop-target" : "",
+        ].filter(Boolean).join(" ")}
+        draggable={!isMutating}
+        onDragStart={(event) => handleDragStart(event, file)}
+        onDragEnd={handleDragEnd}
+        onDragOver={(event) => handleFolderDragOver(event, file)}
+        onDragLeave={(event) => handleFolderDragLeave(event, file)}
+        onDrop={(event) => handleFolderDrop(event, file)}
+      >
+        <button
+          className="drive-file-main"
+          type="button"
+          onClick={() => handleOpenItem(file)}
+          disabled={isMutating}
+        >
+          <span className="drive-file-preview">
+            {!isFolder && file.thumbnailLink ? (
+              <img src={file.thumbnailLink} alt="" loading="lazy" />
+            ) : (
+              <span className={`drive-file-icon ${itemType}`}>
+                <DriveIcon type={itemType} />
+              </span>
+            )}
+          </span>
+
+          <span className="drive-file-content">
+            <strong>{file.name || "Archivo sin nombre"}</strong>
+            <small>{isMutating ? "Actualizando..." : getFileMeta(file)}</small>
+          </span>
+
+          <span className="drive-file-column drive-file-type">{formatMimeType(file.mimeType)}</span>
+          <span className="drive-file-column">{formatDate(file.modifiedTime) || "Sin fecha"}</span>
+          <span className="drive-file-column">{file.size ? formatBytes(Number(file.size)) : "-"}</span>
+        </button>
+
+        {canManageItems ? (
+          <div className="drive-item-actions">
+            <button
+              className="drive-item-menu-button"
+              type="button"
+              onClick={() =>
+                setOpenActionsItemId((current) => (current === file.id ? "" : file.id))
+              }
+              disabled={isMutating}
+              aria-label={`Acciones para ${file.name || "archivo"}`}
+            >
+              <ActionIcon name="more" />
+            </button>
+
+            {openActionsItemId === file.id ? (
+              <div className="drive-item-menu">
+                <button type="button" onClick={() => handleOpenItem(file)}>
+                  Abrir
+                </button>
+                <button type="button" onClick={() => handleRenameItem(file)}>
+                  Renombrar
+                </button>
+                <button type="button" onClick={() => handleMoveItem(file)}>
+                  Mover
+                </button>
+                <button type="button" onClick={() => handleDeleteItem(file)}>
+                  Eliminar
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+    );
+  }
+
   return (
     <div className="visual-page drive-manager-page">
-      <div className="visual-page-header drive-manager-header">
-        <div>
+      <section className="drive-module-hero">
+        <div className="drive-hero-copy">
+          <span className="drive-hero-icon">
+            <DriveModuleIcon />
+          </span>
+          <span>Nube AES</span>
           <h2>Nube AES</h2>
-          <p>{isAdmin ? "Explora carpetas y archivos conectados a Google Drive." : "Accede a las carpetas vinculadas a tus departamentos."}</p>
+          <p>{isAdmin ? "Explora, organiza y previsualiza archivos conectados a Google Drive." : "Accede y organiza archivos de tus departamentos asignados."}</p>
         </div>
 
-        <div className="drive-manager-summary">
-          <span>{isAdmin ? (hasRootFolder ? "Raiz configurada" : "Sin raiz") : "Mis carpetas"}</span>
-          <strong>{folderCount} carpetas / {fileCount} archivos</strong>
-        </div>
-      </div>
+        <div className="drive-hero-side">
+          <div className="drive-hero-stats">
+            <article>
+              <span>Carpetas</span>
+              <strong>{searchActive ? visibleFolderCount : folderCount}</strong>
+            </article>
+            <article>
+              <span>Archivos</span>
+              <strong>{searchActive ? visibleFileCount : fileCount}</strong>
+            </article>
+            <article>
+              <span>{searchActive ? "Resultados" : "Visibles"}</span>
+              <strong>{visibleFiles.length}</strong>
+            </article>
+          </div>
 
-      <div className="drive-tabs" role="tablist" aria-label="Secciones de Nube AES">
-        <button
-          className={activeTab === "files" ? "active" : ""}
-          type="button"
-          onClick={() => setActiveTab("files")}
-        >
-          Archivos
-        </button>
-        <button
-          className={activeTab === "departments" ? "active" : ""}
-          type="button"
-          onClick={handleOpenDepartmentsTab}
-        >
-          {isAdmin ? "Departamentos" : "Mis carpetas"}
-        </button>
-      </div>
+          <div className="drive-tabs" role="tablist" aria-label="Secciones de Nube AES">
+            <button
+              className={activeTab === "files" ? "active" : ""}
+              type="button"
+              onClick={() => setActiveTab("files")}
+            >
+              Archivos
+            </button>
+            <button
+              className={activeTab === "departments" ? "active" : ""}
+              type="button"
+              onClick={handleOpenDepartmentsTab}
+            >
+              {isAdmin ? "Departamentos" : "Mis carpetas"}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {canUseRootSettings && !hasRootFolder && !settingsLoading ? (
         <section className="drive-settings-panel setup">
@@ -631,7 +951,56 @@ export default function DriveManager() {
       ) : null}
 
       {activeTab === "files" && (hasRootFolder || canUseCurrentFolderActions) ? (
-        <section className="drive-control-panel">
+        <section className="drive-toolbar-panel">
+          <form className="drive-search-panel" onSubmit={handleSearchFiles}>
+            <label htmlFor="drive-search-query">Buscar</label>
+            <div>
+              <input
+                id="drive-search-query"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Nombre o contenido"
+                autoComplete="off"
+                disabled={isBrowserLoading}
+              />
+
+              <select
+                value={searchType}
+                onChange={(event) => setSearchType(event.target.value)}
+                disabled={isBrowserLoading}
+                aria-label="Filtro por tipo"
+              >
+                {DRIVE_SEARCH_TYPES.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                className="visual-primary-button drive-icon-button"
+                type="submit"
+                disabled={isBrowserLoading}
+              >
+                <ActionIcon name="load" />
+                <span>{searchLoading ? "Buscando" : "Buscar"}</span>
+              </button>
+
+              {searchActive ? (
+                <button
+                  className="visual-outline-button drive-icon-button"
+                  type="button"
+                  onClick={clearDriveSearch}
+                  disabled={searchLoading}
+                >
+                  <ActionIcon name="close" />
+                  <span>Limpiar</span>
+                </button>
+              ) : null}
+            </div>
+          </form>
+
           <form className="drive-create-form" onSubmit={handleCreateFolder}>
             <label htmlFor="drive-new-folder">Crear carpeta</label>
             <div>
@@ -675,10 +1044,29 @@ export default function DriveManager() {
               type="button"
               onClick={handleUploadClick}
               disabled={!canUseCurrentFolderActions || uploadingFile || isBusy}
+              title={uploadingFile ? "Subiendo archivo" : "Subir archivo"}
+              aria-label={uploadingFile ? "Subiendo archivo" : "Subir archivo"}
             >
               <ActionIcon name="upload" />
-              <span>{uploadingFile ? "Subiendo" : "Subir archivo"}</span>
             </button>
+          </div>
+
+          <div className="drive-view-panel">
+            <span>Vista</span>
+            <div className="drive-view-switcher" role="group" aria-label="Selector de vista">
+              {DRIVE_VIEW_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  className={viewMode === option.value ? "active" : ""}
+                  type="button"
+                  onClick={() => setViewMode(option.value)}
+                  title={option.label}
+                  aria-label={`Vista ${option.label}`}
+                >
+                  <ActionIcon name={option.icon} />
+                </button>
+              ))}
+            </div>
           </div>
 
           {canUseRootSettings ? (
@@ -694,18 +1082,20 @@ export default function DriveManager() {
                 type="button"
                 onClick={handleReloadRoot}
                 disabled={isBusy}
+                title={isBusy ? "Cargando raiz" : "Recargar raiz"}
+                aria-label={isBusy ? "Cargando raiz" : "Recargar raiz"}
               >
                 <ActionIcon name="load" />
-                <span>{isBusy ? "Cargando" : "Recargar raiz"}</span>
               </button>
 
               <button
                 className="visual-outline-button drive-icon-button"
                 type="button"
                 onClick={() => setConfigOpen((current) => !current)}
+                title={configOpen ? "Ocultar configuracion" : "Cambiar carpeta raiz"}
+                aria-label={configOpen ? "Ocultar configuracion" : "Cambiar carpeta raiz"}
               >
                 <ActionIcon name="settings" />
-                <span>{configOpen ? "Ocultar configuracion" : "Cambiar carpeta raiz"}</span>
               </button>
             </div>
           </div>
@@ -798,11 +1188,11 @@ export default function DriveManager() {
 
       {activeTab === "files" ? (
         <section className="drive-browser-panel">
-          <div className="drive-browser-toolbar">
-            <div>
-              <span>{searchActive ? "Resultados" : "Carpeta actual"}</span>
-              <strong>{settingsLoading ? "Cargando configuracion..." : searchActive ? "Busqueda en Nube AES" : currentFolderName}</strong>
-            </div>
+          <div className="drive-path-card">
+            <span>{searchActive ? "Resultados" : "Carpeta actual"}</span>
+            <strong>
+              {settingsLoading ? "Cargando configuracion..." : searchActive ? "Busqueda en Nube AES" : currentFolderName}
+            </strong>
 
             <nav className="drive-breadcrumbs" aria-label="Ruta de Google Drive">
               {breadcrumbs.length === 0 ? (
@@ -822,67 +1212,14 @@ export default function DriveManager() {
             </nav>
           </div>
 
-          <form className="drive-search-panel" onSubmit={handleSearchFiles}>
-            <label htmlFor="drive-search-query">Buscar</label>
-            <div>
-              <input
-                id="drive-search-query"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Nombre o contenido"
-                autoComplete="off"
-                disabled={isBrowserLoading}
-              />
-
-              <select
-                value={searchType}
-                onChange={(event) => setSearchType(event.target.value)}
-                disabled={isBrowserLoading}
-                aria-label="Filtro por tipo"
-              >
-                {DRIVE_SEARCH_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                className="visual-primary-button drive-icon-button"
-                type="submit"
-                disabled={isBrowserLoading}
-              >
-                <ActionIcon name="load" />
-                <span>{searchLoading ? "Buscando" : "Buscar"}</span>
-              </button>
-
-              {searchActive ? (
-                <button
-                  className="visual-outline-button drive-icon-button"
-                  type="button"
-                  onClick={clearDriveSearch}
-                  disabled={searchLoading}
-                >
-                  <ActionIcon name="settings" />
-                  <span>Limpiar busqueda</span>
-                </button>
-              ) : null}
-            </div>
-          </form>
-
           {error ? <div className="drive-error-box">{error}</div> : null}
           {uploadSuccess ? <div className="drive-success-box">{uploadSuccess}</div> : null}
 
           {isBrowserLoading ? (
-            <div className="drive-loading-state">
-              {searchLoading
-                ? "Buscando en Google Drive..."
-                : uploadingFile
-                ? "Subiendo archivo a Google Drive..."
-                : settingsLoading
-                  ? "Cargando configuracion de Nube AES..."
-                  : "Cargando contenido de Drive..."}
+            <div className={`drive-skeleton-grid view-${viewMode}`} aria-label="Cargando contenido">
+              {Array.from({ length: viewMode === "list" ? 5 : 8 }).map((_, index) => (
+                <span className="drive-skeleton-card" key={`drive-skeleton-${index}`} />
+              ))}
             </div>
           ) : null}
 
@@ -904,63 +1241,26 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBrowserLoading && visibleFiles.length > 0 ? (
-            <div className="drive-file-grid">
-              {visibleFiles.map((file) => (
-                <article
-                  key={file.id}
-                  className="drive-file-card"
-                >
-                  <button
-                    className="drive-file-main"
-                    type="button"
-                    onClick={() => handleOpenItem(file)}
-                    disabled={mutatingItemId === file.id}
-                  >
-                    <span className={isDriveFolder(file) ? "drive-file-icon folder" : "drive-file-icon"}>
-                      <DriveIcon type={isDriveFolder(file) ? "folder" : "file"} />
-                    </span>
+          {!isBrowserLoading && hasVisibleFiles ? (
+            <div className={`drive-file-grid view-${viewMode}`}>
+              {viewMode === "list" ? (
+                <div className="drive-file-list-head" aria-hidden="true">
+                  <span>Nombre</span>
+                  <span>Tipo</span>
+                  <span>Fecha</span>
+                  <span>Tamano</span>
+                  <span>Acciones</span>
+                </div>
+              ) : null}
 
-                    <span className="drive-file-content">
-                      <strong>{file.name || "Archivo sin nombre"}</strong>
-                      <small>{mutatingItemId === file.id ? "Actualizando..." : getFileMeta(file)}</small>
-                    </span>
-                  </button>
-
-                  {canManageItems ? (
-                    <div className="drive-item-actions">
-                      <button
-                        className="drive-item-menu-button"
-                        type="button"
-                        onClick={() =>
-                          setOpenActionsItemId((current) => (current === file.id ? "" : file.id))
-                        }
-                        disabled={mutatingItemId === file.id}
-                        aria-label={`Acciones para ${file.name || "archivo"}`}
-                      >
-                        <ActionIcon name="more" />
-                      </button>
-
-                      {openActionsItemId === file.id ? (
-                        <div className="drive-item-menu">
-                          <button type="button" onClick={() => handleRenameItem(file)}>
-                            Renombrar
-                          </button>
-                          <button type="button" onClick={() => handleMoveItem(file)}>
-                            Mover
-                          </button>
-                          <button type="button" onClick={() => handleDeleteItem(file)}>
-                            Eliminar
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </article>
-              ))}
+              {visibleFiles.map((file) => renderDriveItem(file))}
             </div>
           ) : null}
         </section>
+      ) : null}
+
+      {previewFile ? (
+        <DrivePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       ) : null}
     </div>
   );
@@ -994,8 +1294,140 @@ function DriveRootForm({
   );
 }
 
+function DrivePreviewModal({ file, onClose }) {
+  const previewUrl = buildDrivePreviewUrl(file);
+  const fileType = formatMimeType(file?.mimeType);
+
+  return (
+    <div className="drive-preview-backdrop" role="dialog" aria-modal="true" aria-label="Vista previa de archivo">
+      <div className="drive-preview-modal">
+        <header className="drive-preview-header">
+          <div>
+            <span>{fileType}</span>
+            <strong>{file?.name || "Archivo sin nombre"}</strong>
+          </div>
+
+          <div className="drive-preview-actions">
+            {file?.webViewLink ? (
+              <a
+                className="visual-outline-button drive-icon-button"
+                href={file.webViewLink}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ActionIcon name="open" />
+                <span>Abrir en Drive</span>
+              </a>
+            ) : null}
+
+            <button
+              className="drive-preview-close"
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar vista previa"
+            >
+              <ActionIcon name="close" />
+            </button>
+          </div>
+        </header>
+
+        <div className="drive-preview-body">
+          {previewUrl ? (
+            <iframe title={file?.name || "Vista previa"} src={previewUrl} loading="lazy" />
+          ) : (
+            <div className="drive-preview-empty">
+              <DriveIcon type={getDriveItemType(file)} />
+              <p>Vista previa no disponible para este archivo.</p>
+              {file?.webViewLink ? (
+                <a className="visual-primary-button" href={file.webViewLink} target="_blank" rel="noreferrer">
+                  Abrir en Drive
+                </a>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getStoredDriveViewMode() {
+  try {
+    const savedViewMode = window.localStorage.getItem(DRIVE_VIEW_STORAGE_KEY);
+    return DRIVE_VIEW_OPTIONS.some((option) => option.value === savedViewMode) ? savedViewMode : "medium";
+  } catch {
+    return "medium";
+  }
+}
+
 function isDriveFolder(file) {
   return file?.mimeType === DRIVE_FOLDER_MIME_TYPE;
+}
+
+function getDriveItemType(file) {
+  const mimeType = String(file?.mimeType || "");
+
+  if (isDriveFolder(file)) return "folder";
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) return "sheet";
+  if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) return "presentation";
+  if (mimeType.includes("document") || mimeType.includes("word") || mimeType === "text/plain") return "document";
+  return "file";
+}
+
+function isKnownDescendantOf(item, ancestorId, knownItems) {
+  const pendingParentIds = Array.isArray(item?.parents) ? [...item.parents] : [];
+  const itemsById = new Map(knownItems.map((knownItem) => [knownItem.id, knownItem]));
+  const visited = new Set();
+
+  while (pendingParentIds.length > 0) {
+    const parentId = pendingParentIds.shift();
+
+    if (!parentId || visited.has(parentId)) {
+      continue;
+    }
+
+    if (parentId === ancestorId) {
+      return true;
+    }
+
+    visited.add(parentId);
+
+    const parentItem = itemsById.get(parentId);
+
+    if (parentItem?.parents?.length) {
+      pendingParentIds.push(...parentItem.parents);
+    }
+  }
+
+  return false;
+}
+
+function buildDrivePreviewUrl(file) {
+  const id = String(file?.id || "").trim();
+  const type = getDriveItemType(file);
+
+  if (!id || type === "folder") {
+    return "";
+  }
+
+  const encodedId = encodeURIComponent(id);
+
+  if (type === "document") {
+    return `https://docs.google.com/document/d/${encodedId}/preview`;
+  }
+
+  if (type === "sheet") {
+    return `https://docs.google.com/spreadsheets/d/${encodedId}/preview`;
+  }
+
+  if (type === "presentation") {
+    return `https://docs.google.com/presentation/d/${encodedId}/preview`;
+  }
+
+  return `https://drive.google.com/file/d/${encodedId}/preview`;
 }
 
 function getFileMeta(file) {
@@ -1020,11 +1452,13 @@ function getFileMeta(file) {
 
 function formatMimeType(mimeType = "") {
   if (!mimeType) return "Archivo";
+  if (mimeType === DRIVE_FOLDER_MIME_TYPE) return "Carpeta";
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType.startsWith("image/")) return "Imagen";
+  if (mimeType.startsWith("video/")) return "Video";
   if (mimeType.includes("spreadsheet")) return "Hoja de calculo";
   if (mimeType.includes("document")) return "Documento";
   if (mimeType.includes("presentation")) return "Presentacion";
-  if (mimeType.startsWith("image/")) return "Imagen";
-  if (mimeType === "application/pdf") return "PDF";
   return "Archivo";
 }
 
