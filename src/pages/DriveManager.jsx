@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  createDriveResumableUpload,
   createDriveFolder,
   DRIVE_FOLDER_MIME_TYPE,
   deleteDriveItem,
@@ -11,11 +12,9 @@ import {
   renameDriveItem,
   saveDriveRootFolderId,
   searchDriveFiles,
-  uploadDriveFile,
 } from "../services/driveService";
 import { useAuth } from "../context/AuthContext";
 
-const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
 const DRIVE_VIEW_STORAGE_KEY = "nubeAesViewMode";
 const DRIVE_SEARCH_TYPES = [
   { value: "todos", label: "Todos" },
@@ -631,30 +630,36 @@ export default function DriveManager() {
       return;
     }
 
-    if (file.size > MAX_UPLOAD_FILE_BYTES) {
-      setError("El archivo supera el limite inicial de 25MB.");
-      event.target.value = "";
-      return;
-    }
-
     setUploadingFile(true);
     setError("");
-    setUploadSuccess("");
+    setUploadSuccess(`Preparando subida: ${file.name}. La subida puede tardar segun tu conexion.`);
 
     try {
-      const base64 = await readFileAsBase64(file);
-
-      await uploadDriveFile({
+      const mimeType = file.type || "application/octet-stream";
+      const session = await createDriveResumableUpload({
         folderId: currentFolderId,
         name: file.name,
-        mimeType: file.type || "application/octet-stream",
-        base64,
+        mimeType,
+        size: file.size,
       });
 
-      setUploadSuccess(`Archivo subido: ${file.name}`);
+      setUploadSuccess(`Subiendo ${file.name}: 0%. La subida puede tardar segun tu conexion.`);
+
+      await uploadFileToDriveSession({
+        file,
+        uploadUrl: session?.uploadUrl,
+        mimeType,
+        onProgress: (progress) => {
+          setUploadSuccess(`Subiendo ${file.name}: ${progress}%. La subida puede tardar segun tu conexion.`);
+        },
+      });
+
+      setUploadSuccess(`Procesando ${file.name} en Google Drive...`);
       await loadFolder(currentFolderId, breadcrumbs);
+      setUploadSuccess(`Completado: ${file.name}`);
     } catch (uploadError) {
       setError(getDriveErrorMessage(uploadError, "upload"));
+      setUploadSuccess("");
     } finally {
       setUploadingFile(false);
       event.target.value = "";
@@ -1028,7 +1033,7 @@ export default function DriveManager() {
             <div>
               <span>Subida</span>
               <strong>Archivo a carpeta actual</strong>
-              <small>Limite inicial 25MB</small>
+              <small>Archivos grandes compatibles</small>
             </div>
 
             <input
@@ -1484,18 +1489,46 @@ function formatDate(value) {
   });
 }
 
-function readFileAsBase64(file) {
+function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
+    const cleanUploadUrl = String(uploadUrl || "").trim();
 
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      const [, base64 = ""] = result.split(",");
-      resolve(base64);
+    if (!cleanUploadUrl) {
+      reject(new Error("No se pudo preparar la sesion de subida."));
+      return;
+    }
+
+    const request = new XMLHttpRequest();
+
+    request.open("PUT", cleanUploadUrl);
+    request.setRequestHeader("Content-Type", mimeType || "application/octet-stream");
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !event.total) {
+        return;
+      }
+
+      const progress = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      onProgress?.(progress);
     };
 
-    reader.onerror = () => reject(new Error("No se pudo leer el archivo seleccionado."));
-    reader.readAsDataURL(file);
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress?.(100);
+        try {
+          resolve(request.responseText ? JSON.parse(request.responseText) : null);
+        } catch {
+          resolve(null);
+        }
+        return;
+      }
+
+      reject(new Error(`Google Drive rechazo la subida (${request.status}).`));
+    };
+
+    request.onerror = () => reject(new Error("No se pudo subir el archivo a Google Drive."));
+    request.onabort = () => reject(new Error("La subida fue cancelada."));
+    request.send(file);
   });
 }
 

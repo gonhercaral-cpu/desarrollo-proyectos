@@ -17,14 +17,23 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DRIVE_SEARCH_TYPES = new Set(["todos", "carpetas", "documentos", "imagenes", "videos", "pdf"]);
 
 let driveClientPromise;
+let driveAuthClientPromise;
 
-function getDriveClient() {
-  if (!driveClientPromise) {
+function getDriveAuthClient() {
+  if (!driveAuthClientPromise) {
     const auth = new google.auth.GoogleAuth({
       scopes: [DRIVE_SCOPE],
     });
 
-    driveClientPromise = auth.getClient().then((authClient) =>
+    driveAuthClientPromise = auth.getClient();
+  }
+
+  return driveAuthClientPromise;
+}
+
+function getDriveClient() {
+  if (!driveClientPromise) {
+    driveClientPromise = getDriveAuthClient().then((authClient) =>
       google.drive({
         version: "v3",
         auth: authClient,
@@ -363,6 +372,63 @@ function getDriveUploadError(error) {
   );
 }
 
+function getDriveResumableUploadError(error) {
+  if (error instanceof HttpsError) {
+    return error;
+  }
+
+  const status = error?.code || error?.response?.status;
+
+  if (status === 403) {
+    return new HttpsError(
+      "permission-denied",
+      "La cuenta de servicio no tiene permiso para crear la sesion de subida en esta carpeta."
+    );
+  }
+
+  if (status === 404) {
+    return new HttpsError("not-found", "No se encontro la carpeta destino en Google Drive.");
+  }
+
+  return new HttpsError(
+    "internal",
+    "No se pudo preparar la subida grande en Google Drive.",
+    { message: error?.message || "" }
+  );
+}
+
+function requireUploadSize(value) {
+  const size = Number(value);
+
+  if (!Number.isFinite(size) || size < 0 || !Number.isSafeInteger(size)) {
+    throw new HttpsError("invalid-argument", "El tamano del archivo no es valido.");
+  }
+
+  return size;
+}
+
+function normalizeMimeType(value) {
+  const mimeType = String(value || "application/octet-stream").trim() || "application/octet-stream";
+
+  if (/[\r\n]/.test(mimeType)) {
+    throw new HttpsError("invalid-argument", "mimeType no es valido.");
+  }
+
+  return mimeType.slice(0, 180);
+}
+
+async function getDriveAccessToken() {
+  const authClient = await getDriveAuthClient();
+  const tokenResponse = await authClient.getAccessToken();
+  const token = typeof tokenResponse === "string" ? tokenResponse : tokenResponse?.token;
+
+  if (!token) {
+    throw new HttpsError("internal", "No se pudo obtener token para Google Drive.");
+  }
+
+  return token;
+}
+
 function getDriveMutationError(error, fallbackMessage) {
   if (error instanceof HttpsError) {
     return error;
@@ -571,6 +637,56 @@ exports.driveUploadFile = onCall(async (request) => {
     return normalizeDriveFile(response.data || {});
   } catch (error) {
     throw getDriveUploadError(error);
+  }
+});
+
+exports.driveCreateResumableUpload = onCall(async (request) => {
+  const uid = request.auth?.uid;
+
+  try {
+    const profile = await getUserProfile(uid);
+    const drive = await getDriveClient();
+    const folderId = await assertCanAccessDriveFolder({
+      profile,
+      drive,
+      folderId: request.data?.folderId,
+    });
+    const name = requireString(request.data?.name, "name");
+    const mimeType = normalizeMimeType(request.data?.mimeType);
+    const size = requireUploadSize(request.data?.size);
+    const accessToken = await getDriveAccessToken();
+    const response = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": mimeType,
+          "X-Upload-Content-Length": String(size),
+        },
+        body: JSON.stringify({
+          name,
+          parents: [folderId],
+        }),
+      }
+    );
+    const uploadUrl = response.headers.get("location") || "";
+
+    if (!response.ok || !uploadUrl) {
+      throw new HttpsError(
+        response.status === 403 ? "permission-denied" : "internal",
+        "Google Drive no devolvio una sesion de subida valida.",
+        { status: response.status }
+      );
+    }
+
+    return {
+      uploadUrl,
+      sessionExpiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    };
+  } catch (error) {
+    throw getDriveResumableUploadError(error);
   }
 });
 
