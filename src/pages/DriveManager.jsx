@@ -6,6 +6,7 @@ import {
   deleteDriveItem,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
+  getDriveStorageQuota,
   listDriveActivityLogs,
   listDriveTrash,
   listAllowedDriveDepartmentFolders,
@@ -20,20 +21,24 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 const DRIVE_VIEW_STORAGE_KEY = "nubeAesViewMode";
-const DRIVE_SEARCH_TYPES = [
-  { value: "todos", label: "Todos" },
-  { value: "carpetas", label: "Carpetas" },
-  { value: "documentos", label: "Documentos" },
-  { value: "imagenes", label: "Imagenes" },
-  { value: "videos", label: "Videos" },
-  { value: "pdf", label: "PDF" },
-];
 const DRIVE_VIEW_OPTIONS = [
   { value: "list", label: "Lista", icon: "viewList" },
   { value: "small", label: "Pequenas", icon: "viewSmall" },
   { value: "medium", label: "Medianas", icon: "viewMedium" },
   { value: "large", label: "Grandes", icon: "viewLarge" },
 ];
+
+const DRIVE_SHORTCUTS_STORAGE_KEY = "nubeAesShortcuts";
+
+function getStoredDriveShortcuts() {
+  try {
+    const raw = window.localStorage.getItem(DRIVE_SHORTCUTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 function DriveIcon({ type = "file" }) {
   if (type === "folder") {
@@ -121,7 +126,15 @@ function DriveIcon({ type = "file" }) {
 
 function DriveModuleIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.85"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M6 18.5a4 4 0 0 1 .9-7.9 5.8 5.8 0 0 1 11.1 1.6A3.2 3.2 0 0 1 17.8 18.5H6z" />
       <path d="M9 15h6" />
       <path d="M12 12v6" />
@@ -130,6 +143,15 @@ function DriveModuleIcon() {
 }
 
 function ActionIcon({ name }) {
+  if (name === "search") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m16 16 4 4" />
+      </svg>
+    );
+  }
+
   if (name === "load") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -157,6 +179,10 @@ function ActionIcon({ name }) {
         <path d="M19.4 15a1.8 1.8 0 0 0 .3 2l.1.1-2 2-.1-.1a1.8 1.8 0 0 0-2-.3 1.8 1.8 0 0 0-1 1.6V20h-3v-.1a1.8 1.8 0 0 0-1-1.6 1.8 1.8 0 0 0-2 .3l-.1.1-2-2 .1-.1a1.8 1.8 0 0 0 .3-2 1.8 1.8 0 0 0-1.6-1H5v-3h.1a1.8 1.8 0 0 0 1.6-1 1.8 1.8 0 0 0-.3-2l-.1-.1 2-2 .1.1a1.8 1.8 0 0 0 2 .3 1.8 1.8 0 0 0 1-1.6V4h3v.1a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.3l.1-.1 2 2-.1.1a1.8 1.8 0 0 0-.3 2 1.8 1.8 0 0 0 1.6 1h.1v3h-.1a1.8 1.8 0 0 0-1.6 1z" />
       </svg>
     );
+  }
+
+  if (name === "folder") {
+    return <DriveIcon type="folder" />;
   }
 
   if (name === "upload") {
@@ -235,6 +261,70 @@ function ActionIcon({ name }) {
     );
   }
 
+  if (name === "open") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 17 17 7" />
+        <path d="M9 7h8v8" />
+      </svg>
+    );
+  }
+
+  if (name === "share") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="8" cy="12" r="3" />
+        <circle cx="17" cy="7" r="3" />
+        <circle cx="17" cy="17" r="3" />
+        <path d="m10.6 10.5 3.8-2" />
+        <path d="m10.6 13.5 3.8 2" />
+      </svg>
+    );
+  }
+
+  if (name === "printer") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 8V4h10v4" />
+        <rect x="6" y="14" width="12" height="7" rx="1.5" />
+        <rect x="4" y="8" width="16" height="9" rx="2" />
+        <circle cx="17" cy="11.5" r="1" />
+      </svg>
+    );
+  }
+
+  if (name === "video") {
+    return <DriveIcon type="video" />;
+  }
+
+  if (name === "tool") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14.5 5.5l4 4" />
+        <path d="M4 20l6.5-6.5" />
+        <path d="M12.5 3.5l8 8-2.5 2.5-8-8z" />
+      </svg>
+    );
+  }
+
+  if (name === "megaphone") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 13h4l10-5v11L8 14H4z" />
+        <path d="m8 14 2 6" />
+      </svg>
+    );
+  }
+
+  if (name === "building") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 21V5l7-3 7 3v16" />
+        <path d="M9 9h.01M15 9h.01M9 13h.01M15 13h.01M9 17h6" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7 17 17 7" />
@@ -292,7 +382,6 @@ export default function DriveManager() {
   const [syncingDepartments, setSyncingDepartments] = useState(false);
   const [departmentFoldersLoading, setDepartmentFoldersLoading] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
   const [openActionsItemId, setOpenActionsItemId] = useState("");
   const [mutatingItemId, setMutatingItemId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -302,6 +391,7 @@ export default function DriveManager() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [viewMode, setViewMode] = useState(getStoredDriveViewMode);
   const [previewFile, setPreviewFile] = useState(null);
+  const [selectedDetailFile, setSelectedDetailFile] = useState(null);
   const [draggingItemId, setDraggingItemId] = useState("");
   const [dragOverFolderId, setDragOverFolderId] = useState("");
   const [activeTab, setActiveTab] = useState(() => (isAdmin ? "files" : "departments"));
@@ -317,9 +407,13 @@ export default function DriveManager() {
   const [activityLoaded, setActivityLoaded] = useState(false);
   const [activityError, setActivityError] = useState("");
   const [departmentFolders, setDepartmentFolders] = useState([]);
+  const [customShortcuts, setCustomShortcuts] = useState(() => getStoredDriveShortcuts());
+  const [shortcutPickerOpen, setShortcutPickerOpen] = useState(false);
+  const [shortcutWarning, setShortcutWarning] = useState("");
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
   const [departmentSuccess, setDepartmentSuccess] = useState("");
+  const [storageQuota, setStorageQuota] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState("");
   const [uploadStatus, setUploadStatus] = useState(null);
   const fileInputRef = useRef(null);
@@ -346,9 +440,38 @@ export default function DriveManager() {
     : searchActive
       ? "No hay resultados para esta busqueda."
       : "Esta carpeta esta vacia.";
-  const hasVisibleFiles = browserFiles.length > 0;
-  const visibleFolderCount = useMemo(() => visibleFiles.filter(isDriveFolder).length, [visibleFiles]);
-  const visibleFileCount = visibleFiles.length - visibleFolderCount;
+  const folderItems = useMemo(() => browserFiles.filter(isDriveFolder), [browserFiles]);
+  const fileItems = useMemo(() => browserFiles.filter((file) => !isDriveFolder(file)), [browserFiles]);
+  const quickAccessItems = useMemo(() => folderItems.slice(0, 5), [folderItems]);
+  const recentFileItems = useMemo(() => fileItems.slice(0, 6), [fileItems]);
+  const detailFile = selectedDetailFile || fileItems[0] || folderItems[0] || null;
+  const storageDisplay = useMemo(() => getStorageQuotaDisplay(storageQuota), [storageQuota]);
+
+  const shortcutCandidates = useMemo(() => {
+    const seen = new Set();
+    const candidates = [];
+
+    [...departmentFolders, ...folderItems].forEach((item) => {
+      const id = item.folderId || item.id;
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      candidates.push(item);
+    });
+
+    return candidates;
+  }, [departmentFolders, folderItems]);
+
+  const sidebarShortcutItems = customShortcuts.length
+    ? customShortcuts
+    : (departmentFolders.length ? departmentFolders.slice(0, 5) : folderItems.slice(0, 5));
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DRIVE_SHORTCUTS_STORAGE_KEY, JSON.stringify(customShortcuts));
+    } catch {
+      // Local preference only; ignore restricted storage.
+    }
+  }, [customShortcuts]);
 
   useEffect(() => {
     try {
@@ -396,6 +519,26 @@ export default function DriveManager() {
     } finally {
       setDepartmentFoldersLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    getDriveStorageQuota()
+      .then((quota) => {
+        if (isActive) {
+          setStorageQuota(quota || { available: false });
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setStorageQuota({ available: false });
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -454,16 +597,12 @@ export default function DriveManager() {
   }, [canUseRootSettings, loadFolder]);
 
   useEffect(() => {
-    if (!isAdmin) {
-      const timeoutId = window.setTimeout(() => {
-        loadDepartmentFolders();
-      }, 0);
+    const timeoutId = window.setTimeout(() => {
+      loadDepartmentFolders();
+    }, 0);
 
-      return () => window.clearTimeout(timeoutId);
-    }
-
-    return undefined;
-  }, [isAdmin, loadDepartmentFolders]);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadDepartmentFolders]);
 
   useEffect(() => {
     return () => {
@@ -538,12 +677,13 @@ export default function DriveManager() {
     clearActivityView();
 
     if (isDriveFolder(file)) {
+      setSelectedDetailFile(null);
       clearDriveSearch();
       loadFolder(file.id, [...breadcrumbs, { id: file.id, name: file.name || "Carpeta" }]);
       return;
     }
 
-    setPreviewFile(file);
+    setSelectedDetailFile(file);
   }
 
   function handleBreadcrumbClick(index) {
@@ -559,18 +699,16 @@ export default function DriveManager() {
     loadFolder(breadcrumb.id, breadcrumbs.slice(0, index + 1));
   }
 
-  async function handleCreateFolder(event) {
-    event.preventDefault();
-
+  async function handleQuickCreateFolder() {
     if (!currentFolderId) {
       setError("Carga una carpeta raiz antes de crear carpetas.");
       return;
     }
 
-    const cleanName = newFolderName.trim();
+    const nextName = window.prompt("Nombre de carpeta");
+    const cleanName = String(nextName || "").trim();
 
     if (!cleanName) {
-      setError("Escribe el nombre de la carpeta nueva.");
       return;
     }
 
@@ -578,12 +716,8 @@ export default function DriveManager() {
     setError("");
 
     try {
-      const createdFolder = await createDriveFolder(currentFolderId, cleanName);
-      setNewFolderName("");
+      await createDriveFolder(currentFolderId, cleanName);
       await loadFolder(currentFolderId, breadcrumbs);
-      setBreadcrumbs((current) =>
-        current.length ? current : [{ id: currentFolderId, name: createdFolder.name || "Raiz" }]
-      );
     } catch (createError) {
       setError(getDriveErrorMessage(createError, "drive"));
     } finally {
@@ -902,7 +1036,7 @@ export default function DriveManager() {
       message: "La subida puede tardar segun tu conexion.",
       progress: 0,
     });
-    let uploadStartedAt = Date.now();
+    let uploadStartedAt = getTimestampMs();
 
     try {
       const mimeType = file.type || "application/octet-stream";
@@ -920,7 +1054,7 @@ export default function DriveManager() {
         message: "La subida puede tardar segun tu conexion.",
         progress: 0,
       });
-      uploadStartedAt = Date.now();
+      uploadStartedAt = getTimestampMs();
 
       const uploadResult = await uploadFileToDriveSession({
         file,
@@ -1101,6 +1235,24 @@ export default function DriveManager() {
     }
   }
 
+  function handleOpenSharedView() {
+    clearTrashView();
+    clearActivityView();
+    clearDriveSearch();
+    setActiveTab("shared");
+    setDepartmentSuccess("");
+    setSelectedDetailFile(null);
+
+    if (!departmentFolders.length) {
+      loadDepartmentFolders();
+    }
+  }
+
+  function handleOpenMyDriveView() {
+    setActiveTab("files");
+    handleReloadRoot();
+  }
+
   function handleOpenDepartmentFolder(folder) {
     const folderId = String(folder?.folderId || "").trim();
 
@@ -1118,6 +1270,29 @@ export default function DriveManager() {
       ...(rootFolderId ? [{ id: rootFolderId, name: "Raiz" }] : []),
       { id: folderId, name: folder.departmentName || folder.folderName || "Departamento" },
     ]);
+  }
+
+  function handleAddShortcut(item) {
+    const id = item.folderId || item.id;
+    if (!id) return;
+
+    const alreadyExists = sidebarShortcutItems.some((shortcut) => (shortcut.folderId || shortcut.id) === id);
+    if (alreadyExists) {
+      setShortcutWarning("Ese acceso directo ya esta agregado.");
+      return;
+    }
+
+    setCustomShortcuts((current) => [
+      ...current,
+      {
+        id,
+        folderId: item.folderId || item.id,
+        departmentName: item.departmentName || null,
+        folderName: item.folderName || item.name || "Carpeta",
+      },
+    ]);
+    setShortcutWarning("");
+    setShortcutPickerOpen(false);
   }
 
   function getDraggedItem() {
@@ -1211,91 +1386,6 @@ export default function DriveManager() {
     }
   }
 
-  function renderDriveItem(file) {
-    const itemType = getDriveItemType(file);
-    const isFolder = itemType === "folder";
-    const isMutating = mutatingItemId === file.id;
-    const canDropHere = isFolder && canDropOnFolder(file);
-
-    return (
-      <article
-        key={file.id}
-        className={[
-          "drive-file-card",
-          `view-${viewMode}`,
-          `type-${itemType}`,
-          draggingItemId === file.id ? "is-dragging" : "",
-          dragOverFolderId === file.id && canDropHere ? "is-drop-target" : "",
-        ].filter(Boolean).join(" ")}
-        draggable={!isMutating}
-        onDragStart={(event) => handleDragStart(event, file)}
-        onDragEnd={handleDragEnd}
-        onDragOver={(event) => handleFolderDragOver(event, file)}
-        onDragLeave={(event) => handleFolderDragLeave(event, file)}
-        onDrop={(event) => handleFolderDrop(event, file)}
-      >
-        <button
-          className="drive-file-main"
-          type="button"
-          onClick={() => handleOpenItem(file)}
-          disabled={isMutating}
-        >
-          <span className="drive-file-preview">
-            {!isFolder && file.thumbnailLink ? (
-              <img src={file.thumbnailLink} alt="" loading="lazy" />
-            ) : (
-              <span className={`drive-file-icon ${itemType}`}>
-                <DriveIcon type={itemType} />
-              </span>
-            )}
-          </span>
-
-          <span className="drive-file-content">
-            <strong>{file.name || "Archivo sin nombre"}</strong>
-            <small>{isMutating ? "Actualizando..." : getFileMeta(file)}</small>
-          </span>
-
-          <span className="drive-file-column drive-file-type">{formatMimeType(file.mimeType)}</span>
-          <span className="drive-file-column">{formatDate(file.modifiedTime) || "Sin fecha"}</span>
-          <span className="drive-file-column">{file.size ? formatBytes(Number(file.size)) : "-"}</span>
-        </button>
-
-        {canManageItems ? (
-          <div className="drive-item-actions">
-            <button
-              className="drive-item-menu-button"
-              type="button"
-              onClick={() =>
-                setOpenActionsItemId((current) => (current === file.id ? "" : file.id))
-              }
-              disabled={isMutating}
-              aria-label={`Acciones para ${file.name || "archivo"}`}
-            >
-              <ActionIcon name="more" />
-            </button>
-
-            {openActionsItemId === file.id ? (
-              <div className="drive-item-menu">
-                <button type="button" onClick={() => handleOpenItem(file)}>
-                  Abrir
-                </button>
-                <button type="button" onClick={() => handleRenameItem(file)}>
-                  Renombrar
-                </button>
-                <button type="button" onClick={() => handleMoveItem(file)}>
-                  Mover
-                </button>
-                <button type="button" onClick={() => handleDeleteItem(file)}>
-                  Eliminar
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </article>
-    );
-  }
-
   function renderTrashItem(file) {
     const itemType = getDriveItemType(file);
     const isFolder = itemType === "folder";
@@ -1367,49 +1457,39 @@ export default function DriveManager() {
   }
 
   return (
-    <div className="visual-page drive-manager-page">
-      <section className="drive-module-hero">
-        <div className="drive-hero-copy">
-          <span className="drive-hero-icon">
+    <div className="visual-page drive-manager-page drive-cloud-page">
+      <section className="printshop-topbar drive-cloud-topbar">
+        <div className="printshop-topbar-main">
+          <span className="printshop-topbar-module-icon">
             <DriveModuleIcon />
           </span>
-          <span>Nube AES</span>
-          <h2>Nube AES</h2>
-          <p>{isAdmin ? "Explora, organiza y previsualiza archivos conectados a Google Drive." : "Accede y organiza archivos de tus departamentos asignados."}</p>
+          <div className="printshop-topbar-copy">
+            <p className="printshop-kicker">NUBE AES</p>
+            <h1>Nube AES</h1>
+            <p>{isAdmin ? "Explora, organiza y previsualiza archivos conectados a Google Drive." : "Accede y organiza archivos de tus departamentos asignados."}</p>
+          </div>
         </div>
 
-        <div className="drive-hero-side">
-          <div className="drive-hero-stats">
-            <article>
-              <span>Carpetas</span>
-              <strong>{searchActive ? visibleFolderCount : folderCount}</strong>
-            </article>
-            <article>
-              <span>Archivos</span>
-              <strong>{searchActive ? visibleFileCount : fileCount}</strong>
-            </article>
-            <article>
-              <span>{searchActive ? "Resultados" : "Visibles"}</span>
-              <strong>{visibleFiles.length}</strong>
-            </article>
-          </div>
-
-          <div className="drive-tabs" role="tablist" aria-label="Secciones de Nube AES">
-            <button
-              className={activeTab === "files" ? "active" : ""}
-              type="button"
-              onClick={() => setActiveTab("files")}
-            >
-              Archivos
-            </button>
-            <button
-              className={activeTab === "departments" ? "active" : ""}
-              type="button"
-              onClick={handleOpenDepartmentsTab}
-            >
-              {isAdmin ? "Departamentos" : "Mis carpetas"}
-            </button>
-          </div>
+        <div className="drive-cloud-kpis">
+          <article>
+            <span>Carpetas</span>
+            <strong>{folderCount}</strong>
+          </article>
+          <article>
+            <span>Archivos</span>
+            <strong>{fileCount}</strong>
+          </article>
+          <article>
+            <span>Compartidos</span>
+            <strong>{departmentFoldersCount || 0}</strong>
+          </article>
+          <article className="wide">
+            <span>Almacenamiento</span>
+            <strong>{storageDisplay.label}</strong>
+            {storageDisplay.hasLimit ? (
+              <i><b style={{ width: `${storageDisplay.percent}%` }} /></i>
+            ) : null}
+          </article>
         </div>
       </section>
 
@@ -1431,85 +1511,49 @@ export default function DriveManager() {
       ) : null}
 
       {activeTab === "files" && (hasRootFolder || canUseCurrentFolderActions) ? (
-        <section className="drive-toolbar-panel">
-          <form className="drive-search-panel" onSubmit={handleSearchFiles}>
-            <label htmlFor="drive-search-query">Buscar</label>
-            <div>
-              <input
-                id="drive-search-query"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Nombre o contenido"
-                autoComplete="off"
-                disabled={isBrowserLoading}
-              />
-
-              <select
-                value={searchType}
-                onChange={(event) => setSearchType(event.target.value)}
-                disabled={isBrowserLoading}
-                aria-label="Filtro por tipo"
-              >
-                {DRIVE_SEARCH_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                className="visual-primary-button drive-icon-button"
-                type="submit"
-                disabled={isBrowserLoading}
-              >
-                <ActionIcon name="load" />
-                <span>{searchLoading ? "Buscando" : "Buscar"}</span>
-              </button>
-
-              {searchActive ? (
-                <button
-                  className="visual-outline-button drive-icon-button"
-                  type="button"
-                  onClick={clearDriveSearch}
-                  disabled={searchLoading}
-                >
-                  <ActionIcon name="close" />
-                  <span>Limpiar</span>
-                </button>
-              ) : null}
-            </div>
+        <section className="drive-cloud-toolbar">
+          <form className="drive-cloud-search" onSubmit={handleSearchFiles}>
+            <ActionIcon name="search" />
+            <input
+              id="drive-search-query"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Buscar en Nube AES..."
+              autoComplete="off"
+              disabled={isBrowserLoading}
+            />
+            <kbd>Ctrl K</kbd>
           </form>
 
-          <form className="drive-create-form" onSubmit={handleCreateFolder}>
-            <label htmlFor="drive-new-folder">Crear carpeta</label>
-            <div>
-              <input
-                id="drive-new-folder"
-                type="text"
-                value={newFolderName}
-                onChange={(event) => setNewFolderName(event.target.value)}
-                placeholder="Nombre de carpeta"
-                autoComplete="off"
-                disabled={!canUseCurrentFolderActions || creatingFolder || isBusy}
-              />
+          <div className="drive-cloud-chips" role="group" aria-label="Filtros de Nube AES">
+            {[
+              ["todos", "Todos"],
+              ["carpetas", "Carpetas"],
+              ["documentos", "Archivos"],
+              ["todos", "Recientes"],
+            ].map(([value, label]) => (
               <button
-                className="visual-outline-button drive-icon-button"
-                type="submit"
-                disabled={!canUseCurrentFolderActions || creatingFolder || isBusy}
+                key={`${label}-${value}`}
+                className={label !== "Recientes" && searchType === value && !trashActive && !activityActive ? "active" : ""}
+                type="button"
+                onClick={() => setSearchType(value)}
               >
-                <ActionIcon name="add" />
-                <span>{creatingFolder ? "Creando" : "Crear"}</span>
+                {label}
               </button>
-            </div>
-          </form>
+            ))}
+          </div>
 
-          <div className="drive-upload-card">
-            <div>
-              <span>Subida</span>
-              <strong>Archivo a carpeta actual</strong>
-              <small>Archivos grandes compatibles</small>
-            </div>
+          <div className="drive-cloud-actions">
+            <button
+              className="visual-outline-button drive-icon-button"
+              type="button"
+              onClick={handleQuickCreateFolder}
+              disabled={!canUseCurrentFolderActions || creatingFolder || isBusy}
+            >
+              <ActionIcon name="add" />
+              <span>Nueva carpeta</span>
+            </button>
 
             <input
               ref={fileInputRef}
@@ -1524,94 +1568,26 @@ export default function DriveManager() {
               type="button"
               onClick={handleUploadClick}
               disabled={!canUseCurrentFolderActions || uploadingFile || isBusy}
-              title={uploadingFile ? "Subiendo archivo" : "Subir archivo"}
-              aria-label={uploadingFile ? "Subiendo archivo" : "Subir archivo"}
             >
               <ActionIcon name="upload" />
+              <span>Subir</span>
             </button>
           </div>
 
-          <div className="drive-view-panel">
-            <span>Vista</span>
-            <div className="drive-view-switcher" role="group" aria-label="Selector de vista">
-              {DRIVE_VIEW_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  className={viewMode === option.value ? "active" : ""}
-                  type="button"
-                  onClick={() => setViewMode(option.value)}
-                  title={option.label}
-                  aria-label={`Vista ${option.label}`}
-                >
-                  <ActionIcon name={option.icon} />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {canUseTrash ? (
-          <div className="drive-trash-card">
-            <span>Papelera</span>
-            <button
-              className={trashActive ? "visual-primary-button drive-icon-button" : "visual-outline-button drive-icon-button"}
-              type="button"
-              onClick={handleOpenTrash}
-              disabled={trashLoading || (!rootFolderId && !currentFolderId)}
-              title={trashActive ? "Recargar papelera" : "Abrir papelera"}
-              aria-label={trashActive ? "Recargar papelera" : "Abrir papelera"}
-            >
-              <ActionIcon name="trash" />
-            </button>
-          </div>
-          ) : null}
-
-          {canUseActivity ? (
-          <div className="drive-activity-card">
-            <span>Actividad</span>
-            <button
-              className={activityActive ? "visual-primary-button drive-icon-button" : "visual-outline-button drive-icon-button"}
-              type="button"
-              onClick={handleOpenActivity}
-              disabled={activityLoading}
-              title={activityActive ? "Recargar actividad" : "Abrir actividad"}
-              aria-label={activityActive ? "Recargar actividad" : "Abrir actividad"}
-            >
-              <ActionIcon name="load" />
-            </button>
-          </div>
-          ) : null}
-
-          {canUseRootSettings ? (
-          <div className="drive-current-root-card">
-            <div>
-              <span>Carpeta raiz</span>
-              <strong>Activa</strong>
-            </div>
-
-            <div className="drive-root-actions">
+          <div className="drive-cloud-view-switcher" role="group" aria-label="Selector de vista">
+            {DRIVE_VIEW_OPTIONS.map((option) => (
               <button
-                className="visual-outline-button drive-icon-button"
+                key={option.value}
+                className={viewMode === option.value ? "active" : ""}
                 type="button"
-                onClick={handleReloadRoot}
-                disabled={isBusy}
-                title={isBusy ? "Cargando raiz" : "Recargar raiz"}
-                aria-label={isBusy ? "Cargando raiz" : "Recargar raiz"}
+                onClick={() => setViewMode(option.value)}
+                title={option.label}
+                aria-label={`Vista ${option.label}`}
               >
-                <ActionIcon name="load" />
+                <ActionIcon name={option.icon} />
               </button>
-
-              <button
-                className="visual-outline-button drive-icon-button"
-                type="button"
-                onClick={() => setConfigOpen((current) => !current)}
-                title={configOpen ? "Ocultar configuracion" : "Cambiar carpeta raiz"}
-                aria-label={configOpen ? "Ocultar configuracion" : "Cambiar carpeta raiz"}
-              >
-                <ActionIcon name="settings" />
-              </button>
-            </div>
+            ))}
           </div>
-          ) : null}
         </section>
       ) : null}
 
@@ -1632,122 +1608,95 @@ export default function DriveManager() {
         </section>
       ) : null}
 
-      {activeTab === "departments" ? (
-        <section className="drive-departments-panel">
-          <div className="drive-departments-header">
-            <div>
-              <span>{isAdmin ? "Carpetas por departamento" : "Mis carpetas"}</span>
-              <strong>{departmentFoldersCount} vinculadas</strong>
-            </div>
-
-            {canUseDepartmentSync ? (
-            <button
-              className="visual-primary-button drive-icon-button"
-              type="button"
-              onClick={handleSyncDepartmentFolders}
-              disabled={!hasRootFolder || syncingDepartments || settingsLoading}
-            >
-              <ActionIcon name="load" />
-              <span>{syncingDepartments ? "Sincronizando" : "Sincronizar carpetas de departamentos"}</span>
+      <section className="drive-cloud-shell">
+        <aside className="drive-cloud-sidebar">
+          <button className={!trashActive && !activityActive && activeTab === "files" ? "active" : ""} type="button" onClick={handleOpenMyDriveView}>
+            <ActionIcon name="viewSmall" />
+            <span>Mi unidad</span>
+          </button>
+          <button className={activeTab === "departments" ? "active" : ""} type="button" onClick={handleOpenDepartmentsTab}>
+            <ActionIcon name="folder" />
+            <span>Departamentos</span>
+          </button>
+          <button className={activeTab === "shared" ? "active" : ""} type="button" onClick={handleOpenSharedView}>
+            <ActionIcon name="viewList" />
+            <span>Compartidos conmigo</span>
+          </button>
+          <button type="button" onClick={() => { clearTrashView(); clearActivityView(); setActiveTab("files"); setSearchType("todos"); }}>
+            <ActionIcon name="load" />
+            <span>Recientes</span>
+          </button>
+          {canUseTrash ? (
+            <button className={trashActive ? "active" : ""} type="button" onClick={handleOpenTrash}>
+              <ActionIcon name="trash" />
+              <span>Papelera</span>
             </button>
-            ) : null}
+          ) : null}
+          {canUseActivity ? (
+            <button className={activityActive ? "active" : ""} type="button" onClick={handleOpenActivity}>
+              <ActionIcon name="load" />
+              <span>Actividad</span>
+            </button>
+          ) : null}
+
+          <div className="drive-cloud-shortcuts">
+            <div>
+              <span>Accesos directos</span>
+              <button type="button" aria-label="Agregar acceso" onClick={() => { setShortcutWarning(""); setShortcutPickerOpen(true); }}>+</button>
+            </div>
+            {sidebarShortcutItems.map((item) => (
+              <button
+                key={item.id || item.folderId}
+                type="button"
+                onClick={() => item.folderId ? handleOpenDepartmentFolder(item) : handleOpenItem(item)}
+              >
+                <span className={`drive-shortcut-icon ${getShortcutIconTone(item)}`}>
+                  <ActionIcon name={getShortcutIconName(item)} />
+                </span>
+                <span>{item.departmentName || item.folderName || item.name || "Carpeta"}</span>
+              </button>
+            ))}
           </div>
 
-          {departmentError ? <div className="drive-error-box">{departmentError}</div> : null}
-          {departmentSuccess ? <div className="drive-success-box">{departmentSuccess}</div> : null}
+          <div className="drive-cloud-storage">
+            <span>Almacenamiento</span>
+            <strong>{storageDisplay.hasUsage ? storageDisplay.label : storageDisplay.helper}</strong>
+            {storageDisplay.hasUsage ? (
+              <i><b style={{ width: `${storageDisplay.percent}%` }} /></i>
+            ) : null}
+            <button type="button" onClick={() => setConfigOpen((current) => !current)}>
+              Administrar almacenamiento
+            </button>
+          </div>
+        </aside>
 
-          {departmentFoldersLoading ? (
-            <div className="drive-loading-state">Cargando carpetas de departamentos...</div>
-          ) : null}
-
-          {!departmentFoldersLoading && departmentFolders.length === 0 ? (
-            <div className="empty-state drive-empty-state">
-              <div>
-                <DriveIcon type="folder" />
-              </div>
-              <p>{isAdmin ? "No hay carpetas de departamentos vinculadas." : "No tienes carpetas de departamento asignadas."}</p>
-            </div>
-          ) : null}
-
-          {!departmentFoldersLoading && departmentFolders.length > 0 ? (
-            <div className="drive-department-grid">
-              {departmentFolders.map((folder) => (
-                <article className="drive-department-card" key={folder.departmentId || folder.id}>
-                  <span className="drive-file-icon folder">
-                    <DriveIcon type="folder" />
-                  </span>
-
-                  <div>
-                    <strong>{folder.departmentName || "Departamento"}</strong>
-                    <small>{folder.folderName || "Carpeta de Drive"}</small>
-                  </div>
-
-                  <button
-                    className="visual-outline-button drive-icon-button"
-                    type="button"
-                    onClick={() => handleOpenDepartmentFolder(folder)}
-                    disabled={!folder.folderId || loading}
-                  >
-                    <ActionIcon name="open" />
-                    <span>Abrir carpeta</span>
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      {activeTab === "files" ? (
-        <section className="drive-browser-panel">
-          <div className="drive-path-card">
-            <span>{activityActive ? "Actividad" : trashActive ? "Papelera" : searchActive ? "Resultados" : "Carpeta actual"}</span>
-            <strong>
-              {settingsLoading
-                ? "Cargando configuracion..."
-                : activityActive
-                  ? "Actividad reciente"
-                  : trashActive
-                  ? "Elementos eliminados"
-                  : searchActive
-                    ? "Busqueda en Nube AES"
-                    : currentFolderName}
-            </strong>
-
-            <nav className="drive-breadcrumbs" aria-label={activityActive ? "Acciones de actividad" : trashActive ? "Acciones de papelera" : "Ruta de Google Drive"}>
-              {activityActive ? (
+        <main className="drive-cloud-main">
+          <div className="drive-cloud-breadcrumbs">
+            <nav aria-label="Ruta de Google Drive">
+              {activityActive || trashActive || activeTab === "shared" ? (
                 <>
-                  <button type="button" onClick={handleCloseActivity} disabled={isBusy}>
-                    Volver a archivos
-                  </button>
-                  <button type="button" onClick={() => loadActivity({ force: true })} disabled={activityLoading}>
-                    {activityLoading ? "Cargando" : "Recargar actividad"}
-                  </button>
-                </>
-              ) : trashActive ? (
-                <>
-                  <button type="button" onClick={handleCloseTrash} disabled={isBusy}>
-                    Volver a archivos
-                  </button>
-                  <button type="button" onClick={() => loadTrash({ force: true })} disabled={trashLoading}>
-                    {trashLoading ? "Cargando" : "Recargar papelera"}
-                  </button>
+                  <button type="button" onClick={activeTab === "shared" ? handleOpenMyDriveView : activityActive ? handleCloseActivity : handleCloseTrash}>Mi unidad</button>
+                  <span>/</span>
+                  <strong>{activityActive ? "Actividad" : trashActive ? "Papelera" : "Compartidos conmigo"}</strong>
                 </>
               ) : breadcrumbs.length === 0 ? (
-                <span>Sin ruta</span>
+                <strong>Raiz</strong>
               ) : (
                 breadcrumbs.map((breadcrumb, index) => (
                   <button
                     key={`${breadcrumb.id}-${index}`}
                     type="button"
                     onClick={() => handleBreadcrumbClick(index)}
-                    disabled={breadcrumb.id === currentFolderId || isBusy}
+                    disabled={breadcrumb.id === currentFolderId}
                   >
                     {breadcrumb.name}
                   </button>
                 ))
               )}
             </nav>
+            <button className="drive-kebab" type="button" onClick={activityActive ? () => loadActivity({ force: true }) : trashActive ? () => loadTrash({ force: true }) : reloadVisibleItems}>
+              <ActionIcon name="more" />
+            </button>
           </div>
 
           {browserError ? <div className="drive-error-box">{browserError}</div> : null}
@@ -1762,69 +1711,272 @@ export default function DriveManager() {
             </div>
           ) : null}
 
-          {!isBrowserLoading &&
-          !browserError &&
-          (currentFolderId || searchActive || trashActive || activityActive) &&
-          (!activityActive || activityLoaded) &&
-          (!trashActive || trashLoaded) &&
-          (activityActive ? activityLogs.length === 0 : browserFiles.length === 0) ? (
-            <div className="empty-state drive-empty-state">
-              <div>
-                <DriveIcon />
-              </div>
-              <p>{activityActive ? "No hay actividad registrada." : visibleEmptyMessage}</p>
-            </div>
-          ) : null}
-
-          {!isBrowserLoading && !searchActive && !currentFolderId && !trashActive && !activityActive ? (
-            <div className="empty-state drive-empty-state">
-              <div>
-                <DriveIcon type="folder" />
-              </div>
-              <p>{isAdmin ? (hasRootFolder ? "No se pudo cargar la carpeta raiz." : "Configura la carpeta raiz para iniciar.") : "Abre una carpeta de Mis carpetas para navegar."}</p>
-            </div>
-          ) : null}
-
           {!isBrowserLoading && activityActive && activityLogs.length > 0 ? (
             <div className="drive-activity-list">
               {activityLogs.map((log) => (
                 <article className="drive-activity-item" key={log.id}>
-                  <span className="drive-activity-icon">
-                    <ActionIcon name="load" />
-                  </span>
-
+                  <span className="drive-activity-icon"><ActionIcon name="load" /></span>
                   <div>
                     <strong>{getDriveActivityLabel(log.action)}</strong>
                     <p>{getDriveActivitySummary(log)}</p>
-                    <small>
-                      {log.userName || log.userEmail || "Usuario"} - {formatActivityDate(log.createdAt) || "Sin fecha"}
-                    </small>
+                    <small>{log.userName || log.userEmail || "Usuario"} - {formatActivityDate(log.createdAt) || "Sin fecha"}</small>
                   </div>
                 </article>
               ))}
             </div>
           ) : null}
 
-          {!isBrowserLoading && !activityActive && hasVisibleFiles ? (
-            <div className={`drive-file-grid view-${viewMode}`}>
-              {viewMode === "list" ? (
-                <div className="drive-file-list-head" aria-hidden="true">
-                  <span>Nombre</span>
-                  <span>Tipo</span>
-                  <span>Fecha</span>
-                  <span>Tamano</span>
-                  <span>Acciones</span>
+          {!isBrowserLoading && !activityActive && activeTab === "departments" ? (
+            <section className="drive-folder-section">
+              <div className="drive-section-heading">
+                <h3>Departamentos</h3>
+                {canUseDepartmentSync ? (
+                  <button type="button" onClick={handleSyncDepartmentFolders} disabled={syncingDepartments || departmentFoldersLoading}>
+                    {syncingDepartments ? "Sincronizando" : "Sincronizar"}
+                  </button>
+                ) : null}
+              </div>
+              {departmentError ? <div className="drive-error-box">{departmentError}</div> : null}
+              {departmentSuccess ? <div className="drive-success-box">{departmentSuccess}</div> : null}
+              {departmentFoldersLoading ? (
+                <div className="drive-skeleton-grid view-small" aria-label="Cargando departamentos">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <span className="drive-skeleton-card" key={`department-skeleton-${index}`} />
+                  ))}
                 </div>
-              ) : null}
+              ) : (
+                <div className="drive-department-grid">
+                  {departmentFolders.map((folder) => (
+                    <article className="drive-folder-tile" key={folder.departmentId || folder.id}>
+                      <span className="drive-folder-art"><DriveIcon type="folder" /></span>
+                      <div>
+                        <strong>{folder.departmentName || "Departamento"}</strong>
+                        <small>{folder.folderName || "Carpeta de Drive"}</small>
+                      </div>
+                      <button type="button" onClick={() => handleOpenDepartmentFolder(folder)} disabled={!folder.folderId || loading}>
+                        <ActionIcon name="open" />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
 
-              {browserFiles.map((file) => (trashActive ? renderTrashItem(file) : renderDriveItem(file)))}
+          {!isBrowserLoading && !activityActive && activeTab === "shared" ? (
+            <section className="drive-folder-section">
+              <div className="drive-section-heading">
+                <h3>Compartidos conmigo</h3>
+                <button type="button" onClick={loadDepartmentFolders} disabled={departmentFoldersLoading}>
+                  {departmentFoldersLoading ? "Cargando" : "Recargar"}
+                </button>
+              </div>
+              {departmentError ? <div className="drive-error-box">{departmentError}</div> : null}
+              {departmentFoldersLoading ? (
+                <div className="drive-skeleton-grid view-small" aria-label="Cargando compartidos">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <span className="drive-skeleton-card" key={`shared-skeleton-${index}`} />
+                  ))}
+                </div>
+              ) : departmentFolders.length > 0 ? (
+                <div className="drive-department-grid">
+                  {departmentFolders.map((folder) => (
+                    <article className="drive-folder-tile" key={folder.departmentId || folder.id}>
+                      <span className="drive-folder-art"><DriveIcon type="folder" /></span>
+                      <div>
+                        <strong>{folder.departmentName || folder.folderName || "Carpeta compartida"}</strong>
+                        <small>{folder.folderName || "Disponible por permisos internos"}</small>
+                      </div>
+                      <button type="button" onClick={() => handleOpenDepartmentFolder(folder)} disabled={!folder.folderId || loading}>
+                        <ActionIcon name="open" />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state drive-empty-state">
+                  <div><DriveIcon type="folder" /></div>
+                  <p>No hay archivos compartidos contigo.</p>
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {!isBrowserLoading && !activityActive && activeTab === "files" && !trashActive && browserFiles.length > 0 ? (
+            <>
+              <section className="drive-quick-section">
+                <h3>Acceso rapido</h3>
+                <div className="drive-quick-grid">
+                  {(quickAccessItems.length ? quickAccessItems : folderItems.slice(0, 5)).map((folder) => (
+                    <button className="drive-quick-card" key={folder.id} type="button" onClick={() => handleOpenItem(folder)}>
+                      <span className="drive-folder-art"><DriveIcon type="folder" /></span>
+                      <div>
+                        <strong>{folder.name || "Carpeta"}</strong>
+                        <small>{getFileMeta(folder)}</small>
+                      </div>
+                      <ActionIcon name="more" />
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="drive-folder-section">
+                <div className="drive-section-heading">
+                  <h3>Carpetas</h3>
+                  <button type="button">Mas reciente</button>
+                </div>
+                <div className="drive-folder-grid">
+                  {folderItems.map((folder) => (
+                    <article
+                      className={`drive-folder-tile ${dragOverFolderId === folder.id && canDropOnFolder(folder) ? "is-drop-target" : ""}`}
+                      key={folder.id}
+                      draggable={!mutatingItemId}
+                      onDragStart={(event) => handleDragStart(event, folder)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={(event) => handleFolderDragOver(event, folder)}
+                      onDragLeave={(event) => handleFolderDragLeave(event, folder)}
+                      onDrop={(event) => handleFolderDrop(event, folder)}
+                    >
+                      <button type="button" onClick={() => handleOpenItem(folder)}>
+                        <span className="drive-folder-art"><DriveIcon type="folder" /></span>
+                        <div>
+                          <strong>{folder.name || "Carpeta"}</strong>
+                          <small>{getFileMeta(folder)}</small>
+                        </div>
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="drive-recent-section">
+                <h3>Archivos recientes</h3>
+                <div className="drive-recent-table">
+                  <div className="drive-recent-head">
+                    <span>Nombre</span>
+                    <span>Propietario</span>
+                    <span>Ultima modificacion</span>
+                    <span>Tamano</span>
+                    <span />
+                  </div>
+                  {recentFileItems.map((file) => (
+                    <article
+                      className={selectedDetailFile?.id === file.id ? "active" : ""}
+                      key={file.id}
+                      draggable={!mutatingItemId}
+                      onDragStart={(event) => handleDragStart(event, file)}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <button type="button" onClick={() => setSelectedDetailFile(file)}>
+                        <span className={`drive-file-mini ${getDriveItemType(file)}`}><DriveIcon type={getDriveItemType(file)} /></span>
+                        <strong title={file.name || "Archivo"}>{file.name || "Archivo sin nombre"}</strong>
+                      </button>
+                      <span>{file.ownerName || "Nube AES"}</span>
+                      <span>{formatDate(file.modifiedTime) || "Sin fecha"}</span>
+                      <span>{file.size ? formatBytes(Number(file.size)) : "-"}</span>
+                      {canManageItems ? (
+                        <button type="button" onClick={() => setOpenActionsItemId((current) => (current === file.id ? "" : file.id))}>
+                          <ActionIcon name="more" />
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      {canManageItems && openActionsItemId === file.id ? (
+                        <div className="drive-table-menu">
+                          <button type="button" onClick={() => setSelectedDetailFile(file)}>Detalles</button>
+                          <button type="button" onClick={() => setPreviewFile(file)}>Vista previa</button>
+                          <button type="button" onClick={() => handleRenameItem(file)}>Renombrar</button>
+                          <button type="button" onClick={() => handleMoveItem(file)}>Mover</button>
+                          <button type="button" onClick={() => handleDeleteItem(file)}>Eliminar</button>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </>
+          ) : null}
+
+          {!isBrowserLoading && trashActive && trashFiles.length > 0 ? (
+            <div className={`drive-file-grid view-${viewMode}`}>
+              {trashFiles.map((file) => renderTrashItem(file))}
             </div>
           ) : null}
-        </section>
-      ) : null}
+
+          {!isBrowserLoading && !browserError && (activityActive ? activityLoaded && activityLogs.length === 0 : trashActive ? trashLoaded && trashFiles.length === 0 : activeTab === "files" && browserFiles.length === 0) ? (
+            <div className="empty-state drive-empty-state">
+              <div><DriveIcon type={trashActive ? "folder" : "file"} /></div>
+              <p>{activityActive ? "No hay actividad registrada." : visibleEmptyMessage}</p>
+            </div>
+          ) : null}
+        </main>
+
+        <aside className="drive-cloud-details">
+          <header>
+            <strong>{detailFile?.name || "Selecciona un archivo"}</strong>
+            <button type="button" onClick={() => setSelectedDetailFile(null)}><ActionIcon name="close" /></button>
+          </header>
+          <nav>
+            <button className="active" type="button">Detalles</button>
+            <button type="button">Actividad</button>
+            <button type="button">Compartidos</button>
+          </nav>
+          <div className="drive-detail-preview">
+            {detailFile?.thumbnailLink ? (
+              <img src={detailFile.thumbnailLink} alt="" />
+            ) : (
+              <DriveIcon type={getDriveItemType(detailFile)} />
+            )}
+            {detailFile && !isDriveFolder(detailFile) ? (
+              <button type="button" onClick={() => setPreviewFile(detailFile)}>
+                <ActionIcon name="open" />
+              </button>
+            ) : null}
+          </div>
+          <section>
+            <h4>Informacion general</h4>
+            <dl>
+              <div><dt>Tipo</dt><dd>{formatMimeType(detailFile?.mimeType)}</dd></div>
+              <div><dt>Tamano</dt><dd>{detailFile?.size ? formatBytes(Number(detailFile.size)) : "-"}</dd></div>
+              <div><dt>Ubicacion</dt><dd>{currentFolderName}</dd></div>
+              <div><dt>Propietario</dt><dd>Nube AES</dd></div>
+              <div><dt>Modificado</dt><dd>{formatDate(detailFile?.modifiedTime) || "-"}</dd></div>
+            </dl>
+          </section>
+          <section>
+            <h4>Etiquetas</h4>
+            <div className="drive-detail-tags">
+              <span>Drive</span>
+              <span>Nube AES</span>
+              <span>{formatMimeType(detailFile?.mimeType)}</span>
+            </div>
+          </section>
+          {detailFile?.webViewLink ? (
+            <a className="drive-share-button" href={detailFile.webViewLink} target="_blank" rel="noreferrer">
+              <ActionIcon name="share" />
+              <span>Compartir</span>
+            </a>
+          ) : (
+            <button className="drive-share-button" type="button" disabled>
+              <ActionIcon name="share" />
+              <span>Compartir</span>
+            </button>
+          )}
+        </aside>
+      </section>
 
       {previewFile ? (
         <DrivePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      ) : null}
+
+      {shortcutPickerOpen ? (
+        <ShortcutPickerModal
+          candidates={shortcutCandidates}
+          existingItems={sidebarShortcutItems}
+          warning={shortcutWarning}
+          onPick={handleAddShortcut}
+          onClose={() => setShortcutPickerOpen(false)}
+        />
       ) : null}
     </div>
   );
@@ -1915,6 +2067,67 @@ function DrivePreviewModal({ file, onClose }) {
   );
 }
 
+function ShortcutPickerModal({ candidates, existingItems, warning, onPick, onClose }) {
+  const existingIds = useMemo(
+    () => new Set(existingItems.map((item) => item.folderId || item.id)),
+    [existingItems]
+  );
+
+  return (
+    <div className="drive-preview-backdrop" role="dialog" aria-modal="true" aria-label="Agregar acceso directo">
+      <div className="drive-preview-modal drive-shortcut-picker-modal">
+        <header className="drive-preview-header">
+          <div>
+            <span>Accesos directos</span>
+            <strong>Agregar acceso directo</strong>
+          </div>
+
+          <button
+            className="drive-preview-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+          >
+            <ActionIcon name="close" />
+          </button>
+        </header>
+
+        <div className="drive-preview-body drive-shortcut-picker-body">
+          {warning ? <div className="drive-error-box">{warning}</div> : null}
+
+          {candidates.length === 0 ? (
+            <p className="drive-shortcut-picker-empty">No hay carpetas o departamentos disponibles todavia.</p>
+          ) : (
+            <ul className="drive-shortcut-picker-list">
+              {candidates.map((item) => {
+                const id = item.folderId || item.id;
+                const label = item.departmentName || item.folderName || item.name || "Carpeta";
+                const alreadyAdded = existingIds.has(id);
+
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      disabled={alreadyAdded}
+                      onClick={() => onPick(item)}
+                    >
+                      <span className={`drive-shortcut-icon ${getShortcutIconTone(item)}`}>
+                        <ActionIcon name={getShortcutIconName(item)} />
+                      </span>
+                      <span>{label}</span>
+                      {alreadyAdded ? <em>Ya agregado</em> : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getStoredDriveViewMode() {
   try {
     const savedViewMode = window.localStorage.getItem(DRIVE_VIEW_STORAGE_KEY);
@@ -1926,6 +2139,10 @@ function getStoredDriveViewMode() {
 
 function isDriveFolder(file) {
   return file?.mimeType === DRIVE_FOLDER_MIME_TYPE;
+}
+
+function getTimestampMs() {
+  return Number(new Date());
 }
 
 function getDriveItemType(file) {
@@ -2034,6 +2251,70 @@ function formatBytes(bytes) {
   const value = bytes / 1024 ** exponent;
 
   return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
+
+function getStorageQuotaDisplay(quota) {
+  const usage = Number(quota?.usage || quota?.usageInDrive || 0);
+  const limit = Number(quota?.limit || 0);
+  const hasUsage = Number.isFinite(usage) && usage > 0;
+  const hasLimit = Number.isFinite(limit) && limit > 0;
+  const percent = hasUsage && hasLimit ? Math.min(100, Math.round((usage / limit) * 100)) : 0;
+
+  if (!quota?.available || !hasUsage) {
+    return {
+      label: "No disponible",
+      helper: "No disponible",
+      percent: 0,
+      hasLimit: false,
+      hasUsage: false,
+    };
+  }
+
+  if (!hasLimit) {
+    return {
+      label: `Uso actual: ${formatBytes(usage) || "0 B"}`,
+      helper: "Uso actual",
+      percent: 0,
+      hasLimit: false,
+      hasUsage: true,
+    };
+  }
+
+  return {
+    label: `${formatBytes(usage)} / ${formatBytes(limit)}`,
+    helper: `${percent}% utilizado`,
+    percent,
+    hasLimit: true,
+    hasUsage: true,
+  };
+}
+
+function getShortcutIconName(item) {
+  const label = normalizeDriveText(
+    item?.departmentName ||
+    item?.folderName ||
+    item?.name ||
+    ""
+  );
+
+  if (label.includes("imprenta")) return "printer";
+  if (label.includes("produccion") || label.includes("audiovisual") || label.includes("video")) return "video";
+  if (label.includes("soporte") || label.includes("tecnico")) return "tool";
+  if (label.includes("redes") || label.includes("social")) return "megaphone";
+  if (label.includes("direccion")) return "building";
+  return "folder";
+}
+
+function getShortcutIconTone(item) {
+  const iconName = getShortcutIconName(item);
+  return iconName === "folder" ? "folder" : iconName;
+}
+
+function normalizeDriveText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 function formatDate(value) {

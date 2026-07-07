@@ -2854,7 +2854,7 @@ service cloud.firestore {
         )
         || validPrintshopSoftDeleteUpdate();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /certificateTemplates/{templateId} {

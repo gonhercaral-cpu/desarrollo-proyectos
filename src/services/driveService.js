@@ -29,6 +29,7 @@ const driveLogResumableUploadCompletedCallable = httpsCallable(
 );
 const driveListActivityLogsCallable = httpsCallable(functions, "driveListActivityLogs");
 const driveSearchFilesCallable = httpsCallable(functions, "driveSearchFiles");
+const driveGetStorageQuotaCallable = httpsCallable(functions, "driveGetStorageQuota");
 const driveEnsureDepartmentFoldersCallable = httpsCallable(
   functions,
   "driveEnsureDepartmentFolders"
@@ -117,6 +118,11 @@ export async function logDriveResumableUploadCompleted({
 
 export async function searchDriveFiles({ query, type, folderId }) {
   const response = await driveSearchFilesCallable({ query, type, folderId });
+  return response.data;
+}
+
+export async function getDriveStorageQuota() {
+  const response = await driveGetStorageQuotaCallable();
   return response.data;
 }
 

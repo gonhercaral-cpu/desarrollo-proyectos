@@ -18,7 +18,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { getBytes, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
+import { deleteObject, getBytes, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, storage } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
 
@@ -5456,6 +5456,49 @@ export default function PrintShop() {
     }
   }
 
+  async function deleteSignerPermanently(signer) {
+    if (!isAdmin || !signer?.id) return;
+
+    const confirmed = window.confirm(
+      `¿Eliminar definitivamente la firma de ${signer.name || "este firmante"}?\n\nEsta accion borra el registro de Firestore y no se puede deshacer.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      if (signer.storagePath) {
+        try {
+          await deleteObject(storageRef(storage, signer.storagePath));
+        } catch (storageError) {
+          console.warn("No se pudo eliminar el archivo de firma en Storage:", storageError);
+        }
+      }
+
+      await deleteDoc(doc(db, "certificateSigners", signer.id));
+
+      setCertificateSigners((current) => current.filter((item) => item.id !== signer.id));
+      if (selectedSignerId === signer.id) resetSignerForm();
+
+      try {
+        await createPrintshopLog({
+          type: "DELETE",
+          module: "signers",
+          title: `Firma eliminada: ${signer.name || "firmante"}`,
+          description: "El firmante se elimino definitivamente de Firestore.",
+          referenceType: "certificateSigners",
+          referenceId: signer.id,
+        });
+      } catch (logError) {
+        console.warn("La firma se elimino, pero no se pudo guardar la bitacora:", logError);
+      }
+
+      setSignerMessage("Firma eliminada definitivamente.");
+    } catch (error) {
+      console.error("No se pudo eliminar la firma:", error);
+      setSignerMessage("No se pudo eliminar la firma. Revisa las reglas de Firestore.");
+    }
+  }
+
   function resetRequestForm() {
     setSelectedRequestId(null);
     setRequestForm(requestFormInitialState);
@@ -8635,11 +8678,7 @@ export default function PrintShop() {
           onSelectSigner={selectSigner}
           onResetSignerForm={resetSignerForm}
           onToggleSignerStatus={toggleSignerStatus}
-          onSoftDeleteSigner={(signer) => softDeletePrintshopRecord("certificateSigners", signer, {
-            module: "signers",
-            sectionLabel: "Firmas",
-            label: signer.name,
-          })}
+          onSoftDeleteSigner={deleteSignerPermanently}
         />
       ) : (
         <ProductionBatchesView

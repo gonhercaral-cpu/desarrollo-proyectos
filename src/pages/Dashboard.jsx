@@ -3018,6 +3018,22 @@ async function playMessageNotificationSound() {
   }
 }
 
+function getVoiceRecordingErrorMessage(error) {
+  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+    return "Permiso de micrófono denegado. Revisa los permisos del navegador.";
+  }
+
+  if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") {
+    return "No se detectó ningún micrófono.";
+  }
+
+  if (error?.name === "NotReadableError" || error?.name === "TrackStartError") {
+    return "El micrófono está ocupado o bloqueado por otra aplicación.";
+  }
+
+  return "No se pudo acceder al micrófono.";
+}
+
 function canUseBrowserNotifications() {
   return typeof window !== "undefined"
     && "Notification" in window
@@ -3293,6 +3309,22 @@ function InternalMessages({ profile, isAdmin = false }) {
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  useEffect(() => {
+    const recorder = mediaRecorderRef.current;
+
+    if (recorder && recorder.state === "recording") {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.stop();
+    }
+
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    voiceChunksRef.current = [];
+    setVoiceRecordingType("");
+  }, [selectedConversationId]);
 
   const departmentOptions = buildDepartmentChatOptions({
     departments,
@@ -3671,7 +3703,12 @@ function InternalMessages({ profile, isAdmin = false }) {
     if (voiceRecordingType) return;
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setMessageError("Este navegador no permite grabar audio desde aquÃ­.");
+      setMessageError("Este navegador no permite grabar audio desde aquí.");
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      setMessageError("Grabar audio requiere una conexión segura (HTTPS).");
       return;
     }
 
@@ -3724,8 +3761,8 @@ function InternalMessages({ profile, isAdmin = false }) {
       setVoiceRecordingType(type);
       setMessageError("");
     } catch (error) {
-      console.error("No se pudo iniciar la grabaciÃ³n de audio:", error);
-      setMessageError("No se pudo acceder al micrÃ³fono.");
+      console.error("No se pudo iniciar la grabación de audio:", error);
+      setMessageError(getVoiceRecordingErrorMessage(error));
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
       voiceStreamRef.current = null;
       mediaRecorderRef.current = null;

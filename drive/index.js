@@ -727,6 +727,42 @@ exports.driveListFolder = onCall(async (request) => {
   return { folderId, files };
 });
 
+exports.driveGetStorageQuota = onCall(async (request) => {
+  await getUserProfile(request.auth?.uid);
+
+  try {
+    const drive = await getDriveClient();
+    const response = await drive.about.get({
+      fields: "storageQuota",
+    });
+    const storageQuota = response.data?.storageQuota || {};
+
+    return {
+      available: Boolean(storageQuota.usage || storageQuota.limit || storageQuota.usageInDrive),
+      usage: storageQuota.usage || "",
+      limit: storageQuota.limit || "",
+      usageInDrive: storageQuota.usageInDrive || "",
+      usageInDriveTrash: storageQuota.usageInDriveTrash || "",
+    };
+  } catch (error) {
+    const status = error?.code || error?.response?.status;
+
+    if (status === 403 || status === 404) {
+      return {
+        available: false,
+        usage: "",
+        limit: "",
+        usageInDrive: "",
+        usageInDriveTrash: "",
+      };
+    }
+
+    throw new HttpsError("internal", "No se pudo obtener almacenamiento de Google Drive.", {
+      message: error?.message || "",
+    });
+  }
+});
+
 exports.driveCreateFolder = onCall(async (request) => {
   const uid = request.auth?.uid;
 
