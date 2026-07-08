@@ -1874,6 +1874,80 @@ function normalizeRequestStudents(students) {
     .filter((student) => student.name);
 }
 
+function hasStudentGeneratedCertificateData(student) {
+  return Boolean(
+    student?.certificateFolio ||
+    student?.validationCode ||
+    student?.validationUrl ||
+    student?.qrDataUrl ||
+    student?.qrGenerated === true ||
+    student?.generatedAt ||
+    student?.generatedByUid ||
+    student?.generatedByName ||
+    student?.generatedByEmail ||
+    student?.certificateRecordId ||
+    student?.certificateGeneratedAt ||
+    student?.certificateGeneratedByUid ||
+    student?.certificateGeneratedByName ||
+    student?.certificateGeneratedByEmail ||
+    student?.certificateDeliveredAt ||
+    student?.certificateCancelledAt ||
+    student?.folio ||
+    student?.certificateNumber ||
+    student?.generatedFolio ||
+    student?.certificateId ||
+    student?.certificateUrl ||
+    student?.certificatePdfUrl ||
+    student?.pdfUrl ||
+    student?.storagePath ||
+    student?.certificateStoragePath ||
+    student?.certificateGenerated === true ||
+    student?.certificateStatus ||
+    student?.folioGenerated === true
+  );
+}
+
+function resetStudentGeneratedCertificateData(student) {
+  return {
+    ...student,
+    status: "Pendiente",
+    certificateFolio: "",
+    validationCode: "",
+    validationUrl: "",
+    qrDataUrl: "",
+    qrGenerated: false,
+    generatedAt: "",
+    generatedByUid: "",
+    generatedByName: "",
+    generatedByEmail: "",
+    certificateRecordId: "",
+    certificateGeneratedAt: "",
+    certificateGeneratedByUid: "",
+    certificateGeneratedByName: "",
+    certificateGeneratedByEmail: "",
+    certificateDeliveredAt: "",
+    certificateDeliveredByUid: "",
+    certificateDeliveredByName: "",
+    certificateDeliveredByEmail: "",
+    certificateCancelledAt: "",
+    certificateCancelledByUid: "",
+    certificateCancelledByName: "",
+    certificateCancelledByEmail: "",
+    folio: "",
+    certificateNumber: "",
+    generatedFolio: "",
+    certificateId: "",
+    certificateUrl: "",
+    certificatePdfUrl: "",
+    pdfUrl: "",
+    storagePath: "",
+    certificateStoragePath: "",
+    certificateGenerated: false,
+    certificateStatus: "",
+    folioGenerated: false,
+  };
+}
+
 function getStudentDeliveryCounts(students) {
   const normalizedStudents = normalizeRequestStudents(students);
 
@@ -1928,7 +2002,17 @@ function getStudentValidationSummary(request) {
 function formatCertificatePreviewDate(value) {
   if (!value) return "Date pending";
 
-  const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+  let date;
+
+  if (typeof value?.toDate === "function") {
+    date = value.toDate();
+  } else if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    date = new Date(year, month - 1, day);
+  } else {
+    date = new Date(value);
+  }
+
   if (Number.isNaN(date.getTime())) return "Date pending";
 
   return new Intl.DateTimeFormat("en-US", {
@@ -5727,6 +5811,16 @@ export default function PrintShop() {
       }
     }
 
+    const nextResponsibleUid = requestForm.responsibleUid || defaultCertificateResponsible?.uid || "";
+    const nextCollaboratorUid = requestForm.collaboratorUid || "";
+    const assignmentChanged =
+      isAdmin &&
+      Boolean(currentRequest) &&
+      (
+        (currentRequest.responsibleUid || "") !== nextResponsibleUid ||
+        (currentRequest.collaboratorUid || "") !== nextCollaboratorUid
+      );
+
     const basePayload = {
       productId: selectedProduct.id,
       productName: selectedProduct.name || "",
@@ -5734,12 +5828,20 @@ export default function PrintShop() {
       requesterName: requestForm.requesterName.trim(),
       requesterArea: requestForm.requesterArea.trim(),
       campus: requestForm.campus,
-      responsibleUid: requestForm.responsibleUid || defaultCertificateResponsible?.uid || "",
+      responsibleUid: nextResponsibleUid,
       responsibleName: requestForm.responsibleName || defaultCertificateResponsible?.name || "Tony Campos",
       responsibleEmail: requestForm.responsibleEmail || defaultCertificateResponsible?.email || "",
-      collaboratorUid: requestForm.collaboratorUid || "",
+      collaboratorUid: nextCollaboratorUid,
       collaboratorName: requestForm.collaboratorName || "",
       collaboratorEmail: requestForm.collaboratorEmail || "",
+      ...(assignmentChanged
+        ? {
+            assignedAt: serverTimestamp(),
+            assignedByUid: auditUser.uid,
+            assignedByName: auditUser.name,
+            assignedByEmail: auditUser.email,
+          }
+        : {}),
       priority: automaticPriority || requestForm.priority || "Normal",
       requestedQuantity,
       deliveredQuantity,
@@ -5857,7 +5959,12 @@ export default function PrintShop() {
       }
     } catch (error) {
       console.error("No se pudo guardar la solicitud de imprenta:", error);
-      setRequestMessage("No se pudo guardar la solicitud. Revisa las reglas de Firestore.");
+      const isPermissionError = error?.code === "permission-denied";
+      setRequestMessage(
+        isPermissionError
+          ? "No tienes permisos para guardar estos cambios en la solicitud. Revisa tu asignación con un administrador."
+          : `No se pudo guardar la solicitud: ${error?.message || "error desconocido"}.`
+      );
     } finally {
       setSavingRequest(false);
     }
@@ -5954,7 +6061,7 @@ export default function PrintShop() {
       request &&
       selectedRequestId &&
       isRequestCertificateLike(request.requestType) &&
-      canManagePrintshopOperations
+      canCurrentUserEditRequest(request)
     );
   }
 
@@ -6000,7 +6107,10 @@ export default function PrintShop() {
   }
 
   async function publishRequestStudentValidations(request) {
-    if (!canManagePrintshopOperations || !isRequestCertificateLike(request?.requestType)) {
+    if (
+      !canCurrentUserEditRequest(request) ||
+      !isRequestCertificateLike(request?.requestType)
+    ) {
       return;
     }
 
@@ -6742,6 +6852,188 @@ export default function PrintShop() {
       setRequestMessage("No se pudieron generar los folios y QR. Revisa que la librería qrcode esté instalada correctamente.");
     } finally {
       setGeneratingStudentId(null);
+    }
+  }
+
+  async function resetRequestCertificateFolios(request = selectedRequest) {
+    const currentRequest = request || selectedRequest;
+
+    if (!currentRequest?.id || !selectedRequestId) {
+      setRequestMessage("Selecciona primero una solicitud de certificado o diploma.");
+      return;
+    }
+
+    if (!isRequestCertificateLike(currentRequest.requestType)) {
+      setRequestMessage("El reinicio de folios solo aplica para certificados y diplomas.");
+      return;
+    }
+
+    if (!canCurrentUserManageRequestStudents(currentRequest)) {
+      setRequestMessage("No tienes permisos para reiniciar folios en esta solicitud.");
+      return;
+    }
+
+    const currentStudents = normalizeRequestStudents(currentRequest.students || []);
+    const studentsWithGeneratedData = currentStudents.filter(hasStudentGeneratedCertificateData);
+    const certificatesToCancel = generatedCertificates.filter(
+      (certificate) =>
+        certificate.requestId === currentRequest.id &&
+        certificate.status !== "Cancelado" &&
+        (
+          currentStudents.some((student) =>
+            certificate.studentId === student.id ||
+            certificate.validationCode === student.validationCode ||
+            certificate.folio === student.certificateFolio ||
+            certificate.id === student.certificateRecordId
+          ) ||
+          certificate.requestId === currentRequest.id
+        )
+    );
+
+    if (studentsWithGeneratedData.length === 0 && certificatesToCancel.length === 0) {
+      setRequestMessage("Esta solicitud no tiene folios generados para reiniciar.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Esto eliminara los folios generados, pero conservara los alumnos. Podras corregir datos y generar nuevos folios."
+    );
+
+    if (!confirmed) return;
+
+    const auditUser = getAuditUser();
+    const resetAtIso = new Date().toISOString();
+    const resetStudents = currentStudents.map(resetStudentGeneratedCertificateData);
+    const requestRef = doc(db, "printRequests", currentRequest.id);
+    const batch = writeBatch(db);
+
+    batch.update(requestRef, {
+      students: resetStudents,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    });
+
+    studentsWithGeneratedData
+      .filter((student) => student.certificateFolio && student.validationCode)
+      .forEach((student) => {
+        batch.set(
+          doc(db, "publicCertificateValidations", getRequestStudentValidationId(currentRequest, student)),
+          buildPublicCertificateValidationPayload(
+            {
+              folio: student.certificateFolio,
+              validationCode: student.validationCode,
+              validationUrl: student.validationUrl || buildValidationUrl(student.validationCode),
+              studentName: student.name,
+              campus: currentRequest.campus || "Sin plantel",
+              requestId: currentRequest.id,
+              requestFolio: currentRequest.folio || "",
+              requestType: currentRequest.requestType || "Certificado",
+              productName: currentRequest.productName || "",
+              level: currentRequest.level || "No aplica",
+              programName:
+                currentRequest.certificateTemplateProgramName ||
+                getCertificateTrackLabel(currentRequest),
+              templateName:
+                currentRequest.certificateTemplateName ||
+                "Plantilla no especificada",
+              issueDate: getCertificateIssueDate(currentRequest),
+              teacherName:
+                currentRequest.teacherSignerName ||
+                currentRequest.teacherName ||
+                "",
+              status: "Cancelado",
+            },
+            {
+              generationMode: "request",
+              updatedAt: serverTimestamp(),
+            }
+          ),
+          { merge: true }
+        );
+      });
+
+    certificatesToCancel.forEach((certificate) => {
+      const certificatePayload = {
+        status: "Cancelado",
+        cancelledAt: serverTimestamp(),
+        cancelledByUid: auditUser.uid,
+        cancelledByName: auditUser.name,
+        cancelledByEmail: auditUser.email,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      };
+
+      batch.update(doc(db, "generatedCertificates", certificate.id), certificatePayload);
+
+      const publicCertificateId = sanitizeGeneratedCertificateId(
+        certificate.validationCode || certificate.id || certificate.folio
+      );
+
+      batch.set(
+        doc(db, "publicCertificateValidations", publicCertificateId),
+        buildPublicCertificateValidationPayload(certificate, {
+          status: "Cancelado",
+          updatedAt: serverTimestamp(),
+        }),
+        { merge: true }
+      );
+    });
+
+    try {
+      setSavingStudents(true);
+      setRequestMessage("");
+      await batch.commit();
+
+      setGeneratedCertificates((current) =>
+        current.map((certificate) =>
+          certificatesToCancel.some((item) => item.id === certificate.id)
+            ? {
+                ...certificate,
+                status: "Cancelado",
+                cancelledAt: resetAtIso,
+                cancelledByUid: auditUser.uid,
+                cancelledByName: auditUser.name,
+                cancelledByEmail: auditUser.email,
+                updatedAt: resetAtIso,
+                updatedByUid: auditUser.uid,
+                updatedByName: auditUser.name,
+                updatedByEmail: auditUser.email,
+              }
+            : certificate
+        )
+      );
+
+      await createPrintshopLog({
+        type: "CERTIFICATE_FOLIOS_RESET",
+        module: "certificates",
+        title: "Folios de certificados reiniciados",
+        description: `Se reiniciaron ${studentsWithGeneratedData.length} folio(s) de la solicitud ${currentRequest.folio || currentRequest.id}. Los alumnos se conservaron.`,
+        referenceType: "request",
+        referenceId: currentRequest.id,
+        requestId: currentRequest.id,
+        requestFolio: currentRequest.folio || "",
+        productId: currentRequest.productId || "",
+        productName: currentRequest.productName || "",
+        campus: currentRequest.campus || "",
+        level: currentRequest.level || "",
+      });
+
+      setRequestMessage(
+        `Se reiniciaron ${studentsWithGeneratedData.length} folio(s). Los alumnos siguen disponibles para correccion.`
+      );
+    } catch (error) {
+      console.error("No se pudieron reiniciar los folios:", error);
+      setRequestMessage(
+        error?.code === "permission-denied"
+          ? "No tienes permisos para reiniciar estos folios. Revisa asignacion de la solicitud."
+          : "No se pudieron reiniciar los folios. Revisa reglas de Firestore."
+      );
+    } finally {
+      setSavingStudents(false);
     }
   }
 
@@ -8421,6 +8713,7 @@ export default function PrintShop() {
           onDeleteStudent={deleteRequestStudent}
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
+          onResetCertificateFolios={resetRequestCertificateFolios}
           onRegisterGeneratedCertificate={registerGeneratedCertificate}
           onRegisterStandaloneGeneratedCertificate={registerStandaloneGeneratedCertificate}
           onLogPrintshopAction={createPrintshopLog}
@@ -8488,6 +8781,7 @@ export default function PrintShop() {
           onDeleteStudent={deleteRequestStudent}
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
+          onResetCertificateFolios={resetRequestCertificateFolios}
           onRegisterGeneratedCertificate={registerGeneratedCertificate}
           onRegisterStandaloneGeneratedCertificate={registerStandaloneGeneratedCertificate}
           onLogPrintshopAction={createPrintshopLog}
@@ -12084,6 +12378,7 @@ function PrintRequestsView({
   onDeleteStudent,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
+  onResetCertificateFolios,
   onRegisterGeneratedCertificate,
   onRegisterStandaloneGeneratedCertificate,
   onLogPrintshopAction,
@@ -12503,6 +12798,7 @@ function PrintRequestsView({
               onDeleteStudent={onDeleteStudent}
               onGenerateStudentFolio={onGenerateStudentFolio}
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
+              onResetCertificateFolios={onResetCertificateFolios}
               onRegisterGeneratedCertificate={onRegisterGeneratedCertificate}
               onLogPrintshopAction={onLogPrintshopAction}
               onMarkRequestReadyForDelivery={onMarkRequestReadyForDelivery}
@@ -13030,6 +13326,7 @@ function CertificatesWorkspaceView({
   onDeleteStudent,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
+  onResetCertificateFolios,
   onRegisterGeneratedCertificate,
   onRegisterStandaloneGeneratedCertificate,
   onLogPrintshopAction,
@@ -13688,6 +13985,7 @@ function CertificatesWorkspaceView({
               onDeleteStudent={onDeleteStudent}
               onGenerateStudentFolio={onGenerateStudentFolio}
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
+              onResetCertificateFolios={onResetCertificateFolios}
               onRegisterGeneratedCertificate={onRegisterGeneratedCertificate}
               onLogPrintshopAction={onLogPrintshopAction}
               onMarkRequestReadyForDelivery={onMarkRequestReadyForDelivery}
@@ -13742,6 +14040,7 @@ function RequestDetailCard({
   onDeleteStudent,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
+  onResetCertificateFolios,
   onRegisterGeneratedCertificate,
   onLogPrintshopAction,
   onMarkRequestReadyForDelivery,
@@ -13830,6 +14129,11 @@ function RequestDetailCard({
   const certificateStudentsWithFolios = students.filter(
     (student) => Boolean(student.certificateFolio) && Boolean(student.validationCode)
   );
+  const hasGeneratedStudentFolios = students.some(hasStudentGeneratedCertificateData);
+  const canResetCertificateFolios =
+    canManageStudents &&
+    hasGeneratedStudentFolios &&
+    typeof onResetCertificateFolios === "function";
 
   function getGeneratedCertificateRecordForStudent(student) {
     return (generatedCertificates || []).find(
@@ -14449,6 +14753,16 @@ function RequestDetailCard({
                       {generatingStudentId === "all" ? "Generando..." : "Generar folios para todos"}
                     </button>
                   )}
+                  {canResetCertificateFolios && (
+                    <button
+                      type="button"
+                      className="visual-outline-button request-reset-folios-button"
+                      disabled={savingStudents || Boolean(generatingStudentId)}
+                      onClick={() => onResetCertificateFolios(request)}
+                    >
+                      Reiniciar folios
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -14881,8 +15195,9 @@ function buildGeneratedCertificatePdfStoragePath(request, student, fileName) {
   const safeCode = sanitizePdfFileName(
     student?.validationCode || student?.certificateFolio || fileName || `certificado-${Date.now()}`
   );
+  const requestSegment = sanitizePdfFileName(request?.id || "standalone") || "standalone";
 
-  return `printshop/generated-certificates/${year}/${safeCode}.pdf`;
+  return `printshop/generated-certificates/${requestSegment}/${year}/${safeCode}.pdf`;
 }
 
 async function appendCertificateElementToPdf(pdf, element, addPage = false) {

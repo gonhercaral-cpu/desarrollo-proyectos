@@ -65,6 +65,30 @@ service firebase.storage {
       return isAdmin() || isTechnicalSupportUser();
     }
 
+    function printRequestPath(requestId) {
+      return /databases/(default)/documents/printRequests/$(requestId);
+    }
+
+    function printRequestExists(requestId) {
+      return firestore.exists(printRequestPath(requestId));
+    }
+
+    function printRequestData(requestId) {
+      return firestore.get(printRequestPath(requestId)).data;
+    }
+
+    function canAccessPrintRequest(requestId) {
+      return canAccessPrintshop()
+        || (
+          hasProfile()
+          && printRequestExists(requestId)
+          && (
+            printRequestData(requestId).responsibleUid == request.auth.uid ||
+            printRequestData(requestId).collaboratorUid == request.auth.uid
+          )
+        );
+    }
+
     function projectPath(projectId) {
       return /databases/(default)/documents/projects/$(projectId);
     }
@@ -376,7 +400,7 @@ service firebase.storage {
       printshop/signatures/teachers/{userUid}/{fileName}
     */
     match /printshop/signatures/{signerType}/{userUid}/{fileName} {
-      allow read: if canAccessPrintshop();
+      allow read: if hasProfile();
 
       allow create, update: if signedIn()
         && isAdmin()
@@ -392,7 +416,7 @@ service firebase.storage {
       printshop/certificate-templates/{userUid}/{fileName}
     */
     match /printshop/certificate-templates/{userUid}/{fileName} {
-      allow read: if canAccessPrintshop();
+      allow read: if hasProfile();
 
       allow create, update: if signedIn()
         && isAdmin()
@@ -424,7 +448,7 @@ service firebase.storage {
       printshop/template-assets/{userUid}/{fileName}
     */
     match /printshop/template-assets/{userUid}/{fileName} {
-      allow read: if canAccessPrintshop();
+      allow read: if hasProfile();
 
       allow create, update: if signedIn()
         && isAdmin()
@@ -451,14 +475,28 @@ service firebase.storage {
 
     /*
       PDF originales de certificados generados:
+      printshop/generated-certificates/{requestId}/{year}/{fileName}
+      (para certificados individuales sin solicitud, requestId no coincide con
+      ningun printRequests y solo canAccessPrintshop() puede subir/leer)
+    */
+    match /printshop/generated-certificates/{requestId}/{year}/{fileName} {
+      allow read: if canAccessPrintRequest(requestId);
+
+      allow create, update: if signedIn()
+        && canAccessPrintRequest(requestId)
+        && validGeneratedCertificatePdf();
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      Ruta anterior de PDFs de certificados generados (compatibilidad de lectura):
       printshop/generated-certificates/{year}/{fileName}
     */
     match /printshop/generated-certificates/{year}/{fileName} {
       allow read: if canAccessPrintshop();
 
-      allow create, update: if signedIn()
-        && canAccessPrintshop()
-        && validGeneratedCertificatePdf();
+      allow create, update: if false;
 
       allow delete: if isAdmin();
     }

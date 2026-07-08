@@ -1569,7 +1569,6 @@ service cloud.firestore {
 
     function responsiblePrintRequestUpdate() {
       return (isPrintRequestResponsible() || isPrintRequestCollaborator())
-        && validPrintRequestData()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status",
           "requestedQuantity",
@@ -1641,8 +1640,7 @@ service cloud.firestore {
     }
 
     function printshopCertificateStudentsUpdate() {
-      return (canAccessPrintshop() || isPrintRequestResponsible() || isPrintRequestCollaborator())
-        && validPrintRequestData()
+      return (isAdmin() || isPrintRequestResponsible() || isPrintRequestCollaborator())
         && resource.data.requestType in ["Certificado", "Diploma"]
         && request.resource.data.requestType == resource.data.requestType
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -1662,10 +1660,10 @@ service cloud.firestore {
         && request.resource.data.status in [
           "Solicitud recibida",
           "Datos incompletos",
-          "En revisiÃ³n",
+          "En revisión",
           "Aprobada",
-          "En producciÃ³n",
-          "En revisiÃ³n de calidad",
+          "En producción",
+          "En revisión de calidad",
           "Lista para entrega",
           "Entregada"
         ]
@@ -1693,7 +1691,6 @@ service cloud.firestore {
         && printRequestExists(requestId)
         && (
           isAdmin() ||
-          canAccessPrintshop() ||
           (
             printRequestData(requestId).responsibleUid is string
             && printRequestData(requestId).responsibleUid == request.auth.uid
@@ -2759,7 +2756,7 @@ service cloud.firestore {
 
 
     match /printProducts/{productId} {
-      allow read: if canAccessPrintshop();
+      allow read: if hasProfile();
 
       allow create: if canAccessPrintshop()
         && validPrintProductData();
@@ -2851,7 +2848,7 @@ service cloud.firestore {
 
 
     match /certificateSigners/{signerId} {
-      allow read: if canAccessPrintshop();
+      allow read: if hasProfile();
 
       allow create: if isAdmin()
         && validCertificateSignerData();
@@ -2866,7 +2863,7 @@ service cloud.firestore {
     }
 
     match /certificateTemplates/{templateId} {
-      allow read: if canAccessPrintshop();
+      allow read: if hasProfile();
 
       allow create: if isAdmin()
         && validCertificateTemplateData();
@@ -2896,7 +2893,7 @@ service cloud.firestore {
     }
 
     match /generatedCertificates/{certificateId} {
-      allow read: if canAccessPrintshop();
+      allow read: if canAccessPrintshop() || canManageGeneratedCertificateResource();
 
       allow create: if canManageGeneratedCertificateData()
         && validGeneratedCertificateData();
@@ -2928,7 +2925,7 @@ service cloud.firestore {
     match /printshopLogs/{logId} {
       allow read: if canAccessPrintshop();
 
-      allow create: if canAccessPrintshop()
+      allow create: if (canAccessPrintshop() || hasProfile())
         && validPrintshopLogData();
 
       allow update, delete: if false;
@@ -3119,9 +3116,18 @@ service cloud.firestore {
 
     match /printRequests/{requestId} {
       allow get: if canAccessPrintshop()
-        || resource.data.publicTrackingEnabled == true;
+        || resource.data.publicTrackingEnabled == true
+        || isPrintRequestResponsible()
+        || isPrintRequestCollaborator();
 
-      allow list: if canAccessPrintshop();
+      allow list: if canAccessPrintshop()
+        || (
+          hasProfile()
+          && (
+            resource.data.responsibleUid == request.auth.uid
+            || resource.data.collaboratorUid == request.auth.uid
+          )
+        );
 
       allow create: if validPublicPrintRequestCreate()
         || (
@@ -3130,10 +3136,7 @@ service cloud.firestore {
           && request.resource.data.createdByUid == request.auth.uid
         );
 
-      allow update: if (
-          isAdmin()
-          && validPrintRequestData()
-        )
+      allow update: if isAdmin()
         || responsiblePrintRequestUpdate()
         || printshopCertificateStudentsUpdate()
         || validPrintRequestAutoAssignUpdate()

@@ -29,6 +29,7 @@ import BugReports from "./BugReports";
 import SubscriptionManager from "./SubscriptionManager";
 import DriveManager from "./DriveManager";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
+import FloatingQuickTools from "../components/FloatingQuickTools";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
@@ -326,14 +327,49 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
 }
 
 export default function Dashboard({ theme = "light", onToggleTheme }) {
-  const { profile, logout, isAdmin } = useAuth();
+  const { profile, logout, isAdmin, uid } = useAuth();
   const userDepartmentNames = getProfileDepartmentNames(profile);
-  const canUsePrintShop =
+  const canUsePrintShopByDepartment =
     isAdmin ||
     userDepartmentNames.some(
       (departmentName) =>
         departmentName === "imprenta" || departmentName === "soporte tecnico"
     );
+
+  const [hasPrintshopAssignment, setHasPrintshopAssignment] = useState(false);
+
+  useEffect(() => {
+    if (canUsePrintShopByDepartment || !uid) {
+      return;
+    }
+
+    let responsibleHasDocs = false;
+    let collaboratorHasDocs = false;
+
+    const unsubscribeResponsible = onSnapshot(
+      query(collection(db, "printRequests"), where("responsibleUid", "==", uid)),
+      (snapshot) => {
+        responsibleHasDocs = !snapshot.empty;
+        setHasPrintshopAssignment(responsibleHasDocs || collaboratorHasDocs);
+      },
+      () => {}
+    );
+    const unsubscribeCollaborator = onSnapshot(
+      query(collection(db, "printRequests"), where("collaboratorUid", "==", uid)),
+      (snapshot) => {
+        collaboratorHasDocs = !snapshot.empty;
+        setHasPrintshopAssignment(responsibleHasDocs || collaboratorHasDocs);
+      },
+      () => {}
+    );
+
+    return () => {
+      unsubscribeResponsible();
+      unsubscribeCollaborator();
+    };
+  }, [canUsePrintShopByDepartment, uid]);
+
+  const canUsePrintShop = canUsePrintShopByDepartment || hasPrintshopAssignment;
 
   const canUseTechnicalSupport = canAccessTechnicalSupport(profile, isAdmin);
   const canUseDriveManager = isAdmin || profile?.role === "collaborator";
@@ -916,6 +952,17 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
         onOpenMore={() => {
           setMobileMenuOpen(true);
           setProfileMenuOpen(false);
+        }}
+      />
+
+      <FloatingQuickTools
+        profile={profile}
+        isAdmin={isAdmin}
+        unreadMessagesCount={unreadMessagesCount}
+        onOpenMessages={() => goToPage("internal-messages")}
+        onOpenNotes={() => {
+          goToPage("workspace-dashboard");
+          window.setTimeout(() => scrollToWorkspaceSection("workspace-notes-section"), 120);
         }}
       />
     </div>
