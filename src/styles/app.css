@@ -74179,6 +74179,14 @@ html[data-theme="dark"] .drive-cloud-storage button {
   line-height: 1.35;
 }
 
+.quick-tools-message-status {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.66rem;
+  opacity: 0.75;
+  text-align: right;
+}
+
 .quick-tools-message-form,
 .quick-tools-note-form {
   padding: 12px;
@@ -75832,12 +75840,6 @@ html[data-theme="dark"] .quick-tools-header-actions button:last-child {
 
 .quick-tools-thread {
   grid-template-rows: 52px minmax(0, 1fr) auto;
-}
-
-.quick-tools-emoji-row,
-.quick-tools-composer-actions .quick-tools-icon-button,
-.quick-tools-send-button svg {
-  display: none;
 }
 
 .quick-tools-note-actions {

@@ -36,7 +36,6 @@ const NOTE_COLOR_OPTIONS = [
   { value: "pink", label: "Rosa", className: "pink" },
   { value: "purple", label: "Morado", className: "purple" },
 ];
-const QUICK_EMOJIS = ["👍", "✅", "🙏", "📌", "💬"];
 
 export default function FloatingQuickTools({
   profile,
@@ -447,10 +446,6 @@ export default function FloatingQuickTools({
     setVoiceRecordingType("");
   }
 
-  function insertEmoji(emoji) {
-    setMessageText((current) => `${current}${emoji}`);
-  }
-
   async function handleMessageSubmit(event) {
     event.preventDefault();
     setMessageError("");
@@ -665,16 +660,25 @@ export default function FloatingQuickTools({
                 ) : activeMessages.length === 0 ? (
                   <p className="quick-tools-empty">Sin mensajes todavia.</p>
                 ) : (
-                  activeMessages.map((message) => (
-                    <article
-                      key={message.id}
-                      className={message.fromUserId === currentUserId ? "mine" : ""}
-                    >
-                      <small>{message.fromUserId === currentUserId ? "Tu" : message.fromUserName || "Usuario"}</small>
-                      {!isAudioOnlyMessage(message) && <p>{message.message}</p>}
-                      <QuickAttachmentGallery attachments={message.attachments} />
-                    </article>
-                  ))
+                  activeMessages.map((message) => {
+                    const outgoing = message.fromUserId === currentUserId;
+                    return (
+                      <article key={message.id} className={outgoing ? "mine" : ""}>
+                        <small>{outgoing ? "Tu" : message.fromUserName || "Usuario"}</small>
+                        {!isAudioOnlyMessage(message) && <p>{message.message}</p>}
+                        <QuickAttachmentGallery attachments={message.attachments} />
+                        {outgoing && (
+                          <span className="quick-tools-message-status">
+                            {selectedDepartmentConversation
+                              ? `Enviado · visto por ${Math.max(Object.keys(message.readBy || {}).length - 1, 0)}`
+                              : message.read
+                                ? "Leido"
+                                : "Enviado"}
+                          </span>
+                        )}
+                      </article>
+                    );
+                  })
                 )}
               </div>
 
@@ -682,22 +686,16 @@ export default function FloatingQuickTools({
                 <textarea
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      if (!messageSaving) handleMessageSubmit(event);
+                    }
+                  }}
                   placeholder="Escribe un mensaje..."
                   maxLength={1200}
                   disabled={messageSaving}
                 />
-                <div className="quick-tools-emoji-row" aria-label="Emojis rapidos">
-                  {QUICK_EMOJIS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => insertEmoji(emoji)}
-                      aria-label={`Insertar ${emoji}`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
                 <input
                   ref={fileInputRef}
                   type="file"
