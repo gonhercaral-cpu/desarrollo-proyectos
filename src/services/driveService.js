@@ -44,6 +44,7 @@ const driveShareItemCallable = httpsCallable(functions, "driveShareItem");
 const driveUnshareItemCallable = httpsCallable(functions, "driveUnshareItem");
 const driveListSharedWithMeCallable = httpsCallable(functions, "driveListSharedWithMe");
 const driveListItemSharesCallable = httpsCallable(functions, "driveListItemShares");
+const driveListShareableUsersCallable = httpsCallable(functions, "driveListShareableUsers");
 
 export async function listDriveFolder(folderId) {
   const response = await driveListFolderCallable({ folderId });
@@ -100,8 +101,8 @@ export async function restoreDriveItem(fileId) {
   return response.data;
 }
 
-export async function listDriveActivityLogs({ limitCount = 50, folderId = "" } = {}) {
-  const response = await driveListActivityLogsCallable({ limitCount, folderId });
+export async function listDriveActivityLogs({ limitCount = 50, folderId = "", fileId = "" } = {}) {
+  const response = await driveListActivityLogsCallable({ limitCount, folderId, fileId });
   return response.data;
 }
 
@@ -210,6 +211,11 @@ export async function listSharedWithMe() {
 
 export async function listDriveItemShares(fileId) {
   const response = await driveListItemSharesCallable({ fileId });
+  return response.data;
+}
+
+export async function listDriveShareableUsers() {
+  const response = await driveListShareableUsersCallable();
   return response.data;
 }
 

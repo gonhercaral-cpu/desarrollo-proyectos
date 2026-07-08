@@ -10,6 +10,7 @@ import {
   getDriveStorageQuota,
   listDriveActivityLogs,
   listDriveItemShares,
+  listDriveShareableUsers,
   listDriveTrash,
   listAllowedDriveDepartmentFolders,
   listDriveFolder,
@@ -24,7 +25,6 @@ import {
   shareDriveItem,
   unshareDriveItem,
 } from "../services/driveService";
-import { getActiveUsers } from "../services/usersService";
 import { useAuth } from "../context/AuthContext";
 
 const DRIVE_VIEW_STORAGE_KEY = "nubeAesViewMode";
@@ -36,12 +36,23 @@ const DRIVE_VIEW_OPTIONS = [
 ];
 
 const DRIVE_SHORTCUTS_STORAGE_KEY = "nubeAesShortcuts";
+const DRIVE_HIDDEN_SHORTCUTS_STORAGE_KEY = "nubeAesHiddenShortcuts";
 
 function getStoredDriveShortcuts() {
   try {
     const raw = window.localStorage.getItem(DRIVE_SHORTCUTS_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getStoredHiddenShortcuts() {
+  try {
+    const raw = window.localStorage.getItem(DRIVE_HIDDEN_SHORTCUTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
   } catch {
     return [];
   }
@@ -166,6 +177,14 @@ function ActionIcon({ name }) {
         <path d="M18 3v5h-5" />
         <path d="M20 12a8 8 0 0 1-13.6 5.7" />
         <path d="M6 21v-5h5" />
+      </svg>
+    );
+  }
+
+  if (name === "back") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M15 6l-6 6 6 6" />
       </svg>
     );
   }
@@ -415,6 +434,7 @@ export default function DriveManager() {
   const [activityError, setActivityError] = useState("");
   const [departmentFolders, setDepartmentFolders] = useState([]);
   const [customShortcuts, setCustomShortcuts] = useState(() => getStoredDriveShortcuts());
+  const [hiddenShortcutIds, setHiddenShortcutIds] = useState(() => getStoredHiddenShortcuts());
   const [shortcutPickerOpen, setShortcutPickerOpen] = useState(false);
   const [shortcutWarning, setShortcutWarning] = useState("");
   const [myDriveActive, setMyDriveActive] = useState(false);
@@ -428,6 +448,24 @@ export default function DriveManager() {
   const [itemSharesLoading, setItemSharesLoading] = useState(false);
   const [shareModalError, setShareModalError] = useState("");
   const [shareModalSaving, setShareModalSaving] = useState(false);
+  const [renameModalItem, setRenameModalItem] = useState(null);
+  const [renameModalValue, setRenameModalValue] = useState("");
+  const [renameModalError, setRenameModalError] = useState("");
+  const [renameModalSaving, setRenameModalSaving] = useState(false);
+  const [moveModalItem, setMoveModalItem] = useState(null);
+  const [moveModalFolderId, setMoveModalFolderId] = useState("");
+  const [moveModalBreadcrumbs, setMoveModalBreadcrumbs] = useState([]);
+  const [moveModalFolders, setMoveModalFolders] = useState([]);
+  const [moveModalLoading, setMoveModalLoading] = useState(false);
+  const [moveModalError, setMoveModalError] = useState("");
+  const [moveModalSaving, setMoveModalSaving] = useState(false);
+  const [detailActiveTab, setDetailActiveTab] = useState("details");
+  const [detailActivityLogs, setDetailActivityLogs] = useState([]);
+  const [detailActivityLoading, setDetailActivityLoading] = useState(false);
+  const [detailActivityError, setDetailActivityError] = useState("");
+  const [detailShares, setDetailShares] = useState([]);
+  const [detailSharesLoading, setDetailSharesLoading] = useState(false);
+  const [detailSharesError, setDetailSharesError] = useState("");
   const [error, setError] = useState("");
   const [departmentError, setDepartmentError] = useState("");
   const [departmentSuccess, setDepartmentSuccess] = useState("");
@@ -446,22 +484,22 @@ export default function DriveManager() {
   const departmentFoldersCount = departmentFolders.length;
   const canUseRootSettings = isAdmin;
   const canUseDepartmentSync = isAdmin;
-  const canUseTrash = isAdmin;
+  const canUseTrash = true;
   const canUseActivity = isAdmin;
   const canUseCurrentFolderActions = Boolean(currentFolderId);
   const canManageItems = !trashActive && (Boolean(currentFolderId) || searchActive);
+  const canEditCurrentDriveItems = myDriveActive || breadcrumbs.some((breadcrumb) => breadcrumb.shareRole === "editor");
   const visibleFiles = searchActive ? searchResults : files;
   const browserFiles = trashActive ? trashFiles : visibleFiles;
   const browserError = activityActive ? activityError : trashActive ? trashError : error;
   const visibleEmptyMessage = trashActive
-    ? "No hay archivos en la papelera."
+    ? "No hay archivos en tu papelera."
     : searchActive
       ? "No hay resultados para esta busqueda."
       : "Esta carpeta esta vacia.";
   const folderItems = useMemo(() => browserFiles.filter(isDriveFolder), [browserFiles]);
   const fileItems = useMemo(() => browserFiles.filter((file) => !isDriveFolder(file)), [browserFiles]);
   const quickAccessItems = useMemo(() => folderItems.slice(0, 5), [folderItems]);
-  const recentFileItems = useMemo(() => fileItems.slice(0, 6), [fileItems]);
   const detailFile = selectedDetailFile || fileItems[0] || folderItems[0] || null;
   const storageDisplay = useMemo(() => getStorageQuotaDisplay(storageQuota), [storageQuota]);
 
@@ -479,9 +517,10 @@ export default function DriveManager() {
     return candidates;
   }, [departmentFolders, folderItems]);
 
-  const sidebarShortcutItems = customShortcuts.length
+  const sidebarShortcutItems = (customShortcuts.length
     ? customShortcuts
-    : (departmentFolders.length ? departmentFolders.slice(0, 5) : folderItems.slice(0, 5));
+    : (departmentFolders.length ? departmentFolders.slice(0, 5) : folderItems.slice(0, 5)))
+    .filter((item) => !hiddenShortcutIds.includes(item.folderId || item.id));
 
   useEffect(() => {
     try {
@@ -493,11 +532,27 @@ export default function DriveManager() {
 
   useEffect(() => {
     try {
+      window.localStorage.setItem(DRIVE_HIDDEN_SHORTCUTS_STORAGE_KEY, JSON.stringify(hiddenShortcutIds));
+    } catch {
+      // Local preference only; ignore restricted storage.
+    }
+  }, [hiddenShortcutIds]);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(DRIVE_VIEW_STORAGE_KEY, viewMode);
     } catch {
       // Local preference only; ignore restricted storage.
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    setDetailActiveTab("details");
+    setDetailActivityLogs([]);
+    setDetailActivityError("");
+    setDetailShares([]);
+    setDetailSharesError("");
+  }, [detailFile?.id]);
 
   const loadFolder = useCallback(async (folderId, nextBreadcrumbs) => {
     const cleanFolderId = String(folderId || "").trim();
@@ -595,7 +650,7 @@ export default function DriveManager() {
         setRootFolderId(savedRootFolderId);
         setRootFolderDraft(savedRootFolderId);
         setConfigOpen(false);
-        await loadFolder(savedRootFolderId, [{ id: savedRootFolderId, name: "Raiz" }]);
+        await loadFolder(savedRootFolderId, [{ id: savedRootFolderId, name: "Raíz" }]);
       } catch (settingsError) {
         if (!isActive) return;
         setError(getDriveErrorMessage(settingsError, "settings"));
@@ -669,7 +724,7 @@ export default function DriveManager() {
       setRootFolderDraft(savedRootFolderId);
       setConfigOpen(false);
       clearDriveSearch();
-      await loadFolder(savedRootFolderId, [{ id: savedRootFolderId, name: "Raiz" }]);
+      await loadFolder(savedRootFolderId, [{ id: savedRootFolderId, name: "Raíz" }]);
     } catch (saveError) {
       setError(getDriveErrorMessage(saveError, "settings"));
     } finally {
@@ -699,7 +754,7 @@ export default function DriveManager() {
       setActiveTab("files");
       setMyDriveActive(false);
       setSelectedDetailFile(null);
-      loadFolder(item.id, [{ id: item.id, name: item.name || "Compartido" }]);
+      loadFolder(item.id, [{ id: item.id, name: item.name || "Compartido", shareRole: item.shareRole || "viewer" }]);
       return;
     }
 
@@ -827,51 +882,157 @@ export default function DriveManager() {
     setActivityError("");
   }
 
-  async function handleRenameItem(item) {
-    const currentName = item?.name || "";
-    const nextName = window.prompt("Nuevo nombre", currentName);
-    const cleanName = String(nextName || "").trim();
+  function handleRenameItem(item) {
+    setRenameModalItem(item);
+    setRenameModalValue(item?.name || "");
+    setRenameModalError("");
+    setOpenActionsItemId("");
+  }
 
-    if (!cleanName || cleanName === currentName) {
+  function closeRenameModal() {
+    setRenameModalItem(null);
+    setRenameModalValue("");
+    setRenameModalError("");
+  }
+
+  async function submitRenameModal(event) {
+    event.preventDefault();
+
+    const cleanName = String(renameModalValue || "").trim();
+    const currentName = renameModalItem?.name || "";
+
+    if (!cleanName) {
+      setRenameModalError("Indica un nombre.");
       return;
     }
 
-    setMutatingItemId(item.id);
-    setError("");
-    setUploadSuccess("");
-    setOpenActionsItemId("");
+    if (!renameModalItem?.id || cleanName === currentName) {
+      closeRenameModal();
+      return;
+    }
+
+    setRenameModalSaving(true);
+    setRenameModalError("");
+    setMutatingItemId(renameModalItem.id);
 
     try {
-      await renameDriveItem(item.id, cleanName);
+      await renameDriveItem(renameModalItem.id, cleanName);
       setUploadSuccess(`Elemento renombrado: ${cleanName}`);
+      closeRenameModal();
       await reloadVisibleItems();
     } catch (renameError) {
-      setError(getDriveErrorMessage(renameError, "mutation"));
+      setRenameModalError(getDriveErrorMessage(renameError, "mutation"));
     } finally {
+      setRenameModalSaving(false);
       setMutatingItemId("");
     }
   }
 
-  async function handleMoveItem(item) {
-    const targetFolderId = window.prompt("FolderId destino");
-    const cleanTargetFolderId = String(targetFolderId || "").trim();
+  function getMoveRootFolders(sourceItem = moveModalItem) {
+    const roots = [];
+    const seen = new Set();
 
-    if (!cleanTargetFolderId) {
+    function addRoot(folder) {
+      const folderId = String(folder?.folderId || folder?.id || "").trim();
+      if (!folderId || seen.has(folderId) || folderId === sourceItem?.id) return;
+
+      seen.add(folderId);
+      roots.push({
+        id: folderId,
+        name: folder.departmentName || folder.folderName || folder.name || "Carpeta",
+        shareRole: folder.shareRole || "",
+      });
+    }
+
+    folderItems.forEach(addRoot);
+    departmentFolders.forEach(addRoot);
+    customShortcuts.forEach(addRoot);
+    sharedWithMeItems.filter((item) => item.shareRole === "editor").forEach(addRoot);
+
+    return roots;
+  }
+
+  async function loadMoveModalFolder(folderId, nextBreadcrumbs, sourceItem = moveModalItem) {
+    const cleanFolderId = String(folderId || "").trim();
+
+    if (!cleanFolderId) {
+      setMoveModalFolders(getMoveRootFolders(sourceItem));
+      setMoveModalFolderId("");
+      setMoveModalBreadcrumbs([]);
       return;
     }
 
-    setMutatingItemId(item.id);
-    setError("");
-    setUploadSuccess("");
-    setOpenActionsItemId("");
+    setMoveModalLoading(true);
+    setMoveModalError("");
 
     try {
-      await moveDriveItem(item.id, cleanTargetFolderId);
-      setUploadSuccess(`Elemento movido: ${item.name || "Archivo"}`);
+      const result = await listDriveFolder(cleanFolderId);
+      const folders = (Array.isArray(result?.files) ? result.files : [])
+        .filter((item) => isDriveFolder(item))
+        .filter((item) => item.id !== sourceItem?.id && !isKnownDescendantOf(item, sourceItem?.id, visibleFiles));
+
+      setMoveModalFolderId(cleanFolderId);
+      setMoveModalBreadcrumbs(nextBreadcrumbs);
+      setMoveModalFolders(folders);
+    } catch (moveLoadError) {
+      setMoveModalError(getDriveErrorMessage(moveLoadError, "drive"));
+      setMoveModalFolders([]);
+    } finally {
+      setMoveModalLoading(false);
+    }
+  }
+
+  function handleMoveItem(item) {
+    setMoveModalItem(item);
+    setMoveModalError("");
+    setOpenActionsItemId("");
+
+    if (currentFolderId) {
+      loadMoveModalFolder(
+        currentFolderId,
+        breadcrumbs.length ? breadcrumbs : [{ id: currentFolderId, name: currentFolderName || "Raiz" }],
+        item
+      );
+      return;
+    }
+
+    setMoveModalFolders(getMoveRootFolders(item));
+    setMoveModalFolderId("");
+    setMoveModalBreadcrumbs([]);
+  }
+
+  function closeMoveModal() {
+    setMoveModalItem(null);
+    setMoveModalFolderId("");
+    setMoveModalBreadcrumbs([]);
+    setMoveModalFolders([]);
+    setMoveModalError("");
+  }
+
+  async function submitMoveModal() {
+    if (!moveModalItem?.id || !moveModalFolderId) {
+      setMoveModalError("Selecciona una carpeta destino.");
+      return;
+    }
+
+    if (moveModalItem.id === moveModalFolderId || moveModalItem.parents?.includes(moveModalFolderId)) {
+      setMoveModalError("Selecciona una carpeta diferente.");
+      return;
+    }
+
+    setMoveModalSaving(true);
+    setMoveModalError("");
+    setMutatingItemId(moveModalItem.id);
+
+    try {
+      await moveDriveItem(moveModalItem.id, moveModalFolderId);
+      setUploadSuccess(`Elemento movido: ${moveModalItem.name || "Archivo"}`);
+      closeMoveModal();
       await reloadVisibleItems();
     } catch (moveError) {
-      setError(getDriveErrorMessage(moveError, "mutation"));
+      setMoveModalError(getDriveErrorMessage(moveError, "mutation"));
     } finally {
+      setMoveModalSaving(false);
       setMutatingItemId("");
     }
   }
@@ -901,19 +1062,15 @@ export default function DriveManager() {
   }
 
   function resolveTrashFolderId(folderId) {
+    if (folderId !== undefined) {
+      return String(folderId || "").trim();
+    }
+
     return String(folderId || trashFolderId || currentFolderId || rootFolderId || "").trim();
   }
 
   async function loadTrash({ force = false, folderId } = {}) {
     const cleanFolderId = resolveTrashFolderId(folderId);
-
-    if (!cleanFolderId) {
-      setTrashActive(true);
-      setTrashFiles([]);
-      setTrashLoaded(true);
-      setTrashError("Carga una carpeta antes de abrir la papelera.");
-      return false;
-    }
 
     if (!force && trashActive && trashLoaded && trashFolderId === cleanFolderId) {
       return true;
@@ -949,7 +1106,7 @@ export default function DriveManager() {
   async function handleOpenTrash() {
     setActiveTab("files");
     clearActivityView();
-    await loadTrash({ force: true, folderId: rootFolderId || currentFolderId });
+    await loadTrash({ force: true, folderId: isAdmin ? rootFolderId || currentFolderId : "" });
   }
 
   function handleCloseTrash() {
@@ -1013,7 +1170,7 @@ export default function DriveManager() {
     try {
       await restoreDriveItem(item.id);
       setUploadSuccess(`Elemento restaurado: ${itemName}`);
-      await loadTrash({ force: true, folderId: trashFolderId || rootFolderId || currentFolderId });
+      await loadTrash({ force: true, folderId: isAdmin ? trashFolderId || rootFolderId || currentFolderId : "" });
 
       if (currentFolderId) {
         await reloadCurrentFolder();
@@ -1275,31 +1432,47 @@ export default function DriveManager() {
       const result = await listSharedWithMe();
       setSharedWithMeItems(Array.isArray(result?.items) ? result.items : []);
     } catch (sharedError) {
-      setSharedWithMeError(getDriveErrorMessage(sharedError, "drive"));
+      setSharedWithMeError(getDriveErrorMessage(sharedError, "shared"));
       setSharedWithMeItems([]);
     } finally {
       setSharedWithMeLoading(false);
     }
   }
 
-  async function handleOpenMyDriveView() {
+  async function handleOpenMyDrive() {
     setActiveTab("files");
     clearTrashView();
     clearActivityView();
     clearDriveSearch();
     setMyDriveActive(true);
-    setLoading(true);
+    setSharedWithMeError("");
+    setSharedWithMeItems([]);
+    setSelectedDetailFile(null);
+    setPreviewFile(null);
+    setOpenActionsItemId("");
+    setDepartmentSuccess("");
     setError("");
+    setFiles([]);
+    setCurrentFolderId("");
+    setBreadcrumbs([{ id: rootFolderId || "my-drive-root", name: "Raíz" }]);
 
     try {
+      if (rootFolderId) {
+        await loadFolder(rootFolderId, [{ id: rootFolderId, name: "Raíz" }], { force: true });
+        return;
+      }
+
+      setLoading(true);
       const result = await listMyDrive();
       const folderId = result?.folderId || "";
       setCurrentFolderId(folderId);
-      setBreadcrumbs([{ id: folderId, name: "Mi unidad" }]);
+      setBreadcrumbs([{ id: folderId, name: "Raíz" }]);
       setFiles(Array.isArray(result?.files) ? result.files : []);
     } catch (myDriveError) {
       setError(getDriveErrorMessage(myDriveError, "drive"));
       setFiles([]);
+      setCurrentFolderId("");
+      setBreadcrumbs([]);
     } finally {
       setLoading(false);
     }
@@ -1320,7 +1493,7 @@ export default function DriveManager() {
     clearDriveSearch();
     setMyDriveActive(false);
     loadFolder(folderId, [
-      ...(rootFolderId ? [{ id: rootFolderId, name: "Raiz" }] : []),
+      ...(rootFolderId ? [{ id: rootFolderId, name: "Raíz" }] : []),
       { id: folderId, name: folder.departmentName || folder.folderName || "Departamento" },
     ]);
   }
@@ -1333,7 +1506,8 @@ export default function DriveManager() {
     if (!shareModalUsers.length) {
       setShareModalUsersLoading(true);
       try {
-        const users = await getActiveUsers();
+        const result = await listDriveShareableUsers();
+        const users = Array.isArray(result?.users) ? result.users : [];
         setShareModalUsers(users.filter((user) => user.uid !== currentUid));
       } catch {
         setShareModalError("No se pudieron cargar los colaboradores.");
@@ -1346,7 +1520,7 @@ export default function DriveManager() {
       const result = await listDriveItemShares(item.id);
       setItemShares(Array.isArray(result?.shares) ? result.shares : []);
     } catch (sharesError) {
-      setShareModalError(getDriveErrorMessage(sharesError, "drive"));
+      setShareModalError(getDriveErrorMessage(sharesError, "share"));
       setItemShares([]);
     } finally {
       setItemSharesLoading(false);
@@ -1370,7 +1544,7 @@ export default function DriveManager() {
       const result = await listDriveItemShares(shareModalItem.id);
       setItemShares(Array.isArray(result?.shares) ? result.shares : []);
     } catch (shareError) {
-      setShareModalError(getDriveErrorMessage(shareError, "drive"));
+      setShareModalError(getDriveErrorMessage(shareError, "share"));
     } finally {
       setShareModalSaving(false);
     }
@@ -1386,7 +1560,7 @@ export default function DriveManager() {
       await unshareDriveItem({ fileId: shareModalItem.id, sharedWithUid });
       setItemShares((current) => current.filter((share) => share.sharedWithUid !== sharedWithUid));
     } catch (unshareError) {
-      setShareModalError(getDriveErrorMessage(unshareError, "drive"));
+      setShareModalError(getDriveErrorMessage(unshareError, "share"));
     } finally {
       setShareModalSaving(false);
     }
@@ -1411,8 +1585,66 @@ export default function DriveManager() {
         folderName: item.folderName || item.name || "Carpeta",
       },
     ]);
+    setHiddenShortcutIds((current) => current.filter((hiddenId) => hiddenId !== id));
     setShortcutWarning("");
     setShortcutPickerOpen(false);
+  }
+
+  function handleRemoveShortcut(event, shortcutId) {
+    event?.stopPropagation();
+    event?.preventDefault();
+
+    if (!shortcutId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Quitar este acceso directo? La carpeta real no se eliminara.");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCustomShortcuts((current) => current.filter((item) => (item.folderId || item.id) !== shortcutId));
+    setHiddenShortcutIds((current) => (current.includes(shortcutId) ? current : [...current, shortcutId]));
+    setShortcutWarning("");
+  }
+
+  async function handleDetailTabChange(tab) {
+    setDetailActiveTab(tab);
+
+    if (!detailFile?.id) {
+      return;
+    }
+
+    if (tab === "activity") {
+      setDetailActivityLoading(true);
+      setDetailActivityError("");
+
+      try {
+        const result = await listDriveActivityLogs({ limitCount: 25, fileId: detailFile.id });
+        setDetailActivityLogs(Array.isArray(result?.logs) ? result.logs : []);
+      } catch (activityError) {
+        setDetailActivityError(getDriveErrorMessage(activityError, "activity"));
+        setDetailActivityLogs([]);
+      } finally {
+        setDetailActivityLoading(false);
+      }
+    }
+
+    if (tab === "shares") {
+      setDetailSharesLoading(true);
+      setDetailSharesError("");
+
+      try {
+        const result = await listDriveItemShares(detailFile.id);
+        setDetailShares(Array.isArray(result?.shares) ? result.shares : []);
+      } catch (sharesError) {
+        setDetailSharesError(getDriveErrorMessage(sharesError, "shared"));
+        setDetailShares([]);
+      } finally {
+        setDetailSharesLoading(false);
+      }
+    }
   }
 
   function getDraggedItem() {
@@ -1651,11 +1883,10 @@ export default function DriveManager() {
               ["todos", "Todos"],
               ["carpetas", "Carpetas"],
               ["documentos", "Archivos"],
-              ["todos", "Recientes"],
             ].map(([value, label]) => (
               <button
                 key={`${label}-${value}`}
-                className={label !== "Recientes" && searchType === value && !trashActive && !activityActive ? "active" : ""}
+                className={searchType === value && !trashActive && !activityActive ? "active" : ""}
                 type="button"
                 onClick={() => setSearchType(value)}
               >
@@ -1730,7 +1961,7 @@ export default function DriveManager() {
 
       <section className="drive-cloud-shell">
         <aside className="drive-cloud-sidebar">
-          <button className={!trashActive && !activityActive && activeTab === "files" ? "active" : ""} type="button" onClick={handleOpenMyDriveView}>
+          <button className={!trashActive && !activityActive && activeTab === "files" && myDriveActive ? "active" : ""} type="button" onClick={handleOpenMyDrive}>
             <ActionIcon name="viewSmall" />
             <span>Mi unidad</span>
           </button>
@@ -1741,10 +1972,6 @@ export default function DriveManager() {
           <button className={activeTab === "shared" ? "active" : ""} type="button" onClick={handleOpenSharedView}>
             <ActionIcon name="viewList" />
             <span>Compartidos conmigo</span>
-          </button>
-          <button type="button" onClick={() => { clearTrashView(); clearActivityView(); setActiveTab("files"); setSearchType("todos"); }}>
-            <ActionIcon name="load" />
-            <span>Recientes</span>
           </button>
           {canUseTrash ? (
             <button className={trashActive ? "active" : ""} type="button" onClick={handleOpenTrash}>
@@ -1760,21 +1987,32 @@ export default function DriveManager() {
           ) : null}
 
           <div className="drive-cloud-shortcuts">
-            <div>
+            <div className="drive-shortcuts-header">
               <span>Accesos directos</span>
               <button type="button" aria-label="Agregar acceso" onClick={() => { setShortcutWarning(""); setShortcutPickerOpen(true); }}>+</button>
             </div>
             {sidebarShortcutItems.map((item) => (
-              <button
-                key={item.id || item.folderId}
-                type="button"
-                onClick={() => item.folderId ? handleOpenDepartmentFolder(item) : handleOpenItem(item)}
-              >
-                <span className={`drive-shortcut-icon ${getShortcutIconTone(item)}`}>
-                  <ActionIcon name={getShortcutIconName(item)} />
-                </span>
-                <span>{item.departmentName || item.folderName || item.name || "Carpeta"}</span>
-              </button>
+              <div className="drive-shortcut-row" key={item.id || item.folderId}>
+                <button
+                  className="drive-shortcut-open"
+                  type="button"
+                  onClick={() => item.folderId ? handleOpenDepartmentFolder(item) : handleOpenItem(item)}
+                >
+                  <span className={`drive-shortcut-icon ${getShortcutIconTone(item)}`}>
+                    <ActionIcon name={getShortcutIconName(item)} />
+                  </span>
+                  <span>{item.departmentName || item.folderName || item.name || "Carpeta"}</span>
+                </button>
+                <button
+                  className="drive-shortcut-remove"
+                  type="button"
+                  onClick={(event) => handleRemoveShortcut(event, item.folderId || item.id)}
+                  aria-label={`Quitar acceso ${item.departmentName || item.folderName || item.name || "Carpeta"}`}
+                  title="Quitar acceso"
+                >
+                  <span aria-hidden="true">x</span>
+                </button>
+              </div>
             ))}
           </div>
 
@@ -1795,12 +2033,12 @@ export default function DriveManager() {
             <nav aria-label="Ruta de Google Drive">
               {activityActive || trashActive || activeTab === "shared" ? (
                 <>
-                  <button type="button" onClick={activeTab === "shared" ? handleOpenMyDriveView : activityActive ? handleCloseActivity : handleCloseTrash}>Mi unidad</button>
+                  <button type="button" onClick={activeTab === "shared" ? handleOpenMyDrive : activityActive ? handleCloseActivity : handleCloseTrash}>Mi unidad</button>
                   <span>/</span>
                   <strong>{activityActive ? "Actividad" : trashActive ? "Papelera" : "Compartidos conmigo"}</strong>
                 </>
               ) : breadcrumbs.length === 0 ? (
-                <strong>Raiz</strong>
+                <strong>Raíz</strong>
               ) : (
                 breadcrumbs.map((breadcrumb, index) => (
                   <button
@@ -1957,20 +2195,43 @@ export default function DriveManager() {
                       onDragLeave={(event) => handleFolderDragLeave(event, folder)}
                       onDrop={(event) => handleFolderDrop(event, folder)}
                     >
-                      <button type="button" onClick={() => handleOpenItem(folder)}>
+                      <button className="drive-folder-open-button" type="button" onClick={() => handleOpenItem(folder)}>
                         <span className="drive-folder-art"><DriveIcon type="folder" /></span>
                         <div>
                           <strong>{folder.name || "Carpeta"}</strong>
                           <small>{getFileMeta(folder)}</small>
                         </div>
                       </button>
+                      {canManageItems && canEditCurrentDriveItems ? (
+                        <>
+                          <button
+                            className="drive-folder-action-button"
+                            type="button"
+                            onClick={() => setOpenActionsItemId((current) => (current === folder.id ? "" : folder.id))}
+                            aria-label={`Acciones de ${folder.name || "carpeta"}`}
+                          >
+                            <ActionIcon name="more" />
+                          </button>
+                          {openActionsItemId === folder.id ? (
+                            <div className="drive-table-menu">
+                              <button type="button" onClick={() => handleOpenItem(folder)}>Abrir</button>
+                              {myDriveActive ? (
+                                <button type="button" onClick={() => handleOpenShareModal(folder)}>Compartir</button>
+                              ) : null}
+                              <button type="button" onClick={() => handleRenameItem(folder)}>Renombrar</button>
+                              <button type="button" onClick={() => handleMoveItem(folder)}>Mover</button>
+                              <button type="button" onClick={() => handleDeleteItem(folder)}>Eliminar</button>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
                     </article>
                   ))}
                 </div>
               </section>
 
               <section className="drive-recent-section">
-                <h3>Archivos recientes</h3>
+                <h3>Archivos</h3>
                 <div className="drive-recent-table">
                   <div className="drive-recent-head">
                     <span>Nombre</span>
@@ -1979,7 +2240,7 @@ export default function DriveManager() {
                     <span>Tamano</span>
                     <span />
                   </div>
-                  {recentFileItems.map((file) => (
+                  {fileItems.map((file) => (
                     <article
                       className={selectedDetailFile?.id === file.id ? "active" : ""}
                       key={file.id}
@@ -2003,13 +2264,14 @@ export default function DriveManager() {
                       )}
                       {canManageItems && openActionsItemId === file.id ? (
                         <div className="drive-table-menu">
+                          <button type="button" onClick={() => file.webViewLink ? window.open(file.webViewLink, "_blank", "noopener,noreferrer") : setPreviewFile(file)}>Abrir</button>
                           <button type="button" onClick={() => setSelectedDetailFile(file)}>Detalles</button>
                           <button type="button" onClick={() => setPreviewFile(file)}>Vista previa</button>
-                          <button type="button" onClick={() => handleRenameItem(file)}>Renombrar</button>
-                          <button type="button" onClick={() => handleMoveItem(file)}>Mover</button>
-                          {myDriveActive && isDriveFolder(file) ? (
+                          {myDriveActive ? (
                             <button type="button" onClick={() => handleOpenShareModal(file)}>Compartir</button>
                           ) : null}
+                          <button type="button" onClick={() => handleRenameItem(file)}>Renombrar</button>
+                          <button type="button" onClick={() => handleMoveItem(file)}>Mover</button>
                           <button type="button" onClick={() => handleDeleteItem(file)}>Eliminar</button>
                         </div>
                       ) : null}
@@ -2040,9 +2302,9 @@ export default function DriveManager() {
             <button type="button" onClick={() => setSelectedDetailFile(null)}><ActionIcon name="close" /></button>
           </header>
           <nav>
-            <button className="active" type="button">Detalles</button>
-            <button type="button">Actividad</button>
-            <button type="button">Compartidos</button>
+            <button className={detailActiveTab === "details" ? "active" : ""} type="button" onClick={() => handleDetailTabChange("details")}>Detalles</button>
+            <button className={detailActiveTab === "activity" ? "active" : ""} type="button" onClick={() => handleDetailTabChange("activity")}>Actividad</button>
+            <button className={detailActiveTab === "shares" ? "active" : ""} type="button" onClick={() => handleDetailTabChange("shares")}>Compartidos</button>
           </nav>
           <div className="drive-detail-preview">
             {detailFile?.thumbnailLink ? (
@@ -2056,33 +2318,81 @@ export default function DriveManager() {
               </button>
             ) : null}
           </div>
-          <section>
-            <h4>Informacion general</h4>
-            <dl>
-              <div><dt>Tipo</dt><dd>{formatMimeType(detailFile?.mimeType)}</dd></div>
-              <div><dt>Tamano</dt><dd>{detailFile?.size ? formatBytes(Number(detailFile.size)) : "-"}</dd></div>
-              <div><dt>Ubicacion</dt><dd>{currentFolderName}</dd></div>
-              <div><dt>Propietario</dt><dd>Nube AES</dd></div>
-              <div><dt>Modificado</dt><dd>{formatDate(detailFile?.modifiedTime) || "-"}</dd></div>
-            </dl>
-          </section>
-          <section>
-            <h4>Etiquetas</h4>
-            <div className="drive-detail-tags">
-              <span>Drive</span>
-              <span>Nube AES</span>
-              <span>{formatMimeType(detailFile?.mimeType)}</span>
-            </div>
-          </section>
+          {detailActiveTab === "details" ? (
+            <>
+              <section>
+                <h4>Informacion general</h4>
+                <dl>
+                  <div><dt>Tipo</dt><dd>{formatMimeType(detailFile?.mimeType)}</dd></div>
+                  <div><dt>Tamano</dt><dd>{detailFile?.size ? formatBytes(Number(detailFile.size)) : "-"}</dd></div>
+                  <div><dt>Ubicacion</dt><dd>{currentFolderName}</dd></div>
+                  <div><dt>Propietario</dt><dd>{detailFile?.ownerName || "Nube AES"}</dd></div>
+                  <div><dt>Modificado</dt><dd>{formatDate(detailFile?.modifiedTime) || "-"}</dd></div>
+                </dl>
+              </section>
+              <section>
+                <h4>Etiquetas</h4>
+                <div className="drive-detail-tags">
+                  <span>Drive</span>
+                  <span>Nube AES</span>
+                  <span>{formatMimeType(detailFile?.mimeType)}</span>
+                </div>
+              </section>
+            </>
+          ) : null}
+          {detailActiveTab === "activity" ? (
+            <section>
+              <h4>Actividad</h4>
+              {detailActivityError ? <div className="drive-error-box">{detailActivityError}</div> : null}
+              {detailActivityLoading ? (
+                <p className="drive-shortcut-picker-empty">Cargando...</p>
+              ) : detailActivityLogs.length ? (
+                <div className="drive-activity-list compact">
+                  {detailActivityLogs.map((log) => (
+                    <article className="drive-activity-item" key={log.id}>
+                      <span className="drive-activity-icon"><ActionIcon name="load" /></span>
+                      <div>
+                        <strong>{getDriveActivityLabel(log.action)}</strong>
+                        <p>{getDriveActivitySummary(log)}</p>
+                        <small>{log.userName || log.userEmail || "Usuario"} - {formatActivityDate(log.createdAt) || "Sin fecha"}</small>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="drive-shortcut-picker-empty">No hay actividad para este elemento.</p>
+              )}
+            </section>
+          ) : null}
+          {detailActiveTab === "shares" ? (
+            <section>
+              <h4>Compartidos</h4>
+              {detailSharesError ? <div className="drive-error-box">{detailSharesError}</div> : null}
+              {detailSharesLoading ? (
+                <p className="drive-shortcut-picker-empty">Cargando...</p>
+              ) : detailShares.length ? (
+                <ul className="drive-share-chip-list">
+                  {detailShares.map((share) => (
+                    <li key={share.sharedWithUid} className="drive-share-chip">
+                      <span>{share.sharedWithEmail || share.sharedWithUid}</span>
+                      <em>{share.role === "editor" ? "Editor" : "Viewer"}</em>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="drive-shortcut-picker-empty">No hay usuarios con acceso compartido.</p>
+              )}
+            </section>
+          ) : null}
           {detailFile?.webViewLink ? (
             <a className="drive-share-button" href={detailFile.webViewLink} target="_blank" rel="noreferrer">
               <ActionIcon name="share" />
-              <span>Compartir</span>
+              <span>Abrir en Drive</span>
             </a>
           ) : (
             <button className="drive-share-button" type="button" disabled>
               <ActionIcon name="share" />
-              <span>Compartir</span>
+              <span>Abrir en Drive</span>
             </button>
           )}
         </aside>
@@ -2095,10 +2405,51 @@ export default function DriveManager() {
       {shortcutPickerOpen ? (
         <ShortcutPickerModal
           candidates={shortcutCandidates}
-          existingItems={sidebarShortcutItems}
+          existingItems={customShortcuts}
           warning={shortcutWarning}
           onPick={handleAddShortcut}
           onClose={() => setShortcutPickerOpen(false)}
+        />
+      ) : null}
+
+      {renameModalItem ? (
+        <RenameItemModal
+          item={renameModalItem}
+          value={renameModalValue}
+          error={renameModalError}
+          saving={renameModalSaving}
+          onValueChange={setRenameModalValue}
+          onSubmit={submitRenameModal}
+          onClose={closeRenameModal}
+        />
+      ) : null}
+
+      {moveModalItem ? (
+        <MoveItemModal
+          item={moveModalItem}
+          currentFolderId={moveModalFolderId}
+          breadcrumbs={moveModalBreadcrumbs}
+          folders={moveModalFolders}
+          loading={moveModalLoading}
+          error={moveModalError}
+          saving={moveModalSaving}
+          onOpenFolder={(folder) =>
+            loadMoveModalFolder(folder.id || folder.folderId, [
+              ...moveModalBreadcrumbs,
+              { id: folder.id || folder.folderId, name: folder.name || folder.folderName || "Carpeta", shareRole: folder.shareRole || "" },
+            ])
+          }
+          onBack={() => {
+            const nextBreadcrumbs = moveModalBreadcrumbs.slice(0, -1);
+            const parent = nextBreadcrumbs.at(-1);
+            if (parent?.id) {
+              loadMoveModalFolder(parent.id, nextBreadcrumbs);
+            } else {
+              loadMoveModalFolder("", []);
+            }
+          }}
+          onMoveHere={submitMoveModal}
+          onClose={closeMoveModal}
         />
       ) : null}
 
@@ -2135,19 +2486,15 @@ function DriveRootForm({
           type="text"
           value={rootFolderDraft}
           onChange={(event) => onRootFolderDraftChange(event.target.value)}
-          placeholder="ID de carpeta en Google Drive"
-          autoComplete="off"
-          disabled={savingRoot}
+          placeholder="Ej. 1AbCDEF..."
         />
-        <button className="visual-primary-button drive-icon-button" type="submit" disabled={savingRoot}>
-          <ActionIcon name="load" />
-          <span>{savingRoot ? "Guardando" : "Guardar y cargar"}</span>
+        <button type="submit" disabled={savingRoot}>
+          {savingRoot ? "Guardando..." : "Guardar"}
         </button>
       </div>
     </form>
   );
 }
-
 function DrivePreviewModal({ file, onClose }) {
   const previewUrl = buildDrivePreviewUrl(file);
   const fileType = formatMimeType(file?.mimeType);
@@ -2266,6 +2613,120 @@ function ShortcutPickerModal({ candidates, existingItems, warning, onPick, onClo
   );
 }
 
+function RenameItemModal({ item, value, error, saving, onValueChange, onSubmit, onClose }) {
+  return (
+    <div className="drive-preview-backdrop" role="dialog" aria-modal="true" aria-label="Renombrar elemento">
+      <div className="drive-preview-modal drive-shortcut-picker-modal drive-action-modal">
+        <header className="drive-preview-header">
+          <div>
+            <span>Renombrar</span>
+            <strong title={item?.name}>{item?.name || "Elemento"}</strong>
+          </div>
+          <button className="drive-preview-close" type="button" onClick={onClose} aria-label="Cerrar" disabled={saving}>
+            <ActionIcon name="close" />
+          </button>
+        </header>
+
+        <form className="drive-preview-body drive-action-form" onSubmit={onSubmit}>
+          {error ? <div className="drive-error-box">{error}</div> : null}
+          <label>
+            <span>Nombre</span>
+            <input
+              value={value}
+              onChange={(event) => onValueChange(event.target.value)}
+              autoFocus
+              disabled={saving}
+            />
+          </label>
+          <div className="drive-action-modal-actions">
+            <button type="button" className="visual-outline-button" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button type="submit" className="visual-primary-button" disabled={saving}>
+              {saving ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function MoveItemModal({
+  item,
+  currentFolderId,
+  breadcrumbs,
+  folders,
+  loading,
+  error,
+  saving,
+  onOpenFolder,
+  onBack,
+  onMoveHere,
+  onClose,
+}) {
+  const currentName = breadcrumbs.at(-1)?.name || "Ubicaciones";
+  const isSameParent = Array.isArray(item?.parents) && item.parents.includes(currentFolderId);
+
+  return (
+    <div className="drive-preview-backdrop" role="dialog" aria-modal="true" aria-label="Mover elemento">
+      <div className="drive-preview-modal drive-shortcut-picker-modal drive-action-modal">
+        <header className="drive-preview-header">
+          <div>
+            <span>Mover a...</span>
+            <strong title={item?.name}>{item?.name || "Elemento"}</strong>
+          </div>
+          <button className="drive-preview-close" type="button" onClick={onClose} aria-label="Cerrar" disabled={saving}>
+            <ActionIcon name="close" />
+          </button>
+        </header>
+
+        <div className="drive-preview-body drive-action-form">
+          {error ? <div className="drive-error-box">{error}</div> : null}
+
+          <div className="drive-move-modal-path">
+            <button type="button" onClick={onBack} disabled={loading || saving || breadcrumbs.length === 0}>
+              <ActionIcon name="back" />
+            </button>
+            <strong title={currentName}>{currentName}</strong>
+          </div>
+
+          {loading ? (
+            <p className="drive-shortcut-picker-empty">Cargando carpetas...</p>
+          ) : folders.length ? (
+            <ul className="drive-move-folder-list">
+              {folders.map((folder) => (
+                <li key={folder.id || folder.folderId}>
+                  <button type="button" onClick={() => onOpenFolder(folder)} disabled={saving}>
+                    <span className="drive-folder-art"><DriveIcon type="folder" /></span>
+                    <span>{folder.departmentName || folder.folderName || folder.name || "Carpeta"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="drive-shortcut-picker-empty">No hay subcarpetas disponibles.</p>
+          )}
+
+          <div className="drive-action-modal-actions">
+            <button type="button" className="visual-outline-button" onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="visual-primary-button"
+              onClick={onMoveHere}
+              disabled={saving || loading || !currentFolderId || item?.id === currentFolderId || isSameParent}
+            >
+              {saving ? "Moviendo..." : "Mover aqui"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ShareModal({ item, users, usersLoading, shares, sharesLoading, error, saving, onShare, onUnshare, onClose }) {
   const [selectedUid, setSelectedUid] = useState("");
   const [selectedRole, setSelectedRole] = useState("viewer");
@@ -2327,6 +2788,9 @@ function ShareModal({ item, users, usersLoading, shares, sharesLoading, error, s
               Compartir
             </button>
           </form>
+          {!usersLoading && !error && availableUsers.length === 0 ? (
+            <p className="drive-shortcut-picker-empty">No hay colaboradores disponibles.</p>
+          ) : null}
 
           <h4 className="drive-share-list-title">Personas con acceso</h4>
 
@@ -2740,14 +3204,32 @@ function wait(milliseconds) {
 }
 
 function getDriveErrorMessage(error, source = "drive") {
+  if (error?.code === "functions/internal" || error?.code === "internal") {
+    if (source === "shared") {
+      return error?.message && error.message !== "internal"
+        ? error.message
+        : "No se pudieron cargar los archivos compartidos contigo.";
+    }
+
+    return error?.message && error.message !== "internal"
+      ? error.message
+      : "No se pudo completar la operacion en Google Drive.";
+  }
+
   if (error?.code === "permission-denied") {
     return "Sin permisos Firestore para leer o guardar systemSettings/drive. Tu usuario debe tener role admin en users/{uid}.";
   }
 
   if (error?.code === "functions/permission-denied") {
-    return source === "upload"
-      ? "Sin permisos para subir a Drive. Revisa que users/{uid}.role sea admin y que la carpeta permita escritura."
-      : "Sin permisos en la funcion de Drive. Revisa que users/{uid}.role sea admin y que la funcion use ese UID.";
+    if (source === "upload") {
+      return "Sin permisos para subir a Drive. Revisa que users/{uid}.role sea admin y que la carpeta permita escritura.";
+    }
+
+    if (source === "share") {
+      return error?.message || "No tienes permiso para compartir este elemento.";
+    }
+
+    return error?.message || "Sin permisos en la funcion de Drive.";
   }
 
   if (error?.code === "functions/unauthenticated" || error?.code === "unauthenticated") {
@@ -2776,6 +3258,14 @@ function getDriveErrorMessage(error, source = "drive") {
 
   if (source === "search") {
     return error?.message || "No se pudo buscar en Google Drive.";
+  }
+
+  if (source === "shared") {
+    return error?.message || "No se pudieron cargar los archivos compartidos contigo.";
+  }
+
+  if (source === "share") {
+    return error?.message || "No se pudieron cargar los permisos compartidos.";
   }
 
   return error?.message || "No se pudo completar la operacion en Google Drive.";
