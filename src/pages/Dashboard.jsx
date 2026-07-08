@@ -2513,6 +2513,27 @@ function AttachmentDraftList({ items, onRemove }) {
   );
 }
 
+function AudioAttachmentPlayer({ attachment }) {
+  const [unsupported, setUnsupported] = useState(false);
+
+  if (unsupported) {
+    return (
+      <p className="attachment-audio-unsupported">
+        Este audio fue grabado en un formato no compatible con este dispositivo.
+      </p>
+    );
+  }
+
+  return (
+    <audio
+      src={attachment.url}
+      controls
+      preload="metadata"
+      onError={() => setUnsupported(true)}
+    />
+  );
+}
+
 function AttachmentGallery({ attachments, compact = false }) {
   if (!Array.isArray(attachments) || attachments.length === 0) return null;
 
@@ -2526,7 +2547,7 @@ function AttachmentGallery({ attachments, compact = false }) {
               key={attachment.path || attachment.url || attachment.name}
               className="attachment-card type-audio audio-message-card"
             >
-              <audio src={attachment.url} controls preload="metadata" />
+              <AudioAttachmentPlayer attachment={attachment} />
             </article>
           );
         }
@@ -3063,6 +3084,30 @@ async function playMessageNotificationSound() {
   } catch (error) {
     console.warn("No se pudo reproducir sonido de mensaje:", error);
   }
+}
+
+const AUDIO_MIME_CANDIDATES = [
+  "audio/mp4;codecs=mp4a.40.2",
+  "audio/mp4",
+  "audio/aac",
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+];
+
+function pickSupportedAudioMimeType() {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+    return "";
+  }
+  return AUDIO_MIME_CANDIDATES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) || "";
+}
+
+function getAudioFileExtension(mimeType = "") {
+  const type = String(mimeType || "").toLowerCase();
+  if (type.includes("mp4")) return "m4a";
+  if (type.includes("aac")) return "aac";
+  if (type.includes("ogg")) return "ogg";
+  return "webm";
 }
 
 function getVoiceRecordingErrorMessage(error) {
@@ -3767,11 +3812,7 @@ function InternalMessages({ profile, isAdmin = false }) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferredMimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
+      const preferredMimeType = pickSupportedAudioMimeType();
       const recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
       voiceChunksRef.current = [];
       voiceStreamRef.current = stream;
@@ -3784,9 +3825,10 @@ function InternalMessages({ profile, isAdmin = false }) {
       };
 
       recorder.onstop = () => {
-        const mimeType = "audio/webm";
+        const mimeType = recorder.mimeType || preferredMimeType || "audio/webm";
+        const extension = getAudioFileExtension(mimeType);
         const blob = new Blob(voiceChunksRef.current, { type: mimeType });
-        const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`, {
+        const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, {
           type: mimeType,
         });
         const draft = createDraftAttachment(file, { source: "recordedVoice" });

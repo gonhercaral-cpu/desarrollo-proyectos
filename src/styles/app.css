@@ -36316,6 +36316,14 @@ button.purchase-request-card .purchase-card-actions .danger-outline-button {
   width: 100%;
 }
 
+.attachment-audio-unsupported {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  opacity: 0.75;
+  font-style: italic;
+}
+
 .attachment-kind-icon {
   width: 36px;
   height: 36px;
