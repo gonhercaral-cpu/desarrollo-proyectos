@@ -1,0 +1,4 @@
+node_modules/
+.env
+*.local
+sistema-desarrollo-proyectos-firebase-adminsdk-fbsvc-1d8b61c460.json

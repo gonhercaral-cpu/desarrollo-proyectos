@@ -2566,6 +2566,12 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /protectLogs/{logId} {
+      allow get, list: if isAdminRole();
+
+      allow create, update, delete: if false;
+    }
+
     match /drivePrivateItems/{fileId} {
       allow read, write: if false;
     }

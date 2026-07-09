@@ -28,10 +28,14 @@ import IdeasIncubator from "./IdeasIncubator";
 import BugReports from "./BugReports";
 import SubscriptionManager from "./SubscriptionManager";
 import DriveManager from "./DriveManager";
+import ProtectCameras from "./ProtectCameras";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
 import FloatingQuickTools from "../components/FloatingQuickTools";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
+
+// Módulo en desarrollo: reactivar cambiando este valor a true.
+const ENABLE_UNIFI_CAMERAS_MODULE = false;
 
 const DASHBOARD_STORAGE_KEYS = {
   page: "dp.dashboard.activePage",
@@ -211,6 +215,13 @@ function renderDashboardNavIconPath(name) {
           <path d="M8 12.5h5.5" />
         </>
       );
+    case "protect":
+      return (
+        <>
+          <path d="M4 8h11l2-3h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+          <circle cx="12.5" cy="13.5" r="3.6" />
+        </>
+      );
     case "more":
       return (
         <>
@@ -267,6 +278,9 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
     items.push({ page: "drive-manager", label: "Nube AES", mobileLabel: "Nube", icon: "drive", section: "Administración" });
     items.push({ page: "subscription-manager", label: "Gestor de suscripciones", mobileLabel: "Suscripciones", icon: "subscriptions", section: "Administración" });
+    if (ENABLE_UNIFI_CAMERAS_MODULE) {
+      items.push({ page: "protect-cameras", label: "UniFi Protect", mobileLabel: "Cámaras", icon: "protect", section: "Administración" });
+    }
     items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Administración" });
   }
 
@@ -314,9 +328,11 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "collaborators-admin",
     "departments-admin",
     "subscription-manager",
+    "protect-cameras",
   ]);
 
   if (!page) return defaultPage;
+  if (page === "protect-cameras" && !ENABLE_UNIFI_CAMERAS_MODULE) return defaultPage;
   if (adminOnlyPages.has(page) && !isAdmin) return defaultPage;
   if (page === "drive-manager" && !canUseDriveManager) return defaultPage;
   if (page === "print-shop" && !canUsePrintShop) return defaultPage;
@@ -395,6 +411,23 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   const unreadDepartmentMessagesCount = useUnreadDepartmentMessagesCount(profile, isAdmin);
   const unreadMessagesCount = unreadDirectMessagesCount + unreadDepartmentMessagesCount;
   const unreadAnnouncementsCount = useUnreadAnnouncementsCount(profile);
+
+  const [pendingChatKeyToOpen, setPendingChatKeyToOpen] = useState("");
+  const activeChatKeyRef = useRef("");
+  const isMessagesPageActiveRef = useRef(false);
+
+  useEffect(() => {
+    isMessagesPageActiveRef.current = page === "internal-messages";
+  }, [page]);
+
+  const messageNotifications = useGlobalMessageNotifications(profile, isAdmin, {
+    activeChatKeyRef,
+    isMessagesPageActiveRef,
+    onNotificationClick: (chatKey) => {
+      setPendingChatKeyToOpen(chatKey);
+      setPage("internal-messages");
+    },
+  });
 
   useDashboardPresence(profile, page);
 
@@ -573,7 +606,19 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     }
 
     if (page === "internal-messages") {
-      return <InternalMessages profile={profile} isAdmin={isAdmin} />;
+      return (
+        <InternalMessages
+          profile={profile}
+          isAdmin={isAdmin}
+          onActiveChatKeyChange={(chatKey) => {
+            activeChatKeyRef.current = chatKey;
+          }}
+          pendingChatKeyToOpen={pendingChatKeyToOpen}
+          onPendingChatKeyConsumed={() => setPendingChatKeyToOpen("")}
+          notificationPermission={messageNotifications.permission}
+          onRequestNotificationPermission={messageNotifications.requestPermission}
+        />
+      );
     }
 
     if (page === "notifications-center") {
@@ -618,6 +663,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (page === "subscription-manager" && isAdmin) {
       return <SubscriptionManager />;
+    }
+
+    if (page === "protect-cameras" && isAdmin && ENABLE_UNIFI_CAMERAS_MODULE) {
+      return <ProtectCameras />;
     }
 
     if (page === "team-agenda") {
@@ -759,6 +808,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (navPage === "subscription-manager") {
       return page === "subscription-manager";
+    }
+
+    if (navPage === "protect-cameras") {
+      return page === "protect-cameras";
     }
 
     if (navPage === "team-agenda") {
@@ -3132,17 +3185,7 @@ function canUseBrowserNotifications() {
     && (window.isSecureContext || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 }
 
-async function requestBrowserMessageNotificationPermission() {
-  if (!canUseBrowserNotifications() || window.Notification.permission !== "default") return;
-
-  try {
-    await window.Notification.requestPermission();
-  } catch (error) {
-    console.warn("No se pudo pedir permiso de notificaciones:", error);
-  }
-}
-
-function showBrowserMessageNotification(messageInfo) {
+function showBrowserMessageNotification(messageInfo, onNotificationClick) {
   if (!canUseBrowserNotifications() || window.Notification.permission !== "granted") return;
 
   const notification = new window.Notification(messageInfo.title || "Nuevo mensaje", {
@@ -3155,11 +3198,156 @@ function showBrowserMessageNotification(messageInfo) {
   notification.onclick = () => {
     window.focus();
     notification.close();
+    onNotificationClick?.(messageInfo.chatKey);
   };
 }
 
+function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isMessagesPageActiveRef, onNotificationClick }) {
+  const currentUserId = getCurrentUserId(profile);
+  const [permission, setPermission] = useState(() =>
+    canUseBrowserNotifications() ? window.Notification.permission : "unsupported"
+  );
+  const directReadyRef = useRef(false);
+  const departmentReadyRef = useRef(false);
 
-function InternalMessages({ profile, isAdmin = false }) {
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const prepareNotifications = () => primeMessageNotificationSound();
+
+    window.addEventListener("pointerdown", prepareNotifications, { once: true });
+    window.addEventListener("keydown", prepareNotifications, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", prepareNotifications);
+      window.removeEventListener("keydown", prepareNotifications);
+    };
+  }, []);
+
+  async function requestPermission() {
+    if (!canUseBrowserNotifications()) return;
+
+    try {
+      const result = await window.Notification.requestPermission();
+      setPermission(result);
+    } catch (error) {
+      console.warn("No se pudo pedir permiso de notificaciones:", error);
+    }
+  }
+
+  function isViewingChatNow(chatKey) {
+    return (
+      isMessagesPageActiveRef?.current === true &&
+      activeChatKeyRef?.current === chatKey &&
+      typeof document !== "undefined" &&
+      document.visibilityState === "visible"
+    );
+  }
+
+  function alertNewMessages(items) {
+    const itemsNeedingAlert = items.filter((item) => !isViewingChatNow(item.chatKey));
+    if (itemsNeedingAlert.length === 0) return;
+
+    playMessageNotificationSound();
+
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      itemsNeedingAlert.forEach((item) => showBrowserMessageNotification(item, onNotificationClick));
+    }
+  }
+
+  useEffect(() => {
+    directReadyRef.current = false;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const inboxQuery = query(
+      collection(db, "internalMessages"),
+      where("toUserId", "==", currentUserId)
+    );
+
+    return onSnapshot(
+      inboxQuery,
+      (snapshot) => {
+        const wasReady = directReadyRef.current;
+        directReadyRef.current = true;
+        if (!wasReady) return;
+
+        const newItems = snapshot
+          .docChanges()
+          .filter((change) => change.type === "added")
+          .map((change) => ({ id: change.doc.id, ...change.doc.data() }))
+          .filter((message) => message.read !== true && message.fromUserId !== currentUserId)
+          .map((message) => ({
+            key: `direct:${message.id}`,
+            chatKey: `direct:${message.fromUserId || ""}`,
+            title: `Nuevo mensaje de ${message.fromUserName || "un colaborador"}`,
+            body: truncateNotificationText(message.message || "Archivo adjunto", 120),
+            tag: `message-direct-${message.id}`,
+          }));
+
+        alertNewMessages(newItems);
+      },
+      (error) => {
+        console.error("No se pudo iniciar el listener global de mensajes directos:", error);
+      }
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    departmentReadyRef.current = false;
+  }, [currentUserId, isAdmin]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const departmentMessagesRef = collection(db, "departmentMessages");
+    const departmentMessagesQuery = isAdmin
+      ? departmentMessagesRef
+      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
+
+    return onSnapshot(
+      departmentMessagesQuery,
+      (snapshot) => {
+        const wasReady = departmentReadyRef.current;
+        departmentReadyRef.current = true;
+        if (!wasReady) return;
+
+        const newItems = snapshot
+          .docChanges()
+          .filter((change) => change.type === "added")
+          .map((change) => ({ id: change.doc.id, ...change.doc.data() }))
+          .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
+          .map((message) => ({
+            key: `department:${message.id}`,
+            chatKey: `department:${message.departmentId || ""}`,
+            title: `Nuevo mensaje en ${message.departmentName || "departamento"}`,
+            body: `${message.fromUserName || "Un colaborador"}: ${truncateNotificationText(message.message || "Archivo adjunto", 100)}`,
+            tag: `message-department-${message.id}`,
+          }));
+
+        alertNewMessages(newItems);
+      },
+      (error) => {
+        console.error("No se pudo iniciar el listener global de mensajes por departamento:", error);
+      }
+    );
+  }, [currentUserId, isAdmin]);
+
+  return { permission, requestPermission };
+}
+
+
+function InternalMessages({
+  profile,
+  isAdmin = false,
+  onActiveChatKeyChange,
+  pendingChatKeyToOpen = "",
+  onPendingChatKeyConsumed,
+  notificationPermission = "unsupported",
+  onRequestNotificationPermission,
+}) {
   const currentUserId = getCurrentUserId(profile);
   const [collaborators, setCollaborators] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -3193,8 +3381,6 @@ function InternalMessages({ profile, isAdmin = false }) {
   const threadEndRef = useRef(null);
   const directComposerRef = useRef(null);
   const departmentComposerRef = useRef(null);
-  const unreadMessageIdsRef = useRef(new Set());
-  const notificationReadyRef = useRef(false);
   const typingTimeoutRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const voiceChunksRef = useRef([]);
@@ -3599,58 +3785,26 @@ function InternalMessages({ profile, isAdmin = false }) {
   }, [totalUnreadCount]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const prepareNotifications = () => {
-      primeMessageNotificationSound();
-      requestBrowserMessageNotificationPermission();
-    };
-
-    window.addEventListener("pointerdown", prepareNotifications, { once: true });
-    window.addEventListener("keydown", prepareNotifications, { once: true });
-
-    return () => {
-      window.removeEventListener("pointerdown", prepareNotifications);
-      window.removeEventListener("keydown", prepareNotifications);
-    };
-  }, []);
+    onActiveChatKeyChange?.(activeChatKey);
+  }, [activeChatKey, onActiveChatKeyChange]);
 
   useEffect(() => {
-    const unreadItems = [
-      ...inboxMessages
-        .filter((message) => !message.read)
-        .map((message) => ({
-          key: `direct:${message.id}`,
-          title: `Nuevo mensaje de ${message.fromUserName || "un colaborador"}`,
-          body: truncateNotificationText(message.message || "Archivo adjunto", 120),
-          tag: `message-direct-${message.id}`,
-        })),
-      ...departmentMessages
-        .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
-        .map((message) => ({
-          key: `department:${message.id}`,
-          title: `Nuevo mensaje en ${message.departmentName || "departamento"}`,
-          body: `${message.fromUserName || "Un colaborador"}: ${truncateNotificationText(message.message || "Archivo adjunto", 100)}`,
-          tag: `message-department-${message.id}`,
-        })),
-    ];
-    const unreadIds = unreadItems.map((item) => item.key);
-    const nextUnreadSet = new Set(unreadIds);
-    const previousUnreadSet = unreadMessageIdsRef.current;
-    const newUnreadItems = unreadItems.filter((item) => !previousUnreadSet.has(item.key));
+    return () => onActiveChatKeyChange?.("");
+  }, [onActiveChatKeyChange]);
 
-    unreadMessageIdsRef.current = nextUnreadSet;
+  useEffect(() => {
+    if (!pendingChatKeyToOpen) return;
 
-    if (!notificationReadyRef.current) {
-      notificationReadyRef.current = true;
-      return;
+    if (pendingChatKeyToOpen.startsWith("direct:")) {
+      setConversationType("direct");
+      setSelectedConversationId(pendingChatKeyToOpen.slice("direct:".length));
+    } else if (pendingChatKeyToOpen.startsWith("department:")) {
+      setConversationType("department");
+      setSelectedDepartmentId(pendingChatKeyToOpen.slice("department:".length));
     }
 
-    if (newUnreadItems.length > 0) {
-      playMessageNotificationSound();
-      showBrowserMessageNotification(newUnreadItems[0]);
-    }
-  }, [inboxMessages, departmentMessages, currentUserId]);
+    onPendingChatKeyConsumed?.();
+  }, [pendingChatKeyToOpen, onPendingChatKeyConsumed]);
 
   function resetMessageComposer() {
     revokeDraftAttachmentPreviews(messageAttachments);
@@ -4123,6 +4277,20 @@ function InternalMessages({ profile, isAdmin = false }) {
           </div>
         </div>
       </section>
+
+      {notificationPermission === "default" && (
+        <div className="workspace-success-box messages-notification-permission-box">
+          <span>Activa las notificaciones del navegador para no perderte mensajes nuevos cuando la pestaña esté en segundo plano.</span>
+          <button type="button" onClick={onRequestNotificationPermission}>
+            Activar notificaciones
+          </button>
+        </div>
+      )}
+      {notificationPermission === "denied" && (
+        <div className="workspace-error-box messages-notification-permission-box">
+          Las notificaciones están bloqueadas por el navegador. Actívalas desde la configuración del sitio para recibir avisos de mensajes nuevos.
+        </div>
+      )}
 
       {messageError && <div className="workspace-error-box">{messageError}</div>}
       {messageStatus && <div className="workspace-success-box">{messageStatus}</div>}
