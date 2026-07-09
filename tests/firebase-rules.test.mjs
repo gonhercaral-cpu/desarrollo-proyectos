@@ -117,7 +117,13 @@ async function seedBaseData() {
         folio: "IMP-2026-0001",
         requestType: "Certificado",
         responsibleUid: "printer",
+        responsibleName: "Printer",
+        responsibleEmail: "printer@test.local",
+        collaboratorUid: "collab",
+        collaboratorName: "Collaborator",
+        collaboratorEmail: "collab@test.local",
         status: "En producciÃ³n",
+        students: [],
         deleted: false,
       }),
     ]);
@@ -462,6 +468,79 @@ describe("certificados de imprenta", () => {
     await assertSucceeds(getDoc(doc(unauth(), "publicCertificateValidations", certificateId)));
   });
 
+  it("permite al colaborador de apoyo guardar folios, certificado y validacion publica", async () => {
+    const db = auth("collab");
+    const certificateId = "CERT-2026-A1-0001-002-APOYO";
+
+    await assertSucceeds(
+      updateDoc(doc(db, "printRequests", "cert-request-1"), {
+        students: [
+          {
+            id: "student-2",
+            name: "Alumno Apoyo",
+            deliveryType: "Digital",
+            status: "Folio generado",
+            certificateFolio: "CERT-2026-A1-0001-002",
+            validationCode: certificateId,
+          },
+        ],
+        updatedAt: Timestamp.now(),
+        updatedByUid: "collab",
+        updatedByName: "Collaborator",
+        updatedByEmail: "collab@test.local",
+      })
+    );
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "generatedCertificates", certificateId),
+        validGeneratedCertificate({
+          folio: "CERT-2026-A1-0001-002",
+          validationCode: certificateId,
+          studentId: "student-2",
+          studentName: "Alumno Apoyo",
+          generatedByUid: "collab",
+          generatedByName: "Collaborator",
+          generatedByEmail: "collab@test.local",
+          updatedByUid: "collab",
+          updatedByName: "Collaborator",
+          updatedByEmail: "collab@test.local",
+        })
+      )
+    );
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "publicCertificateValidations", certificateId),
+        validPublicCertificateValidation({
+          folio: "CERT-2026-A1-0001-002",
+          validationCode: certificateId,
+          studentName: "Alumno Apoyo",
+        })
+      )
+    );
+  });
+
+  it("bloquea generar certificados de solicitud a colaborador no asignado", async () => {
+    const db = auth("requester");
+
+    await assertFails(
+      setDoc(
+        doc(db, "generatedCertificates", "CERT-2026-A1-0001-003-NO-ASIGNADO"),
+        validGeneratedCertificate({
+          folio: "CERT-2026-A1-0001-003",
+          validationCode: "CERT-2026-A1-0001-003-NO-ASIGNADO",
+          generatedByUid: "requester",
+          generatedByName: "Requester",
+          generatedByEmail: "requester@test.local",
+          updatedByUid: "requester",
+          updatedByName: "Requester",
+          updatedByEmail: "requester@test.local",
+        })
+      )
+    );
+  });
+
   it("permite registrar certificado individual sin solicitud y validarlo por QR", async () => {
     const db = auth("printer");
     const certificateId = "CERT-2026-A1-IND-001-XYZ789";
@@ -610,5 +689,19 @@ describe("storage", () => {
     const fileRef = ref(storage, "evidence/owned-project/collab/proof.txt");
 
     await assertSucceeds(uploadString(fileRef, "proof", "raw", { contentType: "text/plain" }));
+  });
+
+  it("permite al colaborador de apoyo subir PDF de certificado", async () => {
+    const storage = storageAuth("collab");
+    const fileRef = ref(storage, "printshop/generated-certificates/cert-request-1/2026/certificado-apoyo.pdf");
+
+    await assertSucceeds(uploadString(fileRef, "%PDF-1.4", "raw", { contentType: "application/pdf" }));
+  });
+
+  it("bloquea subir PDF de certificado a colaborador no asignado", async () => {
+    const storage = storageAuth("requester");
+    const fileRef = ref(storage, "printshop/generated-certificates/cert-request-1/2026/certificado-ajeno.pdf");
+
+    await assertFails(uploadString(fileRef, "%PDF-1.4", "raw", { contentType: "application/pdf" }));
   });
 });

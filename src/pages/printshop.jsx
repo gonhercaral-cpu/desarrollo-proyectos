@@ -2696,6 +2696,311 @@ function formatDate(value) {
   }).format(date);
 }
 
+function formatPrintableDate(value) {
+  if (!value) return "—";
+
+  const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function escapePrintableHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getPrintableValue(value) {
+  const cleanValue = String(value ?? "").trim();
+  return cleanValue ? escapePrintableHtml(cleanValue) : "—";
+}
+
+function getCertificateDeliveryTypeLabel(student) {
+  const deliveryType = String(student?.deliveryType || student?.studentDeliveryType || "").trim().toLowerCase();
+
+  if (deliveryType.includes("amb")) return "IMPRESO / DIGITAL";
+  if (deliveryType.includes("digital")) return "DIGITAL";
+  if (deliveryType.includes("impres")) return "IMPRESO";
+
+  return "—";
+}
+
+function getStudentDeliveryDate(student) {
+  return formatPrintableDate(
+    student?.certificateDeliveredAt ||
+      student?.deliveredAt ||
+      student?.deliveryDate ||
+      student?.deliveredDate ||
+      ""
+  );
+}
+
+function buildCertificateDeliveryListHtml(request, students) {
+  const defaultNote = "FAVOR DE REVISAR SI HAY PAGOS ATRASADOS GRACIAS (ADEUDOS)";
+  const requestNotes = String(request?.notes || "").trim();
+  const rows = normalizeRequestStudents(students || []);
+  const requestDate = formatPrintableDate(request?.requestDate || request?.createdAt);
+  const scheduledDate = formatPrintableDate(
+    request?.readyForDeliveryAt ||
+      request?.requestedDeliveryDate ||
+      request?.dueDate ||
+      request?.certificateIssueDate ||
+      request?.updatedAt
+  );
+  const modalityGroup = [
+    request?.certificateTemplateAudience || request?.courseAudience,
+    request?.group || request?.courseLevel || request?.courseProgramName,
+  ].filter(Boolean).join(" / ");
+  const levelBookType = [
+    request?.level && request.level !== "No aplica" ? request.level : "",
+    request?.productName || request?.requestType,
+  ].filter(Boolean).join(" / ");
+  const title = `Lista de entrega ${request?.folio || ""}`.trim();
+
+  const studentRows = rows.length > 0
+    ? rows.map((student, index) => `
+        <tr>
+          <td class="number-cell">${index + 1}</td>
+          <td class="name-cell">${getPrintableValue(student.name)}</td>
+          <td class="type-cell">${getCertificateDeliveryTypeLabel(student)}</td>
+          <td class="date-cell">${getStudentDeliveryDate(student)}</td>
+          <td class="signature-cell"></td>
+        </tr>
+      `).join("")
+    : `
+        <tr>
+          <td class="number-cell">1</td>
+          <td class="name-cell">—</td>
+          <td class="type-cell">—</td>
+          <td class="date-cell">—</td>
+          <td class="signature-cell"></td>
+        </tr>
+      `;
+
+  return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapePrintableHtml(title || "Lista de entrega")}</title>
+    <style>
+      @page { size: letter portrait; margin: 12mm; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #111827;
+        background: #f8fafc;
+      }
+      .delivery-sheet {
+        width: 100%;
+        min-height: 100vh;
+        padding: 18px;
+        border: 1px solid #d8e1ee;
+        background: #ffffff;
+      }
+      .document-header {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 16px;
+        align-items: center;
+        padding-bottom: 14px;
+        margin-bottom: 14px;
+        border-bottom: 3px solid #1d4f91;
+      }
+      .brand-logo {
+        width: 82px;
+        height: 82px;
+        object-fit: contain;
+      }
+      .brand-kicker {
+        margin: 0 0 4px;
+        color: #1d4f91;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .institution-name {
+        margin: 0;
+        color: #102f5c;
+        font-size: 20px;
+        font-weight: 800;
+      }
+      .sheet-title {
+        margin: 4px 0 0;
+        color: #1f2937;
+        font-size: 16px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .header-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .header-cell {
+        min-height: 48px;
+        border: 1px solid #d8e1ee;
+        border-left: 4px solid #1d4f91;
+        background: #f8fbff;
+      }
+      .header-cell span {
+        display: block;
+        padding: 6px 8px 0;
+        color: #1d4f91;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .header-cell strong {
+        display: block;
+        padding: 5px 8px 8px;
+        min-height: 24px;
+        color: #111827;
+        font-size: 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        background: #ffffff;
+      }
+      thead {
+        display: table-header-group;
+      }
+      thead th {
+        background: #1d4f91;
+        color: #ffffff;
+        border: 1px solid #123a6d;
+        padding: 8px 6px;
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+      tbody {
+        display: table-row-group;
+      }
+      tbody td {
+        border: 1px solid #c6d2e1;
+        padding: 8px 7px;
+        min-height: 42px;
+        font-size: 11px;
+        vertical-align: middle;
+      }
+      tbody tr:nth-child(even) td { background: #f3f7fc; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      .number-cell { width: 7%; text-align: center; font-weight: 700; }
+      .name-cell { width: 31%; font-weight: 700; }
+      .type-cell { width: 16%; text-align: center; font-weight: 700; }
+      .date-cell { width: 14%; text-align: center; }
+      .signature-cell { width: 32%; height: 48px; }
+      .notes {
+        margin-top: 14px;
+        border: 1px solid #d8e1ee;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .notes-title {
+        padding: 7px 10px;
+        background: #1d4f91;
+        color: #ffffff;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 11px;
+      }
+      .notes-body {
+        min-height: 54px;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+      .print-actions {
+        position: sticky;
+        top: 0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 10px 0 14px;
+        background: #f8fafc;
+      }
+      .print-actions button {
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        background: #1d4f91;
+        color: #ffffff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      @media print {
+        .print-actions { display: none; }
+        body { background: #ffffff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        .delivery-sheet {
+          min-height: auto;
+          padding: 0;
+          border: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-actions">
+      <button type="button" onclick="window.print()">Imprimir</button>
+    </div>
+    <main class="delivery-sheet">
+      <header class="document-header">
+        <img class="brand-logo" src="/active-logo.png" alt="Active English School" onerror="this.style.display='none'" />
+        <div>
+          <p class="brand-kicker">Documento generado por sistema</p>
+          <h1 class="institution-name">Active English School</h1>
+          <p class="sheet-title">Lista de entrega de certificados</p>
+        </div>
+      </header>
+      <section class="header-grid" aria-label="Datos de solicitud">
+        <div class="header-cell"><span>Modalidad / grupo</span><strong>${getPrintableValue(modalityGroup)}</strong></div>
+        <div class="header-cell"><span>Nivel / libro / tipo</span><strong>${getPrintableValue(levelBookType)}</strong></div>
+        <div class="header-cell"><span>Maestro(a)</span><strong>${getPrintableValue(request?.teacherSignerName || request?.teacherName)}</strong></div>
+        <div class="header-cell"><span>Horario</span><strong>${getPrintableValue(request?.schedule)}</strong></div>
+        <div class="header-cell"><span>Fecha solicitud</span><strong>${requestDate}</strong></div>
+        <div class="header-cell"><span>Fecha programada / entrega</span><strong>${scheduledDate}</strong></div>
+        <div class="header-cell"><span>Folio solicitud</span><strong>${getPrintableValue(request?.folio)}</strong></div>
+        <div class="header-cell"><span>Plantel</span><strong>${getPrintableValue(request?.campus)}</strong></div>
+      </section>
+      <table aria-label="Alumnos para entrega">
+        <thead>
+          <tr>
+            <th class="number-cell">N&deg;</th>
+            <th class="name-cell">Nombre del alumno</th>
+            <th class="type-cell">Status / tipo</th>
+            <th class="date-cell">Fecha de entrega</th>
+            <th class="signature-cell">Firma / recibido</th>
+          </tr>
+        </thead>
+        <tbody>${studentRows}</tbody>
+      </table>
+      <section class="notes">
+        <div class="notes-title">Notas:</div>
+        <div class="notes-body">${escapePrintableHtml(defaultNote)}${requestNotes ? `\n${escapePrintableHtml(requestNotes)}` : ""}</div>
+      </section>
+    </main>
+    <script>
+      window.addEventListener("load", () => {
+        window.setTimeout(() => window.print(), 250);
+      });
+    </script>
+  </body>
+</html>`;
+}
+
 
 function getBatchProgress(batch) {
   const statusProgress = {
@@ -2873,6 +3178,73 @@ function canProfileAccessPrintshop(profile, isAdmin) {
     (departmentName) =>
       departmentName === "imprenta" || departmentName === "soporte tecnico"
   );
+}
+
+function requestHasUidInList(value, uid) {
+  if (!Array.isArray(value) || !uid) return false;
+
+  return value.some((item) => {
+    if (typeof item === "string") return isSameUid(uid, item);
+
+    return (
+      isSameUid(uid, item?.uid) ||
+      isSameUid(uid, item?.id) ||
+      isSameUid(uid, item?.userUid) ||
+      isSameUid(uid, item?.collaboratorUid) ||
+      isSameUid(uid, item?.supportUid)
+    );
+  });
+}
+
+function isPrintRequestAssignedToUser(request, actor = {}) {
+  if (!request) return false;
+
+  return (
+    isSameUid(actor.uid, request.responsibleUid) ||
+    isSameUid(actor.uid, request.assignedToUid) ||
+    isSameUid(actor.uid, request.productionAssigneeUid) ||
+    isSameUid(actor.uid, request.assignedCollaboratorUid) ||
+    isSameUid(actor.uid, request.responsibleId) ||
+    isSameText(actor.email, request.responsibleEmail) ||
+    isSameText(actor.email, request.assignedToEmail) ||
+    isSameText(actor.email, request.productionAssigneeEmail) ||
+    isSameText(actor.name, request.responsibleName) ||
+    isSameText(actor.name, request.assignedToName) ||
+    isSameText(actor.name, request.productionAssigneeName)
+  );
+}
+
+function isPrintRequestSupportUser(request, actor = {}) {
+  if (!request) return false;
+
+  return (
+    isSameUid(actor.uid, request.collaboratorUid) ||
+    isSameUid(actor.uid, request.collaboratorId) ||
+    isSameUid(actor.uid, request.supportCollaboratorUid) ||
+    isSameUid(actor.uid, request.productionSupportUid) ||
+    isSameUid(actor.uid, request.supportUid) ||
+    requestHasUidInList(request.supportCollaboratorIds, actor.uid) ||
+    requestHasUidInList(request.supportCollaborators, actor.uid) ||
+    requestHasUidInList(request.collaboratorUids, actor.uid) ||
+    requestHasUidInList(request.collaboratorIds, actor.uid) ||
+    isSameText(actor.email, request.collaboratorEmail) ||
+    isSameText(actor.email, request.supportCollaboratorEmail) ||
+    isSameText(actor.email, request.productionSupportEmail) ||
+    isSameText(actor.email, request.supportEmail) ||
+    isSameText(actor.name, request.collaboratorName) ||
+    isSameText(actor.name, request.supportCollaboratorName) ||
+    isSameText(actor.name, request.productionSupportName) ||
+    isSameText(actor.name, request.supportName)
+  );
+}
+
+function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
+  if (!request) return isAdminUser ? "admin" : "viewer";
+  if (isAdminUser) return "admin";
+  if (isPrintRequestAssignedToUser(request, actor)) return "responsible";
+  if (isPrintRequestSupportUser(request, actor)) return "collaborator";
+
+  return "viewer";
 }
 
 export default function PrintShop() {
@@ -4107,27 +4479,21 @@ export default function PrintShop() {
   }
 
   function isPrintRequestResponsible(request, auditUser = getAuditUser()) {
-    if (!request) return false;
-
-    return (
-      isSameUid(auditUser.uid, request.responsibleUid) ||
-      isSameText(auditUser.email, request.responsibleEmail) ||
-      isSameText(auditUser.name, request.responsibleName)
-    );
+    return isPrintRequestAssignedToUser(request, auditUser);
   }
 
   function isPrintRequestCollaborator(request, auditUser = getAuditUser()) {
-    if (!request) return false;
+    return isPrintRequestSupportUser(request, auditUser);
+  }
 
-    return (
-      isSameUid(auditUser.uid, request.collaboratorUid) ||
-      isSameText(auditUser.email, request.collaboratorEmail) ||
-      isSameText(auditUser.name, request.collaboratorName)
-    );
+  function getCurrentUserPrintRequestRole(request = selectedRequest) {
+    return getPrintRequestMemberRole(request, getAuditUser(), isAdmin);
   }
 
   function canCurrentUserEditRequest(request = selectedRequest) {
-    return isAdmin || isPrintRequestResponsible(request) || isPrintRequestCollaborator(request);
+    return ["admin", "responsible", "collaborator"].includes(
+      getCurrentUserPrintRequestRole(request)
+    );
   }
 
   function handleRequestInputChange(event) {
@@ -9593,13 +9959,6 @@ function DashboardView({
         ))}
       </section>
 
-      {canViewCertificateStatistics && (
-        <CertificateStatisticsSection
-          printRequests={printRequests}
-          generatedCertificates={generatedCertificates}
-        />
-      )}
-
       <section className="printshop-dashboard-compact-layout">
         <Panel title="Trabajo actual" icon="▦" actionLabel="Resumen operativo">
           <div className="printshop-workboard-grid compact-home">
@@ -9749,6 +10108,13 @@ function DashboardView({
           </button>
         </Panel>
       </section>
+
+      {canViewCertificateStatistics && (
+        <CertificateStatisticsSection
+          printRequests={printRequests}
+          generatedCertificates={generatedCertificates}
+        />
+      )}
     </>
   );
 }
@@ -12632,23 +12998,17 @@ function PrintRequestsView({
   const requestProducts = products.filter(
     (product) => product.active !== false && product.category !== "Libro"
   );
-  const selectedRole = selectedRequest
-    ? isAdmin
-      ? "admin"
-      : isSameUid(currentUserUid, selectedRequest.responsibleUid)
-        ? "responsible"
-        : isSameUid(currentUserUid, selectedRequest.collaboratorUid)
-          ? "collaborator"
-        : "viewer"
-    : isAdmin
-      ? "admin"
-      : "viewer";
+  const selectedRole = getPrintRequestMemberRole(
+    selectedRequest,
+    { uid: currentUserUid },
+    isAdmin
+  );
   const canEditAdministrativeFields = isAdmin;
   const canEditOperationalFields =
     isAdmin || selectedRole === "responsible" || selectedRole === "collaborator";
   const canEditCertificateProductionFields =
     canEditAdministrativeFields || canEditOperationalFields;
-  const canGenerateFolios = Boolean(currentUserUid);
+  const canGenerateFolios = canEditOperationalFields;
   const canCreateRequest = isAdmin;
   const isCertificateLike = isRequestCertificateLike(requestForm.requestType);
   const isEditingExistingRequest = Boolean(selectedRequestId);
@@ -13590,20 +13950,14 @@ function CertificatesWorkspaceView({
   const activeRequest = isRequestCertificateLike(selectedRequest?.requestType)
     ? selectedRequest
     : filteredCertificateRequests[0] || certificateRequests[0] || null;
-  const selectedRole = activeRequest
-    ? isAdmin
-      ? "admin"
-      : isSameUid(currentUserUid, activeRequest.responsibleUid)
-        ? "responsible"
-        : isSameUid(currentUserUid, activeRequest.collaboratorUid)
-          ? "collaborator"
-        : "viewer"
-    : isAdmin
-      ? "admin"
-      : "viewer";
+  const selectedRole = getPrintRequestMemberRole(
+    activeRequest,
+    { uid: currentUserUid },
+    isAdmin
+  );
   const canManageStudents =
     isAdmin || selectedRole === "responsible" || selectedRole === "collaborator";
-  const canGenerateFolios = Boolean(currentUserUid);
+  const canGenerateFolios = canManageStudents;
   const generatedCount = generatedCertificates.filter((certificate) =>
     certificateRequests.some((request) => request.id === certificate.requestId)
   ).length;
@@ -14394,6 +14748,10 @@ function RequestDetailCard({
   );
 
   async function buildAndStoreStudentCertificatePdf(student) {
+    if (!canGenerateFolios) {
+      throw new Error("No tienes permisos para generar o guardar certificados en esta solicitud.");
+    }
+
     const element = bulkCertificateRefs.current?.[student.id];
 
     if (!element) {
@@ -14435,6 +14793,11 @@ function RequestDetailCard({
 
     if (certificateStudentsWithFolios.length === 0) {
       setBulkCertificateMessage("Primero genera folios para los alumnos.");
+      return;
+    }
+
+    if (!canGenerateFolios) {
+      setBulkCertificateMessage("No tienes permisos para guardar PDFs de esta solicitud.");
       return;
     }
 
@@ -14485,6 +14848,11 @@ function RequestDetailCard({
 
     if (certificateStudentsWithFolios.length === 0) {
       setBulkCertificateMessage("Primero genera folios para los alumnos.");
+      return;
+    }
+
+    if (!canGenerateFolios) {
+      setBulkCertificateMessage("No tienes permisos para descargar certificados de esta solicitud.");
       return;
     }
 
@@ -14567,6 +14935,11 @@ function RequestDetailCard({
 
     if (certificateStudentsWithFolios.length === 0) {
       setBulkCertificateMessage("Primero genera folios para los alumnos.");
+      return;
+    }
+
+    if (!canGenerateFolios) {
+      setBulkCertificateMessage("No tienes permisos para abrir certificados de esta solicitud.");
       return;
     }
 
@@ -14685,6 +15058,53 @@ function RequestDetailCard({
       }
     } finally {
       setBulkCertificateWorking(false);
+    }
+  }
+
+  async function openCertificateDeliveryList() {
+    if (bulkCertificateWorking) return;
+
+    if (!canGenerateFolios) {
+      setBulkCertificateMessage("No tienes permisos para abrir la lista de entrega de esta solicitud.");
+      return;
+    }
+
+    if (students.length === 0) {
+      setBulkCertificateMessage("Agrega primero la lista de alumnos.");
+      return;
+    }
+
+    const deliveryListWindow = window.open("", "_blank");
+
+    if (!deliveryListWindow) {
+      setBulkCertificateMessage("No se pudo abrir la lista de entrega. Revisa el bloqueo de ventanas emergentes.");
+      return;
+    }
+
+    deliveryListWindow.document.open();
+    deliveryListWindow.document.write(buildCertificateDeliveryListHtml(request, students));
+    deliveryListWindow.document.close();
+    setBulkCertificateMessage("Lista de entrega abierta en una pestaña nueva.");
+
+    if (typeof onLogPrintshopAction === "function") {
+      try {
+        await onLogPrintshopAction({
+          type: "CERTIFICATE_DELIVERY_LIST_OPENED",
+          module: "certificates",
+          title: "Lista de entrega abierta",
+          description: `Se abrio la lista de entrega de certificados de la solicitud ${request.folio || ""}.`,
+          referenceType: "request",
+          referenceId: request.id,
+          requestId: request.id,
+          requestFolio: request.folio || "",
+          productId: request.productId || "",
+          productName: request.productName || "",
+          campus: request.campus || "",
+          level: request.level || "",
+        });
+      } catch (error) {
+        console.error("No se pudo registrar la bitácora de lista de entrega:", error);
+      }
     }
   }
 
@@ -15052,8 +15472,17 @@ function RequestDetailCard({
                   <button
                     type="button"
                     className="visual-outline-button"
+                    disabled={bulkCertificateWorking || !canGenerateFolios || students.length === 0}
+                    onClick={openCertificateDeliveryList}
+                  >
+                    Lista de entrega
+                  </button>
+                  <button
+                    type="button"
+                    className="visual-outline-button"
                     disabled={
                       bulkCertificateWorking ||
+                      !canGenerateFolios ||
                       certificateStudentsWithFolios.length === 0 ||
                       certificateStudentsMissingPdf.length === 0
                     }
@@ -15064,7 +15493,7 @@ function RequestDetailCard({
                   <button
                     type="button"
                     className="visual-outline-button"
-                    disabled={bulkCertificateWorking || certificateStudentsWithFolios.length === 0}
+                    disabled={bulkCertificateWorking || !canGenerateFolios || certificateStudentsWithFolios.length === 0}
                     onClick={openCertificatesPrintPdf}
                   >
                     {bulkCertificateWorking ? "Procesando..." : "Abrir PDF para impresión"}
@@ -15072,7 +15501,7 @@ function RequestDetailCard({
                   <button
                     type="button"
                     className="visual-primary-button"
-                    disabled={bulkCertificateWorking || certificateStudentsWithFolios.length === 0}
+                    disabled={bulkCertificateWorking || !canGenerateFolios || certificateStudentsWithFolios.length === 0}
                     onClick={downloadCertificatesZip}
                   >
                     {bulkCertificateWorking ? "Procesando..." : "Descargar ZIP"}
@@ -15148,7 +15577,7 @@ Mariana Torres`}
               ) : (
                 <div className="request-detail-note important">
                   <strong>Lista en solo lectura</strong>
-                  <p>Solo el administrador o el responsable asignado pueden modificar los alumnos.</p>
+                  <p>Solo el administrador, el responsable asignado o el colaborador de apoyo pueden modificar los alumnos.</p>
                 </div>
               )}
 
@@ -15293,6 +15722,7 @@ Mariana Torres`}
                   teacherSigner={selectedTeacherSigner}
                   certificateTemplate={selectedCertificateTemplate}
                   onCertificateGenerated={onRegisterGeneratedCertificate}
+                  canGenerateCertificate={canGenerateFolios}
                 />
               </div>
             ) : students.some((student) => Boolean(student.certificateFolio)) ? null : (
@@ -15335,6 +15765,8 @@ Mariana Torres`}
               ? "Administrador"
               : selectedRole === "responsible"
                 ? "Responsable asignado"
+                : selectedRole === "collaborator"
+                  ? "Colaborador de apoyo"
                 : "Solo lectura"}
           </strong>
         </div>
@@ -15905,6 +16337,7 @@ function CertificatePreviewCard({
   teacherSigner,
   certificateTemplate,
   onCertificateGenerated,
+  canGenerateCertificate = true,
 }) {
   const certificateRef = useRef(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -15912,41 +16345,40 @@ function CertificatePreviewCard({
   const [embeddedTeacherSignatureUrl, setEmbeddedTeacherSignatureUrl] = useState("");
   const [generationMessage, setGenerationMessage] = useState("");
 
-  if (!request || !student) return null;
-
-  const level = request.level || "A1";
-  const issueDate = formatCertificatePreviewDate(getCertificateIssueDate(request));
+  const safeRequest = request || {};
+  const level = safeRequest.level || "A1";
+  const issueDate = formatCertificatePreviewDate(getCertificateIssueDate(safeRequest));
   const principalName =
-    principalSigner?.name || request.principalSignerName || CERTIFICATE_PRINCIPAL_NAME;
+    principalSigner?.name || safeRequest.principalSignerName || CERTIFICATE_PRINCIPAL_NAME;
   const principalRole =
-    principalSigner?.role || request.principalSignerRole || CERTIFICATE_PRINCIPAL_ROLE;
+    principalSigner?.role || safeRequest.principalSignerRole || CERTIFICATE_PRINCIPAL_ROLE;
   const principalSignatureUrl =
     principalSigner?.signatureDataUrl ||
-    request.principalSignatureDataUrl ||
+    safeRequest.principalSignatureDataUrl ||
     DEFAULT_PRINCIPAL_SIGNATURE_DATA_URL;
   const principalSignatureStoragePath = principalSigner?.storagePath || "";
   const teacherName =
-    teacherSigner?.name || request.teacherSignerName || request.teacherName || "Teacher";
-  const teacherRole = teacherSigner?.role || request.teacherSignerRole || CERTIFICATE_TEACHER_ROLE;
+    teacherSigner?.name || safeRequest.teacherSignerName || safeRequest.teacherName || "Teacher";
+  const teacherRole = teacherSigner?.role || safeRequest.teacherSignerRole || CERTIFICATE_TEACHER_ROLE;
   const teacherSignatureUrl =
     teacherSigner?.signatureDataUrl ||
-    request.teacherSignatureDataUrl ||
+    safeRequest.teacherSignatureDataUrl ||
     DEFAULT_TEACHER_SIGNATURE_DATA_URL;
   const teacherSignatureStoragePath = teacherSigner?.storagePath || "";
   const displayPrincipalSignatureUrl = embeddedPrincipalSignatureUrl || principalSignatureUrl;
   const displayTeacherSignatureUrl = embeddedTeacherSignatureUrl || teacherSignatureUrl;
   const trackLabel =
     certificateTemplate?.programName ||
-    request.certificateTemplateProgramName ||
-    getCertificateTrackLabel(request);
-  const programLabel = getCertificateProgramLabel(request);
+    safeRequest.certificateTemplateProgramName ||
+    getCertificateTrackLabel(safeRequest);
+  const programLabel = getCertificateProgramLabel(safeRequest);
   const levelColor = getCertificateLevelColor(level);
   const templateImageUrl =
     certificateTemplate?.templateImageDataUrl ||
-    request.certificateTemplateImageDataUrl ||
+    safeRequest.certificateTemplateImageDataUrl ||
     "";
   const templatePositions = normalizeCertificateTemplatePositions(
-    certificateTemplate?.positions || request.certificateTemplatePositions
+    certificateTemplate?.positions || safeRequest.certificateTemplatePositions
   );
 
   useEffect(() => {
@@ -15993,8 +16425,15 @@ function CertificatePreviewCard({
     teacherSignatureStoragePath,
   ]);
 
+  if (!request || !student) return null;
+
   async function downloadCertificatePdf() {
     if (!certificateRef.current || downloadingPdf) return;
+
+    if (!canGenerateCertificate) {
+      setGenerationMessage("No tienes permisos para generar o guardar certificados en esta solicitud.");
+      return;
+    }
 
     const element = certificateRef.current;
 
@@ -16075,7 +16514,7 @@ function CertificatePreviewCard({
           type="button"
           className="visual-primary-button"
           onClick={downloadCertificatePdf}
-          disabled={downloadingPdf}
+          disabled={downloadingPdf || !canGenerateCertificate}
         >
           {downloadingPdf ? "Generando PDF..." : "Descargar PDF"}
         </button>

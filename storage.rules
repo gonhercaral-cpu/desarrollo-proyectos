@@ -77,15 +77,70 @@ service firebase.storage {
       return firestore.get(printRequestPath(requestId)).data;
     }
 
+    function profileEmailMatches(value) {
+      return hasProfile()
+        && value is string
+        && userDoc().data.email is string
+        && value == userDoc().data.email;
+    }
+
+    function profileNameMatches(value) {
+      return hasProfile()
+        && value is string
+        && userDoc().data.name is string
+        && value == userDoc().data.name;
+    }
+
+    function isPrintRequestAssignedData(printRequest) {
+      return hasProfile()
+        && (
+          ("responsibleUid" in printRequest && printRequest.responsibleUid is string && printRequest.responsibleUid == request.auth.uid) ||
+          ("assignedToUid" in printRequest && printRequest.assignedToUid is string && printRequest.assignedToUid == request.auth.uid) ||
+          ("productionAssigneeUid" in printRequest && printRequest.productionAssigneeUid is string && printRequest.productionAssigneeUid == request.auth.uid) ||
+          ("assignedCollaboratorUid" in printRequest && printRequest.assignedCollaboratorUid is string && printRequest.assignedCollaboratorUid == request.auth.uid) ||
+          ("responsibleId" in printRequest && printRequest.responsibleId is string && printRequest.responsibleId == request.auth.uid) ||
+          ("responsibleEmail" in printRequest && profileEmailMatches(printRequest.responsibleEmail)) ||
+          ("assignedToEmail" in printRequest && profileEmailMatches(printRequest.assignedToEmail)) ||
+          ("productionAssigneeEmail" in printRequest && profileEmailMatches(printRequest.productionAssigneeEmail)) ||
+          ("responsibleName" in printRequest && profileNameMatches(printRequest.responsibleName)) ||
+          ("assignedToName" in printRequest && profileNameMatches(printRequest.assignedToName)) ||
+          ("productionAssigneeName" in printRequest && profileNameMatches(printRequest.productionAssigneeName))
+        );
+    }
+
+    function isPrintRequestSupportData(printRequest) {
+      return hasProfile()
+        && (
+          ("collaboratorUid" in printRequest && printRequest.collaboratorUid is string && printRequest.collaboratorUid == request.auth.uid) ||
+          ("collaboratorId" in printRequest && printRequest.collaboratorId is string && printRequest.collaboratorId == request.auth.uid) ||
+          ("supportCollaboratorUid" in printRequest && printRequest.supportCollaboratorUid is string && printRequest.supportCollaboratorUid == request.auth.uid) ||
+          ("productionSupportUid" in printRequest && printRequest.productionSupportUid is string && printRequest.productionSupportUid == request.auth.uid) ||
+          ("supportUid" in printRequest && printRequest.supportUid is string && printRequest.supportUid == request.auth.uid) ||
+          ("supportCollaboratorIds" in printRequest && printRequest.supportCollaboratorIds is list && request.auth.uid in printRequest.supportCollaboratorIds) ||
+          ("supportCollaborators" in printRequest && printRequest.supportCollaborators is list && request.auth.uid in printRequest.supportCollaborators) ||
+          ("collaboratorUids" in printRequest && printRequest.collaboratorUids is list && request.auth.uid in printRequest.collaboratorUids) ||
+          ("collaboratorIds" in printRequest && printRequest.collaboratorIds is list && request.auth.uid in printRequest.collaboratorIds) ||
+          ("collaboratorEmail" in printRequest && profileEmailMatches(printRequest.collaboratorEmail)) ||
+          ("supportCollaboratorEmail" in printRequest && profileEmailMatches(printRequest.supportCollaboratorEmail)) ||
+          ("productionSupportEmail" in printRequest && profileEmailMatches(printRequest.productionSupportEmail)) ||
+          ("supportEmail" in printRequest && profileEmailMatches(printRequest.supportEmail)) ||
+          ("collaboratorName" in printRequest && profileNameMatches(printRequest.collaboratorName)) ||
+          ("supportCollaboratorName" in printRequest && profileNameMatches(printRequest.supportCollaboratorName)) ||
+          ("productionSupportName" in printRequest && profileNameMatches(printRequest.productionSupportName)) ||
+          ("supportName" in printRequest && profileNameMatches(printRequest.supportName))
+        );
+    }
+
+    function isPrintRequestMemberData(printRequest) {
+      return isPrintRequestAssignedData(printRequest) || isPrintRequestSupportData(printRequest);
+    }
+
     function canAccessPrintRequest(requestId) {
       return canAccessPrintshop()
         || (
           hasProfile()
           && printRequestExists(requestId)
-          && (
-            printRequestData(requestId).responsibleUid == request.auth.uid ||
-            printRequestData(requestId).collaboratorUid == request.auth.uid
-          )
+          && isPrintRequestMemberData(printRequestData(requestId))
         );
     }
 

@@ -21342,8 +21342,9 @@ body:has(.field-mode-page) .main-content {
 /* ===== Acciones masivas de certificados ===== */
 .request-bulk-certificate-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 16px;
   padding: 16px;
   margin: 14px 0;
@@ -21370,7 +21371,7 @@ body:has(.field-mode-page) .main-content {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .request-bulk-certificate-message {
@@ -21390,11 +21391,14 @@ body:has(.field-mode-page) .main-content {
 @media (max-width: 860px) {
   .request-bulk-certificate-actions {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .request-bulk-certificate-buttons {
     justify-content: flex-start;
+  }
+
+  .request-bulk-certificate-buttons button {
+    flex: 1 1 180px;
   }
 }
 
@@ -51592,6 +51596,7 @@ body {
 
 .request-detail-redesign-card.detail-view-students .request-bulk-certificate-actions {
   display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
   margin-top: 14px !important;
   padding: 14px !important;
   border: 1px solid #dbe7ff !important;
@@ -51721,13 +51726,13 @@ body {
 }
 
 .request-detail-redesign-card.detail-view-students .request-bulk-certificate-actions {
-  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-columns: minmax(0, 1fr) !important;
   gap: 14px !important;
 }
 
 .request-detail-redesign-card.detail-view-students .request-bulk-certificate-buttons {
   display: flex !important;
-  justify-content: flex-end !important;
+  justify-content: flex-start !important;
   align-items: center !important;
   gap: 9px !important;
   flex-wrap: wrap !important;
@@ -51910,6 +51915,10 @@ body {
   .request-detail-redesign-card.detail-view-students .request-students-header-actions,
   .request-detail-redesign-card.detail-view-students .request-bulk-certificate-buttons {
     justify-content: flex-start !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-bulk-certificate-buttons button {
+    flex: 1 1 170px !important;
   }
 
   .request-detail-redesign-card.detail-view-students .request-students-summary {
