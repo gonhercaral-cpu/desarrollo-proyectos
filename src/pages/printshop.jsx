@@ -21,6 +21,7 @@ import {
 import { deleteObject, getBytes, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, storage } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
+import { buildCertificateStatistics, CERTIFICATE_QUICK_RANGES } from "../services/certificateStats";
 
 const productCategories = [
   "Libro",
@@ -2877,6 +2878,8 @@ function canProfileAccessPrintshop(profile, isAdmin) {
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin);
+  const canViewCertificateStatistics =
+    isAdmin || getProfileDepartmentNames(profile).includes("imprenta");
 
   const [activeSection, setActiveSection] = useState("dashboard");
   const [products, setProducts] = useState([]);
@@ -8538,6 +8541,8 @@ export default function PrintShop() {
           batchStats={batchStats}
           printRequests={printRequests}
           requestStats={requestStats}
+          generatedCertificates={generatedCertificates}
+          canViewCertificateStatistics={canViewCertificateStatistics}
           onOpenCatalog={() => setActiveSection("catalog")}
           onOpenInventory={() => setActiveSection("inventory")}
           onOpenBatches={() => setActiveSection("batches")}
@@ -9492,6 +9497,8 @@ function DashboardView({
   batchStats,
   printRequests,
   requestStats,
+  generatedCertificates,
+  canViewCertificateStatistics,
   onOpenCatalog,
   onOpenInventory,
   onOpenBatches,
@@ -9585,6 +9592,13 @@ function DashboardView({
           <MetricCard key={metric.label} metric={metric} />
         ))}
       </section>
+
+      {canViewCertificateStatistics && (
+        <CertificateStatisticsSection
+          printRequests={printRequests}
+          generatedCertificates={generatedCertificates}
+        />
+      )}
 
       <section className="printshop-dashboard-compact-layout">
         <Panel title="Trabajo actual" icon="▦" actionLabel="Resumen operativo">
@@ -9736,6 +9750,234 @@ function DashboardView({
         </Panel>
       </section>
     </>
+  );
+}
+
+const certificateStatsStatusOptions = [
+  "Solicitud recibida",
+  "Datos incompletos",
+  "En revisión",
+  "Aprobada",
+  "En producción",
+  "En revisión de calidad",
+  "Lista para entrega",
+  "Entregada",
+  "Cancelada",
+];
+
+function CertificateStatisticsSection({ printRequests, generatedCertificates }) {
+  const [rangeKey, setRangeKey] = useState("month");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [levelFilter, setLevelFilter] = useState("");
+  const [requesterFilter, setRequesterFilter] = useState("");
+  const [teacherFilter, setTeacherFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilterValue, setStatusFilterValue] = useState("");
+
+  const certificateRequests = useMemo(
+    () =>
+      (printRequests || [])
+        .filter(isVisiblePrintshopRecord)
+        .filter((request) => isRequestCertificateLike(request.requestType)),
+    [printRequests]
+  );
+
+  const filterOptions = useMemo(() => {
+    const levelsSet = new Set();
+    const requestersSet = new Set();
+    const teachersSet = new Set();
+
+    certificateRequests.forEach((request) => {
+      if (request.level) levelsSet.add(request.level);
+      if (request.requesterName) requestersSet.add(request.requesterName);
+      if (request.teacherName) teachersSet.add(request.teacherName);
+    });
+
+    return {
+      levels: Array.from(levelsSet).sort((a, b) => a.localeCompare(b, "es")),
+      requesters: Array.from(requestersSet).sort((a, b) => a.localeCompare(b, "es")),
+      teachers: Array.from(teachersSet).sort((a, b) => a.localeCompare(b, "es")),
+    };
+  }, [certificateRequests]);
+
+  const stats = useMemo(
+    () =>
+      buildCertificateStatistics(printRequests || [], generatedCertificates || [], {
+        rangeKey,
+        startDate: customStart,
+        endDate: customEnd,
+        level: levelFilter,
+        requesterName: requesterFilter,
+        teacherName: teacherFilter,
+        requestType: typeFilter,
+        status: statusFilterValue,
+      }),
+    [
+      printRequests,
+      generatedCertificates,
+      rangeKey,
+      customStart,
+      customEnd,
+      levelFilter,
+      requesterFilter,
+      teacherFilter,
+      typeFilter,
+      statusFilterValue,
+    ]
+  );
+
+  const hasData = stats.totals.requested > 0 || stats.totals.certificatesGenerated > 0;
+  const topCertificatesMax = stats.topCertificates[0]?.count || 1;
+  const topRequestersMax = stats.topRequesters[0]?.count || 1;
+  const topTeachersMax = stats.topTeachers[0]?.count || 1;
+  const byLevelMax = stats.byLevel[0]?.count || 1;
+
+  const statMetrics = [
+    { label: "Solicitados", value: String(stats.totals.requested), tone: "blue", icon: "requests", helper: "Certificados y diplomas solicitados" },
+    { label: "Entregados", value: String(stats.totals.certificatesDelivered), tone: "green", icon: "ready", helper: "Certificados entregados" },
+    { label: "En proceso", value: String(stats.totals.inProgress), tone: "orange", icon: "batches", helper: "En producción o revisión" },
+    { label: "Pendientes", value: String(stats.totals.pending), tone: "purple", icon: "alert", helper: "Recién recibidas o incompletas" },
+    { label: "Cancelados", value: String(stats.totals.cancelled), tone: "red", icon: "critical", helper: "Solicitudes canceladas" },
+  ];
+
+  function renderRankingRows(items, max, tone) {
+    if (items.length === 0) {
+      return <p className="certificate-stats-ranking-empty">Sin datos.</p>;
+    }
+
+    return items.map((item) => (
+      <div className="certificate-stats-ranking-row" key={item.label}>
+        <span>{item.label}</span>
+        <div className="printshop-progress-track">
+          <div
+            className={`printshop-progress-fill ${tone}`}
+            style={{ width: `${Math.round((item.count / max) * 100)}%` }}
+          />
+        </div>
+        <strong>{item.count}</strong>
+      </div>
+    ));
+  }
+
+  return (
+    <Panel
+      title="Estadísticas de certificados"
+      icon="☑"
+      actionLabel={
+        stats.comparison
+          ? `${stats.comparison.deltaPct >= 0 ? "↑" : "↓"} ${Math.abs(stats.comparison.deltaPct)}% vs periodo anterior`
+          : undefined
+      }
+    >
+      <div className="certificate-stats-filters">
+        <div className="printshop-section-tabs">
+          {CERTIFICATE_QUICK_RANGES.filter((option) => option.key !== "custom").map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={rangeKey === option.key ? "active" : ""}
+              onClick={() => setRangeKey(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={rangeKey === "custom" ? "active" : ""}
+            onClick={() => setRangeKey("custom")}
+          >
+            Personalizado
+          </button>
+        </div>
+
+        {rangeKey === "custom" && (
+          <div className="certificate-stats-custom-range">
+            <label>
+              <span>Desde</span>
+              <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} />
+            </label>
+            <label>
+              <span>Hasta</span>
+              <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
+            </label>
+          </div>
+        )}
+
+        <div className="certificate-stats-select-filters">
+          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+            <option value="">Todos los niveles</option>
+            {filterOptions.levels.map((level) => (
+              <option key={level} value={level}>{level}</option>
+            ))}
+          </select>
+
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+            <option value="">Certificados y diplomas</option>
+            <option value="Certificado">Certificado</option>
+            <option value="Diploma">Diploma</option>
+          </select>
+
+          <select value={requesterFilter} onChange={(event) => setRequesterFilter(event.target.value)}>
+            <option value="">Todos los solicitantes</option>
+            {filterOptions.requesters.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+
+          <select value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}>
+            <option value="">Todos los maestros</option>
+            {filterOptions.teachers.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+
+          <select value={statusFilterValue} onChange={(event) => setStatusFilterValue(event.target.value)}>
+            <option value="">Todos los estados</option>
+            {certificateStatsStatusOptions.map((status) => (
+              <option key={status} value={status}>{status}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {!hasData ? (
+        <div className="printshop-small-empty certificate-stats-empty">
+          <strong>Sin datos</strong>
+          <span>No hay certificados en este período.</span>
+        </div>
+      ) : (
+        <>
+          <div className="printshop-metrics-grid certificate-stats-metrics-grid">
+            {statMetrics.map((metric) => (
+              <MetricCard key={metric.label} metric={metric} />
+            ))}
+          </div>
+
+          <div className="certificate-stats-rankings">
+            <div className="certificate-stats-ranking-card">
+              <h3>Certificados más solicitados</h3>
+              {renderRankingRows(stats.topCertificates, topCertificatesMax, "blue")}
+            </div>
+
+            <div className="certificate-stats-ranking-card">
+              <h3>Solicitudes por nivel</h3>
+              {renderRankingRows(stats.byLevel, byLevelMax, "teal")}
+            </div>
+
+            <div className="certificate-stats-ranking-card">
+              <h3>Quiénes más solicitan</h3>
+              {renderRankingRows(stats.topRequesters, topRequestersMax, "orange")}
+            </div>
+
+            <div className="certificate-stats-ranking-card">
+              <h3>Maestros con más solicitudes</h3>
+              {renderRankingRows(stats.topTeachers, topTeachersMax, "green")}
+            </div>
+          </div>
+        </>
+      )}
+    </Panel>
   );
 }
 

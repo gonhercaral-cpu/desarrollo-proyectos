@@ -5,6 +5,7 @@ import {
   calculateAutomaticProgress,
   getProgressLabel,
 } from "../utils/progressUtils";
+import { buildCertificateStatistics } from "../services/certificateStats";
 
 const db = getFirestore();
 
@@ -18,6 +19,7 @@ const EMPTY_MODULE_DATA = {
   printSupplyItems: [],
   printFinishedInventory: [],
   printProducts: [],
+  generatedCertificates: [],
   technicalAssets: [],
   technicalMaintenances: [],
   technicalInstallations: [],
@@ -57,6 +59,7 @@ const MODULE_COLLECTIONS = {
   printSupplyItems: "printSupplyItems",
   printFinishedInventory: "printFinishedInventory",
   printProducts: "printProducts",
+  generatedCertificates: "generatedCertificates",
   technicalAssets: "technicalAssets",
   technicalMaintenances: "technicalMaintenances",
   technicalInstallations: "technicalInstallations",
@@ -433,6 +436,50 @@ export default function ExecutiveDashboard({ onOpenProject, onOpenModule }) {
             })}
           </div>
         </article>
+
+        <article className="admin-panel-card certificates-panel">
+          <PanelHeader title="Certificados (este mes)" action="Ver imprenta" onAction={() => onOpenModule?.("print-shop")} />
+
+          <div className="certificates-mini-stats">
+            <div>
+              <strong>{moduleSummary.certificates.totals.requested}</strong>
+              <span>Solicitados</span>
+            </div>
+            <div>
+              <strong>{moduleSummary.certificates.totals.certificatesDelivered}</strong>
+              <span>Entregados</span>
+            </div>
+            <div>
+              <strong>{moduleSummary.certificates.totals.inProgress}</strong>
+              <span>En proceso</span>
+            </div>
+            <div>
+              <strong>{moduleSummary.certificates.totals.pending}</strong>
+              <span>Pendientes</span>
+            </div>
+          </div>
+
+          <div className="status-legend-list">
+            {moduleSummary.certificates.topCertificates.length === 0 ? (
+              <EmptyState text="No hay certificados en este período." />
+            ) : (
+              moduleSummary.certificates.topCertificates.slice(0, 3).map((item, index) => {
+                const total = moduleSummary.certificates.totals.requested || 1;
+                const percentage = Math.round((item.count / total) * 100);
+                const tones = ["blue", "teal", "gold"];
+
+                return (
+                  <div className="status-legend-row" key={item.label}>
+                    <i className={`legend-dot legend-${tones[index % tones.length]}`} />
+                    <span>{item.label}</span>
+                    <strong>{item.count}</strong>
+                    <small>{percentage}%</small>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </article>
       </section>
     </div>
   );
@@ -715,6 +762,9 @@ function buildModuleSummary(modules) {
       ).length,
       recent: ideas.filter((idea) => isRecentDate(idea.createdAt, 14)).length,
     },
+    certificates: buildCertificateStatistics(printRequests, modules.generatedCertificates || [], {
+      rangeKey: "month",
+    }),
   };
 }
 
