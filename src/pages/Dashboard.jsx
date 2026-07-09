@@ -30,6 +30,7 @@ import SubscriptionManager from "./SubscriptionManager";
 import DriveManager from "./DriveManager";
 import ProtectCameras from "./ProtectCameras";
 import DepartmentsAdmin from "../components/DepartmentsAdmin";
+import DigitalSignageAdmin from "../components/DigitalSignageAdmin";
 import FloatingQuickTools from "../components/FloatingQuickTools";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -222,6 +223,16 @@ function renderDashboardNavIconPath(name) {
           <circle cx="12.5" cy="13.5" r="3.6" />
         </>
       );
+    case "signage":
+      return (
+        <>
+          <rect x="3" y="5" width="18" height="12" rx="2" />
+          <path d="M8 21h8" />
+          <path d="M12 17v4" />
+          <path d="M7 9h5" />
+          <path d="M7 13h10" />
+        </>
+      );
     case "more":
       return (
         <>
@@ -278,6 +289,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
     items.push({ page: "drive-manager", label: "Nube AES", mobileLabel: "Nube", icon: "drive", section: "Administración" });
     items.push({ page: "subscription-manager", label: "Gestor de suscripciones", mobileLabel: "Suscripciones", icon: "subscriptions", section: "Administración" });
+    items.push({ page: "digital-signage", label: "Digital Signage", mobileLabel: "Signage", icon: "signage", section: "Administración" });
     if (ENABLE_UNIFI_CAMERAS_MODULE) {
       items.push({ page: "protect-cameras", label: "UniFi Protect", mobileLabel: "Cámaras", icon: "protect", section: "Administración" });
     }
@@ -327,6 +339,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "create-project",
     "collaborators-admin",
     "departments-admin",
+    "digital-signage",
     "subscription-manager",
     "protect-cameras",
   ]);
@@ -665,6 +678,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       return <SubscriptionManager />;
     }
 
+    if (page === "digital-signage" && isAdmin) {
+      return <DigitalSignageAdmin />;
+    }
+
     if (page === "protect-cameras" && isAdmin && ENABLE_UNIFI_CAMERAS_MODULE) {
       return <ProtectCameras />;
     }
@@ -808,6 +825,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (navPage === "subscription-manager") {
       return page === "subscription-manager";
+    }
+
+    if (navPage === "digital-signage") {
+      return page === "digital-signage";
     }
 
     if (navPage === "protect-cameras") {
@@ -6390,6 +6411,7 @@ function getDashboardSearchableModules(isAdmin) {
     { type: "module", route: "collaborators-admin", title: "Colaboradores", description: "Gestión de usuarios y permisos", icon: "👥", tone: "green" },
     { type: "module", route: "departments-admin", title: "Departamentos", description: "Gestión de departamentos y áreas", icon: "▦", tone: "blue" },
     { type: "module", route: "drive-manager", title: "Nube AES", description: "Explorar carpetas y archivos de Google Drive", icon: "N", tone: "blue" },
+    { type: "module", route: "digital-signage", title: "Digital Signage", description: "Contenido visual, playlists y pantallas", icon: "TV", tone: "blue" },
   ];
 }
 

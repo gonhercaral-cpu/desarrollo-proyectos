@@ -19076,6 +19076,8 @@ body:has(.field-mode-page) .main-content {
 .certificate-signature-image {
   max-width: 240px;
   max-height: 84px;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
@@ -19310,6 +19312,8 @@ body:has(.field-mode-page) .main-content {
 .certificate-signature-image {
   max-width: 240px;
   max-height: 88px;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
@@ -19493,6 +19497,8 @@ body:has(.field-mode-page) .main-content {
 .signer-signature-preview img {
   max-width: 100%;
   max-height: 88px;
+  width: auto;
+  height: auto;
   object-fit: contain;
 }
 
@@ -19527,6 +19533,8 @@ body:has(.field-mode-page) .main-content {
 .signer-form-preview img {
   max-width: 260px;
   max-height: 90px;
+  width: auto;
+  height: auto;
   object-fit: contain;
   background: #fff;
   border-radius: 12px;
@@ -19660,6 +19668,8 @@ body:has(.field-mode-page) .main-content {
 .certificate-signature-image {
   max-width: 240px;
   max-height: 88px;
+  width: auto;
+  height: auto;
   object-fit: contain;
   display: block;
 }
@@ -19722,6 +19732,8 @@ body:has(.field-mode-page) .main-content {
   display: block;
   max-width: 240px;
   max-height: 88px;
+  width: auto;
+  height: auto;
   object-fit: contain;
   opacity: 1;
   visibility: visible;
@@ -19873,10 +19885,19 @@ body:has(.field-mode-page) .main-content {
 
 .certificate-template-signature {
   z-index: 5;
-  max-height: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
-  object-fit: contain;
+  overflow: visible;
   pointer-events: none;
+}
+
+.certificate-template-signature img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .certificate-template-signer-name strong,
@@ -20071,6 +20092,7 @@ body:has(.field-mode-page) .main-content {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: visible;
   font-size: 11px !important;
   color: #17345f;
 }
@@ -75132,4 +75154,475 @@ html[data-theme="dark"] .quick-tools-conversation-list .quick-tools-new-recipien
 .protect-connection-status {
   margin: 0 0 14px;
   font-weight: 700;
+}
+/* =========================================================
+   DIGITAL SIGNAGE
+========================================================= */
+
+.digital-signage-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.digital-signage-header {
+  margin-bottom: 0;
+}
+
+.visual-page-kicker {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: #0f4fc4;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.digital-signage-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.digital-signage-tabs button,
+.digital-pill-list button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #536176;
+  font-weight: 800;
+}
+
+.digital-signage-tabs button {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+}
+
+.digital-signage-tabs button.active,
+.digital-pill-list button.active {
+  background: #ffffff;
+  border-color: #c9d7ea;
+  color: #0f2442;
+  box-shadow: 0 8px 20px rgba(15, 36, 66, 0.08);
+}
+
+.digital-signage-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.4fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.digital-signage-grid.compact {
+  grid-template-columns: minmax(260px, 0.6fr) minmax(0, 1.4fr);
+}
+
+.digital-signage-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.digital-signage-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(15, 36, 66, 0.08);
+}
+
+.digital-signage-card h3 {
+  margin: 0 0 14px;
+  color: #0f2442;
+  font-size: 18px;
+}
+
+.digital-signage-card p,
+.digital-helper,
+.digital-empty {
+  color: #64748b;
+}
+
+.digital-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.digital-signage-page label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #536176;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.digital-signage-page input,
+.digital-signage-page select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f2442;
+  padding: 11px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.digital-signage-page input[type="file"] {
+  padding: 9px;
+}
+
+.digital-card-heading,
+.digital-add-row,
+.digital-row-actions,
+.digital-preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.digital-card-heading {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.digital-card-heading h3,
+.digital-card-heading p {
+  margin: 0;
+}
+
+.digital-card-heading span,
+.digital-preview-meta span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.digital-assets-list,
+.digital-device-list,
+.digital-playlist-items,
+.digital-pill-list {
+  display: grid;
+  gap: 10px;
+}
+
+.digital-asset-row,
+.digital-device-row,
+.digital-playlist-item {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #e5edf7;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.digital-asset-row {
+  grid-template-columns: 78px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.digital-device-row {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 0.8fr);
+}
+
+.digital-playlist-item {
+  grid-template-columns: 32px minmax(0, 1fr) 86px auto;
+  align-items: center;
+}
+
+.digital-asset-row img,
+.digital-asset-row video,
+.digital-web-thumb {
+  width: 78px;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #0f172a;
+}
+
+.digital-web-thumb {
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.digital-asset-row strong,
+.digital-device-row strong,
+.digital-playlist-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #0f2442;
+}
+
+.digital-asset-row span,
+.digital-device-row span,
+.digital-playlist-item small,
+.digital-asset-row small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.digital-device-row code {
+  grid-column: 1 / -1;
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 10px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.digital-row-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.digital-row-actions button,
+.digital-add-row button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.digital-add-row {
+  margin-bottom: 14px;
+}
+
+.digital-add-row select {
+  flex: 1;
+}
+
+.digital-pill-list {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.digital-pill-list button {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  text-align: left;
+  background: #f8fbff;
+  border-color: #d9e2ef;
+}
+
+.digital-pill-list span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.digital-signage-message {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #c9d7ea;
+  border-radius: 8px;
+  background: #f8fbff;
+  color: #0f2442;
+  font-weight: 800;
+}
+
+.digital-device-row small.online {
+  color: #148253;
+}
+
+.digital-device-row small.offline {
+  color: #b42318;
+}
+
+.digital-preview-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.digital-preview-screen {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #020617;
+  color: #ffffff;
+}
+
+.digital-preview-screen img,
+.digital-preview-screen video,
+.digital-preview-screen iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: contain;
+}
+
+.digital-preview-screen iframe {
+  background: #ffffff;
+}
+
+.digital-preview-screen.empty {
+  min-height: 260px;
+  font-weight: 900;
+}
+
+.digital-preview-meta {
+  justify-content: space-between;
+}
+
+.signage-player-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000000;
+  color: #ffffff;
+  z-index: 9999;
+}
+
+.signage-player-stage {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #000000;
+}
+
+.signage-player-stage img,
+.signage-player-stage video,
+.signage-player-stage iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.signage-player-stage img,
+.signage-player-stage video {
+  object-fit: contain;
+}
+
+.signage-player-stage iframe {
+  background: #ffffff;
+}
+
+.signage-player-message {
+  display: grid;
+  place-items: center;
+  width: min(92vw, 620px);
+  min-height: 160px;
+  padding: 24px;
+  text-align: center;
+}
+
+.signage-player-message strong {
+  font-size: clamp(24px, 5vw, 48px);
+  line-height: 1.1;
+}
+
+html[data-theme="dark"] .digital-signage-tabs,
+html[data-theme="dark"] .digital-signage-card,
+html[data-theme="dark"] .digital-signage-tabs button.active,
+html[data-theme="dark"] .digital-pill-list button.active,
+html[data-theme="dark"] .digital-signage-message {
+  background: #101826;
+  border-color: #253246;
+  color: #e5eefb;
+}
+
+html[data-theme="dark"] .digital-signage-card h3,
+html[data-theme="dark"] .digital-card-heading h3,
+html[data-theme="dark"] .digital-asset-row strong,
+html[data-theme="dark"] .digital-device-row strong,
+html[data-theme="dark"] .digital-playlist-item strong,
+html[data-theme="dark"] .digital-signage-page input,
+html[data-theme="dark"] .digital-signage-page select {
+  color: #e5eefb;
+}
+
+html[data-theme="dark"] .digital-signage-page p,
+html[data-theme="dark"] .digital-signage-page label,
+html[data-theme="dark"] .digital-asset-row span,
+html[data-theme="dark"] .digital-device-row span,
+html[data-theme="dark"] .digital-playlist-item small,
+html[data-theme="dark"] .digital-asset-row small,
+html[data-theme="dark"] .digital-card-heading span,
+html[data-theme="dark"] .digital-helper,
+html[data-theme="dark"] .digital-empty {
+  color: #a7b3c7;
+}
+
+html[data-theme="dark"] .digital-signage-page input,
+html[data-theme="dark"] .digital-signage-page select,
+html[data-theme="dark"] .digital-asset-row,
+html[data-theme="dark"] .digital-device-row,
+html[data-theme="dark"] .digital-playlist-item,
+html[data-theme="dark"] .digital-pill-list button,
+html[data-theme="dark"] .digital-device-row code {
+  background: #0b1220;
+  border-color: #253246;
+}
+
+html[data-theme="dark"] .digital-device-row code {
+  color: #cbd5e1;
+}
+
+@media (max-width: 980px) {
+  .digital-signage-grid,
+  .digital-signage-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .digital-asset-row,
+  .digital-device-row,
+  .digital-playlist-item {
+    grid-template-columns: 1fr;
+  }
+
+  .digital-asset-row img,
+  .digital-asset-row video,
+  .digital-web-thumb {
+    width: 100%;
+    max-height: 180px;
+  }
+
+  .digital-row-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .digital-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .digital-card-heading,
+  .digital-add-row,
+  .digital-preview-meta {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .digital-signage-tabs button {
+    flex: 1 0 auto;
+  }
 }

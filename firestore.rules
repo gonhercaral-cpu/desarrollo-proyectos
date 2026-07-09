@@ -1257,7 +1257,23 @@ service cloud.firestore {
           !("signatureDataUrl" in request.resource.data)
           || request.resource.data.signatureDataUrl is string
         )
-        && request.resource.data.storagePath is string;
+        && request.resource.data.storagePath is string
+        && (
+          !("naturalWidth" in request.resource.data)
+          || request.resource.data.naturalWidth is number
+        )
+        && (
+          !("naturalHeight" in request.resource.data)
+          || request.resource.data.naturalHeight is number
+        )
+        && (
+          !("aspectRatio" in request.resource.data)
+          || request.resource.data.aspectRatio is number
+        )
+        && (
+          !("normalizedAspectRatio" in request.resource.data)
+          || request.resource.data.normalizedAspectRatio is number
+        );
     }
 
     function validCertificateTemplateAudience(audience) {
@@ -3434,6 +3450,40 @@ service cloud.firestore {
 
     match /subscriptions/{subscriptionId} {
       allow read, create, update, delete: if isAdmin();
+    }
+
+    match /digitalSignageAssets/{assetId} {
+      allow get: if isAdmin()
+        || resource.data.active == true;
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /digitalSignagePlaylists/{playlistId} {
+      allow get: if isAdmin()
+        || resource.data.active == true;
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /digitalSignageDevices/{deviceId} {
+      allow get: if isAdmin()
+        || resource.data.deviceToken == deviceId;
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.deviceToken == deviceId;
+      allow update: if isAdmin()
+        || (
+          resource.data.deviceToken == deviceId
+          && request.resource.data.deviceToken == resource.data.deviceToken
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "lastSeenAt",
+            "lastSeenMillis",
+            "updatedAt"
+          ])
+          && request.resource.data.lastSeenMillis is number
+        );
+      allow delete: if isAdmin();
     }
 
     match /{document=**} {

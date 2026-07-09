@@ -322,6 +322,11 @@ const certificateTemplateEditorElements = [
   { key: "qr", label: "Código QR", kind: "qr" },
   { key: "folio", label: "Folio / validación", kind: "text" },
 ];
+const certificateSignatureElementKeys = ["principalSignature", "teacherSignature"];
+const CERTIFICATE_SIGNATURE_SOURCE_WIDTH = 2000;
+const CERTIFICATE_SIGNATURE_SOURCE_HEIGHT = 1000;
+const CERTIFICATE_SIGNATURE_ASPECT_RATIO =
+  CERTIFICATE_SIGNATURE_SOURCE_WIDTH / CERTIFICATE_SIGNATURE_SOURCE_HEIGHT;
 
 const credentialTemplateEditorElements = [
   { key: "fullName", label: "Nombre", kind: "text", side: "front" },
@@ -393,6 +398,10 @@ const signerFormInitialState = {
   signatureUrl: "",
   signatureDataUrl: "",
   storagePath: "",
+  naturalWidth: 0,
+  naturalHeight: 0,
+  aspectRatio: 0,
+  normalizedAspectRatio: CERTIFICATE_SIGNATURE_ASPECT_RATIO,
 };
 
 
@@ -1076,13 +1085,23 @@ function getDefaultCertificateTemplatePositions() {
     studentName: { x: 50, y: 38, width: 78, fontSize: 34, active: true },
     bodyText: { x: 50, y: 49, width: 72, fontSize: 21, active: true },
     date: { x: 50, y: 58, width: 40, fontSize: 18, active: true },
-    principalSignature: { x: 24, y: 71, width: 25, height: 50, active: true },
+    principalSignature: { x: 24, y: 71, width: 25, height: 12.5, active: true },
     principalName: { x: 24, y: 82, width: 28, fontSize: 12, active: true },
-    teacherSignature: { x: 76, y: 71, width: 25, height: 50, active: true },
+    teacherSignature: { x: 76, y: 71, width: 25, height: 12.5, active: true },
     teacherName: { x: 76, y: 82, width: 28, fontSize: 12, active: true },
     qr: { x: 50, y: 76, size: 9.5, active: true },
     folio: { x: 50, y: 84, width: 34, fontSize: 7, active: true },
   };
+}
+
+function getCertificateSignatureHeightFromWidth(width) {
+  const safeWidth = Math.max(0, Number(width || 0));
+  return Number((safeWidth / CERTIFICATE_SIGNATURE_ASPECT_RATIO).toFixed(2));
+}
+
+function getCertificateSignatureWidthFromHeight(height) {
+  const safeHeight = Math.max(0, Number(height || 0));
+  return Number((safeHeight * CERTIFICATE_SIGNATURE_ASPECT_RATIO).toFixed(2));
 }
 
 function normalizeTemplatePosition(position, fallback) {
@@ -1100,12 +1119,26 @@ function normalizeTemplatePosition(position, fallback) {
   };
 }
 
+function normalizeCertificateSignaturePosition(position, fallback) {
+  const normalized = normalizeTemplatePosition(position, fallback);
+  const width = normalized.width > 0 ? normalized.width : Number(fallback?.width || 25);
+
+  return {
+    ...normalized,
+    width,
+    height: getCertificateSignatureHeightFromWidth(width),
+    aspectRatio: CERTIFICATE_SIGNATURE_ASPECT_RATIO,
+  };
+}
+
 function normalizeCertificateTemplatePositions(positions) {
   const defaults = getDefaultCertificateTemplatePositions();
   const source = positions && typeof positions === "object" ? positions : {};
 
   return Object.keys(defaults).reduce((nextPositions, key) => {
-    nextPositions[key] = normalizeTemplatePosition(source[key], defaults[key]);
+    nextPositions[key] = isCertificateSignatureElement(key)
+      ? normalizeCertificateSignaturePosition(source[key], defaults[key])
+      : normalizeTemplatePosition(source[key], defaults[key]);
     return nextPositions;
   }, {});
 }
@@ -1158,6 +1191,46 @@ function getTemplateElementStyle(position, extra = {}) {
     transform: "translate(-50%, -50%)",
     textAlign: "center",
     ...restExtra,
+  };
+}
+
+function getTemplateSignatureBoxStyle(position) {
+  const normalized = normalizeCertificateSignaturePosition(position, {});
+
+  return {
+    ...getTemplateElementStyle(normalized),
+    width: `${normalized.width}%`,
+    height: "auto",
+    aspectRatio: `${CERTIFICATE_SIGNATURE_ASPECT_RATIO} / 1`,
+    overflow: "visible",
+  };
+}
+
+function isCertificateSignatureElement(elementKey) {
+  return certificateSignatureElementKeys.includes(elementKey);
+}
+
+function getProportionalSignaturePosition(elementKey, field, value) {
+  const nextValue = field === "active" ? Boolean(value) : Number(value);
+
+  if (!isCertificateSignatureElement(elementKey) || !["width", "height"].includes(field)) {
+    return { [field]: nextValue };
+  }
+
+  if (field === "width") {
+    const width = Math.max(0, Number(value || 0));
+    return {
+      width,
+      height: getCertificateSignatureHeightFromWidth(width),
+      aspectRatio: CERTIFICATE_SIGNATURE_ASPECT_RATIO,
+    };
+  }
+
+  const height = Math.max(0, Number(value || 0));
+  return {
+    width: getCertificateSignatureWidthFromHeight(height),
+    height,
+    aspectRatio: CERTIFICATE_SIGNATURE_ASPECT_RATIO,
   };
 }
 
@@ -1631,6 +1704,45 @@ function isValidSignatureFile(file) {
   return allowedTypes.includes(file.type) && file.size <= maxSize;
 }
 
+function getImageAspectRatio(width, height) {
+  const safeWidth = Number(width || 0);
+  const safeHeight = Number(height || 0);
+
+  return safeWidth > 0 && safeHeight > 0 ? safeWidth / safeHeight : 0;
+}
+
+function getSignatureMetadataFromImage(image) {
+  const naturalWidth = Number(image?.naturalWidth || 0);
+  const naturalHeight = Number(image?.naturalHeight || 0);
+  const aspectRatio = getImageAspectRatio(naturalWidth, naturalHeight);
+
+  return {
+    naturalWidth,
+    naturalHeight,
+    aspectRatio,
+  };
+}
+
+async function loadImageMetadataFromSource(source) {
+  const imageSource = String(source || "");
+
+  if (!imageSource) {
+    return {
+      naturalWidth: 0,
+      naturalHeight: 0,
+      aspectRatio: 0,
+    };
+  }
+
+  return await new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(getSignatureMetadataFromImage(image));
+    image.onerror = () => resolve({ naturalWidth: 0, naturalHeight: 0, aspectRatio: 0 });
+    image.src = imageSource;
+  });
+}
+
 async function readFileAsDataUrl(file) {
   if (!file) return "";
 
@@ -1669,6 +1781,70 @@ async function readFileAsDataUrl(file) {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function readSignatureFileData(file) {
+  if (!file) {
+    return {
+      dataUrl: "",
+      naturalWidth: 0,
+      naturalHeight: 0,
+      aspectRatio: 0,
+    };
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = objectUrl;
+
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const metadata = getSignatureMetadataFromImage(image);
+    const ratio = Math.min(
+      CERTIFICATE_SIGNATURE_SOURCE_WIDTH / image.naturalWidth,
+      CERTIFICATE_SIGNATURE_SOURCE_HEIGHT / image.naturalHeight
+    );
+    const canvas = document.createElement("canvas");
+
+    canvas.width = CERTIFICATE_SIGNATURE_SOURCE_WIDTH;
+    canvas.height = CERTIFICATE_SIGNATURE_SOURCE_HEIGHT;
+
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    const drawWidth = Math.max(1, Math.round(image.naturalWidth * ratio));
+    const drawHeight = Math.max(1, Math.round(image.naturalHeight * ratio));
+    const drawX = Math.round((canvas.width - drawWidth) / 2);
+    const drawY = Math.round((canvas.height - drawHeight) / 2);
+
+    context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+    return {
+      dataUrl: canvas.toDataURL("image/png"),
+      ...metadata,
+      normalizedAspectRatio: CERTIFICATE_SIGNATURE_ASPECT_RATIO,
+    };
+  } catch (error) {
+    console.error("No se pudo optimizar la firma, se guardará el archivo original:", error);
+
+    const dataUrl = await readFileAsDataUrl(file);
+
+    return {
+      dataUrl,
+      naturalWidth: 0,
+      naturalHeight: 0,
+      aspectRatio: 0,
+      normalizedAspectRatio: CERTIFICATE_SIGNATURE_ASPECT_RATIO,
+    };
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -1811,6 +1987,10 @@ function normalizeCertificateSigner(signer) {
     signatureUrl: String(signer?.signatureUrl || ""),
     signatureDataUrl: String(signer?.signatureDataUrl || ""),
     storagePath: String(signer?.storagePath || ""),
+    naturalWidth: Number(signer?.naturalWidth || 0),
+    naturalHeight: Number(signer?.naturalHeight || 0),
+    aspectRatio: Number(signer?.aspectRatio || getImageAspectRatio(signer?.naturalWidth, signer?.naturalHeight) || 0),
+    normalizedAspectRatio: Number(signer?.normalizedAspectRatio || CERTIFICATE_SIGNATURE_ASPECT_RATIO),
     createdAt: signer?.createdAt || "",
     updatedAt: signer?.updatedAt || "",
   };
@@ -4989,7 +5169,7 @@ export default function PrintShop() {
           ...normalizedPositions,
           [elementKey]: {
             ...currentPosition,
-            [field]: field === "active" ? Boolean(value) : Number(value),
+            ...getProportionalSignaturePosition(elementKey, field, value),
           },
         },
       };
@@ -5791,6 +5971,10 @@ export default function PrintShop() {
       signatureUrl: signer.signatureUrl || "",
       signatureDataUrl: signer.signatureDataUrl || "",
       storagePath: signer.storagePath || "",
+      naturalWidth: Number(signer.naturalWidth || 0),
+      naturalHeight: Number(signer.naturalHeight || 0),
+      aspectRatio: Number(signer.aspectRatio || 0),
+      normalizedAspectRatio: Number(signer.normalizedAspectRatio || CERTIFICATE_SIGNATURE_ASPECT_RATIO),
     });
   }
 
@@ -5833,9 +6017,18 @@ export default function PrintShop() {
       let signatureUrl = signerForm.signatureUrl || "";
       let signatureDataUrl = signerForm.signatureDataUrl || "";
       let storagePath = signerForm.storagePath || "";
+      let naturalWidth = Number(signerForm.naturalWidth || 0);
+      let naturalHeight = Number(signerForm.naturalHeight || 0);
+      let aspectRatio = Number(signerForm.aspectRatio || getImageAspectRatio(naturalWidth, naturalHeight) || 0);
+      let normalizedAspectRatio = Number(signerForm.normalizedAspectRatio || CERTIFICATE_SIGNATURE_ASPECT_RATIO);
 
       if (signatureFile) {
-        signatureDataUrl = await readFileAsDataUrl(signatureFile);
+        const signatureFileData = await readSignatureFileData(signatureFile);
+        signatureDataUrl = signatureFileData.dataUrl;
+        naturalWidth = signatureFileData.naturalWidth;
+        naturalHeight = signatureFileData.naturalHeight;
+        aspectRatio = signatureFileData.aspectRatio;
+        normalizedAspectRatio = signatureFileData.normalizedAspectRatio;
         const safeName = sanitizeStorageFileName(signatureFile.name);
         const folder = getSignerTypeFolder(signerForm.type);
         storagePath = `printshop/signatures/${folder}/${auditUser.uid}/${Date.now()}-${safeName}`;
@@ -5845,6 +6038,12 @@ export default function PrintShop() {
           contentType: signatureFile.type,
         });
         signatureUrl = await getDownloadURL(fileRef);
+      } else if (!aspectRatio && (signatureDataUrl || signatureUrl)) {
+        const signatureMetadata = await loadImageMetadataFromSource(signatureDataUrl || signatureUrl);
+        naturalWidth = signatureMetadata.naturalWidth;
+        naturalHeight = signatureMetadata.naturalHeight;
+        aspectRatio = signatureMetadata.aspectRatio;
+        normalizedAspectRatio = CERTIFICATE_SIGNATURE_ASPECT_RATIO;
       }
 
       const payload = {
@@ -5857,6 +6056,10 @@ export default function PrintShop() {
         signatureUrl,
         signatureDataUrl,
         storagePath,
+        naturalWidth,
+        naturalHeight,
+        aspectRatio,
+        normalizedAspectRatio,
         updatedAt: serverTimestamp(),
         updatedByUid: auditUser.uid,
         updatedByName: auditUser.name,
@@ -16701,12 +16904,12 @@ function CertificateTemplateOverlay({
       )}
 
       {positions.principalSignature?.active !== false && (
-        <img
-          src={principalSignatureUrl}
-          alt={`Firma de ${principalName}`}
+        <div
           className="certificate-template-signature"
-          style={getTemplateElementStyle(positions.principalSignature, { includeHeight: true })}
-        />
+          style={getTemplateSignatureBoxStyle(positions.principalSignature)}
+        >
+          <img src={principalSignatureUrl} alt={`Firma de ${principalName}`} />
+        </div>
       )}
 
       {positions.principalName?.active !== false && (
@@ -16720,12 +16923,12 @@ function CertificateTemplateOverlay({
       )}
 
       {positions.teacherSignature?.active !== false && (
-        <img
-          src={teacherSignatureUrl}
-          alt={`Firma de ${teacherName}`}
+        <div
           className="certificate-template-signature"
-          style={getTemplateElementStyle(positions.teacherSignature, { includeHeight: true })}
-        />
+          style={getTemplateSignatureBoxStyle(positions.teacherSignature)}
+        >
+          <img src={teacherSignatureUrl} alt={`Firma de ${teacherName}`} />
+        </div>
       )}
 
       {positions.teacherName?.active !== false && (
@@ -17268,7 +17471,7 @@ function CertificateTemplatesView({
                   )}
                   {selectedEditorMeta.kind === "image" && (
                     <TemplatePositionNumberInput
-                      label="Alto"
+                      label="Alto auto 2:1"
                       value={currentEditorPosition.height}
                       onChange={(value) => updateSelectedPosition("height", value)}
                       disabled={!isAdmin}
@@ -18041,7 +18244,7 @@ function CredentialsView({
                     <TemplatePositionNumberInput label="Fuente" value={currentEditorPosition.fontSize} onChange={(value) => updateSelectedPosition("fontSize", value)} disabled={!isAdmin} />
                   )}
                   {selectedEditorMeta.kind === "image" && (
-                    <TemplatePositionNumberInput label="Alto" value={currentEditorPosition.height} onChange={(value) => updateSelectedPosition("height", value)} disabled={!isAdmin} />
+                    <TemplatePositionNumberInput label="Alto auto 2:1" value={currentEditorPosition.height} onChange={(value) => updateSelectedPosition("height", value)} disabled={!isAdmin} />
                   )}
                 </div>
 
@@ -18929,7 +19132,7 @@ function EditorTemplateLayer({
   const style = isQr
     ? getTemplateElementStyle(normalized, { size: true })
     : isImage
-      ? getTemplateElementStyle(normalized, { includeHeight: true })
+      ? getTemplateSignatureBoxStyle(normalized)
       : getTemplateTextStyle(normalized);
 
   return (
