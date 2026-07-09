@@ -2972,7 +2972,7 @@ function buildCertificateDeliveryListHtml(request, students) {
     <meta charset="utf-8" />
     <title>${escapePrintableHtml(title || "Lista de entrega")}</title>
     <style>
-      @page { size: letter portrait; margin: 12mm; }
+      @page { size: letter portrait; margin: 8mm; }
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -3129,6 +3129,70 @@ function buildCertificateDeliveryListHtml(request, students) {
           padding: 0;
           border: 0;
         }
+        .document-header {
+          grid-template-columns: 58px minmax(0, 1fr);
+          gap: 8px;
+          padding-bottom: 8px;
+          margin-bottom: 8px;
+          border-bottom-width: 2px;
+        }
+        .brand-logo {
+          width: 52px;
+          height: 52px;
+        }
+        .brand-kicker {
+          margin-bottom: 2px;
+          font-size: 9px;
+        }
+        .institution-name {
+          font-size: 15px;
+        }
+        .sheet-title {
+          margin-top: 2px;
+          font-size: 12px;
+        }
+        .header-grid {
+          gap: 4px;
+          margin-bottom: 8px;
+        }
+        .header-cell {
+          min-height: 32px;
+          border-left-width: 3px;
+        }
+        .header-cell span {
+          padding: 4px 6px 0;
+          font-size: 8.5px;
+        }
+        .header-cell strong {
+          min-height: 18px;
+          padding: 3px 6px 5px;
+          font-size: 10px;
+        }
+        thead th {
+          padding: 4px 5px;
+          font-size: 8.5px;
+        }
+        tbody td {
+          min-height: 28px;
+          padding: 4px 5px;
+          font-size: 9.5px;
+        }
+        .signature-cell {
+          height: 30px;
+        }
+        .notes {
+          margin-top: 8px;
+        }
+        .notes-title {
+          padding: 4px 7px;
+          font-size: 9px;
+        }
+        .notes-body {
+          min-height: 30px;
+          padding: 5px 7px;
+          font-size: 10px;
+          line-height: 1.25;
+        }
       }
     </style>
   </head>
@@ -3173,9 +3237,25 @@ function buildCertificateDeliveryListHtml(request, students) {
       </section>
     </main>
     <script>
-      window.addEventListener("load", () => {
-        window.setTimeout(() => window.print(), 250);
-      });
+      (function () {
+        var printed = false;
+        function printWhenReady() {
+          if (printed) return;
+          printed = true;
+          window.requestAnimationFrame(function () {
+            window.setTimeout(function () {
+              if (typeof window.focus === "function") window.focus();
+              window.print();
+            }, 350);
+          });
+        }
+        if (document.readyState === "complete") {
+          printWhenReady();
+        } else {
+          window.addEventListener("load", printWhenReady, { once: true });
+        }
+        window.setTimeout(printWhenReady, 900);
+      }());
     </script>
   </body>
 </html>`;
@@ -15287,6 +15367,9 @@ function RequestDetailCard({
     deliveryListWindow.document.open();
     deliveryListWindow.document.write(buildCertificateDeliveryListHtml(request, students));
     deliveryListWindow.document.close();
+    if (typeof deliveryListWindow.focus === "function") {
+      deliveryListWindow.focus();
+    }
     setBulkCertificateMessage("Lista de entrega abierta en una pestaña nueva.");
 
     if (typeof onLogPrintshopAction === "function") {

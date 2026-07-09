@@ -73421,6 +73421,85 @@ html[data-theme="dark"] .drive-cloud-storage button {
   text-align: right;
 }
 
+.quick-tools-reply-reference,
+.quick-tools-reply-preview {
+  border-left: 3px solid rgba(37, 99, 235, 0.7);
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.quick-tools-reply-reference {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+}
+
+.quick-tools-reply-reference span,
+.quick-tools-reply-preview span {
+  display: block;
+  margin: 0 0 2px;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.quick-tools-reply-reference p,
+.quick-tools-reply-preview p {
+  margin: 0;
+  color: inherit;
+  opacity: 0.82;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.quick-tools-thread-messages article .quick-tools-reply-reference p {
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.quick-tools-thread-messages article.mine .quick-tools-reply-reference {
+  border-left-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.quick-tools-reply-button {
+  margin-top: 6px;
+  border: 0;
+  padding: 0;
+  color: #1d4ed8;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.quick-tools-thread-messages article.mine .quick-tools-reply-button {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.quick-tools-reply-preview {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+}
+
+.quick-tools-reply-preview div {
+  min-width: 0;
+}
+
+.quick-tools-message-form .quick-tools-reply-preview button {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 9px;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+}
+
 .quick-tools-message-form,
 .quick-tools-note-form {
   padding: 12px;
@@ -73518,6 +73597,17 @@ html[data-theme="dark"] .drive-cloud-storage button {
 [data-theme="dark"] .quick-tools-thread-messages article.mine {
   color: #ffffff;
   background: #2563eb;
+}
+
+[data-theme="dark"] .quick-tools-reply-reference,
+[data-theme="dark"] .quick-tools-reply-preview {
+  border-left-color: rgba(96, 165, 250, 0.78);
+  background: rgba(96, 165, 250, 0.14);
+}
+
+[data-theme="dark"] .quick-tools-message-form .quick-tools-reply-preview button {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.18);
 }
 
 @media (max-width: 760px) {

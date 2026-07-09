@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -55,6 +55,7 @@ export default function FloatingQuickTools({
   const [newRecipientId, setNewRecipientId] = useState("");
   const [messageText, setMessageText] = useState("");
   const [messageAttachments, setMessageAttachments] = useState([]);
+  const [replyTarget, setReplyTarget] = useState(null);
   const [messageSaving, setMessageSaving] = useState(false);
   const [messageError, setMessageError] = useState("");
   const [noteTitle, setNoteTitle] = useState("");
@@ -309,6 +310,16 @@ export default function FloatingQuickTools({
       selectedDepartmentConversation ||
       selectedNewRecipient
   );
+  const activeLastMessage = activeMessages[activeMessages.length - 1] || null;
+  const activeLastMessageKey = activeLastMessage
+    ? `${activeLastMessage.id || ""}:${getMillisFromFirestoreDate(activeLastMessage.createdAt)}:${getMillisFromFirestoreDate(activeLastMessage.updatedAt)}`
+    : "";
+  const activeConversationType = selectedDepartmentConversation
+    ? "department"
+    : selectedDirectConversation
+      ? "direct"
+      : "";
+  const visibleReplyTarget = replyTarget?.type === activeConversationType ? replyTarget : null;
 
   useEffect(() => {
     if (activeTool !== "messages" || activeMessages.length === 0) return;
@@ -329,10 +340,29 @@ export default function FloatingQuickTools({
     currentUserId,
   ]);
 
-  useEffect(() => {
+  function scrollThreadToBottom(behavior = "auto") {
+    if (typeof window === "undefined") return;
+
+    const scrollNow = () => {
+      const thread = threadRef.current;
+      if (!thread) return;
+
+      thread.scrollTo({
+        top: thread.scrollHeight,
+        behavior,
+      });
+    };
+
+    window.requestAnimationFrame(() => {
+      scrollNow();
+      window.setTimeout(scrollNow, 90);
+    });
+  }
+
+  useLayoutEffect(() => {
     if (activeTool !== "messages") return;
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
-  }, [activeTool, activeMessages.length, selectedConversationKey]);
+    scrollThreadToBottom("auto");
+  }, [activeTool, activeMessages.length, activeLastMessageKey, selectedConversationKey]);
 
   function toggleTool(toolName) {
     setActiveTool((current) => (current === toolName ? "" : toolName));
@@ -344,7 +374,21 @@ export default function FloatingQuickTools({
   function selectConversation(conversationKey) {
     setSelectedConversationKey(conversationKey);
     setNewRecipientId("");
+    setReplyTarget(null);
     setMessageError("");
+  }
+
+  function handleReplyToMessage(message) {
+    const type = selectedDepartmentConversation ? "department" : "direct";
+
+    setReplyTarget({
+      type,
+      messageId: message.id,
+      fromUserId: message.fromUserId || "",
+      fromUserName: message.fromUserId === currentUserId ? "Tu" : message.fromUserName || "Usuario",
+      message: message.message || "Archivo adjunto",
+      createdAt: message.createdAt || null,
+    });
   }
 
   function handleMessageFileSelection(event) {
@@ -469,6 +513,7 @@ export default function FloatingQuickTools({
           currentUserId,
           message: cleanMessage || "Archivo adjunto",
           attachments: messageAttachments,
+          replyTarget,
         });
       } else {
         const recipient =
@@ -486,6 +531,7 @@ export default function FloatingQuickTools({
           currentUserId,
           message: cleanMessage || "Archivo adjunto",
           attachments: messageAttachments,
+          replyTarget,
         });
 
         if (recipient?.id) {
@@ -495,8 +541,10 @@ export default function FloatingQuickTools({
       }
 
       setMessageText("");
+      setReplyTarget(null);
       revokeDraftAttachmentPreviews(messageAttachments);
       setMessageAttachments([]);
+      scrollThreadToBottom("auto");
     } catch (error) {
       console.error("No se pudo enviar el mensaje rapido:", error);
       setMessageError("No se pudo enviar el mensaje.");
@@ -604,6 +652,7 @@ export default function FloatingQuickTools({
                   onChange={(event) => {
                     setNewRecipientId(event.target.value);
                     setSelectedConversationKey("");
+                    setReplyTarget(null);
                     setMessageError("");
                   }}
                 >
@@ -662,6 +711,12 @@ export default function FloatingQuickTools({
                     return (
                       <article key={message.id} className={outgoing ? "mine" : ""}>
                         <small>{outgoing ? "Tu" : message.fromUserName || "Usuario"}</small>
+                        {message.replyToMessageId && (
+                          <div className="quick-tools-reply-reference">
+                            <span>{message.replyToFromUserName || "Mensaje citado"}</span>
+                            <p>{message.replyToMessage || "Mensaje citado"}</p>
+                          </div>
+                        )}
                         {!isAudioOnlyMessage(message) && <p>{message.message}</p>}
                         <QuickAttachmentGallery attachments={message.attachments} />
                         {outgoing && (
@@ -673,6 +728,13 @@ export default function FloatingQuickTools({
                                 : "Enviado"}
                           </span>
                         )}
+                        <button
+                          type="button"
+                          className="quick-tools-reply-button"
+                          onClick={() => handleReplyToMessage(message)}
+                        >
+                          Responder
+                        </button>
                       </article>
                     );
                   })
@@ -680,6 +742,21 @@ export default function FloatingQuickTools({
               </div>
 
               <form className="quick-tools-message-form" onSubmit={handleMessageSubmit}>
+                {visibleReplyTarget && (
+                  <div className="quick-tools-reply-preview">
+                    <div>
+                      <span>Respondiendo a {visibleReplyTarget.fromUserName}</span>
+                      <p>{visibleReplyTarget.message}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyTarget(null)}
+                      aria-label="Cancelar respuesta"
+                    >
+                      x
+                    </button>
+                  </div>
+                )}
                 <textarea
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}
@@ -1033,7 +1110,7 @@ function QuickAttachmentGallery({ attachments }) {
   );
 }
 
-async function sendDirectMessage({ recipient, profile, currentUserId, message, attachments }) {
+async function sendDirectMessage({ recipient, profile, currentUserId, message, attachments, replyTarget }) {
   if (!recipient?.id || !currentUserId) {
     throw new Error("missing-recipient");
   }
@@ -1055,10 +1132,10 @@ async function sendDirectMessage({ recipient, profile, currentUserId, message, a
     subject: `Conversacion con ${recipientName}`.slice(0, 120),
     message,
     attachments: storedAttachments,
-    replyToMessageId: "",
-    replyToFromUserId: "",
-    replyToFromUserName: "",
-    replyToMessage: "",
+    replyToMessageId: replyTarget?.type === "direct" ? replyTarget.messageId : "",
+    replyToFromUserId: replyTarget?.type === "direct" ? replyTarget.fromUserId : "",
+    replyToFromUserName: replyTarget?.type === "direct" ? replyTarget.fromUserName : "",
+    replyToMessage: replyTarget?.type === "direct" ? replyTarget.message.slice(0, 240) : "",
     read: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -1072,6 +1149,7 @@ async function sendDepartmentMessage({
   currentUserId,
   message,
   attachments,
+  replyTarget,
 }) {
   if (!conversation?.departmentId || !currentUserId) {
     throw new Error("missing-department");
@@ -1096,10 +1174,10 @@ async function sendDepartmentMessage({
     fromUserEmail: profile?.email || "",
     message,
     attachments: storedAttachments,
-    replyToMessageId: "",
-    replyToFromUserId: "",
-    replyToFromUserName: "",
-    replyToMessage: "",
+    replyToMessageId: replyTarget?.type === "department" ? replyTarget.messageId : "",
+    replyToFromUserId: replyTarget?.type === "department" ? replyTarget.fromUserId : "",
+    replyToFromUserName: replyTarget?.type === "department" ? replyTarget.fromUserName : "",
+    replyToMessage: replyTarget?.type === "department" ? replyTarget.message.slice(0, 240) : "",
     memberIds,
     readBy: {
       [currentUserId]: serverTimestamp(),
