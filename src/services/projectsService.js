@@ -43,6 +43,8 @@ export const PROJECT_LOG_TYPES = {
   PROJECT_DELETED: "PROJECT_DELETED",
   PROJECT_RESTORED: "PROJECT_RESTORED",
   INTERNAL_NOTE_UPDATED: "INTERNAL_NOTE_UPDATED",
+  CHECKLIST_COMPLETED: "CHECKLIST_COMPLETED",
+  CHECKLIST_BLOCKED: "CHECKLIST_BLOCKED",
 };
 
 function getCurrentUserUid(currentUser) {
@@ -790,13 +792,22 @@ export async function createProject(projectData, currentUser) {
     comment: "Proyecto creado, aprobado y asignado.",
   });
 
+  const checklistEnabled = Boolean(projectData.reviewChecklist?.enabled);
+  const checklistItemCount = Array.isArray(projectData.reviewChecklist?.items)
+    ? projectData.reviewChecklist.items.length
+    : 0;
+
   await addProjectLog({
     projectId: docRef.id,
     type: PROJECT_LOG_TYPES.PROJECT_CREATED,
     title: "Proyecto creado",
     description: `${
       currentUser.name || currentUser.email || "Un administrador"
-    } creó el proyecto.`,
+    } creó el proyecto.${
+      checklistEnabled
+        ? ` Se activó la checklist de revisión (${checklistItemCount} punto(s)).`
+        : ""
+    }`,
     currentUser,
     metadata: {
       status: projectData.status || "",
@@ -806,6 +817,8 @@ export async function createProject(projectData, currentUser) {
       departmentId: projectData.departmentId || "",
       departmentName: projectData.departmentName || "",
       priority: projectData.priority || "",
+      reviewChecklistEnabled: checklistEnabled,
+      reviewChecklistItemCount: checklistItemCount,
     },
   });
 

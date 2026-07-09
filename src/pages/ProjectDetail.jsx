@@ -7,6 +7,7 @@ import {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   Timestamp,
   updateDoc,
   where,
@@ -213,6 +214,28 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       return;
     }
 
+    if (nextStatus === "Listo para revisión") {
+      const checklistProgress = getReviewChecklistProgress(project);
+
+      if (checklistProgress.enabled && !checklistProgress.allComplete) {
+        setMessage(
+          `Debes completar la checklist de revisión antes de marcar este proyecto como listo para revisar. Faltan ${checklistProgress.remaining} punto(s) de la checklist.`
+        );
+
+        await registerProjectLog({
+          type: PROJECT_LOG_TYPES.CHECKLIST_BLOCKED,
+          title: "Intento de marcar listo sin checklist completa",
+          description: `${profile?.name || firebaseUser?.email || "Un usuario"} intentó marcar el proyecto como listo para revisión sin completar la checklist (faltan ${checklistProgress.remaining} punto(s)).`,
+          metadata: {
+            remaining: checklistProgress.remaining,
+            total: checklistProgress.total,
+          },
+        });
+
+        return;
+      }
+    }
+
     setChangingStatus(true);
     setMessage("");
 
@@ -290,6 +313,88 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       );
     } finally {
       setChangingStatus(false);
+    }
+  }
+
+  async function handleToggleChecklistItem(itemId, checked) {
+    if (!project?.reviewChecklist?.enabled) return;
+
+    if (!canAdministrativelyCorrectProject(project, isAdmin)) {
+      setMessage("No se puede modificar la checklist de un proyecto que está en historial.");
+      return;
+    }
+
+    const currentUserForLog = getCurrentUserForLog();
+    const nowIso = new Date().toISOString();
+    const projectRef = doc(db, "projects", project.id);
+
+    let updatedChecklist = null;
+    let becameComplete = false;
+    let updatedItemCount = 0;
+
+    try {
+      // Transacción: varios colaboradores pueden marcar puntos casi al mismo tiempo,
+      // y un simple updateDoc con el estado local perdería cambios concurrentes.
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(projectRef);
+        const checklist = snapshot.data()?.reviewChecklist;
+
+        if (!checklist?.enabled) return;
+
+        const updatedItems = (checklist.items || []).map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                checked,
+                checkedBy: checked
+                  ? currentUserForLog.name || currentUserForLog.email || "Usuario"
+                  : null,
+                checkedAt: checked ? nowIso : null,
+              }
+            : item
+        );
+
+        const wasComplete = Boolean(checklist.completedAt);
+        const allComplete =
+          updatedItems.length > 0 && updatedItems.every((item) => item.checked === true);
+
+        updatedChecklist = {
+          ...checklist,
+          items: updatedItems,
+          completedAt: allComplete ? checklist.completedAt || nowIso : null,
+          completedBy: allComplete
+            ? checklist.completedBy || currentUserForLog.name || currentUserForLog.email || "Usuario"
+            : null,
+        };
+        becameComplete = allComplete && !wasComplete;
+        updatedItemCount = updatedItems.length;
+
+        transaction.update(projectRef, {
+          reviewChecklist: updatedChecklist,
+          updatedAt: Timestamp.now(),
+        });
+      });
+
+      if (updatedChecklist) {
+        setProject((current) => ({
+          ...current,
+          reviewChecklist: updatedChecklist,
+        }));
+      }
+
+      if (becameComplete) {
+        await registerProjectLog({
+          type: PROJECT_LOG_TYPES.CHECKLIST_COMPLETED,
+          title: "Checklist de revisión completada",
+          description: `${currentUserForLog.name || currentUserForLog.email || "Un usuario"} completó la checklist de revisión (${updatedItemCount} punto(s)).`,
+          metadata: {
+            totalItems: updatedItemCount,
+          },
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("No se pudo actualizar la checklist. Revisa tus permisos.");
     }
   }
 
@@ -943,6 +1048,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const daysDifference = getDaysDifference(project?.deadline);
   const projectIsHistorical = isHistoricalProject(project);
   const canEditClosedProject = canAdministrativelyCorrectProject(project, isAdmin);
+  const checklistProgress = getReviewChecklistProgress(project);
   const isClosed = CLOSED_STATUSES.includes(project?.status) || projectIsHistorical;
   const isOverdue = daysDifference !== null && daysDifference < 0 && !isClosed;
   const automaticProgress = calculateAutomaticProgress(project);
@@ -1018,6 +1124,12 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               </option>
             ))}
           </select>
+
+          {checklistProgress.enabled && !checklistProgress.allComplete && (
+            <small className="review-checklist-block-hint">
+              Faltan {checklistProgress.remaining} punto(s) de la checklist.
+            </small>
+          )}
 
           {isAdmin && canEditClosedProject && (
             <button
@@ -1203,6 +1315,80 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               </div>
             )}
           </section>
+
+          {checklistProgress.enabled && (
+            <section className="visual-card review-checklist-card">
+              <div className="project-documents-header">
+                <div>
+                  <SectionTitle
+                    icon={<SvgIcon name="checklist" />}
+                    title="Checklist de revisión"
+                    color="purple"
+                  />
+                  <p>
+                    {checklistProgress.completedCount} de {checklistProgress.total} completados
+                    {checklistProgress.allComplete && " · Checklist completa"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="review-checklist-progress-row">
+                <div className="review-checklist-progress-track">
+                  <div
+                    className="review-checklist-progress-fill"
+                    style={{
+                      width: `${
+                        checklistProgress.total > 0
+                          ? Math.round((checklistProgress.completedCount / checklistProgress.total) * 100)
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+                <span className="review-checklist-progress-label">
+                  {checklistProgress.total > 0
+                    ? Math.round((checklistProgress.completedCount / checklistProgress.total) * 100)
+                    : 0}
+                  %
+                </span>
+              </div>
+
+              <div className="review-checklist-item-list">
+                {checklistProgress.items.map((item) => (
+                  <label
+                    className={`review-checklist-item-row ${item.checked ? "checked" : ""}`}
+                    key={item.id}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={item.checked === true}
+                      disabled={!canEditClosedProject}
+                      onChange={(event) => handleToggleChecklistItem(item.id, event.target.checked)}
+                    />
+                    <div className="review-checklist-item-copy">
+                      <strong>{item.text}</strong>
+                      {item.checked && item.checkedAt && (
+                        <small>
+                          Marcado por {item.checkedBy || "un usuario"} · {formatDate(item.checkedAt)}
+                        </small>
+                      )}
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              {checklistProgress.allComplete ? (
+                <div className="review-checklist-complete-banner">
+                  Checklist completa. El proyecto puede marcarse como listo para revisión.
+                </div>
+              ) : (
+                <small className="review-checklist-block-hint">
+                  Faltan {checklistProgress.remaining} punto(s) de la checklist para poder marcar
+                  este proyecto como listo para revisar.
+                </small>
+              )}
+            </section>
+          )}
 
           <section className="visual-card advances-card">
             <div className="advances-header">
@@ -2135,6 +2321,22 @@ function normalizeArray(value) {
   }
 
   return [];
+}
+
+function getReviewChecklistProgress(project) {
+  const checklist = project?.reviewChecklist;
+  const items = Array.isArray(checklist?.items) ? checklist.items : [];
+  const total = items.length;
+  const completedCount = items.filter((item) => item.checked === true).length;
+
+  return {
+    enabled: Boolean(checklist?.enabled),
+    items,
+    total,
+    completedCount,
+    remaining: Math.max(total - completedCount, 0),
+    allComplete: Boolean(checklist?.enabled) && total > 0 && completedCount === total,
+  };
 }
 
 function normalizeFileItem(file) {

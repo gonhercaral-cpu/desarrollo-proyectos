@@ -13,6 +13,23 @@ const STATUSES = [
   "En espera de información",
 ];
 
+const MATERIAL_DEVELOPMENT_CHECKLIST_TEMPLATE = [
+  "Revisé ortografía y errores de dedo.",
+  "Revisé gramática y estructura de las instrucciones.",
+  "Revisé que los títulos estén correctos y uniformes.",
+  "Revisé que los nombres de actividades coincidan con el contenido.",
+  "Revisé que no haya texto duplicado o incompleto.",
+  "Revisé que las diapositivas tengan formato visual consistente.",
+  "Revisé que imágenes, íconos y elementos visuales estén bien colocados.",
+  "Revisé que las instrucciones sean claras para el maestro.",
+  "Revisé que el material corresponda al nivel y unidad correctos.",
+  "Revisé que el archivo final esté actualizado y sea el correcto.",
+];
+
+function buildChecklistItemId(index) {
+  return `check-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 export default function CreateProject() {
   const { profile, currentUser, firebaseUser } = useAuth();
 
@@ -45,6 +62,9 @@ export default function CreateProject() {
 
   const [collaboratorIds, setCollaboratorIds] = useState([]);
   const [files, setFiles] = useState([]);
+
+  const [reviewChecklistEnabled, setReviewChecklistEnabled] = useState(false);
+  const [reviewChecklistItems, setReviewChecklistItems] = useState([]);
 
   async function loadData() {
     setLoadingUsers(true);
@@ -152,6 +172,32 @@ export default function CreateProject() {
     setFiles(selectedFiles);
   }
 
+  function toggleReviewChecklistEnabled(enabled) {
+    setReviewChecklistEnabled(enabled);
+
+    if (enabled && reviewChecklistItems.length === 0) {
+      setReviewChecklistItems([...MATERIAL_DEVELOPMENT_CHECKLIST_TEMPLATE]);
+    }
+  }
+
+  function resetReviewChecklistToTemplate() {
+    setReviewChecklistItems([...MATERIAL_DEVELOPMENT_CHECKLIST_TEMPLATE]);
+  }
+
+  function updateReviewChecklistItem(index, value) {
+    setReviewChecklistItems((current) =>
+      current.map((item, itemIndex) => (itemIndex === index ? value : item))
+    );
+  }
+
+  function addReviewChecklistItem() {
+    setReviewChecklistItems((current) => [...current, "Nuevo punto de revisión"]);
+  }
+
+  function removeReviewChecklistItem(index) {
+    setReviewChecklistItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
   function resetForm() {
     setForm({
       title: "",
@@ -176,6 +222,8 @@ export default function CreateProject() {
 
     setCollaboratorIds([]);
     setFiles([]);
+    setReviewChecklistEnabled(false);
+    setReviewChecklistItems([]);
     setMessage("");
   }
 
@@ -284,6 +332,27 @@ export default function CreateProject() {
         createdByName: creatorUser.name,
 
         attachedFileNames: files.map((file) => file.name),
+
+        reviewChecklist: reviewChecklistEnabled
+          ? {
+              enabled: true,
+              templateKey: "material_development",
+              items: reviewChecklistItems
+                .map((label) => String(label || "").trim())
+                .filter(Boolean)
+                .map((text, index) => ({
+                  id: buildChecklistItemId(index),
+                  text,
+                  checked: false,
+                  checkedBy: null,
+                  checkedAt: null,
+                  createdAt: new Date().toISOString(),
+                  createdBy: creatorUid,
+                })),
+              completedAt: null,
+              completedBy: null,
+            }
+          : { enabled: false },
       };
 
       await createProject(payload, creatorUser);
@@ -601,6 +670,86 @@ export default function CreateProject() {
             <section className="visual-card form-section-card">
               <FormSectionHeader
                 number="3"
+                icon="checklist"
+                title="Checklist de revisión"
+                subtitle="Actívala para proyectos que necesiten una revisión de calidad antes de entregarse, como Desarrollo de material."
+              />
+
+              <div className="visual-form-grid">
+                <Field label="Checklist de revisión" full>
+                  <label className="checkbox-toggle-field">
+                    <input
+                      type="checkbox"
+                      checked={reviewChecklistEnabled}
+                      onChange={(event) => toggleReviewChecklistEnabled(event.target.checked)}
+                    />
+                    <span>Activar checklist de revisión para este proyecto</span>
+                  </label>
+                </Field>
+              </div>
+
+              {reviewChecklistEnabled && (
+                <div className="review-checklist-editor-card">
+                  <div className="review-checklist-editor-header">
+                    <div>
+                      <h3>Puntos a revisar</h3>
+                      <p>
+                        Se cargó la plantilla de Desarrollo de material. Puedes editar, eliminar o
+                        agregar puntos antes de crear el proyecto.
+                      </p>
+                    </div>
+
+                    <div className="review-checklist-editor-actions">
+                      <button
+                        type="button"
+                        className="visual-outline-button"
+                        onClick={resetReviewChecklistToTemplate}
+                      >
+                        Usar plantilla predefinida
+                      </button>
+
+                      <button
+                        type="button"
+                        className="visual-outline-button"
+                        onClick={addReviewChecklistItem}
+                      >
+                        + Agregar punto
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="review-checklist-editor-list">
+                    {reviewChecklistItems.length === 0 ? (
+                      <EmptyState text="Agrega al menos un punto de revisión." />
+                    ) : (
+                      reviewChecklistItems.map((item, index) => (
+                        <div className="review-checklist-editor-row" key={index}>
+                          <input
+                            type="text"
+                            value={item}
+                            onChange={(event) => updateReviewChecklistItem(index, event.target.value)}
+                            placeholder="Punto de revisión"
+                          />
+
+                          <button
+                            type="button"
+                            className="danger-table-button"
+                            onClick={() => removeReviewChecklistItem(index)}
+                            disabled={reviewChecklistItems.length <= 1}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="visual-card form-section-card">
+              <FormSectionHeader
+                number="4"
                 icon="upload"
                 title="Adjuntos y referencias"
                 subtitle="Agrega archivos o enlaces que respalden el proyecto."
