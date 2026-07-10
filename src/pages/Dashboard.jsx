@@ -360,7 +360,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
 }
 
 export default function Dashboard({ theme = "light", onToggleTheme }) {
-  const { profile, logout, isAdmin, uid } = useAuth();
+  const { profile, logout, isAdmin, uid, refreshProfile } = useAuth();
   const userDepartmentNames = getProfileDepartmentNames(profile);
   const canUsePrintShopByDepartment =
     isAdmin ||
@@ -603,6 +603,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
         <ProfilePage
           profile={profile}
           isAdmin={isAdmin}
+          onProfileUpdated={refreshProfile}
           onClose={() => setProfilePanelOpen(false)}
         />
       );
@@ -1748,8 +1749,10 @@ function WorkspaceDashboard({
                 <span>Mensaje</span>
                 <textarea
                   value={announcementForm.message}
-                  spellCheck
+                  spellCheck={true}
                   lang="es-MX"
+                  autoCorrect="on"
+                  autoCapitalize="sentences"
                   onChange={(event) =>
                     setAnnouncementForm((current) => ({
                       ...current,
@@ -3109,8 +3112,9 @@ async function primeMessageNotificationSound() {
   }
 }
 
-async function playMessageNotificationSound() {
+async function playMessageNotificationSound(preferences = { soundsEnabled: true, tone: "classic", volume: 70, mutedUntil: 0 }) {
   if (typeof window === "undefined") return;
+  if (!preferences.soundsEnabled || Number(preferences.mutedUntil) > Date.now()) return;
 
   try {
     const audioContext = getMessageNotificationAudioContext();
@@ -3120,20 +3124,18 @@ async function playMessageNotificationSound() {
       await audioContext.resume();
     }
 
-    [
-      { start: 0, frequency: 880, endFrequency: 660, duration: 0.18 },
-      { start: 0.24, frequency: 1040, endFrequency: 780, duration: 0.2 },
-    ].forEach((tone) => {
+    const selectedTone = NOTIFICATION_TONES.find((tone) => tone.id === preferences.tone) || NOTIFICATION_TONES[0];
+    selectedTone.notes.forEach((tone) => {
       const oscillator = audioContext.createOscillator();
       const gain = audioContext.createGain();
       const startAt = audioContext.currentTime + tone.start;
       const stopAt = startAt + tone.duration;
 
-      oscillator.type = "triangle";
+      oscillator.type = selectedTone.wave;
       oscillator.frequency.setValueAtTime(tone.frequency, startAt);
       oscillator.frequency.exponentialRampToValueAtTime(tone.endFrequency, stopAt);
       gain.gain.setValueAtTime(0.001, startAt);
-      gain.gain.exponentialRampToValueAtTime(0.34, startAt + 0.03);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.001, Number(preferences.volume) / 100 * 0.34), startAt + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.001, stopAt);
       oscillator.connect(gain);
       gain.connect(audioContext.destination);
@@ -3262,7 +3264,7 @@ function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isM
     const itemsNeedingAlert = items.filter((item) => !isViewingChatNow(item.chatKey));
     if (itemsNeedingAlert.length === 0) return;
 
-    playMessageNotificationSound();
+    playMessageNotificationSound({ soundsEnabled: true, tone: "classic", volume: 70, mutedUntil: 0, ...profile?.notificationPreferences });
 
     if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       itemsNeedingAlert.forEach((item) => showBrowserMessageNotification(item, onNotificationClick));
@@ -4975,8 +4977,10 @@ function InternalMessages({
                   ) : (
                     <>
                   <textarea
-                    spellCheck
+                    spellCheck={true}
                     lang="es-MX"
+                    autoCorrect="on"
+                    autoCapitalize="sentences"
                     onPaste={(event) => handleComposerPaste(event, "direct")}
                     value={messageForm.message}
                     onChange={(event) => {
@@ -5182,8 +5186,10 @@ function InternalMessages({
                 ) : (
                   <>
                 <textarea
-                  spellCheck
+                  spellCheck={true}
                   lang="es-MX"
+                  autoCorrect="on"
+                  autoCapitalize="sentences"
                   onPaste={(event) => handleComposerPaste(event, "department")}
                   value={departmentForm.message}
                   onChange={(event) => {
@@ -6165,7 +6171,7 @@ function MobileAppHeader({ profile, title, subtitle, onHome, onOpenMenu, onOpenP
           onClick={onOpenProfile}
           aria-label="Ver mi perfil"
         >
-          {getInitials(profile?.name)}
+          <UserAvatar profile={profile} />
         </button>
       </div>
     </header>
@@ -6235,7 +6241,7 @@ function MobileModuleDrawer({
         <div className="mobile-drawer-handle" />
 
         <div className="mobile-drawer-profile">
-          <div className="mobile-drawer-avatar">{getInitials(profile?.name)}</div>
+          <div className="mobile-drawer-avatar"><UserAvatar profile={profile} /></div>
           <div>
             <strong>{profile?.name || "Usuario"}</strong>
             <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
@@ -6661,7 +6667,7 @@ function TopProfileBar({
             className="profile-chip-button"
             onClick={toggleProfile}
           >
-            <span className="profile-chip-avatar">{getInitials(profile?.name)}</span>
+            <span className="profile-chip-avatar"><UserAvatar profile={profile} /></span>
             <strong>{profile?.name || "Usuario"}</strong>
             <em>⌄</em>
           </button>
@@ -6669,9 +6675,7 @@ function TopProfileBar({
           {profileMenuOpen && (
             <div className="profile-dropdown">
               <div className="profile-dropdown-header">
-                <div className="profile-dropdown-avatar">
-                  {getInitials(profile?.name)}
-                </div>
+                <div className="profile-dropdown-avatar"><UserAvatar profile={profile} /></div>
 
                 <div>
                   <strong>{profile?.name || "Usuario sin perfil"}</strong>
@@ -7191,56 +7195,92 @@ function buildQuickNotifications() {
   return [];
 }
 
-function ProfilePage({ profile, isAdmin, onClose }) {
+function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
+  const [phone, setPhone] = useState(profile?.phone || "");
+  const [bio, setBio] = useState(profile?.bio || "");
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [preferences, setPreferences] = useState(() => ({ soundsEnabled: true, tone: "classic", volume: 70, mutedUntil: 0, ...profile?.notificationPreferences }));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    if (phone.trim() && !/^[+\d][\d\s().-]{6,19}$/.test(phone.trim())) return setMessage("Ingresa un teléfono válido.");
+    setSaving(true); setMessage("");
+    try {
+      const userId = profile.uid || profile.id;
+      const photoRef = ref(storage, `profile-photos/${userId}/avatar`);
+      let photoURL = profile.photoURL || "";
+      if (removePhoto || photoFile) { await deleteObject(photoRef).catch(() => {}); photoURL = ""; }
+      if (photoFile) {
+        if (!photoFile.type.startsWith("image/") || photoFile.size > 5 * 1024 * 1024) throw new Error("La foto debe ser una imagen de máximo 5 MB.");
+        await uploadBytes(photoRef, photoFile, { contentType: photoFile.type });
+        photoURL = await getDownloadURL(photoRef);
+      }
+      const savedPreferences = { ...preferences, mutedUntil: Number(preferences.muteDuration || 0) ? Date.now() + Number(preferences.muteDuration) : 0 };
+      delete savedPreferences.muteDuration;
+      await updateDoc(doc(db, "users", userId), { phone: phone.trim(), bio: bio.trim(), photoURL, notificationPreferences: savedPreferences, profileUpdatedAt: serverTimestamp() });
+      await onProfileUpdated(); setMessage("Cambios guardados correctamente."); setPhotoFile(null); setRemovePhoto(false);
+    } catch (error) { setMessage(error?.message || "No se pudieron guardar los cambios."); }
+    finally { setSaving(false); }
+  }
   return (
-    <div className="visual-page">
-      <div className="visual-page-header">
-        <div>
-          <h2>Mi perfil</h2>
-          <p>Consulta la información de tu usuario dentro del sistema.</p>
-        </div>
+    <form className="profile-page printshop-page" onSubmit={saveProfile}>
+      <section className="profile-module-topbar printshop-topbar"><div className="printshop-topbar-main"><span className="printshop-topbar-module-icon"><DashboardNavIcon name="collaborators" /></span><div className="printshop-topbar-copy"><p className="section-kicker">CUENTA PERSONAL</p><h1>Mi perfil</h1><p>Administra tus datos y notificaciones internas.</p></div></div><button type="button" className="visual-outline-button profile-back-button" onClick={onClose}>← Volver</button></section>
 
-        <div className="visual-page-actions">
-          <button className="visual-outline-button" onClick={onClose}>
-            ← Volver
-          </button>
-        </div>
+      <div className="profile-content-grid">
+        <section className="profile-section-card profile-photo-card">
+          <ProfileSectionTitle title="Foto de perfil" text="Visible en encabezado y avatares del sistema." />
+          <div className="profile-photo-editor">
+            <div className="profile-page-avatar"><UserAvatar profile={{ ...profile, photoURL: removePhoto ? "" : profile.photoURL }} preview={photoPreview} /></div>
+            <strong>{profile?.name || "Usuario"}</strong>
+            <div className="profile-photo-actions"><label className="visual-outline-button">Cambiar foto<input hidden type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0] || null; setPhotoFile(file); setPhotoPreview(file ? URL.createObjectURL(file) : ""); setRemovePhoto(false); }} /></label>{(profile.photoURL || photoFile) && <button type="button" className="profile-remove-photo" onClick={() => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(true); }}>Eliminar</button>}</div>
+            <small>JPG, PNG o WebP. Máximo 5 MB.</small>
+          </div>
+          <label className="profile-bio-field"><span>Sobre mí</span><textarea rows="5" maxLength="400" value={bio} onChange={(event) => setBio(event.target.value)} placeholder="Escribe una breve presentación personal." /><small>{bio.length}/400</small></label>
+        </section>
+
+        <section className="profile-section-card profile-personal-card">
+          <ProfileSectionTitle title="Información personal" text="Datos básicos de contacto." />
+          <div className="profile-fields-grid"><ProfileInfoItem label="Nombre" value={profile?.name} /><label className="profile-edit-field"><span>Teléfono</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+52 664 123 4567" /></label></div>
+        </section>
+
+        <section className="profile-section-card profile-account-card">
+          <ProfileSectionTitle title="Cuenta y privilegios" text="Información administrada por el sistema." />
+          <div className="profile-fields-grid"><ProfileInfoItem label="Correo" value={profile?.email} /><ProfileInfoItem label="Área" value={profile?.area} /><ProfileInfoItem label="Privilegio" value={isAdmin ? "Administrador" : getRoleLabel(profile?.role)} /><ProfileInfoItem label="Estado" value={profile?.active === false ? "Inactivo" : "Activo"} /></div>
+        </section>
+
+        <section className="profile-section-card profile-notifications-card">
+          <ProfileSectionTitle title="Configuración de notificaciones" text="Controla únicamente sonidos internos de esta aplicación." />
+          <div className="profile-notification-settings"><label className="profile-toggle-field"><input type="checkbox" checked={preferences.soundsEnabled} onChange={(e) => setPreferences({ ...preferences, soundsEnabled: e.target.checked })} /> Activar sonidos</label><label>Tono<select value={preferences.tone} onChange={(e) => setPreferences({ ...preferences, tone: e.target.value })}>{NOTIFICATION_TONES.map((tone) => <option key={tone.id} value={tone.id}>{tone.label}</option>)}</select></label><label>Volumen: {preferences.volume}%<input type="range" min="0" max="100" value={preferences.volume} onChange={(e) => setPreferences({ ...preferences, volume: Number(e.target.value) })} /></label><label>Silenciar temporalmente<select value={preferences.muteDuration || 0} onChange={(e) => setPreferences({ ...preferences, muteDuration: Number(e.target.value) })}><option value="0">No silenciar</option><option value="3600000">1 hora</option><option value="28800000">8 horas</option><option value="86400000">24 horas</option></select></label><button type="button" className="visual-outline-button profile-preview-button" onClick={() => playMessageNotificationSound({ ...preferences, soundsEnabled: true, mutedUntil: 0 })}>Escuchar vista previa</button></div>
+        </section>
       </div>
-
-      <section className="profile-page-card">
-        <div className="profile-page-hero">
-          <div className="profile-page-avatar">
-            {getInitials(profile?.name)}
-          </div>
-
-          <div>
-            <h3>{profile?.name || "Usuario sin perfil"}</h3>
-            <p>{profile?.email || "Sin correo registrado"}</p>
-
-            <div className="profile-page-badges">
-              <span>{isAdmin ? "Administrador" : getRoleLabel(profile?.role)}</span>
-              <span>{profile?.area || "Sin área"}</span>
-              <span>{profile?.active === false ? "Inactivo" : "Activo"}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="profile-info-grid">
-          <ProfileInfoItem label="Nombre" value={profile?.name} />
-          <ProfileInfoItem label="Correo" value={profile?.email} />
-          <ProfileInfoItem
-            label="Privilegio"
-            value={isAdmin ? "Administrador" : getRoleLabel(profile?.role)}
-          />
-          <ProfileInfoItem label="Área" value={profile?.area} />
-          <ProfileInfoItem
-            label="Estado"
-            value={profile?.active === false ? "Inactivo" : "Activo"}
-          />
-        </div>
-      </section>
-    </div>
+      <div className="profile-page-footer">{message && <p className="profile-save-message" role="status">{message}</p>}<div className="profile-save-actions"><button className="visual-primary-button" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></div>
+    </form>
   );
+}
+
+const NOTIFICATION_TONES = [
+  { id: "classic", label: "Clásico", wave: "triangle", notes: [{ start: 0, frequency: 880, endFrequency: 660, duration: 0.18 }, { start: 0.24, frequency: 1040, endFrequency: 780, duration: 0.2 }] },
+  { id: "soft", label: "Suave", wave: "sine", notes: [{ start: 0, frequency: 620, endFrequency: 520, duration: 0.28 }] },
+  { id: "bright", label: "Brillante", wave: "triangle", notes: [{ start: 0, frequency: 1040, endFrequency: 1320, duration: 0.14 }, { start: 0.17, frequency: 1320, endFrequency: 1560, duration: 0.16 }] },
+  { id: "bell", label: "Campana", wave: "sine", notes: [{ start: 0, frequency: 784, endFrequency: 740, duration: 0.42 }] },
+  { id: "double", label: "Doble aviso", wave: "square", notes: [{ start: 0, frequency: 720, endFrequency: 720, duration: 0.1 }, { start: 0.16, frequency: 720, endFrequency: 720, duration: 0.1 }] },
+  { id: "ascending", label: "Ascendente", wave: "triangle", notes: [{ start: 0, frequency: 520, endFrequency: 720, duration: 0.16 }, { start: 0.18, frequency: 720, endFrequency: 980, duration: 0.18 }] },
+  { id: "digital", label: "Digital", wave: "square", notes: [{ start: 0, frequency: 980, endFrequency: 860, duration: 0.08 }, { start: 0.11, frequency: 1180, endFrequency: 1020, duration: 0.09 }] },
+  { id: "calm", label: "Calmado", wave: "sine", notes: [{ start: 0, frequency: 440, endFrequency: 392, duration: 0.38 }, { start: 0.3, frequency: 523, endFrequency: 466, duration: 0.32 }] },
+  { id: "pulse", label: "Pulso", wave: "sawtooth", notes: [{ start: 0, frequency: 660, endFrequency: 620, duration: 0.09 }, { start: 0.13, frequency: 660, endFrequency: 620, duration: 0.09 }, { start: 0.26, frequency: 820, endFrequency: 760, duration: 0.12 }] },
+  { id: "chime", label: "Armonía", wave: "sine", notes: [{ start: 0, frequency: 659, endFrequency: 622, duration: 0.32 }, { start: 0.14, frequency: 784, endFrequency: 740, duration: 0.34 }, { start: 0.28, frequency: 988, endFrequency: 932, duration: 0.36 }] },
+];
+
+function UserAvatar({ profile, preview = "" }) {
+  return preview || profile?.photoURL ? <img className="user-avatar-image" src={preview || profile.photoURL} alt="Foto de perfil" /> : getInitials(profile?.name);
+}
+
+function ProfileSectionTitle({ title, text }) {
+  return <div className="profile-section-title"><h2>{title}</h2><p>{text}</p></div>;
 }
 
 function ProfileInfoItem({ label, value }) {

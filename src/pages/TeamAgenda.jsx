@@ -2276,20 +2276,22 @@ function TodayTeamItem({ person, schedule, currentUserId, onMessage }) {
         <span>{getScheduleTimeLabel(schedule)}</span>
       </div>
 
-      <b className={`agenda-modern-status-pill ${tone}`}>
-        {getScheduleShortStatus(schedule)}
-      </b>
-      {person.id !== currentUserId && person.active !== false && person.deleted !== true && person.email && (
-        <button
-          type="button"
-          className="agenda-modern-message-button"
-          onClick={() => onMessage(person.id)}
-          title={`Enviar mensaje a ${person.name}`}
-          aria-label={`Enviar mensaje a ${person.name}`}
-        >
-          ✉
-        </button>
-      )}
+      <div className="agenda-modern-team-actions">
+        <b className={`agenda-modern-status-pill ${tone}`}>
+          {getScheduleShortStatus(schedule)}
+        </b>
+        {person.id !== currentUserId && person.active !== false && person.deleted !== true && person.email && (
+          <button
+            type="button"
+            className="agenda-modern-message-button"
+            onClick={() => onMessage(person.id)}
+            title={`Enviar mensaje a ${person.name}`}
+            aria-label={`Enviar mensaje a ${person.name}`}
+          >
+            ✉
+          </button>
+        )}
+      </div>
     </article>
   );
 }

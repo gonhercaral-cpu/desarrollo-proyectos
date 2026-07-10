@@ -2722,7 +2722,13 @@ service cloud.firestore {
 
       allow create: if isAdmin();
 
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        || (signedIn() && userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "phone", "bio", "photoURL", "notificationPreferences", "profileUpdatedAt"
+          ])
+          && request.resource.data.bio is string
+          && request.resource.data.bio.size() <= 400);
 
       allow delete: if false;
     }

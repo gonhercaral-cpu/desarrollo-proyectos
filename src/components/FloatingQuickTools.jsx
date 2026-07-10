@@ -1072,8 +1072,10 @@ export default function FloatingQuickTools({
                 ) : (
                   <>
                 <textarea
-                  spellCheck
+                  spellCheck={true}
                   lang="es-MX"
+                  autoCorrect="on"
+                  autoCapitalize="sentences"
                   onPaste={handleMessagePaste}
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}

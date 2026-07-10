@@ -35,6 +35,15 @@ service firebase.storage {
         && userDoc().data.role == "admin";
     }
 
+    match /profile-photos/{userId}/{fileName} {
+      allow read: if signedIn() && hasProfile();
+      allow create, update: if signedIn() && hasProfile()
+        && request.auth.uid == userId && fileName == "avatar"
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if signedIn() && hasProfile() && (request.auth.uid == userId || isAdmin());
+    }
+
     function isPrintshopUser() {
       return hasProfile()
         && hasUserArea()
