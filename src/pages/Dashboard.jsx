@@ -34,6 +34,10 @@ import DigitalSignageAdmin from "../components/DigitalSignageAdmin";
 import FloatingQuickTools from "../components/FloatingQuickTools";
 import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { getPastedImageFiles } from "../utils/clipboardAttachments";
+import MessageAudioPlayer from "../components/MessageAudioPlayer";
+import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
+import { userBelongsToDepartmentId } from "../utils/departmentMembership";
 
 // Módulo en desarrollo: reactivar cambiando este valor a true.
 const ENABLE_UNIFI_CAMERAS_MODULE = false;
@@ -687,7 +691,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     }
 
     if (page === "team-agenda") {
-      return <TeamAgenda />;
+      return <TeamAgenda onMessageUser={(userId) => {
+        setPendingChatKeyToOpen(`direct:${userId}`);
+        setPage("internal-messages");
+      }} />;
     }
 
     if (page === "ideas-incubator") {
@@ -1741,6 +1748,8 @@ function WorkspaceDashboard({
                 <span>Mensaje</span>
                 <textarea
                   value={announcementForm.message}
+                  spellCheck
+                  lang="es-MX"
                   onChange={(event) =>
                     setAnnouncementForm((current) => ({
                       ...current,
@@ -2587,27 +2596,6 @@ function AttachmentDraftList({ items, onRemove }) {
   );
 }
 
-function AudioAttachmentPlayer({ attachment }) {
-  const [unsupported, setUnsupported] = useState(false);
-
-  if (unsupported) {
-    return (
-      <p className="attachment-audio-unsupported">
-        Este audio fue grabado en un formato no compatible con este dispositivo.
-      </p>
-    );
-  }
-
-  return (
-    <audio
-      src={attachment.url}
-      controls
-      preload="metadata"
-      onError={() => setUnsupported(true)}
-    />
-  );
-}
-
 function AttachmentGallery({ attachments, compact = false }) {
   if (!Array.isArray(attachments) || attachments.length === 0) return null;
 
@@ -2621,7 +2609,7 @@ function AttachmentGallery({ attachments, compact = false }) {
               key={attachment.path || attachment.url || attachment.name}
               className="attachment-card type-audio audio-message-card"
             >
-              <AudioAttachmentPlayer attachment={attachment} />
+              <MessageAudioPlayer attachment={attachment} />
             </article>
           );
         }
@@ -2663,10 +2651,7 @@ function AttachmentGallery({ attachments, compact = false }) {
 }
 
 function isAudioOnlyMessage(message) {
-  const attachments = normalizeStoredAttachments(message?.attachments);
-  return attachments.length > 0
-    && attachments.every((attachment) => getAttachmentType(attachment.contentType, attachment.name) === "audio")
-    && String(message?.message || "").trim().toLowerCase() === "archivo adjunto";
+  return isAudioMessage(message, getAttachmentType);
 }
 
 function isRecordedVoiceAttachment(attachment) {
@@ -3312,7 +3297,7 @@ function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isM
             key: `direct:${message.id}`,
             chatKey: `direct:${message.fromUserId || ""}`,
             title: `Nuevo mensaje de ${message.fromUserName || "un colaborador"}`,
-            body: truncateNotificationText(message.message || "Archivo adjunto", 120),
+            body: truncateNotificationText(getMessagePreview(message, getAttachmentType), 120),
             tag: `message-direct-${message.id}`,
           }));
 
@@ -3352,7 +3337,7 @@ function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isM
             key: `department:${message.id}`,
             chatKey: `department:${message.departmentId || ""}`,
             title: `Nuevo mensaje en ${message.departmentName || "departamento"}`,
-            body: `${message.fromUserName || "Un colaborador"}: ${truncateNotificationText(message.message || "Archivo adjunto", 100)}`,
+            body: `${message.fromUserName || "Un colaborador"}: ${truncateNotificationText(getMessagePreview(message, getAttachmentType), 100)}`,
             tag: `message-department-${message.id}`,
           }));
 
@@ -3670,12 +3655,9 @@ function InternalMessages({
     matchesDepartmentConversationSearch(conversation, conversationSearchTerm)
   );
   const selectedConversation =
-    filteredConversations.find((conversation) => conversation.participantId === selectedConversationId) ||
-    (!selectedConversationId ? filteredConversations[0] : null);
+    filteredConversations.find((conversation) => conversation.participantId === selectedConversationId) || null;
   const selectedDepartmentConversation =
-    filteredDepartmentConversations.find((conversation) => conversation.departmentId === selectedDepartmentId) ||
-    filteredDepartmentConversations[0] ||
-    null;
+    filteredDepartmentConversations.find((conversation) => conversation.departmentId === selectedDepartmentId) || null;
   const selectedMessages = selectedConversation
     ? selectedConversation.messages
         .slice()
@@ -3781,20 +3763,6 @@ function InternalMessages({
       window.setTimeout(scrollNow, 240);
     });
   }
-
-  useEffect(() => {
-    if (conversationType !== "direct") return;
-    if (!selectedConversationId && !selectedConversation && filteredConversations[0]?.participantId) {
-      setSelectedConversationId(filteredConversations[0].participantId);
-    }
-  }, [conversationType, filteredConversations.length, selectedConversationId, selectedConversation?.participantId]);
-
-  useEffect(() => {
-    if (conversationType !== "department") return;
-    if (!selectedDepartmentConversation && filteredDepartmentConversations[0]?.departmentId) {
-      setSelectedDepartmentId(filteredDepartmentConversations[0].departmentId);
-    }
-  }, [conversationType, filteredDepartmentConversations.length, selectedDepartmentConversation?.departmentId]);
 
   useEffect(() => {
     if (conversationType !== "direct" || !selectedConversation) return;
@@ -3970,6 +3938,24 @@ function InternalMessages({
       ...current,
       ...files.map(createDraftAttachment),
     ]);
+    setMessageError("");
+  }
+
+  function handleComposerPaste(event, type) {
+    const files = getPastedImageFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    const validation = validateBoardFiles(
+      files,
+      type === "department" ? departmentAttachments.length : messageAttachments.length
+    );
+    if (!validation.valid) {
+      setMessageError(validation.message);
+      return;
+    }
+    const drafts = files.map(createDraftAttachment);
+    if (type === "department") setDepartmentAttachments((current) => [...current, ...drafts].slice(0, 6));
+    else setMessageAttachments((current) => [...current, ...drafts].slice(0, 6));
     setMessageError("");
   }
 
@@ -4197,7 +4183,7 @@ function InternalMessages({
           fromUserId: currentUserId,
           fromUserName: profile?.name || "Usuario",
           fromUserEmail: profile?.email || "",
-          message: "Archivo adjunto",
+          message: "Mensaje de audio",
           attachments,
           replyToMessageId: replyTarget?.type === "department" ? replyTarget.messageId : "",
           replyToFromUserId: replyTarget?.type === "department" ? replyTarget.fromUserId : "",
@@ -4246,7 +4232,7 @@ function InternalMessages({
           toUserName: recipientName,
           toUserEmail: recipient.email || "",
           subject: `ConversaciÃ³n con ${recipientName}`.slice(0, 120),
-          message: "Archivo adjunto",
+          message: "Mensaje de audio",
           attachments,
           replyToMessageId: replyTarget?.type === "direct" ? replyTarget.messageId : "",
           replyToFromUserId: replyTarget?.type === "direct" ? replyTarget.fromUserId : "",
@@ -4443,9 +4429,10 @@ function InternalMessages({
     setMessageError("");
 
     const department = selectedDepartmentConversation || departmentOptions.find((item) => item.id === selectedDepartmentId);
+    const departmentId = department?.departmentId || department?.id || selectedDepartmentId;
     const cleanMessage = departmentForm.message.trim();
 
-    if (!department?.id) {
+    if (!departmentId) {
       setMessageError("Selecciona un departamento.");
       return;
     }
@@ -4465,13 +4452,13 @@ function InternalMessages({
     try {
       const messageId = doc(collection(db, "departmentMessages")).id;
       const attachments = await uploadBoardAttachments(departmentAttachments, {
-        folder: `dashboard/departmentMessages/${department.id}/${currentUserId}/${messageId}`,
+        folder: `dashboard/departmentMessages/${departmentId}/${currentUserId}/${messageId}`,
         ownerUid: currentUserId,
       });
 
       await setDoc(doc(db, "departmentMessages", messageId), {
-        departmentId: department.id,
-        departmentName: department.name || "Departamento",
+        departmentId,
+        departmentName: department.departmentName || department.name || "Departamento",
         fromUserId: currentUserId,
         fromUserName: profile?.name || "Usuario",
         fromUserEmail: profile?.email || "",
@@ -4489,7 +4476,7 @@ function InternalMessages({
         updatedAt: serverTimestamp(),
       });
 
-      setSelectedDepartmentId(department.id);
+      setSelectedDepartmentId(departmentId);
       writeTypingState(false);
       resetDepartmentComposer();
       scrollActiveThreadToBottom("smooth");
@@ -4566,6 +4553,19 @@ function InternalMessages({
     writeTypingState(false);
     markDepartmentConversationMessagesAsRead(conversation.messages);
   }
+
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key !== "Escape" || !selectedConversationId && !selectedDepartmentId) return;
+      if (showChatFilesPanel || replyTarget || voiceRecordingType) return;
+      setSelectedConversationId("");
+      setSelectedDepartmentId("");
+      setMessageForm((current) => ({ ...current, toUserId: "" }));
+      setShowChatFilesPanel(false);
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [selectedConversationId, selectedDepartmentId, showChatFilesPanel, replyTarget, voiceRecordingType]);
 
   return (
     <div className="internal-messages-page chat-messages-page department-chat-page">
@@ -4758,7 +4758,7 @@ function InternalMessages({
                         <PresenceBadge status={presenceStatus} compact />
                         <p>
                           {conversation.lastMessage?.fromUserId === currentUserId ? "Tú: " : ""}
-                          {conversation.lastMessage?.message || "Archivo adjunto"}
+                          {getMessagePreview(conversation.lastMessage, getAttachmentType)}
                         </p>
                         <div className="chat-conversation-meta">
                           <span>{conversation.messages.length} mensaje(s)</span>
@@ -4809,7 +4809,7 @@ function InternalMessages({
                       <span className="department-chat-label">Chat grupal</span>
                       <p>
                         {conversation.lastMessage
-                          ? `${conversation.lastMessage.fromUserId === currentUserId ? "Tú" : conversation.lastMessage.fromUserName || "Usuario"}: ${conversation.lastMessage.message || "Archivo adjunto"}`
+                          ? `${conversation.lastMessage.fromUserId === currentUserId ? "Tú" : conversation.lastMessage.fromUserName || "Usuario"}: ${getMessagePreview(conversation.lastMessage, getAttachmentType)}`
                           : "Todavía no hay mensajes en este departamento."}
                       </p>
                       <div className="chat-conversation-meta">
@@ -4836,7 +4836,8 @@ function InternalMessages({
         <section className="chat-thread-panel">
           {conversationType === "direct" ? (
             !selectedRecipient ? (
-              <div className="workspace-empty-state messages-empty-state chat-empty-thread">
+              <div className="workspace-empty-state messages-empty-state chat-empty-thread chat-empty-watermark">
+                <div className="chat-empty-watermark-pattern" aria-hidden="true" />
                 <strong>Selecciona una conversación</strong>
                 <p>El historial del chat aparecerá aquí.</p>
               </div>
@@ -4974,6 +4975,9 @@ function InternalMessages({
                   ) : (
                     <>
                   <textarea
+                    spellCheck
+                    lang="es-MX"
+                    onPaste={(event) => handleComposerPaste(event, "direct")}
                     value={messageForm.message}
                     onChange={(event) => {
                       const nextMessage = event.target.value;
@@ -5178,6 +5182,9 @@ function InternalMessages({
                 ) : (
                   <>
                 <textarea
+                  spellCheck
+                  lang="es-MX"
+                  onPaste={(event) => handleComposerPaste(event, "department")}
                   value={departmentForm.message}
                   onChange={(event) => {
                     const nextMessage = event.target.value;
@@ -5467,7 +5474,7 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
   (departments || []).forEach((department) => {
     const departmentName = department.name || department.title || "";
     const normalizedName = normalizeText(departmentName);
-    if (!departmentName || (!isAdmin && !currentUserDepartmentKeys.includes(normalizedName))) return;
+    if (!departmentName || (!isAdmin && !userBelongsToDepartmentId(profile, department.id) && !currentUserDepartmentKeys.includes(normalizedName))) return;
     addOption({ id: department.id || getDepartmentOptionId(departmentName), name: departmentName, source: "departments", raw: department });
   });
 
@@ -5485,7 +5492,7 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
       ...option,
       memberCount: getDepartmentMemberIds(option, collaborators, profile, currentUserId).length,
     }))
-    .filter((option) => isAdmin || users.some((user) => userBelongsToDepartment(user, option.normalizedName)))
+    .filter((option) => isAdmin || users.some((user) => userBelongsToDepartmentId(user, option.id) || userBelongsToDepartment(user, option.normalizedName)))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
@@ -5553,7 +5560,7 @@ function getDepartmentMemberIds(department, collaborators, profile, currentUserI
   [{ ...profile, id: currentUserId }, ...(collaborators || [])].forEach((user) => {
     const userId = user?.id || user?.uid || "";
     if (!userId) return;
-    if (userBelongsToDepartment(user, normalizedName)) {
+    if (userBelongsToDepartmentId(user, department?.departmentId || department?.id) || userBelongsToDepartment(user, normalizedName)) {
       userMap.set(userId, user);
     }
   });
@@ -7103,6 +7110,7 @@ function buildRealDashboardNotifications({ directMessages = [], departmentMessag
 }
 
 function getNotificationMessageDetail(message) {
+  if (isAudioOnlyMessage(message)) return "Mensaje de audio";
   const cleanMessage = String(message?.message || "").trim();
   if (cleanMessage) return truncateNotificationText(cleanMessage, 90);
 

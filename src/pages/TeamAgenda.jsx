@@ -107,7 +107,7 @@ function TeamAgendaModuleIcon() {
   );
 }
 
-export default function TeamAgenda() {
+export default function TeamAgenda({ onMessageUser = () => {} }) {
   const { profile, isAdmin } = useAuth();
   const currentWeek = useMemo(() => getCurrentWeek(), []);
   const currentUserId = profile?.uid || profile?.id || "";
@@ -1484,7 +1484,13 @@ export default function TeamAgenda() {
                 <div className="team-agenda-empty compact">Sin equipo programado hoy.</div>
               ) : (
                 todayTeam.slice(0, 7).map((person) => (
-                  <TodayTeamItem key={person.id} person={person} schedule={person.todaySchedule} />
+                  <TodayTeamItem
+                    key={person.id}
+                    person={person}
+                    schedule={person.todaySchedule}
+                    currentUserId={currentUserId}
+                    onMessage={onMessageUser}
+                  />
                 ))
               )}
             </div>
@@ -2256,7 +2262,7 @@ function FocusedAgendaPanel({ title, description, badge, sideContent, onClose, c
   );
 }
 
-function TodayTeamItem({ person, schedule }) {
+function TodayTeamItem({ person, schedule, currentUserId, onMessage }) {
   const tone = getScheduleTone(schedule);
 
   return (
@@ -2273,6 +2279,17 @@ function TodayTeamItem({ person, schedule }) {
       <b className={`agenda-modern-status-pill ${tone}`}>
         {getScheduleShortStatus(schedule)}
       </b>
+      {person.id !== currentUserId && person.active !== false && person.deleted !== true && person.email && (
+        <button
+          type="button"
+          className="agenda-modern-message-button"
+          onClick={() => onMessage(person.id)}
+          title={`Enviar mensaje a ${person.name}`}
+          aria-label={`Enviar mensaje a ${person.name}`}
+        >
+          ✉
+        </button>
+      )}
     </article>
   );
 }

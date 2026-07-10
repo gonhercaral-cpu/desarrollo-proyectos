@@ -2451,6 +2451,21 @@ service cloud.firestore {
         );
     }
 
+    function userMatchesDepartmentId(departmentId) {
+      return hasProfile()
+        && departmentId is string
+        && (
+          isAdmin()
+          || userDoc().data.departmentId == departmentId
+          || userDoc().data.primaryDepartmentId == departmentId
+          || userDoc().data.areaId == departmentId
+          || (
+            userDoc().data.departmentIds is list
+            && departmentId in userDoc().data.departmentIds
+          )
+        );
+    }
+
     function canReadDepartmentMessage() {
       return hasProfile()
         && (
@@ -2486,8 +2501,8 @@ service cloud.firestore {
         && request.resource.data.departmentName.size() > 0
         && request.resource.data.departmentName.size() <= 120
         && (
-          userMatchesDepartmentName(request.resource.data.departmentName)
-          || request.auth.uid in request.resource.data.memberIds
+          userMatchesDepartmentId(request.resource.data.departmentId)
+          || userMatchesDepartmentName(request.resource.data.departmentName)
         )
         && request.resource.data.fromUserName is string
         && request.resource.data.fromUserName.size() <= 120

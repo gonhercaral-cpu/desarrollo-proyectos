@@ -12,6 +12,10 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, storage } from "../services/firebase";
+import { getPastedImageFiles } from "../utils/clipboardAttachments";
+import MessageAudioPlayer from "./MessageAudioPlayer";
+import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
+import { userBelongsToDepartmentId } from "../utils/departmentMembership";
 
 const MAX_RECENT_CONVERSATIONS = 8;
 const BOARD_ATTACHMENT_ACCEPT = [
@@ -472,6 +476,16 @@ export default function FloatingQuickTools({
     currentUserId,
   ]);
 
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key !== "Escape" || activeTool !== "messages" || !selectedConversationKey) return;
+      if (replyTarget || voiceRecordingType) return;
+      setSelectedConversationKey("");
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [activeTool, selectedConversationKey, replyTarget, voiceRecordingType]);
+
   function scrollThreadToBottom(behavior = "auto") {
     if (typeof window === "undefined") return;
 
@@ -537,6 +551,19 @@ export default function FloatingQuickTools({
       ...current,
       ...files.map(createDraftAttachment),
     ]);
+    setMessageError("");
+  }
+
+  function handleMessagePaste(event) {
+    const files = getPastedImageFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    const validation = validateBoardFiles(files, messageAttachments.length);
+    if (!validation.valid) {
+      setMessageError(validation.message);
+      return;
+    }
+    setMessageAttachments((current) => [...current, ...files.map(createDraftAttachment)].slice(0, 6));
     setMessageError("");
   }
 
@@ -611,7 +638,7 @@ export default function FloatingQuickTools({
           collaborators,
           profile,
           currentUserId,
-          message: "Archivo adjunto",
+          message: "Mensaje de audio",
           attachments: [draftAttachment],
           replyTarget,
         });
@@ -629,7 +656,7 @@ export default function FloatingQuickTools({
           recipient,
           profile,
           currentUserId,
-          message: "Archivo adjunto",
+          message: "Mensaje de audio",
           attachments: [draftAttachment],
           replyTarget,
         });
@@ -922,7 +949,7 @@ export default function FloatingQuickTools({
                     </span>
                     <span>
                       <strong>{conversation.title}</strong>
-                      <small>{truncateText(conversation.lastMessage?.message || conversation.subtitle, 62)}</small>
+                      <small>{truncateText(conversation.lastMessage ? getMessagePreview(conversation.lastMessage, getAttachmentType) : conversation.subtitle, 62)}</small>
                     </span>
                     {conversation.unreadCount > 0 && (
                       <em>{formatBadgeCount(conversation.unreadCount)}</em>
@@ -1045,6 +1072,9 @@ export default function FloatingQuickTools({
                 ) : (
                   <>
                 <textarea
+                  spellCheck
+                  lang="es-MX"
+                  onPaste={handleMessagePaste}
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}
                   onKeyDown={(event) => {
@@ -1372,27 +1402,6 @@ function QuickAttachmentDraftList({ items, onRemove }) {
   );
 }
 
-function QuickAudioAttachmentPlayer({ attachment }) {
-  const [unsupported, setUnsupported] = useState(false);
-
-  if (unsupported) {
-    return (
-      <p className="attachment-audio-unsupported">
-        Este audio fue grabado en un formato no compatible con este dispositivo.
-      </p>
-    );
-  }
-
-  return (
-    <audio
-      src={attachment.url}
-      controls
-      preload="metadata"
-      onError={() => setUnsupported(true)}
-    />
-  );
-}
-
 function QuickAttachmentGallery({ attachments }) {
   const normalized = normalizeStoredAttachments(attachments);
   if (!normalized.length) return null;
@@ -1403,7 +1412,7 @@ function QuickAttachmentGallery({ attachments }) {
         const type = getAttachmentType(attachment.contentType, attachment.name);
         if (type === "audio") {
           return (
-            <QuickAudioAttachmentPlayer
+            <MessageAudioPlayer
               key={attachment.path || attachment.url}
               attachment={attachment}
             />
@@ -1601,7 +1610,7 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
   departments.forEach((department) => {
     const departmentName = department.name || department.title || "";
     const normalizedName = normalizeText(departmentName);
-    if (!departmentName || (!isAdmin && !currentUserDepartmentKeys.includes(normalizedName))) return;
+    if (!departmentName || (!isAdmin && !userBelongsToDepartmentId(profile, department.id) && !currentUserDepartmentKeys.includes(normalizedName))) return;
     addOption({ id: department.id || getDepartmentOptionId(departmentName), name: departmentName, source: "departments", raw: department });
   });
 
@@ -1619,7 +1628,7 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
       ...option,
       memberCount: getDepartmentMemberIds(option, collaborators, profile, currentUserId).length,
     }))
-    .filter((option) => isAdmin || users.some((user) => userBelongsToDepartment(user, option.normalizedName)))
+    .filter((option) => isAdmin || users.some((user) => userBelongsToDepartmentId(user, option.id) || userBelongsToDepartment(user, option.normalizedName)))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
@@ -1684,7 +1693,7 @@ function getDepartmentMemberIds(department, collaborators, profile, currentUserI
   [{ ...profile, id: currentUserId }, ...collaborators].forEach((user) => {
     const userId = user?.id || user?.uid || "";
     if (!userId) return;
-    if (userBelongsToDepartment(user, normalizedName)) {
+    if (userBelongsToDepartmentId(user, department?.departmentId || department?.id) || userBelongsToDepartment(user, normalizedName)) {
       userMap.set(userId, user);
     }
   });
@@ -1818,10 +1827,7 @@ function normalizeStoredAttachments(value) {
 }
 
 function isAudioOnlyMessage(message) {
-  const attachments = normalizeStoredAttachments(message?.attachments);
-  return attachments.length > 0
-    && attachments.every((attachment) => getAttachmentType(attachment.contentType, attachment.name) === "audio")
-    && String(message?.message || "").trim().toLowerCase() === "archivo adjunto";
+  return isAudioMessage(message, getAttachmentType);
 }
 
 function getAttachmentType(contentType, fileName = "") {
