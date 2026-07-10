@@ -68,17 +68,135 @@ export default function FloatingQuickTools({
   const [noteStatus, setNoteStatus] = useState("");
   const [noteError, setNoteError] = useState("");
   const [voiceRecordingType, setVoiceRecordingType] = useState("");
+  const [voiceRecordingElapsedMs, setVoiceRecordingElapsedMs] = useState(0);
+  const [voiceRecordingPaused, setVoiceRecordingPaused] = useState(false);
+  const [voiceRecordingProcessing, setVoiceRecordingProcessing] = useState(false);
+  const [voicePauseSupported, setVoicePauseSupported] = useState(false);
+  const [voiceWaveLevels, setVoiceWaveLevels] = useState([0.3, 0.55, 0.42, 0.7, 0.36, 0.62, 0.45]);
   const threadRef = useRef(null);
   const fileInputRef = useRef(null);
   const messageAttachmentsRef = useRef([]);
   const mediaRecorderRef = useRef(null);
   const voiceChunksRef = useRef([]);
   const voiceStreamRef = useRef(null);
+  const voiceStopActionRef = useRef("draft");
+  const voiceRecordingStartedAtRef = useRef(0);
+  const voiceRecordingAccumulatedMsRef = useRef(0);
+  const voiceTimerRef = useRef(null);
+  const voiceAudioContextRef = useRef(null);
+  const voiceAnalyserRef = useRef(null);
+  const voiceAnalyserDataRef = useRef(null);
+  const voiceWaveFrameRef = useRef(null);
+  const voiceWaveLastUpdateRef = useRef(0);
 
   function stopVoiceStream() {
     voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
     voiceStreamRef.current = null;
     mediaRecorderRef.current = null;
+  }
+
+  function clearVoiceTimer() {
+    if (voiceTimerRef.current) {
+      window.clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  }
+
+  function stopVoiceWave() {
+    if (voiceWaveFrameRef.current) {
+      window.cancelAnimationFrame(voiceWaveFrameRef.current);
+      voiceWaveFrameRef.current = null;
+    }
+
+    if (voiceAudioContextRef.current) {
+      voiceAudioContextRef.current.close().catch(() => {});
+      voiceAudioContextRef.current = null;
+    }
+
+    voiceAnalyserRef.current = null;
+    voiceAnalyserDataRef.current = null;
+    voiceWaveLastUpdateRef.current = 0;
+    setVoiceWaveLevels([0.18, 0.22, 0.2, 0.24, 0.19, 0.21, 0.18]);
+  }
+
+  function startVoiceWave(stream) {
+    stopVoiceWave();
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass || !stream) return;
+
+    try {
+      const audioContext = new AudioContextClass();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 128;
+      source.connect(analyser);
+
+      voiceAudioContextRef.current = audioContext;
+      voiceAnalyserRef.current = analyser;
+      voiceAnalyserDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+      const draw = (timestamp) => {
+        if (!voiceAnalyserRef.current || !voiceAnalyserDataRef.current) return;
+        voiceAnalyserRef.current.getByteFrequencyData(voiceAnalyserDataRef.current);
+
+        if (timestamp - voiceWaveLastUpdateRef.current > 80) {
+          const data = voiceAnalyserDataRef.current;
+          const step = Math.max(1, Math.floor(data.length / 7));
+          const levels = Array.from({ length: 7 }, (_, index) => {
+            const slice = data.slice(index * step, (index + 1) * step);
+            const average = slice.reduce((sum, value) => sum + value, 0) / Math.max(slice.length, 1);
+            return Math.min(1, Math.max(0.16, average / 150));
+          });
+
+          setVoiceWaveLevels(levels);
+          voiceWaveLastUpdateRef.current = timestamp;
+        }
+
+        voiceWaveFrameRef.current = window.requestAnimationFrame(draw);
+      };
+
+      voiceWaveFrameRef.current = window.requestAnimationFrame(draw);
+    } catch (error) {
+      console.warn("No se pudo iniciar el analizador de audio rapido:", error);
+    }
+  }
+
+  function startVoiceTimer() {
+    clearVoiceTimer();
+    voiceRecordingStartedAtRef.current = Date.now();
+    voiceTimerRef.current = window.setInterval(() => {
+      setVoiceRecordingElapsedMs(
+        voiceRecordingAccumulatedMsRef.current + Date.now() - voiceRecordingStartedAtRef.current
+      );
+    }, 250);
+  }
+
+  function resetVoiceRecorderState() {
+    clearVoiceTimer();
+    stopVoiceWave();
+    voiceRecordingStartedAtRef.current = 0;
+    voiceRecordingAccumulatedMsRef.current = 0;
+    voiceStopActionRef.current = "draft";
+    voiceChunksRef.current = [];
+    stopVoiceStream();
+    setVoiceRecordingType("");
+    setVoiceRecordingElapsedMs(0);
+    setVoiceRecordingPaused(false);
+    setVoiceRecordingProcessing(false);
+    setVoicePauseSupported(false);
+  }
+
+  function createVoiceDraftFile(mimeType = "") {
+    const extension = getAudioFileExtension(mimeType);
+    const blob = new Blob(voiceChunksRef.current, { type: mimeType || "audio/webm" });
+    if (!blob.size) return null;
+
+    const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, {
+      type: mimeType || "audio/webm",
+    });
+
+    return createDraftAttachment(file, { source: "recordedVoice" });
   }
 
   useEffect(() => {
@@ -88,6 +206,15 @@ export default function FloatingQuickTools({
   useEffect(() => {
     return () => {
       revokeDraftAttachmentPreviews(messageAttachmentsRef.current);
+      clearVoiceTimer();
+      if (voiceWaveFrameRef.current) {
+        window.cancelAnimationFrame(voiceWaveFrameRef.current);
+        voiceWaveFrameRef.current = null;
+      }
+      if (voiceAudioContextRef.current) {
+        voiceAudioContextRef.current.close().catch(() => {});
+        voiceAudioContextRef.current = null;
+      }
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
       voiceStreamRef.current = null;
       mediaRecorderRef.current = null;
@@ -320,6 +447,11 @@ export default function FloatingQuickTools({
       ? "direct"
       : "";
   const visibleReplyTarget = replyTarget?.type === activeConversationType ? replyTarget : null;
+  const quickMessageHasText = Boolean(messageText.trim());
+  const quickMessageCanSend = quickMessageHasText || messageAttachments.length > 0;
+  const quickComposerRecording = Boolean(voiceRecordingType);
+  const quickComposerUsesVoiceButton = quickComposerRecording || !quickMessageCanSend;
+  const voiceRecordingLabel = formatVoiceRecordingDuration(voiceRecordingElapsedMs);
 
   useEffect(() => {
     if (activeTool !== "messages" || activeMessages.length === 0) return;
@@ -419,6 +551,106 @@ export default function FloatingQuickTools({
     });
   }
 
+  function handleToggleVoicePause() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || voiceRecordingProcessing) return;
+
+    if (recorder.state === "recording") {
+      if (typeof recorder.pause !== "function") {
+        setMessageError("Este navegador no permite pausar la grabacion.");
+        return;
+      }
+
+      recorder.pause();
+      voiceRecordingAccumulatedMsRef.current += Date.now() - voiceRecordingStartedAtRef.current;
+      setVoiceRecordingElapsedMs(voiceRecordingAccumulatedMsRef.current);
+      clearVoiceTimer();
+      stopVoiceWave();
+      setVoiceRecordingPaused(true);
+      return;
+    }
+
+    if (recorder.state === "paused" && typeof recorder.resume === "function") {
+      recorder.resume();
+      setVoiceRecordingPaused(false);
+      startVoiceTimer();
+      startVoiceWave(voiceStreamRef.current);
+    }
+  }
+
+  function finishVoiceRecording(action = "draft") {
+    if (voiceRecordingProcessing) return;
+
+    const recorder = mediaRecorderRef.current;
+    voiceStopActionRef.current = action;
+    if (action === "send") {
+      setVoiceRecordingProcessing(true);
+    }
+
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+      return;
+    }
+
+    resetVoiceRecorderState();
+  }
+
+  async function sendVoiceRecording(draftAttachment) {
+    if (!draftAttachment) {
+      setMessageError("No se pudo preparar el audio.");
+      return;
+    }
+
+    setMessageSaving(true);
+    setMessageError("");
+
+    try {
+      if (selectedDepartmentConversation) {
+        await sendDepartmentMessage({
+          conversation: selectedDepartmentConversation,
+          collaborators,
+          profile,
+          currentUserId,
+          message: "Archivo adjunto",
+          attachments: [draftAttachment],
+          replyTarget,
+        });
+      } else {
+        const recipient =
+          selectedNewRecipient ||
+          collaborators.find((user) => user.id === selectedDirectConversation?.participantId) ||
+          {
+            id: selectedDirectConversation?.participantId,
+            name: selectedDirectConversation?.participantName,
+            email: selectedDirectConversation?.participantEmail,
+          };
+
+        await sendDirectMessage({
+          recipient,
+          profile,
+          currentUserId,
+          message: "Archivo adjunto",
+          attachments: [draftAttachment],
+          replyTarget,
+        });
+
+        if (recipient?.id) {
+          setSelectedConversationKey(`direct:${recipient.id}`);
+          setNewRecipientId("");
+        }
+      }
+
+      setMessageText("");
+      setReplyTarget(null);
+      scrollThreadToBottom("auto");
+    } catch (error) {
+      console.error("No se pudo enviar el audio rapido:", error);
+      setMessageError("No se pudo enviar el audio.");
+    } finally {
+      setMessageSaving(false);
+    }
+  }
+
   async function handleStartVoiceRecording() {
     if (voiceRecordingType) return;
 
@@ -442,8 +674,13 @@ export default function FloatingQuickTools({
       const preferredMimeType = pickSupportedAudioMimeType();
       const recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
       voiceChunksRef.current = [];
+      voiceStopActionRef.current = "draft";
       voiceStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
+      setVoiceRecordingElapsedMs(0);
+      setVoiceRecordingPaused(false);
+      setVoiceRecordingProcessing(false);
+      setVoicePauseSupported(typeof recorder.pause === "function" && typeof recorder.resume === "function");
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size > 0) {
@@ -451,23 +688,34 @@ export default function FloatingQuickTools({
         }
       };
 
-      recorder.onstop = () => {
-        const mimeType = recorder.mimeType || preferredMimeType || "audio/webm";
-        const extension = getAudioFileExtension(mimeType);
-        const blob = new Blob(voiceChunksRef.current, { type: mimeType });
-        const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, {
-          type: mimeType,
-        });
-        const draft = createDraftAttachment(file, { source: "recordedVoice" });
+      recorder.onstop = async () => {
+        clearVoiceTimer();
+        const action = voiceStopActionRef.current;
 
-        setMessageAttachments((current) => [...current, draft].slice(0, 6));
-        voiceChunksRef.current = [];
-        stopVoiceStream();
-        setVoiceRecordingType("");
+        if (action === "cancel") {
+          resetVoiceRecorderState();
+          return;
+        }
+
+        const draft = createVoiceDraftFile(recorder.mimeType || preferredMimeType || "audio/webm");
+
+        if (action === "send") {
+          await sendVoiceRecording(draft);
+          resetVoiceRecorderState();
+          return;
+        }
+
+        if (draft) {
+          setMessageAttachments((current) => [...current, draft].slice(0, 6));
+        }
+
+        resetVoiceRecorderState();
       };
 
       recorder.start();
       setVoiceRecordingType("message");
+      startVoiceTimer();
+      startVoiceWave(stream);
       setMessageError("");
     } catch (error) {
       console.error("No se pudo iniciar la grabacion de audio:", error);
@@ -478,13 +726,7 @@ export default function FloatingQuickTools({
   }
 
   function handleStopVoiceRecording() {
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
-      return;
-    }
-
-    stopVoiceStream();
-    setVoiceRecordingType("");
+    finishVoiceRecording("draft");
   }
 
   async function handleMessageSubmit(event) {
@@ -757,6 +999,51 @@ export default function FloatingQuickTools({
                     </button>
                   </div>
                 )}
+                {quickComposerRecording ? (
+                  <div className="quick-tools-voice-recorder-bar" role="status" aria-live="polite">
+                    <button
+                      type="button"
+                      className="quick-tools-recorder-action danger"
+                      onClick={() => finishVoiceRecording("cancel")}
+                      disabled={voiceRecordingProcessing}
+                      aria-label="Cancelar audio"
+                      title="Cancelar audio"
+                    >
+                      <QuickToolIcon name="trash" />
+                    </button>
+                    <div className="quick-tools-recorder-status">
+                      <span className={`quick-tools-recorder-dot ${voiceRecordingPaused ? "paused" : ""}`} />
+                      <strong>{voiceRecordingPaused ? "Pausado" : "Grabando"}</strong>
+                      <small>{voiceRecordingLabel}</small>
+                      <div className={`quick-tools-recorder-wave ${voiceRecordingPaused ? "paused" : ""}`} aria-hidden="true">
+                        {voiceWaveLevels.map((level, index) => (
+                          <span key={index} style={{ "--wave-level": level }} />
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="quick-tools-recorder-action"
+                      onClick={handleToggleVoicePause}
+                      disabled={voiceRecordingProcessing || !voicePauseSupported}
+                      aria-label={voiceRecordingPaused ? "Continuar grabando" : "Pausar grabacion"}
+                      title={voicePauseSupported ? (voiceRecordingPaused ? "Continuar grabando" : "Pausar grabacion") : "Pausa no disponible"}
+                    >
+                      <QuickToolIcon name={voiceRecordingPaused ? "mic" : "pause"} />
+                    </button>
+                    <button
+                      type="button"
+                      className="quick-tools-recorder-action send"
+                      onClick={() => finishVoiceRecording("send")}
+                      disabled={voiceRecordingProcessing}
+                      aria-label="Enviar audio"
+                      title="Enviar audio"
+                    >
+                      <QuickToolIcon name={voiceRecordingProcessing ? "stop" : "send"} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
                 <textarea
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}
@@ -782,7 +1069,6 @@ export default function FloatingQuickTools({
                   items={messageAttachments}
                   onRemove={handleRemoveMessageAttachment}
                 />
-                {messageError && <span className="quick-tools-error">{messageError}</span>}
                 <div className="quick-tools-composer-actions">
                   <button
                     type="button"
@@ -794,23 +1080,48 @@ export default function FloatingQuickTools({
                     <QuickToolIcon name="paperclip" />
                   </button>
                   <button
-                    type="button"
-                    className={`quick-tools-icon-button ${voiceRecordingType ? "recording" : ""}`}
-                    onClick={voiceRecordingType ? handleStopVoiceRecording : handleStartVoiceRecording}
-                    title={voiceRecordingType ? "Detener audio" : "Grabar audio"}
-                    aria-label={voiceRecordingType ? "Detener audio" : "Grabar audio"}
-                  >
-                    <QuickToolIcon name={voiceRecordingType ? "stop" : "mic"} />
-                  </button>
-                  <button
-                    type="submit"
-                    className="quick-tools-send-button"
+                    type={quickComposerUsesVoiceButton ? "button" : "submit"}
+                    className={`quick-tools-send-button ${quickComposerUsesVoiceButton ? "voice-mode" : ""} ${quickComposerRecording ? "recording" : ""}`}
+                    onClick={
+                      quickComposerUsesVoiceButton
+                        ? (quickComposerRecording ? handleStopVoiceRecording : handleStartVoiceRecording)
+                        : undefined
+                    }
                     disabled={messageSaving || !canSendMessage}
+                    title={
+                      messageSaving
+                        ? "Enviando..."
+                        : quickComposerUsesVoiceButton
+                          ? quickComposerRecording
+                            ? "Detener audio"
+                            : "Grabar audio"
+                          : "Enviar"
+                    }
+                    aria-label={
+                      messageSaving
+                        ? "Enviando mensaje"
+                        : quickComposerUsesVoiceButton
+                          ? quickComposerRecording
+                            ? "Detener audio"
+                            : "Grabar audio"
+                          : "Enviar mensaje"
+                    }
                   >
-                    <QuickToolIcon name="send" />
-                    <span>{messageSaving ? "Enviando..." : "Enviar"}</span>
+                    <QuickToolIcon name={quickComposerUsesVoiceButton ? (quickComposerRecording ? "stop" : "mic") : "send"} />
+                    <span>
+                      {messageSaving
+                        ? "Enviando..."
+                        : quickComposerUsesVoiceButton
+                          ? quickComposerRecording
+                            ? "Detener"
+                            : "Audio"
+                          : "Enviar"}
+                    </span>
                   </button>
                 </div>
+                  </>
+                )}
+                {messageError && <span className="quick-tools-error">{messageError}</span>}
               </form>
             </div>
           </div>
@@ -1014,6 +1325,13 @@ function QuickToolIcon({ name }) {
       </>
     ),
     stop: <path d="M7 7h10v10H7z" />,
+    pause: <path d="M8 5h3v14H8zM13 5h3v14h-3z" />,
+    trash: (
+      <>
+        <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13" />
+        <path d="M9 7V4h6v3" />
+      </>
+    ),
     send: <path d="M4 4l17 8-17 8 3-8-3-8Zm3 8h14" />,
     pin: (
       <>
@@ -1597,6 +1915,14 @@ function getVoiceRecordingErrorMessage(error) {
   }
 
   return "No se pudo grabar audio.";
+}
+
+function formatVoiceRecordingDuration(milliseconds = 0) {
+  const totalSeconds = Math.max(0, Math.floor(Number(milliseconds || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function getCurrentUserId(profile) {

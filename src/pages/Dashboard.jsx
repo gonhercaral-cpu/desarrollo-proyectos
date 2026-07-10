@@ -3200,6 +3200,14 @@ function getVoiceRecordingErrorMessage(error) {
   return "No se pudo acceder al micrófono.";
 }
 
+function formatVoiceRecordingDuration(milliseconds = 0) {
+  const totalSeconds = Math.max(0, Math.floor(Number(milliseconds || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function canUseBrowserNotifications() {
   return typeof window !== "undefined"
     && "Notification" in window
@@ -3398,6 +3406,13 @@ function InternalMessages({
   const [replyTarget, setReplyTarget] = useState(null);
   const [typingStates, setTypingStates] = useState([]);
   const [voiceRecordingType, setVoiceRecordingType] = useState("");
+  const [voiceRecordingElapsedMs, setVoiceRecordingElapsedMs] = useState(0);
+  const [voiceRecordingPaused, setVoiceRecordingPaused] = useState(false);
+  const [voiceRecordingProcessing, setVoiceRecordingProcessing] = useState(false);
+  const [voicePauseSupported, setVoicePauseSupported] = useState(false);
+  const [voiceWaveLevels, setVoiceWaveLevels] = useState(() =>
+    Array.from({ length: 56 }, (_, index) => 0.2 + ((index % 7) * 0.035))
+  );
   const threadMessagesRef = useRef(null);
   const threadEndRef = useRef(null);
   const directComposerRef = useRef(null);
@@ -3406,6 +3421,15 @@ function InternalMessages({
   const mediaRecorderRef = useRef(null);
   const voiceChunksRef = useRef([]);
   const voiceStreamRef = useRef(null);
+  const voiceStopActionRef = useRef("draft");
+  const voiceRecordingStartedAtRef = useRef(0);
+  const voiceRecordingAccumulatedMsRef = useRef(0);
+  const voiceTimerRef = useRef(null);
+  const voiceAudioContextRef = useRef(null);
+  const voiceAnalyserRef = useRef(null);
+  const voiceAnalyserDataRef = useRef(null);
+  const voiceWaveFrameRef = useRef(null);
+  const voiceWaveLastUpdateRef = useRef(0);
   const pageTitleRef = useRef(typeof document === "undefined" ? "Mensajes" : document.title);
 
   useEffect(() => {
@@ -3727,6 +3751,16 @@ function InternalMessages({
         ? `${activeTypingUsers[0].userName || "Alguien"} está escribiendo...`
         : "Varias personas están escribiendo...";
 
+  const directMessageHasText = Boolean(messageForm.message.trim());
+  const directMessageCanSend = directMessageHasText || messageAttachments.length > 0;
+  const directComposerRecording = voiceRecordingType === "direct";
+  const directComposerUsesVoiceButton = directComposerRecording || !directMessageCanSend;
+  const departmentMessageHasText = Boolean(departmentForm.message.trim());
+  const departmentMessageCanSend = departmentMessageHasText || departmentAttachments.length > 0;
+  const departmentComposerRecording = voiceRecordingType === "department";
+  const departmentComposerUsesVoiceButton = departmentComposerRecording || !departmentMessageCanSend;
+  const voiceRecordingLabel = formatVoiceRecordingDuration(voiceRecordingElapsedMs);
+
   function scrollActiveThreadToBottom(behavior = "smooth") {
     if (typeof window === "undefined") return;
 
@@ -3781,6 +3815,18 @@ function InternalMessages({
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
       }
+      clearVoiceTimer();
+      if (voiceWaveFrameRef.current) {
+        window.cancelAnimationFrame(voiceWaveFrameRef.current);
+        voiceWaveFrameRef.current = null;
+      }
+      if (voiceAudioContextRef.current) {
+        voiceAudioContextRef.current.close().catch(() => {});
+        voiceAudioContextRef.current = null;
+      }
+      voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+      voiceStreamRef.current = null;
+      mediaRecorderRef.current = null;
       writeTypingState(false);
     };
   }, [activeChatKey]);
@@ -3966,6 +4012,265 @@ function InternalMessages({
     });
   }
 
+  function clearVoiceTimer() {
+    if (voiceTimerRef.current) {
+      window.clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  }
+
+  function stopVoiceWave() {
+    if (voiceWaveFrameRef.current) {
+      window.cancelAnimationFrame(voiceWaveFrameRef.current);
+      voiceWaveFrameRef.current = null;
+    }
+
+    if (voiceAudioContextRef.current) {
+      voiceAudioContextRef.current.close().catch(() => {});
+      voiceAudioContextRef.current = null;
+    }
+
+    voiceAnalyserRef.current = null;
+    voiceAnalyserDataRef.current = null;
+    voiceWaveLastUpdateRef.current = 0;
+    setVoiceWaveLevels(Array.from({ length: 100 }, (_, index) => 0.16 + ((index % 6) * 0.025)));
+  }
+
+  function startVoiceWave(stream) {
+    stopVoiceWave();
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass || !stream) return;
+
+    try {
+      const audioContext = new AudioContextClass();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 128;
+      source.connect(analyser);
+
+      voiceAudioContextRef.current = audioContext;
+      voiceAnalyserRef.current = analyser;
+      voiceAnalyserDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+      const draw = (timestamp) => {
+        if (!voiceAnalyserRef.current || !voiceAnalyserDataRef.current) return;
+        voiceAnalyserRef.current.getByteFrequencyData(voiceAnalyserDataRef.current);
+
+        if (timestamp - voiceWaveLastUpdateRef.current > 100) {
+          const data = voiceAnalyserDataRef.current;
+          const step = Math.max(1, Math.floor(data.length / 100));
+          const levels = Array.from({ length: 100 }, (_, index) => {
+            const slice = data.slice(index * step, (index + 1) * step);
+            const average = slice.reduce((sum, value) => sum + value, 0) / Math.max(slice.length, 1);
+            return Math.min(1, Math.max(0.16, average / 150));
+          });
+
+          setVoiceWaveLevels(levels);
+          voiceWaveLastUpdateRef.current = timestamp;
+        }
+
+        voiceWaveFrameRef.current = window.requestAnimationFrame(draw);
+      };
+
+      voiceWaveFrameRef.current = window.requestAnimationFrame(draw);
+    } catch (error) {
+      console.warn("No se pudo iniciar el analizador de audio:", error);
+    }
+  }
+
+  function startVoiceTimer() {
+    clearVoiceTimer();
+    voiceRecordingStartedAtRef.current = Date.now();
+    voiceTimerRef.current = window.setInterval(() => {
+      setVoiceRecordingElapsedMs(
+        voiceRecordingAccumulatedMsRef.current + Date.now() - voiceRecordingStartedAtRef.current
+      );
+    }, 250);
+  }
+
+  function resetVoiceRecorderState() {
+    clearVoiceTimer();
+    stopVoiceWave();
+    voiceRecordingStartedAtRef.current = 0;
+    voiceRecordingAccumulatedMsRef.current = 0;
+    voiceStopActionRef.current = "draft";
+    voiceChunksRef.current = [];
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    setVoiceRecordingType("");
+    setVoiceRecordingElapsedMs(0);
+    setVoiceRecordingPaused(false);
+    setVoiceRecordingProcessing(false);
+    setVoicePauseSupported(false);
+  }
+
+  function createVoiceDraftFile(mimeType = "") {
+    const extension = getAudioFileExtension(mimeType);
+    const blob = new Blob(voiceChunksRef.current, { type: mimeType || "audio/webm" });
+    if (!blob.size) return null;
+
+    const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, {
+      type: mimeType || "audio/webm",
+    });
+
+    return createDraftAttachment(file, { source: "recordedVoice" });
+  }
+
+  function handleToggleVoicePause() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || voiceRecordingProcessing) return;
+
+    if (recorder.state === "recording") {
+      if (typeof recorder.pause !== "function") {
+        setMessageError("Este navegador no permite pausar la grabaciÃ³n.");
+        return;
+      }
+
+      recorder.pause();
+      voiceRecordingAccumulatedMsRef.current += Date.now() - voiceRecordingStartedAtRef.current;
+      setVoiceRecordingElapsedMs(voiceRecordingAccumulatedMsRef.current);
+      clearVoiceTimer();
+      stopVoiceWave();
+      setVoiceRecordingPaused(true);
+      return;
+    }
+
+    if (recorder.state === "paused" && typeof recorder.resume === "function") {
+      recorder.resume();
+      setVoiceRecordingPaused(false);
+      startVoiceTimer();
+      startVoiceWave(voiceStreamRef.current);
+    }
+  }
+
+  function finishVoiceRecording(action = "draft") {
+    if (voiceRecordingProcessing) return;
+
+    const recorder = mediaRecorderRef.current;
+    voiceStopActionRef.current = action;
+    if (action === "send") {
+      setVoiceRecordingProcessing(true);
+    }
+
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+      return;
+    }
+
+    resetVoiceRecorderState();
+  }
+
+  async function sendVoiceRecording(type, draftAttachment) {
+    if (!draftAttachment) {
+      setMessageError("No se pudo preparar el audio.");
+      return;
+    }
+
+    setMessageSaving(true);
+    setMessageError("");
+    setMessageStatus("");
+
+    try {
+      if (type === "department") {
+        const department = selectedDepartmentConversation || departmentOptions.find((item) => item.id === selectedDepartmentId);
+        if (!department?.id) {
+          setMessageError("Selecciona un departamento.");
+          return;
+        }
+
+        const memberIds = getDepartmentMemberIds(department, collaborators, profile, currentUserId);
+        if (!memberIds.includes(currentUserId)) {
+          memberIds.push(currentUserId);
+        }
+
+        const messageId = doc(collection(db, "departmentMessages")).id;
+        const attachments = await uploadBoardAttachments([draftAttachment], {
+          folder: `dashboard/departmentMessages/${department.id}/${currentUserId}/${messageId}`,
+          ownerUid: currentUserId,
+        });
+
+        await setDoc(doc(db, "departmentMessages", messageId), {
+          departmentId: department.id,
+          departmentName: department.name || "Departamento",
+          fromUserId: currentUserId,
+          fromUserName: profile?.name || "Usuario",
+          fromUserEmail: profile?.email || "",
+          message: "Archivo adjunto",
+          attachments,
+          replyToMessageId: replyTarget?.type === "department" ? replyTarget.messageId : "",
+          replyToFromUserId: replyTarget?.type === "department" ? replyTarget.fromUserId : "",
+          replyToFromUserName: replyTarget?.type === "department" ? replyTarget.fromUserName : "",
+          replyToMessage: replyTarget?.type === "department" ? replyTarget.message.slice(0, 240) : "",
+          memberIds,
+          readBy: {
+            [currentUserId]: serverTimestamp(),
+          },
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        setSelectedDepartmentId(department.id);
+        writeTypingState(false);
+        resetDepartmentComposer();
+      } else {
+        const recipientId = messageForm.toUserId || selectedConversation?.participantId || "";
+        const recipient =
+          collaborators.find((user) => user.id === recipientId) ||
+          (selectedConversation?.participantId === recipientId
+            ? {
+                id: selectedConversation.participantId,
+                name: selectedConversation.participantName,
+                email: selectedConversation.participantEmail,
+              }
+            : null);
+
+        if (!recipient?.id) {
+          setMessageError("Selecciona una conversaciÃ³n o un colaborador.");
+          return;
+        }
+
+        const messageId = doc(collection(db, "internalMessages")).id;
+        const attachments = await uploadBoardAttachments([draftAttachment], {
+          folder: `dashboard/internalMessages/${currentUserId}/${recipient.id}/${messageId}`,
+          ownerUid: currentUserId,
+        });
+        const recipientName = recipient.name || recipient.email || "Usuario";
+
+        await setDoc(doc(db, "internalMessages", messageId), {
+          fromUserId: currentUserId,
+          fromUserName: profile?.name || "Usuario",
+          fromUserEmail: profile?.email || "",
+          toUserId: recipient.id,
+          toUserName: recipientName,
+          toUserEmail: recipient.email || "",
+          subject: `ConversaciÃ³n con ${recipientName}`.slice(0, 120),
+          message: "Archivo adjunto",
+          attachments,
+          replyToMessageId: replyTarget?.type === "direct" ? replyTarget.messageId : "",
+          replyToFromUserId: replyTarget?.type === "direct" ? replyTarget.fromUserId : "",
+          replyToFromUserName: replyTarget?.type === "direct" ? replyTarget.fromUserName : "",
+          replyToMessage: replyTarget?.type === "direct" ? replyTarget.message.slice(0, 240) : "",
+          read: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        setSelectedConversationId(recipient.id);
+        writeTypingState(false);
+        resetMessageComposer();
+      }
+
+      scrollActiveThreadToBottom("smooth");
+    } catch (error) {
+      console.error("No se pudo enviar el audio:", error);
+      setMessageError("No se pudo enviar el audio.");
+    } finally {
+      setMessageSaving(false);
+    }
+  }
+
   async function handleStartVoiceRecording(type) {
     if (voiceRecordingType) return;
 
@@ -3990,8 +4295,13 @@ function InternalMessages({
       const preferredMimeType = pickSupportedAudioMimeType();
       const recorder = new MediaRecorder(stream, preferredMimeType ? { mimeType: preferredMimeType } : undefined);
       voiceChunksRef.current = [];
+      voiceStopActionRef.current = "draft";
       voiceStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
+      setVoiceRecordingElapsedMs(0);
+      setVoiceRecordingPaused(false);
+      setVoiceRecordingProcessing(false);
+      setVoicePauseSupported(typeof recorder.pause === "function" && typeof recorder.resume === "function");
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size > 0) {
@@ -3999,30 +4309,38 @@ function InternalMessages({
         }
       };
 
-      recorder.onstop = () => {
-        const mimeType = recorder.mimeType || preferredMimeType || "audio/webm";
-        const extension = getAudioFileExtension(mimeType);
-        const blob = new Blob(voiceChunksRef.current, { type: mimeType });
-        const file = new File([blob], `audio-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, {
-          type: mimeType,
-        });
-        const draft = createDraftAttachment(file, { source: "recordedVoice" });
+      recorder.onstop = async () => {
+        clearVoiceTimer();
+        const action = voiceStopActionRef.current;
 
-        if (type === "department") {
-          setDepartmentAttachments((current) => [...current, draft].slice(0, 6));
-        } else {
-          setMessageAttachments((current) => [...current, draft].slice(0, 6));
+        if (action === "cancel") {
+          resetVoiceRecorderState();
+          return;
         }
 
-        voiceChunksRef.current = [];
-        voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
-        voiceStreamRef.current = null;
-        mediaRecorderRef.current = null;
-        setVoiceRecordingType("");
+        const draft = createVoiceDraftFile(recorder.mimeType || preferredMimeType || "audio/webm");
+
+        if (action === "send") {
+          await sendVoiceRecording(type, draft);
+          resetVoiceRecorderState();
+          return;
+        }
+
+        if (draft) {
+          if (type === "department") {
+            setDepartmentAttachments((current) => [...current, draft].slice(0, 6));
+          } else {
+            setMessageAttachments((current) => [...current, draft].slice(0, 6));
+          }
+        }
+
+        resetVoiceRecorderState();
       };
 
       recorder.start();
       setVoiceRecordingType(type);
+      startVoiceTimer();
+      startVoiceWave(stream);
       setMessageError("");
     } catch (error) {
       console.error("No se pudo iniciar la grabación de audio:", error);
@@ -4035,9 +4353,7 @@ function InternalMessages({
   }
 
   function handleStopVoiceRecording() {
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
-    }
+    finishVoiceRecording("draft");
   }
 
   function handleStartConversation(userId) {
@@ -4612,6 +4928,51 @@ function InternalMessages({
                       </button>
                     </div>
                   )}
+                  {directComposerRecording ? (
+                    <div className="chat-voice-recorder-bar" role="status" aria-live="polite">
+                      <button
+                        type="button"
+                        className="voice-recorder-action danger"
+                        onClick={() => finishVoiceRecording("cancel")}
+                        disabled={voiceRecordingProcessing}
+                        aria-label="Cancelar audio"
+                        title="Cancelar audio"
+                      >
+                        🗑
+                      </button>
+                      <div className="voice-recorder-status">
+                        <span className={`voice-recorder-dot ${voiceRecordingPaused ? "paused" : ""}`} />
+                        <strong>{voiceRecordingPaused ? "Pausado" : "Grabando"}</strong>
+                        <small>{voiceRecordingLabel}</small>
+                        <div className={`voice-recorder-wave ${voiceRecordingPaused ? "paused" : ""}`} aria-hidden="true">
+                          {voiceWaveLevels.map((level, index) => (
+                            <span key={index} style={{ "--wave-level": level, "--wave-index": index }} />
+                          ))}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="voice-recorder-action"
+                        onClick={handleToggleVoicePause}
+                        disabled={voiceRecordingProcessing || !voicePauseSupported}
+                        aria-label={voiceRecordingPaused ? "Continuar grabando" : "Pausar grabacion"}
+                        title={voicePauseSupported ? (voiceRecordingPaused ? "Continuar grabando" : "Pausar grabacion") : "Pausa no disponible"}
+                      >
+                        {voiceRecordingPaused ? "🎙" : "⏸"}
+                      </button>
+                      <button
+                        type="button"
+                        className="voice-recorder-action send"
+                        onClick={() => finishVoiceRecording("send")}
+                        disabled={voiceRecordingProcessing}
+                        aria-label="Enviar audio"
+                        title="Enviar audio"
+                      >
+                        {voiceRecordingProcessing ? "…" : "➤"}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
                   <textarea
                     value={messageForm.message}
                     onChange={(event) => {
@@ -4636,28 +4997,34 @@ function InternalMessages({
                     />
 
                     <button
-                      type="button"
-                      className={`chat-voice-button ${voiceRecordingType === "direct" ? "recording" : ""}`}
-                      onClick={() =>
-                        voiceRecordingType === "direct"
-                          ? handleStopVoiceRecording()
-                          : handleStartVoiceRecording("direct")
+                      type={directComposerUsesVoiceButton ? "button" : "submit"}
+                      className={`workspace-primary-button chat-send-icon-button ${directComposerUsesVoiceButton ? "voice-mode" : ""} ${directComposerRecording ? "recording" : ""}`}
+                      onClick={
+                        directComposerUsesVoiceButton
+                          ? () => (directComposerRecording ? handleStopVoiceRecording() : handleStartVoiceRecording("direct"))
+                          : undefined
                       }
-                      disabled={Boolean(voiceRecordingType && voiceRecordingType !== "direct")}
-                      title={voiceRecordingType === "direct" ? "Detener audio" : "Grabar audio"}
-                      aria-label={voiceRecordingType === "direct" ? "Detener audio" : "Grabar audio"}
+                      disabled={messageSaving || Boolean(voiceRecordingType && voiceRecordingType !== "direct")}
+                      aria-label={
+                        messageSaving
+                          ? "Enviando mensaje"
+                          : directComposerUsesVoiceButton
+                            ? directComposerRecording
+                              ? "Detener audio"
+                              : "Grabar audio"
+                            : "Enviar mensaje"
+                      }
+                      title={
+                        messageSaving
+                          ? "Enviando..."
+                          : directComposerUsesVoiceButton
+                            ? directComposerRecording
+                              ? "Detener audio"
+                              : "Grabar audio"
+                            : "Enviar"
+                      }
                     >
-                      {voiceRecordingType === "direct" ? "■" : "🎙"}
-                    </button>
-
-                    <button
-                      type="submit"
-                      className="workspace-primary-button chat-send-icon-button"
-                      disabled={messageSaving}
-                      aria-label={messageSaving ? "Enviando mensaje" : "Enviar mensaje"}
-                      title={messageSaving ? "Enviando..." : "Enviar"}
-                    >
-                      {messageSaving ? "…" : "➤"}
+                      {messageSaving ? "…" : directComposerUsesVoiceButton ? (directComposerRecording ? "■" : "🎙") : "➤"}
                     </button>
                   </div>
 
@@ -4665,6 +5032,8 @@ function InternalMessages({
                     items={messageAttachments}
                     onRemove={handleRemoveMessageAttachment}
                   />
+                    </>
+                  )}
                 </form>
               </>
             )
@@ -4763,6 +5132,51 @@ function InternalMessages({
                     </button>
                   </div>
                 )}
+                {departmentComposerRecording ? (
+                  <div className="chat-voice-recorder-bar" role="status" aria-live="polite">
+                    <button
+                      type="button"
+                      className="voice-recorder-action danger"
+                      onClick={() => finishVoiceRecording("cancel")}
+                      disabled={voiceRecordingProcessing}
+                      aria-label="Cancelar audio"
+                      title="Cancelar audio"
+                    >
+                      🗑
+                    </button>
+                    <div className="voice-recorder-status">
+                      <span className={`voice-recorder-dot ${voiceRecordingPaused ? "paused" : ""}`} />
+                      <strong>{voiceRecordingPaused ? "Pausado" : "Grabando"}</strong>
+                      <small>{voiceRecordingLabel}</small>
+                      <div className={`voice-recorder-wave ${voiceRecordingPaused ? "paused" : ""}`} aria-hidden="true">
+                        {voiceWaveLevels.map((level, index) => (
+                          <span key={index} style={{ "--wave-level": level, "--wave-index": index }} />
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="voice-recorder-action"
+                      onClick={handleToggleVoicePause}
+                      disabled={voiceRecordingProcessing || !voicePauseSupported}
+                      aria-label={voiceRecordingPaused ? "Continuar grabando" : "Pausar grabacion"}
+                      title={voicePauseSupported ? (voiceRecordingPaused ? "Continuar grabando" : "Pausar grabacion") : "Pausa no disponible"}
+                    >
+                      {voiceRecordingPaused ? "🎙" : "⏸"}
+                    </button>
+                    <button
+                      type="button"
+                      className="voice-recorder-action send"
+                      onClick={() => finishVoiceRecording("send")}
+                      disabled={voiceRecordingProcessing}
+                      aria-label="Enviar audio"
+                      title="Enviar audio"
+                    >
+                      {voiceRecordingProcessing ? "…" : "➤"}
+                    </button>
+                  </div>
+                ) : (
+                  <>
                 <textarea
                   value={departmentForm.message}
                   onChange={(event) => {
@@ -4783,28 +5197,34 @@ function InternalMessages({
                   />
 
                   <button
-                    type="button"
-                    className={`chat-voice-button ${voiceRecordingType === "department" ? "recording" : ""}`}
-                    onClick={() =>
-                      voiceRecordingType === "department"
-                        ? handleStopVoiceRecording()
-                        : handleStartVoiceRecording("department")
+                    type={departmentComposerUsesVoiceButton ? "button" : "submit"}
+                    className={`workspace-primary-button chat-send-icon-button ${departmentComposerUsesVoiceButton ? "voice-mode" : ""} ${departmentComposerRecording ? "recording" : ""}`}
+                    onClick={
+                      departmentComposerUsesVoiceButton
+                        ? () => (departmentComposerRecording ? handleStopVoiceRecording() : handleStartVoiceRecording("department"))
+                        : undefined
                     }
-                    disabled={Boolean(voiceRecordingType && voiceRecordingType !== "department")}
-                    title={voiceRecordingType === "department" ? "Detener audio" : "Grabar audio"}
-                    aria-label={voiceRecordingType === "department" ? "Detener audio" : "Grabar audio"}
+                    disabled={messageSaving || Boolean(voiceRecordingType && voiceRecordingType !== "department")}
+                    aria-label={
+                      messageSaving
+                        ? "Enviando mensaje"
+                        : departmentComposerUsesVoiceButton
+                          ? departmentComposerRecording
+                            ? "Detener audio"
+                            : "Grabar audio"
+                          : "Enviar mensaje al departamento"
+                    }
+                    title={
+                      messageSaving
+                        ? "Enviando..."
+                        : departmentComposerUsesVoiceButton
+                          ? departmentComposerRecording
+                            ? "Detener audio"
+                            : "Grabar audio"
+                          : "Enviar"
+                    }
                   >
-                    {voiceRecordingType === "department" ? "■" : "🎙"}
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="workspace-primary-button chat-send-icon-button"
-                    disabled={messageSaving}
-                    aria-label={messageSaving ? "Enviando mensaje" : "Enviar mensaje al departamento"}
-                    title={messageSaving ? "Enviando..." : "Enviar"}
-                  >
-                    {messageSaving ? "…" : "➤"}
+                    {messageSaving ? "…" : departmentComposerUsesVoiceButton ? (departmentComposerRecording ? "■" : "🎙") : "➤"}
                   </button>
                 </div>
 
@@ -4812,6 +5232,8 @@ function InternalMessages({
                   items={departmentAttachments}
                   onRemove={handleRemoveDepartmentAttachment}
                 />
+                  </>
+                )}
               </form>
             </>
           )}

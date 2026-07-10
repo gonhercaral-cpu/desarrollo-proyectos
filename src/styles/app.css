@@ -18641,6 +18641,35 @@ body:has(.field-mode-page) .main-content {
   font-weight: 800;
 }
 
+.request-student-added-after-badge {
+  margin-top: 6px;
+}
+
+.request-add-people-section {
+  margin-top: 16px;
+}
+
+.request-add-people-button {
+  margin-top: 6px;
+}
+
+.request-add-people-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.request-add-people-rows {
+  display: grid;
+  gap: 12px;
+}
+
+.request-add-people-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 @media (max-width: 1050px) {
   .request-students-summary,
   .request-student-inline-form,
@@ -69641,7 +69670,7 @@ html[data-theme="dark"] body #root .main-content .project-detail-page :is(
 
 .internal-messages-page.chat-messages-page .chat-composer {
   display: grid !important;
-  grid-template-columns: 38px 38px minmax(0, 1fr) 42px !important;
+  grid-template-columns: 38px minmax(0, 1fr) 42px !important;
   gap: 7px !important;
   align-items: center !important;
   padding: 9px 12px !important;
@@ -69650,7 +69679,7 @@ html[data-theme="dark"] body #root .main-content .project-detail-page :is(
 }
 
 .internal-messages-page.chat-messages-page .chat-composer textarea {
-  grid-column: 3 !important;
+  grid-column: 2 !important;
   grid-row: 1 !important;
   min-height: 40px !important;
   height: 40px !important;
@@ -69694,7 +69723,7 @@ html[data-theme="dark"] body #root .main-content .project-detail-page :is(
 }
 
 .internal-messages-page.chat-messages-page .chat-send-icon-button {
-  grid-column: 4 !important;
+  grid-column: 3 !important;
   grid-row: 1 !important;
   width: 42px !important;
   min-width: 42px !important;
@@ -69702,6 +69731,126 @@ html[data-theme="dark"] body #root .main-content .project-detail-page :is(
   min-height: 40px !important;
   border-radius: 12px !important;
   padding: 0 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-send-icon-button.recording {
+  border-color: #ef4444 !important;
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-send-icon-button.voice-mode {
+  font-size: 20px !important;
+  line-height: 1 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-recorder-bar {
+  grid-column: 1 / -1 !important;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-status strong,
+.internal-messages-page.chat-messages-page .voice-recorder-status small {
+  font-size: 0.78rem;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-status small {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-wave {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-wave span {
+  flex: 0 0 2px;
+  width: 2px;
+  height: calc(4px + (var(--wave-level, 0.35) * 16px));
+  border-radius: 999px;
+  background: #2563eb;
+  transform-origin: center;
+  transition: height 90ms ease;
+  animation: voice-wave-fallback 900ms ease-in-out infinite;
+  animation-delay: calc(var(--wave-index, 0) * -80ms);
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-wave.paused span {
+  height: 7px;
+  opacity: 0.58;
+  animation-play-state: paused;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.12);
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-dot.paused {
+  background: #f59e0b;
+  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.14);
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  color: #1d4ed8;
+  background: #e8f0ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action.danger {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action.send {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@keyframes voice-wave-fallback {
+  0%, 100% { transform: scaleY(0.72); }
+  50% { transform: scaleY(1.18); }
 }
 
 .internal-messages-page.chat-messages-page .chat-composer .attachment-draft-list,
@@ -70032,6 +70181,38 @@ html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-send-ic
 html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-send-icon-button {
   background: linear-gradient(135deg, #2563eb, #0ea5e9) !important;
   color: #ffffff !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-voice-recorder-bar {
+  border-color: rgba(148, 163, 184, 0.26);
+  background: #0f172a;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-status {
+  color: #e5e7eb;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-status small {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-action {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.18);
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-action.danger {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-action.send {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-wave span {
+  background: #60a5fa;
 }
 
 html[data-theme="dark"] .printshop-batch-card-list,
@@ -73967,6 +74148,168 @@ html[data-theme="dark"] .drive-cloud-storage button {
   justify-content: center;
   gap: 8px;
   padding: 0 16px;
+}
+
+.quick-tools-send-button.recording {
+  color: #ffffff;
+  background: #dc2626;
+  animation: quick-tools-pulse 1.2s ease-in-out infinite;
+}
+
+.quick-tools-send-button.voice-mode svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 2.5;
+}
+
+.quick-tools-voice-recorder-bar {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--app-surface, #ffffff) 88%, #2563eb 12%);
+}
+
+.quick-tools-recorder-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.quick-tools-recorder-status strong,
+.quick-tools-recorder-status small {
+  font-size: 0.72rem;
+}
+
+.quick-tools-recorder-status small {
+  color: var(--app-muted-text, #64748b);
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-tools-recorder-wave {
+  width: 46px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-left: 1px;
+}
+
+.quick-tools-recorder-wave span {
+  width: 3px;
+  height: calc(4px + (var(--wave-level, 0.35) * 15px));
+  border-radius: 999px;
+  background: #2563eb;
+  transition: height 90ms ease;
+  animation: quick-recorder-wave-fallback 900ms ease-in-out infinite;
+  animation-delay: calc(var(--wave-index, 0) * -80ms);
+}
+
+.quick-tools-recorder-wave span:nth-child(1) { --wave-index: 1; }
+.quick-tools-recorder-wave span:nth-child(2) { --wave-index: 2; }
+.quick-tools-recorder-wave span:nth-child(3) { --wave-index: 3; }
+.quick-tools-recorder-wave span:nth-child(4) { --wave-index: 4; }
+.quick-tools-recorder-wave span:nth-child(5) { --wave-index: 5; }
+.quick-tools-recorder-wave span:nth-child(6) { --wave-index: 6; }
+.quick-tools-recorder-wave span:nth-child(7) { --wave-index: 7; }
+
+.quick-tools-recorder-wave.paused span {
+  height: 6px;
+  opacity: 0.58;
+  animation-play-state: paused;
+}
+
+.quick-tools-recorder-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.12);
+}
+
+.quick-tools-recorder-dot.paused {
+  background: #f59e0b;
+  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.14);
+}
+
+.quick-tools-recorder-action {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+  cursor: pointer;
+}
+
+.quick-tools-recorder-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.quick-tools-recorder-action.danger {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.quick-tools-recorder-action.send {
+  width: 38px;
+  min-width: 38px;
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.quick-tools-recorder-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@keyframes quick-recorder-wave-fallback {
+  0%, 100% { transform: scaleY(0.72); }
+  50% { transform: scaleY(1.16); }
+}
+
+html[data-theme="dark"] .quick-tools-voice-recorder-bar {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: #0f172a;
+}
+
+html[data-theme="dark"] .quick-tools-recorder-status {
+  color: #e5e7eb;
+}
+
+html[data-theme="dark"] .quick-tools-recorder-status small {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .quick-tools-recorder-action {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.18);
+}
+
+html[data-theme="dark"] .quick-tools-recorder-action.danger {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+html[data-theme="dark"] .quick-tools-recorder-action.send {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+html[data-theme="dark"] .quick-tools-recorder-wave span {
+  background: #60a5fa;
 }
 
 .quick-tools-note-options {

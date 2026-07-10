@@ -258,6 +258,7 @@ const printshopLogTypes = [
   "CERTIFICATE_REPRINT_OPENED",
   "CERTIFICATE_BULK_PDFS_SAVED",
   "CERTIFICATE_ZIP_DOWNLOADED",
+  "STUDENTS_ADDED_AFTER_CLOSURE",
   "TEMPLATE_CREATED",
   "TEMPLATE_UPDATED",
   "SIGNER_CREATED",
@@ -2051,6 +2052,11 @@ function normalizeRequestStudents(students) {
       certificateCancelledByUid: String(student?.certificateCancelledByUid || ""),
       certificateCancelledByName: String(student?.certificateCancelledByName || ""),
       certificateCancelledByEmail: String(student?.certificateCancelledByEmail || ""),
+      addedAfterCreation: student?.addedAfterCreation === true,
+      addedAfterCreationAt: String(student?.addedAfterCreationAt || ""),
+      addedAfterCreationByUid: String(student?.addedAfterCreationByUid || ""),
+      addedAfterCreationByName: String(student?.addedAfterCreationByName || ""),
+      addedAfterCreationByEmail: String(student?.addedAfterCreationByEmail || ""),
     }))
     .filter((student) => student.name);
 }
@@ -2417,6 +2423,7 @@ function getPrintshopLogTypeLabel(type) {
     CERTIFICATE_REPRINT_OPENED: "Reimpresión preparada",
     CERTIFICATE_BULK_PDFS_SAVED: "PDFs masivos guardados",
     CERTIFICATE_ZIP_DOWNLOADED: "ZIP descargado",
+    STUDENTS_ADDED_AFTER_CLOSURE: "Personas agregadas (post-cierre)",
     TEMPLATE_CREATED: "Plantilla creada",
     TEMPLATE_UPDATED: "Plantilla actualizada",
     SIGNER_CREATED: "Firma creada",
@@ -3586,6 +3593,7 @@ export default function PrintShop() {
   const [savingStudents, setSavingStudents] = useState(false);
   const [generatingStudentId, setGeneratingStudentId] = useState(null);
   const [reprintCertificateStudentId, setReprintCertificateStudentId] = useState("");
+  const [addingStudentsAfterClosure, setAddingStudentsAfterClosure] = useState(false);
 
   const [certificateSigners, setCertificateSigners] = useState([]);
   const [loadingSigners, setLoadingSigners] = useState(true);
@@ -6717,6 +6725,15 @@ export default function PrintShop() {
     );
   }
 
+  function canCurrentUserAddPeopleAfterClosure(request = selectedRequest) {
+    return Boolean(
+      request &&
+      selectedRequestId &&
+      isRequestCertificateLike(request.requestType) &&
+      (isAdmin || isPrintRequestAssignedToUser(request, getAuditUser()))
+    );
+  }
+
   function getRequestStudentValidationId(request, student) {
     return sanitizeGeneratedCertificateId(
       student.validationCode ||
@@ -6861,9 +6878,11 @@ export default function PrintShop() {
 
       await batch.commit();
       setRequestMessage(successMessage);
+      return true;
     } catch (error) {
       console.error("No se pudo actualizar la lista de alumnos:", error);
       setRequestMessage("No se pudo actualizar la lista de alumnos. Revisa las reglas de Firestore.");
+      return false;
     } finally {
       setSavingStudents(false);
     }
@@ -7350,6 +7369,115 @@ export default function PrintShop() {
     await updateSelectedRequestStudents(nextStudents, "Alumno eliminado correctamente.");
   }
 
+  async function addStudentsAfterClosure(newPeopleDrafts) {
+    const currentRequest = selectedRequest;
+
+    if (!currentRequest || !selectedRequestId) {
+      setRequestMessage("Selecciona primero una solicitud de certificado o diploma.");
+      return { success: false };
+    }
+
+    if (!isRequestCertificateLike(currentRequest.requestType)) {
+      setRequestMessage("Agregar personas solo aplica para certificados y diplomas.");
+      return { success: false };
+    }
+
+    if (!canCurrentUserAddPeopleAfterClosure(currentRequest)) {
+      setRequestMessage(
+        "Solo un administrador o la persona de Imprenta asignada a esta solicitud puede agregar personas faltantes."
+      );
+      return { success: false };
+    }
+
+    if (savingStudents || addingStudentsAfterClosure) {
+      return { success: false };
+    }
+
+    const cleanDrafts = (Array.isArray(newPeopleDrafts) ? newPeopleDrafts : [])
+      .map((draft) => ({
+        name: String(draft?.name || "").trim(),
+        deliveryType: studentDeliveryTypes.includes(draft?.deliveryType) ? draft.deliveryType : "Impreso",
+      }))
+      .filter((draft) => draft.name);
+
+    if (cleanDrafts.length === 0) {
+      setRequestMessage("Captura al menos una persona con nombre válido.");
+      return { success: false };
+    }
+
+    const auditUser = getAuditUser();
+    const currentStudents = normalizeRequestStudents(currentRequest.students || []);
+    const addedAtIso = new Date().toISOString();
+
+    try {
+      setAddingStudentsAfterClosure(true);
+      setRequestMessage("");
+
+      const newStudentsBase = cleanDrafts.map((draft) => ({
+        id: createStudentId(),
+        name: draft.name,
+        deliveryType: draft.deliveryType,
+        status: "Pendiente",
+        addedAfterCreation: true,
+        addedAfterCreationAt: addedAtIso,
+        addedAfterCreationByUid: auditUser.uid,
+        addedAfterCreationByName: auditUser.name,
+        addedAfterCreationByEmail: auditUser.email,
+      }));
+
+      const combinedStudents = [...currentStudents, ...newStudentsBase];
+      const newStudentsWithFolios = [];
+
+      for (let offset = 0; offset < newStudentsBase.length; offset += 1) {
+        const studentIndex = currentStudents.length + offset;
+        // eslint-disable-next-line no-await-in-loop
+        const studentWithFolio = await buildStudentWithFolio(
+          currentRequest,
+          combinedStudents[studentIndex],
+          studentIndex,
+          auditUser
+        );
+        newStudentsWithFolios.push(studentWithFolio);
+      }
+
+      const nextStudents = [...currentStudents, ...newStudentsWithFolios];
+      const persisted = await updateSelectedRequestStudents(
+        nextStudents,
+        `${newStudentsWithFolios.length} persona(s) agregada(s) y folio(s) generado(s) correctamente.`
+      );
+
+      if (!persisted) {
+        return { success: false };
+      }
+
+      const addedNames = newStudentsWithFolios.map((student) => student.name).join(", ");
+      const newFolios = newStudentsWithFolios.map((student) => student.certificateFolio).join(", ");
+
+      await createPrintshopLog({
+        type: "STUDENTS_ADDED_AFTER_CLOSURE",
+        module: "certificates",
+        title: "Personas agregadas después del cierre",
+        description: `${auditUser.name} agregó ${newStudentsWithFolios.length} persona(s) a la solicitud ${currentRequest.folio || currentRequest.id}: ${addedNames}. Folios nuevos: ${newFolios}.`,
+        referenceType: "request",
+        referenceId: currentRequest.id,
+        requestId: currentRequest.id,
+        requestFolio: currentRequest.folio || "",
+        studentName: addedNames,
+        productId: currentRequest.productId || "",
+        productName: currentRequest.productName || "",
+        campus: currentRequest.campus || "",
+        level: currentRequest.level || "",
+      });
+
+      return { success: true, addedCount: newStudentsWithFolios.length };
+    } catch (error) {
+      console.error("No se pudieron agregar las personas después del cierre:", error);
+      setRequestMessage("No se pudieron agregar las personas. Revisa la conexión o las reglas de Firestore.");
+      return { success: false };
+    } finally {
+      setAddingStudentsAfterClosure(false);
+    }
+  }
 
   function validateStudentsReadyForFolios(request = selectedRequest) {
     if (!request || !selectedRequestId) {
@@ -9357,6 +9485,7 @@ export default function PrintShop() {
           savingStudents={savingStudents}
           generatingStudentId={generatingStudentId}
           reprintCertificateStudentId={reprintCertificateStudentId}
+          addingStudentsAfterClosure={addingStudentsAfterClosure}
           onStudentNameChange={setStudentName}
           onStudentDeliveryTypeChange={setStudentDeliveryType}
           onBulkStudentsTextChange={setBulkStudentsText}
@@ -9365,6 +9494,7 @@ export default function PrintShop() {
           onAddBulkStudents={addBulkRequestStudents}
           onUpdateStudent={updateRequestStudent}
           onDeleteStudent={deleteRequestStudent}
+          onAddStudentsAfterClosure={addStudentsAfterClosure}
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
           onResetCertificateFolios={resetRequestCertificateFolios}
@@ -9418,6 +9548,7 @@ export default function PrintShop() {
           savingStudents={savingStudents}
           generatingStudentId={generatingStudentId}
           reprintCertificateStudentId={reprintCertificateStudentId}
+          addingStudentsAfterClosure={addingStudentsAfterClosure}
           onSelectRequest={selectRequest}
           onRequestSearchChange={setRequestSearch}
           onRequestStatusFilterChange={setRequestStatusFilter}
@@ -9433,6 +9564,7 @@ export default function PrintShop() {
           onAddBulkStudents={addBulkRequestStudents}
           onUpdateStudent={updateRequestStudent}
           onDeleteStudent={deleteRequestStudent}
+          onAddStudentsAfterClosure={addStudentsAfterClosure}
           onGenerateStudentFolio={generateStudentFolio}
           onGenerateAllStudentFolios={generateAllStudentFolios}
           onResetCertificateFolios={resetRequestCertificateFolios}
@@ -13259,6 +13391,7 @@ function PrintRequestsView({
   savingStudents,
   generatingStudentId,
   reprintCertificateStudentId,
+  addingStudentsAfterClosure,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -13267,6 +13400,7 @@ function PrintRequestsView({
   onAddBulkStudents,
   onUpdateStudent,
   onDeleteStudent,
+  onAddStudentsAfterClosure,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
   onResetCertificateFolios,
@@ -13673,6 +13807,7 @@ function PrintRequestsView({
               savingStudents={savingStudents}
               generatingStudentId={generatingStudentId}
               reprintCertificateStudentId={reprintCertificateStudentId}
+              addingStudentsAfterClosure={addingStudentsAfterClosure}
               onStudentNameChange={onStudentNameChange}
               onStudentDeliveryTypeChange={onStudentDeliveryTypeChange}
               onBulkStudentsTextChange={onBulkStudentsTextChange}
@@ -13681,6 +13816,7 @@ function PrintRequestsView({
               onAddBulkStudents={onAddBulkStudents}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
+              onAddStudentsAfterClosure={onAddStudentsAfterClosure}
               onGenerateStudentFolio={onGenerateStudentFolio}
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
               onResetCertificateFolios={onResetCertificateFolios}
@@ -14194,6 +14330,7 @@ function CertificatesWorkspaceView({
   savingStudents,
   generatingStudentId,
   reprintCertificateStudentId,
+  addingStudentsAfterClosure,
   onSelectRequest,
   onRequestSearchChange,
   onRequestStatusFilterChange,
@@ -14209,6 +14346,7 @@ function CertificatesWorkspaceView({
   onAddBulkStudents,
   onUpdateStudent,
   onDeleteStudent,
+  onAddStudentsAfterClosure,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
   onResetCertificateFolios,
@@ -14854,6 +14992,7 @@ function CertificatesWorkspaceView({
               savingStudents={savingStudents}
               generatingStudentId={generatingStudentId}
               reprintCertificateStudentId={reprintCertificateStudentId}
+              addingStudentsAfterClosure={addingStudentsAfterClosure}
               onStudentNameChange={onStudentNameChange}
               onStudentDeliveryTypeChange={onStudentDeliveryTypeChange}
               onBulkStudentsTextChange={onBulkStudentsTextChange}
@@ -14862,6 +15001,7 @@ function CertificatesWorkspaceView({
               onAddBulkStudents={onAddBulkStudents}
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
+              onAddStudentsAfterClosure={onAddStudentsAfterClosure}
               onGenerateStudentFolio={onGenerateStudentFolio}
               onGenerateAllStudentFolios={onGenerateAllStudentFolios}
               onResetCertificateFolios={onResetCertificateFolios}
@@ -14909,6 +15049,7 @@ function RequestDetailCard({
   savingStudents,
   generatingStudentId,
   reprintCertificateStudentId,
+  addingStudentsAfterClosure,
   onStudentNameChange,
   onStudentDeliveryTypeChange,
   onBulkStudentsTextChange,
@@ -14917,6 +15058,7 @@ function RequestDetailCard({
   onAddBulkStudents,
   onUpdateStudent,
   onDeleteStudent,
+  onAddStudentsAfterClosure,
   onGenerateStudentFolio,
   onGenerateAllStudentFolios,
   onResetCertificateFolios,
@@ -14930,6 +15072,11 @@ function RequestDetailCard({
   const [bulkCertificateWorking, setBulkCertificateWorking] = useState(false);
   const [bulkCertificateMessage, setBulkCertificateMessage] = useState("");
   const bulkCertificateRefs = useRef({});
+  const [addPeoplePanelOpen, setAddPeoplePanelOpen] = useState(false);
+  const [addPeopleStep, setAddPeopleStep] = useState("form");
+  const [addPeopleDrafts, setAddPeopleDrafts] = useState([{ localId: "draft-0", name: "", deliveryType: "Impreso" }]);
+  const [addPeopleMessage, setAddPeopleMessage] = useState("");
+  const addPeopleSubmittingRef = useRef(false);
 
   useEffect(() => {
     setDetailActiveTab(reprintCertificateStudentId ? "students" : "summary");
@@ -14995,6 +15142,9 @@ function RequestDetailCard({
     selectedRole === "collaborator";
   const canEditCertificateProductionFields =
     canEditAdministrativeFields || canEditOperationalFields;
+  const canAddPeopleAfterClosure =
+    typeof onAddStudentsAfterClosure === "function" &&
+    (selectedRole === "admin" || selectedRole === "responsible");
   const canEditRequestDetails = Boolean(
     selectedRequestId &&
     typeof onSavePrintRequest === "function" &&
@@ -15013,6 +15163,70 @@ function RequestDetailCard({
     canManageStudents &&
     hasGeneratedStudentFolios &&
     typeof onResetCertificateFolios === "function";
+
+  function openAddPeoplePanel() {
+    setAddPeopleDrafts([{ localId: `draft-${Date.now()}`, name: "", deliveryType: "Impreso" }]);
+    setAddPeopleStep("form");
+    setAddPeopleMessage("");
+    setAddPeoplePanelOpen(true);
+  }
+
+  function closeAddPeoplePanel() {
+    setAddPeoplePanelOpen(false);
+    setAddPeopleStep("form");
+    setAddPeopleMessage("");
+  }
+
+  function addDraftRow() {
+    setAddPeopleDrafts((current) => [
+      ...current,
+      { localId: `draft-${Date.now()}-${current.length}`, name: "", deliveryType: "Impreso" },
+    ]);
+  }
+
+  function removeDraftRow(localId) {
+    setAddPeopleDrafts((current) =>
+      current.length > 1 ? current.filter((draft) => draft.localId !== localId) : current
+    );
+  }
+
+  function updateDraftRow(localId, changes) {
+    setAddPeopleDrafts((current) =>
+      current.map((draft) => (draft.localId === localId ? { ...draft, ...changes } : draft))
+    );
+  }
+
+  const validAddPeopleDrafts = addPeopleDrafts.filter((draft) => draft.name.trim());
+
+  function goToAddPeoplePreview() {
+    if (validAddPeopleDrafts.length === 0) {
+      setAddPeopleMessage("Captura al menos una persona con nombre válido.");
+      return;
+    }
+
+    setAddPeopleMessage("");
+    setAddPeopleStep("preview");
+  }
+
+  async function confirmAddPeople() {
+    if (addPeopleSubmittingRef.current || addingStudentsAfterClosure) return;
+
+    addPeopleSubmittingRef.current = true;
+
+    try {
+      const result = await onAddStudentsAfterClosure(
+        validAddPeopleDrafts.map((draft) => ({ name: draft.name.trim(), deliveryType: draft.deliveryType }))
+      );
+
+      if (result?.success) {
+        closeAddPeoplePanel();
+      } else {
+        setAddPeopleStep("form");
+      }
+    } finally {
+      addPeopleSubmittingRef.current = false;
+    }
+  }
 
   function getGeneratedCertificateRecordForStudent(student) {
     return (generatedCertificates || []).find(
@@ -15903,6 +16117,14 @@ Mariana Torres`}
                                 Nombre bloqueado después de generar folio.
                               </small>
                             )}
+                            {student.addedAfterCreation && (
+                              <div
+                                className="request-student-added-after-badge"
+                                title={`Agregado por ${student.addedAfterCreationByName || "Usuario"}${student.addedAfterCreationAt ? ` el ${formatCertificatePreviewDate(student.addedAfterCreationAt)}` : ""}`}
+                              >
+                                <StatusBadge tone="teal">Agregado posteriormente</StatusBadge>
+                              </div>
+                            )}
                           </td>
                           <td>
                             <select
@@ -15986,6 +16208,150 @@ Mariana Torres`}
               {!studentListComplete && students.length > 0 && (
                 <div className="request-students-warning">
                   Revisa las cantidades: el total de alumnos, impresos y digitales debe coincidir con la solicitud.
+                </div>
+              )}
+
+              {canAddPeopleAfterClosure && (
+                <div className="request-detail-note important request-add-people-section">
+                  <strong>Agregar personas faltantes</strong>
+                  <p>
+                    Agrega alumnos o personas que faltaron en esta solicitud, aunque ya esté cerrada.
+                    Solo se generarán folios para las personas nuevas; los folios, certificados y PDFs
+                    existentes no se modifican.
+                  </p>
+
+                  {!addPeoplePanelOpen ? (
+                    <button
+                      type="button"
+                      className="visual-outline-button request-add-people-button"
+                      onClick={openAddPeoplePanel}
+                    >
+                      Agregar personas
+                    </button>
+                  ) : (
+                    <div className="request-add-people-panel">
+                      {addPeopleMessage && (
+                        <div className="message-box request-bulk-certificate-message">{addPeopleMessage}</div>
+                      )}
+
+                      {addPeopleStep === "form" ? (
+                        <>
+                          <div className="request-add-people-rows">
+                            {addPeopleDrafts.map((draft) => (
+                              <div className="request-student-inline-form" key={draft.localId}>
+                                <label>
+                                  <span>Nombre</span>
+                                  <input
+                                    value={draft.name}
+                                    onChange={(event) => updateDraftRow(draft.localId, { name: event.target.value })}
+                                    placeholder="Ej. Ana López Martínez"
+                                    disabled={addingStudentsAfterClosure}
+                                  />
+                                </label>
+                                <label>
+                                  <span>Entrega</span>
+                                  <select
+                                    value={draft.deliveryType}
+                                    onChange={(event) => updateDraftRow(draft.localId, { deliveryType: event.target.value })}
+                                    disabled={addingStudentsAfterClosure}
+                                  >
+                                    {studentDeliveryTypes.map((type) => (
+                                      <option key={type}>{type}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <button
+                                  type="button"
+                                  className="danger-table-button"
+                                  disabled={addingStudentsAfterClosure || addPeopleDrafts.length <= 1}
+                                  onClick={() => removeDraftRow(draft.localId)}
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="request-add-people-actions">
+                            <button
+                              type="button"
+                              className="visual-outline-button"
+                              disabled={addingStudentsAfterClosure}
+                              onClick={addDraftRow}
+                            >
+                              Agregar otra persona
+                            </button>
+                            <button
+                              type="button"
+                              className="visual-primary-button"
+                              disabled={addingStudentsAfterClosure}
+                              onClick={goToAddPeoplePreview}
+                            >
+                              Revisar lista
+                            </button>
+                            <button
+                              type="button"
+                              className="visual-outline-button"
+                              disabled={addingStudentsAfterClosure}
+                              onClick={closeAddPeoplePanel}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="request-students-table-wrap">
+                            <table className="visual-table request-students-table">
+                              <thead>
+                                <tr>
+                                  <th>Nombre</th>
+                                  <th>Entrega</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {validAddPeopleDrafts.map((draft) => (
+                                  <tr key={draft.localId}>
+                                    <td>{draft.name.trim()}</td>
+                                    <td>{draft.deliveryType}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="request-add-people-actions">
+                            <button
+                              type="button"
+                              className="visual-outline-button"
+                              disabled={addingStudentsAfterClosure}
+                              onClick={() => setAddPeopleStep("form")}
+                            >
+                              Volver a editar
+                            </button>
+                            <button
+                              type="button"
+                              className="visual-primary-button"
+                              disabled={addingStudentsAfterClosure}
+                              onClick={confirmAddPeople}
+                            >
+                              {addingStudentsAfterClosure
+                                ? "Guardando..."
+                                : `Confirmar y generar ${validAddPeopleDrafts.length} folio(s)`}
+                            </button>
+                            <button
+                              type="button"
+                              className="visual-outline-button"
+                              disabled={addingStudentsAfterClosure}
+                              onClick={closeAddPeoplePanel}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
