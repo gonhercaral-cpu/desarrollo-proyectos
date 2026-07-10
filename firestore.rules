@@ -621,13 +621,20 @@ service cloud.firestore {
           "description",
           "priority",
           "status",
+          "steps",
           "evidenceFiles",
+          "evidenceCount",
+          "imageEvidenceCount",
+          "videoEvidenceCount",
           "reporterUid",
           "reporterName",
           "reporterEmail",
+          "adminComment",
+          "adminHistory",
           "createdAt",
           "updatedAt",
-          "lastActivityAt"
+          "lastActivityAt",
+          "searchableText"
         ])
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.title is string
@@ -640,9 +647,19 @@ service cloud.firestore {
         && request.resource.data.priority is string
         && validBugReportPriority(request.resource.data.priority)
         && request.resource.data.status == "nuevo"
+        && (!("steps" in request.resource.data) || request.resource.data.steps is string)
         && request.resource.data.evidenceFiles is list
+        && (!("evidenceCount" in request.resource.data) || request.resource.data.evidenceCount is number)
+        && (!("imageEvidenceCount" in request.resource.data) || request.resource.data.imageEvidenceCount is number)
+        && (!("videoEvidenceCount" in request.resource.data) || request.resource.data.videoEvidenceCount is number)
+        && (!("reporterName" in request.resource.data) || request.resource.data.reporterName is string)
+        && (!("reporterEmail" in request.resource.data) || request.resource.data.reporterEmail is string)
+        && (!("adminComment" in request.resource.data) || request.resource.data.adminComment == "")
+        && (!("adminHistory" in request.resource.data) || request.resource.data.adminHistory is list)
+        && (!("searchableText" in request.resource.data) || request.resource.data.searchableText is string)
         && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.lastActivityAt is timestamp;
     }
 
 
@@ -1645,11 +1662,10 @@ service cloud.firestore {
       return (isPrintRequestResponsible() || isPrintRequestCollaborator())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status",
-          "requestedQuantity",
           "deliveredQuantity",
-          "deliveryType",
           "notes",
           "students",
+          "dueDate",
           "certificateIssueDate",
           "certificateTemplateId",
           "certificateTemplateName",
@@ -1665,11 +1681,7 @@ service cloud.firestore {
           "certificateTemplateStoragePath",
           "certificateTemplatePositions",
           "level",
-          "group",
           "teacherName",
-          "schedule",
-          "printedQuantity",
-          "digitalQuantity",
           "principalSignerId",
           "principalSignerName",
           "principalSignerRole",
@@ -2921,7 +2933,7 @@ service cloud.firestore {
 
 
     match /certificateSigners/{signerId} {
-      allow read: if hasProfile();
+      allow read: if hasProfile() || resource.data.active == true;
 
       allow create: if isAdmin()
         && validCertificateSignerData();
@@ -2936,7 +2948,7 @@ service cloud.firestore {
     }
 
     match /certificateTemplates/{templateId} {
-      allow read: if hasProfile();
+      allow read: if hasProfile() || resource.data.active == true;
 
       allow create: if isAdmin()
         && validCertificateTemplateData();

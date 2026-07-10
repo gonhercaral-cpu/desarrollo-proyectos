@@ -3,16 +3,22 @@ import { auth, storage } from "./firebase";
 
 const MAX_FILE_SIZE_MB = 25;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const GENERIC_FILE_TYPES = new Set(["", "application/octet-stream"]);
 
-const ALLOWED_FILE_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-];
+const ALLOWED_FILE_TYPES_BY_EXTENSION = {
+  png: ["image/png"],
+  jpg: ["image/jpeg"],
+  jpeg: ["image/jpeg"],
+  webp: ["image/webp"],
+  pdf: ["application/pdf"],
+  doc: ["application/msword"],
+  docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ppt: ["application/vnd.ms-powerpoint"],
+  pptx: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  xls: ["application/vnd.ms-excel"],
+  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  txt: ["text/plain"],
+};
 
 function getAuthenticatedUser() {
   const firebaseUser = auth.currentUser;
@@ -36,7 +42,28 @@ function cleanFileName(fileName) {
   return fileName
     .trim()
     .replace(/\s+/g, "_")
-    .replace(/[^a-zA-Z0-9._-]/g, "");
+    .replace(/[^a-zA-Z0-9._-]/g, "")
+    .toLowerCase();
+}
+
+function getFileExtension(fileName = "") {
+  const parts = String(fileName || "").trim().split(".");
+  return parts.length > 1 ? parts.pop().toLowerCase() : "";
+}
+
+function isGenericFileType(type = "") {
+  return GENERIC_FILE_TYPES.has(String(type || "").toLowerCase());
+}
+
+function hasAllowedFileType(file) {
+  const extension = getFileExtension(file?.name);
+  const allowedTypes = ALLOWED_FILE_TYPES_BY_EXTENSION[extension];
+  const type = String(file?.type || "").toLowerCase();
+
+  if (!allowedTypes) return false;
+  if (isGenericFileType(type)) return true;
+
+  return allowedTypes.includes(type);
 }
 
 function validateEvidenceFile(file) {
@@ -48,10 +75,11 @@ function validateEvidenceFile(file) {
     throw new Error(`El archivo no puede pesar más de ${MAX_FILE_SIZE_MB} MB.`);
   }
 
-  if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-    throw new Error(
+  if (!hasAllowedFileType(file)) {
+    throw new Error("Tipo de archivo no permitido. Solo se permiten imagenes, PDF, Word, PowerPoint, Excel o TXT.");
+    /*
       "Tipo de archivo no permitido. Solo se permiten imágenes, PDF, Word, PowerPoint o Excel."
-    );
+    */
   }
 }
 
@@ -80,7 +108,7 @@ export async function uploadEvidenceFile(projectId, file, currentUser = {}) {
   const fileRef = ref(storage, filePath);
 
   const snapshot = await uploadBytes(fileRef, file, {
-    contentType: file.type,
+    contentType: file.type || "application/octet-stream",
     customMetadata: {
       projectId,
       uploadedByUid: currentUserUid,

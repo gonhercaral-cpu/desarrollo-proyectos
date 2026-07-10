@@ -22,6 +22,7 @@ import { deleteObject, getBytes, getDownloadURL, ref as storageRef, uploadBytes 
 import { db, storage } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
 import { buildCertificateStatistics, CERTIFICATE_QUICK_RANGES } from "../services/certificateStats";
+import { findMatchingCertificateTemplateInList } from "../utils/certificateTemplateMatching";
 
 const productCategories = [
   "Libro",
@@ -42,7 +43,21 @@ const productionTypes = [
   "Material interno",
 ];
 
-const levels = ["No aplica", "A1", "A2", "B1", "B2", "C1", "Otro"];
+const levels = [
+  "No aplica",
+  "A1",
+  "A2",
+  "B1",
+  "B2",
+  "C1",
+  "Smile 1",
+  "Smile 2",
+  "Smile 3",
+  "Smile 4",
+  "Smile 5",
+  "Mega Flash",
+  "Otro",
+];
 
 const units = ["Pieza", "Libro", "Documento", "Paquete", "Hoja", "Metro", "Lote"];
 
@@ -999,83 +1014,8 @@ function calculateRequestPriority({ requestDate, dueDate, createdAt } = {}) {
   return "Normal";
 }
 
-function normalizeCertificateMatchText(value = "") {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/discovery/g, "discover")
-    .replace(/new horizons/g, "newhorizons")
-    .replace(/mega flash/g, "megaflash")
-    .replace(/smile\s+/g, "smile")
-    .replace(/[^a-z0-9]+/g, "");
-}
-
-function certificateTextMatches(source = "", target = "") {
-  const sourceText = normalizeCertificateMatchText(source);
-  const targetText = normalizeCertificateMatchText(target);
-
-  if (!sourceText || !targetText) return false;
-
-  return sourceText === targetText || sourceText.includes(targetText) || targetText.includes(sourceText);
-}
-
-function getCertificateRequestTemplateTargets(form = {}, selectedProduct = null) {
-  const rawLevel = form.level && form.level !== "No aplica"
-    ? form.level
-    : form.certificateTemplateLevel || selectedProduct?.level || "";
-  const rawProgram =
-    form.certificateTemplateProgramName ||
-    form.courseProgramName ||
-    form.courseLevel ||
-    form.group ||
-    selectedProduct?.name ||
-    form.productName ||
-    "";
-  const rawAudience = form.certificateTemplateAudience || form.courseAudience || "";
-  const rawType = isRequestCertificateLike(form.requestType)
-    ? form.requestType
-    : selectedProduct?.category || form.requestType || "";
-
-  return {
-    targetLevel: String(rawLevel || "").trim(),
-    targetProgram: String(rawProgram || "").trim(),
-    targetAudience: String(rawAudience || "").trim(),
-    targetType: String(rawType || "").trim(),
-  };
-}
-
-function findMatchingCertificateTemplateInList(templates = [], form = {}, selectedProduct = null) {
-  const activeTemplates = (templates || []).filter((template) => template?.active !== false);
-  const { targetLevel, targetProgram, targetAudience, targetType } = getCertificateRequestTemplateTargets(form, selectedProduct);
-
-  const hasTarget = Boolean(targetLevel || targetProgram || targetAudience || targetType);
-  if (!hasTarget) return null;
-
-  return activeTemplates.find((template) => {
-    const matchesLevel = targetLevel ? certificateTextMatches(template.level, targetLevel) : false;
-    const matchesProgram = targetProgram
-      ? certificateTextMatches(template.programName, targetProgram) ||
-        certificateTextMatches(template.name, targetProgram) ||
-        certificateTextMatches(`${template.level || ""} ${template.programName || ""}`, targetProgram)
-      : false;
-    const matchesAudience = targetAudience ? certificateTextMatches(template.audience, targetAudience) : true;
-    const matchesType = targetType
-      ? certificateTextMatches(template.certificateType, targetType) || certificateTextMatches(template.audience, targetType)
-      : true;
-
-    return (matchesLevel || matchesProgram) && matchesAudience && matchesType;
-  }) || activeTemplates.find((template) => {
-    if (targetLevel && certificateTextMatches(template.level, targetLevel)) return true;
-    if (!targetProgram) return false;
-
-    return (
-      certificateTextMatches(template.programName, targetProgram) ||
-      certificateTextMatches(template.name, targetProgram) ||
-      certificateTextMatches(`${template.level || ""} ${template.programName || ""}`, targetProgram)
-    );
-  }) || null;
-}
+// Matching de plantillas por nivel/programa/audiencia/tipo movido a
+// src/utils/certificateTemplateMatching.js (findMatchingCertificateTemplateInList).
 
 function normalizePrintRequestStatus(status) {
   return printRequestStatuses.includes(status) ? status : "Solicitud recibida";
@@ -2446,6 +2386,53 @@ function getPrintshopLogTone(type) {
   if (String(type || "").includes("ZIP") || String(type || "").includes("BULK")) return "teal";
   if (String(type || "").includes("UPDATED")) return "orange";
   return "blue";
+}
+
+const REQUEST_FIELD_CHANGE_LABELS = {
+  status: "Estado",
+  priority: "Prioridad",
+  requestedQuantity: "Cantidad solicitada",
+  deliveredQuantity: "Cantidad entregada",
+  deliveryType: "Tipo de entrega",
+  requestDate: "Fecha solicitada",
+  dueDate: "Fecha de compromiso",
+  certificateIssueDate: "Fecha del certificado",
+  certificateTemplateName: "Plantilla",
+  level: "Nivel",
+  group: "Grupo",
+  teacherName: "Maestro",
+  schedule: "Horario",
+  printedQuantity: "Impresos",
+  digitalQuantity: "Digitales",
+  principalSignerName: "Firmante principal",
+  teacherSignerName: "Teacher",
+  notes: "Observaciones",
+  responsibleName: "Responsable",
+  collaboratorName: "Colaborador de apoyo",
+  campus: "Plantel",
+  requesterName: "Solicitante",
+};
+
+function buildFieldChangeDescription(previous = {}, next = {}, fieldLabels = REQUEST_FIELD_CHANGE_LABELS) {
+  const changes = Object.keys(fieldLabels)
+    .filter((key) => key in next)
+    .map((key) => {
+      const previousValue = previous?.[key];
+      const nextValue = next[key];
+      const previousText = previousValue === undefined || previousValue === null || previousValue === ""
+        ? "(vacío)"
+        : String(previousValue);
+      const nextText = nextValue === undefined || nextValue === null || nextValue === ""
+        ? "(vacío)"
+        : String(nextValue);
+
+      if (previousText === nextText) return null;
+
+      return `${fieldLabels[key]}: '${previousText}' → '${nextText}'`;
+    })
+    .filter(Boolean);
+
+  return changes.join("; ");
 }
 
 function isVisiblePrintshopRecord(record) {
@@ -4425,9 +4412,13 @@ export default function PrintShop() {
       const certificateTeacher = certificate.teacherName || "Sin maestro";
       const certificateLevel = certificate.level || "No aplica";
 
+      const certificateRequestSchedule = certificate.requestId
+        ? printRequests.find((request) => request.id === certificate.requestId)?.schedule || ""
+        : "";
+
       const matchesSearch =
         !normalizedSearch ||
-        `${certificate.folio} ${certificate.validationCode} ${certificate.studentName} ${certificate.level} ${certificate.programName} ${certificate.requestFolio} ${certificate.templateName} ${certificate.teacherName} ${certificate.principalName} ${certificate.campus} ${certificate.group}`
+        `${certificate.folio} ${certificate.validationCode} ${certificate.studentName} ${certificate.level} ${certificate.programName} ${certificate.requestFolio} ${certificate.templateName} ${certificate.teacherName} ${certificate.principalName} ${certificate.campus} ${certificate.group} ${certificateRequestSchedule}`
           .toLowerCase()
           .includes(normalizedSearch);
 
@@ -4455,6 +4446,7 @@ export default function PrintShop() {
     });
   }, [
     generatedCertificates,
+    printRequests,
     generatedCertificateSearch,
     generatedCertificateStatusFilter,
     generatedCertificateYearFilter,
@@ -6038,11 +6030,13 @@ export default function PrintShop() {
     });
   }
 
-  function resetSignerForm() {
+  function resetSignerForm({ keepMessage = false } = {}) {
     setSelectedSignerId(null);
     setSignerForm(signerFormInitialState);
     setSignatureFile(null);
-    setSignerMessage("");
+    if (!keepMessage) {
+      setSignerMessage("");
+    }
   }
 
   function selectSigner(signer) {
@@ -6072,7 +6066,7 @@ export default function PrintShop() {
 
     if (!isAdmin) {
       setSignerMessage("Solo los administradores pueden administrar firmas.");
-      return;
+      return { success: false };
     }
 
     const auditUser = getAuditUser();
@@ -6081,22 +6075,22 @@ export default function PrintShop() {
 
     if (!name) {
       setSignerMessage("Indica el nombre del firmante.");
-      return;
+      return { success: false };
     }
 
     if (!role) {
       setSignerMessage("Indica el cargo que aparecerá debajo del nombre.");
-      return;
+      return { success: false };
     }
 
     if (!selectedSignerId && !signatureFile) {
       setSignerMessage("Sube una imagen de firma para crear el firmante.");
-      return;
+      return { success: false };
     }
 
     if (signatureFile && !isValidSignatureFile(signatureFile)) {
       setSignerMessage("La firma debe ser PNG, JPG o WEBP y pesar menos de 5 MB.");
-      return;
+      return { success: false };
     }
 
     try {
@@ -6154,6 +6148,8 @@ export default function PrintShop() {
         updatedByEmail: auditUser.email,
       };
 
+      let savedSignerId = selectedSignerId;
+
       if (selectedSignerId) {
         await updateDoc(doc(db, "certificateSigners", selectedSignerId), payload);
         await createPrintshopLog({
@@ -6184,12 +6180,15 @@ export default function PrintShop() {
           campus: payload.campus || "",
         });
         setSignerMessage("Firmante creado correctamente.");
+        savedSignerId = newSignerRef.id;
       }
 
-      resetSignerForm();
+      resetSignerForm({ keepMessage: true });
+      return { success: true, signerId: savedSignerId };
     } catch (error) {
       console.error("No se pudo guardar la firma:", error);
       setSignerMessage("No se pudo guardar la firma. Revisa reglas de Firestore y Storage.");
+      return { success: false };
     } finally {
       setSavingSigner(false);
     }
@@ -6562,18 +6561,47 @@ export default function PrintShop() {
               status: basePayload.status,
               deliveredQuantity: basePayload.deliveredQuantity,
               notes: basePayload.notes,
+              dueDate: basePayload.dueDate,
+              certificateIssueDate: basePayload.certificateIssueDate,
+              certificateTemplateId: basePayload.certificateTemplateId,
+              certificateTemplateName: basePayload.certificateTemplateName,
+              certificateTemplateLevel: basePayload.certificateTemplateLevel,
+              certificateTemplateProgramName: basePayload.certificateTemplateProgramName,
+              certificateTemplateAudience: basePayload.certificateTemplateAudience,
+              certificateTemplateBodyText: basePayload.certificateTemplateBodyText,
+              certificateTemplateBodySegments: basePayload.certificateTemplateBodySegments,
+              certificateTemplateCustomTexts: basePayload.certificateTemplateCustomTexts,
+              certificateTemplateCustomImages: basePayload.certificateTemplateCustomImages,
+              certificateTemplateImageUrl: basePayload.certificateTemplateImageUrl,
+              certificateTemplateImageDataUrl: basePayload.certificateTemplateImageDataUrl,
+              certificateTemplateStoragePath: basePayload.certificateTemplateStoragePath,
+              certificateTemplatePositions: basePayload.certificateTemplatePositions,
+              level: basePayload.level,
+              teacherName: basePayload.teacherName,
+              principalSignerId: basePayload.principalSignerId,
+              principalSignerName: basePayload.principalSignerName,
+              principalSignerRole: basePayload.principalSignerRole,
+              principalSignatureUrl: basePayload.principalSignatureUrl,
+              teacherSignerId: basePayload.teacherSignerId,
+              teacherSignerName: basePayload.teacherSignerName,
+              teacherSignerRole: basePayload.teacherSignerRole,
+              teacherSignatureUrl: basePayload.teacherSignatureUrl,
               updatedAt: basePayload.updatedAt,
               updatedByUid: basePayload.updatedByUid,
               updatedByName: basePayload.updatedByName,
               updatedByEmail: basePayload.updatedByEmail,
             };
 
+        const fieldChangeSummary = buildFieldChangeDescription(currentRequest, payload);
+
         await updateDoc(doc(db, "printRequests", selectedRequestId), payload);
         await createPrintshopLog({
           type: "REQUEST_UPDATED",
           module: "requests",
           title: "Solicitud de imprenta actualizada",
-          description: `Se actualizó la solicitud ${currentRequest?.folio || selectedRequestId}.`,
+          description: fieldChangeSummary
+            ? `Se actualizó la solicitud ${currentRequest?.folio || selectedRequestId}. ${fieldChangeSummary}.`
+            : `Se actualizó la solicitud ${currentRequest?.folio || selectedRequestId}.`,
           referenceType: "request",
           referenceId: selectedRequestId,
           requestId: selectedRequestId,
@@ -14016,7 +14044,7 @@ function PrintRequestsView({
                   name="dueDate"
                   value={requestForm.dueDate}
                   onChange={onRequestInputChange}
-                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
+                  disabled={!canEditOperationalFields}
                 />
               </label>
 
@@ -14062,7 +14090,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Nivel</span>
-                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields}>
+                    <select name="level" value={requestForm.level} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields}>
                       {levels.map((level) => (
                         <option key={level}>{level}</option>
                       ))}
@@ -14071,7 +14099,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Grupo</span>
-                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditCertificateProductionFields} />
+                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
@@ -14110,12 +14138,12 @@ function PrintRequestsView({
 
                   <label>
                     <span>Maestro / nombre visible</span>
-                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditCertificateProductionFields} />
+                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Horario</span>
-                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditCertificateProductionFields} />
+                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
@@ -14131,12 +14159,12 @@ function PrintRequestsView({
 
                   <label>
                     <span>Impresos</span>
-                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Digitales</span>
-                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
                 </div>
               )}
@@ -14392,6 +14420,51 @@ function CertificatesWorkspaceView({
   const [standaloneMessage, setStandaloneMessage] = useState("");
   const [standaloneWorking, setStandaloneWorking] = useState(false);
   const [certificateHistoryOpen, setCertificateHistoryOpen] = useState(false);
+  const [expandedCertificateLoteKey, setExpandedCertificateLoteKey] = useState("");
+
+  const certificateLotes = useMemo(() => {
+    const groups = new Map();
+
+    safeFilteredCertificates.forEach((certificate) => {
+      const loteKey = certificate.requestId || `individual-${certificate.id}`;
+
+      if (!groups.has(loteKey)) {
+        groups.set(loteKey, []);
+      }
+
+      groups.get(loteKey).push(certificate);
+    });
+
+    return Array.from(groups.entries()).map(([loteKey, loteCertificates]) => {
+      const matchedRequest = loteCertificates[0].requestId
+        ? certificateRequests.find((request) => request.id === loteCertificates[0].requestId)
+        : null;
+      const distinctStatuses = new Set(loteCertificates.map((certificate) => certificate.status));
+      const loteStatus = distinctStatuses.size === 1 ? loteCertificates[0].status : "Mixto";
+      const latestGeneratedAt = loteCertificates.reduce((latest, certificate) => {
+        const currentDate = certificate.generatedAt?.toDate
+          ? certificate.generatedAt.toDate()
+          : new Date(certificate.generatedAt || 0);
+        return !latest || currentDate > latest ? currentDate : latest;
+      }, null);
+
+      return {
+        loteKey,
+        requestId: loteCertificates[0].requestId || "",
+        requestFolio: matchedRequest?.folio || loteCertificates[0].requestFolio || "",
+        teacherName: matchedRequest?.teacherName || loteCertificates[0].teacherName || "",
+        schedule: matchedRequest?.schedule || "",
+        campus: matchedRequest?.campus || loteCertificates[0].campus || "",
+        group: matchedRequest?.group || loteCertificates[0].group || "",
+        level: loteCertificates[0].level || "",
+        templateName: loteCertificates[0].templateName || "",
+        latestGeneratedAt,
+        certificates: loteCertificates,
+        count: loteCertificates.length,
+        status: loteStatus,
+      };
+    }).sort((a, b) => (b.latestGeneratedAt?.getTime() || 0) - (a.latestGeneratedAt?.getTime() || 0));
+  }, [safeFilteredCertificates, certificateRequests]);
 
   useEffect(() => {
     if (!activeRequest?.id || activeRequest.id === selectedRequest?.id) return;
@@ -14615,101 +14688,133 @@ function CertificatesWorkspaceView({
                 <p>No hay certificados generados con los filtros seleccionados.</p>
               </div>
             ) : (
-              <div className="certificate-history-card-list">
-                {safeFilteredCertificates.map((certificate) => {
-                  const canManageCertificate =
-                    isAdmin || isSameUid(currentUserUid, certificate.responsibleUid);
-                  const updating = updatingCertificateId === certificate.id;
+              <div className="certificate-history-card-list certificate-lote-list">
+                {certificateLotes.map((lote) => {
+                  const isExpanded = expandedCertificateLoteKey === lote.loteKey;
 
                   return (
-                    <article key={certificate.id} className="certificate-history-card certificate-history-card-redesign">
-                      <div className="certificate-history-card-main">
-                        <div className="certificate-history-card-icon">
-                          <PrintshopIcon name="certificates" />
+                    <div key={lote.loteKey} className="certificate-lote-group">
+                      <button
+                        type="button"
+                        className="certificate-lote-summary"
+                        onClick={() => setExpandedCertificateLoteKey(isExpanded ? "" : lote.loteKey)}
+                      >
+                        <div className="certificate-lote-summary-main">
+                          <strong>{lote.requestFolio || "Certificado individual"}</strong>
+                          <span>{lote.teacherName || "Sin maestro"} · {lote.schedule || "Sin horario"}</span>
+                          <span>{lote.group || "Sin grupo"} · {lote.campus || "Sin plantel"} · {lote.level || "Sin nivel"}</span>
                         </div>
-                        <div className="certificate-history-card-content">
-                          <div className="certificate-history-title-row">
-                            <div>
-                              <strong>{certificate.studentName || "Sin alumno"}</strong>
-                              <span>{certificate.folio || "Sin folio"} / {certificate.requestFolio || "Individual"}</span>
-                            </div>
-                            <StatusBadge tone={getGeneratedCertificateStatusTone(certificate.status)}>
-                              {certificate.status}
-                            </StatusBadge>
-                          </div>
-                          <div className="certificate-history-meta-grid">
-                            <div>
-                              <small>Fecha</small>
-                              <strong>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</strong>
-                            </div>
-                            <div>
-                              <small>Maestro</small>
-                              <strong>{certificate.teacherName || "Sin maestro"}</strong>
-                            </div>
-                            <div>
-                              <small>Nivel</small>
-                              <strong>{certificate.level || "Sin nivel"}</strong>
-                            </div>
-                            <div>
-                              <small>Grupo / Plantel</small>
-                              <strong>{certificate.group || "Sin grupo"} - {certificate.campus || "Sin plantel"}</strong>
-                            </div>
-                            <div>
-                              <small>QR</small>
-                              <strong>{certificate.validationCode ? "Validable" : "Pendiente"}</strong>
-                            </div>
-                          </div>
+                        <div className="certificate-lote-summary-meta">
+                          <StatusBadge tone={lote.status === "Mixto" ? "blue" : getGeneratedCertificateStatusTone(lote.status)}>
+                            {lote.status}
+                          </StatusBadge>
+                          <span>{lote.count} {lote.count === 1 ? "certificado" : "certificados"}</span>
+                          <span>{lote.latestGeneratedAt ? formatCertificatePreviewDate(lote.latestGeneratedAt) : "Sin fecha"}</span>
+                          <span aria-hidden="true">{isExpanded ? "▲" : "▼"}</span>
                         </div>
-                      </div>
-                      <div className="certificate-history-card-actions certificate-actions-modern">
-                        <button
-                          type="button"
-                          className="visual-outline-button certificate-action-button"
-                          disabled={!certificate.pdfUrl}
-                          onClick={() => {
-                            if (certificate.pdfUrl) {
-                              window.open(certificate.pdfUrl, "_blank", "noopener,noreferrer");
-                            }
-                          }}
-                        >
-                          PDF original
-                        </button>
-                        <button type="button" className="visual-outline-button certificate-action-button" onClick={() => onReprintCertificate?.(certificate)}>
-                          Reimprimir
-                        </button>
-                        {certificate.requestId && (
-                          <button type="button" className="certificate-action-button" onClick={() => onOpenCertificateRequest?.(certificate)}>
-                            Ver solicitud
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="certificate-action-button"
-                          disabled={!canManageCertificate || updating || certificate.status === "Entregado"}
-                          onClick={() => onMarkCertificateDelivered?.(certificate)}
-                        >
-                          Entregado
-                        </button>
-                        <button
-                          type="button"
-                          className="danger-table-button certificate-action-button"
-                          disabled={!canManageCertificate || updating || certificate.status === "Cancelado"}
-                          onClick={() => onCancelCertificate?.(certificate)}
-                        >
-                          Cancelar
-                        </button>
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            className="danger-table-button certificate-action-button"
-                            disabled={updating}
-                            onClick={() => onSoftDeleteCertificate?.(certificate)}
-                          >
-                            Eliminar
-                          </button>
-                        )}
-                      </div>
-                    </article>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="certificate-lote-details">
+                          {lote.certificates.map((certificate) => {
+                            const canManageCertificate =
+                              isAdmin || isSameUid(currentUserUid, certificate.responsibleUid);
+                            const updating = updatingCertificateId === certificate.id;
+
+                            return (
+                              <article key={certificate.id} className="certificate-history-card certificate-history-card-redesign">
+                                <div className="certificate-history-card-main">
+                                  <div className="certificate-history-card-icon">
+                                    <PrintshopIcon name="certificates" />
+                                  </div>
+                                  <div className="certificate-history-card-content">
+                                    <div className="certificate-history-title-row">
+                                      <div>
+                                        <strong>{certificate.studentName || "Sin alumno"}</strong>
+                                        <span>{certificate.folio || "Sin folio"} / {certificate.requestFolio || "Individual"}</span>
+                                      </div>
+                                      <StatusBadge tone={getGeneratedCertificateStatusTone(certificate.status)}>
+                                        {certificate.status}
+                                      </StatusBadge>
+                                    </div>
+                                    <div className="certificate-history-meta-grid">
+                                      <div>
+                                        <small>Fecha</small>
+                                        <strong>{certificate.issueDate ? formatCertificatePreviewDate(certificate.issueDate) : "Sin fecha"}</strong>
+                                      </div>
+                                      <div>
+                                        <small>Maestro</small>
+                                        <strong>{certificate.teacherName || "Sin maestro"}</strong>
+                                      </div>
+                                      <div>
+                                        <small>Nivel</small>
+                                        <strong>{certificate.level || "Sin nivel"}</strong>
+                                      </div>
+                                      <div>
+                                        <small>Grupo / Plantel</small>
+                                        <strong>{certificate.group || "Sin grupo"} - {certificate.campus || "Sin plantel"}</strong>
+                                      </div>
+                                      <div>
+                                        <small>QR</small>
+                                        <strong>{certificate.validationCode ? "Validable" : "Pendiente"}</strong>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="certificate-history-card-actions certificate-actions-modern">
+                                  <button
+                                    type="button"
+                                    className="visual-outline-button certificate-action-button"
+                                    disabled={!certificate.pdfUrl}
+                                    onClick={() => {
+                                      if (certificate.pdfUrl) {
+                                        window.open(certificate.pdfUrl, "_blank", "noopener,noreferrer");
+                                      }
+                                    }}
+                                  >
+                                    PDF original
+                                  </button>
+                                  <button type="button" className="visual-outline-button certificate-action-button" onClick={() => onReprintCertificate?.(certificate)}>
+                                    Reimprimir
+                                  </button>
+                                  {certificate.requestId && (
+                                    <button type="button" className="certificate-action-button" onClick={() => onOpenCertificateRequest?.(certificate)}>
+                                      Ver solicitud
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="certificate-action-button"
+                                    disabled={!canManageCertificate || updating || certificate.status === "Entregado"}
+                                    onClick={() => onMarkCertificateDelivered?.(certificate)}
+                                  >
+                                    Entregado
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="danger-table-button certificate-action-button"
+                                    disabled={!canManageCertificate || updating || certificate.status === "Cancelado"}
+                                    onClick={() => onCancelCertificate?.(certificate)}
+                                  >
+                                    Cancelar
+                                  </button>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      className="danger-table-button certificate-action-button"
+                                      disabled={updating}
+                                      onClick={() => onSoftDeleteCertificate?.(certificate)}
+                                    >
+                                      Eliminar
+                                    </button>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -15706,6 +15811,16 @@ function RequestDetailCard({
               )}
             </div>
 
+            {isCertificateLike && hasGeneratedStudentFolios && canEditOperationalFields && (
+              <div className="request-detail-note important full">
+                <strong>Esta solicitud ya tiene certificados generados</strong>
+                <p>
+                  Los cambios de plantilla, fechas o firmantes aplicarán a futuras generaciones o regeneraciones.
+                  Los certificados ya emitidos no se modifican automáticamente.
+                </p>
+              </div>
+            )}
+
             <div className="request-production-edit-grid">
               <label>
                 <span>Responsable</span>
@@ -15766,7 +15881,7 @@ function RequestDetailCard({
 
               <label>
                 <span>Fecha compromiso</span>
-                <input type="date" name="dueDate" value={requestForm.dueDate || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
+                <input type="date" name="dueDate" value={requestForm.dueDate || ""} onChange={onRequestInputChange} disabled={!canEditOperationalFields} />
               </label>
 
               {isCertificateLike && (
@@ -15785,7 +15900,7 @@ function RequestDetailCard({
 
                   <label>
                     <span>Nivel</span>
-                    <select name="level" value={requestForm.level || "No aplica"} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields}>
+                    <select name="level" value={requestForm.level || "No aplica"} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields}>
                       {levels.map((level) => (
                         <option key={level}>{level}</option>
                       ))}
@@ -15794,17 +15909,17 @@ function RequestDetailCard({
 
                   <label>
                     <span>Grupo / curso</span>
-                    <input name="group" value={requestForm.group || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input name="group" value={requestForm.group || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Maestro</span>
-                    <input name="teacherName" value={requestForm.teacherName || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input name="teacherName" value={requestForm.teacherName || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Horario</span>
-                    <input name="schedule" value={requestForm.schedule || ""} onChange={onRequestInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input name="schedule" value={requestForm.schedule || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
@@ -15814,12 +15929,12 @@ function RequestDetailCard({
 
                   <label>
                     <span>Impresos</span>
-                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
                     <span>Digitales</span>
-                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditCertificateProductionFields} />
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
                   </label>
 
                   <label>
@@ -19668,6 +19783,7 @@ function CertificateSignersView({
   const principalCount = signers.filter((signer) => signer.type === "Principal" && signer.active !== false).length;
   const teacherCount = signers.filter((signer) => signer.type === "Teacher" && signer.active !== false).length;
   const [signerFocusOpen, setSignerFocusOpen] = useState(false);
+  const [recentlySavedSignerId, setRecentlySavedSignerId] = useState("");
 
   function openSignerFocus(signer = null) {
     if (signer) {
@@ -19681,6 +19797,19 @@ function CertificateSignersView({
   function closeSignerFocus() {
     onResetSignerForm();
     setSignerFocusOpen(false);
+  }
+
+  async function handleSaveSignerSubmit(event) {
+    const result = await onSaveSigner(event);
+
+    if (result?.success) {
+      setSignerFocusOpen(false);
+
+      if (result.signerId) {
+        setRecentlySavedSignerId(result.signerId);
+        setTimeout(() => setRecentlySavedSignerId(""), 3000);
+      }
+    }
   }
 
 
@@ -19719,7 +19848,10 @@ function CertificateSignersView({
           ) : (
             <div className="signers-grid">
               {signers.map((signer) => (
-                <article key={signer.id} className={`signer-card ${signer.active === false ? "inactive" : ""}`}>
+                <article
+                  key={signer.id}
+                  className={`signer-card ${signer.active === false ? "inactive" : ""} ${signer.id === recentlySavedSignerId ? "signer-card-recently-saved" : ""}`}
+                >
                   <div className="signer-card-header">
                     <div>
                       <strong>{signer.name}</strong>
@@ -19778,7 +19910,7 @@ function CertificateSignersView({
           icon={selectedSigner ? "✎" : "＋"}
           actionLabel={selectedSigner ? "Edición" : "Alta"}
         >
-          <form className="printshop-product-form signer-form" onSubmit={onSaveSigner}>
+          <form className="printshop-product-form signer-form" onSubmit={handleSaveSignerSubmit}>
             <label>
               <span>Tipo de firmante</span>
               <select name="type" value={signerForm.type} onChange={onSignerInputChange} disabled={!isAdmin}>

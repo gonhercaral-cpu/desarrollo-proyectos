@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
 
 function sanitizeValidationCodeId(value) {
@@ -35,7 +35,19 @@ function formatValidationDate(value) {
 }
 
 function getValidationStatusConfig(status) {
-  if (status === "Cancelado") {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+
+  if (["eliminado", "anulado", "revocado"].includes(normalizedStatus)) {
+    return {
+      tone: "danger",
+      icon: "alert",
+      title: "Certificado eliminado/anulado",
+      description:
+        "Este certificado ya no aparece como activo para validacion publica.",
+    };
+  }
+
+  if (normalizedStatus === "cancelado") {
     return {
       tone: "danger",
       icon: "alert",
@@ -71,9 +83,99 @@ function getValidationCodeFromLocation() {
   const marker = "/validar-certificado/";
   const markerIndex = path.indexOf(marker);
 
-  if (markerIndex < 0) return "";
+  if (markerIndex < 0) {
+    const params = new URLSearchParams(window.location.search || "");
+    return (
+      params.get("validationCode") ||
+      params.get("codigo") ||
+      params.get("code") ||
+      params.get("folio") ||
+      params.get("token") ||
+      ""
+    );
+  }
 
   return decodeURIComponent(path.slice(markerIndex + marker.length).replace(/\/+$/, ""));
+}
+
+function normalizeValidationCodeInput(value = "") {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+
+  try {
+    const parsedUrl = new URL(rawValue);
+    const marker = "/validar-certificado/";
+    const markerIndex = parsedUrl.pathname.indexOf(marker);
+
+    if (markerIndex >= 0) {
+      return decodeURIComponent(parsedUrl.pathname.slice(markerIndex + marker.length).replace(/\/+$/, ""));
+    }
+
+    return (
+      parsedUrl.searchParams.get("validationCode") ||
+      parsedUrl.searchParams.get("codigo") ||
+      parsedUrl.searchParams.get("code") ||
+      parsedUrl.searchParams.get("folio") ||
+      parsedUrl.searchParams.get("token") ||
+      rawValue
+    );
+  } catch {
+    return rawValue;
+  }
+}
+
+function uniqueValues(values = []) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function getValidationDocumentIds(validationCode) {
+  return uniqueValues([validationCode, sanitizeValidationCodeId(validationCode)]);
+}
+
+function isVoidedCertificate(certificate) {
+  const status = String(certificate?.status || "").trim().toLowerCase();
+
+  return certificate?.deleted === true ||
+    certificate?.active === false ||
+    ["eliminado", "anulado", "revocado"].includes(status);
+}
+
+async function getFirstValidationByField(field, value) {
+  const validationQuery = query(
+    collection(db, "publicCertificateValidations"),
+    where(field, "==", value),
+    limit(1)
+  );
+  const snapshot = await getDocs(validationQuery);
+
+  if (snapshot.empty) return null;
+
+  const validationDoc = snapshot.docs[0];
+  return {
+    id: validationDoc.id,
+    ...validationDoc.data(),
+  };
+}
+
+async function findPublicCertificateValidation(validationCode) {
+  const documentIds = getValidationDocumentIds(validationCode);
+
+  for (const validationId of documentIds) {
+    const validationRef = doc(db, "publicCertificateValidations", validationId);
+    const validationSnap = await getDoc(validationRef);
+
+    if (validationSnap.exists()) {
+      return {
+        id: validationSnap.id,
+        ...validationSnap.data(),
+      };
+    }
+  }
+
+  return (
+    await getFirstValidationByField("validationCode", validationCode) ||
+    await getFirstValidationByField("folio", validationCode)
+  );
 }
 
 function ValidationIcon({ name = "check" }) {
@@ -102,7 +204,7 @@ function ValidationIcon({ name = "check" }) {
 
 export default function CertificateValidation({ validationCode: validationCodeProp }) {
   const validationCode = useMemo(
-    () => String(validationCodeProp || getValidationCodeFromLocation() || "").trim(),
+    () => normalizeValidationCodeInput(validationCodeProp || getValidationCodeFromLocation() || ""),
     [validationCodeProp]
   );
   const [loading, setLoading] = useState(true);
@@ -123,19 +225,17 @@ export default function CertificateValidation({ validationCode: validationCodePr
         setLoading(true);
         setError("");
 
-        const validationId = sanitizeValidationCodeId(validationCode);
-        const validationRef = doc(db, "publicCertificateValidations", validationId);
-        const validationSnap = await getDoc(validationRef);
+        const nextCertificate = await findPublicCertificateValidation(validationCode);
 
         if (cancelled) return;
 
-        if (!validationSnap.exists()) {
+        if (!nextCertificate) {
           setCertificate(null);
           setError("");
         } else {
           setCertificate({
-            id: validationSnap.id,
-            ...validationSnap.data(),
+            ...nextCertificate,
+            status: isVoidedCertificate(nextCertificate) ? "Eliminado" : nextCertificate.status,
           });
         }
       } catch (loadError) {
@@ -143,7 +243,11 @@ export default function CertificateValidation({ validationCode: validationCodePr
 
         if (!cancelled) {
           setCertificate(null);
+          setError("Error temporal o falta de conexion.");
           setError("No se pudo consultar la validación. Inténtalo de nuevo más tarde.");
+        }
+        if (!cancelled) {
+          setError("Error temporal o falta de conexion.");
         }
       } finally {
         if (!cancelled) {
@@ -181,7 +285,7 @@ export default function CertificateValidation({ validationCode: validationCodePr
         ) : error ? (
           <div className="certificate-validation-state danger">
             <div className="certificate-validation-icon"><ValidationIcon name="alert" /></div>
-            <h1>No se pudo validar</h1>
+            <h1>Error temporal o falta de conexion</h1>
             <p>{error}</p>
             <small>Código consultado: {validationCode || "Sin código"}</small>
           </div>

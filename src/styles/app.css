@@ -19491,6 +19491,12 @@ body:has(.field-mode-page) .main-content {
   opacity: 0.65;
 }
 
+.signer-card-recently-saved {
+  border-color: var(--primary, #0f4fc4) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, #0f4fc4) 25%, transparent) !important;
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
 .signer-card-header,
 .signer-card-footer {
   display: flex;
@@ -62456,6 +62462,55 @@ html[data-theme="dark"] .purchase-detail-grid strong {
   display: grid !important;
   gap: 14px !important;
   margin-top: 18px !important;
+}
+
+.certificate-lote-group {
+  display: grid;
+  gap: 10px;
+}
+
+.certificate-lote-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border, #dbe6f4);
+  border-radius: 16px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  padding: 14px 16px;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+
+.certificate-lote-summary-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.certificate-lote-summary-main span {
+  color: var(--muted, #526176);
+  font-size: 12px;
+}
+
+.certificate-lote-summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted, #526176);
+}
+
+.certificate-lote-details {
+  display: grid;
+  gap: 14px;
+  padding-left: 18px;
+  border-left: 3px solid var(--border, #dbe6f4);
+  margin-left: 6px;
 }
 
 .certificate-history-card-redesign,

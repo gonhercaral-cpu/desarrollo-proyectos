@@ -51,6 +51,28 @@ const STATUS_OPTIONS = [
 const MAX_FILES = 6;
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024;
 const MAX_VIDEO_SIZE = 120 * 1024 * 1024;
+const MAX_DOCUMENT_SIZE = 25 * 1024 * 1024;
+
+const GENERIC_FILE_TYPES = new Set(["", "application/octet-stream"]);
+const ALLOWED_EVIDENCE_TYPES = {
+  png: ["image/png"],
+  jpg: ["image/jpeg"],
+  jpeg: ["image/jpeg"],
+  webp: ["image/webp"],
+  gif: ["image/gif"],
+  pdf: ["application/pdf"],
+  doc: ["application/msword"],
+  docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ppt: ["application/vnd.ms-powerpoint"],
+  pptx: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  xls: ["application/vnd.ms-excel"],
+  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  mp4: ["video/mp4"],
+  mov: ["video/quicktime"],
+  webm: ["video/webm"],
+};
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm"]);
 
 const EMPTY_FORM = {
   module: "",
@@ -264,12 +286,38 @@ function sortReportsByDate(a, b) {
   return second - first;
 }
 
+function getFileExtension(fileName = "") {
+  const parts = String(fileName || "").trim().split(".");
+  return parts.length > 1 ? parts.pop().toLowerCase() : "";
+}
+
+function isGenericFileType(type = "") {
+  return GENERIC_FILE_TYPES.has(String(type || "").toLowerCase());
+}
+
+function hasAllowedEvidenceType(file) {
+  const extension = getFileExtension(file?.name);
+  const allowedMimeTypes = ALLOWED_EVIDENCE_TYPES[extension];
+  const mimeType = String(file?.type || "").toLowerCase();
+
+  if (!allowedMimeTypes) return false;
+  if (isGenericFileType(mimeType)) return true;
+
+  return allowedMimeTypes.includes(mimeType);
+}
+
 function isImageFile(file) {
-  return file?.type?.startsWith("image/");
+  const extension = getFileExtension(file?.name);
+  const mimeType = String(file?.type || "").toLowerCase();
+
+  return IMAGE_EXTENSIONS.has(extension) && (mimeType.startsWith("image/") || isGenericFileType(mimeType));
 }
 
 function isVideoFile(file) {
-  return file?.type?.startsWith("video/");
+  const extension = getFileExtension(file?.name);
+  const mimeType = String(file?.type || "").toLowerCase();
+
+  return VIDEO_EXTENSIONS.has(extension) && (mimeType.startsWith("video/") || isGenericFileType(mimeType));
 }
 
 function getEvidenceKind(type = "") {
@@ -284,6 +332,7 @@ function safeFileName(fileName = "archivo") {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9._-]/g, "-")
     .replace(/-+/g, "-")
+    .toLowerCase()
     .slice(0, 90);
 
   return cleanName || "archivo";
@@ -294,9 +343,9 @@ function validateSelectedFiles(files) {
     return `Puedes subir máximo ${MAX_FILES} evidencias por reporte.`;
   }
 
-  const invalidType = files.find((file) => !isImageFile(file) && !isVideoFile(file));
+  const invalidType = files.find((file) => !hasAllowedEvidenceType(file));
   if (invalidType) {
-    return "Solo se permiten evidencias en imagen o video.";
+    return "Tipo de archivo no permitido. Solo se permiten imagenes, PDF, Word, PowerPoint, Excel o video.";
   }
 
   const oversizedImage = files.find((file) => isImageFile(file) && file.size > MAX_IMAGE_SIZE);
@@ -307,6 +356,11 @@ function validateSelectedFiles(files) {
   const oversizedVideo = files.find((file) => isVideoFile(file) && file.size > MAX_VIDEO_SIZE);
   if (oversizedVideo) {
     return "Cada video debe pesar máximo 120 MB.";
+  }
+
+  const oversizedDocument = files.find((file) => !isImageFile(file) && !isVideoFile(file) && file.size > MAX_DOCUMENT_SIZE);
+  if (oversizedDocument) {
+    return "Cada archivo debe pesar maximo 25 MB.";
   }
 
   return "";
@@ -1056,7 +1110,7 @@ export default function BugReports() {
                 <label className="bug-dropzone-redesign">
                   <input
                     type="file"
-                    accept="image/*,video/mp4,video/quicktime,video/webm"
+                    accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
                     multiple
                     onChange={handleFileSelection}
                   />

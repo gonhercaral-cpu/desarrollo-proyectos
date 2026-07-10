@@ -56,6 +56,32 @@ const CLOSED_STATUSES = [
   "Archivado",
 ];
 
+const PROJECT_EVIDENCE_ACCEPT = [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".ppt",
+  ".pptx",
+  ".xls",
+  ".xlsx",
+  ".txt",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+].join(",");
+
 export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const { profile, firebaseUser, isAdmin } = useAuth();
 
@@ -1277,6 +1303,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 <input
                   type="file"
                   multiple
+                  accept={PROJECT_EVIDENCE_ACCEPT}
                   disabled={uploading || !canEditClosedProject}
                   onChange={handleUploadEvidence}
                 />
@@ -1430,6 +1457,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     <input
                       type="file"
                       multiple
+                      accept={PROJECT_EVIDENCE_ACCEPT}
                       disabled={publishingAdvance || !canEditClosedProject}
                       onChange={handleAdvanceFilesChange}
                     />
@@ -2569,6 +2597,7 @@ function getFileType(file) {
 
   if (extension === "pdf") return "pdf";
   if (extension === "xlsx" || extension === "xls") return "xlsx";
+  if (extension === "txt") return "txt";
 
   if (
     extension === "jpg" ||
@@ -2590,6 +2619,7 @@ function getFileBadgeColor(file) {
 
   if (type === "pdf") return "red";
   if (type === "xlsx") return "green";
+  if (type === "txt") return "blue";
   if (type === "jpg") return "gold";
   if (type === "doc") return "blue";
   if (type === "ppt") return "purple";

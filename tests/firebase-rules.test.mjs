@@ -99,6 +99,16 @@ async function seedBaseData() {
         requesterArea: "Otra área",
         deleted: false,
       }),
+      setDoc(doc(db, "projects", "collab-project"), {
+        title: "Collaboration",
+        status: "En proceso",
+        assignedToUid: "someone-else",
+        collaboratorIds: ["collab"],
+        collaboratorUids: ["collab"],
+        createdByUid: "admin",
+        requesterArea: "Operacion",
+        deleted: false,
+      }),
       setDoc(doc(db, "purchaseRequests", "own-purchase"), {
         itemName: "Laptop",
         requestedByUid: "requester",
@@ -390,6 +400,39 @@ describe("acceso vertical", () => {
   it("impide leer soporte técnico si usuario no pertenece a soporte", async () => {
     await assertFails(getDoc(doc(auth("requester"), "technicalAssets", "asset-1")));
     await assertSucceeds(getDoc(doc(auth("tech"), "technicalAssets", "asset-1")));
+  });
+});
+
+describe("proyectos y reportes", () => {
+  it("permite query de proyectos por collaboratorIds al colaborador asignado", async () => {
+    const q = query(
+      collection(auth("collab"), "projects"),
+      where("collaboratorIds", "array-contains", "collab")
+    );
+
+    await assertSucceeds(getDocs(q));
+  });
+
+  it("permite a colaborador crear su propio bug report con campos del formulario", async () => {
+    await assertSucceeds(
+      setDoc(doc(auth("requester"), "bugReports", "bug-own"), validBugReport({
+        steps: "Abrir Mis proyectos y subir evidencia.",
+        evidenceCount: 1,
+        imageEvidenceCount: 1,
+        videoEvidenceCount: 0,
+        adminComment: "",
+        adminHistory: [],
+        searchableText: "dashboard error requester",
+      }))
+    );
+  });
+
+  it("bloquea suplantar reporterUid en bug report", async () => {
+    await assertFails(
+      setDoc(doc(auth("requester"), "bugReports", "bug-spoof"), validBugReport({
+        reporterUid: "collab",
+      }))
+    );
   });
 });
 
@@ -689,6 +732,20 @@ describe("storage", () => {
     const fileRef = ref(storage, "evidence/owned-project/collab/proof.txt");
 
     await assertSucceeds(uploadString(fileRef, "proof", "raw", { contentType: "text/plain" }));
+  });
+
+  it("permite subir TXT con MIME generico a proyecto asignado", async () => {
+    const storage = storageAuth("collab");
+    const fileRef = ref(storage, "evidence/owned-project/collab/notas.txt");
+
+    await assertSucceeds(uploadString(fileRef, "notas", "raw", { contentType: "application/octet-stream" }));
+  });
+
+  it("bloquea extension no permitida como evidencia de proyecto", async () => {
+    const storage = storageAuth("collab");
+    const fileRef = ref(storage, "evidence/owned-project/collab/proof.exe");
+
+    await assertFails(uploadString(fileRef, "proof", "raw", { contentType: "application/octet-stream" }));
   });
 
   it("permite al colaborador de apoyo subir PDF de certificado", async () => {

@@ -208,6 +208,38 @@ service firebase.storage {
       return request.resource.size < 25 * 1024 * 1024;
     }
 
+    function isGenericContentType() {
+      return request.resource.contentType == ""
+        || request.resource.contentType == "application/octet-stream";
+    }
+
+    function hasProjectEvidenceExtension(fileName) {
+      return fileName.matches('.*\\.(png|jpg|jpeg|webp|pdf|doc|docx|ppt|pptx|xls|xlsx|txt)$');
+    }
+
+    function isAllowedProjectEvidenceContentType() {
+      return request.resource.contentType in [
+          "image/png",
+          "image/jpeg",
+          "image/webp",
+          "application/pdf",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.ms-powerpoint",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "application/vnd.ms-excel",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "text/plain"
+        ]
+        || isGenericContentType();
+    }
+
+    function validProjectEvidenceFile(fileName) {
+      return validEvidenceSize()
+        && hasProjectEvidenceExtension(fileName)
+        && isAllowedProjectEvidenceContentType();
+    }
+
 
 
     function ideaDocumentPath(ideaId) {
@@ -288,13 +320,46 @@ service firebase.storage {
         );
     }
 
-    function validBugReportEvidenceFile() {
+    function hasBugReportEvidenceExtension(fileName) {
+      return fileName.matches('.*\\.(png|jpg|jpeg|webp|gif|pdf|doc|docx|ppt|pptx|xls|xlsx|mp4|mov|webm)$');
+    }
+
+    function isBugReportImageType() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
+        || isGenericContentType();
+    }
+
+    function isBugReportVideoType() {
+      return request.resource.contentType in ['video/mp4', 'video/quicktime', 'video/webm']
+        || isGenericContentType();
+    }
+
+    function isBugReportDocumentType() {
+      return request.resource.contentType in [
+          "application/pdf",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.ms-powerpoint",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "application/vnd.ms-excel",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ]
+        || isGenericContentType();
+    }
+
+    function validBugReportEvidenceFile(fileName) {
       return (
-          request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
+          fileName.matches('.*\\.(png|jpg|jpeg|webp|gif)$')
+          && isBugReportImageType()
           && request.resource.size < 15 * 1024 * 1024
         ) || (
-          request.resource.contentType in ['video/mp4', 'video/quicktime', 'video/webm']
+          fileName.matches('.*\\.(mp4|mov|webm)$')
+          && isBugReportVideoType()
           && request.resource.size < 120 * 1024 * 1024
+        ) || (
+          fileName.matches('.*\\.(pdf|doc|docx|ppt|pptx|xls|xlsx)$')
+          && isBugReportDocumentType()
+          && request.resource.size < 25 * 1024 * 1024
         );
     }
 
@@ -429,7 +494,7 @@ service firebase.storage {
         && hasProfile()
         && request.auth.uid == userUid
         && canAccessProject(projectId)
-        && validEvidenceSize();
+        && validProjectEvidenceFile(fileName);
 
       allow update, delete: if false;
     }
@@ -444,7 +509,7 @@ service firebase.storage {
       allow create: if signedIn()
         && hasProfile()
         && canAccessProject(projectId)
-        && validEvidenceSize();
+        && validProjectEvidenceFile(fileName);
 
       allow update, delete: if false;
     }
@@ -570,7 +635,7 @@ service firebase.storage {
       allow create: if signedIn()
         && hasProfile()
         && request.auth.uid == userUid
-        && validBugReportEvidenceFile();
+        && validBugReportEvidenceFile(fileName);
 
       allow update: if false;
 

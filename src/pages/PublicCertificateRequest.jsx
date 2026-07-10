@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, getDocs, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
   acceptStudentSuggestion,
   keepStudentOriginal,
   prepareStudentNameReview
 } from "../utils/nameCorrectionUtils";
+import { findStrictMatchingCertificateTemplates } from "../utils/certificateTemplateMatching";
 
 const CAMPUS_OPTIONS = [
   "Plaza Estrella",
@@ -91,6 +92,18 @@ function normalizePublicSigner(signer) {
     deleted: signer?.deleted === true,
     signatureUrl: String(signer?.signatureUrl || ""),
     signatureDataUrl: String(signer?.signatureDataUrl || "")
+  };
+}
+
+function normalizePublicCertificateTemplate(template) {
+  return {
+    id: template?.id || "",
+    name: String(template?.name || "").trim(),
+    level: String(template?.level || "No aplica"),
+    programName: String(template?.programName || "").trim(),
+    audience: template?.audience === "Kids" || template?.audience === "Otro" ? template.audience : "Adultos",
+    certificateType: template?.certificateType === "Diploma" ? "Diploma" : "Certificado",
+    active: template?.active !== false,
   };
 }
 
@@ -189,6 +202,7 @@ export default function PublicCertificateRequest() {
   const [schedule, setSchedule] = useState("");
   const [notes, setNotes] = useState("");
   const [certificateSigners, setCertificateSigners] = useState([]);
+  const [certificateTemplates, setCertificateTemplates] = useState([]);
 
   const [defaultStudentDeliveryType, setDefaultStudentDeliveryType] = useState("Impreso");
   const [bulkNames, setBulkNames] = useState("");
@@ -229,6 +243,35 @@ export default function PublicCertificateRequest() {
     }
 
     loadCertificateSigners();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCertificateTemplates() {
+      try {
+        const templatesQuery = query(collection(db, "certificateTemplates"), where("active", "==", true));
+        const snapshot = await getDocs(templatesQuery);
+        const nextTemplates = snapshot.docs.map((templateDoc) =>
+          normalizePublicCertificateTemplate({ id: templateDoc.id, ...templateDoc.data() })
+        );
+
+        if (active) {
+          setCertificateTemplates(nextTemplates);
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar las plantillas de certificado:", err);
+        if (active) {
+          setCertificateTemplates([]);
+        }
+      }
+    }
+
+    loadCertificateTemplates();
 
     return () => {
       active = false;
@@ -409,6 +452,18 @@ export default function PublicCertificateRequest() {
       const matchedTeacherSigner = findPublicSignerByName(activeTeacherSigners, cleanTeacherName);
       const certificateIssueDate = requestedDeliveryDate || requestDate;
 
+      const templateMatchCandidates = findStrictMatchingCertificateTemplates(
+        certificateTemplates,
+        {
+          level,
+          certificateTemplateProgramName: selectedCourseOption?.programName || cleanCourseLevel,
+          certificateTemplateAudience: selectedCourseOption?.audience || "Adultos",
+          requestType: CERTIFICATE_TYPE
+        },
+        null
+      );
+      const matchedTemplate = templateMatchCandidates.length === 1 ? templateMatchCandidates[0] : null;
+
       const docRef = await addDoc(collection(db, "printRequests"), {
         folio,
         productId: "",
@@ -436,11 +491,11 @@ export default function PublicCertificateRequest() {
         requestedDeliveryDate: requestedDeliveryDate || "",
 
         certificateIssueDate,
-        certificateTemplateId: "",
-        certificateTemplateName: "",
-        certificateTemplateLevel: level,
-        certificateTemplateProgramName: selectedCourseOption?.programName || cleanCourseLevel,
-        certificateTemplateAudience: selectedCourseOption?.audience || "Adultos",
+        certificateTemplateId: matchedTemplate?.id || "",
+        certificateTemplateName: matchedTemplate?.name || "",
+        certificateTemplateLevel: matchedTemplate?.level || level,
+        certificateTemplateProgramName: matchedTemplate?.programName || selectedCourseOption?.programName || cleanCourseLevel,
+        certificateTemplateAudience: matchedTemplate?.audience || selectedCourseOption?.audience || "Adultos",
         certificateTemplateBodyText: "",
         certificateTemplateBodySegments: [],
         certificateTemplateCustomTexts: [],
