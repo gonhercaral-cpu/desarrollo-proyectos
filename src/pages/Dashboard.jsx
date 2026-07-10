@@ -3355,6 +3355,16 @@ function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isM
 }
 
 
+function MessagesEmptyConversationState() {
+  return (
+    <div className="workspace-empty-state messages-empty-state chat-empty-thread chat-empty-watermark">
+      <div className="chat-empty-watermark-pattern" aria-hidden="true" />
+      <strong>Selecciona una conversación</strong>
+      <p>El historial del chat aparecerá aquí.</p>
+    </div>
+  );
+}
+
 function InternalMessages({
   profile,
   isAdmin = false,
@@ -4838,11 +4848,7 @@ function InternalMessages({
         <section className="chat-thread-panel">
           {conversationType === "direct" ? (
             !selectedRecipient ? (
-              <div className="workspace-empty-state messages-empty-state chat-empty-thread chat-empty-watermark">
-                <div className="chat-empty-watermark-pattern" aria-hidden="true" />
-                <strong>Selecciona una conversación</strong>
-                <p>El historial del chat aparecerá aquí.</p>
-              </div>
+              <MessagesEmptyConversationState />
             ) : (
               <>
                 <div className="chat-thread-header">
@@ -5046,10 +5052,7 @@ function InternalMessages({
               </>
             )
           ) : !selectedDepartmentConversation ? (
-            <div className="workspace-empty-state messages-empty-state chat-empty-thread">
-              <strong>Selecciona un departamento</strong>
-              <p>El historial del chat grupal aparecerá aquí.</p>
-            </div>
+            <MessagesEmptyConversationState />
           ) : (
             <>
               <div className="chat-thread-header department-thread-header">
