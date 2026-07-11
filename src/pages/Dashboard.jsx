@@ -37,7 +37,13 @@ import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage
 import { getPastedImageFiles } from "../utils/clipboardAttachments";
 import MessageAudioPlayer from "../components/MessageAudioPlayer";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
-import { userBelongsToDepartmentId } from "../utils/departmentMembership";
+import { normalizeDepartmentId, userBelongsToDepartmentId } from "../utils/departmentMembership";
+import {
+  subscribeToUserNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  getNotificationVisual,
+} from "../services/notificationsService";
 
 // Módulo en desarrollo: reactivar cambiando este valor a true.
 const ENABLE_UNIFI_CAMERAS_MODULE = false;
@@ -647,6 +653,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
           unreadMessagesCount={unreadMessagesCount}
           unreadAnnouncementsCount={unreadAnnouncementsCount}
           onOpenModule={goToPage}
+          onOpenProject={openProject}
         />
       );
     }
@@ -3668,8 +3675,46 @@ function InternalMessages({
   );
   const selectedConversation =
     filteredConversations.find((conversation) => conversation.participantId === selectedConversationId) || null;
+  const normalizedSelectedDepartmentId = normalizeDepartmentId(selectedDepartmentId) || "";
+  const selectedDepartmentOption =
+    departmentOptions.find((department) => normalizeDepartmentId(department) === normalizedSelectedDepartmentId) || null;
   const selectedDepartmentConversation =
-    filteredDepartmentConversations.find((conversation) => conversation.departmentId === selectedDepartmentId) || null;
+    departmentConversations.find((conversation) => normalizeDepartmentId(conversation.departmentId) === normalizedSelectedDepartmentId) ||
+    (selectedDepartmentOption
+      ? {
+          departmentId: normalizedSelectedDepartmentId,
+          departmentName: selectedDepartmentOption.name,
+          normalizedName: selectedDepartmentOption.normalizedName,
+          memberCount: selectedDepartmentOption.memberCount || 0,
+          messages: [],
+          unreadCount: 0,
+          lastMessage: null,
+        }
+      : null);
+  const selectedDepartmentName =
+    selectedDepartmentOption?.name ||
+    selectedDepartmentConversation?.departmentName ||
+    selectedDepartmentConversation?.name ||
+    "Departamento";
+  const selectedDepartmentNormalizedName =
+    selectedDepartmentOption?.normalizedName ||
+    selectedDepartmentConversation?.normalizedName ||
+    normalizeText(selectedDepartmentName);
+  const selectedDepartmentTarget = normalizedSelectedDepartmentId && (selectedDepartmentOption || selectedDepartmentConversation)
+    ? {
+        id: normalizedSelectedDepartmentId,
+        departmentId: normalizedSelectedDepartmentId,
+        name: selectedDepartmentName,
+        departmentName: selectedDepartmentName,
+        normalizedName: selectedDepartmentNormalizedName,
+      }
+    : null;
+  const userCanAccessSelectedDepartment = Boolean(
+    !normalizedSelectedDepartmentId ||
+      isAdmin ||
+      userBelongsToDepartmentId(profile, normalizedSelectedDepartmentId) ||
+      userBelongsToDepartment(profile, selectedDepartmentNormalizedName)
+  );
   const selectedMessages = selectedConversation
     ? selectedConversation.messages
         .slice()
@@ -3711,7 +3756,7 @@ function InternalMessages({
     ? `${activeLastMessage.id || ""}:${getMillisFromFirestoreDate(activeLastMessage.createdAt)}:${getMillisFromFirestoreDate(activeLastMessage.updatedAt)}`
     : "";
   const activeChatTitle = conversationType === "department"
-    ? selectedDepartmentConversation?.departmentName || "Departamento"
+    ? selectedDepartmentName
     : selectedRecipient?.name || selectedRecipient?.email || "Conversación";
   const activeChatSubtitle = conversationType === "department"
     ? `${selectedDepartmentConversation?.memberCount || 0} integrante(s) incluidos`
@@ -3728,7 +3773,7 @@ function InternalMessages({
   const activeChatTypeLabel = conversationType === "department" ? "Chat por departamento" : "Chat individual";
   const activeChatKey =
     conversationType === "department"
-      ? `department:${selectedDepartmentConversation?.departmentId || ""}`
+      ? `department:${normalizedSelectedDepartmentId}`
       : `direct:${selectedConversation?.participantId || selectedRecipient?.id || ""}`;
   const activeChatMuted = Boolean(mutedChats[activeChatKey]);
   const activeTypingUsers = typingStates.filter((typingState) => {
@@ -3847,7 +3892,7 @@ function InternalMessages({
       setSelectedConversationId(pendingChatKeyToOpen.slice("direct:".length));
     } else if (pendingChatKeyToOpen.startsWith("department:")) {
       setConversationType("department");
-      setSelectedDepartmentId(pendingChatKeyToOpen.slice("department:".length));
+      setSelectedDepartmentId(normalizeDepartmentId(pendingChatKeyToOpen.slice("department:".length)) || "");
     }
 
     onPendingChatKeyConsumed?.();
@@ -3875,13 +3920,13 @@ function InternalMessages({
 
     const isDepartmentChat = conversationType === "department";
     const targetId = isDepartmentChat
-      ? selectedDepartmentConversation?.departmentId
+      ? normalizedSelectedDepartmentId
       : selectedRecipient?.id;
 
     if (!targetId) return;
 
     const memberIds = isDepartmentChat
-      ? getDepartmentMemberIds(selectedDepartmentConversation, collaborators, profile, currentUserId)
+      ? getDepartmentMemberIds(selectedDepartmentTarget, collaborators, profile, currentUserId)
       : [currentUserId, targetId].filter(Boolean);
 
     try {
@@ -4172,9 +4217,17 @@ function InternalMessages({
 
     try {
       if (type === "department") {
-        const department = selectedDepartmentConversation || departmentOptions.find((item) => item.id === selectedDepartmentId);
-        if (!department?.id) {
+        const department = selectedDepartmentTarget;
+        if (!normalizedSelectedDepartmentId) {
           setMessageError("Selecciona un departamento.");
+          return;
+        }
+        if (!department) {
+          setMessageError("Cargando conversación.");
+          return;
+        }
+        if (!userCanAccessSelectedDepartment) {
+          setMessageError("No tienes acceso a este departamento.");
           return;
         }
 
@@ -4185,13 +4238,13 @@ function InternalMessages({
 
         const messageId = doc(collection(db, "departmentMessages")).id;
         const attachments = await uploadBoardAttachments([draftAttachment], {
-          folder: `dashboard/departmentMessages/${department.id}/${currentUserId}/${messageId}`,
+          folder: `dashboard/departmentMessages/${normalizedSelectedDepartmentId}/${currentUserId}/${messageId}`,
           ownerUid: currentUserId,
         });
 
         await setDoc(doc(db, "departmentMessages", messageId), {
-          departmentId: department.id,
-          departmentName: department.name || "Departamento",
+          departmentId: normalizedSelectedDepartmentId,
+          departmentName: department.name || department.departmentName || "Departamento",
           fromUserId: currentUserId,
           fromUserName: profile?.name || "Usuario",
           fromUserEmail: profile?.email || "",
@@ -4209,7 +4262,7 @@ function InternalMessages({
           updatedAt: serverTimestamp(),
         });
 
-        setSelectedDepartmentId(department.id);
+        setSelectedDepartmentId(normalizedSelectedDepartmentId);
         writeTypingState(false);
         resetDepartmentComposer();
       } else {
@@ -4440,12 +4493,20 @@ function InternalMessages({
     setMessageStatus("");
     setMessageError("");
 
-    const department = selectedDepartmentConversation || departmentOptions.find((item) => item.id === selectedDepartmentId);
-    const departmentId = department?.departmentId || department?.id || selectedDepartmentId;
+    const department = selectedDepartmentTarget;
+    const departmentId = normalizedSelectedDepartmentId;
     const cleanMessage = departmentForm.message.trim();
 
     if (!departmentId) {
       setMessageError("Selecciona un departamento.");
+      return;
+    }
+    if (!department) {
+      setMessageError("Cargando conversación.");
+      return;
+    }
+    if (!userCanAccessSelectedDepartment) {
+      setMessageError("No tienes acceso a este departamento.");
       return;
     }
 
@@ -4555,8 +4616,9 @@ function InternalMessages({
   }
 
   function handleSelectDepartmentConversation(conversation) {
+    const departmentId = normalizeDepartmentId(conversation?.departmentId || conversation) || "";
     setConversationType("department");
-    setSelectedDepartmentId(conversation.departmentId);
+    setSelectedDepartmentId(departmentId);
     setThreadSearchTerm("");
     setShowChatFilesPanel(false);
     setMessageStatus("");
@@ -4807,7 +4869,7 @@ function InternalMessages({
                   <button
                     key={conversation.departmentId}
                     type="button"
-                    className={`chat-conversation-item department-chat-item ${selectedDepartmentConversation?.departmentId === conversation.departmentId ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
+                    className={`chat-conversation-item department-chat-item ${normalizedSelectedDepartmentId === normalizeDepartmentId(conversation.departmentId) ? "active" : ""} ${conversation.unreadCount > 0 ? "unread" : ""}`}
                     onClick={() => handleSelectDepartmentConversation(conversation)}
                   >
                     <div className="chat-conversation-avatar department-chat-avatar">
@@ -5051,15 +5113,21 @@ function InternalMessages({
                 </form>
               </>
             )
+          ) : normalizedSelectedDepartmentId && !selectedDepartmentConversation ? (
+            <div className="workspace-empty-state messages-empty-state chat-empty-thread chat-empty-watermark">
+              <div className="chat-empty-watermark-pattern" aria-hidden="true" />
+              <strong>Cargando conversación</strong>
+              <p>Estamos preparando el chat del departamento.</p>
+            </div>
           ) : !selectedDepartmentConversation ? (
             <MessagesEmptyConversationState />
           ) : (
             <>
               <div className="chat-thread-header department-thread-header">
-                <div className="chat-thread-avatar department-chat-avatar">{getInitials(selectedDepartmentConversation.departmentName)}</div>
+                <div className="chat-thread-avatar department-chat-avatar">{getInitials(selectedDepartmentName)}</div>
                 <div>
                   <span>Chat por departamento</span>
-                  <h3>{selectedDepartmentConversation.departmentName}</h3>
+                  <h3>{selectedDepartmentName}</h3>
                   <small>{selectedDepartmentConversation.memberCount || 0} integrante(s) incluidos en esta conversación.</small>
                   <span className="department-chat-label">Visible para miembros del departamento y administradores</span>
                 </div>
@@ -5201,7 +5269,7 @@ function InternalMessages({
                     scheduleTypingState(Boolean(nextMessage.trim()));
                   }}
                   onKeyDown={(event) => handleComposerKeyDown(event, departmentComposerRef)}
-                  placeholder={`Escribe un mensaje para ${selectedDepartmentConversation.departmentName}...`}
+                  placeholder={`Escribe un mensaje para ${selectedDepartmentName}...`}
                   maxLength={1200}
                 />
 
@@ -5467,7 +5535,10 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
     if (!cleanName) return;
     const normalizedName = normalizeText(cleanName);
     if (!normalizedName) return;
-    const optionId = id || getDepartmentOptionId(cleanName);
+    const optionId =
+      normalizeDepartmentId({ ...raw, id: id || raw.id }) ||
+      normalizeDepartmentId(cleanName, { labelFallback: true }) ||
+      getDepartmentOptionId(cleanName);
     if (!optionsByKey.has(normalizedName)) {
       optionsByKey.set(normalizedName, {
         id: optionId,
@@ -5483,8 +5554,9 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
   (departments || []).forEach((department) => {
     const departmentName = department.name || department.title || "";
     const normalizedName = normalizeText(departmentName);
-    if (!departmentName || (!isAdmin && !userBelongsToDepartmentId(profile, department.id) && !currentUserDepartmentKeys.includes(normalizedName))) return;
-    addOption({ id: department.id || getDepartmentOptionId(departmentName), name: departmentName, source: "departments", raw: department });
+    const departmentId = normalizeDepartmentId(department) || normalizeDepartmentId(departmentName, { labelFallback: true }) || getDepartmentOptionId(departmentName);
+    if (!departmentName || (!isAdmin && !userBelongsToDepartmentId(profile, departmentId) && !currentUserDepartmentKeys.includes(normalizedName))) return;
+    addOption({ id: departmentId, name: departmentName, source: "departments", raw: department });
   });
 
   if (isAdmin) {
@@ -5507,10 +5579,16 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
 
 function buildDepartmentConversations(messages, departmentOptions, currentUserId) {
   const grouped = new Map();
+  const departmentIdByName = new Map();
 
   (departmentOptions || []).forEach((department) => {
-    grouped.set(department.id, {
-      departmentId: department.id,
+    const departmentId = normalizeDepartmentId(department) || normalizeDepartmentId(department.name, { labelFallback: true });
+    if (!departmentId) return;
+    if (department.normalizedName) {
+      departmentIdByName.set(department.normalizedName, departmentId);
+    }
+    grouped.set(departmentId, {
+      departmentId,
       departmentName: department.name,
       normalizedName: department.normalizedName,
       memberCount: department.memberCount || 0,
@@ -5521,12 +5599,18 @@ function buildDepartmentConversations(messages, departmentOptions, currentUserId
   });
 
   (messages || []).forEach((message) => {
-    const departmentId = message.departmentId || getDepartmentOptionId(message.departmentName || "Departamento");
+    const messageDepartmentName = message.departmentName || message.department || message.area || "Departamento";
+    const normalizedName = normalizeText(messageDepartmentName);
+    const departmentId =
+      departmentIdByName.get(normalizedName) ||
+      normalizeDepartmentId(message.departmentId || message.areaId || message.primaryDepartmentId) ||
+      normalizeDepartmentId(messageDepartmentName, { labelFallback: true }) ||
+      getDepartmentOptionId(messageDepartmentName);
     if (!grouped.has(departmentId)) {
       grouped.set(departmentId, {
         departmentId,
-        departmentName: message.departmentName || "Departamento",
-        normalizedName: normalizeText(message.departmentName || "Departamento"),
+        departmentName: messageDepartmentName,
+        normalizedName,
         memberCount: Array.isArray(message.memberIds) ? message.memberIds.length : 0,
         messages: [],
         unreadCount: 0,
@@ -5563,13 +5647,14 @@ function buildDepartmentConversations(messages, departmentOptions, currentUserId
 }
 
 function getDepartmentMemberIds(department, collaborators, profile, currentUserId) {
+  const departmentId = normalizeDepartmentId(department);
   const normalizedName = department?.normalizedName || normalizeText(department?.name || department?.departmentName || "");
   const userMap = new Map();
 
   [{ ...profile, id: currentUserId }, ...(collaborators || [])].forEach((user) => {
     const userId = user?.id || user?.uid || "";
     if (!userId) return;
-    if (userBelongsToDepartmentId(user, department?.departmentId || department?.id) || userBelongsToDepartment(user, normalizedName)) {
+    if (userBelongsToDepartmentId(user, departmentId) || userBelongsToDepartment(user, normalizedName)) {
       userMap.set(userId, user);
     }
   });
@@ -6286,12 +6371,50 @@ function MobileModuleDrawer({
 }
 
 
+function NotificationsSummaryIcon({ name }) {
+  const commonProps = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: "2",
+    "aria-hidden": "true",
+  };
+
+  if (name === "messages") {
+    return (
+      <svg {...commonProps}>
+        <path d="M4 5h16v11H8l-4 4z" />
+      </svg>
+    );
+  }
+
+  if (name === "announcements") {
+    return (
+      <svg {...commonProps}>
+        <path d="M3 10v4h3l4 4V6L6 10z" />
+        <path d="M14 8a4 4 0 0 1 0 8" />
+        <path d="M17 5a8 8 0 0 1 0 14" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path d="M12 3a5 5 0 0 0-5 5v2.6c0 .8-.24 1.58-.69 2.24L5 15.3c-.6.9.04 2.1 1.11 2.1h11.78c1.07 0 1.71-1.2 1.11-2.1l-1.31-1.96A4 4 0 0 1 17 11.1V8a5 5 0 0 0-5-5Z" />
+      <path d="M9.5 18.5a2.5 2.5 0 0 0 5 0" />
+    </svg>
+  );
+}
+
 function NotificationsCenter({
   profile,
   isAdmin,
   unreadMessagesCount = 0,
   unreadAnnouncementsCount = 0,
   onOpenModule,
+  onOpenProject,
 }) {
   const [marking, setMarking] = useState(false);
   const [status, setStatus] = useState("");
@@ -6322,15 +6445,41 @@ function NotificationsCenter({
       console.error("No se pudo marcar la notificación como leída:", error);
     }
 
+    if (notification.type === "project" && notification.projectId) {
+      onOpenProject?.(notification.projectId);
+      return;
+    }
+
     onOpenModule?.(notification.route || "workspace-dashboard");
   }
 
   return (
-    <section className="notifications-center-page">
-      <div className="notifications-center-hero">
-        <div>
-          <h2>Notificaciones</h2>
-          <p>Consulta avisos reales de mensajes pendientes y comunicados por confirmar.</p>
+    <section className="notifications-center-page printshop-page">
+      <section className="printshop-topbar">
+        <div className="printshop-topbar-main">
+          <span className="printshop-topbar-module-icon">
+            <svg
+              className="printshop-svg-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M12 3a5 5 0 0 0-5 5v2.6c0 .8-.24 1.58-.69 2.24L5 15.3c-.6.9.04 2.1 1.11 2.1h11.78c1.07 0 1.71-1.2 1.11-2.1l-1.31-1.96A4 4 0 0 1 17 11.1V8a5 5 0 0 0-5-5Z" />
+              <path d="M9.5 18.5a2.5 2.5 0 0 0 5 0" />
+            </svg>
+          </span>
+
+          <div className="printshop-topbar-copy">
+            <p className="section-kicker printshop-kicker">Centro de avisos</p>
+            <h1>Notificaciones</h1>
+            <p>
+              Consulta mensajes pendientes, comunicados y actualizaciones de tus proyectos en un solo lugar.
+            </p>
+          </div>
         </div>
 
         <button
@@ -6341,27 +6490,33 @@ function NotificationsCenter({
         >
           {marking ? "Marcando..." : "Marcar todas como leídas"}
         </button>
-      </div>
+      </section>
 
       {status && <div className="message-box">{status}</div>}
 
       <div className="notifications-center-grid">
         <article className="notifications-center-summary-card unread">
-          <span>Sin leer</span>
+          <span className="notifications-center-summary-icon">
+            <NotificationsSummaryIcon name="unread" />
+          </span>
+          <span className="notifications-center-summary-label">Sin leer</span>
           <strong>{formatUnreadBadgeCount(totalUnread)}</strong>
-          <p>Notificaciones reales pendientes.</p>
         </article>
 
         <article className="notifications-center-summary-card">
-          <span>Mensajes</span>
+          <span className="notifications-center-summary-icon">
+            <NotificationsSummaryIcon name="messages" />
+          </span>
+          <span className="notifications-center-summary-label">Mensajes</span>
           <strong>{formatUnreadBadgeCount(realUnreadMessagesCount || unreadMessagesCount)}</strong>
-          <p>Conversaciones pendientes.</p>
         </article>
 
         <article className="notifications-center-summary-card">
-          <span>Anuncios</span>
+          <span className="notifications-center-summary-icon">
+            <NotificationsSummaryIcon name="announcements" />
+          </span>
+          <span className="notifications-center-summary-label">Anuncios</span>
           <strong>{formatUnreadBadgeCount(realUnreadAnnouncementsCount || unreadAnnouncementsCount)}</strong>
-          <p>Comunicados por confirmar.</p>
         </article>
       </div>
 
@@ -6512,7 +6667,12 @@ function TopProfileBar({
       console.error("No se pudo marcar la notificación como leída:", error);
     }
 
-    if (notification.route) onOpenModule?.(notification.route);
+    if (notification.type === "project" && notification.projectId) {
+      onOpenProject?.(notification.projectId);
+    } else if (notification.route) {
+      onOpenModule?.(notification.route);
+    }
+
     setNotificationPanelOpen(false);
   }
 
@@ -6867,6 +7027,8 @@ async function markAllDashboardNotificationsRead({ profile, isAdmin }) {
   const currentUserId = getCurrentUserId(profile);
   if (!currentUserId) return;
 
+  await markAllNotificationsRead(currentUserId);
+
   const announcements = await getSafeCollectionItems("announcements");
   const activeAnnouncements = announcements.filter((announcement) => announcement.active !== false);
 
@@ -6927,6 +7089,16 @@ function useDashboardNotifications(profile, isAdmin = false) {
   const [departmentMessages, setDepartmentMessages] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementReadState, setAnnouncementReadState] = useState({});
+  const [projectNotifications, setProjectNotifications] = useState([]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setProjectNotifications([]);
+      return undefined;
+    }
+
+    return subscribeToUserNotifications(currentUserId, setProjectNotifications);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -7063,10 +7235,16 @@ function useDashboardNotifications(profile, isAdmin = false) {
     directMessages,
     departmentMessages,
     announcements: announcements.filter((announcement) => announcementReadState[announcement.id] !== true),
+    projectNotifications: projectNotifications.filter((notification) => notification.read !== true),
   });
 }
 
-function buildRealDashboardNotifications({ directMessages = [], departmentMessages = [], announcements = [] }) {
+function buildRealDashboardNotifications({
+  directMessages = [],
+  departmentMessages = [],
+  announcements = [],
+  projectNotifications = [],
+}) {
   const directNotifications = directMessages.map((message) => ({
     key: `direct-${message.id}`,
     type: "direct-message",
@@ -7109,8 +7287,31 @@ function buildRealDashboardNotifications({ directMessages = [], departmentMessag
     route: "workspace-dashboard",
   }));
 
+  const projectEventNotifications = projectNotifications.map((notification) => {
+    const visual = getNotificationVisual(notification.tipo);
+
+    return {
+      key: `project-${notification.id}`,
+      type: "project",
+      group: "project",
+      id: notification.id,
+      projectId: notification.projectId,
+      tone: visual.tone,
+      icon: visual.icon,
+      title: notification.titulo || "Actualización de proyecto",
+      detail: `${notification.actorName || "Un colaborador"}: ${truncateNotificationText(notification.mensaje || "", 90)}`,
+      time: formatNotificationTime(notification.createdAt),
+      dateValue: notification.createdAt,
+    };
+  });
+
   return {
-    notifications: [...directNotifications, ...departmentNotifications, ...announcementNotifications]
+    notifications: [
+      ...directNotifications,
+      ...departmentNotifications,
+      ...announcementNotifications,
+      ...projectEventNotifications,
+    ]
       .sort((a, b) => getMillisFromFirestoreDate(b.dateValue) - getMillisFromFirestoreDate(a.dateValue))
       .slice(0, 30),
   };
@@ -7161,6 +7362,11 @@ function formatNotificationTime(value) {
 async function markDashboardNotificationRead(notification, { profile }) {
   const currentUserId = getCurrentUserId(profile);
   if (!currentUserId || !notification?.id) return;
+
+  if (notification.type === "project") {
+    await markNotificationRead(notification.id);
+    return;
+  }
 
   if (notification.type === "direct-message") {
     await updateDoc(doc(db, "internalMessages", notification.id), {

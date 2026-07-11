@@ -12,6 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { createProjectEventNotifications } from "./notificationsService";
 
 const PROJECTS_COLLECTION = "projects";
 const UPDATES_COLLECTION = "projectUpdates";
@@ -669,6 +670,24 @@ export async function addProjectLog({
     metadata,
     createdAt: serverTimestamp(),
   });
+
+  try {
+    const project = await getProjectById(projectId);
+
+    if (project) {
+      await createProjectEventNotifications({
+        project,
+        type,
+        title,
+        message: description,
+        actorUid: userAuditData.uid,
+        actorName: userAuditData.name,
+        actorIsAdmin: isAdmin(currentUser),
+      });
+    }
+  } catch (error) {
+    console.warn("No se pudieron generar las notificaciones del proyecto:", error);
+  }
 }
 
 export async function getProjectLogs(projectId) {

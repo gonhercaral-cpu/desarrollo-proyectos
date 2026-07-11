@@ -83,6 +83,35 @@ async function seedBaseData() {
         active: false,
         area: "Dirección",
       }),
+      setDoc(doc(db, "users", "admin2"), {
+        name: "Admin Two",
+        email: "admin2@test.local",
+        role: "  Admin ",
+        active: true,
+        area: "Dirección",
+      }),
+      setDoc(doc(db, "users", "deptmember"), {
+        name: "Dept Member",
+        email: "deptmember@test.local",
+        role: "collaborator",
+        active: true,
+        area: "Operación",
+        departmentIds: ["dept-ops"],
+        primaryDepartmentId: "dept-ops",
+      }),
+      setDoc(doc(db, "users", "outsider"), {
+        name: "Outsider",
+        email: "outsider@test.local",
+        role: "collaborator",
+        active: true,
+        area: "Otra área",
+        departmentIds: ["dept-other"],
+        primaryDepartmentId: "dept-other",
+      }),
+      setDoc(doc(db, "departments", "dept-ops"), {
+        name: "Operación",
+        active: true,
+      }),
       setDoc(doc(db, "projects", "owned-project"), {
         title: "Owned",
         status: "En proceso",
@@ -311,6 +340,27 @@ function validPublicCertificateValidation(overrides = {}) {
     requestId: "cert-request-1",
     updatedAt: Timestamp.now(),
     publishedAt: Timestamp.now(),
+    ...overrides,
+  };
+}
+
+function validDepartmentMessage(overrides = {}) {
+  return {
+    departmentId: "dept-ops",
+    departmentName: "Operación",
+    fromUserId: "deptmember",
+    fromUserName: "Dept Member",
+    fromUserEmail: "deptmember@test.local",
+    message: "Hola equipo",
+    attachments: [],
+    replyToMessageId: "",
+    replyToFromUserId: "",
+    replyToFromUserName: "",
+    replyToMessage: "",
+    memberIds: ["deptmember"],
+    readBy: { deptmember: Timestamp.now() },
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
     ...overrides,
   };
 }
@@ -716,6 +766,84 @@ describe("configuracion de Nube AES", () => {
     });
 
     await assertFails(getDoc(doc(auth("collab"), "driveDepartmentFolders", "operations")));
+  });
+});
+
+describe("mensajeria departamental", () => {
+  it("permite a un miembro del departamento enviar mensaje", async () => {
+    await assertSucceeds(
+      setDoc(doc(auth("deptmember"), "departmentMessages", "msg-member"), validDepartmentMessage())
+    );
+  });
+
+  it("permite al administrador principal enviar mensaje aunque no pertenezca al departamento", async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(auth("admin"), "departmentMessages", "msg-admin"),
+        validDepartmentMessage({
+          fromUserId: "admin",
+          fromUserName: "Admin",
+          fromUserEmail: "admin@test.local",
+          memberIds: ["admin"],
+          readBy: { admin: Timestamp.now() },
+        })
+      )
+    );
+  });
+
+  it("permite a un segundo admin con role mal formateado (mayusculas/espacios) enviar mensaje", async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(auth("admin2"), "departmentMessages", "msg-admin2"),
+        validDepartmentMessage({
+          fromUserId: "admin2",
+          fromUserName: "Admin Two",
+          fromUserEmail: "admin2@test.local",
+          memberIds: ["admin2"],
+          readBy: { admin2: Timestamp.now() },
+        })
+      )
+    );
+  });
+
+  it("bloquea a un colaborador ajeno al departamento", async () => {
+    await assertFails(
+      setDoc(
+        doc(auth("outsider"), "departmentMessages", "msg-outsider"),
+        validDepartmentMessage({
+          fromUserId: "outsider",
+          fromUserName: "Outsider",
+          fromUserEmail: "outsider@test.local",
+          memberIds: ["outsider"],
+          readBy: { outsider: Timestamp.now() },
+        })
+      )
+    );
+  });
+
+  it("bloquea leer mensajes de un departamento ajeno, permite a miembro y a admin", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "departmentMessages", "msg-seeded"), validDepartmentMessage());
+    });
+
+    await assertFails(getDoc(doc(auth("outsider"), "departmentMessages", "msg-seeded")));
+    await assertSucceeds(getDoc(doc(auth("deptmember"), "departmentMessages", "msg-seeded")));
+    await assertSucceeds(getDoc(doc(auth("admin"), "departmentMessages", "msg-seeded")));
+  });
+
+  it("bloquea a un usuario inactivo aunque tenga role admin", async () => {
+    await assertFails(
+      setDoc(
+        doc(auth("inactive"), "departmentMessages", "msg-inactive"),
+        validDepartmentMessage({
+          fromUserId: "inactive",
+          fromUserName: "Inactive",
+          fromUserEmail: "inactive@test.local",
+          memberIds: ["inactive"],
+          readBy: { inactive: Timestamp.now() },
+        })
+      )
+    );
   });
 });
 

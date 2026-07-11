@@ -5,6 +5,12 @@ import { useAuth } from "../context/AuthContext";
 import {
   softDeleteProject,
 } from "../services/projectsService";
+import {
+  subscribeToUserNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  getNotificationVisual,
+} from "../services/notificationsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
 
 const PROJECTS_COLLECTION = "projects";
@@ -48,6 +54,10 @@ export default function MyProjects({ onOpenProject }) {
 
   const [showFullAgenda, setShowFullAgenda] = useState(false);
   const [showFullActivity, setShowFullActivity] = useState(false);
+
+  const [notifications, setNotifications] = useState([]);
+  const [showFullNotifications, setShowFullNotifications] = useState(false);
+  const [markingNotifications, setMarkingNotifications] = useState(false);
 
   function getUserId() {
     return (
@@ -114,6 +124,51 @@ export default function MyProjects({ onOpenProject }) {
     profile?.id,
     isAdmin,
   ]);
+
+  useEffect(() => {
+    const userId = getUserId();
+
+    if (!userId) {
+      setNotifications([]);
+      return undefined;
+    }
+
+    return subscribeToUserNotifications(userId, setNotifications);
+  }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id]);
+
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((notification) => notification.read !== true).length,
+    [notifications]
+  );
+
+  const visibleNotifications = showFullNotifications
+    ? notifications
+    : notifications.slice(0, 4);
+
+  async function handleOpenNotification(notification) {
+    try {
+      await markNotificationRead(notification.id);
+    } catch (error) {
+      console.error("No se pudo marcar la notificación como leída:", error);
+    }
+
+    onOpenProject(notification.projectId);
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    const userId = getUserId();
+    if (!userId) return;
+
+    setMarkingNotifications(true);
+
+    try {
+      await markAllNotificationsRead(userId);
+    } catch (error) {
+      console.error("No se pudieron marcar las notificaciones como leídas:", error);
+    } finally {
+      setMarkingNotifications(false);
+    }
+  }
 
   async function handleDeleteProject(project) {
     if (!isAdmin) {
@@ -417,6 +472,46 @@ export default function MyProjects({ onOpenProject }) {
         </main>
 
         <aside className="my-projects-side-v2">
+          <section className="my-projects-side-card-v2">
+            <SectionHeader
+              icon="🔔"
+              title={`Notificaciones${unreadNotificationsCount > 0 ? ` (${unreadNotificationsCount})` : ""}`}
+              action={unreadNotificationsCount > 0 ? (markingNotifications ? "Marcando..." : "Marcar todas") : (notifications.length > 4 ? (showFullNotifications ? "Ver menos" : "Ver todas") : undefined)}
+              onAction={unreadNotificationsCount > 0 ? handleMarkAllNotificationsRead : () => setShowFullNotifications((current) => !current)}
+            />
+
+            <div className="notifications-list my-projects-notifications-list-v2">
+              {visibleNotifications.length === 0 ? (
+                <EmptyState text="No tienes notificaciones de proyectos." />
+              ) : (
+                visibleNotifications.map((notification) => {
+                  const visual = getNotificationVisual(notification.tipo);
+
+                  return (
+                    <button
+                      type="button"
+                      key={notification.id}
+                      className={`notification-item${notification.read !== true ? " unread" : ""}`}
+                      onClick={() => handleOpenNotification(notification)}
+                    >
+                      <span className={`notification-icon notification-${visual.tone}`}>
+                        {visual.icon}
+                      </span>
+                      <span className="notification-copy">
+                        <strong>{notification.titulo || "Actualización de proyecto"}</strong>
+                        <small>{notification.actorName || "Un colaborador"}: {notification.mensaje || ""}</small>
+                      </span>
+                      <span className="notification-time">{formatRelativeNotificationTime(notification.createdAt)}</span>
+                      {notification.read !== true && (
+                        <i className={`notification-dot notification-dot-${visual.tone}`} />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
           <section className="my-projects-side-card-v2">
             <SectionHeader
               icon="▣"
@@ -914,6 +1009,25 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatRelativeNotificationTime(value) {
+  const date = parseDate(value);
+  if (!date) return "Ahora";
+
+  const diff = Math.max(Date.now() - date.getTime(), 0);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < minute) return "Ahora";
+  if (diff < hour) return `Hace ${Math.max(Math.floor(diff / minute), 1)} min`;
+  if (diff < day) return `Hace ${Math.max(Math.floor(diff / hour), 1)} h`;
+
+  const days = Math.max(Math.floor(diff / day), 1);
+  if (days < 7) return `Hace ${days} d`;
+
+  return formatPlainDate(value);
 }
 
 function formatPlainDate(value) {

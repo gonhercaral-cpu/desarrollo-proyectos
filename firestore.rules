@@ -28,8 +28,12 @@ service cloud.firestore {
       return userDoc().data.role;
     }
 
+    function normalizedRole() {
+      return role() is string ? role().lower() : role();
+    }
+
     function isAdminRole() {
-      return userExists() && role() == "admin";
+      return userExists() && normalizedRole() == "admin";
     }
 
     function isAdmin() {
@@ -117,10 +121,10 @@ service cloud.firestore {
       return hasProfile()
         && departmentName is string
         && (
-          userDoc().data.area == departmentName ||
-          userDoc().data.department == departmentName ||
-          userDoc().data.departmentName == departmentName ||
-          userDoc().data.team == departmentName ||
+          (userDoc().data.area is string && userDoc().data.area.lower() == departmentName.lower()) ||
+          (userDoc().data.department is string && userDoc().data.department.lower() == departmentName.lower()) ||
+          (userDoc().data.departmentName is string && userDoc().data.departmentName.lower() == departmentName.lower()) ||
+          (userDoc().data.team is string && userDoc().data.team.lower() == departmentName.lower()) ||
           (
             userDoc().data.departmentNames is list
             && departmentName in userDoc().data.departmentNames
@@ -577,6 +581,47 @@ service cloud.firestore {
       return isAdmin()
         && resource.data.projectId is string
         && projectExists(resource.data.projectId);
+    }
+
+    function validNotificationCreate() {
+      return hasProfile()
+        && request.resource.data.keys().hasOnly([
+          "recipientId",
+          "projectId",
+          "tipo",
+          "titulo",
+          "mensaje",
+          "actorId",
+          "actorName",
+          "read",
+          "createdAt"
+        ])
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.recipientId.size() > 0
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.projectId is string
+        && projectExists(request.resource.data.projectId)
+        && canAccessProjectId(request.resource.data.projectId)
+        && request.resource.data.tipo is string
+        && request.resource.data.tipo.size() <= 60
+        && request.resource.data.titulo is string
+        && request.resource.data.titulo.size() > 0
+        && request.resource.data.titulo.size() <= 140
+        && request.resource.data.mensaje is string
+        && request.resource.data.mensaje.size() <= 600
+        && request.resource.data.actorName is string
+        && request.resource.data.actorName.size() <= 120
+        && request.resource.data.read == false
+        && request.resource.data.createdAt is timestamp;
+    }
+
+    function validNotificationReadUpdate() {
+      return hasProfile()
+        && resource.data.recipientId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read", "readAt"])
+        && request.resource.data.read == true
+        && request.resource.data.readAt is timestamp;
     }
 
     function validInternalNoteCreate() {
@@ -2436,18 +2481,7 @@ service cloud.firestore {
         && departmentName is string
         && (
           isAdmin()
-          || userDoc().data.area == departmentName
-          || userDoc().data.department == departmentName
-          || userDoc().data.departmentName == departmentName
-          || userDoc().data.team == departmentName
-          || (
-            userDoc().data.departmentNames is list
-            && departmentName in userDoc().data.departmentNames
-          )
-          || (
-            userDoc().data.departments is list
-            && departmentName in userDoc().data.departments
-          )
+          || userHasDepartmentName(departmentName)
         );
     }
 
@@ -2704,6 +2738,16 @@ service cloud.firestore {
       allow create: if validDepartmentMessageCreate();
 
       allow update: if validDepartmentMessageReadUpdate();
+
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow get, list: if hasProfile() && resource.data.recipientId == request.auth.uid;
+
+      allow create: if validNotificationCreate();
+
+      allow update: if validNotificationReadUpdate();
 
       allow delete: if false;
     }

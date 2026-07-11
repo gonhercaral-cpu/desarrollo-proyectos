@@ -16,6 +16,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../services/firebase";
+import { normalizeRole } from "../utils/departmentMembership";
 
 const AuthContext = createContext();
 const ATTENDANCE_TOLERANCE_MINUTES = 10;
@@ -409,7 +410,7 @@ export function AuthProvider({ children }) {
     return signOut(auth);
   }
 
-  const role = profile?.role || "";
+  const role = normalizeRole(profile?.role);
 
   return (
     <AuthContext.Provider

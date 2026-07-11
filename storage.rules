@@ -32,7 +32,8 @@ service firebase.storage {
 
     function isAdmin() {
       return hasProfile()
-        && userDoc().data.role == "admin";
+        && userDoc().data.role is string
+        && userDoc().data.role.lower() == "admin";
     }
 
     match /profile-photos/{userId}/{fileName} {
