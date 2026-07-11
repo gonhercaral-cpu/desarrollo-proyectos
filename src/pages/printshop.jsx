@@ -3759,15 +3759,24 @@ export default function PrintShop() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin || printRequests.length === 0 || generatedCertificates.length === 0) return;
+    if (!isAdmin || printRequests.length === 0) return;
 
-    const staleRequests = printRequests.filter((request) =>
-      request.status === "Entregada" &&
-      !normalizedDeliveredRequestIdsRef.current.has(request.id) &&
-      generatedCertificates.some((certificate) =>
+    const staleRequests = printRequests.filter((request) => {
+      if (normalizedDeliveredRequestIdsRef.current.has(request.id)) return false;
+      const studentsWithFolios = normalizeRequestStudents(request.students || []).filter(
+        (student) => student.certificateFolio && student.validationCode
+      );
+      const missingCertificate = studentsWithFolios.some((student) =>
+        !generatedCertificates.some((certificate) =>
+          certificate.requestId === request.id &&
+          (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
+        )
+      );
+      const staleDelivered = request.status === "Entregada" && generatedCertificates.some((certificate) =>
         certificate.requestId === request.id && certificate.status === "Generado"
-      )
-    );
+      );
+      return studentsWithFolios.length > 0 && (missingCertificate || staleDelivered || request.status === "Entregada");
+    });
     if (staleRequests.length === 0) return;
 
     staleRequests.forEach((request) => normalizedDeliveredRequestIdsRef.current.add(request.id));
@@ -3775,6 +3784,13 @@ export default function PrintShop() {
       const auditUser = getAuditUser();
       for (const request of staleRequests) {
         const batch = writeBatch(db);
+        addCertificateHistoryUpserts(
+          batch,
+          request,
+          request.students || [],
+          auditUser,
+          request.status === "Entregada" ? "Entregado" : ""
+        );
         batch.update(doc(db, "printRequests", request.id), {
           students: normalizeRequestStudents(request.students || []).map((student) =>
             student.status === "Cancelado" ? student : { ...student, status: "Entregado" }
@@ -6751,6 +6767,7 @@ export default function PrintShop() {
         if (changedToDelivered && isRequestCertificateLike(currentRequest?.requestType)) {
           const batch = writeBatch(db);
           batch.update(doc(db, "printRequests", selectedRequestId), payload);
+          addCertificateHistoryUpserts(batch, { ...currentRequest, ...basePayload }, basePayload.students, auditUser, "Entregado");
           generatedCertificates
             .filter((certificate) => certificate.requestId === selectedRequestId && certificate.status !== "Cancelado")
             .forEach((certificate) => {
@@ -7010,6 +7027,130 @@ export default function PrintShop() {
     await batch.commit();
   }
 
+  function getCertificateRecordId(request, student) {
+    const existing = generatedCertificates.find((certificate) =>
+      certificate.requestId === request.id &&
+      (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
+    );
+    return existing?.id || sanitizeGeneratedCertificateId(`${request.id}-${student.id}`);
+  }
+
+  function buildGeneratedCertificateFromStudent(request, student, auditUser, status) {
+    const existing = generatedCertificates.find((certificate) =>
+      certificate.requestId === request.id &&
+      (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
+    );
+    const issueDate = getCertificateIssueDate(request);
+    const issueYear = getYearFromDateString(issueDate) || String(new Date().getFullYear());
+    return {
+      folio: student.certificateFolio,
+      validationCode: student.validationCode,
+      validationUrl: student.validationUrl || buildValidationUrl(student.validationCode),
+      studentId: student.id,
+      studentName: student.name,
+      studentDeliveryType: student.deliveryType || "Impreso",
+      campus: request.campus || "Sin plantel",
+      group: request.group || "",
+      requestId: request.id,
+      requestFolio: request.folio || "",
+      requestType: request.requestType || "Certificado",
+      productId: request.productId || "",
+      productName: request.productName || "",
+      responsibleUid: request.responsibleUid || "",
+      responsibleName: request.responsibleName || "",
+      responsibleEmail: request.responsibleEmail || "",
+      level: request.level || "No aplica",
+      programName: request.certificateTemplateProgramName || getCertificateTrackLabel(request),
+      templateId: request.certificateTemplateId || "",
+      templateName: request.certificateTemplateName || "Plantilla no especificada",
+      issueDate,
+      issueYear,
+      generatedYear: issueYear,
+      principalName: request.principalSignerName || "",
+      teacherName: request.teacherSignerName || request.teacherName || "",
+      status,
+      pdfFileName: existing?.pdfFileName || "",
+      ...(existing?.pdfUrl ? { pdfUrl: existing.pdfUrl } : {}),
+      ...(existing?.pdfStoragePath ? { pdfStoragePath: existing.pdfStoragePath } : {}),
+      generatedAt: existing?.generatedAt || serverTimestamp(),
+      generatedByUid: existing?.generatedByUid || auditUser.uid,
+      generatedByName: existing?.generatedByName || auditUser.name,
+      generatedByEmail: existing?.generatedByEmail || auditUser.email,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    };
+  }
+
+  function addCertificateHistoryUpserts(batch, request, students, auditUser, forcedStatus = "") {
+    const generatedStudents = normalizeRequestStudents(students).filter(
+      (student) => student.certificateFolio && student.validationCode
+    );
+    if (generatedStudents.length === 0) return;
+    const requestDelivered = forcedStatus === "Entregado" || request.status === "Entregada";
+    const activeStatuses = generatedStudents.map((student) =>
+      student.status === "Cancelado" ? "Cancelado" : requestDelivered ? "Entregado" : "Generado"
+    );
+    const loteStatus = activeStatuses.every((status) => status === activeStatuses[0])
+      ? activeStatuses[0]
+      : "Mixto";
+
+    batch.set(doc(db, "certificateHistoryBatches", request.id), {
+      requestId: request.id,
+      loteId: request.id,
+      requestFolio: request.folio || "",
+      certificateIds: generatedStudents.map((student) => getCertificateRecordId(request, student)),
+      certificateCount: generatedStudents.length,
+      status: loteStatus,
+      campus: request.campus || "",
+      group: request.group || "",
+      level: request.level || "No aplica",
+      templateId: request.certificateTemplateId || "",
+      templateName: request.certificateTemplateName || "",
+      issueDate: getCertificateIssueDate(request),
+      responsibleUid: request.responsibleUid || "",
+      collaboratorUid: request.collaboratorUid || "",
+      createdAt: request.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    }, { merge: true });
+
+    generatedStudents.forEach((student, index) => {
+      const certificateId = getCertificateRecordId(request, student);
+      const payload = buildGeneratedCertificateFromStudent(request, student, auditUser, activeStatuses[index]);
+      batch.set(doc(db, "generatedCertificates", certificateId), payload, { merge: true });
+      batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(student.validationCode)), buildPublicCertificateValidationPayload(payload, {
+        status: activeStatuses[index],
+        generationMode: "request",
+        updatedAt: serverTimestamp(),
+      }), { merge: true });
+    });
+  }
+
+  function addHistoryBatchStatusWrite(batch, request, changedCertificateId, nextStatus, auditUser) {
+    if (!request?.id) return;
+    const statuses = generatedCertificates
+      .filter((certificate) => certificate.requestId === request.id)
+      .map((certificate) => certificate.id === changedCertificateId ? nextStatus : certificate.status);
+    const loteStatus = statuses.length > 0 && statuses.every((status) => status === statuses[0])
+      ? statuses[0]
+      : "Mixto";
+    batch.set(doc(db, "certificateHistoryBatches", request.id), {
+      requestId: request.id,
+      loteId: request.id,
+      requestFolio: request.folio || "",
+      status: loteStatus,
+      certificateCount: statuses.length,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    }, { merge: true });
+  }
+
   async function updateSelectedRequestStudents(nextStudents, successMessage = "Lista de alumnos actualizada.") {
     const currentRequest = selectedRequest;
 
@@ -7070,19 +7211,12 @@ export default function PrintShop() {
         updatedByEmail: auditUser.email,
       });
 
-      normalizedStudents
-        .filter((student) => student.certificateFolio && student.validationCode)
-        .forEach((student) => {
-          batch.set(
-            doc(
-              db,
-              "publicCertificateValidations",
-              getRequestStudentValidationId(currentRequest, student)
-            ),
-            buildRequestStudentPublicValidationPayload(currentRequest, student),
-            { merge: true }
-          );
-        });
+      addCertificateHistoryUpserts(
+        batch,
+        { ...currentRequest, status: shouldMoveToProduction ? "En producciÃ³n" : currentRequest.status },
+        normalizedStudents,
+        auditUser
+      );
 
       await batch.commit();
       setRequestMessage(successMessage);
@@ -7116,9 +7250,7 @@ export default function PrintShop() {
 
     const auditUser = getAuditUser();
     const nowIso = new Date().toISOString();
-    const certificateId = sanitizeGeneratedCertificateId(
-      student.validationCode || student.certificateFolio || `${request.id}-${student.id}`
-    );
+    const certificateId = getCertificateRecordId(request, student);
     const existingCertificate = generatedCertificates.find(
       (certificate) => certificate.id === certificateId || certificate.validationCode === student.validationCode
     );
@@ -7195,6 +7327,7 @@ export default function PrintShop() {
     });
 
     const batch = writeBatch(db);
+    addCertificateHistoryUpserts(batch, request, nextStudents, auditUser);
     batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
     batch.set(doc(db, "publicCertificateValidations", certificateId), publicCertificatePayload, { merge: true });
     batch.update(doc(db, "printRequests", request.id), {
@@ -7363,6 +7496,7 @@ export default function PrintShop() {
     }
 
     batch.update(certificateRef, statusPayload);
+    addHistoryBatchStatusWrite(batch, request, certificate.id, nextStatus, auditUser);
 
     const publicCertificateId = sanitizeGeneratedCertificateId(
       certificate.validationCode || certificate.id || certificate.folio
@@ -7970,6 +8104,17 @@ export default function PrintShop() {
         { merge: true }
       );
     });
+    batch.set(doc(db, "certificateHistoryBatches", currentRequest.id), {
+      requestId: currentRequest.id,
+      loteId: currentRequest.id,
+      requestFolio: currentRequest.folio || "",
+      status: "Cancelado",
+      certificateCount: certificatesToCancel.length,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    }, { merge: true });
 
     try {
       setSavingStudents(true);
@@ -14781,6 +14926,14 @@ function CertificatesWorkspaceView({
       };
 
       request.students = [student];
+      await onRegisterStandaloneGeneratedCertificate({
+        request,
+        student,
+        certificateTemplate,
+        principalName: principalSigner?.name || "",
+        teacherName: teacherSigner?.name || certificateGeneratorForm.teacherName || "",
+        fileName: "",
+      });
       setStandalonePreview({
         request,
         student,

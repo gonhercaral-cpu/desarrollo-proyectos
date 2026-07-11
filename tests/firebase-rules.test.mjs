@@ -612,6 +612,21 @@ describe("certificados de imprenta", () => {
         })
       )
     );
+
+    await assertSucceeds(
+      setDoc(doc(db, "certificateHistoryBatches", "cert-request-1"), {
+        requestId: "cert-request-1",
+        loteId: "cert-request-1",
+        requestFolio: "IMP-2026-0001",
+        certificateIds: [certificateId],
+        certificateCount: 1,
+        status: "Generado",
+        updatedAt: Timestamp.now(),
+        updatedByUid: "collab",
+        updatedByName: "Collaborator",
+        updatedByEmail: "collab@test.local",
+      })
+    );
   });
 
   it("bloquea generar certificados de solicitud a colaborador no asignado", async () => {
@@ -631,6 +646,14 @@ describe("certificados de imprenta", () => {
           updatedByEmail: "requester@test.local",
         })
       )
+    );
+
+    await assertFails(
+      setDoc(doc(db, "certificateHistoryBatches", "cert-request-1"), {
+        requestId: "cert-request-1",
+        loteId: "cert-request-1",
+        status: "Generado",
+      })
     );
   });
 

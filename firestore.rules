@@ -3057,6 +3057,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /certificateHistoryBatches/{batchId} {
+      allow read: if canAccessPrintshop()
+        || canManageGeneratedCertificateRequest(resource.data.requestId);
+
+      allow create: if request.resource.data.requestId == batchId
+        && canManageGeneratedCertificateRequest(request.resource.data.requestId);
+
+      allow update: if request.resource.data.requestId == resource.data.requestId
+        && request.resource.data.requestId == batchId
+        && canManageGeneratedCertificateRequest(resource.data.requestId);
+
+      allow delete: if false;
+    }
+
     match /generatedCredentials/{credentialId} {
       allow read: if canAccessPrintshop();
 
