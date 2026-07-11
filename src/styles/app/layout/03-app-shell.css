@@ -1,0 +1,167 @@
+/* APP SHELL */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.sidebar {
+  position: relative;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 95% 18%, rgba(237, 28, 36, 0.22), transparent 34%),
+    radial-gradient(circle at 15% 95%, rgba(237, 28, 36, 0.16), transparent 30%),
+    linear-gradient(180deg, #123f8c 0%, #0a2f70 45%, #071f4f 100%);
+  color: white;
+  padding: 26px 18px;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-brand-panel {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  margin-bottom: 34px;
+}
+
+.sidebar-logo {
+  width: 165px;
+  max-width: 100%;
+  display: block;
+  margin: 0 auto 26px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: 0 12px 26px rgba(2, 12, 32, 0.18);
+}
+
+.sidebar-brand-panel h1 {
+  font-size: 19px;
+  line-height: 1.25;
+  margin: 0;
+  color: #ffffff;
+}
+
+.sidebar-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 24px 0;
+}
+
+.sidebar-brand-panel h2 {
+  font-size: 18px;
+  line-height: 1.4;
+  margin: 0;
+  color: #f1f6ff;
+}
+
+.sidebar-nav {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.sidebar-nav button {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 15px 15px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e5efff;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+  transition: 0.18s ease;
+}
+
+.sidebar-nav button:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.sidebar-nav button.active {
+  background: linear-gradient(135deg, #ffffff 0%, #eef5ff 100%);
+  color: #0a2f70;
+  box-shadow: 0 12px 24px rgba(2, 12, 32, 0.22);
+}
+
+.sidebar-nav button.active .nav-icon {
+  color: #ed1c24;
+}
+
+.nav-icon {
+  width: 24px;
+  color: currentColor;
+  font-size: 18px;
+}
+
+.sidebar-footer {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 82px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: white;
+}
+
+.sidebar-footer-icon {
+  font-size: 23px;
+}
+
+.sidebar-footer strong {
+  display: block;
+  font-size: 13px;
+}
+
+.sidebar-footer span {
+  display: block;
+  font-size: 12px;
+  color: #d5e3ff;
+}
+
+.logout-button {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 24px;
+  z-index: 1;
+  width: calc(100% - 36px);
+  background: rgba(237, 28, 36, 0.14) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 160, 160, 0.35) !important;
+  border-radius: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.logout-button:hover {
+  background: rgba(237, 28, 36, 0.24) !important;
+}
+
+.main-content {
+  padding: 30px 36px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.main-content h2 {
+  color: #0f2442;
+  font-size: 30px;
+}
+

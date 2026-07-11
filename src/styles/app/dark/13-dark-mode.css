@@ -1,0 +1,4292 @@
+/* Dark-mode finish pass: remove bright gradients and white islands inside modules. */
+html[data-theme="dark"] .topbar-theme-toggle .theme-toggle-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html[data-theme="dark"] .topbar-theme-toggle .theme-toggle-icon svg circle {
+  fill: none;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .module-topbar,
+  .module-topbar-dashboard,
+  .module-topbar-messages,
+  .module-topbar-agenda,
+  .module-topbar-ideas,
+  .module-topbar-my-projects,
+  .workspace-module-topbar,
+  .messages-module-topbar,
+  .printshop-topbar,
+  .technical-page-topbar,
+  .purchase-module-topbar,
+  .project-history-module-topbar,
+  .subscription-topbar,
+  .departments-module-topbar,
+  .bug-module-topbar,
+  .create-project-module-topbar,
+  .all-projects-module-topbar,
+  .team-agenda-hero-panel,
+  .purchase-hero-card,
+  .agenda-focused-header,
+  .purchase-focused-header
+) {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(96, 165, 250, 0.12), transparent 26%),
+    linear-gradient(135deg, #111c31 0%, #0f172a 54%, #0b1325 100%) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 20px 44px rgba(2, 8, 23, 0.34) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .module-topbar,
+  .module-topbar-dashboard,
+  .module-topbar-messages,
+  .module-topbar-agenda,
+  .module-topbar-ideas,
+  .module-topbar-my-projects,
+  .workspace-module-topbar,
+  .messages-module-topbar,
+  .printshop-topbar,
+  .technical-page-topbar,
+  .purchase-module-topbar,
+  .project-history-module-topbar,
+  .subscription-topbar,
+  .departments-module-topbar,
+  .bug-module-topbar,
+  .create-project-module-topbar,
+  .all-projects-module-topbar,
+  .team-agenda-hero-panel,
+  .purchase-hero-card
+)::before,
+html[data-theme="dark"] .main-content :is(
+  .module-topbar,
+  .module-topbar-dashboard,
+  .module-topbar-messages,
+  .module-topbar-agenda,
+  .module-topbar-ideas,
+  .module-topbar-my-projects,
+  .workspace-module-topbar,
+  .messages-module-topbar,
+  .printshop-topbar,
+  .technical-page-topbar,
+  .purchase-module-topbar,
+  .project-history-module-topbar,
+  .subscription-topbar,
+  .departments-module-topbar,
+  .bug-module-topbar,
+  .create-project-module-topbar,
+  .all-projects-module-topbar,
+  .team-agenda-hero-panel,
+  .purchase-hero-card
+)::after {
+  background: none !important;
+  background-image: none !important;
+  content: none !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .module-topbar-main,
+  .module-topbar-copy,
+  .module-topbar-title-row,
+  .module-topbar-summary-grid,
+  .module-topbar-actions,
+  .printshop-topbar-main,
+  .printshop-topbar-copy,
+  .printshop-topbar-actions,
+  .technical-topbar-main,
+  .technical-topbar-copy,
+  .technical-topbar-actions,
+  .purchase-topbar-actions,
+  .purchase-hero-content,
+  .purchase-hero-actions,
+  .team-agenda-hero-content,
+  .team-agenda-hero-actions,
+  .messages-title-row,
+  .messages-summary-grid
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .module-topbar-summary-grid .messages-summary-card,
+  .messages-summary-card,
+  .module-topbar-side-card,
+  .purchase-module-metric-card,
+  .purchase-compact-metric,
+  .team-agenda-summary-card,
+  .hero-week-pill,
+  .agenda-hero-button,
+  .purchase-hero-button,
+  .purchase-topbar-button
+) {
+  background: rgba(15, 23, 42, 0.62) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08) !important;
+}
+
+html[data-theme="dark"] .status-donut {
+  box-shadow: inset 0 0 0 1px var(--border), 0 12px 30px rgba(2, 8, 23, 0.28) !important;
+}
+
+html[data-theme="dark"] .legend-dot.legend-blue {
+  background: #60a5fa !important;
+}
+
+html[data-theme="dark"] .admin-dashboard-proposal::before {
+  background:
+    radial-gradient(80% 120% at 78% 0%, rgba(45, 212, 191, 0.08), transparent 55%),
+    radial-gradient(70% 120% at 56% 10%, rgba(96, 165, 250, 0.08), transparent 58%) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .chat-panel,
+  .chat-layout,
+  .chat-sidebar,
+  .chat-thread,
+  .chat-thread-header,
+  .chat-thread-messages,
+  .chat-composer,
+  .chat-conversation-card,
+  .conversation-list,
+  .department-chat-panel,
+  .messages-list-card,
+  .message-detail-card
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.chat-bubble) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.chat-bubble.is-own, .message-bubble.is-own, .chat-message.own .chat-bubble) {
+  background: rgba(96, 165, 250, 0.16) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .chat-conversation-avatar,
+  .chat-thread-avatar,
+  .chat-message-avatar,
+  .presence-avatar
+) {
+  background: linear-gradient(135deg, #1e3a8a, #7f1d1d) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .team-agenda-card,
+  .agenda-calendar-card,
+  .agenda-focused-card,
+  .agenda-chart-card,
+  .agenda-insights-card,
+  .agenda-insight-mini-card,
+  .agenda-compact-request-card,
+  .agenda-workload-item,
+  .agenda-tab-card,
+  .team-agenda-request-card,
+  .team-agenda-form,
+  .team-agenda-table-wrap,
+  .team-agenda-table,
+  .team-agenda-table th,
+  .team-agenda-table td,
+  .permanent-week-grid,
+  .team-agenda-permanent-day-card,
+  .team-agenda-permanent-change-box,
+  .team-agenda-permanent-days-wrapper
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .team-agenda-table th,
+  .team-agenda-table td,
+  .agenda-tab-card.active,
+  .team-agenda-permanent-day-header,
+  .agenda-chart-bar-track
+) {
+  background: var(--surface-2) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .purchase-panel-card,
+  .purchase-focused-card,
+  .purchase-alert-strip,
+  .purchase-filters-card,
+  .purchase-detail-summary-card,
+  .purchase-side-summary,
+  .purchase-focused-side,
+  .purchase-detail-side-stack,
+  .purchase-create-form,
+  .purchase-focused-form,
+  .purchase-detail-main-card,
+  .purchase-modern-row,
+  .purchase-preview-request-card,
+  .purchase-attention-list button,
+  .purchase-status-bars div,
+  .purchase-log-focused-card,
+  .purchase-admin-focused-card,
+  .purchase-inline-warning,
+  .purchase-delete-zone,
+  .purchase-log-item,
+  .purchase-log-empty,
+  .purchase-side-empty
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .purchase-filter-controls select,
+  .purchase-hero-search,
+  .purchase-topbar-search,
+  .purchase-modern-main,
+  .purchase-row-actions button
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-tabs,
+  .technical-tabs,
+  .project-history-quick-tabs,
+  .agenda-workspace-tabs
+) {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  gap: 10px !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-tabs button,
+  .technical-tabs button,
+  .project-history-quick-tabs button,
+  .agenda-workspace-tabs button,
+  .agenda-tab-card
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-tabs button.active,
+  .technical-tabs button.active,
+  .project-history-quick-tabs button.active,
+  .agenda-workspace-tabs button.active,
+  .agenda-tab-card.active
+) {
+  background: rgba(96, 165, 250, 0.18) !important;
+  color: #dbeafe !important;
+  border-color: rgba(147, 197, 253, 0.34) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .technical-attention-item-v4,
+  .technical-command-card,
+  .technical-panel,
+  .project-history-info-panel,
+  .project-history-panel
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .attachment-picker-dropzone,
+  .chat-shared-file,
+  .chat-info-section strong,
+  .chat-info-section b,
+  .chat-info-stats > div
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .schedule-cell,
+  .schedule-cell.unset,
+  .schedule-cell.normal,
+  .schedule-cell.rest,
+  .schedule-cell.approved,
+  .schedule-cell.pending,
+  .schedule-cell.rejected,
+  .agenda-modern-action-card,
+  .agenda-modern-action-meta
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.schedule-cell.normal, .agenda-modern-action-card.blue) {
+  background: rgba(96, 165, 250, 0.14) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.schedule-cell.approved, .agenda-modern-action-card.green) {
+  background: rgba(74, 222, 128, 0.12) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.schedule-cell.rest, .schedule-cell.unset) {
+  background: rgba(148, 163, 184, 0.1) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .technical-workspace-grid-v4 > button,
+  .technical-health-grid-v4 > article,
+  .technical-attention-item-v4,
+  .technical-command-card
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.technical-workspace-grid-v4 > button:hover) {
+  background: rgba(96, 165, 250, 0.14) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.agenda-modern-legend i.rest) {
+  background: rgba(148, 163, 184, 0.18) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .all-projects-empty-state,
+  .all-projects-empty-state > div,
+  .create-project-header-button.primary,
+  .dropzone,
+  .project-preview-card,
+  .required-list > div
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.required-list > div.complete) {
+  background: rgba(74, 222, 128, 0.12) !important;
+  color: #bbf7d0 !important;
+}
+
+html[data-theme="dark"] .main-content :is(.create-project-header-button.primary) {
+  background: rgba(96, 165, 250, 0.18) !important;
+  color: #dbeafe !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .module-topbar-kicker,
+  .section-kicker,
+  .printshop-kicker,
+  .focused-kicker,
+  .bug-focused-kicker,
+  .location-detail-kicker,
+  .purchase-focused-kicker,
+  .agenda-focused-eyebrow,
+  .collaborator-focused-title span,
+  .department-focused-title span
+) {
+  display: inline-flex !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin: 0 0 6px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .focused-view,
+  .technical-focused-view,
+  .printshop-focused-layout,
+  .project-detail-redesign,
+  .purchase-focused-view,
+  .agenda-focused-overlay,
+  .agenda-focused-panel,
+  .collaborator-focused-editor,
+  .department-focused-editor-card,
+  .bug-focused-panel,
+  .bug-detail-layout,
+  .location-focused-panel,
+  .request-detail-redesign-card,
+  .certificate-generator-focused-panel,
+  .credential-generator-focused,
+  .subscription-focused-view
+) {
+  background: var(--bg) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .agenda-focused-panel,
+  .agenda-focused-main,
+  .agenda-focus-sidebar,
+  .agenda-focus-summary-item,
+  .agenda-focused-section,
+  .agenda-focused-card,
+  .agenda-focused-form,
+  .collaborator-focused-main-card,
+  .collaborator-focused-side-card,
+  .department-focused-editor-card,
+  .department-focused-side,
+  .departments-helper-card,
+  .department-focused-preview,
+  .bug-detail-summary-card,
+  .bug-detail-card,
+  .bug-detail-admin-card,
+  .bug-focused-side,
+  .technical-focused-panel,
+  .technical-quick-asset-panel,
+  .technical-history-panel,
+  .technical-qr-label-panel,
+  .location-detail-hero,
+  .location-detail-actions,
+  .location-checklist-card,
+  .location-reviews-card,
+  .location-assets-card,
+  .location-maintenance-card,
+  .installation-run-detail-panel,
+  .spare-part-form-panel,
+  .request-detail-item,
+  .request-detail-note,
+  .request-detail-certificate,
+  .request-detail-certificate-header,
+  .certificate-generator-panel,
+  .credential-generator-panel,
+  .credential-preview-panel,
+  .credential-template-form-panel,
+  .project-detail-redesign .visual-card,
+  .project-detail-redesign .project-hero-overview,
+  .project-detail-redesign .hero-meta-item,
+  .project-detail-redesign .project-hero-illustration,
+  .redesigned-detail-side,
+  .redesigned-detail-side .visual-card,
+  .side-compact-card,
+  .admin-review-visual-card
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .agenda-focused-header,
+  .collaborator-focused-heading,
+  .department-focused-header,
+  .bug-focused-header,
+  .bug-detail-title-row,
+  .focused-location-header,
+  .printshop-focused-header,
+  .purchase-focused-header,
+  .project-detail-topline,
+  .location-detail-hero
+) {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(96, 165, 250, 0.12), transparent 26%),
+    linear-gradient(135deg, #111c31 0%, #0f172a 54%, #0b1325 100%) !important;
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(96, 165, 250, 0.12), transparent 26%),
+    linear-gradient(135deg, #111c31 0%, #0f172a 54%, #0b1325 100%) !important;
+  color: var(--text) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+html[data-theme="dark"] .main-content .agenda-focused-header::before,
+html[data-theme="dark"] .main-content .collaborator-focused-heading::before,
+html[data-theme="dark"] .main-content .department-focused-header::before,
+html[data-theme="dark"] .main-content .bug-focused-header::before,
+html[data-theme="dark"] .main-content .printshop-focused-header::before,
+html[data-theme="dark"] .main-content .purchase-focused-header::before,
+html[data-theme="dark"] .main-content .project-detail-topline::before {
+  background: none !important;
+  content: none !important;
+}
+
+.ideas-modern-filters {
+  display: grid !important;
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, 0.5fr)) auto !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+
+.ideas-modern-filters > *,
+.ideas-modern-filters select,
+.ideas-modern-filters input,
+.ideas-modern-clear {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.ideas-modern-clear {
+  white-space: nowrap !important;
+}
+
+@media (max-width: 1360px) {
+  .ideas-modern-filters {
+    grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(150px, 0.5fr)) !important;
+  }
+
+  .ideas-modern-clear {
+    grid-column: span 2 !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .ideas-modern-filters {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ideas-modern-clear {
+    grid-column: auto !important;
+  }
+}
+
+html[data-theme="dark"] .main-content :is(
+  .collaborators-list-header > strong,
+  .subscription-list-header > strong,
+  .subscription-toolbar strong,
+  .subscription-main-panel strong,
+  .bug-count-pill
+) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .area-chip,
+  .role-chip,
+  .status-chip
+) {
+  background: rgba(96, 165, 250, 0.14) !important;
+  color: #bfdbfe !important;
+  border-color: rgba(147, 197, 253, 0.28) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .status-inactive,
+  .status-suspended,
+  .status-archived
+) {
+  background: rgba(148, 163, 184, 0.14) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .status-active,
+  .area-teal
+) {
+  background: rgba(45, 212, 191, 0.14) !important;
+  color: #99f6e4 !important;
+  border-color: rgba(94, 234, 212, 0.3) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .role-admin,
+  .area-red
+) {
+  background: rgba(248, 113, 113, 0.14) !important;
+  color: #fecaca !important;
+  border-color: rgba(248, 113, 113, 0.32) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .department-card-visual,
+  .department-card-visual.preview
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .department-danger-action {
+  background: rgba(248, 113, 113, 0.12) !important;
+  color: #fca5a5 !important;
+  border-color: rgba(248, 113, 113, 0.32) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .bug-status-summary-list > div,
+  .bug-metric-card,
+  .bug-attention-card,
+  .bug-filter-card,
+  .bug-side-card,
+  .bug-report-card-redesign,
+  .bug-preview-card
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .bug-status-summary-list > div {
+  background: var(--surface-2) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .subscription-card strong,
+  .subscription-visible-count
+) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .collaborator-quick-summary > div {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .collaborator-quick-summary > div span {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .collaborator-quick-summary > div strong {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .agenda-focus-sidebar-header,
+  .agenda-focus-actions,
+  .team-agenda-checkbox-label.agenda-rest-toggle
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .agenda-focus-sidebar-header p,
+  .agenda-focus-sidebar-header h4,
+  .agenda-focus-actions h4,
+  .team-agenda-checkbox-label.agenda-rest-toggle
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .agenda-focus-sidebar-header p {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .agenda-focus-actions button {
+  background: rgba(96, 165, 250, 0.14) !important;
+  color: #dbeafe !important;
+  border-color: rgba(147, 197, 253, 0.28) !important;
+}
+
+html[data-theme="dark"] .main-content .department-selection-header strong {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .bug-dropzone-redesign,
+  .ideas-focused-dropzone
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .bug-dropzone-redesign strong,
+  .ideas-focused-dropzone strong
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .bug-dropzone-redesign p,
+  .bug-dropzone-redesign small,
+  .ideas-focused-dropzone p
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .bug-preview-files strong {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .collaborators-toolbar {
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, 0.45fr)) minmax(86px, auto) !important;
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  overflow: hidden !important;
+}
+
+html[data-theme="dark"] .clear-users-filter {
+  min-width: 0 !important;
+  white-space: nowrap;
+}
+
+@media (max-width: 1400px) {
+  html[data-theme="dark"] .collaborators-toolbar {
+    grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(130px, 0.5fr)) !important;
+  }
+
+  html[data-theme="dark"] .clear-users-filter {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 900px) {
+  html[data-theme="dark"] .collaborators-toolbar {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Dark-mode QA pass: project history detail, printshop/support tabs, subscriptions, idea modal. */
+html[data-theme="dark"] .main-content .project-detail-redesign {
+  padding-top: 0 !important;
+}
+
+html[data-theme="dark"] .main-content .project-detail-module-topbar.project-detail-topline,
+html[data-theme="dark"] .main-content .project-detail-topline {
+  min-height: 118px !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 0 0 18px !important;
+  padding: 20px 24px !important;
+  align-items: center !important;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(96, 165, 250, 0.12), transparent 26%),
+    linear-gradient(135deg, #111c31 0%, #0f172a 54%, #0b1325 100%) !important;
+  color: var(--text) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 20px 44px rgba(2, 8, 23, 0.34) !important;
+}
+
+html[data-theme="dark"] .main-content .project-detail-topline::after {
+  content: none !important;
+}
+
+html[data-theme="dark"] .main-content .project-detail-topline .visual-page-actions {
+  align-self: center !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .illustration-board,
+  .project-documents-upload-button,
+  .advance-composer-box,
+  .attach-evidence-chip,
+  .advance-file-chip,
+  .advance-comment,
+  .advance-comment-form,
+  .advance-comments-list,
+  .project-documents-list,
+  .advance-file-review-card
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Firmas: vista normal a ancho completo. */
+.printshop-page .printshop-signers-layout:not(.printshop-focused-layout) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+}
+
+.printshop-page .printshop-signers-layout:not(.printshop-focused-layout) > .printshop-panel:first-child {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.printshop-page .printshop-signers-layout:not(.printshop-focused-layout) .signers-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+  gap: 18px !important;
+}
+
+.printshop-page .printshop-signers-layout:not(.printshop-focused-layout) .signer-signature-preview {
+  min-height: 150px !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .advance-composer-box textarea,
+  .advance-comment-form textarea
+) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .advance-file-chip small,
+  .advance-comment small,
+  .advance-comment p
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-documents-card,
+  .project-document-card,
+  .advances-card,
+  .advance-entry,
+  .advance-file-review-card,
+  .internal-notes-admin-card,
+  .internal-notes-editor,
+  .internal-note-history-item,
+  .internal-note-preview,
+  .legacy-internal-note,
+  .empty-state
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: 0 12px 28px rgba(2, 8, 23, 0.28) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .advance-composer-box,
+  .advance-comment-form,
+  .advance-comment,
+  .advance-file-chip,
+  .project-documents-upload-button,
+  .attach-evidence-chip,
+  .selected-advance-files,
+  .internal-notes-editor textarea,
+  .advance-composer-box textarea,
+  .advance-comment-form textarea
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-documents-header,
+  .internal-notes-history-header
+) {
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-document-card strong,
+  .advance-entry-header strong,
+  .advance-file-chip strong,
+  .advance-comment strong,
+  .internal-note-history-top strong,
+  .internal-notes-history-header strong,
+  .internal-note-preview p,
+  .advance-entry > p
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .project-documents-header p,
+  .project-document-card small,
+  .advances-header p,
+  .advance-entry-meta small,
+  .advance-file-chip small,
+  .advance-entry-actions,
+  .advance-help-text,
+  .advance-comment p,
+  .advance-comment small,
+  .internal-notes-admin-help,
+  .internal-note-history-top small,
+  .empty-state p
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .subscription-topbar-main,
+  .subscription-topbar-copy,
+  .subscription-topbar-button
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .main-content .subscription-topbar-button {
+  background: rgba(15, 23, 42, 0.42) !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-heading,
+  .request-metrics-grid,
+  .printshop-catalog-metrics,
+  .inventory-hero-card,
+  .batch-quick-summary,
+  .batch-quick-summary-item,
+  .maintenance-clean-metrics,
+  .maintenance-clean-metrics article,
+  .equipment-quick-metrics,
+  .equipment-quick-metrics article,
+  .spare-parts-metrics-grid,
+  .spare-parts-metrics-grid article,
+  .installation-templates-metrics-grid,
+  .installation-templates-metrics-grid article,
+  .technical-location-metrics,
+  .technical-location-metrics article,
+  .equipment-history-summary,
+  .equipment-history-summary article,
+  .location-chip-group,
+  .technical-form-card,
+  .technical-form-section,
+  .technical-empty-state,
+  .technical-list-card,
+  .technical-table-wrap,
+  .technical-field-card,
+  .equipment-form-card,
+  .spare-part-form,
+  .installation-template-form
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .request-metrics-grid,
+  .printshop-catalog-metrics,
+  .batch-quick-summary,
+  .maintenance-clean-metrics,
+  .equipment-quick-metrics,
+  .spare-parts-metrics-grid,
+  .installation-templates-metrics-grid,
+  .technical-location-metrics,
+  .equipment-history-summary,
+  .location-chip-group
+) {
+  box-shadow: var(--shadow-soft) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-heading > div:first-child,
+  .printshop-section-heading .visual-primary-button,
+  .printshop-section-heading .visual-outline-button,
+  .location-chip-group button
+) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .location-chip-group button.active {
+  background: rgba(96, 165, 250, 0.18) !important;
+  color: #dbeafe !important;
+  border-color: rgba(147, 197, 253, 0.34) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-heading p,
+  .inventory-hero-card span,
+  .batch-quick-summary-item small,
+  .maintenance-clean-metrics p,
+  .equipment-quick-metrics small,
+  .spare-parts-metrics-grid p,
+  .installation-templates-metrics-grid p,
+  .technical-location-metrics small,
+  .equipment-history-summary small
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .ideas-focused-overlay {
+  inset: 0 0 0 305px !important;
+  width: calc(100vw - 305px) !important;
+  min-width: 0 !important;
+  padding: 26px !important;
+  place-items: center !important;
+  background: rgba(7, 15, 33, 0.58) !important;
+}
+
+html[data-theme="dark"] .app-shell.sidebar-collapsed .main-content .ideas-focused-overlay {
+  left: 88px !important;
+  width: calc(100vw - 88px) !important;
+}
+
+html[data-theme="dark"] .main-content .ideas-focused-panel {
+  width: min(1040px, calc(100% - 52px)) !important;
+  max-width: calc(100% - 52px) !important;
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 30px 90px rgba(2, 8, 23, 0.48) !important;
+}
+
+html[data-theme="dark"] .main-content .ideas-focused-header {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(96, 165, 250, 0.12), transparent 26%),
+    linear-gradient(135deg, #111c31 0%, #0f172a 54%, #0b1325 100%) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .ideas-focused-header button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .ideas-focused-header p {
+  color: var(--muted) !important;
+}
+
+@media (max-width: 900px) {
+  html[data-theme="dark"] .main-content .ideas-focused-overlay {
+    inset: 0 !important;
+    width: 100vw !important;
+    padding: 14px !important;
+  }
+
+  html[data-theme="dark"] .main-content .ideas-focused-panel {
+    width: min(100%, 1040px) !important;
+    max-width: 100% !important;
+  }
+}
+
+/* Higher-specificity dark fixes for printshop/support tab internals. */
+html[data-theme="dark"] .main-content .printshop-page .printshop-tab-redesign :is(
+  .catalog-metrics-grid,
+  .template-metrics-grid,
+  .signers-metrics-grid,
+  .printshop-logs-metrics,
+  .request-list-count-control,
+  .request-list-count-control label,
+  .request-list-count-control select,
+  .batch-inventory-helper
+),
+html[data-theme="dark"] .main-content .printshop-page .printshop-tab-redesign .printshop-catalog-hero .inventory-hero-card,
+html[data-theme="dark"] .main-content .printshop-page .printshop-inventory-page > .inventory-hero .inventory-hero-card,
+html[data-theme="dark"] .main-content .printshop-page .printshop-supplies-page > .supplies-hero-redesign .inventory-hero-card,
+html[data-theme="dark"] .main-content .printshop-page .printshop-supplies-page :is(
+  .supplies-overview-card,
+  .supplies-panel,
+  .supplies-movement-card,
+  .supplies-empty-state,
+  .supplies-filter-bar
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .printshop-tab-redesign :is(
+  .catalog-metrics-grid > *,
+  .template-metrics-grid > *,
+  .signers-metrics-grid > *,
+  .printshop-logs-metrics > *,
+  .request-metrics-grid > *,
+  .printshop-catalog-metrics > *,
+  .batch-inventory-helper strong
+),
+html[data-theme="dark"] .main-content .printshop-page .printshop-tab-redesign .inventory-hero-card :is(strong, span) {
+  background: transparent !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .printshop-tab-redesign .inventory-hero-card span,
+html[data-theme="dark"] .main-content .printshop-page .printshop-tab-redesign .batch-inventory-helper p {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .equipment-filter-bar,
+  .technical-location-filters,
+  .editable-checklist-row,
+  .editable-checklist-row input,
+  .editable-checklist-row button,
+  .technical-form-full,
+  .technical-form-full input,
+  .technical-form-full textarea,
+  .technical-form-full select,
+  .technical-checklist-panel,
+  .technical-checklist-panel input,
+  .technical-checklist-panel textarea
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .equipment-filter-bar select,
+  .equipment-filter-bar input,
+  .technical-location-filters select,
+  .technical-location-filters input
+) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page :is(
+  .batch-inventory-helper,
+  .supplies-summary-metrics,
+  .supplies-summary-metrics > div,
+  .inventory-side-help
+),
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .asset-generated-note,
+  .asset-auto-preview-card,
+  .asset-auto-preview-card > div
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page :is(
+  .batch-inventory-helper p,
+  .supplies-summary-metrics span,
+  .inventory-side-help
+),
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .asset-generated-note span,
+  .asset-generated-note p,
+  .asset-auto-preview-card small
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 .technical-form-actions .primary-button {
+  background: rgba(96, 165, 250, 0.2) !important;
+  background-image: none !important;
+  color: #dbeafe !important;
+  border: 1px solid rgba(147, 197, 253, 0.34) !important;
+}
+
+/* Uniform dark polish: chrome, tabs, signers and support headers. */
+html[data-theme="dark"] .sidebar-logo,
+html[data-theme="dark"] .sidebar-logo-button,
+html[data-theme="dark"] .sidebar-logo-button .sidebar-logo {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .notification-bell-button,
+html[data-theme="dark"] .profile-chip-button,
+html[data-theme="dark"] .topbar-theme-toggle {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .notification-bell-button:hover,
+html[data-theme="dark"] .profile-chip-button:hover,
+html[data-theme="dark"] .topbar-theme-toggle:hover {
+  background: rgba(148, 163, 184, 0.08) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-tabs button,
+  .technical-tabs button,
+  .printshop-section-tabs button span,
+  .technical-tabs button span,
+  .printshop-section-tabs .printshop-tab-icon,
+  .technical-tabs .technical-tab-icon
+) {
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-tabs button:not(.active),
+  .technical-tabs button:not(.active)
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .printshop-section-tabs button.active,
+  .technical-tabs button.active
+) {
+  background: rgba(96, 165, 250, 0.2) !important;
+  background-image: none !important;
+  color: #dbeafe !important;
+  border-color: rgba(147, 197, 253, 0.38) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-signers-section :is(
+  .printshop-section-heading h2,
+  .printshop-section-heading p,
+  .catalog-metric-card strong,
+  .catalog-metric-card span,
+  .signer-card strong,
+  .signer-card p
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-signers-section :is(
+  .printshop-section-heading p,
+  .signer-card p,
+  .signer-card small
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-signers-section :is(
+  .catalog-metric-card,
+  .catalog-metric-card > div,
+  .signer-card,
+  .signer-signature-preview,
+  .signer-form-preview
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-signers-section .catalog-metric-card > div:first-child {
+  background: rgba(96, 165, 250, 0.14) !important;
+  color: #bfdbfe !important;
+  border-color: rgba(147, 197, 253, 0.28) !important;
+}
+
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .maintenance-clean-header,
+  .field-mode-section-header,
+  .installation-template-section-header,
+  .installation-run-section-header,
+  .maintenance-clean-card-header,
+  .workspace-header,
+  .section-header-with-action
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .maintenance-clean-header h2,
+  .maintenance-clean-header h3,
+  .field-mode-section-header h2,
+  .field-mode-section-header h3,
+  .installation-template-section-header h4,
+  .installation-run-section-header h4,
+  .workspace-header h2,
+  .workspace-header h3,
+  .section-header-with-action h2,
+  .section-header-with-action h3
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .technical-support-redesign-v5 :is(
+  .maintenance-clean-header p,
+  .field-mode-section-header p,
+  .installation-template-section-header p,
+  .installation-run-section-header p,
+  .workspace-header p,
+  .section-header-with-action p
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .collaborators-main-card {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 14px 34px rgba(2, 8, 23, 0.22) !important;
+}
+
+html[data-theme="dark"] .main-content .collaborators-main-card :is(
+  .collaborators-list-header,
+  .collaborators-toolbar,
+  .collaborators-table-footer
+) {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] :is(
+  .redesigned-topbar,
+  .dashboard-topbar,
+  .topbar-actions,
+  header
+) :is(
+  .notification-bell-button,
+  .profile-chip-button,
+  .topbar-theme-toggle
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] :is(
+  .redesigned-topbar,
+  .dashboard-topbar,
+  .topbar-actions,
+  header
+) :is(
+  .notification-bell-button,
+  .profile-chip-button,
+  .topbar-theme-toggle
+):hover {
+  background: rgb(15, 23, 42) !important;
+}
+
+html[data-theme="dark"] .notification-bell-button,
+html[data-theme="dark"] .profile-chip-button,
+html[data-theme="dark"] .topbar-theme-toggle {
+  background-color: rgb(15, 23, 42) !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .topbar-actions button.notification-bell-button,
+html[data-theme="dark"] body #root .main-content .topbar-actions button.profile-chip-button,
+html[data-theme="dark"] body #root .main-content .topbar-actions button.topbar-theme-toggle {
+  background: rgb(15, 23, 42) !important;
+  background-color: rgb(15, 23, 42) !important;
+  background-image: none !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  box-shadow: none !important;
+}
+
+/* Final contrast pass for Printshop and Technical Support tabs. */
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign,
+  .printshop-dashboard-compact-layout,
+  .printshop-batches-layout,
+  .certificate-workspace-layout,
+  .printshop-signers-layout,
+  .templates-redesign-page,
+  .logs-redesign-page,
+  .product-catalog-redesign,
+  .inventory-redesign-page,
+  .supplies-redesign-page
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .maintenance-workspace-clean,
+  .technical-equipment-workspace,
+  .spare-parts-workspace,
+  .installation-templates-workspace,
+  .technical-locations-workspace,
+  .technical-register-panel,
+  .equipment-history-workspace,
+  .technical-location-layout,
+  .technical-equipment-layout,
+  .technical-register-layout
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign,
+  .printshop-tab-redesign *,
+  .printshop-dashboard-compact-layout,
+  .printshop-dashboard-compact-layout *,
+  .printshop-section-heading,
+  .printshop-section-heading *,
+  .printshop-panel,
+  .printshop-panel *,
+  .request-metric-card,
+  .request-metric-card *,
+  .catalog-metric-card,
+  .catalog-metric-card *,
+  .inventory-hero-card,
+  .inventory-hero-card *,
+  .batch-quick-summary,
+  .batch-quick-summary *,
+  .printshop-mini-heading,
+  .printshop-mini-heading *
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .technical-equipment-workspace,
+  .technical-equipment-workspace *,
+  .spare-parts-workspace,
+  .spare-parts-workspace *,
+  .installation-templates-workspace,
+  .installation-templates-workspace *,
+  .technical-locations-workspace,
+  .technical-locations-workspace *,
+  .technical-register-panel,
+  .technical-register-panel *,
+  .equipment-history-workspace,
+  .equipment-history-workspace *,
+  .equipment-page-header,
+  .equipment-page-header *,
+  .technical-panel-header,
+  .technical-panel-header *,
+  .technical-panel,
+  .technical-panel *,
+  .maintenance-clean-header,
+  .maintenance-clean-header *,
+  .equipment-history-summary,
+  .equipment-history-summary *,
+  .equipment-list-header,
+  .equipment-list-header *
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign p,
+  .printshop-tab-redesign small,
+  .printshop-tab-redesign .section-kicker,
+  .printshop-tab-redesign .printshop-kicker,
+  .printshop-tab-redesign .empty-state p,
+  .printshop-panel p,
+  .printshop-panel small,
+  .printshop-mini-heading p,
+  .catalog-metric-card span,
+  .request-metric-card span,
+  .inventory-hero-card span,
+  .batch-quick-summary-item small
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .technical-equipment-workspace p,
+  .technical-equipment-workspace small,
+  .technical-equipment-workspace .section-kicker,
+  .spare-parts-workspace p,
+  .spare-parts-workspace small,
+  .installation-templates-workspace p,
+  .installation-templates-workspace small,
+  .technical-locations-workspace p,
+  .technical-locations-workspace small,
+  .technical-register-panel p,
+  .technical-register-panel small,
+  .technical-register-panel span,
+  .equipment-history-workspace p,
+  .equipment-history-workspace small,
+  .equipment-list-location,
+  .asset-generated-note span
+) {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-section-heading,
+  .printshop-panel,
+  .request-metrics-grid,
+  .catalog-metrics-grid,
+  .printshop-catalog-metrics,
+  .inventory-hero-card,
+  .batch-quick-summary,
+  .request-list-panel-redesign,
+  .catalog-toolbar,
+  .empty-state,
+  .printshop-request-card-list,
+  .signer-card
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .equipment-page-header,
+  .technical-panel-header,
+  .technical-panel,
+  .technical-card,
+  .technical-list-card,
+  .maintenance-clean-header,
+  .maintenance-clean-card,
+  .maintenance-clean-metrics,
+  .equipment-quick-metrics,
+  .spare-parts-metrics-grid,
+  .installation-templates-metrics-grid,
+  .technical-location-metrics,
+  .equipment-history-summary,
+  .technical-register-form-card,
+  .asset-auto-preview-card,
+  .empty-state,
+  .equipment-list-card,
+  .equipment-history-card
+) {
+  background: var(--surface) !important;
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .equipment-chip,
+  .status-eliminado,
+  .status-baja
+) {
+  background: rgba(248, 113, 113, 0.14) !important;
+  color: #fecaca !important;
+  border-color: rgba(248, 113, 113, 0.32) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  strong,
+  b,
+  label
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  h1,
+  h2,
+  h3,
+  h4,
+  strong,
+  b,
+  label
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  p,
+  small,
+  .section-kicker,
+  .printshop-kicker,
+  .printshop-metrics-grid p,
+  .printshop-dashboard-compact-metrics p,
+  .printshop-dashboard-compact-layout p,
+  .batches-clean-copy p,
+  .printshop-mini-heading p
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  p,
+  small,
+  .section-kicker,
+  .technical-command-card p,
+  .technical-attention-item-v4 p,
+  .maintenance-clean-metrics p,
+  .maintenance-clean-metrics small,
+  .technical-health-grid-v4 p,
+  .technical-health-grid-v4 small
+) {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-small-empty,
+  .inventory-movement-item,
+  .inventory-form-note,
+  .inventory-side-help,
+  .supply-yield-estimate,
+  .supply-movements-table,
+  .supplies-alert-card,
+  .supplies-summary-card,
+  .supplies-empty-mini,
+  .supplies-alert-row,
+  .supplies-summary-metrics,
+  .printshop-table-wrap
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .spare-parts-header,
+  .installation-templates-header,
+  .installation-runs-header,
+  .spare-parts-list-panel,
+  .spare-part-form-panel,
+  .spare-history-panel,
+  .installation-templates-list-panel,
+  .installation-template-form-panel,
+  .installation-runs-list-panel,
+  .installation-run-form-panel,
+  .installation-run-detail-panel
+) {
+  background: var(--surface) !important;
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .inventory-movement-icon,
+  .supplies-side-icon,
+  .printshop-empty-catalog > div,
+  .printshop-small-empty > div
+),
+html[data-theme="dark"] body #root .main-content .technical-support-redesign-v5 :is(
+  .spare-part-icon,
+  .installation-template-icon,
+  .installation-run-icon
+) {
+  background: rgba(96, 165, 250, 0.16) !important;
+  color: #bfdbfe !important;
+  border-color: rgba(147, 197, 253, 0.28) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .inventory-movement-icon.green,
+  .supplies-side-icon.summary
+) {
+  background: rgba(34, 197, 94, 0.16) !important;
+  color: #bbf7d0 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .inventory-movement-icon.orange,
+  .supplies-side-icon.warning
+) {
+  background: rgba(249, 115, 22, 0.16) !important;
+  color: #fed7aa !important;
+}
+
+/* Printshop dark lock: match every tab header to Inventory terminado. */
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign > .printshop-catalog-hero,
+  .printshop-tab-redesign > .printshop-section-heading,
+  .printshop-tab-redesign > .supplies-hero,
+  .printshop-tab-redesign > .supplies-hero-redesign,
+  .printshop-tab-redesign > .printshop-requests-hero-redesign,
+  .printshop-tab-redesign > .certificates-clean-hero,
+  .printshop-batches-page > .batches-hero,
+  .printshop-certificates-workspace > .printshop-section-heading,
+  .generated-certificates-redesign > .certificates-clean-hero,
+  .certificate-templates-section > .printshop-section-heading,
+  .printshop-logs-section > .printshop-section-heading,
+  .printshop-signers-section > .printshop-section-heading
+) {
+  height: 96px !important;
+  min-height: 96px !important;
+  max-height: 96px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 16px !important;
+  padding: 16px 20px !important;
+  background: var(--surface) !important;
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 18px !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign > .printshop-catalog-hero,
+  .printshop-tab-redesign > .printshop-section-heading,
+  .printshop-tab-redesign > .supplies-hero,
+  .printshop-tab-redesign > .supplies-hero-redesign,
+  .printshop-tab-redesign > .printshop-requests-hero-redesign,
+  .printshop-tab-redesign > .certificates-clean-hero,
+  .printshop-batches-page > .batches-hero,
+  .printshop-certificates-workspace > .printshop-section-heading,
+  .generated-certificates-redesign > .certificates-clean-hero,
+  .certificate-templates-section > .printshop-section-heading,
+  .printshop-logs-section > .printshop-section-heading,
+  .printshop-signers-section > .printshop-section-heading
+) > div:first-child {
+  min-width: 0 !important;
+  display: grid !important;
+  align-content: center !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-hero,
+  .printshop-section-heading,
+  .supplies-hero,
+  .supplies-hero-redesign,
+  .printshop-requests-hero-redesign,
+  .certificates-clean-hero,
+  .batches-hero
+) :is(.section-kicker, .printshop-kicker) {
+  display: block !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 0 5px !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  color: #93c5fd !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  visibility: visible !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-hero,
+  .printshop-section-heading,
+  .supplies-hero,
+  .supplies-hero-redesign,
+  .printshop-requests-hero-redesign,
+  .certificates-clean-hero,
+  .batches-hero
+) h2 {
+  margin: 0 0 5px !important;
+  color: var(--text) !important;
+  font-family: inherit !important;
+  font-size: 24px !important;
+  font-weight: 750 !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.015em !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-hero,
+  .printshop-section-heading,
+  .supplies-hero,
+  .supplies-hero-redesign,
+  .printshop-requests-hero-redesign,
+  .certificates-clean-hero,
+  .batches-hero
+) p:not(.section-kicker):not(.printshop-kicker) {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 1 !important;
+  line-clamp: 1 !important;
+  max-width: 980px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  color: #cbd5e1 !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.35 !important;
+  text-overflow: ellipsis !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign .printshop-catalog-metrics,
+  .printshop-tab-redesign .catalog-metrics-grid,
+  .printshop-tab-redesign .request-metrics-grid,
+  .certificate-quick-summary,
+  .batch-quick-summary
+) {
+  background: var(--surface) !important;
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-tab-redesign .printshop-catalog-metrics::before,
+  .printshop-tab-redesign .catalog-metrics-grid::before,
+  .printshop-tab-redesign .request-metrics-grid::before,
+  .certificate-quick-summary > h3,
+  .batch-quick-summary > h3
+) {
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  font-family: inherit !important;
+  font-size: 18px !important;
+  font-weight: 750 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card,
+  .request-metric-card,
+  .certificate-quick-summary-item,
+  .batch-quick-summary-item
+) {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > strong,
+  .request-metric-card > strong,
+  .certificate-quick-summary-item > strong,
+  .batch-quick-summary-item > strong
+) {
+  color: var(--text) !important;
+  font-family: inherit !important;
+  font-size: 25px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > span,
+  .request-metric-card > span,
+  .request-metric-card > p,
+  .certificate-quick-summary-item > small,
+  .batch-quick-summary-item > small
+) {
+  color: #dbeafe !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+  line-height: 1.2 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > div,
+  .request-metric-card > div,
+  .certificate-quick-summary-item > span,
+  .batch-quick-summary-item > span
+) {
+  background: rgba(96, 165, 250, 0.16) !important;
+  background-image: none !important;
+  color: #bfdbfe !important;
+  border: 1px solid rgba(147, 197, 253, 0.24) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.green > div,
+  .request-metric-card.green > div,
+  .certificate-quick-summary-item.green > span,
+  .batch-quick-summary-item.green > span
+) {
+  background: rgba(34, 197, 94, 0.16) !important;
+  color: #bbf7d0 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.orange > div,
+  .request-metric-card.orange > div,
+  .certificate-quick-summary-item.orange > span,
+  .batch-quick-summary-item.orange > span
+) {
+  background: rgba(249, 115, 22, 0.16) !important;
+  color: #fed7aa !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.red > div,
+  .request-metric-card.red > div,
+  .certificate-quick-summary-item.red > span,
+  .batch-quick-summary-item.red > span
+) {
+  background: rgba(248, 113, 113, 0.16) !important;
+  color: #fecaca !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.purple > div,
+  .request-metric-card.purple > div,
+  .certificate-quick-summary-item.purple > span,
+  .batch-quick-summary-item.purple > span
+) {
+  background: rgba(192, 132, 252, 0.16) !important;
+  color: #e9d5ff !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.teal > div,
+  .request-metric-card.teal > div,
+  .certificate-quick-summary-item.teal > span,
+  .batch-quick-summary-item.teal > span
+) {
+  background: rgba(45, 212, 191, 0.14) !important;
+  color: #99f6e4 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card .printshop-svg-icon,
+  .request-metric-card .printshop-svg-icon,
+  .certificate-quick-summary-item .printshop-svg-icon,
+  .batch-quick-summary-item .printshop-svg-icon
+) {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* Printshop metric text lock: make every info card read like Lotes de producción. */
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-metrics,
+  .catalog-metrics-grid,
+  .request-metrics-grid,
+  .certificate-quick-summary,
+  .batch-quick-summary
+) :is(
+  .catalog-metric-card,
+  .request-metric-card,
+  .certificate-quick-summary-item,
+  .batch-quick-summary-item
+) {
+  color: #e5eefb !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > strong,
+  .request-metric-card > strong,
+  .certificate-quick-summary-item > strong,
+  .batch-quick-summary-item > strong
+) {
+  color: #f8fbff !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > span,
+  .request-metric-card > span,
+  .request-metric-card > p,
+  .certificate-quick-summary-item > small,
+  .batch-quick-summary-item > small
+) {
+  color: #e0f2fe !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > span,
+  .request-metric-card > span
+) {
+  display: block !important;
+  visibility: visible !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > p {
+  display: block !important;
+  visibility: visible !important;
+  font-size: 11.5px !important;
+  line-height: 1.2 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > div,
+  .request-metric-card > div
+) + span {
+  color: #e0f2fe !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-metrics,
+  .catalog-metrics-grid,
+  .request-metrics-grid,
+  .certificate-quick-summary,
+  .batch-quick-summary
+) :is(strong, span, small, p) {
+  opacity: 1 !important;
+  filter: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-metrics,
+  .catalog-metrics-grid,
+  .request-metrics-grid,
+  .certificate-quick-summary,
+  .batch-quick-summary
+) :is(.catalog-metric-card, .request-metric-card, .certificate-quick-summary-item, .batch-quick-summary-item) > :is(strong, span, small, p):not(:first-child) {
+  color: #f1f7ff !important;
+  -webkit-text-fill-color: #f1f7ff !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card > div,
+  .request-metric-card > div,
+  .certificate-quick-summary-item > span:first-child,
+  .batch-quick-summary-item > span:first-child
+) {
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* Printshop metrics: explicit structure, same visual rhythm as Lotes de producción. */
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-metrics,
+  .catalog-metrics-grid,
+  .request-metrics-grid,
+  .certificate-quick-summary,
+  .batch-quick-summary
+) {
+  display: grid !important;
+  grid-template-columns: 220px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 18px !important;
+  min-height: 104px !important;
+  padding: 22px 26px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 18px !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-metrics::before,
+  .catalog-metrics-grid::before,
+  .request-metrics-grid::before
+) {
+  content: "Resumen rápido" !important;
+  display: flex !important;
+  align-items: center !important;
+  min-height: 64px !important;
+  margin: 0 !important;
+  padding: 0 18px 0 0 !important;
+  border-right: 1px solid var(--border) !important;
+  color: #f8fbff !important;
+  -webkit-text-fill-color: #f8fbff !important;
+  font-size: 18px !important;
+  font-weight: 850 !important;
+  line-height: 1.15 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .printshop-catalog-metrics,
+  .catalog-metrics-grid,
+  .request-metrics-grid
+) > :is(.catalog-metric-card, .request-metric-card) {
+  display: grid !important;
+  grid-template-columns: 46px minmax(0, auto) !important;
+  grid-template-rows: auto auto !important;
+  grid-template-areas:
+    "icon value"
+    "icon label" !important;
+  align-items: center !important;
+  column-gap: 13px !important;
+  row-gap: 0 !important;
+  min-height: 64px !important;
+  margin: 0 !important;
+  padding: 8px 28px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-left: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metrics-grid > .request-metric-card {
+  min-height: 64px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-icon {
+  grid-area: icon !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 50% !important;
+  background: rgba(96, 165, 250, 0.16) !important;
+  color: #bfdbfe !important;
+  -webkit-text-fill-color: #bfdbfe !important;
+  border: 1px solid rgba(147, 197, 253, 0.26) !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-value {
+  grid-area: value !important;
+  display: block !important;
+  margin: 0 !important;
+  color: #f8fbff !important;
+  -webkit-text-fill-color: #f8fbff !important;
+  font-size: 25px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-label,
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-helper {
+  grid-area: label !important;
+  display: block !important;
+  margin: 0 !important;
+  color: #e0f2fe !important;
+  -webkit-text-fill-color: #e0f2fe !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-helper {
+  display: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.green,
+  .request-metric-card.green
+) .printshop-info-card-icon {
+  background: rgba(34, 197, 94, 0.16) !important;
+  color: #bbf7d0 !important;
+  -webkit-text-fill-color: #bbf7d0 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.orange,
+  .request-metric-card.orange
+) .printshop-info-card-icon {
+  background: rgba(249, 115, 22, 0.16) !important;
+  color: #fed7aa !important;
+  -webkit-text-fill-color: #fed7aa !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.red,
+  .request-metric-card.red
+) .printshop-info-card-icon {
+  background: rgba(248, 113, 113, 0.16) !important;
+  color: #fecaca !important;
+  -webkit-text-fill-color: #fecaca !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.purple,
+  .request-metric-card.purple
+) .printshop-info-card-icon {
+  background: rgba(192, 132, 252, 0.16) !important;
+  color: #e9d5ff !important;
+  -webkit-text-fill-color: #e9d5ff !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page :is(
+  .catalog-metric-card.teal,
+  .request-metric-card.teal
+) .printshop-info-card-icon {
+  background: rgba(45, 212, 191, 0.14) !important;
+  color: #99f6e4 !important;
+  -webkit-text-fill-color: #99f6e4 !important;
+}
+
+@media (max-width: 1320px) {
+  html[data-theme="dark"] body #root .main-content .printshop-page :is(
+    .printshop-catalog-metrics,
+    .catalog-metrics-grid,
+    .request-metrics-grid,
+    .certificate-quick-summary,
+    .batch-quick-summary
+  ) {
+    grid-template-columns: 1fr 1fr !important;
+    padding: 18px !important;
+  }
+
+  html[data-theme="dark"] body #root .main-content .printshop-page :is(
+    .printshop-catalog-metrics::before,
+    .catalog-metrics-grid::before,
+    .request-metrics-grid::before
+  ) {
+    grid-column: 1 / -1 !important;
+    min-height: auto !important;
+    padding: 0 0 12px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+}
+
+/* Printshop metrics S: final explicit selectors, no pseudo-elements inside :is(). */
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-catalog-metrics,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metrics-grid,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metrics-grid,
+html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary,
+html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary {
+  display: grid !important;
+  grid-template-columns: 140px repeat(auto-fit, minmax(112px, 1fr)) !important;
+  align-items: center !important;
+  gap: 0 !important;
+  min-height: 58px !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 8px 12px !important;
+  background: var(--surface) !important;
+  background-color: var(--surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-catalog-metrics::before,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metrics-grid::before,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metrics-grid::before {
+  content: "Resumen rápido" !important;
+  display: flex !important;
+  align-items: center !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  margin: 0 !important;
+  padding: 0 10px 0 0 !important;
+  border-right: 1px solid var(--border) !important;
+  border-bottom: 0 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+  line-height: 1.1 !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary > h3,
+html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary > h3 {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  margin: 0 !important;
+  padding: 0 10px 0 0 !important;
+  border-right: 1px solid var(--border) !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 850 !important;
+  line-height: 1.1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-catalog-metrics > .catalog-metric-card,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metrics-grid > .catalog-metric-card,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metrics-grid > .request-metric-card,
+html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary-item,
+html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary-item {
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+  grid-template-rows: auto auto !important;
+  grid-template-areas:
+    "icon value"
+    "icon label" !important;
+  align-items: center !important;
+  column-gap: 8px !important;
+  row-gap: 1px !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  margin: 0 !important;
+  padding: 0 10px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-left: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-icon,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metric-card > div,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > div,
+html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary-item > span:first-child,
+html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary-item > span:first-child {
+  grid-area: icon !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  background: rgba(96, 165, 250, 0.18) !important;
+  color: #bfdbfe !important;
+  -webkit-text-fill-color: #bfdbfe !important;
+  border: 1px solid rgba(147, 197, 253, 0.25) !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-icon .printshop-svg-icon,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metric-card > div .printshop-svg-icon,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > div .printshop-svg-icon {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-value,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metric-card > strong,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > strong,
+html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary-item > strong,
+html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary-item > strong {
+  grid-area: value !important;
+  display: block !important;
+  margin: 0 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  font-size: 17px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-info-card-label,
+html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metric-card > span,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > span,
+html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary-item > small,
+html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary-item > small {
+  grid-area: label !important;
+  display: block !important;
+  margin: 0 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  font-size: 10.5px !important;
+  font-weight: 750 !important;
+  line-height: 1.1 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > .printshop-info-card-helper,
+html[data-theme="dark"] body #root .main-content .printshop-page .request-metric-card > p {
+  display: none !important;
+}
+
+@media (max-width: 1320px) {
+  html[data-theme="dark"] body #root .main-content .printshop-page .printshop-catalog-metrics,
+  html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metrics-grid,
+  html[data-theme="dark"] body #root .main-content .printshop-page .request-metrics-grid,
+  html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary,
+  html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary {
+    grid-template-columns: 1fr 1fr !important;
+    padding: 8px 10px !important;
+  }
+
+  html[data-theme="dark"] body #root .main-content .printshop-page .printshop-catalog-metrics::before,
+  html[data-theme="dark"] body #root .main-content .printshop-page .catalog-metrics-grid::before,
+  html[data-theme="dark"] body #root .main-content .printshop-page .request-metrics-grid::before,
+  html[data-theme="dark"] body #root .main-content .printshop-page .certificate-quick-summary > h3,
+  html[data-theme="dark"] body #root .main-content .printshop-page .batch-quick-summary > h3 {
+    grid-column: 1 / -1 !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    padding: 0 0 6px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+}
+
+/* Imprenta > Plantillas: remove gray boxes from Certificados/Credenciales switch. */
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs button,
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs button.active,
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs button:hover {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  box-shadow: none !important;
+  color: #f8fbff !important;
+  -webkit-text-fill-color: #f8fbff !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs button.active {
+  border-color: rgba(147, 197, 253, 0.5) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs button > span,
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-template-hub-tabs button.active > span {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 1px solid rgba(148, 163, 184, 0.28) !important;
+  color: #f8fbff !important;
+  -webkit-text-fill-color: #f8fbff !important;
+}
+
+/* Module header uniform lock. */
+.main-content :is(
+  .module-topbar,
+  .module-topbar-dashboard,
+  .module-topbar-messages,
+  .module-topbar-agenda,
+  .module-topbar-ideas,
+  .module-topbar-my-projects,
+  .workspace-module-topbar,
+  .messages-module-topbar,
+  .purchase-module-topbar,
+  .project-history-module-topbar,
+  .departments-module-topbar,
+  .bug-module-topbar,
+  .create-project-module-topbar,
+  .all-projects-module-topbar,
+  .printshop-topbar,
+  .project-screen-topbar,
+  .subscription-topbar,
+  .technical-support-redesign-v5 .technical-page-topbar
+) {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 128px !important;
+  height: 128px !important;
+  max-height: 128px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px) !important;
+  align-items: center !important;
+  gap: 18px !important;
+  margin: 0 0 18px !important;
+  padding: 20px 24px !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+}
+
+.main-content :is(
+  .module-topbar:not(:has(.module-topbar-search)):not(:has(.module-topbar-side-card)):not(:has(.module-topbar-actions)),
+  .module-topbar-dashboard,
+  .module-topbar-messages,
+  .workspace-module-topbar,
+  .messages-module-topbar,
+  .technical-support-redesign-v5 .technical-page-topbar:not(:has(.technical-global-search))
+) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.main-content :is(
+  .module-topbar-main,
+  .printshop-topbar-main,
+  .subscription-topbar-main,
+  .technical-support-redesign-v5 .technical-topbar-main
+) {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 54px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 14px !important;
+  align-self: center !important;
+}
+
+.main-content :is(
+  .module-topbar-module-icon,
+  .printshop-topbar-module-icon,
+  .subscription-topbar-module-icon,
+  .technical-support-redesign-v5 .technical-topbar-module-icon
+) {
+  width: 54px !important;
+  height: 54px !important;
+  min-width: 54px !important;
+  min-height: 54px !important;
+  border-radius: 18px !important;
+  display: grid !important;
+  place-items: center !important;
+}
+
+.main-content :is(
+  .module-topbar-module-icon svg,
+  .module-topbar-module-icon .nav-svg-icon,
+  .module-topbar-module-icon .my-projects-menu-svg,
+  .module-topbar-svg-icon,
+  .printshop-topbar-module-icon svg,
+  .printshop-topbar-module-icon .printshop-svg-icon,
+  .subscription-topbar-module-icon svg,
+  .subscription-topbar-module-icon .subscription-icon-svg,
+  .technical-support-redesign-v5 .technical-topbar-module-icon svg
+) {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  display: block !important;
+  stroke-width: 1.9 !important;
+}
+
+.main-content :is(
+  .module-topbar-copy,
+  .printshop-topbar-copy,
+  .subscription-topbar-copy,
+  .technical-support-redesign-v5 .technical-topbar-copy
+) {
+  min-width: 0 !important;
+  display: grid !important;
+  align-content: center !important;
+}
+
+.main-content :is(
+  .module-topbar .module-topbar-kicker,
+  .module-topbar .section-kicker,
+  .printshop-topbar .section-kicker,
+  .printshop-topbar .printshop-kicker,
+  .subscription-topbar-copy > span,
+  .technical-support-redesign-v5 .technical-page-topbar .section-kicker
+) {
+  margin: 0 0 4px !important;
+  font-size: 10.5px !important;
+  line-height: 1.1 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.1em !important;
+}
+
+.main-content :is(
+  .module-topbar h1,
+  .module-topbar .module-topbar-title-row h1,
+  .printshop-topbar h1,
+  .subscription-topbar-copy h1,
+  .technical-support-redesign-v5 .technical-page-topbar h1
+) {
+  margin: 0 0 4px !important;
+  font-size: clamp(22px, 1.9vw, 30px) !important;
+  line-height: 1.05 !important;
+  font-weight: 780 !important;
+  letter-spacing: -0.015em !important;
+}
+
+.main-content :is(
+  .module-topbar p:not(.section-kicker):not(.module-topbar-kicker),
+  .printshop-topbar p:not(.section-kicker):not(.printshop-kicker),
+  .subscription-topbar-copy p,
+  .technical-support-redesign-v5 .technical-topbar-copy span
+) {
+  max-width: 760px !important;
+  margin: 0 !important;
+  font-size: 12.5px !important;
+  line-height: 1.35 !important;
+  font-weight: 400 !important;
+}
+
+.main-content :is(
+  .module-topbar-search,
+  .printshop-search,
+  .technical-support-redesign-v5 .technical-global-search,
+  .all-projects-topbar-search,
+  .project-history-topbar-search,
+  .bug-topbar-search,
+  .purchase-topbar-search
+) {
+  align-self: center !important;
+  justify-self: stretch !important;
+  width: 100% !important;
+  max-width: 420px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 9px !important;
+  margin: 0 !important;
+  padding: 0 14px !important;
+  border-radius: 14px !important;
+}
+
+.main-content :is(
+  .module-topbar-search span,
+  .printshop-search span,
+  .technical-support-redesign-v5 .technical-global-search span,
+  .all-projects-topbar-search span,
+  .project-history-topbar-search span,
+  .bug-topbar-search span,
+  .purchase-topbar-search span
+) {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  min-height: 30px !important;
+  display: grid !important;
+  place-items: center !important;
+  margin: 0 !important;
+}
+
+.main-content :is(
+  .module-topbar-search input,
+  .printshop-search input,
+  .technical-support-redesign-v5 .technical-global-search input,
+  .all-projects-topbar-search input,
+  .project-history-topbar-search input,
+  .bug-topbar-search input,
+  .purchase-topbar-search input
+) {
+  width: 100% !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  max-height: 46px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: block !important;
+  line-height: 46px !important;
+  font-size: 13px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.main-content :is(
+  .module-topbar-actions,
+  .module-topbar-actions.compact,
+  .purchase-topbar-actions,
+  .printshop-hero-actions,
+  .equipment-header-actions,
+  .technical-page-topbar-actions,
+  .subscription-topbar-actions,
+  .module-topbar-side-card
+) {
+  align-self: center !important;
+}
+
+@media (max-width: 900px) {
+  .main-content :is(
+    .module-topbar,
+    .module-topbar-dashboard,
+    .module-topbar-messages,
+    .module-topbar-agenda,
+    .module-topbar-ideas,
+    .module-topbar-my-projects,
+    .workspace-module-topbar,
+    .messages-module-topbar,
+    .purchase-module-topbar,
+    .project-history-module-topbar,
+    .departments-module-topbar,
+    .bug-module-topbar,
+    .create-project-module-topbar,
+    .all-projects-module-topbar,
+    .printshop-topbar,
+    .project-screen-topbar,
+    .subscription-topbar,
+    .technical-support-redesign-v5 .technical-page-topbar
+  ) {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 118px !important;
+    grid-template-columns: 1fr !important;
+    padding: 18px !important;
+  }
+
+  .main-content :is(
+    .module-topbar-search,
+    .printshop-search,
+    .technical-support-redesign-v5 .technical-global-search,
+    .all-projects-topbar-search,
+    .project-history-topbar-search,
+    .bug-topbar-search,
+    .purchase-topbar-search
+  ) {
+    max-width: 100% !important;
+  }
+}
+
+/* Final header polish: keep uniform shell, fix module-specific content fit. */
+.main-content .messages-module-topbar,
+.main-content .module-topbar-messages {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px) !important;
+  align-items: center !important;
+}
+
+.main-content .messages-module-topbar .module-topbar-main,
+.main-content .module-topbar-messages .module-topbar-main {
+  align-self: center !important;
+}
+
+.main-content .messages-module-topbar .module-topbar-copy,
+.main-content .module-topbar-messages .module-topbar-copy {
+  align-content: center !important;
+}
+
+.main-content .messages-module-topbar .module-topbar-summary-grid,
+.main-content .module-topbar-messages .module-topbar-summary-grid {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  align-self: center !important;
+  justify-self: end !important;
+  width: min(420px, 100%) !important;
+  max-width: 420px !important;
+  margin: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+.main-content .module-topbar-summary-grid .messages-summary-card {
+  min-height: 44px !important;
+  height: 44px !important;
+  padding: 7px 9px !important;
+  border-radius: 12px !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  grid-template-areas:
+    "icon value"
+    "icon label" !important;
+  align-items: center !important;
+  gap: 0 7px !important;
+}
+
+.main-content .module-topbar-summary-grid .messages-summary-card span {
+  grid-area: icon !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  min-height: 24px !important;
+  margin: 0 !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+}
+
+.main-content .module-topbar-summary-grid .messages-summary-card strong {
+  grid-area: value !important;
+  margin: 0 !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+}
+
+.main-content .module-topbar-summary-grid .messages-summary-card small {
+  grid-area: label !important;
+  margin: 0 !important;
+  font-size: 9.5px !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.main-content .create-project-module-topbar {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+}
+
+.main-content .create-project-topbar-actions {
+  align-self: center !important;
+  justify-self: end !important;
+  align-items: center !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+.main-content .create-project-header-button {
+  min-height: 44px !important;
+  height: 44px !important;
+  align-self: center !important;
+}
+
+.main-content .subscription-topbar .subscription-topbar-copy p {
+  margin: 0 0 4px !important;
+  font-size: 10.5px !important;
+  line-height: 1.1 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.1em !important;
+}
+
+.main-content .subscription-topbar .subscription-topbar-copy h1 {
+  margin: 0 0 4px !important;
+  font-size: clamp(22px, 1.9vw, 30px) !important;
+  line-height: 1.05 !important;
+  font-weight: 780 !important;
+  letter-spacing: -0.015em !important;
+}
+
+.main-content .subscription-topbar .subscription-topbar-copy span {
+  max-width: 760px !important;
+  margin: 0 !important;
+  font-size: 12.5px !important;
+  line-height: 1.35 !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+}
+
+.main-content .bug-reports-redesign,
+.main-content .bug-module-topbar.printshop-topbar {
+  width: 100% !important;
+  max-width: 100% !important;
+  justify-self: stretch !important;
+}
+
+.main-content .bug-module-topbar.printshop-topbar {
+  min-height: 128px !important;
+}
+
+/* La altura fija (128px) de arriba no dejaba crecer la tarjeta cuando
+   el titulo pasaba a 2 lineas en movil, cortando el texto (overflow
+   hidden). Con min-height sin height fijo, la tarjeta crece con el
+   contenido y ya no se pierde texto. */
+@media (max-width: 900px) {
+  .main-content .bug-module-topbar.printshop-topbar {
+    height: auto !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .main-content .messages-module-topbar,
+  .main-content .module-topbar-messages {
+    grid-template-columns: 1fr !important;
+  }
+
+  .main-content .messages-module-topbar .module-topbar-summary-grid,
+  .main-content .module-topbar-messages .module-topbar-summary-grid {
+    grid-column: 1 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .main-content .create-project-topbar-actions {
+    justify-self: stretch !important;
+  }
+}
+
+/* Last pass: requested header alignment fixes only. */
+body #root .main-content .create-project-redesign .create-project-module-topbar.module-topbar {
+  position: relative !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: center !important;
+  align-content: center !important;
+  min-height: 128px !important;
+  height: 128px !important;
+  max-height: 128px !important;
+  padding: 20px 330px 20px 24px !important;
+  overflow: hidden !important;
+}
+
+body #root .main-content .create-project-redesign .create-project-module-topbar .module-topbar-main {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  align-self: center !important;
+  min-height: 0 !important;
+}
+
+body #root .main-content .create-project-redesign .create-project-module-topbar .module-topbar-copy {
+  align-content: center !important;
+  transform: none !important;
+}
+
+body #root .main-content .create-project-redesign .create-project-topbar-actions {
+  position: absolute !important;
+  top: 50% !important;
+  right: 24px !important;
+  z-index: 2 !important;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  width: auto !important;
+  margin: 0 !important;
+  transform: translateY(-50%) !important;
+}
+
+body #root .main-content .create-project-redesign .create-project-header-button {
+  height: 42px !important;
+  min-height: 42px !important;
+  padding: 0 14px !important;
+}
+
+body #root .main-content .subscription-manager-page .subscription-topbar .subscription-topbar-copy h1 {
+  font-size: clamp(21px, 1.55vw, 26px) !important;
+  font-weight: 760 !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.015em !important;
+}
+
+body #root .main-content .subscription-manager-page .subscription-topbar .subscription-topbar-copy span {
+  font-size: 12.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
+}
+
+body #root .main-content .bug-reports-redesign > .bug-module-topbar.printshop-topbar {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  justify-self: stretch !important;
+}
+
+@media (max-width: 900px) {
+  body #root .main-content .create-project-redesign .create-project-module-topbar.module-topbar {
+    height: auto !important;
+    max-height: none !important;
+    padding: 18px !important;
+  }
+
+  body #root .main-content .create-project-redesign .create-project-topbar-actions {
+    position: static !important;
+    width: 100% !important;
+    transform: none !important;
+  }
+
+  body #root .main-content .bug-reports-redesign > .bug-module-topbar.printshop-topbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}
+
+/* Imprenta: detalle de solicitudes en modo oscuro */
+html[data-theme="dark"] .main-content .request-detail-redesign-card {
+  background: var(--bg) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-hero,
+  .request-detail-progress-strip > div,
+  .request-detail-tabs,
+  .request-detail-item,
+  .request-detail-note,
+  .request-role-summary,
+  .request-detail-certificate,
+  .request-detail-certificate-header,
+  .request-students-card,
+  .request-students-summary-pill,
+  .request-bulk-certificate-actions,
+  .request-students-table-wrap,
+  .request-student-validation-card,
+  .request-student-no-folio,
+  .request-certificate-preview-block,
+  .request-certificate-preview-header
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-progress-strip > div,
+  .request-detail-item,
+  .request-students-summary-pill,
+  .request-students-table-wrap,
+  .request-student-validation-card,
+  .request-detail-tabs,
+  .request-bulk-certificate-actions
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-hero span,
+  .request-detail-hero p,
+  .request-detail-status-stack small,
+  .request-detail-progress-strip span,
+  .request-detail-item span,
+  .request-detail-item small,
+  .request-detail-note p,
+  .request-students-header p,
+  .request-students-summary-pill span,
+  .request-student-locked-note,
+  .request-certificate-preview-header p
+) {
+  color: var(--muted) !important;
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-detail-hero strong,
+  .request-detail-progress-strip strong,
+  .request-detail-item strong,
+  .request-detail-note strong,
+  .request-students-header strong,
+  .request-students-summary-pill strong,
+  .request-student-validation-card strong,
+  .request-certificate-preview-header strong
+) {
+  color: var(--text) !important;
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card :is(
+  .request-students-table,
+  .request-students-table thead,
+  .request-students-table tbody,
+  .request-students-table tr,
+  .request-students-table th,
+  .request-students-table td
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-students-table :is(input, select),
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-student-inline-form :is(input, select),
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-student-bulk-form :is(textarea, select) {
+  background: #0b1220 !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-students-table :is(input:disabled, select:disabled) {
+  background: #111827 !important;
+  color: #dbeafe !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-detail-tabs button {
+  background: transparent !important;
+  color: var(--muted) !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .request-detail-tabs button.active {
+  background: rgba(96, 165, 250, 0.22) !important;
+  color: #dbeafe !important;
+  border-color: rgba(147, 197, 253, 0.34) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shell {
+  background: transparent !important;
+  background-image: none !important;
+  color: inherit !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-stage {
+  background: #f7f8f8 !important;
+  background-image: none !important;
+  color: #0d1f3d !important;
+  border-color: #d5dfe9 !important;
+  box-shadow: 0 20px 55px rgba(2, 8, 23, 0.32) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-stage :is(
+  .certificate-preview-body,
+  .certificate-preview-kicker,
+  .certificate-preview-title,
+  .certificate-preview-to,
+  .certificate-preview-name,
+  .certificate-preview-text,
+  .certificate-preview-date,
+  .certificate-signature-block,
+  .certificate-signature-block strong,
+  .certificate-signature-block span
+) {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-kicker,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-to {
+  color: #202020 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-title,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-name,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-date,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-signature-block,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-signature-block strong {
+  color: #000000 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-text {
+  color: #101010 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-signature-block span {
+  color: #222222 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-copy,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-copy strong,
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-copy span {
+  background: transparent !important;
+  color: #183359 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-validation-qr {
+  background: #ffffff !important;
+  border-color: rgba(21, 43, 78, 0.14) !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-course-bar {
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shape.shape-one {
+  background: #d5e3d9 !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shape.shape-two {
+  background: #cddbcf !important;
+}
+
+html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate-preview-shape.shape-three {
+  background: #e1e9e2 !important;
+}
+
+/* Imprenta: historial de certificados en modo oscuro */
+html[data-theme="dark"] .main-content .generated-certificates-redesign,
+html[data-theme="dark"] .main-content .certificate-history-embedded {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .generated-certificates-redesign .printshop-panel,
+  .generated-certificates-redesign .generated-certificates-toolbar,
+  .generated-certificates-redesign .generated-certificates-toolbar.enhanced,
+  .generated-certificates-redesign .generated-certificates-insights-grid > *,
+  .certificate-history-embedded .card,
+  .certificate-history-embedded .printshop-panel,
+  .certificate-history-card-redesign,
+  .certificate-history-card-list .certificate-history-card,
+  .certificate-history-card-main,
+  .certificate-history-card-content,
+  .certificate-history-title-row,
+  .certificate-history-meta-grid,
+  .certificate-history-card-actions.certificate-actions-modern
+) {
+  background: var(--surface) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .certificate-history-meta-grid > div,
+  .certificate-history-card-icon,
+  .generated-certificates-redesign .generated-certificates-toolbar label,
+  .generated-certificates-redesign .generated-certificates-toolbar input,
+  .generated-certificates-redesign .generated-certificates-toolbar select
+) {
+  background: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .certificate-history-title-row strong,
+  .certificate-history-meta-grid strong
+) {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .certificate-history-title-row span,
+  .certificate-history-meta-grid small
+) {
+  background: transparent !important;
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .main-content .certificate-history-meta-grid > div:is(:hover, :focus-within) {
+  background: #111827 !important;
+}
+
+html[data-theme="dark"] .main-content .certificate-history-card-actions.certificate-actions-modern .certificate-action-button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Imprenta: Inicio / Trabajo actual en modo oscuro */
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout :is(
+  .printshop-request-card.home-clickable-card,
+  .printshop-request-card,
+  .printshop-small-empty,
+  .printshop-home-footer-link
+) {
+  background: var(--surface-2) !important;
+  background-color: var(--surface-2) !important;
+  background-image: none !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout .printshop-request-card.home-clickable-card:hover,
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout .printshop-home-footer-link:hover {
+  background: #111827 !important;
+  border-color: rgba(147, 197, 253, 0.34) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout :is(
+  .printshop-request-card strong,
+  .printshop-small-empty strong,
+  .printshop-home-footer-link
+) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout :is(
+  .printshop-request-card span,
+  .printshop-request-card small,
+  .printshop-small-empty span
+) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .printshop-dashboard-compact-layout .printshop-workboard-column + .printshop-workboard-column {
+  border-left-color: var(--border) !important;
+}
+
+/* Detalle de proyecto: topbar centrado y compacto */
+body #root .main-content .project-detail-page .project-detail-module-topbar.project-screen-topbar.printshop-topbar {
+  min-height: 128px !important;
+  height: 128px !important;
+  max-height: 128px !important;
+  align-items: center !important;
+  overflow: hidden !important;
+  margin-top: 0 !important;
+  padding-top: 18px !important;
+  padding-bottom: 18px !important;
+}
+
+body #root .main-content .project-detail-page.project-detail-redesign {
+  padding: 0 34px 34px 20px !important;
+}
+
+body #root .main-content .my-projects-redesign .my-project-progress-row-v2:has(.my-project-delete-button-v2) {
+  grid-template-columns: 85px minmax(0, 1fr) auto auto !important;
+}
+
+body #root .main-content .my-projects-redesign .my-project-delete-button-v2 {
+  min-height: 42px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 10px 14px !important;
+  border: 1px solid rgba(220, 38, 38, 0.28) !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(254, 242, 242, 0.94)) !important;
+  color: #b42318 !important;
+  box-shadow: 0 10px 22px rgba(180, 35, 24, 0.08) !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+
+body #root .main-content .my-projects-redesign .my-project-delete-button-v2:hover:not(:disabled) {
+  transform: translateY(-1px) !important;
+  border-color: rgba(220, 38, 38, 0.45) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 247, 0.98), rgba(254, 226, 226, 0.96)) !important;
+  box-shadow: 0 14px 28px rgba(180, 35, 24, 0.14) !important;
+}
+
+body #root .main-content .my-projects-redesign .my-project-delete-button-v2 .my-projects-menu-svg {
+  width: 16px !important;
+  height: 16px !important;
+  stroke-width: 2.1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .my-projects-redesign .my-project-delete-button-v2 {
+  border-color: rgba(248, 113, 113, 0.34) !important;
+  background:
+    linear-gradient(180deg, rgba(127, 29, 29, 0.28), rgba(69, 10, 10, 0.28)) !important;
+  color: #fecaca !important;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .my-projects-redesign .my-project-delete-button-v2:hover:not(:disabled) {
+  border-color: rgba(252, 165, 165, 0.55) !important;
+  background:
+    linear-gradient(180deg, rgba(153, 27, 27, 0.34), rgba(127, 29, 29, 0.28)) !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar .printshop-topbar-main,
+body #root .main-content .project-detail-page .project-screen-topbar .printshop-topbar-copy,
+body #root .main-content .project-detail-page .project-screen-topbar .project-screen-actions {
+  align-self: center !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar .project-screen-actions {
+  justify-self: end !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  margin: 0 !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar .project-screen-breadcrumb {
+  display: none !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar .section-kicker {
+  margin-bottom: 4px !important;
+  font-size: 10.5px !important;
+  line-height: 1.1 !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar h1 {
+  margin-bottom: 4px !important;
+  font-size: clamp(22px, 1.9vw, 30px) !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.015em !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar p:not(.section-kicker) {
+  font-size: 12.5px !important;
+  line-height: 1.35 !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-module-icon.printshop-topbar-module-icon {
+  width: 54px !important;
+  height: 54px !important;
+  min-width: 54px !important;
+  min-height: 54px !important;
+  border-radius: 18px !important;
+}
+
+body #root .main-content .project-detail-page .project-screen-topbar .project-screen-status-select,
+body #root .main-content .project-detail-page .project-screen-topbar .project-screen-actions .visual-primary-button,
+body #root .main-content .project-detail-page .project-screen-topbar .project-screen-actions .visual-outline-button {
+  flex: 0 0 auto !important;
+  min-height: 44px !important;
+  height: 44px !important;
+  margin: 0 !important;
+}
+
+@media (min-width: 901px) {
+  body #root .main-content .project-detail-page .project-detail-module-topbar.project-screen-topbar.printshop-topbar {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 420px) !important;
+  }
+
+  body #root .main-content .project-detail-page .project-screen-topbar .project-screen-actions {
+    justify-self: end !important;
+    justify-content: flex-end !important;
+  }
+}
+
+@media (max-width: 900px) {
+  body #root .main-content .project-detail-page .project-detail-module-topbar.project-screen-topbar.printshop-topbar {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 118px !important;
+    padding: 22px !important;
+  }
+
+  body #root .main-content .project-detail-page .project-screen-topbar .project-screen-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  body #root .main-content .my-projects-redesign .my-project-progress-row-v2:has(.my-project-delete-button-v2) {
+    grid-template-columns: 1fr !important;
+  }
+
+  body #root .main-content .my-projects-redesign .my-project-delete-button-v2 {
+    width: 100% !important;
+  }
+}
+
+/* Project detail dark mode: keep nested cards and editors from falling back to white. */
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .visual-card,
+  .project-hero-overview,
+  .description-focus-card,
+  .project-documents-card,
+  .advances-card,
+  .formal-log-card,
+  .side-compact-card,
+  .internal-notes-admin-card,
+  .admin-review-visual-card
+) {
+  background: linear-gradient(180deg, #121826, #0f172a) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  color: #e5edf8 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .advance-composer-box,
+  .advance-entry,
+  .advance-file-review-card,
+  .advance-file-chip,
+  .advance-comment-form,
+  .advance-comment,
+  .selected-advance-files,
+  .project-document-card,
+  .internal-notes-editor,
+  .internal-note-history-item,
+  .internal-note-preview,
+  .legacy-internal-note,
+  .formal-log-table-row,
+  .info-item,
+  .responsible-item,
+  .action-item,
+  .comment-item
+) {
+  background: #111827 !important;
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  color: #e5edf8 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  input,
+  select,
+  textarea,
+  .status-pill-select,
+  .advance-comment-toggle,
+  .attach-evidence-chip,
+  .project-documents-upload-button
+) {
+  background: #0b1220 !important;
+  border-color: rgba(148, 163, 184, 0.34) !important;
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  h2,
+  h3,
+  h4,
+  strong,
+  .detail-section-title h3,
+  .advance-entry-header strong,
+  .advance-file-chip strong,
+  .project-document-card strong,
+  .internal-notes-history-header strong,
+  .internal-note-history-top strong
+) {
+  color: #f8fafc !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  p,
+  small,
+  .prominent-description,
+  .advances-header p,
+  .advance-entry > p,
+  .advance-entry-meta small,
+  .advance-file-chip small,
+  .advance-help-text,
+  .internal-notes-admin-help,
+  .internal-note-history-item p,
+  .formal-log-table-row > span,
+  .formal-log-table-row p
+) {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .project-detail-page :is(
+  .description-focus-icon,
+  .project-document-icon,
+  .legacy-note-icon,
+  .internal-note-preview span
+) {
+  background: rgba(96, 165, 250, 0.16) !important;
+  color: #bfdbfe !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer-tools {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 44px 56px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
+  grid-column: 1 / -1 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer textarea {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-reply-preview {
+  width: 100% !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-column: 1 / -1 !important;
+  min-height: 46px !important;
+  max-height: 78px !important;
+  align-items: start !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-reply-preview p {
+  max-height: 34px !important;
+  overflow: hidden !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button {
+  border: 1px solid #cbd7e6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f4fc4;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 900;
+  height: 44px;
+  min-height: 44px;
+  width: 44px;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button.recording {
+  border-color: #ef4444;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.internal-messages-page.chat-messages-page .audio-message-card {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.internal-messages-page.chat-messages-page .audio-message-card audio {
+  display: block;
+  width: min(280px, 100%);
+}
+
+.internal-messages-page.chat-messages-page .chat-bubble .attachment-gallery.compact:has(.audio-message-card) {
+  margin-top: 8px !important;
+}
+
+/* =========================================================
+   MENSAJES - COMPACTAR CABECERAS Y COMPOSER
+========================================================= */
+
+.internal-messages-page.chat-messages-page .chat-sidebar-header {
+  padding: 10px 12px 6px !important;
+  gap: 10px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-sidebar-header h3 {
+  font-size: 17px !important;
+  line-height: 1.15 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-sidebar-header button {
+  min-height: 34px !important;
+  padding: 7px 10px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-mode-tabs {
+  margin: 0 12px 8px !important;
+  padding: 3px !important;
+  border-radius: 13px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-mode-tabs button {
+  min-height: 31px !important;
+  padding: 5px 8px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-new-conversation-box {
+  margin: 0 12px 8px !important;
+  padding: 10px !important;
+  gap: 8px !important;
+  border-radius: 14px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-search-box {
+  margin: 0 12px 8px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-search-box input {
+  min-height: 38px !important;
+  border-radius: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header {
+  grid-template-columns: 42px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding: 10px 14px !important;
+  min-height: 0 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-avatar {
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 14px !important;
+  font-size: 13px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header h3 {
+  margin: 0 !important;
+  font-size: 16px !important;
+  line-height: 1.15 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header small {
+  display: block !important;
+  margin-top: 2px !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-thread-header .presence-badge,
+.internal-messages-page.chat-messages-page .department-thread-header .department-chat-label {
+  margin-top: 4px !important;
+  min-height: 20px !important;
+  padding: 2px 7px !important;
+  font-size: 10px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer {
+  display: grid !important;
+  grid-template-columns: 38px minmax(0, 1fr) 42px !important;
+  gap: 7px !important;
+  align-items: center !important;
+  padding: 9px 12px !important;
+  border-top: 1px solid #edf1f7 !important;
+  background: #ffffff !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer textarea {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  max-height: 80px !important;
+  padding: 10px 12px !important;
+  border-radius: 13px !important;
+  resize: none !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer-tools {
+  display: contents !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .attachment-picker {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  width: 38px !important;
+  height: 40px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .attachment-picker-dropzone {
+  width: 38px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .dropzone-icon {
+  font-size: 17px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-button {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+  font-size: 17px !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-send-icon-button {
+  grid-column: 3 !important;
+  grid-row: 1 !important;
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-send-icon-button.recording {
+  border-color: #ef4444 !important;
+  background: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-send-icon-button.voice-mode {
+  font-size: 20px !important;
+  line-height: 1 !important;
+}
+
+.internal-messages-page.chat-messages-page .chat-voice-recorder-bar {
+  grid-column: 1 / -1 !important;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f172a;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-status strong,
+.internal-messages-page.chat-messages-page .voice-recorder-status small {
+  font-size: 0.78rem;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-status small {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-wave {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-wave span {
+  flex: 0 0 2px;
+  width: 2px;
+  height: calc(4px + (var(--wave-level, 0.35) * 16px));
+  border-radius: 999px;
+  background: #2563eb;
+  transform-origin: center;
+  transition: height 90ms ease;
+  animation: voice-wave-fallback 900ms ease-in-out infinite;
+  animation-delay: calc(var(--wave-index, 0) * -80ms);
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-wave.paused span {
+  height: 7px;
+  opacity: 0.58;
+  animation-play-state: paused;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.12);
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-dot.paused {
+  background: #f59e0b;
+  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.14);
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  color: #1d4ed8;
+  background: #e8f0ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action.danger {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action.send {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.internal-messages-page.chat-messages-page .voice-recorder-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@keyframes voice-wave-fallback {
+  0%, 100% { transform: scaleY(0.72); }
+  50% { transform: scaleY(1.18); }
+}
+
+.internal-messages-page.chat-messages-page .chat-composer .attachment-draft-list,
+.internal-messages-page.chat-messages-page .chat-reply-preview {
+  grid-column: 1 / -1 !important;
+}
+
+/* =========================================================
+   FIX ANDROID: SCROLL TACTIL NORMAL EN LAYOUT MOVIL
+========================================================= */
+
+@media (max-width: 1050px) {
+  html,
+  body,
+  #root,
+  .app-root {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+  }
+
+  body {
+    min-height: 100dvh !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .main-content,
+  .redesigned-main-content {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* =========================================================
+   DARK MODE - SUPERFICIES ESPECIFICAS
+========================================================= */
+
+html[data-theme="dark"] body {
+  background: var(--bg) !important;
+}
+
+html[data-theme="dark"] .sidebar-nav button.active,
+html[data-theme="dark"] .sidebar-nav button.sidebar-featured-item.active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(14, 165, 233, 0.85)) !important;
+  color: #f8fbff !important;
+  border-color: rgba(96, 165, 250, 0.55) !important;
+}
+
+html[data-theme="dark"] .sidebar-nav button.active .nav-icon,
+html[data-theme="dark"] .sidebar-nav button.active .nav-svg-icon,
+html[data-theme="dark"] .sidebar-nav button.active svg {
+  color: #f8fbff !important;
+  stroke: #f8fbff !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .chat-info-expanded-files,
+  .chat-expanded-files-list,
+  .chat-shared-file,
+  .attendance-visual-intro,
+  .attendance-visual-score-card,
+  .attendance-visual-metric,
+  .attendance-visual-card,
+  .attendance-visual-row-card,
+  .attendance-visual-alert-card,
+  .attendance-collaborator-summary-row,
+  .team-agenda-request-card,
+  .agenda-modern-request-card,
+  .team-agenda-admin-comment,
+  .team-agenda-admin-comment-box,
+  .team-agenda-info-alert,
+  .request-detail-card,
+  .request-students-card,
+  .request-student-validation-card,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .batch-quality-checklist,
+  .batch-quality-field,
+  .product-recipe-box,
+  .product-recipe-empty,
+  .product-recipe-item,
+  .product-requirements,
+  .product-requirement-card,
+  .supply-quick-scan-card,
+  .supply-quick-scan-card-redesign,
+  .supply-presentation-card,
+  .supply-card,
+  .supply-detail-card,
+  .supply-stock-card,
+  .supply-movement-card,
+  .registered-supply-card,
+  .maintenance-clean-card,
+  .maintenance-clean-row,
+  .technical-panel,
+  .technical-focused-panel,
+  .technical-quick-asset-panel,
+  .technical-quick-info-grid article,
+  .technical-quick-maintenance-card,
+  .technical-quick-maintenance-item,
+  .technical-related-installations-card,
+  .technical-history-panel,
+  .technical-asset-details,
+  .technical-qr-label-panel,
+  .technical-qr-help-card,
+  .technical-qr-print-area,
+  .technical-qr-single-print-area,
+  .technical-qr-batch-print-area,
+  .maintenance-checklist-box,
+  .visual-checklist-box,
+  .visual-checklist-item,
+  .editable-maintenance-checklist-item,
+  .checklist-score-card,
+  .all-projects-panel,
+  .all-projects-side-panel,
+  .all-projects-department-row,
+  .all-projects-recent-card,
+  .project-detail-card,
+  .project-detail-overview-card,
+  .project-detail-info-card,
+  .project-detail-meta-card,
+  .project-summary-card,
+  .edit-project-section-card,
+  .edit-side-card,
+  .edit-preview-card,
+  .edit-summary-strip,
+  .edit-impact-card,
+  .preview-details > div
+) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-shared-file-icon,
+  .chat-info-quick-actions button,
+  .attendance-visual-location-card,
+  .attendance-visual-empty-mini,
+  .attendance-collaborator-summary-tools,
+  .team-agenda-request-info,
+  .agenda-request-detail-info,
+  .printshop-workboard-column,
+  .printshop-batch-card,
+  .printshop-batch-card.home-clickable-card,
+  .printshop-request-card,
+  .request-detail-note,
+  .certificate-template-match-note,
+  .batch-quality-checklist label,
+  .product-recipe-inputs,
+  .product-recipe-inputs label,
+  .product-recipe-actions,
+  .product-recipe-tip,
+  .requirement-chip-list span,
+  .maintenance-clean-metrics article,
+  .maintenance-clean-meta,
+  .technical-panel-header,
+  .technical-form,
+  .technical-form-grid,
+  .technical-quick-asset-hero,
+  .technical-quick-actions,
+  .technical-qr-label,
+  .technical-qr-batch-item,
+  .technical-quick-maintenance-list,
+  .technical-quick-main,
+  .all-projects-table-wrap,
+  .all-projects-modern-table,
+  .area-progress-track,
+  .edit-required-list div,
+  .attached-file-item
+) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .chat-info-expanded-files,
+  .chat-shared-file,
+  .attendance-visual-panel,
+  .attendance-visual-card,
+  .attendance-collaborator-summary-card,
+  .team-agenda-request-card,
+  .team-agenda-admin-comment-box,
+  .request-detail-card,
+  .request-students-card,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .maintenance-clean-card,
+  .technical-panel,
+  .technical-quick-asset-panel,
+  .technical-qr-label-panel,
+  .all-projects-panel,
+  .all-projects-side-panel,
+  .project-detail-card,
+  .edit-project-section-card,
+  .edit-side-card
+) :is(h1, h2, h3, h4, h5, strong, b, label) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .chat-info-expanded-files,
+  .chat-shared-file,
+  .attendance-visual-panel,
+  .attendance-visual-card,
+  .attendance-collaborator-summary-card,
+  .team-agenda-request-card,
+  .team-agenda-admin-comment-box,
+  .request-detail-card,
+  .request-students-card,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .maintenance-clean-card,
+  .technical-panel,
+  .technical-quick-asset-panel,
+  .technical-qr-label-panel,
+  .all-projects-panel,
+  .all-projects-side-panel,
+  .project-detail-card,
+  .edit-project-section-card,
+  .edit-side-card
+) :is(p, small, span, li, em) {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] :is(
+  .attendance-visual-kicker,
+  .attendance-visual-card-header > div > span,
+  .attendance-visual-location-card > div > span,
+  .maintenance-clean-card-header > span,
+  .technical-quick-info-grid span,
+  .project-code-badge,
+  .all-projects-count-badge
+) {
+  color: #bfdbfe !important;
+  background: rgba(37, 99, 235, 0.18) !important;
+  border-color: rgba(96, 165, 250, 0.35) !important;
+}
+
+html[data-theme="dark"] :is(
+  .attendance-visual-metric.blue > span,
+  .attendance-visual-metric.green > span,
+  .attendance-visual-metric.gold > span,
+  .attendance-visual-metric.red > span,
+  .attendance-status,
+  .visual-badge,
+  .asset-tag,
+  .status-badge,
+  .priority-badge,
+  .all-projects-recent-card > span
+) {
+  color: #f8fbff !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .attendance-visual-panel,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .technical-panel,
+  .maintenance-clean-card,
+  .edit-project-redesign-page,
+  .all-projects-redesign
+) :is(input, select, textarea) {
+  background: var(--surface-3) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] :is(
+  .chat-new-conversation-box,
+  .attendance-visual-panel,
+  .request-production-edit-card,
+  .batch-quality-box,
+  .product-recipe-box,
+  .technical-panel,
+  .maintenance-clean-card,
+  .edit-project-redesign-page,
+  .all-projects-redesign
+) :is(input, select, textarea)::placeholder {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-composer {
+  background: var(--surface) !important;
+  border-top-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-composer textarea {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .attachment-picker-dropzone,
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-voice-button,
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-send-icon-button {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-send-icon-button {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .chat-voice-recorder-bar {
+  border-color: rgba(148, 163, 184, 0.26);
+  background: #0f172a;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-status {
+  color: #e5e7eb;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-status small {
+  color: #94a3b8;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-action {
+  color: #bfdbfe;
+  background: rgba(96, 165, 250, 0.18);
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-action.danger {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-action.send {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+html[data-theme="dark"] .internal-messages-page.chat-messages-page .voice-recorder-wave span {
+  background: #60a5fa;
+}
+
+html[data-theme="dark"] .printshop-batch-card-list,
+html[data-theme="dark"] .product-recipe-list,
+html[data-theme="dark"] .maintenance-clean-list,
+html[data-theme="dark"] .attendance-visual-row-list,
+html[data-theme="dark"] .attendance-visual-alert-list,
+html[data-theme="dark"] .all-projects-department-list,
+html[data-theme="dark"] .all-projects-recent-list {
+  background: transparent !important;
+}
+
+html[data-theme="dark"] .batch-quality-checklist label.checked,
+html[data-theme="dark"] .visual-checklist-item.checked,
+html[data-theme="dark"] .editable-maintenance-checklist-item.checked {
+  background: rgba(34, 197, 94, 0.16) !important;
+  border-color: rgba(74, 222, 128, 0.45) !important;
+}
+
+html[data-theme="dark"] .maintenance-clean-row.urgency-overdue,
+html[data-theme="dark"] .technical-quick-maintenance-item.urgency-overdue {
+  background: rgba(248, 113, 113, 0.16) !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+}
+
+html[data-theme="dark"] .maintenance-clean-row.urgency-today,
+html[data-theme="dark"] .technical-quick-maintenance-item.urgency-today {
+  background: rgba(251, 191, 36, 0.16) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+html[data-theme="dark"] .maintenance-clean-row.urgency-week,
+html[data-theme="dark"] .maintenance-clean-row.urgency-soon,
+html[data-theme="dark"] .technical-quick-maintenance-item.urgency-soon {
+  background: rgba(59, 130, 246, 0.16) !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+}
+
+html[data-theme="dark"] .technical-qr-code {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="dark"] .technical-qr-code svg {
+  color: #0f172a !important;
+  stroke: currentColor;
+}
+
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar.printshop-topbar {
+  align-items: center !important;
+}
+
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar .printshop-topbar-main,
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar .printshop-topbar-copy,
+html[data-theme="dark"] body #root .main-content :is(
+  .project-detail-page,
+  .edit-project-page
+) .project-screen-topbar .project-screen-actions {
+  align-self: center !important;
+}
+

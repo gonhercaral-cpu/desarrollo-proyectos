@@ -147,7 +147,6 @@ export async function createTechnicalMaintenance(
     assetCategory: asset.category || "",
     campus: asset.campus || "",
     area: asset.area || "",
-    assignedTo: asset.assignedTo || "",
     technicalLocationId: asset.technicalLocationId || "",
     technicalLocationName: asset.technicalLocationName || "",
     technicalLocationType: asset.technicalLocationType || "",
@@ -166,7 +165,6 @@ export async function createTechnicalMaintenance(
     // y asegurar que la ficha técnica, la pestaña de mantenimientos y el cierre
     // lean exactamente el mismo checklist editado.
     checklistTemplate,
-    checklistBase: checklistTemplate,
     maintenanceChecklistTemplate: checklistTemplate,
     maintenanceChecklist: checklistTemplate,
     checklistBase: checklistTemplate,

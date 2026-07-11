@@ -66,7 +66,6 @@ export const NAME_CORRECTIONS = {
   peres: "Pérez",
   chavés: "Chávez",
   chaves: "Chávez",
-  marquez: "Márquez",
   marques: "Márquez",
   domingues: "Domínguez",
   benites: "Benítez",
