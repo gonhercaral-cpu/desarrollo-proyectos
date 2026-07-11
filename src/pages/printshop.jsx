@@ -9,6 +9,8 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -3358,6 +3360,79 @@ function findDefaultCertificateResponsibleUser(users = []) {
   }) || null;
 }
 
+function findPrintshopShiftCollaborators(users = []) {
+  const findByIdentity = (targets) => (users || []).find((person) => {
+    const identity = `${getUserDisplayName(person)} ${getUserEmail(person)}`.toLowerCase();
+    return targets.some((target) => identity.includes(target));
+  }) || null;
+
+  return {
+    tony: findByIdentity(["tony", "toni"]),
+    ernesto: findByIdentity(["ernesto"]),
+  };
+}
+
+function getLocalAgendaDateParts(date = new Date()) {
+  const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const pad = (value) => String(value).padStart(2, "0");
+  return {
+    dateValue: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    dayKey: dayKeys[date.getDay()],
+    minute: date.getHours() * 60 + date.getMinutes(),
+  };
+}
+
+function agendaTimeToMinutes(value) {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
+}
+
+async function isUserOnAgendaShift(userId, creationDate) {
+  const { dateValue, dayKey, minute } = getLocalAgendaDateParts(creationDate);
+  const adjustments = await getDocs(
+    query(collection(db, "scheduleAdjustments"), where("userId", "==", userId))
+  );
+  const adjustment = adjustments.docs
+    .map((item) => item.data())
+    .filter((item) => item.isActive !== false)
+    .find((item) => dateValue >= item.startDate && dateValue <= (item.endDate || item.startDate));
+  const blocked = ["permission", "absence", "dayOff"].includes(adjustment?.publicStatus || adjustment?.type);
+  if (blocked) return false;
+
+  let schedule = adjustment?.startTime && adjustment?.endTime ? adjustment : null;
+  if (!schedule) {
+    const snapshot = await getDoc(doc(db, "workSchedules", `${String(userId).replace(/[^a-zA-Z0-9_-]/g, "_")}_${dayKey}`));
+    schedule = snapshot.exists() ? snapshot.data() : null;
+  }
+  if (!schedule || schedule.isActive === false || schedule.isRestDay) return false;
+  const start = agendaTimeToMinutes(schedule.startTime);
+  const end = agendaTimeToMinutes(schedule.endTime);
+  return start !== null && end !== null && minute >= start && minute < end;
+}
+
+async function resolvePrintshopShiftAssignment(users, creationDate = new Date()) {
+  const { tony, ernesto } = findPrintshopShiftCollaborators(users);
+  if (!tony || !ernesto) {
+    const principal = tony || ernesto || null;
+    return { principal, support: principal === tony ? ernesto : tony, source: "fallback", reason: "No se encontraron ambos UIDs activos de Tony y Ernesto." };
+  }
+
+  try {
+    const [tonyOnShift, ernestoOnShift] = await Promise.all([
+      isUserOnAgendaShift(getUserUid(tony), creationDate),
+      isUserOnAgendaShift(getUserUid(ernesto), creationDate),
+    ]);
+    if (tonyOnShift !== ernestoOnShift) {
+      return tonyOnShift
+        ? { principal: tony, support: ernesto, source: "agenda", reason: "" }
+        : { principal: ernesto, support: tony, source: "agenda", reason: "" };
+    }
+    return { principal: tony, support: ernesto, source: "fallback", reason: tonyOnShift ? "Ambos colaboradores aparecen de turno." : "Ningún colaborador aparece de turno." };
+  } catch (error) {
+    return { principal: tony, support: ernesto, source: "fallback", reason: `No se pudo consultar Agenda: ${error?.code || error?.message || "error desconocido"}` };
+  }
+}
+
 function toDateInputValue(value) {
   if (!value) return "";
 
@@ -3617,6 +3692,7 @@ export default function PrintShop() {
   const [credentialMessage, setCredentialMessage] = useState("");
 
   const [generatedCertificates, setGeneratedCertificates] = useState([]);
+  const normalizedDeliveredRequestIdsRef = useRef(new Set());
   const [loadingGeneratedCertificates, setLoadingGeneratedCertificates] = useState(true);
   const [generatedCertificatesError, setGeneratedCertificatesError] = useState("");
   const [generatedCertificateSearch, setGeneratedCertificateSearch] = useState("");
@@ -3681,6 +3757,63 @@ export default function PrintShop() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin || printRequests.length === 0 || generatedCertificates.length === 0) return;
+
+    const staleRequests = printRequests.filter((request) =>
+      request.status === "Entregada" &&
+      !normalizedDeliveredRequestIdsRef.current.has(request.id) &&
+      generatedCertificates.some((certificate) =>
+        certificate.requestId === request.id && certificate.status === "Generado"
+      )
+    );
+    if (staleRequests.length === 0) return;
+
+    staleRequests.forEach((request) => normalizedDeliveredRequestIdsRef.current.add(request.id));
+    const normalize = async () => {
+      const auditUser = getAuditUser();
+      for (const request of staleRequests) {
+        const batch = writeBatch(db);
+        batch.update(doc(db, "printRequests", request.id), {
+          students: normalizeRequestStudents(request.students || []).map((student) =>
+            student.status === "Cancelado" ? student : { ...student, status: "Entregado" }
+          ),
+          updatedAt: serverTimestamp(),
+          updatedByUid: auditUser.uid,
+          updatedByName: auditUser.name,
+          updatedByEmail: auditUser.email,
+        });
+        const certificates = generatedCertificates.filter((certificate) =>
+          certificate.requestId === request.id && certificate.status === "Generado"
+        );
+        certificates.forEach((certificate) => {
+          batch.update(doc(db, "generatedCertificates", certificate.id), {
+            status: "Entregado",
+            deliveredAt: serverTimestamp(),
+            deliveredByUid: auditUser.uid,
+            deliveredByName: auditUser.name,
+            deliveredByEmail: auditUser.email,
+            updatedAt: serverTimestamp(),
+            updatedByUid: auditUser.uid,
+            updatedByName: auditUser.name,
+            updatedByEmail: auditUser.email,
+          });
+          batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(certificate.validationCode || certificate.id || certificate.folio)), {
+            status: "Entregado",
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        });
+        try {
+          await batch.commit();
+        } catch (error) {
+          normalizedDeliveredRequestIdsRef.current.delete(request.id);
+          console.error("No se pudo normalizar una solicitud entregada:", error);
+        }
+      }
+    };
+    normalize();
+  }, [generatedCertificates, isAdmin, printRequests]);
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -6470,8 +6603,18 @@ export default function PrintShop() {
       }
     }
 
-    const nextResponsibleUid = requestForm.responsibleUid || defaultCertificateResponsible?.uid || "";
-    const nextCollaboratorUid = requestForm.collaboratorUid || "";
+    const creationDate = new Date();
+    const automaticAssignment = !selectedRequestId
+      ? await resolvePrintshopShiftAssignment(activeUsers, creationDate)
+      : null;
+    const nextResponsible = automaticAssignment?.principal || null;
+    const nextSupport = automaticAssignment?.support || null;
+    const nextResponsibleUid = selectedRequestId
+      ? (requestForm.responsibleUid || defaultCertificateResponsible?.uid || "")
+      : getUserUid(nextResponsible);
+    const nextCollaboratorUid = selectedRequestId
+      ? (requestForm.collaboratorUid || "")
+      : getUserUid(nextSupport);
     const assignmentChanged =
       isAdmin &&
       Boolean(currentRequest) &&
@@ -6488,11 +6631,17 @@ export default function PrintShop() {
       requesterArea: requestForm.requesterArea.trim(),
       campus: requestForm.campus,
       responsibleUid: nextResponsibleUid,
-      responsibleName: requestForm.responsibleName || defaultCertificateResponsible?.name || "Tony Campos",
-      responsibleEmail: requestForm.responsibleEmail || defaultCertificateResponsible?.email || "",
+      responsibleName: selectedRequestId ? (requestForm.responsibleName || defaultCertificateResponsible?.name || "Tony Campos") : getUserDisplayName(nextResponsible),
+      responsibleEmail: selectedRequestId ? (requestForm.responsibleEmail || defaultCertificateResponsible?.email || "") : getUserEmail(nextResponsible),
       collaboratorUid: nextCollaboratorUid,
-      collaboratorName: requestForm.collaboratorName || "",
-      collaboratorEmail: requestForm.collaboratorEmail || "",
+      collaboratorName: selectedRequestId ? (requestForm.collaboratorName || "") : getUserDisplayName(nextSupport),
+      collaboratorEmail: selectedRequestId ? (requestForm.collaboratorEmail || "") : getUserEmail(nextSupport),
+      ...(!selectedRequestId ? {
+        responsibleAutoAssigned: true,
+        assignmentSource: automaticAssignment?.source || "fallback",
+        assignmentFallbackReason: automaticAssignment?.reason || "",
+        assignmentEvaluatedAt: creationDate.toISOString(),
+      } : {}),
       ...(assignmentChanged
         ? {
             assignedAt: serverTimestamp(),
@@ -6544,7 +6693,11 @@ export default function PrintShop() {
       teacherSignerName: resolvedTeacherSigner?.name || requestForm.teacherSignerName || requestForm.teacherName.trim(),
       teacherSignerRole: resolvedTeacherSigner?.role || requestForm.teacherSignerRole || "Teacher",
       teacherSignatureUrl: resolvedTeacherSigner?.signatureUrl || requestForm.teacherSignatureUrl || "",
-      students: normalizeRequestStudents(currentRequest?.students || []),
+      students: normalizeRequestStudents(currentRequest?.students || []).map((student) =>
+        normalizePrintRequestStatus(requestForm.status) === "Entregada" && student.status !== "Cancelado"
+          ? { ...student, status: "Entregado" }
+          : student
+      ),
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
       updatedByName: auditUser.name,
@@ -6594,7 +6747,34 @@ export default function PrintShop() {
 
         const fieldChangeSummary = buildFieldChangeDescription(currentRequest, payload);
 
-        await updateDoc(doc(db, "printRequests", selectedRequestId), payload);
+        const changedToDelivered = basePayload.status === "Entregada" && currentRequest?.status !== "Entregada";
+        if (changedToDelivered && isRequestCertificateLike(currentRequest?.requestType)) {
+          const batch = writeBatch(db);
+          batch.update(doc(db, "printRequests", selectedRequestId), payload);
+          generatedCertificates
+            .filter((certificate) => certificate.requestId === selectedRequestId && certificate.status !== "Cancelado")
+            .forEach((certificate) => {
+              const deliveredPayload = {
+                status: "Entregado",
+                deliveredAt: serverTimestamp(),
+                deliveredByUid: auditUser.uid,
+                deliveredByName: auditUser.name,
+                deliveredByEmail: auditUser.email,
+                updatedAt: serverTimestamp(),
+                updatedByUid: auditUser.uid,
+                updatedByName: auditUser.name,
+                updatedByEmail: auditUser.email,
+              };
+              batch.update(doc(db, "generatedCertificates", certificate.id), deliveredPayload);
+              batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(certificate.validationCode || certificate.id || certificate.folio)), {
+                status: "Entregado",
+                updatedAt: serverTimestamp(),
+              }, { merge: true });
+            });
+          await batch.commit();
+        } else {
+          await updateDoc(doc(db, "printRequests", selectedRequestId), payload);
+        }
         await createPrintshopLog({
           type: "REQUEST_UPDATED",
           module: "requests",
@@ -14717,8 +14897,11 @@ function CertificatesWorkspaceView({
                       {isExpanded && (
                         <div className="certificate-lote-details">
                           {lote.certificates.map((certificate) => {
+                            const certificateRequest = certificateRequests.find((request) => request.id === certificate.requestId);
+                            const certificateRole = getPrintRequestMemberRole(certificateRequest, { uid: currentUserUid }, isAdmin);
                             const canManageCertificate =
-                              isAdmin || isSameUid(currentUserUid, certificate.responsibleUid);
+                              ["admin", "responsible", "collaborator"].includes(certificateRole) ||
+                              isSameUid(currentUserUid, certificate.responsibleUid);
                             const updating = updatingCertificateId === certificate.id;
 
                             return (
