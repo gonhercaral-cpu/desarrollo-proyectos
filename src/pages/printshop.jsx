@@ -66,6 +66,11 @@ import {
   getPrintRequestMemberRole as resolvePrintRequestMemberRole,
   normalizePrintRequestAssignments,
 } from "../utils/printRequestPermissions";
+import {
+  CERTIFICATE_SIGNER_CAMPUS_OPTIONS,
+  getCertificateSignerCampusFormState,
+  resolveCertificateSignerCampus,
+} from "../utils/certificateSignerCampus";
 import { formatPrintRequestCreatedAt } from "../utils/printRequestDateTime";
 
 const productCategories = [
@@ -453,6 +458,7 @@ const signerFormInitialState = {
   role: "Teacher",
   type: "Teacher",
   campus: "Plaza Estrella",
+  customCampus: "",
   active: true,
   notes: "",
   signatureUrl: "",
@@ -6066,6 +6072,7 @@ export default function PrintShop() {
   }
 
   function selectSigner(signer) {
+    const campusFormState = getCertificateSignerCampusFormState(signer.campus);
     setSelectedSignerId(signer.id);
     setSignerMessage("");
     setSignatureFile(null);
@@ -6073,7 +6080,7 @@ export default function PrintShop() {
       name: signer.name || "",
       role: signer.role || (signer.type === "Principal" ? "Principal" : "Teacher"),
       type: signer.type || "Teacher",
-      campus: signer.campus || "Plaza Estrella",
+      ...campusFormState,
       active: signer.active !== false,
       notes: signer.notes || "",
       signatureUrl: signer.signatureUrl || "",
@@ -6098,6 +6105,7 @@ export default function PrintShop() {
     const auditUser = getAuditUser();
     const name = signerForm.name.trim();
     const role = signerForm.role.trim() || (signerForm.type === "Principal" ? "Principal" : "Teacher");
+    const campus = resolveCertificateSignerCampus(signerForm.campus, signerForm.customCampus);
 
     if (!name) {
       setSignerMessage("Indica el nombre del firmante.");
@@ -6106,6 +6114,11 @@ export default function PrintShop() {
 
     if (!role) {
       setSignerMessage("Indica el cargo que aparecerá debajo del nombre.");
+      return { success: false };
+    }
+
+    if (!campus) {
+      setSignerMessage("Indica el nombre del plantel.");
       return { success: false };
     }
 
@@ -6158,7 +6171,7 @@ export default function PrintShop() {
         name,
         role,
         type: signerForm.type,
-        campus: signerForm.campus || "Otro",
+        campus,
         active: signerForm.active !== false,
         notes: signerForm.notes || "",
         signatureUrl,
@@ -21278,9 +21291,24 @@ function CertificateSignersView({
             <label>
               <span>Plantel</span>
               <select name="campus" value={signerForm.campus} onChange={onSignerInputChange} disabled={!isAdmin}>
-                {printCampuses.map((campus) => <option key={campus}>{campus}</option>)}
+                {CERTIFICATE_SIGNER_CAMPUS_OPTIONS.map((campus) => <option key={campus}>{campus}</option>)}
               </select>
             </label>
+
+            {signerForm.campus === "Otro" && (
+              <label>
+                <span>Nombre del plantel</span>
+                <input
+                  name="customCampus"
+                  value={signerForm.customCampus}
+                  onChange={onSignerInputChange}
+                  placeholder="Escribe el nombre del plantel"
+                  maxLength={120}
+                  required
+                  disabled={!isAdmin}
+                />
+              </label>
+            )}
 
             <label className="full">
               <span>Nombre</span>
