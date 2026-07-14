@@ -33,7 +33,9 @@ service cloud.firestore {
     }
 
     function isAdminRole() {
-      return userExists() && normalizedRole() == "admin";
+      return userExists()
+        && normalizedRole() is string
+        && normalizedRole().matches('^ *admin *$');
     }
 
     function isAdmin() {
@@ -184,11 +186,11 @@ service cloud.firestore {
     function isAssignedToProject() {
       return hasProfile()
         && (
-          resource.data.assignedToUid == request.auth.uid ||
-          resource.data.assignedToId == request.auth.uid ||
-          resource.data.assignedTo == request.auth.uid ||
-          resource.data.responsibleUid == request.auth.uid ||
-          resource.data.responsibleId == request.auth.uid
+          ("assignedToUid" in resource.data && resource.data.assignedToUid == request.auth.uid) ||
+          ("assignedToId" in resource.data && resource.data.assignedToId == request.auth.uid) ||
+          ("assignedTo" in resource.data && resource.data.assignedTo == request.auth.uid) ||
+          ("responsibleUid" in resource.data && resource.data.responsibleUid == request.auth.uid) ||
+          ("responsibleId" in resource.data && resource.data.responsibleId == request.auth.uid)
         );
     }
 
@@ -196,11 +198,11 @@ service cloud.firestore {
       return hasProfile()
         && projectExists(projectId)
         && (
-          projectData(projectId).assignedToUid == request.auth.uid ||
-          projectData(projectId).assignedToId == request.auth.uid ||
-          projectData(projectId).assignedTo == request.auth.uid ||
-          projectData(projectId).responsibleUid == request.auth.uid ||
-          projectData(projectId).responsibleId == request.auth.uid
+          ("assignedToUid" in projectData(projectId) && projectData(projectId).assignedToUid == request.auth.uid) ||
+          ("assignedToId" in projectData(projectId) && projectData(projectId).assignedToId == request.auth.uid) ||
+          ("assignedTo" in projectData(projectId) && projectData(projectId).assignedTo == request.auth.uid) ||
+          ("responsibleUid" in projectData(projectId) && projectData(projectId).responsibleUid == request.auth.uid) ||
+          ("responsibleId" in projectData(projectId) && projectData(projectId).responsibleId == request.auth.uid)
         );
     }
 
@@ -208,22 +210,26 @@ service cloud.firestore {
       return hasProfile()
         && (
           (
-            resource.data.collaboratorIds is list
+            "collaboratorIds" in resource.data
+            && resource.data.collaboratorIds is list
             && request.auth.uid in resource.data.collaboratorIds
           )
           ||
           (
-            resource.data.collaboratorUids is list
+            "collaboratorUids" in resource.data
+            && resource.data.collaboratorUids is list
             && request.auth.uid in resource.data.collaboratorUids
           )
           ||
           (
-            resource.data.collaboratorsIds is list
+            "collaboratorsIds" in resource.data
+            && resource.data.collaboratorsIds is list
             && request.auth.uid in resource.data.collaboratorsIds
           )
           ||
           (
-            resource.data.collaborators is list
+            "collaborators" in resource.data
+            && resource.data.collaborators is list
             && request.auth.uid in resource.data.collaborators
           )
         );
@@ -234,22 +240,26 @@ service cloud.firestore {
         && projectExists(projectId)
         && (
           (
-            projectData(projectId).collaboratorIds is list
+            "collaboratorIds" in projectData(projectId)
+            && projectData(projectId).collaboratorIds is list
             && request.auth.uid in projectData(projectId).collaboratorIds
           )
           ||
           (
-            projectData(projectId).collaboratorUids is list
+            "collaboratorUids" in projectData(projectId)
+            && projectData(projectId).collaboratorUids is list
             && request.auth.uid in projectData(projectId).collaboratorUids
           )
           ||
           (
-            projectData(projectId).collaboratorsIds is list
+            "collaboratorsIds" in projectData(projectId)
+            && projectData(projectId).collaboratorsIds is list
             && request.auth.uid in projectData(projectId).collaboratorsIds
           )
           ||
           (
-            projectData(projectId).collaborators is list
+            "collaborators" in projectData(projectId)
+            && projectData(projectId).collaborators is list
             && request.auth.uid in projectData(projectId).collaborators
           )
         );
@@ -258,8 +268,8 @@ service cloud.firestore {
     function isCreatorOfProject() {
       return hasProfile()
         && (
-          resource.data.createdByUid == request.auth.uid ||
-          resource.data.createdBy == request.auth.uid
+          ("createdByUid" in resource.data && resource.data.createdByUid == request.auth.uid) ||
+          ("createdBy" in resource.data && resource.data.createdBy == request.auth.uid)
         );
     }
 
@@ -267,8 +277,8 @@ service cloud.firestore {
       return hasProfile()
         && projectExists(projectId)
         && (
-          projectData(projectId).createdByUid == request.auth.uid ||
-          projectData(projectId).createdBy == request.auth.uid
+          ("createdByUid" in projectData(projectId) && projectData(projectId).createdByUid == request.auth.uid) ||
+          ("createdBy" in projectData(projectId) && projectData(projectId).createdBy == request.auth.uid)
         );
     }
 
@@ -277,8 +287,8 @@ service cloud.firestore {
         && isRequester()
         && hasUserArea()
         && (
-          resource.data.requesterArea == userDoc().data.area ||
-          resource.data.responsibleArea == userDoc().data.area
+          ("requesterArea" in resource.data && resource.data.requesterArea == userDoc().data.area) ||
+          ("responsibleArea" in resource.data && resource.data.responsibleArea == userDoc().data.area)
         );
     }
 
@@ -288,8 +298,8 @@ service cloud.firestore {
         && hasUserArea()
         && projectExists(projectId)
         && (
-          projectData(projectId).requesterArea == userDoc().data.area ||
-          projectData(projectId).responsibleArea == userDoc().data.area
+          ("requesterArea" in projectData(projectId) && projectData(projectId).requesterArea == userDoc().data.area) ||
+          ("responsibleArea" in projectData(projectId) && projectData(projectId).responsibleArea == userDoc().data.area)
         );
     }
 
@@ -1610,62 +1620,41 @@ service cloud.firestore {
         );
     }
 
-    function profileEmailMatches(value) {
-      return hasProfile()
-        && value is string
-        && userDoc().data.email is string
-        && value == userDoc().data.email;
-    }
-
-    function profileNameMatches(value) {
-      return hasProfile()
-        && value is string
-        && userDoc().data.name is string
-        && value == userDoc().data.name;
-    }
-
     function isPrintRequestAssignedData(printRequest) {
       return hasProfile()
         && (
+          ("assignedUserId" in printRequest && printRequest.assignedUserId is string && printRequest.assignedUserId == request.auth.uid) ||
           ("responsibleUid" in printRequest && printRequest.responsibleUid is string && printRequest.responsibleUid == request.auth.uid) ||
           ("assignedToUid" in printRequest && printRequest.assignedToUid is string && printRequest.assignedToUid == request.auth.uid) ||
           ("productionAssigneeUid" in printRequest && printRequest.productionAssigneeUid is string && printRequest.productionAssigneeUid == request.auth.uid) ||
           ("assignedCollaboratorUid" in printRequest && printRequest.assignedCollaboratorUid is string && printRequest.assignedCollaboratorUid == request.auth.uid) ||
-          ("responsibleId" in printRequest && printRequest.responsibleId is string && printRequest.responsibleId == request.auth.uid) ||
-          ("responsibleEmail" in printRequest && profileEmailMatches(printRequest.responsibleEmail)) ||
-          ("assignedToEmail" in printRequest && profileEmailMatches(printRequest.assignedToEmail)) ||
-          ("productionAssigneeEmail" in printRequest && profileEmailMatches(printRequest.productionAssigneeEmail)) ||
-          ("responsibleName" in printRequest && profileNameMatches(printRequest.responsibleName)) ||
-          ("assignedToName" in printRequest && profileNameMatches(printRequest.assignedToName)) ||
-          ("productionAssigneeName" in printRequest && profileNameMatches(printRequest.productionAssigneeName))
+          ("responsibleId" in printRequest && printRequest.responsibleId is string && printRequest.responsibleId == request.auth.uid)
         );
     }
 
     function isPrintRequestSupportData(printRequest) {
       return hasProfile()
         && (
+          ("supportUserId" in printRequest && printRequest.supportUserId is string && printRequest.supportUserId == request.auth.uid) ||
           ("collaboratorUid" in printRequest && printRequest.collaboratorUid is string && printRequest.collaboratorUid == request.auth.uid) ||
           ("collaboratorId" in printRequest && printRequest.collaboratorId is string && printRequest.collaboratorId == request.auth.uid) ||
           ("supportCollaboratorUid" in printRequest && printRequest.supportCollaboratorUid is string && printRequest.supportCollaboratorUid == request.auth.uid) ||
           ("productionSupportUid" in printRequest && printRequest.productionSupportUid is string && printRequest.productionSupportUid == request.auth.uid) ||
           ("supportUid" in printRequest && printRequest.supportUid is string && printRequest.supportUid == request.auth.uid) ||
+          ("supportUserIds" in printRequest && printRequest.supportUserIds is list && request.auth.uid in printRequest.supportUserIds) ||
           ("supportCollaboratorIds" in printRequest && printRequest.supportCollaboratorIds is list && request.auth.uid in printRequest.supportCollaboratorIds) ||
           ("supportCollaborators" in printRequest && printRequest.supportCollaborators is list && request.auth.uid in printRequest.supportCollaborators) ||
           ("collaboratorUids" in printRequest && printRequest.collaboratorUids is list && request.auth.uid in printRequest.collaboratorUids) ||
-          ("collaboratorIds" in printRequest && printRequest.collaboratorIds is list && request.auth.uid in printRequest.collaboratorIds) ||
-          ("collaboratorEmail" in printRequest && profileEmailMatches(printRequest.collaboratorEmail)) ||
-          ("supportCollaboratorEmail" in printRequest && profileEmailMatches(printRequest.supportCollaboratorEmail)) ||
-          ("productionSupportEmail" in printRequest && profileEmailMatches(printRequest.productionSupportEmail)) ||
-          ("supportEmail" in printRequest && profileEmailMatches(printRequest.supportEmail)) ||
-          ("collaboratorName" in printRequest && profileNameMatches(printRequest.collaboratorName)) ||
-          ("supportCollaboratorName" in printRequest && profileNameMatches(printRequest.supportCollaboratorName)) ||
-          ("productionSupportName" in printRequest && profileNameMatches(printRequest.productionSupportName)) ||
-          ("supportName" in printRequest && profileNameMatches(printRequest.supportName))
+          ("collaboratorIds" in printRequest && printRequest.collaboratorIds is list && request.auth.uid in printRequest.collaboratorIds)
         );
     }
 
     function isPrintRequestMemberData(printRequest) {
       return isPrintRequestAssignedData(printRequest) || isPrintRequestSupportData(printRequest);
+    }
+
+    function canManagePrintRequestData(printRequest) {
+      return isAdmin() || isPrintRequestMemberData(printRequest);
     }
 
     function isPrintRequestResponsible() {
@@ -1705,10 +1694,13 @@ service cloud.firestore {
     }
 
     function responsiblePrintRequestUpdate() {
-      return (isPrintRequestResponsible() || isPrintRequestCollaborator())
+      return canManagePrintRequestData(resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status",
+          "statusLabel",
+          "requestedQuantity",
           "deliveredQuantity",
+          "deliveryType",
           "notes",
           "students",
           "dueDate",
@@ -1727,7 +1719,11 @@ service cloud.firestore {
           "certificateTemplateStoragePath",
           "certificateTemplatePositions",
           "level",
+          "group",
           "teacherName",
+          "schedule",
+          "printedQuantity",
+          "digitalQuantity",
           "principalSignerId",
           "principalSignerName",
           "principalSignerRole",
@@ -1751,8 +1747,21 @@ service cloud.firestore {
           "En producción",
           "En revisión de calidad",
           "Lista para entrega",
-          "Entregada"
+          "Entregada",
+          "Cancelada"
         ]
+        && (!("statusLabel" in request.resource.data) || request.resource.data.statusLabel == request.resource.data.status)
+        && request.resource.data.requestedQuantity is number
+        && request.resource.data.requestedQuantity >= 0
+        && request.resource.data.deliveredQuantity is number
+        && request.resource.data.deliveredQuantity >= 0
+        && request.resource.data.deliveredQuantity <= request.resource.data.requestedQuantity
+        && request.resource.data.deliveryType in ["Impresa", "Digital", "Ambas"]
+        && request.resource.data.printedQuantity is number
+        && request.resource.data.printedQuantity >= 0
+        && request.resource.data.digitalQuantity is number
+        && request.resource.data.digitalQuantity >= 0
+        && request.resource.data.students is list
         && request.resource.data.updatedByUid == request.auth.uid;
     }
 
@@ -1772,7 +1781,7 @@ service cloud.firestore {
     }
 
     function printshopCertificateStudentsUpdate() {
-      return (isAdmin() || isPrintRequestResponsible() || isPrintRequestCollaborator())
+      return canManagePrintRequestData(resource.data)
         && resource.data.requestType in ["Certificado", "Diploma"]
         && request.resource.data.requestType == resource.data.requestType
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -1797,7 +1806,8 @@ service cloud.firestore {
           "En producción",
           "En revisión de calidad",
           "Lista para entrega",
-          "Entregada"
+          "Entregada",
+          "Cancelada"
         ]
         && request.resource.data.updatedByUid == request.auth.uid;
     }
@@ -1822,8 +1832,7 @@ service cloud.firestore {
         && requestId.size() > 0
         && printRequestExists(requestId)
         && (
-          isAdmin() ||
-          isPrintRequestMemberData(printRequestData(requestId))
+          canManagePrintRequestData(printRequestData(requestId))
         );
     }
 
@@ -2782,6 +2791,8 @@ service cloud.firestore {
       allow get: if canAccessProject();
 
       allow list: if isAdmin() || canAccessProject();
+      allow list: if hasProfile()
+        && request.auth.uid in resource.data.collaboratorIds;
 
       allow create: if adminValidProjectCreate();
 

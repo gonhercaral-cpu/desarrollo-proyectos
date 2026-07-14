@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 import {
   assertFails,
@@ -15,9 +16,9 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
   where,
 } from "firebase/firestore";
-import { getStorage, ref, uploadString } from "firebase/storage";
 
 const PROJECT_ID = "security-rules-audit";
 
@@ -28,7 +29,7 @@ function auth(uid) {
 }
 
 function storageAuth(uid) {
-  return getStorage(testEnv.authenticatedContext(uid).app);
+  return testEnv.authenticatedContext(uid).storage();
 }
 
 function unauth() {
@@ -155,13 +156,21 @@ async function seedBaseData() {
       setDoc(doc(db, "printRequests", "cert-request-1"), {
         folio: "IMP-2026-0001",
         requestType: "Certificado",
+        assignedUserId: "printer",
+        supportUserId: "collab",
         responsibleUid: "printer",
         responsibleName: "Printer",
         responsibleEmail: "printer@test.local",
         collaboratorUid: "collab",
         collaboratorName: "Collaborator",
         collaboratorEmail: "collab@test.local",
-        status: "En producciÃ³n",
+        status: "En producción",
+        statusLabel: "En producción",
+        requestedQuantity: 1,
+        deliveredQuantity: 0,
+        deliveryType: "Impresa",
+        printedQuantity: 1,
+        digitalQuantity: 0,
         students: [],
         deleted: false,
       }),
@@ -688,6 +697,182 @@ describe("certificados de imprenta", () => {
     );
   });
 
+  it("permite al principal y apoyo cambiar cualquier estado permitido", async () => {
+    const allowedStatuses = [
+      "Solicitud recibida",
+      "Datos incompletos",
+      "En revisión",
+      "Aprobada",
+      "En producción",
+      "En revisión de calidad",
+      "Lista para entrega",
+      "Entregada",
+      "Cancelada",
+    ];
+
+    for (const [index, status] of allowedStatuses.entries()) {
+      const uid = index % 2 === 0 ? "printer" : "collab";
+      const db = auth(uid);
+      await assertSucceeds(
+        updateDoc(doc(db, "printRequests", "cert-request-1"), {
+          status,
+          statusLabel: status,
+          updatedAt: Timestamp.now(),
+          updatedByUid: uid,
+          updatedByName: uid === "printer" ? "Printer" : "Collaborator",
+          updatedByEmail: `${uid}@test.local`,
+        })
+      );
+    }
+  });
+
+  it("permite al apoyo editar alumnos, entrega, plantilla, fechas, firmantes y producción", async () => {
+    const db = auth("collab");
+
+    await assertSucceeds(
+      updateDoc(doc(db, "printRequests", "cert-request-1"), {
+        requestedQuantity: 1,
+        deliveredQuantity: 0,
+        deliveryType: "Digital",
+        dueDate: "2026-08-15",
+        certificateIssueDate: "2026-08-14",
+        certificateTemplateId: "template-2",
+        certificateTemplateName: "Plantilla corregida",
+        certificateTemplateLevel: "A1",
+        certificateTemplateProgramName: "Journey",
+        certificateTemplateAudience: "Adultos",
+        certificateTemplateBodyText: "Texto",
+        certificateTemplateBodySegments: [],
+        certificateTemplateCustomTexts: [],
+        certificateTemplateCustomImages: [],
+        certificateTemplateImageUrl: "https://example.test/template.png",
+        certificateTemplateImageDataUrl: "data:image/png;base64,AA==",
+        certificateTemplateStoragePath: "printshop/templates/template-2.png",
+        certificateTemplatePositions: {},
+        level: "A1",
+        group: "Grupo A1",
+        teacherName: "Teacher Demo",
+        schedule: "Lun 18:00",
+        printedQuantity: 0,
+        digitalQuantity: 1,
+        principalSignerId: "principal-2",
+        principalSignerName: "Principal Demo",
+        principalSignerRole: "Principal",
+        principalSignatureUrl: "https://example.test/principal.png",
+        principalSignatureDataUrl: "data:image/png;base64,AA==",
+        teacherSignerId: "teacher-2",
+        teacherSignerName: "Teacher Demo",
+        teacherSignerRole: "Teacher",
+        teacherSignatureUrl: "https://example.test/teacher.png",
+        teacherSignatureDataUrl: "data:image/png;base64,AA==",
+        students: [{ id: "student-1", name: "Alumno Corregido", deliveryType: "Digital", status: "Pendiente" }],
+        updatedAt: Timestamp.now(),
+        updatedByUid: "collab",
+        updatedByName: "Collaborator",
+        updatedByEmail: "collab@test.local",
+      })
+    );
+  });
+
+  it("mantiene al usuario no asignado en solo lectura", async () => {
+    const db = auth("requester");
+
+    await assertFails(
+      updateDoc(doc(db, "printRequests", "cert-request-1"), {
+        status: "Entregada",
+        statusLabel: "Entregada",
+        updatedAt: Timestamp.now(),
+        updatedByUid: "requester",
+        updatedByName: "Requester",
+        updatedByEmail: "requester@test.local",
+      })
+    );
+  });
+
+  it("sincroniza Entregada atómicamente en solicitud, lote, certificado y QR", async () => {
+    const db = auth("collab");
+    const certificateId = "CERT-2026-A1-ENTREGADO-001";
+    const student = {
+      id: "student-delivered",
+      name: "Alumno Entregado",
+      deliveryType: "Impreso",
+      status: "Entregado",
+      certificateFolio: "CERT-2026-A1-ENTREGADO",
+      validationCode: certificateId,
+    };
+
+    await assertSucceeds(setDoc(
+      doc(db, "generatedCertificates", certificateId),
+      validGeneratedCertificate({
+        folio: student.certificateFolio,
+        validationCode: certificateId,
+        studentId: student.id,
+        studentName: student.name,
+        generatedByUid: "collab",
+        generatedByName: "Collaborator",
+        generatedByEmail: "collab@test.local",
+        updatedByUid: "collab",
+        updatedByName: "Collaborator",
+        updatedByEmail: "collab@test.local",
+      })
+    ));
+    await assertSucceeds(setDoc(
+      doc(db, "publicCertificateValidations", certificateId),
+      validPublicCertificateValidation({
+        folio: student.certificateFolio,
+        validationCode: certificateId,
+        studentName: student.name,
+      })
+    ));
+    await assertSucceeds(setDoc(doc(db, "certificateHistoryBatches", "cert-request-1"), {
+      requestId: "cert-request-1",
+      loteId: "cert-request-1",
+      status: "Generado",
+    }));
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, "printRequests", "cert-request-1"), {
+      status: "Entregada",
+      statusLabel: "Entregada",
+      deliveredQuantity: 1,
+      students: [student],
+      updatedAt: Timestamp.now(),
+      updatedByUid: "collab",
+      updatedByName: "Collaborator",
+      updatedByEmail: "collab@test.local",
+    });
+    batch.set(doc(db, "certificateHistoryBatches", "cert-request-1"), {
+      requestId: "cert-request-1",
+      loteId: "cert-request-1",
+      status: "Entregado",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "collab",
+      updatedByName: "Collaborator",
+      updatedByEmail: "collab@test.local",
+    }, { merge: true });
+    batch.update(doc(db, "generatedCertificates", certificateId), {
+      status: "Entregado",
+      deliveredByUid: "collab",
+      deliveredByName: "Collaborator",
+      deliveredByEmail: "collab@test.local",
+      updatedByUid: "collab",
+      updatedByName: "Collaborator",
+      updatedByEmail: "collab@test.local",
+    });
+    batch.set(doc(db, "publicCertificateValidations", certificateId), {
+      status: "Entregado",
+    }, { merge: true });
+
+    await assertSucceeds(batch.commit());
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const verificationDb = context.firestore();
+      assert.equal((await getDoc(doc(verificationDb, "printRequests", "cert-request-1"))).data().status, "Entregada");
+      assert.equal((await getDoc(doc(verificationDb, "certificateHistoryBatches", "cert-request-1"))).data().status, "Entregado");
+      assert.equal((await getDoc(doc(verificationDb, "generatedCertificates", certificateId))).data().status, "Entregado");
+      assert.equal((await getDoc(doc(verificationDb, "publicCertificateValidations", certificateId))).data().status, "Entregado");
+    });
+  });
+
   it("bloquea generar certificados de solicitud a colaborador no asignado", async () => {
     const db = auth("requester");
 
@@ -932,43 +1117,43 @@ describe("mensajeria departamental", () => {
 describe("storage", () => {
   it("impide subir evidencia a proyecto ajeno", async () => {
     const storage = storageAuth("requester");
-    const fileRef = ref(storage, "evidence/other-project/requester/proof.txt");
+    const fileRef = storage.ref("evidence/other-project/requester/proof.txt");
 
-    await assertFails(uploadString(fileRef, "proof", "raw", { contentType: "text/plain" }));
+    await assertFails(fileRef.putString("proof", "raw", { contentType: "text/plain" }));
   });
 
   it("permite subir evidencia a proyecto asignado", async () => {
     const storage = storageAuth("collab");
-    const fileRef = ref(storage, "evidence/owned-project/collab/proof.txt");
+    const fileRef = storage.ref("evidence/owned-project/collab/proof.txt");
 
-    await assertSucceeds(uploadString(fileRef, "proof", "raw", { contentType: "text/plain" }));
+    await assertSucceeds(fileRef.putString("proof", "raw", { contentType: "text/plain" }));
   });
 
   it("permite subir TXT con MIME generico a proyecto asignado", async () => {
     const storage = storageAuth("collab");
-    const fileRef = ref(storage, "evidence/owned-project/collab/notas.txt");
+    const fileRef = storage.ref("evidence/owned-project/collab/notas.txt");
 
-    await assertSucceeds(uploadString(fileRef, "notas", "raw", { contentType: "application/octet-stream" }));
+    await assertSucceeds(fileRef.putString("notas", "raw", { contentType: "application/octet-stream" }));
   });
 
   it("bloquea extension no permitida como evidencia de proyecto", async () => {
     const storage = storageAuth("collab");
-    const fileRef = ref(storage, "evidence/owned-project/collab/proof.exe");
+    const fileRef = storage.ref("evidence/owned-project/collab/proof.exe");
 
-    await assertFails(uploadString(fileRef, "proof", "raw", { contentType: "application/octet-stream" }));
+    await assertFails(fileRef.putString("proof", "raw", { contentType: "application/octet-stream" }));
   });
 
   it("permite al colaborador de apoyo subir PDF de certificado", async () => {
     const storage = storageAuth("collab");
-    const fileRef = ref(storage, "printshop/generated-certificates/cert-request-1/2026/certificado-apoyo.pdf");
+    const fileRef = storage.ref("printshop/generated-certificates/cert-request-1/2026/certificado-apoyo.pdf");
 
-    await assertSucceeds(uploadString(fileRef, "%PDF-1.4", "raw", { contentType: "application/pdf" }));
+    await assertSucceeds(fileRef.putString("%PDF-1.4", "raw", { contentType: "application/pdf" }));
   });
 
   it("bloquea subir PDF de certificado a colaborador no asignado", async () => {
     const storage = storageAuth("requester");
-    const fileRef = ref(storage, "printshop/generated-certificates/cert-request-1/2026/certificado-ajeno.pdf");
+    const fileRef = storage.ref("printshop/generated-certificates/cert-request-1/2026/certificado-ajeno.pdf");
 
-    await assertFails(uploadString(fileRef, "%PDF-1.4", "raw", { contentType: "application/pdf" }));
+    await assertFails(fileRef.putString("%PDF-1.4", "raw", { contentType: "application/pdf" }));
   });
 });

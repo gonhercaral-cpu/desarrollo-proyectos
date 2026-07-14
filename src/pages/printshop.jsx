@@ -51,11 +51,18 @@ import {
   isLetterPortraitPdf,
 } from "../utils/certificatePage";
 import { findMatchingCertificateTemplateInList } from "../utils/certificateTemplateMatching";
+import { repairMissingPrintRequestAssignments } from "../services/printRequestAssignmentsService";
 import {
   dedupeCertificatePeople,
   isActiveCertificatePerson,
   normalizeCertificateSignerType,
 } from "../utils/certificatePeople";
+import {
+  buildCanonicalPrintRequestAssignment,
+  canManagePrintRequest,
+  getPrintRequestMemberRole as resolvePrintRequestMemberRole,
+  normalizePrintRequestAssignments,
+} from "../utils/printRequestPermissions";
 
 const productCategories = [
   "Libro",
@@ -3392,19 +3399,6 @@ function isSameText(a, b) {
   return Boolean(first) && Boolean(second) && first === second;
 }
 
-function findDefaultCertificateResponsibleUser(users = []) {
-  const normalizedTonyNames = ["tony", "toni", "tony campos", "toni campos"];
-
-  return (users || []).find((person) => {
-    const name = normalizeComparable(getUserDisplayName(person));
-    const email = normalizeComparable(getUserEmail(person));
-
-    return normalizedTonyNames.some((target) => name === target || name.includes(target)) ||
-      email.includes("tony") ||
-      email.includes("toni");
-  }) || null;
-}
-
 function toCertificateDate(value) {
   if (!value) return null;
   const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
@@ -3427,14 +3421,17 @@ function getOriginalCertificateGenerationValue(students = [], request = null, ce
 }
 
 function findPrintshopShiftCollaborators(users = []) {
-  const findByIdentity = (targets) => (users || []).find((person) => {
-    const identity = `${getUserDisplayName(person)} ${getUserEmail(person)}`.toLowerCase();
-    return targets.some((target) => identity.includes(target));
-  }) || null;
+  const findByAssignmentRole = (role) => (users || []).find((person) =>
+    normalizeComparable(
+      person?.printshopAssignmentRole ||
+      person?.printshopShiftRole ||
+      person?.printshopAssignmentKey
+    ) === role
+  ) || null;
 
   return {
-    tony: findByIdentity(["tony", "toni"]),
-    ernesto: findByIdentity(["ernesto"]),
+    tony: findByAssignmentRole("tony"),
+    ernesto: findByAssignmentRole("ernesto"),
   };
 }
 
@@ -3575,71 +3572,8 @@ function canProfileAccessPrintshop(profile, isAdmin) {
   );
 }
 
-function requestHasUidInList(value, uid) {
-  if (!Array.isArray(value) || !uid) return false;
-
-  return value.some((item) => {
-    if (typeof item === "string") return isSameUid(uid, item);
-
-    return (
-      isSameUid(uid, item?.uid) ||
-      isSameUid(uid, item?.id) ||
-      isSameUid(uid, item?.userUid) ||
-      isSameUid(uid, item?.collaboratorUid) ||
-      isSameUid(uid, item?.supportUid)
-    );
-  });
-}
-
-function isPrintRequestAssignedToUser(request, actor = {}) {
-  if (!request) return false;
-
-  return (
-    isSameUid(actor.uid, request.responsibleUid) ||
-    isSameUid(actor.uid, request.assignedToUid) ||
-    isSameUid(actor.uid, request.productionAssigneeUid) ||
-    isSameUid(actor.uid, request.assignedCollaboratorUid) ||
-    isSameUid(actor.uid, request.responsibleId) ||
-    isSameText(actor.email, request.responsibleEmail) ||
-    isSameText(actor.email, request.assignedToEmail) ||
-    isSameText(actor.email, request.productionAssigneeEmail) ||
-    isSameText(actor.name, request.responsibleName) ||
-    isSameText(actor.name, request.assignedToName) ||
-    isSameText(actor.name, request.productionAssigneeName)
-  );
-}
-
-function isPrintRequestSupportUser(request, actor = {}) {
-  if (!request) return false;
-
-  return (
-    isSameUid(actor.uid, request.collaboratorUid) ||
-    isSameUid(actor.uid, request.collaboratorId) ||
-    isSameUid(actor.uid, request.supportCollaboratorUid) ||
-    isSameUid(actor.uid, request.productionSupportUid) ||
-    isSameUid(actor.uid, request.supportUid) ||
-    requestHasUidInList(request.supportCollaboratorIds, actor.uid) ||
-    requestHasUidInList(request.supportCollaborators, actor.uid) ||
-    requestHasUidInList(request.collaboratorUids, actor.uid) ||
-    requestHasUidInList(request.collaboratorIds, actor.uid) ||
-    isSameText(actor.email, request.collaboratorEmail) ||
-    isSameText(actor.email, request.supportCollaboratorEmail) ||
-    isSameText(actor.email, request.productionSupportEmail) ||
-    isSameText(actor.email, request.supportEmail) ||
-    isSameText(actor.name, request.collaboratorName) ||
-    isSameText(actor.name, request.supportCollaboratorName) ||
-    isSameText(actor.name, request.productionSupportName) ||
-    isSameText(actor.name, request.supportName)
-  );
-}
-
 function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
-  if (!request) return isAdminUser ? "admin" : "viewer";
-  if (isAdminUser) return "admin";
-  if (isPrintRequestAssignedToUser(request, actor)) return "responsible";
-  if (isPrintRequestSupportUser(request, actor)) return "collaborator";
-
-  return "viewer";
+  return resolvePrintRequestMemberRole(actor.uid, request, isAdminUser);
 }
 
 export default function PrintShop() {
@@ -3647,6 +3581,7 @@ export default function PrintShop() {
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin);
   const canViewCertificateStatistics =
     isAdmin || getProfileDepartmentNames(profile).includes("imprenta");
+  const assignmentRepairStartedRef = useRef(false);
 
   const [activeSection, setActiveSection] = useState("dashboard");
   const [products, setProducts] = useState([]);
@@ -3786,6 +3721,15 @@ export default function PrintShop() {
     setBulkStudentsText("");
     setBulkStudentsDeliveryType("Impreso");
   }, [selectedRequestId]);
+
+  useEffect(() => {
+    if (!isAdmin || assignmentRepairStartedRef.current) return;
+    assignmentRepairStartedRef.current = true;
+
+    repairMissingPrintRequestAssignments().catch((error) => {
+      console.warn("No se pudo ejecutar la reparación de asignaciones de Imprenta:", error);
+    });
+  }, [isAdmin]);
 
   useEffect(() => {
     setLoadingUsers(true);
@@ -4668,11 +4612,6 @@ export default function PrintShop() {
     [certificateSigners]
   );
 
-  const defaultCertificateResponsible = useMemo(
-    () => findDefaultCertificateResponsibleUser(activeUsers),
-    [activeUsers]
-  );
-
   const activeCertificateTemplates = useMemo(
     () => certificateTemplates.filter((template) => template.active !== false),
     [certificateTemplates]
@@ -4911,22 +4850,8 @@ export default function PrintShop() {
     return role === "admin" || role === "responsible" || role === "auditor";
   }
 
-  function isPrintRequestResponsible(request, auditUser = getAuditUser()) {
-    return isPrintRequestAssignedToUser(request, auditUser);
-  }
-
-  function isPrintRequestCollaborator(request, auditUser = getAuditUser()) {
-    return isPrintRequestSupportUser(request, auditUser);
-  }
-
-  function getCurrentUserPrintRequestRole(request = selectedRequest) {
-    return getPrintRequestMemberRole(request, getAuditUser(), isAdmin);
-  }
-
   function canCurrentUserEditRequest(request = selectedRequest) {
-    return ["admin", "responsible", "collaborator"].includes(
-      getCurrentUserPrintRequestRole(request)
-    );
+    return canManagePrintRequest(getAuditUser().uid, request, isAdmin);
   }
 
   function handleRequestInputChange(event) {
@@ -6441,6 +6366,9 @@ export default function PrintShop() {
   }
 
   function selectRequest(request) {
+    const normalizedAssignments = normalizePrintRequestAssignments(request);
+    const assignedUser = activeUsers.find((person) => getUserUid(person) === normalizedAssignments.assignedUserId);
+    const supportUser = activeUsers.find((person) => getUserUid(person) === normalizedAssignments.supportUserId);
     const requestLevel = request.level || request.certificateTemplateLevel || "No aplica";
     const requestGroup = request.group || request.courseLevel || request.certificateTemplateProgramName || "";
     const requestStudentCounts = getStudentDeliveryCounts(request.students || []);
@@ -6472,7 +6400,6 @@ export default function PrintShop() {
               level: requestLevel,
             }
           );
-    const defaultResponsible = findDefaultCertificateResponsibleUser(activeUsers);
     const automaticPriority = calculateRequestPriority({
       requestDate: request.requestDate,
       dueDate: request.dueDate || request.requestedDeliveryDate,
@@ -6498,12 +6425,12 @@ export default function PrintShop() {
       requesterName: request.requesterName || "",
       requesterArea: request.requesterArea || "",
       campus: request.campus || "Plaza Estrella",
-      responsibleUid: request.responsibleUid || defaultResponsible?.uid || "",
-      responsibleName: request.responsibleName || defaultResponsible?.name || "Tony Campos",
-      responsibleEmail: request.responsibleEmail || defaultResponsible?.email || "",
-      collaboratorUid: request.collaboratorUid || "",
-      collaboratorName: request.collaboratorName || "",
-      collaboratorEmail: request.collaboratorEmail || "",
+      responsibleUid: normalizedAssignments.assignedUserId,
+      responsibleName: request.responsibleName || getUserDisplayName(assignedUser),
+      responsibleEmail: request.responsibleEmail || getUserEmail(assignedUser),
+      collaboratorUid: normalizedAssignments.supportUserId,
+      collaboratorName: request.collaboratorName || getUserDisplayName(supportUser),
+      collaboratorEmail: request.collaboratorEmail || getUserEmail(supportUser),
       priority: automaticPriority || request.priority || "Normal",
       requestedQuantity: resolvedRequestedQuantity,
       deliveredQuantity: Number(request.deliveredQuantity || 0),
@@ -6588,7 +6515,10 @@ export default function PrintShop() {
     }
 
     const requestedQuantity = Number(requestForm.requestedQuantity || 0);
-    const deliveredQuantity = Number(requestForm.deliveredQuantity || 0);
+    const nextRequestStatus = normalizePrintRequestStatus(requestForm.status);
+    const deliveredQuantity = nextRequestStatus === "Entregada"
+      ? requestedQuantity
+      : Number(requestForm.deliveredQuantity || 0);
     const printedQuantity = Number(requestForm.printedQuantity || 0);
     const digitalQuantity = Number(requestForm.digitalQuantity || 0);
     const resolvedTemplate = findMatchingCertificateTemplate(requestForm, selectedProduct);
@@ -6647,17 +6577,18 @@ export default function PrintShop() {
     const nextResponsible = automaticAssignment?.principal || null;
     const nextSupport = automaticAssignment?.support || null;
     const nextResponsibleUid = selectedRequestId
-      ? (requestForm.responsibleUid || defaultCertificateResponsible?.uid || "")
+      ? (requestForm.responsibleUid || "")
       : getUserUid(nextResponsible);
     const nextCollaboratorUid = selectedRequestId
       ? (requestForm.collaboratorUid || "")
       : getUserUid(nextSupport);
+    const currentAssignments = normalizePrintRequestAssignments(currentRequest || {});
     const assignmentChanged =
       isAdmin &&
       Boolean(currentRequest) &&
       (
-        (currentRequest.responsibleUid || "") !== nextResponsibleUid ||
-        (currentRequest.collaboratorUid || "") !== nextCollaboratorUid
+        currentAssignments.assignedUserId !== nextResponsibleUid ||
+        currentAssignments.supportUserId !== nextCollaboratorUid
       );
 
     const basePayload = {
@@ -6667,10 +6598,9 @@ export default function PrintShop() {
       requesterName: requestForm.requesterName.trim(),
       requesterArea: requestForm.requesterArea.trim(),
       campus: requestForm.campus,
-      responsibleUid: nextResponsibleUid,
-      responsibleName: selectedRequestId ? (requestForm.responsibleName || defaultCertificateResponsible?.name || "Tony Campos") : getUserDisplayName(nextResponsible),
-      responsibleEmail: selectedRequestId ? (requestForm.responsibleEmail || defaultCertificateResponsible?.email || "") : getUserEmail(nextResponsible),
-      collaboratorUid: nextCollaboratorUid,
+      ...buildCanonicalPrintRequestAssignment(nextResponsibleUid, nextCollaboratorUid),
+      responsibleName: selectedRequestId ? requestForm.responsibleName : getUserDisplayName(nextResponsible),
+      responsibleEmail: selectedRequestId ? requestForm.responsibleEmail : getUserEmail(nextResponsible),
       collaboratorName: selectedRequestId ? (requestForm.collaboratorName || "") : getUserDisplayName(nextSupport),
       collaboratorEmail: selectedRequestId ? (requestForm.collaboratorEmail || "") : getUserEmail(nextSupport),
       ...(!selectedRequestId ? {
@@ -6691,8 +6621,8 @@ export default function PrintShop() {
       requestedQuantity,
       deliveredQuantity,
       deliveryType: requestForm.deliveryType,
-      status: normalizePrintRequestStatus(requestForm.status),
-      statusLabel: normalizePrintRequestStatus(requestForm.status),
+      status: nextRequestStatus,
+      statusLabel: nextRequestStatus,
       requestDate: requestForm.requestDate,
       dueDate: requestForm.dueDate,
       certificateIssueDate: requestForm.certificateIssueDate || "",
@@ -6726,12 +6656,14 @@ export default function PrintShop() {
       principalSignerName: resolvedPrincipalSigner?.name || requestForm.principalSignerName || "",
       principalSignerRole: resolvedPrincipalSigner?.role || requestForm.principalSignerRole || "Principal",
       principalSignatureUrl: resolvedPrincipalSigner?.signatureUrl || requestForm.principalSignatureUrl || "",
+      principalSignatureDataUrl: resolvedPrincipalSigner?.signatureDataUrl || requestForm.principalSignatureDataUrl || "",
       teacherSignerId: resolvedTeacherSigner?.id || requestForm.teacherSignerId || "",
       teacherSignerName: resolvedTeacherSigner?.name || requestForm.teacherSignerName || requestForm.teacherName.trim(),
       teacherSignerRole: resolvedTeacherSigner?.role || requestForm.teacherSignerRole || "Teacher",
       teacherSignatureUrl: resolvedTeacherSigner?.signatureUrl || requestForm.teacherSignatureUrl || "",
+      teacherSignatureDataUrl: resolvedTeacherSigner?.signatureDataUrl || requestForm.teacherSignatureDataUrl || "",
       students: normalizeRequestStudents(currentRequest?.students || []).map((student) =>
-        normalizePrintRequestStatus(requestForm.status) === "Entregada" && student.status !== "Cancelado"
+        nextRequestStatus === "Entregada" && student.status !== "Cancelado"
           ? { ...student, status: "Entregado" }
           : student
       ),
@@ -6749,7 +6681,10 @@ export default function PrintShop() {
           ? basePayload
           : {
               status: basePayload.status,
+              statusLabel: basePayload.statusLabel,
+              requestedQuantity: basePayload.requestedQuantity,
               deliveredQuantity: basePayload.deliveredQuantity,
+              deliveryType: basePayload.deliveryType,
               notes: basePayload.notes,
               dueDate: basePayload.dueDate,
               certificateIssueDate: basePayload.certificateIssueDate,
@@ -6767,15 +6702,22 @@ export default function PrintShop() {
               certificateTemplateStoragePath: basePayload.certificateTemplateStoragePath,
               certificateTemplatePositions: basePayload.certificateTemplatePositions,
               level: basePayload.level,
+              group: basePayload.group,
               teacherName: basePayload.teacherName,
+              schedule: basePayload.schedule,
+              printedQuantity: basePayload.printedQuantity,
+              digitalQuantity: basePayload.digitalQuantity,
               principalSignerId: basePayload.principalSignerId,
               principalSignerName: basePayload.principalSignerName,
               principalSignerRole: basePayload.principalSignerRole,
               principalSignatureUrl: basePayload.principalSignatureUrl,
+              principalSignatureDataUrl: basePayload.principalSignatureDataUrl,
               teacherSignerId: basePayload.teacherSignerId,
               teacherSignerName: basePayload.teacherSignerName,
               teacherSignerRole: basePayload.teacherSignerRole,
               teacherSignatureUrl: basePayload.teacherSignatureUrl,
+              teacherSignatureDataUrl: basePayload.teacherSignatureDataUrl,
+              students: basePayload.students,
               updatedAt: basePayload.updatedAt,
               updatedByUid: basePayload.updatedByUid,
               updatedByName: basePayload.updatedByName,
@@ -6786,11 +6728,26 @@ export default function PrintShop() {
 
         const changedToDelivered = basePayload.status === "Entregada" && currentRequest?.status !== "Entregada";
         if (changedToDelivered && isRequestCertificateLike(currentRequest?.requestType)) {
-          const deliveredCertificates = generatedCertificates.filter((certificate) => {
-            const association = getCertificateAssociation(certificate, [currentRequest]);
-            return association.request?.id === selectedRequestId &&
-              normalizeCertificateStatus(certificate.status) !== "Cancelado";
+          const freshCertificatesSnapshot = await getDocs(query(
+            collection(db, "generatedCertificates"),
+            where("requestId", "==", selectedRequestId)
+          ));
+          const deliveredCertificatesById = new Map();
+          freshCertificatesSnapshot.docs.forEach((certificateSnapshot) => {
+            deliveredCertificatesById.set(certificateSnapshot.id, {
+              id: certificateSnapshot.id,
+              ...certificateSnapshot.data(),
+            });
           });
+          generatedCertificates.forEach((certificate) => {
+            const association = getCertificateAssociation(certificate, [currentRequest]);
+            if (association.request?.id === selectedRequestId) {
+              deliveredCertificatesById.set(certificate.id, certificate);
+            }
+          });
+          const deliveredCertificates = [...deliveredCertificatesById.values()].filter(
+            (certificate) => normalizeCertificateStatus(certificate.status) !== "Cancelado"
+          );
           const publicDocumentsByCertificate = new Map();
           for (const certificate of deliveredCertificates) {
             publicDocumentsByCertificate.set(
@@ -6800,7 +6757,15 @@ export default function PrintShop() {
           }
           const batch = writeBatch(db);
           batch.update(doc(db, "printRequests", selectedRequestId), payload);
-          addCertificateHistoryUpserts(batch, { ...currentRequest, ...basePayload }, basePayload.students, auditUser, "Entregado");
+          addCertificateHistoryUpserts(
+            batch,
+            { ...currentRequest, ...basePayload },
+            basePayload.students,
+            auditUser,
+            "Entregado",
+            [],
+            deliveredCertificates
+          );
           deliveredCertificates.forEach((certificate) => {
               const deliveredPayload = {
                 status: "Entregado",
@@ -6979,6 +6944,7 @@ export default function PrintShop() {
       request &&
       selectedRequestId &&
       isRequestCertificateLike(request.requestType) &&
+      normalizePrintRequestStatus(request.status) !== "Entregada" &&
       canCurrentUserEditRequest(request)
     );
   }
@@ -6988,7 +6954,8 @@ export default function PrintShop() {
       request &&
       selectedRequestId &&
       isRequestCertificateLike(request.requestType) &&
-      (isAdmin || isPrintRequestAssignedToUser(request, getAuditUser()))
+      normalizePrintRequestStatus(request.status) !== "Entregada" &&
+      canCurrentUserEditRequest(request)
     );
   }
 
@@ -7033,16 +7000,16 @@ export default function PrintShop() {
     );
   }
 
-  function getCertificateRecordId(request, student) {
-    const existing = generatedCertificates.find((certificate) =>
+  function getCertificateRecordId(request, student, certificates = generatedCertificates) {
+    const existing = certificates.find((certificate) =>
       certificate.requestId === request.id &&
       (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
     );
     return existing?.id || sanitizeGeneratedCertificateId(`${request.id}-${student.id}`);
   }
 
-  function buildGeneratedCertificateFromStudent(request, student, auditUser, status) {
-    const existing = generatedCertificates.find((certificate) =>
+  function buildGeneratedCertificateFromStudent(request, student, auditUser, status, certificates = generatedCertificates) {
+    const existing = certificates.find((certificate) =>
       certificate.requestId === request.id &&
       (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
     );
@@ -7062,6 +7029,8 @@ export default function PrintShop() {
       requestType: request.requestType || "Certificado",
       productId: request.productId || "",
       productName: request.productName || "",
+      assignedUserId: normalizePrintRequestAssignments(request).assignedUserId,
+      supportUserId: normalizePrintRequestAssignments(request).supportUserId,
       responsibleUid: request.responsibleUid || "",
       responsibleName: request.responsibleName || "",
       responsibleEmail: request.responsibleEmail || "",
@@ -7098,15 +7067,16 @@ export default function PrintShop() {
     students,
     auditUser,
     forcedStatus = "",
-    pendingCertificateIds = []
+    pendingCertificateIds = [],
+    knownCertificates = generatedCertificates
   ) {
     const studentsWithFolios = normalizeRequestStudents(students).filter(
       (student) => student.certificateFolio && student.validationCode
     );
     const pendingIds = new Set(pendingCertificateIds);
     const generatedStudents = studentsWithFolios.filter((student) => {
-      const certificateId = getCertificateRecordId(request, student);
-      return pendingIds.has(certificateId) || generatedCertificates.some((certificate) =>
+      const certificateId = getCertificateRecordId(request, student, knownCertificates);
+      return pendingIds.has(certificateId) || knownCertificates.some((certificate) =>
         certificate.id === certificateId ||
         certificate.requestId === request.id && (
           certificate.studentId === student.id ||
@@ -7127,7 +7097,7 @@ export default function PrintShop() {
       requestId: request.id,
       loteId: request.id,
       requestFolio: request.folio || "",
-      certificateIds: generatedStudents.map((student) => getCertificateRecordId(request, student)),
+      certificateIds: generatedStudents.map((student) => getCertificateRecordId(request, student, knownCertificates)),
       certificateCount: generatedStudents.length,
       status: loteStatus,
       campus: request.campus || "",
@@ -7142,6 +7112,8 @@ export default function PrintShop() {
       generatedAt: getOriginalCertificateGenerationValue(generatedStudents, request),
       responsibleUid: request.responsibleUid || "",
       collaboratorUid: request.collaboratorUid || "",
+      assignedUserId: normalizePrintRequestAssignments(request).assignedUserId,
+      supportUserId: normalizePrintRequestAssignments(request).supportUserId,
       createdAt: request.createdAt || serverTimestamp(),
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
@@ -7150,8 +7122,14 @@ export default function PrintShop() {
     }, { merge: true });
 
     generatedStudents.forEach((student, index) => {
-      const certificateId = getCertificateRecordId(request, student);
-      const payload = buildGeneratedCertificateFromStudent(request, student, auditUser, activeStatuses[index]);
+      const certificateId = getCertificateRecordId(request, student, knownCertificates);
+      const payload = buildGeneratedCertificateFromStudent(
+        request,
+        student,
+        auditUser,
+        activeStatuses[index],
+        knownCertificates
+      );
       batch.set(doc(db, "generatedCertificates", certificateId), payload, { merge: true });
       batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(student.validationCode)), buildPublicCertificateValidationPayload(payload, {
         status: activeStatuses[index],
@@ -7330,6 +7308,8 @@ export default function PrintShop() {
       requestType: request.requestType || "Certificado",
       productId: request.productId || "",
       productName: request.productName || "",
+      assignedUserId: normalizePrintRequestAssignments(request).assignedUserId,
+      supportUserId: normalizePrintRequestAssignments(request).supportUserId,
       responsibleUid: request.responsibleUid || "",
       responsibleName: request.responsibleName || "",
       responsibleEmail: request.responsibleEmail || "",
@@ -14686,7 +14666,7 @@ function PrintRequestsView({
                   name="deliveryType"
                   value={requestForm.deliveryType}
                   onChange={onRequestInputChange}
-                  disabled={sourceFieldsLocked || !canEditAdministrativeFields}
+                  disabled={!canEditOperationalFields}
                 >
                   {printDeliveryTypes.map((type) => (
                     <option key={type}>{type}</option>
@@ -14781,7 +14761,7 @@ function PrintRequestsView({
 
                   <label>
                     <span>Grupo</span>
-                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditAdministrativeFields} />
+                    <input name="group" value={requestForm.group} onChange={onRequestInputChange} placeholder="Ej. Grupo Teacher Samantha" disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
@@ -14820,12 +14800,12 @@ function PrintRequestsView({
 
                   <label>
                     <span>Maestro / nombre visible</span>
-                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditAdministrativeFields} />
+                    <input name="teacherName" value={requestForm.teacherName} onChange={onRequestInputChange} placeholder="Nombre del maestro" disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
                     <span>Horario</span>
-                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditAdministrativeFields} />
+                    <input name="schedule" value={requestForm.schedule} onChange={onRequestInputChange} placeholder="Ej. Lun/Mié 6:00 pm" disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
@@ -14841,12 +14821,12 @@ function PrintRequestsView({
 
                   <label>
                     <span>Impresos</span>
-                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity} onChange={onRequestNumberInputChange} disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
                     <span>Digitales</span>
-                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity} onChange={onRequestNumberInputChange} disabled={!canEditOperationalFields} />
                   </label>
                 </div>
               )}
@@ -16297,7 +16277,8 @@ function RequestDetailCard({
     canEditAdministrativeFields || canEditOperationalFields;
   const canAddPeopleAfterClosure =
     typeof onAddStudentsAfterClosure === "function" &&
-    (selectedRole === "admin" || selectedRole === "responsible");
+    canEditOperationalFields &&
+    normalizePrintRequestStatus(request.status) !== "Entregada";
   const canEditRequestDetails = Boolean(
     selectedRequestId &&
     typeof onSavePrintRequest === "function" &&
@@ -16928,7 +16909,7 @@ function RequestDetailCard({
 
               <label>
                 <span>Cantidad solicitada</span>
-                <input type="number" name="requestedQuantity" min="0" value={requestForm.requestedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                <input type="number" name="requestedQuantity" min="0" value={requestForm.requestedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditOperationalFields} />
               </label>
 
               <label>
@@ -16971,17 +16952,17 @@ function RequestDetailCard({
 
                   <label>
                     <span>Grupo / curso</span>
-                    <input name="group" value={requestForm.group || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
+                    <input name="group" value={requestForm.group || ""} onChange={onRequestInputChange} disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
                     <span>Maestro</span>
-                    <input name="teacherName" value={requestForm.teacherName || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
+                    <input name="teacherName" value={requestForm.teacherName || ""} onChange={onRequestInputChange} disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
                     <span>Horario</span>
-                    <input name="schedule" value={requestForm.schedule || ""} onChange={onRequestInputChange} disabled={!canEditAdministrativeFields} />
+                    <input name="schedule" value={requestForm.schedule || ""} onChange={onRequestInputChange} disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
@@ -16991,12 +16972,12 @@ function RequestDetailCard({
 
                   <label>
                     <span>Impresos</span>
-                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                    <input type="number" name="printedQuantity" min="0" value={requestForm.printedQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
                     <span>Digitales</span>
-                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditAdministrativeFields} />
+                    <input type="number" name="digitalQuantity" min="0" value={requestForm.digitalQuantity || 0} onChange={onRequestNumberInputChange} disabled={!canEditOperationalFields} />
                   </label>
 
                   <label>
@@ -17286,7 +17267,7 @@ Mariana Torres`}
                               defaultValue={student.name}
                               title={student.name}
                               aria-label={`Nombre de ${student.name}`}
-                              disabled={!canManageStudents || savingStudents || Boolean(student.certificateFolio)}
+                              disabled={!canManageStudents || savingStudents}
                               onBlur={(event) => {
                                 const nextName = event.target.value.trim();
                                 if (nextName && nextName !== student.name) {
@@ -17294,11 +17275,6 @@ Mariana Torres`}
                                 }
                               }}
                             />
-                            {student.certificateFolio && (
-                              <small className="request-student-locked-note">
-                                Nombre bloqueado después de generar folio.
-                              </small>
-                            )}
                             {student.addedAfterCreation && (
                               <div
                                 className="request-student-added-after-badge"
@@ -17312,7 +17288,7 @@ Mariana Torres`}
                             <select
                               aria-label={`Tipo de entrega de ${student.name}`}
                               value={student.deliveryType}
-                              disabled={!canManageStudents || savingStudents || Boolean(student.certificateFolio)}
+                              disabled={!canManageStudents || savingStudents}
                               onChange={(event) => onUpdateStudent(student.id, { deliveryType: event.target.value })}
                             >
                               {studentDeliveryTypes.map((type) => (

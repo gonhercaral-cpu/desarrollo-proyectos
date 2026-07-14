@@ -1,8 +1,14 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { defineString } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const {
+  repairAllPrintRequestAssignments,
+  repairPrintRequestAssignment,
+} = require("./printRequestAssignments");
 
 initializeApp();
 
@@ -10,6 +16,15 @@ const db = getFirestore();
 
 const ALLOWED_ROLES = ["admin", "collaborator", "requester"];
 const PUBLIC_CERTIFICATE_PEOPLE_COLLECTION = "publicCertificatePeople";
+const PRINTSHOP_TONY_UID = defineString("PRINTSHOP_TONY_UID", { default: "" });
+const PRINTSHOP_ERNESTO_UID = defineString("PRINTSHOP_ERNESTO_UID", { default: "" });
+
+function getPrintshopAssignmentIds() {
+  return {
+    tonyUserId: PRINTSHOP_TONY_UID.value(),
+    ernestoUserId: PRINTSHOP_ERNESTO_UID.value(),
+  };
+}
 
 async function assertAdmin(request) {
   if (!request.auth) {
@@ -128,6 +143,55 @@ exports.syncPublicCertificateSigner = onDocumentWritten(
       event.params.signerId,
       type ? data : null,
       type || "Teacher"
+    );
+  }
+);
+
+exports.normalizePrintRequestAssignments = onDocumentWritten(
+  {
+    document: "printRequests/{requestId}",
+    region: "us-central1",
+    timeoutSeconds: 60,
+  },
+  async (event) => {
+    if (!event.data?.after.exists) return;
+    await repairPrintRequestAssignment(
+      db,
+      event.data.after.ref,
+      getPrintshopAssignmentIds(),
+      FieldValue
+    );
+  }
+);
+
+exports.repairPrintRequestAssignments = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 540,
+  },
+  async (request) => {
+    await assertAdmin(request);
+    return repairAllPrintRequestAssignments(
+      db,
+      getPrintshopAssignmentIds(),
+      FieldValue
+    );
+  }
+);
+
+exports.repairPrintRequestAssignmentsDaily = onSchedule(
+  {
+    schedule: "every day 03:00",
+    timeZone: "America/Tijuana",
+    region: "us-central1",
+    timeoutSeconds: 540,
+  },
+  async () => {
+    await repairAllPrintRequestAssignments(
+      db,
+      getPrintshopAssignmentIds(),
+      FieldValue
     );
   }
 );
