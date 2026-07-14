@@ -1,11 +1,12 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { defineString } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const {
+  createPrintRequestWithAssignment: createAssignedPrintRequest,
+  normalizePrintRequestAssignments,
   repairAllPrintRequestAssignments,
   repairPrintRequestAssignment,
 } = require("./printRequestAssignments");
@@ -16,13 +17,11 @@ const db = getFirestore();
 
 const ALLOWED_ROLES = ["admin", "collaborator", "requester"];
 const PUBLIC_CERTIFICATE_PEOPLE_COLLECTION = "publicCertificatePeople";
-const PRINTSHOP_TONY_UID = defineString("PRINTSHOP_TONY_UID", { default: "" });
-const PRINTSHOP_ERNESTO_UID = defineString("PRINTSHOP_ERNESTO_UID", { default: "" });
 
 function getPrintshopAssignmentIds() {
   return {
-    tonyUserId: PRINTSHOP_TONY_UID.value(),
-    ernestoUserId: PRINTSHOP_ERNESTO_UID.value(),
+    tonyUserId: process.env.PRINTSHOP_TONY_UID || "",
+    ernestoUserId: process.env.PRINTSHOP_ERNESTO_UID || "",
   };
 }
 
@@ -46,7 +45,7 @@ async function assertAdmin(request) {
 
   const requesterProfile = requesterSnapshot.data();
 
-  if (requesterProfile.active !== true || requesterProfile.role !== "admin") {
+  if (requesterProfile.active !== true || cleanString(requesterProfile.role).toLowerCase() !== "admin") {
     throw new HttpsError(
       "permission-denied",
       "Solo un administrador puede realizar esta acción."
@@ -147,6 +146,130 @@ exports.syncPublicCertificateSigner = onDocumentWritten(
   }
 );
 
+const PUBLIC_PRINT_REQUEST_FIELDS = [
+  "folio", "productId", "productName", "requestType", "requesterName", "requesterId",
+  "requesterArea", "campus", "priority", "requestedQuantity", "deliveredQuantity",
+  "deliveryType", "status", "statusLabel", "requestDate", "dueDate", "requestedDeliveryDate",
+  "certificateIssueDate", "certificateTemplateId", "certificateTemplateName",
+  "certificateTemplateLevel", "certificateTemplateProgramName", "certificateTemplateAudience",
+  "certificateTemplateBodyText", "certificateTemplateBodySegments", "certificateTemplateCustomTexts",
+  "certificateTemplateCustomImages", "certificateTemplateImageUrl", "certificateTemplateImageDataUrl",
+  "certificateTemplateStoragePath", "certificateTemplatePositions", "notes", "level", "group",
+  "courseProgramName", "courseAudience", "teacherName", "schedule", "printedQuantity",
+  "digitalQuantity", "principalSignerId", "principalSignerName", "principalSignerRole",
+  "principalSignatureUrl", "principalSignatureDataUrl", "teacherSignerId", "teacherSignerName",
+  "teacherSignerRole", "teacherSignatureUrl", "teacherSignatureDataUrl", "students",
+  "publicTrackingEnabled", "publicRequestSource", "academicDirector", "certificateDirectorName",
+  "courseLevel",
+];
+
+function sanitizePublicPrintRequest(payload) {
+  const requestedQuantity = payload.requestedQuantity;
+  const printedQuantity = payload.printedQuantity;
+  const digitalQuantity = payload.digitalQuantity;
+  const students = Array.isArray(payload.students) ? payload.students : [];
+  const valid =
+    cleanString(payload.folio).length > 0 &&
+    cleanString(payload.folio).length <= 80 &&
+    payload.publicTrackingEnabled === true &&
+    payload.publicRequestSource === "certificate-public-form" &&
+    payload.requestType === "Certificado" &&
+    payload.status === "Solicitud recibida" &&
+    payload.statusLabel === "Solicitud recibida" &&
+    payload.deliveredQuantity === 0 &&
+    ["Baja", "Normal", "Alta", "Urgente"].includes(payload.priority) &&
+    cleanString(payload.requesterName).length > 0 &&
+    payload.requesterArea === "Dirección Académica" &&
+    ["Plaza Estrella", "Plaza Bugambilias", "Plaza Aranjuez", "Online"].includes(payload.campus) &&
+    Number.isInteger(requestedQuantity) && requestedQuantity > 0 && requestedQuantity <= 150 &&
+    Number.isInteger(printedQuantity) && printedQuantity >= 0 &&
+    Number.isInteger(digitalQuantity) && digitalQuantity >= 0 &&
+    printedQuantity + digitalQuantity === requestedQuantity &&
+    ["Impresa", "Digital", "Ambas"].includes(payload.deliveryType) &&
+    students.length === requestedQuantity &&
+    students.every((student) =>
+      cleanString(student?.id).length > 0 &&
+      cleanString(student?.name).length > 0 &&
+      ["Impreso", "Digital"].includes(student?.deliveryType)
+    );
+
+  if (!valid) {
+    throw new HttpsError("invalid-argument", "La solicitud pública contiene datos inválidos.");
+  }
+
+  return Object.fromEntries(
+    PUBLIC_PRINT_REQUEST_FIELDS
+      .filter((field) => payload[field] !== undefined)
+      .map((field) => [field, payload[field]])
+  );
+}
+
+exports.createPrintRequestWithAssignment = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    const payload = request.data?.request;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new HttpsError("invalid-argument", "Faltan datos de la solicitud.");
+    }
+
+    const isPublicRequest = payload.publicRequestSource === "certificate-public-form";
+    let creationPayload;
+    if (isPublicRequest) {
+      creationPayload = {
+        ...sanitizePublicPrintRequest(payload),
+        createdBy: "public-certificate-form",
+        createdByUid: "public-form",
+        createdByName: cleanString(payload.requesterName),
+        createdByEmail: "",
+        updatedByUid: "public-form",
+        updatedByName: cleanString(payload.requesterName),
+        updatedByEmail: "",
+      };
+    } else {
+      const adminProfile = await assertAdmin(request);
+      creationPayload = {
+        ...payload,
+        createdByUid: request.auth.uid,
+        createdByName: cleanString(adminProfile.name || adminProfile.displayName || adminProfile.email),
+        createdByEmail: cleanString(adminProfile.email),
+        updatedByUid: request.auth.uid,
+        updatedByName: cleanString(adminProfile.name || adminProfile.displayName || adminProfile.email),
+        updatedByEmail: cleanString(adminProfile.email),
+      };
+    }
+
+    try {
+      const result = await createAssignedPrintRequest(db, creationPayload, {
+        createdAt: new Date(),
+        configuredIds: getPrintshopAssignmentIds(),
+      });
+      return {
+        requestId: result.requestId,
+        folio: cleanString(result.requestData.folio),
+        assignedUserId: result.assignedUserId,
+        assignedUserName: result.assignedUserName,
+        supportUserId: result.supportUserId,
+        supportUserName: result.supportUserName,
+        assignmentSource: result.assignmentSource,
+      };
+    } catch (error) {
+      console.error("[printshop-assignment] No se pudo crear solicitud asignada", {
+        message: error?.message || String(error),
+        publicRequest: isPublicRequest,
+      });
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError(
+        "failed-precondition",
+        "No fue posible resolver responsable y apoyo. La solicitud no fue creada."
+      );
+    }
+  }
+);
+
 exports.normalizePrintRequestAssignments = onDocumentWritten(
   {
     document: "printRequests/{requestId}",
@@ -155,6 +278,13 @@ exports.normalizePrintRequestAssignments = onDocumentWritten(
   },
   async (event) => {
     if (!event.data?.after.exists) return;
+    const assignments = normalizePrintRequestAssignments(event.data.after.data());
+    if (
+      assignments.assignedUserId &&
+      assignments.assignedUserName &&
+      assignments.supportUserId &&
+      assignments.supportUserName
+    ) return;
     await repairPrintRequestAssignment(
       db,
       event.data.after.ref,

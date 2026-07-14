@@ -63,7 +63,9 @@ export function normalizePrintRequestAssignments(request = {}) {
 
   return {
     assignedUserId,
+    assignedUserName: String(request.assignedUserName || request.responsibleName || "").trim(),
     supportUserId: supportUserIds[0] || "",
+    supportUserName: String(request.supportUserName || request.collaboratorName || "").trim(),
     supportUserIds,
   };
 }
@@ -89,13 +91,22 @@ export function getPrintRequestMemberRole(userId, request, isAdmin = false) {
   return "viewer";
 }
 
-export function buildCanonicalPrintRequestAssignment(assignedUserId, supportUserId) {
+export function buildCanonicalPrintRequestAssignment(
+  assignedUserId,
+  supportUserId,
+  assignedUserName = "",
+  supportUserName = ""
+) {
   const primaryId = normalizeUserId(assignedUserId);
   const secondaryId = normalizeUserId(supportUserId);
+  const primaryName = String(assignedUserName || "").trim();
+  const secondaryName = String(supportUserName || "").trim();
 
   return {
     assignedUserId: primaryId,
+    assignedUserName: primaryName,
     supportUserId: secondaryId,
+    supportUserName: secondaryName,
     responsibleUid: primaryId,
     collaboratorUid: secondaryId,
   };

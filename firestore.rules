@@ -1530,6 +1530,14 @@ service cloud.firestore {
         && request.resource.data.requesterArea.size() > 0
         && request.resource.data.campus is string
         && request.resource.data.campus.size() > 0
+        && request.resource.data.assignedUserId is string
+        && request.resource.data.assignedUserId.size() > 0
+        && request.resource.data.assignedUserName is string
+        && request.resource.data.assignedUserName.size() > 0
+        && request.resource.data.supportUserId is string
+        && request.resource.data.supportUserId.size() > 0
+        && request.resource.data.supportUserName is string
+        && request.resource.data.supportUserName.size() > 0
         && request.resource.data.responsibleUid is string
         && request.resource.data.responsibleName is string
         && request.resource.data.responsibleEmail is string
@@ -3133,48 +3141,67 @@ service cloud.firestore {
 
 
 
-    function validPublicCertificateFormCreate() {
-      return request.resource.data.keys().hasAll([
+    function validPublicCertificateFormCreate(requestData) {
+      return requestData.keys().hasAll([
           "folio",
           "publicTrackingEnabled"
         ])
-        && request.resource.data.folio is string
-        && request.resource.data.folio.size() > 0
-        && request.resource.data.publicTrackingEnabled == true
+        && requestData.folio is string
+        && requestData.folio.size() > 0
+        && requestData.publicTrackingEnabled == true
         && (
           (
-            request.resource.data.keys().hasAll([
+            requestData.keys().hasAll([
               "publicRequestSource",
               "requestType",
               "status",
               "createdByUid"
             ])
-            && request.resource.data.publicRequestSource == "certificate-public-form"
-            && request.resource.data.requestType == "Certificado"
-            && request.resource.data.status in ["Solicitud recibida", "received"]
-            && request.resource.data.createdByUid == "public-form"
+            && requestData.publicRequestSource == "certificate-public-form"
+            && requestData.requestType == "Certificado"
+            && requestData.status in ["Solicitud recibida", "received"]
+            && requestData.createdByUid == "public-form"
           )
           ||
           (
-            request.resource.data.keys().hasAll([
+            requestData.keys().hasAll([
               "certificateType",
               "status",
               "createdBy"
             ])
-            && request.resource.data.certificateType == "Certificado"
-            && request.resource.data.status in ["Solicitud recibida", "received"]
-            && request.resource.data.createdBy in ["public-form", "public-certificate-form"]
+            && requestData.certificateType == "Certificado"
+            && requestData.status in ["Solicitud recibida", "received"]
+            && requestData.createdBy in ["public-form", "public-certificate-form"]
           )
         );
     }
 
-    function validPublicPrintRequestCreate() {
-      return validPublicCertificateFormCreate()
-        && request.resource.data.keys().hasAll([
+    function validPublicPrintRequestCreate(requestData) {
+      return validPublicCertificateFormCreate(requestData)
+        && requestData.keys().hasAll([
           "publicRequestSource",
           "requestType",
-          "createdByUid"
-        ]);
+          "createdByUid",
+          "assignedUserId",
+          "assignedUserName",
+          "supportUserId",
+          "supportUserName",
+          "assignmentSource"
+        ])
+        && requestData.assignedUserId is string
+        && requestData.assignedUserId.size() > 0
+        && requestData.assignedUserName is string
+        && requestData.assignedUserName.size() > 0
+        && requestData.supportUserId is string
+        && requestData.supportUserId.size() > 0
+        && requestData.supportUserId != requestData.assignedUserId
+        && requestData.supportUserName is string
+        && requestData.supportUserName.size() > 0
+        && requestData.assignmentSource in [
+          "agenda:tony",
+          "agenda:ernesto",
+          "fallback:tony-default"
+        ];
     }
 
     function isPublicCertificateRequestEditable() {
@@ -3286,7 +3313,7 @@ service cloud.firestore {
 
     match /certificateRequests/{requestId} {
       allow create: if validCertificateRequestCreate()
-        || validPublicCertificateFormCreate();
+        || validPublicCertificateFormCreate(request.resource.data);
 
       allow get: if resource.data.publicTrackingEnabled == true
         || canAccessPrintshop();
@@ -3310,11 +3337,13 @@ service cloud.firestore {
           && isPrintRequestMemberData(resource.data)
         );
 
-      allow create: if validPublicPrintRequestCreate()
-        || (
-          isAdmin()
-          && validPrintRequestData()
-          && request.resource.data.createdByUid == request.auth.uid
+      allow create: if isAdmin()
+        && (
+          (
+            request.resource.data.createdByUid == request.auth.uid
+            && validPrintRequestData()
+          )
+          || validPublicPrintRequestCreate(request.resource.data)
         );
 
       allow update: if isAdmin()

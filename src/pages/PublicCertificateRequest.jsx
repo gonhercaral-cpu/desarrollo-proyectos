@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, getDocs, query, serverTimestamp, where } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
+import { createPrintRequestWithAssignment } from "../services/printRequestAssignmentsService";
 import {
   findPublicCertificatePerson,
   loadPublicCertificatePeople,
@@ -465,7 +466,7 @@ export default function PublicCertificateRequest() {
       );
       const matchedTemplate = templateMatchCandidates.length === 1 ? templateMatchCandidates[0] : null;
 
-      const docRef = await addDoc(collection(db, "printRequests"), {
+      const creationResult = await createPrintRequestWithAssignment({
         folio,
         productId: "",
         productName: publicProductName,
@@ -475,17 +476,6 @@ export default function PublicCertificateRequest() {
         requesterId: matchedRequester?.id || "",
         requesterArea: PUBLIC_REQUESTER_AREA,
         campus,
-
-        assignedUserId: "",
-        supportUserId: "",
-        responsibleUid: "",
-        responsibleName: "",
-        responsibleEmail: "",
-        collaboratorUid: "",
-        collaboratorName: "",
-        collaboratorEmail: "",
-        responsibleAutoAssigned: false,
-        assignmentPending: true,
 
         priority: calculatePublicRequestPriority(requestDate, requestedDeliveryDate),
         requestedQuantity,
@@ -542,8 +532,6 @@ export default function PublicCertificateRequest() {
         courseLevel: cleanCourseLevel,
         statusLabel: "Solicitud recibida",
 
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
         createdBy: "public-certificate-form",
         createdByUid: "public-form",
         createdByName: cleanRequesterName,
@@ -553,7 +541,7 @@ export default function PublicCertificateRequest() {
         updatedByEmail: ""
       });
 
-      setTrackingId(docRef.id);
+      setTrackingId(creationResult.requestId);
       setTrackingFolio(folio);
     } catch (err) {
       console.error("No se pudo enviar la solicitud de certificados:", err);

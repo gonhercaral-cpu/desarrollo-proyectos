@@ -51,7 +51,10 @@ import {
   isLetterPortraitPdf,
 } from "../utils/certificatePage";
 import { findMatchingCertificateTemplateInList } from "../utils/certificateTemplateMatching";
-import { repairMissingPrintRequestAssignments } from "../services/printRequestAssignmentsService";
+import {
+  createPrintRequestWithAssignment,
+  repairMissingPrintRequestAssignments,
+} from "../services/printRequestAssignmentsService";
 import {
   dedupeCertificatePeople,
   isActiveCertificatePerson,
@@ -3420,82 +3423,6 @@ function getOriginalCertificateGenerationValue(students = [], request = null, ce
   return request?.certificateGeneratedAt || request?.generatedAt || request?.createdAt || serverTimestamp();
 }
 
-function findPrintshopShiftCollaborators(users = []) {
-  const findByAssignmentRole = (role) => (users || []).find((person) =>
-    normalizeComparable(
-      person?.printshopAssignmentRole ||
-      person?.printshopShiftRole ||
-      person?.printshopAssignmentKey
-    ) === role
-  ) || null;
-
-  return {
-    tony: findByAssignmentRole("tony"),
-    ernesto: findByAssignmentRole("ernesto"),
-  };
-}
-
-function getLocalAgendaDateParts(date = new Date()) {
-  const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  const pad = (value) => String(value).padStart(2, "0");
-  return {
-    dateValue: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    dayKey: dayKeys[date.getDay()],
-    minute: date.getHours() * 60 + date.getMinutes(),
-  };
-}
-
-function agendaTimeToMinutes(value) {
-  const [hours, minutes] = String(value || "").split(":").map(Number);
-  return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null;
-}
-
-async function isUserOnAgendaShift(userId, creationDate) {
-  const { dateValue, dayKey, minute } = getLocalAgendaDateParts(creationDate);
-  const adjustments = await getDocs(
-    query(collection(db, "scheduleAdjustments"), where("userId", "==", userId))
-  );
-  const adjustment = adjustments.docs
-    .map((item) => item.data())
-    .filter((item) => item.isActive !== false)
-    .find((item) => dateValue >= item.startDate && dateValue <= (item.endDate || item.startDate));
-  const blocked = ["permission", "absence", "dayOff"].includes(adjustment?.publicStatus || adjustment?.type);
-  if (blocked) return false;
-
-  let schedule = adjustment?.startTime && adjustment?.endTime ? adjustment : null;
-  if (!schedule) {
-    const snapshot = await getDoc(doc(db, "workSchedules", `${String(userId).replace(/[^a-zA-Z0-9_-]/g, "_")}_${dayKey}`));
-    schedule = snapshot.exists() ? snapshot.data() : null;
-  }
-  if (!schedule || schedule.isActive === false || schedule.isRestDay) return false;
-  const start = agendaTimeToMinutes(schedule.startTime);
-  const end = agendaTimeToMinutes(schedule.endTime);
-  return start !== null && end !== null && minute >= start && minute < end;
-}
-
-async function resolvePrintshopShiftAssignment(users, creationDate = new Date()) {
-  const { tony, ernesto } = findPrintshopShiftCollaborators(users);
-  if (!tony || !ernesto) {
-    const principal = tony || ernesto || null;
-    return { principal, support: principal === tony ? ernesto : tony, source: "fallback", reason: "No se encontraron ambos UIDs activos de Tony y Ernesto." };
-  }
-
-  try {
-    const [tonyOnShift, ernestoOnShift] = await Promise.all([
-      isUserOnAgendaShift(getUserUid(tony), creationDate),
-      isUserOnAgendaShift(getUserUid(ernesto), creationDate),
-    ]);
-    if (tonyOnShift !== ernestoOnShift) {
-      return tonyOnShift
-        ? { principal: tony, support: ernesto, source: "agenda", reason: "" }
-        : { principal: ernesto, support: tony, source: "agenda", reason: "" };
-    }
-    return { principal: tony, support: ernesto, source: "fallback", reason: tonyOnShift ? "Ambos colaboradores aparecen de turno." : "Ningún colaborador aparece de turno." };
-  } catch (error) {
-    return { principal: tony, support: ernesto, source: "fallback", reason: `No se pudo consultar Agenda: ${error?.code || error?.message || "error desconocido"}` };
-  }
-}
-
 function toDateInputValue(value) {
   if (!value) return "";
 
@@ -6570,18 +6497,20 @@ export default function PrintShop() {
       }
     }
 
-    const creationDate = new Date();
-    const automaticAssignment = !selectedRequestId
-      ? await resolvePrintshopShiftAssignment(activeUsers, creationDate)
-      : null;
-    const nextResponsible = automaticAssignment?.principal || null;
-    const nextSupport = automaticAssignment?.support || null;
     const nextResponsibleUid = selectedRequestId
       ? (requestForm.responsibleUid || "")
-      : getUserUid(nextResponsible);
+      : "";
     const nextCollaboratorUid = selectedRequestId
       ? (requestForm.collaboratorUid || "")
-      : getUserUid(nextSupport);
+      : "";
+    const nextResponsible = activeUsers.find((person) => getUserUid(person) === nextResponsibleUid) || null;
+    const nextSupport = activeUsers.find((person) => getUserUid(person) === nextCollaboratorUid) || null;
+    const nextResponsibleName = selectedRequestId
+      ? (requestForm.responsibleName || (nextResponsible ? getUserDisplayName(nextResponsible) : ""))
+      : "";
+    const nextSupportName = selectedRequestId
+      ? (requestForm.collaboratorName || (nextSupport ? getUserDisplayName(nextSupport) : ""))
+      : "";
     const currentAssignments = normalizePrintRequestAssignments(currentRequest || {});
     const assignmentChanged =
       isAdmin &&
@@ -6598,17 +6527,16 @@ export default function PrintShop() {
       requesterName: requestForm.requesterName.trim(),
       requesterArea: requestForm.requesterArea.trim(),
       campus: requestForm.campus,
-      ...buildCanonicalPrintRequestAssignment(nextResponsibleUid, nextCollaboratorUid),
-      responsibleName: selectedRequestId ? requestForm.responsibleName : getUserDisplayName(nextResponsible),
+      ...buildCanonicalPrintRequestAssignment(
+        nextResponsibleUid,
+        nextCollaboratorUid,
+        nextResponsibleName,
+        nextSupportName
+      ),
+      responsibleName: nextResponsibleName,
       responsibleEmail: selectedRequestId ? requestForm.responsibleEmail : getUserEmail(nextResponsible),
-      collaboratorName: selectedRequestId ? (requestForm.collaboratorName || "") : getUserDisplayName(nextSupport),
+      collaboratorName: nextSupportName,
       collaboratorEmail: selectedRequestId ? (requestForm.collaboratorEmail || "") : getUserEmail(nextSupport),
-      ...(!selectedRequestId ? {
-        responsibleAutoAssigned: true,
-        assignmentSource: automaticAssignment?.source || "fallback",
-        assignmentFallbackReason: automaticAssignment?.reason || "",
-        assignmentEvaluatedAt: creationDate.toISOString(),
-      } : {}),
       ...(assignmentChanged
         ? {
             assignedAt: serverTimestamp(),
@@ -6815,22 +6743,24 @@ export default function PrintShop() {
         }
 
         const newRequestFolio = buildRequestFolio(requestForm.requestType);
-        const newRequestRef = await addDoc(collection(db, "printRequests"), {
+        const creationPayload = {
           ...basePayload,
           folio: newRequestFolio,
-          createdAt: serverTimestamp(),
           createdByUid: auditUser.uid,
           createdByName: auditUser.name,
           createdByEmail: auditUser.email,
-        });
+        };
+        delete creationPayload.updatedAt;
+        delete creationPayload.assignedAt;
+        const creationResult = await createPrintRequestWithAssignment(creationPayload);
         await createPrintshopLog({
           type: "REQUEST_CREATED",
           module: "requests",
           title: "Solicitud de imprenta creada",
           description: `Se creó la solicitud ${newRequestFolio}.`,
           referenceType: "request",
-          referenceId: newRequestRef.id,
-          requestId: newRequestRef.id,
+          referenceId: creationResult.requestId,
+          requestId: creationResult.requestId,
           requestFolio: newRequestFolio,
           productId: selectedProduct.id,
           productName: selectedProduct.name || "",

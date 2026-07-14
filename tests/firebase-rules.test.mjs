@@ -157,7 +157,9 @@ async function seedBaseData() {
         folio: "IMP-2026-0001",
         requestType: "Certificado",
         assignedUserId: "printer",
+        assignedUserName: "Printer",
         supportUserId: "collab",
+        supportUserName: "Collaborator",
         responsibleUid: "printer",
         responsibleName: "Printer",
         responsibleEmail: "printer@test.local",
@@ -200,6 +202,48 @@ async function seedBaseData() {
       }),
     ]);
   });
+}
+
+function validAssignedPublicPrintRequest(overrides = {}) {
+  return {
+    folio: "CERT-2026-PUBLIC-ASSIGNED",
+    productId: "",
+    productName: "Certificado A1",
+    requestType: "Certificado",
+    requesterName: "Solicitante público",
+    requesterArea: "Dirección Académica",
+    campus: "Plaza Estrella",
+    assignedUserId: "printer",
+    assignedUserName: "Printer",
+    supportUserId: "collab",
+    supportUserName: "Collaborator",
+    responsibleUid: "printer",
+    responsibleName: "Printer",
+    responsibleEmail: "printer@test.local",
+    collaboratorUid: "collab",
+    collaboratorName: "Collaborator",
+    collaboratorEmail: "collab@test.local",
+    assignmentSource: "agenda:tony",
+    priority: "Normal",
+    requestedQuantity: 1,
+    deliveredQuantity: 0,
+    deliveryType: "Impresa",
+    status: "Solicitud recibida",
+    requestDate: "2026-07-14",
+    dueDate: "2026-07-31",
+    notes: "",
+    level: "A1",
+    group: "A1 Journey",
+    teacherName: "Teacher",
+    schedule: "10:00",
+    printedQuantity: 1,
+    digitalQuantity: 0,
+    students: [],
+    publicTrackingEnabled: true,
+    publicRequestSource: "certificate-public-form",
+    createdByUid: "public-form",
+    ...overrides,
+  };
 }
 
 function validBugReport(overrides = {}) {
@@ -614,6 +658,23 @@ describe("personas publicas de certificados", () => {
 });
 
 describe("certificados de imprenta", () => {
+  it("bloquea creación pública directa para exigir asignación server-side", async () => {
+    await assertFails(setDoc(
+      doc(unauth(), "printRequests", "public-direct"),
+      validAssignedPublicPrintRequest({
+        assignedUserId: "uid-inventado",
+        supportUserId: "uid-inventado-2",
+      })
+    ));
+  });
+
+  it("usa validPublicPrintRequestCreate para escritura pública confiable", async () => {
+    await assertSucceeds(setDoc(
+      doc(auth("admin"), "printRequests", "public-trusted"),
+      validAssignedPublicPrintRequest()
+    ));
+  });
+
   it("permite registrar certificado ligado a solicitud y su validacion publica", async () => {
     const db = auth("printer");
     const certificateId = "CERT-2026-A1-0001-001-ABC123";
