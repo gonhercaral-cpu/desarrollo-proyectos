@@ -13,6 +13,7 @@ const PDF_SUBCOLLECTIONS = ["certificates", "generatedCertificates", "certificat
 const PDF_LOOKUP_FIELDS = ["certificateId", "validationCode", "folio"];
 const LOOKUP_TIMEOUT_MS = 3500;
 const RESOLUTION_TIMEOUT_MS = 15000;
+const GENERATION_TIMEOUT_MS = 30000;
 
 function unique(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
@@ -330,6 +331,14 @@ async function locateStoredCertificatePdf(certificate, request = null, student =
   );
 }
 
+async function resolveReferencedCertificatePdf(certificate, student = null) {
+  const attemptedPaths = new Set();
+  const result = await tryReferenceSources([certificate, student].filter(Boolean), attemptedPaths);
+
+  if (result) return result;
+  throw new Error("El certificado no tiene una referencia directa vigente al PDF almacenado.");
+}
+
 export async function resolveStoredCertificatePdf(certificate, request = null, student = null) {
   try {
     return await withTimeout(
@@ -346,4 +355,64 @@ export async function resolveStoredCertificatePdf(certificate, request = null, s
     }
     throw error;
   }
+}
+
+export async function resolveCertificatePdfDocument({
+  certificate,
+  request = null,
+  student = null,
+  loadStoredPdf,
+  buildPdfBlob,
+  preferStored = true,
+  acceptStoredUrl = false,
+}) {
+  let storedError = null;
+
+  if (preferStored) {
+    try {
+      const storedSource = typeof buildPdfBlob === "function"
+        ? await resolveReferencedCertificatePdf(certificate, student)
+        : await resolveStoredCertificatePdf(certificate, request, student);
+      if (acceptStoredUrl) {
+        return { blob: null, source: "storage", storedSource };
+      }
+      if (typeof loadStoredPdf !== "function") {
+        throw new Error("No se configuró la descarga del PDF almacenado.");
+      }
+      const blob = await withTimeout(
+        loadStoredPdf(storedSource),
+        RESOLUTION_TIMEOUT_MS,
+        "el PDF almacenado"
+      );
+      return { blob, source: "storage", storedSource };
+    } catch (error) {
+      storedError = error;
+      logLookupFailure(
+        "flujo-almacenado",
+        certificate?.validationCode || certificate?.id || certificate?.folio,
+        error
+      );
+    }
+  }
+
+  if (typeof buildPdfBlob === "function") {
+    try {
+      const blob = await withTimeout(
+        buildPdfBlob(),
+        GENERATION_TIMEOUT_MS,
+        "generar el PDF desde la solicitud"
+      );
+      return { blob, source: "request", storedSource: null, storedError };
+    } catch (generationError) {
+      const storageMessage = storedError?.message
+        ? ` Almacenado: ${storedError.message}`
+        : "";
+      throw new Error(
+        `No se pudo obtener el PDF desde Storage ni reconstruirlo desde la solicitud.${storageMessage} Generación: ${generationError.message}`,
+        { cause: generationError }
+      );
+    }
+  }
+
+  throw storedError || new Error("El certificado no tiene PDF almacenado ni datos suficientes para reconstruirlo.");
 }

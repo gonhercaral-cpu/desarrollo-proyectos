@@ -27,13 +27,21 @@ import { buildCertificateStatistics, CERTIFICATE_QUICK_RANGES } from "../service
 import {
   findCertificateRequest,
   getCertificateAssociation,
+  getCertificateHistoryMetadata,
+  getLocalCertificateDateBoundary,
   getCertificatePdfReferences,
   getCertificatePdfStoragePath,
   getCertificatePdfUrl,
   getCertificateRequestId,
+  normalizeCertificateHistoryText,
+  normalizeCertificateSchedule,
   normalizeCertificateStatus,
+  toCertificateHistoryDate,
 } from "../utils/certificateHistory";
-import { resolveStoredCertificatePdf as resolveCertificatePdfFromStorage } from "../services/certificatePdfService";
+import {
+  resolveCertificatePdfDocument,
+  resolveStoredCertificatePdf as resolveCertificatePdfFromStorage,
+} from "../services/certificatePdfService";
 import {
   CERTIFICATE_PAGE,
   CERTIFICATE_PAGE_VERSION,
@@ -3731,6 +3739,9 @@ export default function PrintShop() {
   const [generatedCertificates, setGeneratedCertificates] = useState([]);
   const [loadingGeneratedCertificates, setLoadingGeneratedCertificates] = useState(true);
   const [generatedCertificatesError, setGeneratedCertificatesError] = useState("");
+  const [certificateHistoryBatches, setCertificateHistoryBatches] = useState([]);
+  const [loadingCertificateHistoryBatches, setLoadingCertificateHistoryBatches] = useState(true);
+  const [certificateHistoryBatchesError, setCertificateHistoryBatchesError] = useState("");
   const [generatedCertificateSearch, setGeneratedCertificateSearch] = useState("");
   const [generatedCertificateStatusFilter, setGeneratedCertificateStatusFilter] = useState("Todos");
   const [generatedCertificateYearFilter, setGeneratedCertificateYearFilter] = useState("Todos");
@@ -4117,6 +4128,29 @@ export default function PrintShop() {
         console.error("No se pudieron cargar los certificados generados:", error);
         setGeneratedCertificatesError("No se pudieron cargar los certificados generados. Revisa las reglas de Firestore.");
         setLoadingGeneratedCertificates(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    setLoadingCertificateHistoryBatches(true);
+    setCertificateHistoryBatchesError("");
+
+    const unsubscribe = onSnapshot(
+      collection(db, "certificateHistoryBatches"),
+      (snapshot) => {
+        setCertificateHistoryBatches(snapshot.docs.map((batchDoc) => ({
+          id: batchDoc.id,
+          ...batchDoc.data(),
+        })));
+        setLoadingCertificateHistoryBatches(false);
+      },
+      (error) => {
+        console.error("No se pudieron cargar los lotes históricos de certificados:", error);
+        setCertificateHistoryBatchesError("No se pudieron cargar los lotes históricos de certificados.");
+        setLoadingCertificateHistoryBatches(false);
       }
     );
 
@@ -7076,6 +7110,9 @@ export default function PrintShop() {
       level: request.level || "No aplica",
       templateId: request.certificateTemplateId || "",
       templateName: request.certificateTemplateName || "",
+      teacherId: request.teacherSignerId || request.teacherId || "",
+      teacherName: request.teacherSignerName || request.teacherName || "",
+      groupSchedule: request.groupSchedule || request.schedule || "",
       issueDate: getCertificateIssueDate(request),
       generatedAt: getOriginalCertificateGenerationValue(generatedStudents, request),
       responsibleUid: request.responsibleUid || "",
@@ -7628,15 +7665,55 @@ export default function PrintShop() {
   }
 
   async function repairCertificateHistoryConsistency() {
-    if (!isAdmin) return { synchronized: 0, dated: 0 };
+    if (!isAdmin) return { synchronized: 0, dated: 0, metadata: 0 };
 
-    const historySnapshot = await getDocs(collection(db, "certificateHistoryBatches"));
-    const historyById = new Map(historySnapshot.docs.map((snapshotDoc) => [
-      snapshotDoc.id,
-      { id: snapshotDoc.id, ...snapshotDoc.data() },
-    ]));
+    const loadedHistory = certificateHistoryBatches.length > 0
+      ? certificateHistoryBatches
+      : (await getDocs(collection(db, "certificateHistoryBatches"))).docs.map((snapshotDoc) => ({
+        id: snapshotDoc.id,
+        ...snapshotDoc.data(),
+      }));
+    const historyById = new Map(loadedHistory.map((history) => [history.id, history]));
     let synchronized = 0;
     let dated = 0;
+    let metadata = 0;
+
+    for (let offset = 0; offset < loadedHistory.length; offset += 400) {
+      const metadataBatch = writeBatch(db);
+      let metadataWrites = 0;
+
+      loadedHistory.slice(offset, offset + 400).forEach((history) => {
+        const requestId = getCertificateRequestId(history) || history.id;
+        const matchedRequest = printRequests.find((request) => request.id === requestId) || null;
+        const historyCertificateIds = new Set(Array.isArray(history.certificateIds) ? history.certificateIds : []);
+        const certificates = generatedCertificates.filter((certificate) =>
+          certificate.requestId === requestId || historyCertificateIds.has(certificate.id)
+        );
+        const nextMetadata = getCertificateHistoryMetadata(history, matchedRequest, certificates);
+        const patch = {};
+
+        if (!String(history.teacherId || "").trim() && nextMetadata.teacherId) {
+          patch.teacherId = nextMetadata.teacherId;
+        }
+        if (!String(history.teacherName || "").trim() && nextMetadata.teacherName) {
+          patch.teacherName = nextMetadata.teacherName;
+        }
+        if (!String(history.groupSchedule || "").trim() && nextMetadata.groupSchedule) {
+          patch.groupSchedule = nextMetadata.groupSchedule;
+        }
+        if (!toCertificateHistoryDate(history.generatedAt) && toCertificateHistoryDate(nextMetadata.generatedAt)) {
+          patch.generatedAt = nextMetadata.generatedAt;
+        }
+
+        if (Object.keys(patch).length > 0) {
+          metadataBatch.set(doc(db, "certificateHistoryBatches", history.id), patch, { merge: true });
+          metadataWrites += 1;
+          metadata += 1;
+        }
+      });
+
+      if (metadataWrites > 0) await metadataBatch.commit();
+    }
 
     for (const request of printRequests) {
       const history = historyById.get(request.id) || null;
@@ -7716,8 +7793,7 @@ export default function PrintShop() {
       );
       const historyPatch = {};
       if (normalizeCertificateStatus(history?.status) !== "Entregado") historyPatch.status = "Entregado";
-      if (toCertificateDate(originalGeneratedAt) &&
-          toCertificateDate(history?.generatedAt)?.getTime() !== toCertificateDate(originalGeneratedAt)?.getTime()) {
+      if (!toCertificateDate(history?.generatedAt) && toCertificateDate(originalGeneratedAt)) {
         historyPatch.generatedAt = originalGeneratedAt;
         dated += 1;
       }
@@ -7733,7 +7809,7 @@ export default function PrintShop() {
       if (writes > 0) await batch.commit();
     }
 
-    return { synchronized, dated };
+    return { synchronized, dated, metadata };
   }
 
   async function persistGeneratedCertificatePdfRepair(certificate, request, pdfSource, regenerated) {
@@ -7761,7 +7837,7 @@ export default function PrintShop() {
     }
   }
 
-  async function openOriginalGeneratedCertificate(certificate) {
+  async function openOriginalGeneratedCertificate(certificate, buildPdfBlob = null) {
     let pdfWindow;
 
     try {
@@ -7776,10 +7852,25 @@ export default function PrintShop() {
       setGeneratedCertificateActionMessage("");
       const request = await getRequestForGeneratedCertificate(certificate);
       const association = getCertificateAssociation(certificate, request ? [request] : printRequests);
-      const pdfSource = await resolveStoredCertificatePdf(certificate, association.request, association.student);
+      const pdfDocument = await resolveCertificatePdfDocument({
+        certificate,
+        request: association.request,
+        student: association.student,
+        loadStoredPdf: loadStoredCertificatePdfBlob,
+        buildPdfBlob,
+        acceptStoredUrl: true,
+      });
 
-      pdfWindow.location.replace(pdfSource.url);
-      setGeneratedCertificateActionMessage("PDF original abierto en una pestaña nueva.");
+      if (pdfDocument.source === "storage") {
+        pdfWindow.location.replace(pdfDocument.storedSource.url);
+      } else {
+        openCertificatePdfBlob(pdfWindow, pdfDocument.blob);
+      }
+      setGeneratedCertificateActionMessage(
+        pdfDocument.source === "storage"
+          ? "PDF almacenado abierto en una pestaña nueva."
+          : "PDF reconstruido desde la solicitud y abierto sin modificar registros."
+      );
       return true;
     } catch (error) {
       console.error("No se pudo abrir el PDF original:", error);
@@ -7821,7 +7912,7 @@ export default function PrintShop() {
     setActiveSection("certificates");
   }
 
-  async function reprintGeneratedCertificate(certificate) {
+  async function reprintGeneratedCertificate(certificate, buildPdfBlob = null) {
     let printWindow;
 
     try {
@@ -7836,15 +7927,24 @@ export default function PrintShop() {
       setGeneratedCertificateActionMessage("");
       const request = await getRequestForGeneratedCertificate(certificate);
       const association = getCertificateAssociation(certificate, request ? [request] : printRequests);
-      const pdfSource = await resolveStoredCertificatePdf(certificate, association.request, association.student);
-      const pdfBlob = await loadStoredCertificatePdfBlob(pdfSource);
+      const pdfDocument = await resolveCertificatePdfDocument({
+        certificate,
+        request: association.request,
+        student: association.student,
+        loadStoredPdf: loadStoredCertificatePdfBlob,
+        buildPdfBlob,
+      });
 
       renderCertificatePrintWindow(
         printWindow,
-        pdfBlob,
+        pdfDocument.blob,
         certificate.pdfFileName || `${certificate.folio || "certificado"}.pdf`
       );
-      setGeneratedCertificateActionMessage("PDF original cargado; diálogo de impresión solicitado.");
+      setGeneratedCertificateActionMessage(
+        pdfDocument.source === "storage"
+          ? "PDF almacenado cargado; diálogo de impresión solicitado."
+          : "PDF reconstruido desde la solicitud; diálogo de impresión solicitado."
+      );
       createPrintshopLog({
         type: "CERTIFICATE_REPRINT_OPENED",
         module: "certificates",
@@ -10115,6 +10215,9 @@ export default function PrintShop() {
           activeTeacherSigners={activeTeacherSigners}
           activeCertificateTemplates={activeCertificateTemplates}
           generatedCertificates={generatedCertificates}
+          certificateHistoryBatches={certificateHistoryBatches}
+          loadingCertificateHistoryBatches={loadingCertificateHistoryBatches}
+          certificateHistoryBatchesError={certificateHistoryBatchesError}
           filteredCertificates={filteredGeneratedCertificates}
           loadingCertificates={loadingGeneratedCertificates}
           certificatesError={generatedCertificatesError}
@@ -10569,7 +10672,6 @@ function PrintshopLogsView({
 
 function GeneratedCertificatesView({
   certificates,
-  filteredCertificates,
   loadingCertificates,
   certificatesError,
   search,
@@ -13957,10 +14059,6 @@ function PrintRequestsView({
   certificatesError,
   certificateSearch,
   certificateStatusFilter,
-  certificateYearFilter,
-  certificateCampusFilter,
-  certificateTeacherFilter,
-  certificateLevelFilter,
   updatingCertificateId,
   loadingRequests,
   requestsError,
@@ -14902,15 +15000,13 @@ function CertificatesWorkspaceView({
   activeTeacherSigners,
   activeCertificateTemplates,
   generatedCertificates,
-  filteredCertificates,
+  certificateHistoryBatches,
+  loadingCertificateHistoryBatches,
+  certificateHistoryBatchesError,
   loadingCertificates,
   certificatesError,
   certificateSearch,
   certificateStatusFilter,
-  certificateYearFilter,
-  certificateCampusFilter,
-  certificateTeacherFilter,
-  certificateLevelFilter,
   updatingCertificateId,
   loadingRequests,
   requestsError,
@@ -14958,10 +15054,6 @@ function CertificatesWorkspaceView({
   onMarkRequestReadyForDelivery,
   onCertificateSearchChange,
   onCertificateStatusFilterChange,
-  onCertificateYearFilterChange,
-  onCertificateCampusFilterChange,
-  onCertificateTeacherFilterChange,
-  onCertificateLevelFilterChange,
   onMarkCertificateDelivered,
   onCancelCertificate,
   onOpenCertificateRequest,
@@ -14988,10 +15080,6 @@ function CertificatesWorkspaceView({
   const generatedCount = generatedCertificates.filter((certificate) =>
     certificateRequests.some((request) => request.id === certificate.requestId)
   ).length;
-  const safeFilteredCertificates = useMemo(
-    () => Array.isArray(filteredCertificates) ? filteredCertificates : [],
-    [filteredCertificates]
-  );
   const pendingRequests = certificateRequests.filter(
     (request) => !["Lista para entrega", "Entregada", "Cancelada"].includes(request.status)
   ).length;
@@ -15004,11 +15092,18 @@ function CertificatesWorkspaceView({
   const [expandedCertificateLoteKey, setExpandedCertificateLoteKey] = useState("");
   const [repairingCertificateHistory, setRepairingCertificateHistory] = useState(false);
   const [certificateRepairMessage, setCertificateRepairMessage] = useState("");
+  const [historyScheduleFilter, setHistoryScheduleFilter] = useState("Todos");
+  const [historyTeacherFilter, setHistoryTeacherFilter] = useState("Todos");
+  const [historyDateFrom, setHistoryDateFrom] = useState("");
+  const [historyDateTo, setHistoryDateTo] = useState("");
+  const [historyYearFilter, setHistoryYearFilter] = useState("Todos");
+  const [historyRenderDescriptor, setHistoryRenderDescriptor] = useState(null);
+  const historyCertificateRefs = useRef({});
 
   const certificateLotes = useMemo(() => {
     const groups = new Map();
 
-    safeFilteredCertificates.forEach((certificate) => {
+    generatedCertificates.forEach((certificate) => {
       const loteKey = certificate.requestId || `individual-${certificate.id}`;
 
       if (!groups.has(loteKey)) {
@@ -15019,23 +15114,27 @@ function CertificatesWorkspaceView({
     });
 
     return Array.from(groups.entries()).map(([loteKey, loteCertificates]) => {
-      const matchedRequest = loteCertificates[0].requestId
-        ? certificateRequests.find((request) => request.id === loteCertificates[0].requestId)
+      const requestId = getCertificateRequestId(loteCertificates[0]);
+      const matchedRequest = requestId
+        ? certificateRequests.find((request) => request.id === requestId)
         : null;
+      const matchedBatch = certificateHistoryBatches.find((batch) =>
+        batch.id === loteKey ||
+        getCertificateRequestId(batch) === requestId ||
+        String(batch.loteId || "") === loteKey
+      ) || null;
+      const metadata = getCertificateHistoryMetadata(matchedBatch, matchedRequest, loteCertificates);
       const distinctStatuses = new Set(loteCertificates.map((certificate) => certificate.status));
       const loteStatus = distinctStatuses.size === 1 ? loteCertificates[0].status : "Mixto";
-      const originalGeneratedAt = toCertificateDate(getOriginalCertificateGenerationValue(
-        matchedRequest?.students || [],
-        matchedRequest,
-        loteCertificates
-      ));
+      const originalGeneratedAt = toCertificateHistoryDate(metadata.generatedAt);
 
       return {
         loteKey,
-        requestId: loteCertificates[0].requestId || "",
+        requestId,
         requestFolio: matchedRequest?.folio || loteCertificates[0].requestFolio || "",
-        teacherName: matchedRequest?.teacherName || loteCertificates[0].teacherName || "",
-        schedule: matchedRequest?.schedule || "",
+        teacherId: metadata.teacherId,
+        teacherName: metadata.teacherName,
+        schedule: metadata.groupSchedule,
         campus: matchedRequest?.campus || loteCertificates[0].campus || "",
         group: matchedRequest?.group || loteCertificates[0].group || "",
         level: loteCertificates[0].level || "",
@@ -15046,7 +15145,100 @@ function CertificatesWorkspaceView({
         status: loteStatus,
       };
     }).sort((a, b) => (b.originalGeneratedAt?.getTime() || 0) - (a.originalGeneratedAt?.getTime() || 0));
-  }, [safeFilteredCertificates, certificateRequests]);
+  }, [generatedCertificates, certificateRequests, certificateHistoryBatches]);
+
+  const historyTeacherOptions = useMemo(() => {
+    const idsByName = new Map();
+    certificateLotes.forEach((lote) => {
+      const nameKey = normalizeCertificateHistoryText(lote.teacherName);
+      if (nameKey && lote.teacherId) idsByName.set(nameKey, lote.teacherId);
+    });
+    const options = new Map();
+    certificateLotes.forEach((lote) => {
+      const nameKey = normalizeCertificateHistoryText(lote.teacherName);
+      if (!nameKey) return;
+      const teacherId = lote.teacherId || idsByName.get(nameKey) || "";
+      const key = teacherId ? `id:${teacherId}` : `name:${nameKey}`;
+      if (!options.has(key)) options.set(key, { key, name: lote.teacherName });
+    });
+    return [...options.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }, [certificateLotes]);
+
+  const historyTeacherIdsByName = useMemo(() => {
+    const values = new Map();
+    certificateLotes.forEach((lote) => {
+      const nameKey = normalizeCertificateHistoryText(lote.teacherName);
+      if (nameKey && lote.teacherId) values.set(nameKey, lote.teacherId);
+    });
+    return values;
+  }, [certificateLotes]);
+
+  const historyScheduleOptions = useMemo(() => {
+    const options = new Map();
+    certificateLotes.forEach((lote) => {
+      const key = normalizeCertificateSchedule(lote.schedule);
+      if (key && !options.has(key)) options.set(key, lote.schedule);
+    });
+    return [...options.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }, [certificateLotes]);
+
+  const historyYearOptions = useMemo(() => (
+    [...new Set(certificateLotes
+      .map((lote) => lote.originalGeneratedAt?.getFullYear())
+      .filter(Boolean))]
+      .sort((a, b) => b - a)
+  ), [certificateLotes]);
+
+  const filteredCertificateLotes = useMemo(() => {
+    const search = normalizeCertificateHistoryText(certificateSearch);
+    const dateFrom = getLocalCertificateDateBoundary(historyDateFrom, false);
+    const dateTo = getLocalCertificateDateBoundary(historyDateTo, true);
+
+    return certificateLotes.filter((lote) => {
+      const searchable = normalizeCertificateHistoryText([
+        lote.requestFolio,
+        lote.teacherName,
+        lote.schedule,
+        lote.group,
+        lote.campus,
+        lote.level,
+        lote.templateName,
+        ...lote.certificates.flatMap((certificate) => [
+          certificate.folio,
+          certificate.validationCode,
+          certificate.studentName,
+        ]),
+      ].join(" "));
+      const teacherNameKey = normalizeCertificateHistoryText(lote.teacherName);
+      const effectiveTeacherId = lote.teacherId || historyTeacherIdsByName.get(teacherNameKey) || "";
+      const teacherKey = effectiveTeacherId ? `id:${effectiveTeacherId}` : `name:${teacherNameKey}`;
+      const generatedTime = lote.originalGeneratedAt?.getTime() || null;
+      const matchesStatus = certificateStatusFilter === "Todos" ||
+        lote.certificates.some((certificate) => certificate.status === certificateStatusFilter);
+      const matchesSchedule = historyScheduleFilter === "Todos" ||
+        normalizeCertificateSchedule(lote.schedule) === historyScheduleFilter;
+      const matchesTeacher = historyTeacherFilter === "Todos" || teacherKey === historyTeacherFilter;
+      const matchesYear = historyYearFilter === "Todos" ||
+        String(lote.originalGeneratedAt?.getFullYear() || "") === historyYearFilter;
+      const matchesDateFrom = !dateFrom || generatedTime !== null && generatedTime >= dateFrom.getTime();
+      const matchesDateTo = !dateTo || generatedTime !== null && generatedTime <= dateTo.getTime();
+
+      return (!search || searchable.includes(search)) && matchesStatus && matchesSchedule &&
+        matchesTeacher && matchesYear && matchesDateFrom && matchesDateTo;
+    });
+  }, [
+    certificateLotes,
+    certificateSearch,
+    certificateStatusFilter,
+    historyScheduleFilter,
+    historyTeacherFilter,
+    historyTeacherIdsByName,
+    historyDateFrom,
+    historyDateTo,
+    historyYearFilter,
+  ]);
 
   const historyRepairDescriptors = useMemo(() => (
     generatedCertificates.map((certificate) => {
@@ -15060,6 +15252,72 @@ function CertificatesWorkspaceView({
     certificateRequests,
     generatedCertificates,
   ]);
+
+  async function buildHistoryCertificatePdfBlob(certificate) {
+    const association = getCertificateAssociation(certificate, certificateRequests);
+    if (!association.request) {
+      throw new Error("No se encontró la solicitud asociada para reconstruir el PDF.");
+    }
+    if (!association.student) {
+      throw new Error("La solicitud existe, pero no contiene el certificado solicitado por ID o folio.");
+    }
+
+    const request = {
+      ...association.request,
+      certificateTemplateId: association.request.certificateTemplateId || certificate.templateId || "",
+      certificateTemplateName: association.request.certificateTemplateName || certificate.templateName || "",
+      certificateIssueDate: association.request.certificateIssueDate || certificate.issueDate || "",
+      level: association.request.level || certificate.level || "No aplica",
+      teacherName: association.request.teacherName || certificate.teacherName || "",
+    };
+    const validationCode = association.student.validationCode || certificate.validationCode || "";
+    const validationUrl = association.student.validationUrl || certificate.validationUrl || buildValidationUrl(validationCode);
+    const student = {
+      ...association.student,
+      id: association.student.id || certificate.studentId || certificate.id,
+      name: association.student.name || certificate.studentName || "",
+      certificateFolio: association.student.certificateFolio || certificate.folio || "",
+      validationCode,
+      validationUrl,
+      qrDataUrl: association.student.qrDataUrl || await QRCode.toDataURL(validationUrl, {
+        margin: 2,
+        width: 220,
+        errorCorrectionLevel: "M",
+      }),
+    };
+    const { principalSigner, teacherSigner, certificateTemplate } = resolveCertificateRenderContext(
+      request,
+      activePrincipalSigners,
+      activeTeacherSigners,
+      activeCertificateTemplates
+    );
+
+    historyCertificateRefs.current = {};
+    setHistoryRenderDescriptor({ request, student, principalSigner, teacherSigner, certificateTemplate });
+    await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+
+    const element = historyCertificateRefs.current[student.id];
+    if (!element) {
+      setHistoryRenderDescriptor(null);
+      throw new Error("No se pudo montar la vista del certificado desde la solicitud.");
+    }
+
+    try {
+      return await buildCertificatePdfBlobFromElement(element);
+    } finally {
+      setHistoryRenderDescriptor(null);
+    }
+  }
+
+  function clearCertificateHistoryFilters() {
+    onCertificateSearchChange?.("");
+    onCertificateStatusFilterChange?.("Todos");
+    setHistoryScheduleFilter("Todos");
+    setHistoryTeacherFilter("Todos");
+    setHistoryDateFrom("");
+    setHistoryDateTo("");
+    setHistoryYearFilter("Todos");
+  }
 
   useEffect(() => {
     if (!activeRequest?.id || activeRequest.id === selectedRequest?.id) return;
@@ -15130,10 +15388,10 @@ function CertificatesWorkspaceView({
         }
       }
 
-      const consistency = await onRepairCertificateHistoryConsistency?.() || { synchronized: 0, dated: 0 };
+      const consistency = await onRepairCertificateHistoryConsistency?.() || { synchronized: 0, dated: 0, metadata: 0 };
 
       setCertificateRepairMessage(
-        `Reparación terminada: ${normalizedCount} PDFs vinculados, ${consistency.synchronized} estados sincronizados, ${consistency.dated} fechas recuperadas, ${nonLetterCount} PDFs no Carta detectados y ${skippedCount} omitidos.`
+        `Reparación terminada: ${normalizedCount} PDFs vinculados, ${consistency.metadata} lotes enriquecidos, ${consistency.synchronized} estados sincronizados, ${consistency.dated} fechas recuperadas, ${nonLetterCount} PDFs no Carta detectados y ${skippedCount} omitidos.`
       );
     } catch (error) {
       console.error("No se pudo reparar el historial de certificados:", error);
@@ -15310,7 +15568,7 @@ function CertificatesWorkspaceView({
             <span>Historial de certificados</span>
           </div>
 
-          <Panel title="Historial de certificados generados" icon="history" actionLabel={`${safeFilteredCertificates.length} registros`}>
+          <Panel title="Historial de certificados generados" icon="history" actionLabel={`${filteredCertificateLotes.length} lotes`}>
             {certificateActionMessage && (
               <div className="message-box certificate-generation-message" role="status">
                 {certificateActionMessage}
@@ -15344,27 +15602,78 @@ function CertificatesWorkspaceView({
                 />
               </label>
 
-              <select value={certificateStatusFilter || "Todos"} onChange={(event) => onCertificateStatusFilterChange?.(event.target.value)}>
+              <select
+                aria-label="Filtrar por estado"
+                value={certificateStatusFilter || "Todos"}
+                onChange={(event) => onCertificateStatusFilterChange?.(event.target.value)}
+              >
                 <option>Todos</option>
                 {generatedCertificateStatuses.map((status) => (
                   <option key={status}>{status}</option>
                 ))}
               </select>
+
+              <select
+                aria-label="Filtrar por horario"
+                value={historyScheduleFilter}
+                onChange={(event) => setHistoryScheduleFilter(event.target.value)}
+              >
+                <option value="Todos">Todos los horarios</option>
+                {historyScheduleOptions.map((option) => (
+                  <option key={option.key} value={option.key}>{option.label}</option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filtrar por maestro"
+                value={historyTeacherFilter}
+                onChange={(event) => setHistoryTeacherFilter(event.target.value)}
+              >
+                <option value="Todos">Todos los maestros</option>
+                {historyTeacherOptions.map((option) => (
+                  <option key={option.key} value={option.key}>{option.name}</option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filtrar por año"
+                value={historyYearFilter}
+                onChange={(event) => setHistoryYearFilter(event.target.value)}
+              >
+                <option value="Todos">Todos los años</option>
+                {historyYearOptions.map((year) => (
+                  <option key={year} value={String(year)}>{year}</option>
+                ))}
+              </select>
+
+              <label className="certificate-history-date-filter">
+                <span>Desde</span>
+                <input type="date" value={historyDateFrom} onChange={(event) => setHistoryDateFrom(event.target.value)} />
+              </label>
+
+              <label className="certificate-history-date-filter">
+                <span>Hasta</span>
+                <input type="date" value={historyDateTo} onChange={(event) => setHistoryDateTo(event.target.value)} />
+              </label>
+
+              <button type="button" className="visual-outline-button" onClick={clearCertificateHistoryFilters}>
+                Limpiar filtros
+              </button>
             </div>
 
-            {certificatesError ? (
-              <div className="message-box">{certificatesError}</div>
-            ) : loadingCertificates ? (
+            {certificatesError || certificateHistoryBatchesError ? (
+              <div className="message-box">{certificatesError || certificateHistoryBatchesError}</div>
+            ) : loadingCertificates || loadingCertificateHistoryBatches ? (
               <div className="empty-state small">
                 <p>Cargando certificados...</p>
               </div>
-            ) : safeFilteredCertificates.length === 0 ? (
+            ) : filteredCertificateLotes.length === 0 ? (
               <div className="empty-state small">
-                <p>No hay certificados generados con los filtros seleccionados.</p>
+                <p>No hay lotes con los filtros seleccionados.</p>
               </div>
             ) : (
               <div className="certificate-history-card-list certificate-lote-list">
-                {certificateLotes.map((lote) => {
+                {filteredCertificateLotes.map((lote) => {
                   const isExpanded = expandedCertificateLoteKey === lote.loteKey;
 
                   return (
@@ -15446,10 +15755,13 @@ function CertificatesWorkspaceView({
                                   <button
                                     type="button"
                                     className="visual-outline-button certificate-action-button"
-                                    disabled={Boolean(actionType)}
+                                    disabled={Boolean(certificateAction)}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onOpenOriginalCertificate?.(certificate);
+                                      onOpenOriginalCertificate?.(
+                                        certificate,
+                                        () => buildHistoryCertificatePdfBlob(certificate)
+                                      );
                                     }}
                                   >
                                     {actionType === "original" ? "Abriendo..." : "PDF original"}
@@ -15457,10 +15769,13 @@ function CertificatesWorkspaceView({
                                   <button
                                     type="button"
                                     className="visual-outline-button certificate-action-button"
-                                    disabled={Boolean(actionType)}
+                                    disabled={Boolean(certificateAction)}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      onReprintCertificate?.(certificate);
+                                      onReprintCertificate?.(
+                                        certificate,
+                                        () => buildHistoryCertificatePdfBlob(certificate)
+                                      );
                                     }}
                                   >
                                     {actionType === "reprint" ? "Cargando..." : "Reimprimir"}
@@ -15468,7 +15783,7 @@ function CertificatesWorkspaceView({
                                   <button
                                     type="button"
                                     className="certificate-action-button"
-                                    disabled={Boolean(actionType)}
+                                    disabled={Boolean(certificateAction)}
                                     onClick={async (event) => {
                                       event.stopPropagation();
                                       const opened = await onOpenCertificateRequest?.(certificate);
@@ -15820,8 +16135,38 @@ function CertificatesWorkspaceView({
         </aside>
       </div>
       )}
+      {historyRenderDescriptor && (
+        <HiddenBulkCertificateStages
+          request={historyRenderDescriptor.request}
+          students={[historyRenderDescriptor.student]}
+          principalSigner={historyRenderDescriptor.principalSigner}
+          teacherSigner={historyRenderDescriptor.teacherSigner}
+          certificateTemplate={historyRenderDescriptor.certificateTemplate}
+          refsMap={historyCertificateRefs}
+        />
+      )}
     </section>
   );
+}
+
+function resolveCertificateRenderContext(
+  request,
+  principalSigners = [],
+  teacherSigners = [],
+  certificateTemplates = []
+) {
+  return {
+    principalSigner: principalSigners.find((signer) => signer.id === request?.principalSignerId) || null,
+    teacherSigner: teacherSigners.find((signer) => signer.id === request?.teacherSignerId) || null,
+    certificateTemplate:
+      certificateTemplates.find((template) => template.id === request?.certificateTemplateId) ||
+      findMatchingCertificateTemplateInList(certificateTemplates, request, {
+        id: request?.productId || "",
+        name: request?.productName || "",
+        category: request?.requestType || "Certificado",
+        level: request?.level || request?.certificateTemplateLevel || "",
+      }),
+  };
 }
 
 
@@ -15923,18 +16268,16 @@ function RequestDetailCard({
     students.find((student) => student.id === previewStudentId) ||
     students.find((student) => Boolean(student.certificateFolio)) ||
     null;
-  const selectedPrincipalSigner =
-    (activePrincipalSigners || []).find((signer) => signer.id === request.principalSignerId) || null;
-  const selectedTeacherSigner =
-    (activeTeacherSigners || []).find((signer) => signer.id === request.teacherSignerId) || null;
-  const selectedCertificateTemplate =
-    (activeCertificateTemplates || []).find((template) => template.id === request.certificateTemplateId) ||
-    findMatchingCertificateTemplateInList(activeCertificateTemplates, request, {
-      id: request.productId || "",
-      name: request.productName || "",
-      category: request.requestType || "Certificado",
-      level: request.level || request.certificateTemplateLevel || "",
-    });
+  const {
+    principalSigner: selectedPrincipalSigner,
+    teacherSigner: selectedTeacherSigner,
+    certificateTemplate: selectedCertificateTemplate,
+  } = resolveCertificateRenderContext(
+    request,
+    activePrincipalSigners,
+    activeTeacherSigners,
+    activeCertificateTemplates
+  );
   const canEditAdministrativeFields = selectedRole === "admin";
   const canEditOperationalFields =
     selectedRole === "admin" ||
@@ -16061,7 +16404,18 @@ function RequestDetailCard({
     const fileName = `${sanitizePdfFileName(
       `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
     )}.pdf`;
-    const pdfBlob = await buildCertificatePdfBlobFromElement(element);
+    const pdfDocument = await resolveCertificatePdfDocument({
+      certificate: getGeneratedCertificateRecordForStudent(student) || {
+        id: student.certificateRecordId || student.validationCode || student.certificateFolio,
+        validationCode: student.validationCode,
+        folio: student.certificateFolio,
+      },
+      request,
+      student,
+      preferStored: false,
+      buildPdfBlob: () => buildCertificatePdfBlobFromElement(element),
+    });
+    const pdfBlob = pdfDocument.blob;
     const { pdfUrl, pdfStoragePath } = await saveGeneratedCertificatePdfBlob({
       request,
       student,
@@ -17367,6 +17721,16 @@ function renderCertificateActionWindowError(actionWindow, message) {
   actionWindow.document.close();
 }
 
+function openCertificatePdfBlob(actionWindow, pdfBlob) {
+  if (!actionWindow || actionWindow.closed) {
+    throw new Error("La pestaña del PDF se cerró antes de terminar la carga.");
+  }
+
+  const pdfUrl = URL.createObjectURL(pdfBlob);
+  actionWindow.location.replace(pdfUrl);
+  window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 10 * 60 * 1000);
+}
+
 function renderCertificatePrintWindow(printWindow, pdfBlob, fileName) {
   if (!printWindow || printWindow.closed) {
     throw new Error("La pestaña de impresión se cerró antes de cargar el PDF.");
@@ -18057,7 +18421,18 @@ function CertificatePreviewCard({
         `${student.certificateFolio || "certificado"}-${student.name || "alumno"}`
       );
       const finalFileName = `${fileName}.pdf`;
-      const pdfBlob = await buildCertificatePdfBlobFromElement(element);
+      const pdfDocument = await resolveCertificatePdfDocument({
+        certificate: {
+          id: student.certificateRecordId || student.validationCode || student.certificateFolio,
+          validationCode: student.validationCode,
+          folio: student.certificateFolio,
+        },
+        request,
+        student,
+        preferStored: false,
+        buildPdfBlob: () => buildCertificatePdfBlobFromElement(element),
+      });
+      const pdfBlob = pdfDocument.blob;
       let pdfUrl = "";
       let pdfStoragePath = "";
       let storageWarning = "";

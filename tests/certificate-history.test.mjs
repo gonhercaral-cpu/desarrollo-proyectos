@@ -6,11 +6,14 @@ import { jsPDF } from "jspdf";
 import {
   findCertificateRequest,
   getCertificateBatchId,
+  getCertificateHistoryMetadata,
+  getLocalCertificateDateBoundary,
   getCertificatePdfReferences,
   getCertificatePdfStoragePath,
   getCertificatePdfUrl,
   getCertificateRequestId,
   getStorageObjectPath,
+  normalizeCertificateSchedule,
   normalizeCertificateStatus,
 } from "../src/utils/certificateHistory.js";
 import {
@@ -79,6 +82,60 @@ test("recupera solicitud por asociacion estable sin usar nombre visible", () => 
   assert.equal(findCertificateRequest({ validationCode: "VALID-1" }, requests)?.id, "request-1");
 });
 
+test("recupera certificado desde mapas y estructuras historicas de solicitud", () => {
+  const requests = [{
+    id: "request-map",
+    certificates: {
+      "VALID-MAP-1": {
+        studentId: "student-map",
+        certificateFolio: "CERT-MAP-1",
+        pdfPath: "printshop/generated-certificates/CERT-MAP-1.pdf",
+      },
+    },
+  }];
+
+  assert.equal(findCertificateRequest({ validationCode: "VALID-MAP-1" }, requests)?.id, "request-map");
+});
+
+test("enriquece lote sin reemplazar metadatos historicos validos", () => {
+  const originalGeneratedAt = "2025-08-10T16:00:00.000Z";
+  const metadata = getCertificateHistoryMetadata(
+    {
+      teacherName: "Maestra histórica",
+      groupSchedule: "5:00–6:00",
+      generatedAt: originalGeneratedAt,
+    },
+    {
+      teacherSignerId: "teacher-1",
+      teacherSignerName: "Maestra actual",
+      schedule: "17:00 - 18:00",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    []
+  );
+
+  assert.equal(metadata.teacherId, "teacher-1");
+  assert.equal(metadata.teacherName, "Maestra histórica");
+  assert.equal(metadata.groupSchedule, "5:00–6:00");
+  assert.equal(metadata.generatedAt, originalGeneratedAt);
+  assert.equal(normalizeCertificateSchedule(" 5:00 – 6:00 "), "5:00-6:00");
+});
+
+test("construye un rango local inclusivo sin convertir a UTC", () => {
+  const start = getLocalCertificateDateBoundary("2026-07-13");
+  const end = getLocalCertificateDateBoundary("2026-07-13", true);
+
+  assert.equal(start.getFullYear(), 2026);
+  assert.equal(start.getMonth(), 6);
+  assert.equal(start.getDate(), 13);
+  assert.equal(start.getHours(), 0);
+  assert.equal(start.getMilliseconds(), 0);
+  assert.equal(end.getHours(), 23);
+  assert.equal(end.getMinutes(), 59);
+  assert.equal(end.getSeconds(), 59);
+  assert.equal(end.getMilliseconds(), 999);
+});
+
 test("detecta Letter vertical 612 por 792 puntos", () => {
   const letterPdf = "%PDF-1.4\n/MediaBox [0 0 612 792]\n";
   const landscapePdf = "%PDF-1.4\n/MediaBox [0 0 792 612]\n";
@@ -119,4 +176,22 @@ test("abrir PDF, reimprimir y ver solicitud no ejecutan migraciones", () => {
 
   assert.doesNotMatch(actionSource, /repairGeneratedCertificateReferences|updateDoc\(|writeBatch\(/);
   assert.doesNotMatch(selectSource, /publishRequestStudentValidations|updateDoc\(|writeBatch\(/);
+});
+
+test("historial y detalle comparten contexto, renderer y servicio PDF", () => {
+  const source = readFileSync(new URL("../src/pages/printshop.jsx", import.meta.url), "utf8");
+  const historyBuilder = source.slice(
+    source.indexOf("async function buildHistoryCertificatePdfBlob"),
+    source.indexOf("function clearCertificateHistoryFilters")
+  );
+  const detailBuilder = source.slice(
+    source.indexOf("async function buildAndStoreStudentCertificatePdf"),
+    source.indexOf("async function saveMissingCertificatePdfs")
+  );
+
+  assert.match(historyBuilder, /resolveCertificateRenderContext/);
+  assert.match(historyBuilder, /buildCertificatePdfBlobFromElement/);
+  assert.doesNotMatch(historyBuilder, /saveGeneratedCertificatePdfBlob|uploadBytes|updateDoc\(/);
+  assert.match(detailBuilder, /resolveCertificatePdfDocument/);
+  assert.match(detailBuilder, /buildCertificatePdfBlobFromElement/);
 });

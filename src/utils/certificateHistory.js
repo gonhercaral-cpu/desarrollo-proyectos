@@ -151,8 +151,142 @@ export function normalizeCertificateStatus(status, fallback = "Generado") {
   return fallback;
 }
 
+export function normalizeCertificateHistoryText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("es-MX");
+}
+
+export function normalizeCertificateSchedule(value) {
+  return normalizeCertificateHistoryText(value)
+    .replace(/[–—−]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/(\d)\s+(am|pm)\b/g, "$1$2")
+    .replace(/(\d):00\s*(am|pm)\b/g, "$1$2")
+    .replace(/\s+/g, " ");
+}
+
+export function toCertificateHistoryDate(value) {
+  if (!value) return null;
+  const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function getLocalCertificateDateBoundary(value, endOfDay = false) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 999 : 0
+  );
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function readRequestCertificateContainer(container) {
+  if (Array.isArray(container)) return container.filter((item) => item && typeof item === "object");
+  if (!container || typeof container !== "object") return [];
+
+  return Object.entries(container).map(([key, value]) => {
+    if (value && typeof value === "object") {
+      return {
+        ...value,
+        id: value.id || value.studentId || key,
+        validationCode: value.validationCode || value.codigoValidacion || key,
+      };
+    }
+
+    return {
+      id: key,
+      certificateFolio: typeof value === "string" ? value : "",
+    };
+  });
+}
+
+export function getCertificateRequestEntries(request) {
+  const containers = [
+    request?.students,
+    request?.alumnos,
+    request?.certificates,
+    request?.generatedCertificates,
+    request?.certificateFiles,
+    request?.files,
+    request?.folios,
+  ];
+  const entries = containers.flatMap(readRequestCertificateContainer);
+  const seen = new Set();
+
+  return entries.filter((entry) => {
+    const key = firstText(
+      entry?.id,
+      entry?.studentId,
+      entry?.certificateId,
+      entry?.validationCode,
+      entry?.codigoValidacion,
+      entry?.certificateFolio,
+      entry?.folio
+    );
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function getCertificateHistoryMetadata(batch = null, request = null, certificates = []) {
+  const requestEntries = getCertificateRequestEntries(request);
+  const validBatchGeneratedAt = toCertificateHistoryDate(batch?.generatedAt)
+    ? batch.generatedAt
+    : null;
+  const dateValues = [
+    validBatchGeneratedAt,
+    ...requestEntries.flatMap((entry) => [entry?.certificateGeneratedAt, entry?.generatedAt]),
+    ...certificates.map((certificate) => certificate?.generatedAt),
+    request?.certificateGeneratedAt,
+    request?.generatedAt,
+    request?.createdAt,
+  ].filter((value) => toCertificateHistoryDate(value));
+  const generatedAt = validBatchGeneratedAt || (dateValues.length > 0
+    ? dateValues.reduce((earliest, value) => (
+      toCertificateHistoryDate(value) < toCertificateHistoryDate(earliest) ? value : earliest
+    ))
+    : null);
+
+  return {
+    teacherId: firstText(
+      batch?.teacherId,
+      batch?.teacherSignerId,
+      request?.teacherId,
+      request?.teacherSignerId,
+      request?.maestroId
+    ),
+    teacherName: firstText(
+      batch?.teacherName,
+      batch?.teacherSignerName,
+      request?.teacherName,
+      request?.teacherSignerName,
+      request?.maestroNombre,
+      certificates[0]?.teacherName
+    ),
+    groupSchedule: firstText(
+      batch?.groupSchedule,
+      batch?.schedule,
+      request?.groupSchedule,
+      request?.schedule,
+      request?.horario
+    ),
+    generatedAt,
+  };
+}
+
 export function findCertificateStudent(request, certificate) {
-  const students = Array.isArray(request?.students) ? request.students : [];
+  const students = getCertificateRequestEntries(request);
   const certificateId = firstText(certificate?.id, certificate?.certificateId);
   const studentId = firstText(certificate?.studentId, certificate?.alumnoId);
   const validationCode = firstText(certificate?.validationCode, certificate?.codigoValidacion);
