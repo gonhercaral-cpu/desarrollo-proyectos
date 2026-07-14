@@ -19,7 +19,6 @@ function validPublicPayload(overrides = {}) {
     requesterId: "principal-requester",
     principalSignerId: "principal-director",
     teacherSignerId: "teacher-one",
-    certificateTemplateId: "template-a1",
     campus: "Plaza Estrella",
     requestedDeliveryDate: "2026-07-21",
     courseLevel: "A1 Journey",
@@ -216,19 +215,25 @@ describe("entrada pública confiable de certificados", () => {
     assert.match(result.students[0].id, /^student-/);
   });
 
-  it("ignora folio, estado y asignaciones enviados por cliente", () => {
+  it("ignora folio, estado, asignaciones y plantilla enviados por cliente", () => {
     const result = publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload({
       folio: "FOLIO-CLIENTE",
       status: "Entregada",
       assignedUserId: "uid-inventado",
       supportUserId: "uid-inventado-2",
       assignmentSource: "cliente",
+      certificateTemplateId: "template-inventada",
+      certificateTemplateName: "Plantilla manipulada",
+      templateId: "otra-template",
     }), CREATED_AT);
     assert.notEqual(result.folio, "FOLIO-CLIENTE");
     assert.equal(result.status, "Solicitud recibida");
     assert.equal(result.assignedUserId, undefined);
     assert.equal(result.supportUserId, undefined);
     assert.equal(result.assignmentSource, undefined);
+    assert.equal(result.certificateTemplateId, undefined);
+    assert.equal(result.certificateTemplateName, undefined);
+    assert.equal(result.templateId, undefined);
   });
 
   it("limita alumnos, valores e identificadores", () => {
@@ -292,6 +297,10 @@ describe("resolver único de Agenda y persistencia", () => {
     assert.match(internalSource, /createPrintRequestWithAssignment\(creationPayload\)/);
     assert.doesNotMatch(publicSource, /addDoc\(collection\(db,\s*"printRequests"/);
     assert.doesNotMatch(internalSource, /addDoc\(collection\(db,\s*"printRequests"/);
+    assert.doesNotMatch(publicSource, /certificateTemplateId|templateId|templateName/);
+    assert.doesNotMatch(publicSource, /Plantilla (?:del|de) certificado/);
+    assert.match(publicSource, /Enviar nueva solicitud/);
+    assert.match(publicSource, /Copiar enlace de seguimiento/);
   });
 
   it("resuelve variantes de nombre y diferencia docId del UID de Auth", async () => {

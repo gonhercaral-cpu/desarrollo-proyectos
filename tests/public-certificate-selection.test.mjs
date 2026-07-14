@@ -14,6 +14,13 @@ const activeTemplate = {
   audience: "Adultos",
   certificateType: "Certificado",
 };
+const a1Request = {
+  requestType: "Certificado",
+  level: "A1",
+  courseLevel: "A1 Journey",
+  courseProgramName: "Journey",
+  courseAudience: "Adultos",
+};
 
 describe("selección pública de firmas y plantillas", () => {
   it("normaliza strings y estructuras comunes a un ID estable", () => {
@@ -44,23 +51,58 @@ describe("selección pública de firmas y plantillas", () => {
     assert.throws(
       () => publicPrintRequest.validatePublicCertificateTemplate(
         { certificateType: "Certificado", level: "A2", audience: "Adultos" },
-        { level: "A1", courseAudience: "Adultos" }
+        { requestType: "Certificado", level: "A1", courseAudience: "Adultos" }
       ),
       /no corresponde al nivel/
     );
     assert.throws(
       () => publicPrintRequest.validatePublicCertificateTemplate(
         { certificateType: "Certificado", level: "A1", audience: "Kids" },
-        { level: "A1", courseAudience: "Adultos" }
+        { requestType: "Certificado", level: "A1", courseAudience: "Adultos" }
       ),
       /no corresponde al público/
     );
-    assert.equal(
-      publicPrintRequest.validatePublicCertificateTemplate(
-        { certificateType: "Certificado", level: "A1", audience: "Adultos" },
-        { level: "A1", courseAudience: "Adultos" }
-      ),
-      true
+  });
+
+  it("backend resuelve la única plantilla activa compatible sin ID del cliente", () => {
+    const selected = publicPrintRequest.selectPublicCertificateTemplate([
+      { ...activeTemplate, id: "a2", name: "Explore", level: "A2", programName: "Journey" },
+      { ...activeTemplate, id: "a1", name: "Journey", level: "A1", programName: "Journey" },
+    ], a1Request);
+
+    assert.equal(selected.id, "a1");
+  });
+
+  it("backend aplica la plantilla predeterminada configurada si hay varias válidas", () => {
+    const templates = [
+      { ...activeTemplate, id: "a1-blue", name: "Journey azul", level: "A1", programName: "Journey" },
+      { ...activeTemplate, id: "a1-green", name: "Journey verde", level: "A1", programName: "Journey" },
+    ];
+    const selected = publicPrintRequest.selectPublicCertificateTemplate(
+      templates,
+      a1Request,
+      { defaultCertificateTemplateIds: { "A1 Journey": "a1-green" } }
+    );
+
+    assert.equal(selected.id, "a1-green");
+  });
+
+  it("backend no crea una solicitud incompleta cuando falta plantilla compatible", () => {
+    assert.throws(
+      () => publicPrintRequest.selectPublicCertificateTemplate([
+        { ...activeTemplate, id: "a2", name: "Explore", level: "A2", programName: "Explore" },
+      ], a1Request),
+      /No existe una plantilla activa compatible con A1 Journey/
+    );
+  });
+
+  it("backend exige una predeterminada cuando el resultado es ambiguo", () => {
+    assert.throws(
+      () => publicPrintRequest.selectPublicCertificateTemplate([
+        { ...activeTemplate, id: "one", name: "Journey 1", level: "A1", programName: "Journey" },
+        { ...activeTemplate, id: "two", name: "Journey 2", level: "A1", programName: "Journey" },
+      ], a1Request),
+      /configura una como predeterminada/
     );
   });
 });

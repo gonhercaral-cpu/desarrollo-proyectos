@@ -15,6 +15,7 @@ const {
   createLegacyPublicRequestId,
   createPublicRequestId,
   sanitizePublicPrintRequest,
+  selectPublicCertificateTemplate,
   validatePublicCertificateTemplate,
 } = require("./publicPrintRequest");
 
@@ -165,15 +166,22 @@ async function getActiveCertificateSigner(signerId, expectedType, fieldName) {
   return { id: signerId, name, type, data };
 }
 
-async function getActiveCertificateTemplate(templateId, requestData) {
-  const snapshot = await db.collection("certificateTemplates").doc(templateId).get();
-  const data = snapshot.exists ? snapshot.data() : null;
-  const certificateType = cleanString(data?.certificateType || "Certificado");
-  if (data?.active !== true || certificateType !== "Certificado" || !cleanString(data?.name)) {
-    throw new HttpsError("invalid-argument", "La plantilla no existe, no está activa o no es de certificado.");
-  }
-  validatePublicCertificateTemplate(data, requestData);
-  return { id: templateId, data };
+async function resolvePublicCertificateTemplate(requestData) {
+  const [templatesSnapshot, settingsSnapshot] = await Promise.all([
+    db.collection("certificateTemplates").where("active", "==", true).get(),
+    db.collection("systemSettings").doc("printshopCertificates").get(),
+  ]);
+  const templates = templatesSnapshot.docs.map((templateSnapshot) => ({
+    id: templateSnapshot.id,
+    ...templateSnapshot.data(),
+  }));
+  const selectedTemplate = selectPublicCertificateTemplate(
+    templates,
+    requestData,
+    settingsSnapshot.exists ? settingsSnapshot.data() : {}
+  );
+  validatePublicCertificateTemplate(selectedTemplate, requestData);
+  return { id: selectedTemplate.id, data: selectedTemplate };
 }
 
 async function buildTrustedPublicPrintRequest(payload, createdAt) {
@@ -182,7 +190,7 @@ async function buildTrustedPublicPrintRequest(payload, createdAt) {
     getActiveCertificateSigner(sanitized.requesterId, "Principal", "Solicitante"),
     getActiveCertificateSigner(sanitized.principalSignerId, "Principal", "Firmante principal"),
     getActiveCertificateSigner(sanitized.teacherSignerId, "Teacher", "Maestro"),
-    getActiveCertificateTemplate(sanitized.certificateTemplateId, sanitized),
+    resolvePublicCertificateTemplate(sanitized),
   ]);
   const templateData = template.data;
   const principalRole = cleanString(
@@ -194,6 +202,7 @@ async function buildTrustedPublicPrintRequest(payload, createdAt) {
 
   return {
     ...sanitized,
+    certificateTemplateId: template.id,
     requesterName: requester.name,
     teacherName: teacher.name,
     certificateTemplateName: cleanString(templateData.name),

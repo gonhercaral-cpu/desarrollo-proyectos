@@ -116,7 +116,6 @@ function createLegacyPublicRequestId(payload, clientKey, createdAt = new Date())
     requesterId: payload?.requesterId,
     principalSignerId: payload?.principalSignerId,
     teacherSignerId: payload?.teacherSignerId,
-    certificateTemplateId: payload?.certificateTemplateId,
     campus: payload?.campus,
     requestedDeliveryDate: payload?.requestedDeliveryDate,
     courseLevel: payload?.courseLevel,
@@ -206,7 +205,6 @@ function sanitizePublicPrintRequest(payload, createdAt = new Date()) {
     dueDate,
     requestedDeliveryDate: dueDate,
     certificateIssueDate: dueDate || requestDate,
-    certificateTemplateId: sanitizeDocumentId(payload.certificateTemplateId, "Plantilla"),
     notes: sanitizeText(payload.notes || "", "Observaciones", 2000, false),
     level: course.level,
     group: courseLevel,
@@ -230,7 +228,132 @@ function normalizeTemplateMatchText(value) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/discovery/g, "discover")
+    .replace(/new horizons/g, "newhorizons")
+    .replace(/mega flash/g, "megaflash")
+    .replace(/smile\s+/g, "smile")
     .replace(/[^a-z0-9]+/g, "");
+}
+
+function certificateTemplateTextMatches(source, target) {
+  const sourceText = normalizeTemplateMatchText(source);
+  const targetText = normalizeTemplateMatchText(target);
+  if (!sourceText || !targetText) return false;
+  return sourceText === targetText || sourceText.includes(targetText) || targetText.includes(sourceText);
+}
+
+function getPublicTemplateTargets(requestData = {}) {
+  return {
+    level: String(requestData.level || requestData.certificateTemplateLevel || "").trim(),
+    programName: String(
+      requestData.courseProgramName ||
+      requestData.certificateTemplateProgramName ||
+      requestData.courseLevel ||
+      requestData.group ||
+      ""
+    ).trim(),
+    audience: String(requestData.courseAudience || requestData.certificateTemplateAudience || "").trim(),
+    certificateType: String(requestData.requestType || "Certificado").trim(),
+  };
+}
+
+function matchesPublicCertificateTemplate(template, requestData) {
+  const targets = getPublicTemplateTargets(requestData);
+  const templateType = template.certificateType || "Certificado";
+  const typeMatches = certificateTemplateTextMatches(templateType, targets.certificateType);
+  const audienceMatches = targets.audience
+    ? certificateTemplateTextMatches(template.audience, targets.audience)
+    : true;
+  const levelMatches = targets.level
+    ? certificateTemplateTextMatches(template.level, targets.level)
+    : false;
+  const hasComparableLevel = Boolean(
+    targets.level && template.level && template.level !== "No aplica"
+  );
+  if (!typeMatches || !audienceMatches || (hasComparableLevel && !levelMatches)) return false;
+
+  const programMatches = targets.programName
+    ? certificateTemplateTextMatches(template.programName, targets.programName) ||
+      certificateTemplateTextMatches(template.name, targets.programName) ||
+      certificateTemplateTextMatches(
+        `${template.level || ""} ${template.programName || ""}`,
+        targets.programName
+      )
+    : false;
+
+  return levelMatches || programMatches;
+}
+
+function getConfiguredTemplateId(settings = {}, requestData = {}) {
+  const targets = getPublicTemplateTargets(requestData);
+  const lookupKeys = [
+    requestData.courseLevel,
+    `${targets.certificateType}:${targets.audience}:${targets.level}`,
+    `${targets.certificateType}:${targets.level}`,
+    targets.level,
+    targets.programName,
+  ].filter(Boolean);
+  const maps = [
+    settings.defaultCertificateTemplateIds,
+    settings.certificateTemplateDefaults,
+    settings.defaultTemplateIds,
+  ].filter((value) => value && typeof value === "object" && !Array.isArray(value));
+
+  for (const map of maps) {
+    for (const key of lookupKeys) {
+      const directValue = map[key];
+      if (typeof directValue === "string" && directValue.trim()) return directValue.trim();
+      const normalizedKey = Object.keys(map).find(
+        (candidate) => normalizeTemplateMatchText(candidate) === normalizeTemplateMatchText(key)
+      );
+      const normalizedValue = normalizedKey ? map[normalizedKey] : "";
+      if (typeof normalizedValue === "string" && normalizedValue.trim()) {
+        return normalizedValue.trim();
+      }
+    }
+  }
+
+  const directDefault =
+    settings.defaultCertificateTemplateId ||
+    settings.defaultTemplateId ||
+    "";
+  return typeof directDefault === "string" ? directDefault.trim() : "";
+}
+
+function selectPublicCertificateTemplate(templates = [], requestData = {}, settings = {}) {
+  const compatibleTemplates = templates.filter((template) =>
+    template &&
+    template.id &&
+    template.active === true &&
+    typeof template.name === "string" &&
+    template.name.trim() &&
+    matchesPublicCertificateTemplate(template, requestData)
+  );
+
+  if (compatibleTemplates.length === 0) {
+    throw new HttpsError(
+      "failed-precondition",
+      `No existe una plantilla activa compatible con ${requestData.courseLevel || requestData.level || "la solicitud"}.`
+    );
+  }
+  if (compatibleTemplates.length === 1) return compatibleTemplates[0];
+
+  const configuredTemplateId = getConfiguredTemplateId(settings, requestData);
+  const configuredTemplate = compatibleTemplates.find(
+    (template) => template.id === configuredTemplateId
+  );
+  if (configuredTemplate) return configuredTemplate;
+
+  const defaults = compatibleTemplates.filter((template) =>
+    template.defaultForPublicRequests === true ||
+    template.isDefault === true ||
+    template.default === true
+  );
+  if (defaults.length === 1) return defaults[0];
+
+  throw new HttpsError(
+    "failed-precondition",
+    `Hay varias plantillas activas compatibles con ${requestData.courseLevel || requestData.level || "la solicitud"}; configura una como predeterminada en Imprenta.`
+  );
 }
 
 function validatePublicCertificateTemplate(templateData, requestData) {
@@ -240,8 +363,10 @@ function validatePublicCertificateTemplate(templateData, requestData) {
   const templateAudience = normalizeTemplateMatchText(templateData?.audience);
   const requestAudience = normalizeTemplateMatchText(requestData?.courseAudience);
 
-  if (templateType !== "certificado") {
-    invalidArgument("La plantilla seleccionada no es de certificado.");
+  const requestType = normalizeTemplateMatchText(requestData?.requestType || "Certificado");
+
+  if (templateType !== requestType) {
+    invalidArgument("La plantilla resuelta no corresponde al tipo de documento solicitado.");
   }
   if (templateLevel && requestLevel && templateLevel !== requestLevel) {
     invalidArgument("La plantilla seleccionada no corresponde al nivel solicitado.");
@@ -258,6 +383,7 @@ module.exports = {
   createLegacyPublicRequestId,
   createPublicRequestId,
   sanitizePublicPrintRequest,
+  selectPublicCertificateTemplate,
   validatePublicCertificateTemplate,
   validatePublicSubmissionId,
 };
