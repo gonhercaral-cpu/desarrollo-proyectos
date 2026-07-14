@@ -66,6 +66,7 @@ import {
   getPrintRequestMemberRole as resolvePrintRequestMemberRole,
   normalizePrintRequestAssignments,
 } from "../utils/printRequestPermissions";
+import { formatPrintRequestCreatedAt } from "../utils/printRequestDateTime";
 
 const productCategories = [
   "Libro",
@@ -14295,7 +14296,7 @@ function PrintRequestsView({
                               <StatusBadge tone={getPriorityTone(request.priority)}>{request.priority || "Normal"}</StatusBadge>
                             </td>
                             <td>
-                              <strong>{formatDate(request.requestDate || request.createdAt)}</strong>
+                              <strong>{formatPrintRequestCreatedAt(request)}</strong>
                             </td>
                             <td>{getRequestDueLabel(request)}</td>
                             <td>
@@ -14880,7 +14881,7 @@ function RequestPreviewPanel({ request, onOpen }) {
           <div>
             <span>Fechas</span>
             <strong>Solicitud</strong>
-            <small>{formatDate(request.requestDate || request.createdAt)}</small>
+            <small>{formatPrintRequestCreatedAt(request)}</small>
             <strong>Compromiso</strong>
             <small>{getRequestDueLabel(request)}</small>
           </div>
