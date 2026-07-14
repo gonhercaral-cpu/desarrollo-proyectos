@@ -2,6 +2,7 @@ const PREDEFINED_CERTIFICATE_SIGNER_CAMPUSES = [
   "Plaza Estrella",
   "Plaza Bugambilias",
   "Plaza Aranjuez",
+  "Online",
 ];
 
 const CERTIFICATE_SIGNER_CAMPUS_OPTIONS = [

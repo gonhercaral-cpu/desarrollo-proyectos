@@ -12,6 +12,7 @@ describe("plantel de firmantes", () => {
       "Plaza Estrella",
       "Plaza Bugambilias",
       "Plaza Aranjuez",
+      "Online",
       "Otro",
     ]);
     assert.ok(!CERTIFICATE_SIGNER_CAMPUS_OPTIONS.includes("Coffee Beans Factory"));
@@ -19,6 +20,11 @@ describe("plantel de firmantes", () => {
 
   it("guarda plantel predefinido sin modificarlo", () => {
     assert.equal(resolveCertificateSignerCampus("Plaza Bugambilias", ""), "Plaza Bugambilias");
+    assert.equal(resolveCertificateSignerCampus("Online", ""), "Online");
+    assert.deepEqual(getCertificateSignerCampusFormState("Online"), {
+      campus: "Online",
+      customCampus: "",
+    });
   });
 
   it("exige y guarda nombre personalizado al seleccionar Otro", () => {
