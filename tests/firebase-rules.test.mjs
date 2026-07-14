@@ -9,6 +9,7 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -436,6 +437,28 @@ function validDepartmentMessage(overrides = {}) {
     replyToMessage: "",
     memberIds: ["deptmember"],
     readBy: { deptmember: Timestamp.now() },
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+    ...overrides,
+  };
+}
+
+function validInternalMessage(overrides = {}) {
+  return {
+    fromUserId: "collab",
+    fromUserName: "Collaborator",
+    fromUserEmail: "collab@test.local",
+    toUserId: "requester",
+    toUserName: "Requester",
+    toUserEmail: "requester@test.local",
+    subject: "Conversación de prueba",
+    message: "Hola",
+    attachments: [],
+    replyToMessageId: "",
+    replyToFromUserId: "",
+    replyToFromUserName: "",
+    replyToMessage: "",
+    read: false,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
     ...overrides,
@@ -1172,6 +1195,33 @@ describe("mensajeria departamental", () => {
         })
       )
     );
+  });
+});
+
+describe("eliminacion global de mensajes", () => {
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await Promise.all([
+        setDoc(doc(db, "internalMessages", "msg-direct-delete"), validInternalMessage()),
+        setDoc(doc(db, "departmentMessages", "msg-department-delete"), validDepartmentMessage()),
+      ]);
+    });
+  });
+
+  it("permite a admin eliminar mensajes directos y departamentales", async () => {
+    await assertSucceeds(deleteDoc(doc(auth("admin"), "internalMessages", "msg-direct-delete")));
+    await assertSucceeds(deleteDoc(doc(auth("admin"), "departmentMessages", "msg-department-delete")));
+  });
+
+  it("bloquea a no admin eliminar mensajes propios o ajenos", async () => {
+    await assertFails(deleteDoc(doc(auth("collab"), "internalMessages", "msg-direct-delete")));
+    await assertFails(deleteDoc(doc(auth("requester"), "internalMessages", "msg-direct-delete")));
+    await assertFails(deleteDoc(doc(auth("deptmember"), "departmentMessages", "msg-department-delete")));
+  });
+
+  it("bloquea a admin inactivo", async () => {
+    await assertFails(deleteDoc(doc(auth("inactive"), "internalMessages", "msg-direct-delete")));
   });
 });
 

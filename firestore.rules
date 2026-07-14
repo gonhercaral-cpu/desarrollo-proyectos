@@ -2746,7 +2746,7 @@ service cloud.firestore {
 
       allow update: if validInternalMessageReadUpdate();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
 
@@ -2757,7 +2757,7 @@ service cloud.firestore {
 
       allow update: if validDepartmentMessageReadUpdate();
 
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /notifications/{notificationId} {

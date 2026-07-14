@@ -3373,6 +3373,60 @@ html[data-theme="dark"] .drive-cloud-storage button {
   color: rgba(255, 255, 255, 0.88);
 }
 
+.chat-bubble p a,
+.quick-tools-thread-messages article p a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.message-read-receipt {
+  position: relative;
+  display: inline-block;
+  text-align: left;
+}
+
+.message-read-receipt summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.message-read-receipt summary::-webkit-details-marker {
+  display: none;
+}
+
+.message-read-receipt-names {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  display: none;
+  min-width: 170px;
+  max-width: 260px;
+  border: 1px solid var(--app-border, #dbe3ef);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--app-text, #0f172a);
+  background: var(--app-surface, #ffffff);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.message-read-receipt-names span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.message-read-receipt[open] .message-read-receipt-names,
+.message-read-receipt:hover .message-read-receipt-names,
+.message-read-receipt:focus-within .message-read-receipt-names {
+  display: block;
+}
+
 .quick-tools-reply-preview {
   display: flex;
   align-items: flex-start;

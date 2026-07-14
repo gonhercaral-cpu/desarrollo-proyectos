@@ -14,6 +14,8 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, storage } from "../services/firebase";
 import { getPastedImageFiles } from "../utils/clipboardAttachments";
 import MessageAudioPlayer from "./MessageAudioPlayer";
+import MessageText from "./MessageText";
+import DepartmentReadReceipt from "./DepartmentReadReceipt";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
 import { userBelongsToDepartmentId } from "../utils/departmentMembership";
 
@@ -378,6 +380,10 @@ export default function FloatingQuickTools({
       ).filter((conversation) => conversation.messages.length > 0),
     [departmentMessages, departmentOptions, currentUserId]
   );
+  const messageProfiles = useMemo(
+    () => [{ ...profile, id: currentUserId }, ...collaborators],
+    [profile, currentUserId, collaborators]
+  );
 
   const recentConversations = useMemo(
     () =>
@@ -535,6 +541,30 @@ export default function FloatingQuickTools({
       message: message.message || "Archivo adjunto",
       createdAt: message.createdAt || null,
     });
+  }
+
+  async function handleDeleteMessage(message) {
+    if (!isAdmin || !message?.id) return;
+
+    const confirmed = window.confirm(
+      "¿Eliminar este mensaje para todos? Esta acción no se puede deshacer."
+    );
+    if (!confirmed) return;
+
+    setMessageError("");
+
+    try {
+      const collectionName = selectedDepartmentConversation
+        ? "departmentMessages"
+        : "internalMessages";
+      await deleteDoc(doc(db, collectionName, message.id));
+      if (replyTarget?.messageId === message.id) {
+        setReplyTarget(null);
+      }
+    } catch (error) {
+      console.error("No se pudo eliminar el mensaje rápido:", error);
+      setMessageError("No se pudo eliminar el mensaje.");
+    }
   }
 
   function handleMessageFileSelection(event) {
@@ -983,19 +1013,21 @@ export default function FloatingQuickTools({
                         {message.replyToMessageId && (
                           <div className="quick-tools-reply-reference">
                             <span>{message.replyToFromUserName || "Mensaje citado"}</span>
-                            <p>{message.replyToMessage || "Mensaje citado"}</p>
+                            <p><MessageText text={message.replyToMessage || "Mensaje citado"} /></p>
                           </div>
                         )}
-                        {!isAudioOnlyMessage(message) && <p>{message.message}</p>}
+                        {!isAudioOnlyMessage(message) && (
+                          <p><MessageText text={message.message} /></p>
+                        )}
                         <QuickAttachmentGallery attachments={message.attachments} />
                         {outgoing && (
-                          <span className="quick-tools-message-status">
-                            {selectedDepartmentConversation
-                              ? `Enviado · visto por ${Math.max(Object.keys(message.readBy || {}).length - 1, 0)}`
-                              : message.read
-                                ? "Leido"
-                                : "Enviado"}
-                          </span>
+                          <div className="quick-tools-message-status">
+                            {selectedDepartmentConversation ? (
+                              <>
+                                Enviado · <DepartmentReadReceipt message={message} profiles={messageProfiles} />
+                              </>
+                            ) : message.read ? "Leido" : "Enviado"}
+                          </div>
                         )}
                         <button
                           type="button"
@@ -1004,6 +1036,15 @@ export default function FloatingQuickTools({
                         >
                           Responder
                         </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            className="quick-tools-reply-button"
+                            onClick={() => handleDeleteMessage(message)}
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </article>
                     );
                   })

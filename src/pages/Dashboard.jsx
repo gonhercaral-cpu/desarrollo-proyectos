@@ -36,6 +36,8 @@ import { auth, db, storage } from "../services/firebase";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getPastedImageFiles } from "../utils/clipboardAttachments";
 import MessageAudioPlayer from "../components/MessageAudioPlayer";
+import MessageText from "../components/MessageText";
+import DepartmentReadReceipt from "../components/DepartmentReadReceipt";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
 import { normalizeDepartmentId, userBelongsToDepartmentId } from "../utils/departmentMembership";
 import {
@@ -3733,6 +3735,7 @@ function InternalMessages({
   const unreadDepartmentCount = departmentMessages.filter((message) => isUnreadDepartmentMessage(message, currentUserId)).length;
   const totalUnreadCount = unreadCount + unreadDepartmentCount;
   const totalMessages = allMessages.length + departmentMessages.length;
+  const messageProfiles = [{ ...profile, id: currentUserId }, ...collaborators];
   const selectedRecipient = selectedConversation
     ? {
         id: selectedConversation.participantId,
@@ -4590,6 +4593,30 @@ function InternalMessages({
     }
   }
 
+  async function handleDeleteMessage(message, type) {
+    if (!isAdmin || !message?.id) return;
+
+    const confirmed = window.confirm(
+      "¿Eliminar este mensaje para todos? Esta acción no se puede deshacer."
+    );
+    if (!confirmed) return;
+
+    setMessageStatus("");
+    setMessageError("");
+
+    try {
+      const collectionName = type === "department" ? "departmentMessages" : "internalMessages";
+      await deleteDoc(doc(db, collectionName, message.id));
+      if (replyTarget?.messageId === message.id) {
+        setReplyTarget(null);
+      }
+      setMessageStatus("Mensaje eliminado para todos.");
+    } catch (error) {
+      console.error("No se pudo eliminar el mensaje:", error);
+      setMessageError("No se pudo eliminar el mensaje.");
+    }
+  }
+
   function markConversationMessagesAsRead(messages) {
     (messages || [])
       .filter((message) => message.toUserId === currentUserId && !message.read)
@@ -4958,10 +4985,12 @@ function InternalMessages({
                             {message.replyToMessageId && (
                               <div className="chat-reply-reference">
                                 <span>{message.replyToFromUserName || "Mensaje citado"}</span>
-                                <p>{message.replyToMessage || "Mensaje citado"}</p>
+                                <p><MessageText text={message.replyToMessage || "Mensaje citado"} /></p>
                               </div>
                             )}
-                            {message.message && !isAudioOnlyMessage(message) && <p>{message.message}</p>}
+                            {message.message && !isAudioOnlyMessage(message) && (
+                              <p><MessageText text={message.message} /></p>
+                            )}
                             <AttachmentGallery attachments={message.attachments} compact />
                             <div className="chat-bubble-status">
                               {outgoing ? (message.read ? "Leído" : "Enviado") : "Recibido"}
@@ -4972,6 +5001,15 @@ function InternalMessages({
                               >
                                 Responder
                               </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  className="chat-reply-button"
+                                  onClick={() => handleDeleteMessage(message, "direct")}
+                                >
+                                  Eliminar
+                                </button>
+                              )}
                             </div>
                           </div>
                         </article>
@@ -5168,15 +5206,19 @@ function InternalMessages({
                           {message.replyToMessageId && (
                             <div className="chat-reply-reference">
                               <span>{message.replyToFromUserName || "Mensaje citado"}</span>
-                              <p>{message.replyToMessage || "Mensaje citado"}</p>
+                              <p><MessageText text={message.replyToMessage || "Mensaje citado"} /></p>
                             </div>
                           )}
-                          {message.message && !isAudioOnlyMessage(message) && <p>{message.message}</p>}
+                          {message.message && !isAudioOnlyMessage(message) && (
+                            <p><MessageText text={message.message} /></p>
+                          )}
                           <AttachmentGallery attachments={message.attachments} compact />
                           <div className="chat-bubble-status">
-                            {outgoing
-                              ? `Enviado · visto por ${Math.max(Object.keys(message.readBy || {}).length - 1, 0)}`
-                              : "Recibido"}
+                            {outgoing ? (
+                              <>
+                                Enviado · <DepartmentReadReceipt message={message} profiles={messageProfiles} />
+                              </>
+                            ) : "Recibido"}
                             <button
                               type="button"
                               className="chat-reply-button"
@@ -5184,6 +5226,15 @@ function InternalMessages({
                             >
                               Responder
                             </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                className="chat-reply-button"
+                                onClick={() => handleDeleteMessage(message, "department")}
+                              >
+                                Eliminar
+                              </button>
+                            )}
                           </div>
                         </div>
                       </article>
