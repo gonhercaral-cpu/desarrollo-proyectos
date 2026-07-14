@@ -433,6 +433,7 @@ function removeUndefinedValues(value) {
 
 async function createPrintRequestWithAssignment(db, payload, options = {}) {
   const createdAt = options.createdAt instanceof Date ? options.createdAt : new Date();
+  const persistedTimestamp = options.fieldValue?.serverTimestamp?.() || createdAt;
   const assignment = await resolvePrintshopAssignees(db, createdAt, options.configuredIds || {});
   const [assignedProfile, supportProfile] = await Promise.all([
     getUserPresentation(db, assignment.assignedUserId),
@@ -460,11 +461,43 @@ async function createPrintRequestWithAssignment(db, payload, options = {}) {
     assignmentSource: assignment.assignmentSource,
     assignmentFallbackReason: assignment.assignmentFallbackReason,
     assignmentEvaluatedAt: createdAt.toISOString(),
-    createdAt,
-    updatedAt: createdAt,
+    createdAt: persistedTimestamp,
+    updatedAt: persistedTimestamp,
   };
 
-  const requestRef = await db.collection("printRequests").add(requestData);
+  let requestRef;
+  if (options.requestId) {
+    requestRef = db.collection("printRequests").doc(options.requestId);
+    try {
+      await requestRef.create(requestData);
+    } catch (error) {
+      const alreadyExists = error?.code === 6 ||
+        error?.code === "already-exists" ||
+        error?.code === "ALREADY_EXISTS" ||
+        /already exists/i.test(error?.message || "");
+      if (!options.idempotent || !alreadyExists) throw error;
+      const existingSnapshot = await requestRef.get();
+      if (!existingSnapshot.exists) throw error;
+      const existingData = existingSnapshot.data();
+      const existingAssignments = normalizePrintRequestAssignments(existingData);
+      console.info("[printshop-assignment] Envío duplicado reutilizó solicitud", {
+        requestId: requestRef.id,
+      });
+      return {
+        requestId: requestRef.id,
+        requestData: existingData,
+        assignedUserId: existingAssignments.assignedUserId,
+        assignedUserName: existingAssignments.assignedUserName,
+        supportUserId: existingAssignments.supportUserId,
+        supportUserName: existingAssignments.supportUserName,
+        assignmentSource: existingData.assignmentSource || "",
+        assignmentFallbackReason: existingData.assignmentFallbackReason || "",
+        duplicate: true,
+      };
+    }
+  } else {
+    requestRef = await db.collection("printRequests").add(requestData);
+  }
   console.info("[printshop-assignment] Solicitud creada con asignación", {
     requestId: requestRef.id,
     assignedUserId: assignment.assignedUserId,

@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
-import { createPrintRequestWithAssignment } from "../services/printRequestAssignmentsService";
+import {
+  createPrintRequestSubmissionId,
+  createPrintRequestWithAssignment,
+} from "../services/printRequestAssignmentsService";
 import {
   findPublicCertificatePerson,
   loadPublicCertificatePeople,
@@ -21,7 +24,6 @@ const CAMPUS_OPTIONS = [
 ];
 
 const CERTIFICATE_TYPE = "Certificado";
-const PUBLIC_REQUESTER_AREA = "Dirección Académica";
 const STUDENT_DELIVERY_TYPES = ["Impreso", "Digital"];
 
 const CERTIFICATE_LEVEL_OPTIONS = [
@@ -37,38 +39,6 @@ const CERTIFICATE_LEVEL_OPTIONS = [
   { value: "Smile 5", level: "Smile 5", programName: "Smile 5", audience: "Kids", productName: "Certificado Smile 5" },
   { value: "Mega Flash", level: "Mega Flash", programName: "Mega Flash", audience: "Kids", productName: "Certificado Mega Flash" }
 ];
-
-function createFolio() {
-  const year = new Date().getFullYear();
-  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
-
-  return `CERT-${year}-${random}`;
-}
-
-function createStudentId() {
-  return `student-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-}
-
-function getTodayInputDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function calculatePublicRequestPriority(requestDate, dueDate) {
-  if (!dueDate) return "Normal";
-
-  const startDate = requestDate ? new Date(`${requestDate}T00:00:00`) : new Date();
-  const endDate = new Date(`${dueDate}T00:00:00`);
-
-  if (Number.isNaN(endDate.getTime())) return "Normal";
-
-  const safeStartDate = Number.isNaN(startDate.getTime()) ? new Date() : startDate;
-  const dayMs = 24 * 60 * 60 * 1000;
-  const daysToDeliver = Math.ceil((endDate.getTime() - safeStartDate.getTime()) / dayMs);
-
-  if (daysToDeliver <= 3) return "Urgente";
-  if (daysToDeliver <= 7) return "Alta";
-  return "Normal";
-}
 
 function getCertificateLevelOption(value = "") {
   const cleanValue = String(value || "").trim();
@@ -97,22 +67,6 @@ function inferLevelFromCourse(value = "") {
 
   const match = String(value).toUpperCase().match(/\b(A1|A2|B1|B2|C1)\b/);
   return match?.[1] || String(value || "").trim() || "No aplica";
-}
-
-function buildCertificateProductName(value = "") {
-  const selectedOption = getCertificateLevelOption(value);
-
-  if (selectedOption?.productName) return selectedOption.productName;
-
-  const cleanValue = String(value || "").trim();
-
-  if (!cleanValue) return CERTIFICATE_TYPE;
-
-  if (/certificado|diploma/i.test(cleanValue)) {
-    return cleanValue;
-  }
-
-  return `${CERTIFICATE_TYPE} ${cleanValue}`;
 }
 
 function parseBulkNames(value = "", deliveryType = "Impreso") {
@@ -179,6 +133,8 @@ export default function PublicCertificateRequest() {
   const [trackingFolio, setTrackingFolio] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const savingRef = useRef(false);
+  const submissionIdRef = useRef("");
 
   const trackingUrl = useMemo(() => {
     if (!trackingId) return "";
@@ -393,6 +349,7 @@ export default function PublicCertificateRequest() {
   }
 
   async function submitRequest() {
+    if (savingRef.current) return;
     setError("");
 
     if (reviewStudents.length === 0) {
@@ -401,11 +358,10 @@ export default function PublicCertificateRequest() {
     }
 
     try {
+      savingRef.current = true;
       setSaving(true);
 
-      const folio = createFolio();
       const preparedStudents = reviewStudents.map((student) => ({
-        id: createStudentId(),
         name: student.finalName,
         originalName: student.originalName,
         suggestedName: student.hasSuggestion ? student.suggestedName : "",
@@ -413,23 +369,12 @@ export default function PublicCertificateRequest() {
         deliveryType: STUDENT_DELIVERY_TYPES.includes(student.deliveryType)
           ? student.deliveryType
           : "Impreso",
-        status: "Pendiente",
-        certificateFolio: "",
-        validationCode: "",
-        validationUrl: "",
-        qrDataUrl: "",
-        qrGenerated: false,
         notes: student.notes || ""
       }));
 
-      const requestedQuantity = preparedStudents.length;
-      const { printedQuantity, digitalQuantity, deliveryType } =
-        getDeliverySummary(preparedStudents);
       const cleanCourseLevel = courseLevel.trim();
       const selectedCourseOption = getCertificateLevelOption(cleanCourseLevel);
       const level = inferLevelFromCourse(cleanCourseLevel);
-      const publicProductName = buildCertificateProductName(cleanCourseLevel);
-      const requestDate = getTodayInputDate();
       const cleanRequesterName = requesterName.trim();
       const cleanCertificateDirectorName = certificateDirectorName.trim();
       const cleanTeacherName = teacherName.trim();
@@ -452,8 +397,6 @@ export default function PublicCertificateRequest() {
         teacherSignerId,
         cleanTeacherName
       );
-      const certificateIssueDate = requestedDeliveryDate || requestDate;
-
       const templateMatchCandidates = findStrictMatchingCertificateTemplates(
         certificateTemplates,
         {
@@ -465,90 +408,36 @@ export default function PublicCertificateRequest() {
         null
       );
       const matchedTemplate = templateMatchCandidates.length === 1 ? templateMatchCandidates[0] : null;
+      if (!matchedRequester || !matchedPrincipalSigner || !matchedTeacherSigner || !matchedTemplate) {
+        throw new Error("Selecciona solicitante, director, maestro y plantilla activos.");
+      }
+      if (!submissionIdRef.current) {
+        submissionIdRef.current = createPrintRequestSubmissionId();
+      }
 
       const creationResult = await createPrintRequestWithAssignment({
-        folio,
-        productId: "",
-        productName: publicProductName,
-        requestType: CERTIFICATE_TYPE,
-
-        requesterName: cleanRequesterName,
-        requesterId: matchedRequester?.id || "",
-        requesterArea: PUBLIC_REQUESTER_AREA,
+        requesterId: matchedRequester.id,
         campus,
-
-        priority: calculatePublicRequestPriority(requestDate, requestedDeliveryDate),
-        requestedQuantity,
-        deliveredQuantity: 0,
-        deliveryType,
-        status: "Solicitud recibida",
-
-        requestDate,
-        dueDate: requestedDeliveryDate || "",
         requestedDeliveryDate: requestedDeliveryDate || "",
-
-        certificateIssueDate,
-        certificateTemplateId: matchedTemplate?.id || "",
-        certificateTemplateName: matchedTemplate?.name || "",
-        certificateTemplateLevel: matchedTemplate?.level || level,
-        certificateTemplateProgramName: matchedTemplate?.programName || selectedCourseOption?.programName || cleanCourseLevel,
-        certificateTemplateAudience: matchedTemplate?.audience || selectedCourseOption?.audience || "Adultos",
-        certificateTemplateBodyText: "",
-        certificateTemplateBodySegments: [],
-        certificateTemplateCustomTexts: [],
-        certificateTemplateCustomImages: [],
-        certificateTemplateImageUrl: "",
-        certificateTemplateImageDataUrl: "",
-        certificateTemplateStoragePath: "",
-        certificateTemplatePositions: {},
-
+        certificateTemplateId: matchedTemplate.id,
         notes: notes.trim(),
-        level,
-        group: cleanCourseLevel,
-        courseProgramName: selectedCourseOption?.programName || cleanCourseLevel,
-        courseAudience: selectedCourseOption?.audience || "Adultos",
-        teacherName: cleanTeacherName,
-        schedule: cleanSchedule,
-        printedQuantity,
-        digitalQuantity,
-
-        principalSignerId: matchedPrincipalSigner?.id || "",
-        principalSignerName: matchedPrincipalSigner?.name || cleanCertificateDirectorName,
-        principalSignerRole: matchedPrincipalSigner?.role || "Director",
-        principalSignatureUrl: "",
-        principalSignatureDataUrl: "",
-        teacherSignerId: matchedTeacherSigner?.id || "",
-        teacherSignerName: matchedTeacherSigner?.name || cleanTeacherName,
-        teacherSignerRole: matchedTeacherSigner?.role || "Teacher",
-        teacherSignatureUrl: "",
-        teacherSignatureDataUrl: "",
-
-        students: preparedStudents,
-
-        publicTrackingEnabled: true,
-        publicRequestSource: "certificate-public-form",
-        academicDirector: cleanCertificateDirectorName,
-        certificateDirectorName: cleanCertificateDirectorName,
         courseLevel: cleanCourseLevel,
-        statusLabel: "Solicitud recibida",
-
-        createdBy: "public-certificate-form",
-        createdByUid: "public-form",
-        createdByName: cleanRequesterName,
-        createdByEmail: "",
-        updatedByUid: "public-form",
-        updatedByName: cleanRequesterName,
-        updatedByEmail: ""
+        schedule: cleanSchedule,
+        principalSignerId: matchedPrincipalSigner.id,
+        teacherSignerId: matchedTeacherSigner.id,
+        students: preparedStudents,
+        publicRequestSource: "certificate-public-form",
+      }, {
+        submissionId: submissionIdRef.current,
       });
 
       setTrackingId(creationResult.requestId);
-      setTrackingFolio(folio);
+      setTrackingFolio(creationResult.folio);
     } catch (err) {
       console.error("No se pudo enviar la solicitud de certificados:", err);
-      setError(
-        "No se pudo enviar la solicitud. Revisa las reglas de Firestore o intenta de nuevo."
-      );
+      setError(err?.message || "No se pudo enviar la solicitud. Intenta de nuevo.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }

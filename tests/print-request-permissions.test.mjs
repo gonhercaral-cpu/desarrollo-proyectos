@@ -11,7 +11,28 @@ import {
 
 const require = createRequire(import.meta.url);
 const backendAssignments = require("../functions/printRequestAssignments.js");
+const publicPrintRequest = require("../functions/publicPrintRequest.js");
 const CREATED_AT = new Date("2026-07-14T19:00:00.000Z"); // 12:00, America/Tijuana.
+
+function validPublicPayload(overrides = {}) {
+  return {
+    requesterId: "principal-requester",
+    principalSignerId: "principal-director",
+    teacherSignerId: "teacher-one",
+    certificateTemplateId: "template-a1",
+    campus: "Plaza Estrella",
+    requestedDeliveryDate: "2026-07-21",
+    courseLevel: "A1 Journey",
+    schedule: "Lunes 10:00",
+    notes: "Entrega en recepción",
+    students: [
+      { name: "Ana Pérez", deliveryType: "Impreso", notes: "" },
+      { name: "Luis López", deliveryType: "Digital", notes: "" },
+    ],
+    publicRequestSource: "certificate-public-form",
+    ...overrides,
+  };
+}
 
 function createSnapshot(id, data) {
   return {
@@ -60,6 +81,14 @@ function createFakeDb(seed = {}) {
           return {
             id,
             collectionName: name,
+            async create(data) {
+              if (getStore(name).has(id)) {
+                const error = new Error("Document already exists");
+                error.code = 6;
+                throw error;
+              }
+              getStore(name).set(id, data);
+            },
             async get() {
               return createSnapshot(id, getStore(name).get(id));
             },
@@ -170,6 +199,81 @@ describe("permisos de solicitudes de Imprenta", () => {
         collaboratorUid: "ernesto-uid",
       }
     );
+  });
+});
+
+describe("entrada pública confiable de certificados", () => {
+  it("calcula en servidor folio, estado, cantidades y campos internos", () => {
+    const result = publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload(), CREATED_AT);
+    assert.match(result.folio, /^CERT-2026-[A-F0-9]{10}$/);
+    assert.equal(result.status, "Solicitud recibida");
+    assert.equal(result.requestedQuantity, 2);
+    assert.equal(result.printedQuantity, 1);
+    assert.equal(result.digitalQuantity, 1);
+    assert.equal(result.deliveryType, "Ambas");
+    assert.equal(result.requestDate, "2026-07-14");
+    assert.equal(result.students[0].certificateFolio, "");
+    assert.match(result.students[0].id, /^student-/);
+  });
+
+  it("ignora folio, estado y asignaciones enviados por cliente", () => {
+    const result = publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload({
+      folio: "FOLIO-CLIENTE",
+      status: "Entregada",
+      assignedUserId: "uid-inventado",
+      supportUserId: "uid-inventado-2",
+      assignmentSource: "cliente",
+    }), CREATED_AT);
+    assert.notEqual(result.folio, "FOLIO-CLIENTE");
+    assert.equal(result.status, "Solicitud recibida");
+    assert.equal(result.assignedUserId, undefined);
+    assert.equal(result.supportUserId, undefined);
+    assert.equal(result.assignmentSource, undefined);
+  });
+
+  it("limita alumnos, valores e identificadores", () => {
+    assert.throws(
+      () => publicPrintRequest.sanitizePublicPrintRequest(
+        validPublicPayload({ students: Array.from({ length: 151 }, () => ({ name: "Alumno", deliveryType: "Impreso" })) }),
+        CREATED_AT
+      ),
+      /Cantidad de alumnos/
+    );
+    assert.throws(
+      () => publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload({ campus: "Inventado" }), CREATED_AT),
+      /Plantel inválido/
+    );
+    assert.throws(
+      () => publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload({ teacherSignerId: "../teacher" }), CREATED_AT),
+      /Maestro no es válido/
+    );
+    assert.throws(
+      () => publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload({ ignoredPadding: "x".repeat(300000) }), CREATED_AT),
+      /tamaño permitido/
+    );
+  });
+
+  it("deriva un document ID idempotente del mismo envío", () => {
+    const submissionId = "12345678-1234-4123-8123-123456789abc";
+    const first = publicPrintRequest.createPublicRequestId(submissionId);
+    const second = publicPrintRequest.createPublicRequestId(submissionId);
+    assert.equal(first, second);
+    assert.match(first, /^public-[a-f0-9]{40}$/);
+  });
+
+  it("deduplica doble clic del cliente anterior durante la misma ventana", () => {
+    const clientKey = "127.0.0.1|https://sistema-desarrollo-proyectos.web.app|browser";
+    const first = publicPrintRequest.createLegacyPublicRequestId(validPublicPayload(), clientKey, CREATED_AT);
+    const second = publicPrintRequest.createLegacyPublicRequestId(validPublicPayload({
+      folio: "otro-folio-generado-por-cliente",
+      assignedUserId: "otro-uid",
+    }), clientKey, new Date(CREATED_AT.getTime() + 1000));
+    const changed = publicPrintRequest.createLegacyPublicRequestId(validPublicPayload({
+      students: [{ name: "Alumno distinto", deliveryType: "Impreso" }],
+    }), clientKey, CREATED_AT);
+    assert.equal(first, second);
+    assert.notEqual(first, changed);
+    assert.match(first, /^public-legacy-[a-f0-9]{40}$/);
   });
 });
 
@@ -289,6 +393,28 @@ describe("resolver único de Agenda y persistencia", () => {
       assert.equal(stored.createdAt, CREATED_AT);
     });
   }
+
+  it("reutiliza la misma solicitud ante doble envío", async () => {
+    const db = createFakeDb(createAgendaSeed());
+    const options = {
+      createdAt: CREATED_AT,
+      idempotent: true,
+      requestId: "public-idempotent-request",
+    };
+    const first = await backendAssignments.createPrintRequestWithAssignment(
+      db,
+      { folio: "CERT-2026-IDEMPOTENT" },
+      options
+    );
+    const second = await backendAssignments.createPrintRequestWithAssignment(
+      db,
+      { folio: "CERT-2026-IDEMPOTENT" },
+      options
+    );
+    assert.equal(first.requestId, second.requestId);
+    assert.equal(second.duplicate, true);
+    assert.equal(db.stores.get("printRequests").size, 1);
+  });
 
   it("rechaza creación si no puede resolver ambos UIDs", async () => {
     const db = createFakeDb({ systemSettings: {}, users: {}, workSchedules: {}, scheduleAdjustments: {} });
