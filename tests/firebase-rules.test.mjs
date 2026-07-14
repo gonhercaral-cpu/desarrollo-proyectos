@@ -177,6 +177,12 @@ async function seedBaseData() {
         type: "Principal",
         active: true,
       }),
+      setDoc(doc(db, "publicCertificatePeople", "signer-teacher"), {
+        sourceId: "teacher",
+        name: "Teacher Demo",
+        type: "Teacher",
+        active: true,
+      }),
       setDoc(doc(db, "publicCertificatePeople", "signer-inactive"), {
         sourceId: "inactive-signer",
         name: "Firmante inactivo",
@@ -564,17 +570,25 @@ describe("certificados individuales", () => {
 });
 
 describe("personas publicas de certificados", () => {
-  it("permite consultar solo personas activas con filtro compatible", async () => {
-    const peopleQuery = query(
+  it("permite consultar solo firmantes activos por categoria", async () => {
+    const principalQuery = query(
       collection(unauth(), "publicCertificatePeople"),
-      where("active", "==", true)
+      where("active", "==", true),
+      where("type", "==", "Principal")
+    );
+    const teacherQuery = query(
+      collection(unauth(), "publicCertificatePeople"),
+      where("active", "==", true),
+      where("type", "==", "Teacher")
     );
 
-    await assertSucceeds(getDocs(peopleQuery));
+    await assertSucceeds(getDocs(principalQuery));
+    await assertSucceeds(getDocs(teacherQuery));
   });
 
-  it("bloquea listar sin filtro y leer una persona inactiva", async () => {
+  it("bloquea listar sin filtros, usuarios generales e inactivos", async () => {
     await assertFails(getDocs(collection(unauth(), "publicCertificatePeople")));
+    await assertFails(getDoc(doc(unauth(), "publicCertificatePeople", "requester-requester")));
     await assertFails(getDoc(doc(unauth(), "publicCertificatePeople", "signer-inactive")));
   });
 

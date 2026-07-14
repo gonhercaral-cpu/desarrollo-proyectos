@@ -48,6 +48,35 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeCertificatePersonText(value) {
+  return cleanString(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[_/-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeCertificateSignerType(data) {
+  const candidates = [
+    data?.type,
+    data?.signerType,
+    data?.category,
+    data?.categoria,
+    data?.role,
+    data?.rol,
+    data?.cargo,
+  ].map(normalizeCertificatePersonText).filter(Boolean);
+
+  if (candidates.some((value) => /(^|\s)(principal|director|directora)(\s|$)/.test(value))) {
+    return "Principal";
+  }
+  if (candidates.some((value) => /(^|\s)(teacher|maestr[oa]|docente|profesor[ae]?|instructor[ae]?)(\s|$)/.test(value))) {
+    return "Teacher";
+  }
+  return "";
+}
+
 async function syncPublicCertificatePerson(projectionId, sourceId, data, type) {
   const projectionRef = db.collection(PUBLIC_CERTIFICATE_PEOPLE_COLLECTION).doc(projectionId);
   const name = cleanString(data?.name || data?.displayName || data?.fullName || data?.nombre);
@@ -74,15 +103,13 @@ exports.syncPublicCertificateRequester = onDocumentWritten(
     region: "us-central1",
   },
   async (event) => {
-    const data = event.data?.after.exists ? event.data.after.data() : null;
-    const role = cleanString(data?.role || data?.privilege || data?.rol || data?.userType).toLowerCase();
-    const allowed = data && ALLOWED_ROLES.includes(role);
-
+    // Compatibilidad: elimina la proyecciÃ³n antigua de usuarios generales.
+    // Solicitante y director ahora provienen exclusivamente de Firmas.
     await syncPublicCertificatePerson(
       `requester-${event.params.userId}`,
       event.params.userId,
-      allowed ? data : null,
-      "Requester"
+      null,
+      "Principal"
     );
   }
 );
@@ -94,11 +121,7 @@ exports.syncPublicCertificateSigner = onDocumentWritten(
   },
   async (event) => {
     const data = event.data?.after.exists ? event.data.after.data() : null;
-    const rawType = cleanString(
-      data?.type || data?.signerType || data?.role || data?.rol || data?.cargo
-    ).toLowerCase();
-    const type = rawType === "principal" || rawType === "director" ? "Principal" :
-      rawType === "teacher" || rawType === "maestro" ? "Teacher" : "";
+    const type = normalizeCertificateSignerType(data);
 
     await syncPublicCertificatePerson(
       `signer-${event.params.signerId}`,

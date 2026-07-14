@@ -174,7 +174,10 @@ test("abrir PDF, reimprimir y ver solicitud no ejecutan migraciones", () => {
     source.indexOf("async function savePrintRequest")
   );
 
-  assert.doesNotMatch(actionSource, /repairGeneratedCertificateReferences|updateDoc\(|writeBatch\(/);
+  assert.doesNotMatch(
+    actionSource,
+    /repairGeneratedCertificateReferences|createPrintshopLog\(|updateDoc\(|writeBatch\(/
+  );
   assert.doesNotMatch(selectSource, /publishRequestStudentValidations|updateDoc\(|writeBatch\(/);
 });
 
@@ -190,8 +193,10 @@ test("historial y detalle comparten contexto, renderer y servicio PDF", () => {
   );
 
   assert.match(historyBuilder, /resolveCertificateRenderContext/);
-  assert.match(historyBuilder, /buildCertificatePdfBlobFromElement/);
+  assert.match(historyBuilder, /buildDetachedCertificatePdfBlob/);
+  assert.doesNotMatch(historyBuilder, /requestAnimationFrame|setHistoryRenderDescriptor/);
   assert.doesNotMatch(historyBuilder, /saveGeneratedCertificatePdfBlob|uploadBytes|updateDoc\(/);
   assert.match(detailBuilder, /resolveCertificatePdfDocument/);
   assert.match(detailBuilder, /buildCertificatePdfBlobFromElement/);
+  assert.match(source, /new MessageChannel\(\)/);
 });

@@ -247,7 +247,7 @@ export default function PublicCertificateStatus() {
   }, []);
 
   const activeRequesters = useMemo(
-    () => certificatePeople.filter((person) => person.type === "Requester"),
+    () => certificatePeople.filter((person) => person.type === "Principal"),
     [certificatePeople]
   );
 
@@ -332,7 +332,7 @@ export default function PublicCertificateStatus() {
 
     const requester = findPublicCertificatePerson(
       certificatePeople,
-      "Requester",
+      "Principal",
       request.requesterId || "",
       request.requesterName || ""
     );
@@ -444,7 +444,8 @@ export default function PublicCertificateStatus() {
   }
 
   function selectEditPerson(type, id) {
-    const person = certificatePeople.find((item) => item.type === type && item.id === id) || null;
+    const signerType = type === "Requester" ? "Principal" : type;
+    const person = certificatePeople.find((item) => item.type === signerType && item.id === id) || null;
 
     if (type === "Requester") {
       setEditRequesterId(id);
@@ -477,7 +478,7 @@ export default function PublicCertificateStatus() {
     const selectedCourseOption = getCertificateLevelOption(cleanCourseLevel);
     const matchedRequester = findPublicCertificatePerson(
       certificatePeople,
-      "Requester",
+      "Principal",
       editRequesterId,
       cleanRequesterName
     );
@@ -538,7 +539,7 @@ export default function PublicCertificateStatus() {
         certificateTemplateAudience: selectedCourseOption?.audience || "Adultos",
         teacherName: cleanTeacherName,
         schedule: cleanSchedule,
-        teacherSignerId: matchedTeacherSigner?.id || "",
+        teacherSignerId: matchedTeacherSigner?.id || request.teacherSignerId || "",
         teacherSignerName: matchedTeacherSigner?.name || cleanTeacherName,
         teacherSignerRole: matchedTeacherSigner?.role || "Teacher",
         teacherSignatureUrl: request.teacherSignatureUrl || "",
@@ -546,7 +547,7 @@ export default function PublicCertificateStatus() {
 
         academicDirector: cleanCertificateDirectorName,
         certificateDirectorName: cleanCertificateDirectorName,
-        principalSignerId: matchedPrincipalSigner?.id || "",
+        principalSignerId: matchedPrincipalSigner?.id || request.principalSignerId || "",
         principalSignerName: matchedPrincipalSigner?.name || cleanCertificateDirectorName,
         principalSignerRole: matchedPrincipalSigner?.role || "Director",
         principalSignatureUrl: request.principalSignatureUrl || "",

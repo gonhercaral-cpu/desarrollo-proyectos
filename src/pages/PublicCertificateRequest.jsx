@@ -243,7 +243,7 @@ export default function PublicCertificateRequest() {
   }, []);
 
   const activeRequesters = useMemo(
-    () => certificatePeople.filter((person) => person.type === "Requester"),
+    () => certificatePeople.filter((person) => person.type === "Principal"),
     [certificatePeople]
   );
 
@@ -262,7 +262,8 @@ export default function PublicCertificateRequest() {
   }, [students]);
 
   function selectCertificatePerson(type, id) {
-    const person = certificatePeople.find((item) => item.type === type && item.id === id) || null;
+    const signerType = type === "Requester" ? "Principal" : type;
+    const person = certificatePeople.find((item) => item.type === signerType && item.id === id) || null;
 
     if (type === "Requester") {
       setRequesterId(id);
@@ -432,6 +433,12 @@ export default function PublicCertificateRequest() {
       const cleanCertificateDirectorName = certificateDirectorName.trim();
       const cleanTeacherName = teacherName.trim();
       const cleanSchedule = schedule.trim();
+      const matchedRequester = findPublicCertificatePerson(
+        certificatePeople,
+        "Principal",
+        requesterId,
+        cleanRequesterName
+      );
       const matchedPrincipalSigner = findPublicCertificatePerson(
         certificatePeople,
         "Principal",
@@ -465,7 +472,7 @@ export default function PublicCertificateRequest() {
         requestType: CERTIFICATE_TYPE,
 
         requesterName: cleanRequesterName,
-        requesterId,
+        requesterId: matchedRequester?.id || "",
         requesterArea: PUBLIC_REQUESTER_AREA,
         campus,
 

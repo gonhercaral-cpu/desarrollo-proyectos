@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import QRCode from "qrcode";
 import JSZip from "jszip";
 import { BrowserCodeReader, BrowserMultiFormatReader } from "@zxing/browser";
@@ -49,6 +51,11 @@ import {
   isLetterPortraitPdf,
 } from "../utils/certificatePage";
 import { findMatchingCertificateTemplateInList } from "../utils/certificateTemplateMatching";
+import {
+  dedupeCertificatePeople,
+  isActiveCertificatePerson,
+  normalizeCertificateSignerType,
+} from "../utils/certificatePeople";
 
 const productCategories = [
   "Libro",
@@ -1943,13 +1950,27 @@ async function readCredentialTemplateFileAsDataUrl(file, orientation = "horizont
 }
 
 function normalizeCertificateSigner(signer) {
+  const type = normalizeCertificateSignerType(
+    signer?.type,
+    signer?.signerType,
+    signer?.category,
+    signer?.categoria,
+    signer?.role,
+    signer?.rol,
+    signer?.cargo
+  );
+  const hasExplicitActiveValue = [signer?.active, signer?.isActive, signer?.activo]
+    .some((value) => value !== undefined && value !== null);
+  const deleted = signer?.deleted === true || signer?.isDeleted === true || signer?.archived === true;
+
   return {
     id: signer?.id || "",
-    name: String(signer?.name || "").trim(),
-    role: String(signer?.role || (signer?.type === "Principal" ? "Principal" : "Teacher")).trim(),
-    type: certificateSignerTypes.includes(signer?.type) ? signer.type : "Teacher",
+    name: String(signer?.name || signer?.displayName || signer?.fullName || signer?.nombre || "").trim(),
+    role: String(signer?.role || signer?.rol || signer?.cargo || (type === "Principal" ? "Principal" : "Teacher")).trim(),
+    type,
     campus: String(signer?.campus || "Otro"),
-    active: signer?.active !== false,
+    active: !deleted && (hasExplicitActiveValue ? isActiveCertificatePerson(signer) : true),
+    deleted,
     notes: String(signer?.notes || ""),
     signatureUrl: String(signer?.signatureUrl || ""),
     signatureDataUrl: String(signer?.signatureDataUrl || ""),
@@ -4634,12 +4655,16 @@ export default function PrintShop() {
   );
 
   const activePrincipalSigners = useMemo(
-    () => certificateSigners.filter((signer) => signer.active !== false && signer.type === "Principal"),
+    () => dedupeCertificatePeople(
+      certificateSigners.filter((signer) => signer.active === true && signer.type === "Principal" && signer.name)
+    ),
     [certificateSigners]
   );
 
   const activeTeacherSigners = useMemo(
-    () => certificateSigners.filter((signer) => signer.active !== false && signer.type === "Teacher"),
+    () => dedupeCertificatePeople(
+      certificateSigners.filter((signer) => signer.active === true && signer.type === "Teacher" && signer.name)
+    ),
     [certificateSigners]
   );
 
@@ -7864,7 +7889,11 @@ export default function PrintShop() {
       if (pdfDocument.source === "storage") {
         pdfWindow.location.replace(pdfDocument.storedSource.url);
       } else {
-        openCertificatePdfBlob(pdfWindow, pdfDocument.blob);
+        openCertificatePdfBlob(
+          pdfWindow,
+          pdfDocument.blob,
+          certificate.pdfFileName || `${certificate.folio || "certificado"}.pdf`
+        );
       }
       setGeneratedCertificateActionMessage(
         pdfDocument.source === "storage"
@@ -7945,24 +7974,6 @@ export default function PrintShop() {
           ? "PDF almacenado cargado; diálogo de impresión solicitado."
           : "PDF reconstruido desde la solicitud; diálogo de impresión solicitado."
       );
-      createPrintshopLog({
-        type: "CERTIFICATE_REPRINT_OPENED",
-        module: "certificates",
-        title: "PDF original abierto para reimpresión",
-        description: `Se abrió el PDF original de ${certificate.studentName || "alumno"} y se solicitó impresión.`,
-        referenceType: "certificate",
-        referenceId: certificate.id || "",
-        requestId: association.requestId || "",
-        requestFolio: association.request?.folio || certificate.requestFolio || "",
-        certificateId: certificate.id || "",
-        certificateFolio: certificate.folio || "",
-        validationCode: certificate.validationCode || "",
-        studentName: certificate.studentName || "",
-        productId: certificate.productId || "",
-        productName: certificate.productName || "",
-        campus: certificate.campus || "",
-        level: certificate.level || "",
-      }).catch((error) => console.error("No se pudo registrar la reimpresión:", error));
       return true;
     } catch (error) {
       console.error("No se pudo reimprimir el PDF original:", error);
@@ -15097,8 +15108,6 @@ function CertificatesWorkspaceView({
   const [historyDateFrom, setHistoryDateFrom] = useState("");
   const [historyDateTo, setHistoryDateTo] = useState("");
   const [historyYearFilter, setHistoryYearFilter] = useState("Todos");
-  const [historyRenderDescriptor, setHistoryRenderDescriptor] = useState(null);
-  const historyCertificateRefs = useRef({});
 
   const certificateLotes = useMemo(() => {
     const groups = new Map();
@@ -15292,21 +15301,13 @@ function CertificatesWorkspaceView({
       activeCertificateTemplates
     );
 
-    historyCertificateRefs.current = {};
-    setHistoryRenderDescriptor({ request, student, principalSigner, teacherSigner, certificateTemplate });
-    await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
-
-    const element = historyCertificateRefs.current[student.id];
-    if (!element) {
-      setHistoryRenderDescriptor(null);
-      throw new Error("No se pudo montar la vista del certificado desde la solicitud.");
-    }
-
-    try {
-      return await buildCertificatePdfBlobFromElement(element);
-    } finally {
-      setHistoryRenderDescriptor(null);
-    }
+    return await buildDetachedCertificatePdfBlob({
+      request,
+      student,
+      principalSigner,
+      teacherSigner,
+      certificateTemplate,
+    });
   }
 
   function clearCertificateHistoryFilters() {
@@ -15591,72 +15592,91 @@ function CertificatesWorkspaceView({
                 </button>
               </div>
             )}
-            <div className="catalog-toolbar request-toolbar request-toolbar-redesign">
-              <label className="visual-search catalog-search request-search-redesign">
-                <span><PrintshopIcon name="search" /></span>
-                <input
-                  type="search"
-                  placeholder="Buscar folio, alumno, grupo, maestro o plantel"
-                  value={certificateSearch}
-                  onChange={(event) => onCertificateSearchChange?.(event.target.value)}
-                />
+            <div className="catalog-toolbar request-toolbar request-toolbar-redesign certificate-history-filters">
+              <label className="certificate-history-filter-control certificate-history-search-control">
+                <span>Buscar</span>
+                <span className="visual-search catalog-search request-search-redesign">
+                  <span><PrintshopIcon name="search" /></span>
+                  <input
+                    type="search"
+                    placeholder="Folio, alumno, grupo, maestro o plantel"
+                    value={certificateSearch}
+                    onChange={(event) => onCertificateSearchChange?.(event.target.value)}
+                  />
+                </span>
               </label>
 
-              <select
-                aria-label="Filtrar por estado"
-                value={certificateStatusFilter || "Todos"}
-                onChange={(event) => onCertificateStatusFilterChange?.(event.target.value)}
-              >
-                <option>Todos</option>
-                {generatedCertificateStatuses.map((status) => (
-                  <option key={status}>{status}</option>
-                ))}
-              </select>
+              <label className="certificate-history-filter-control">
+                <span>Estado</span>
+                <select
+                  aria-label="Filtrar por estado"
+                  value={certificateStatusFilter || "Todos"}
+                  onChange={(event) => onCertificateStatusFilterChange?.(event.target.value)}
+                >
+                  <option>Todos</option>
+                  {generatedCertificateStatuses.map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
 
-              <select
-                aria-label="Filtrar por horario"
-                value={historyScheduleFilter}
-                onChange={(event) => setHistoryScheduleFilter(event.target.value)}
-              >
-                <option value="Todos">Todos los horarios</option>
-                {historyScheduleOptions.map((option) => (
-                  <option key={option.key} value={option.key}>{option.label}</option>
-                ))}
-              </select>
+              <label className="certificate-history-filter-control">
+                <span>Horario</span>
+                <select
+                  aria-label="Filtrar por horario"
+                  value={historyScheduleFilter}
+                  onChange={(event) => setHistoryScheduleFilter(event.target.value)}
+                >
+                  <option value="Todos">Todos los horarios</option>
+                  {historyScheduleOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
 
-              <select
-                aria-label="Filtrar por maestro"
-                value={historyTeacherFilter}
-                onChange={(event) => setHistoryTeacherFilter(event.target.value)}
-              >
-                <option value="Todos">Todos los maestros</option>
-                {historyTeacherOptions.map((option) => (
-                  <option key={option.key} value={option.key}>{option.name}</option>
-                ))}
-              </select>
+              <label className="certificate-history-filter-control">
+                <span>Maestro</span>
+                <select
+                  aria-label="Filtrar por maestro"
+                  value={historyTeacherFilter}
+                  onChange={(event) => setHistoryTeacherFilter(event.target.value)}
+                >
+                  <option value="Todos">Todos los maestros</option>
+                  {historyTeacherOptions.map((option) => (
+                    <option key={option.key} value={option.key}>{option.name}</option>
+                  ))}
+                </select>
+              </label>
 
-              <select
-                aria-label="Filtrar por año"
-                value={historyYearFilter}
-                onChange={(event) => setHistoryYearFilter(event.target.value)}
-              >
-                <option value="Todos">Todos los años</option>
-                {historyYearOptions.map((year) => (
-                  <option key={year} value={String(year)}>{year}</option>
-                ))}
-              </select>
-
-              <label className="certificate-history-date-filter">
+              <label className="certificate-history-filter-control certificate-history-date-filter">
                 <span>Desde</span>
                 <input type="date" value={historyDateFrom} onChange={(event) => setHistoryDateFrom(event.target.value)} />
               </label>
 
-              <label className="certificate-history-date-filter">
+              <label className="certificate-history-filter-control certificate-history-date-filter">
                 <span>Hasta</span>
                 <input type="date" value={historyDateTo} onChange={(event) => setHistoryDateTo(event.target.value)} />
               </label>
 
-              <button type="button" className="visual-outline-button" onClick={clearCertificateHistoryFilters}>
+              <label className="certificate-history-filter-control">
+                <span>Año</span>
+                <select
+                  aria-label="Filtrar por año"
+                  value={historyYearFilter}
+                  onChange={(event) => setHistoryYearFilter(event.target.value)}
+                >
+                  <option value="Todos">Todos los años</option>
+                  {historyYearOptions.map((year) => (
+                    <option key={year} value={String(year)}>{year}</option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className="visual-outline-button certificate-history-clear-filter"
+                onClick={clearCertificateHistoryFilters}
+              >
                 Limpiar filtros
               </button>
             </div>
@@ -16134,16 +16154,6 @@ function CertificatesWorkspaceView({
           )}
         </aside>
       </div>
-      )}
-      {historyRenderDescriptor && (
-        <HiddenBulkCertificateStages
-          request={historyRenderDescriptor.request}
-          students={[historyRenderDescriptor.student]}
-          principalSigner={historyRenderDescriptor.principalSigner}
-          teacherSigner={historyRenderDescriptor.teacherSigner}
-          certificateTemplate={historyRenderDescriptor.certificateTemplate}
-          refsMap={historyCertificateRefs}
-        />
       )}
     </section>
   );
@@ -17267,10 +17277,15 @@ Mariana Torres`}
                     </thead>
                     <tbody>
                       {students.map((student) => (
-                        <tr key={student.id}>
-                          <td>
+                        <tr
+                          key={student.id}
+                          className={previewStudent?.id === student.id ? "certificate-student-selected" : ""}
+                        >
+                          <td data-label="Alumno">
                             <input
                               defaultValue={student.name}
+                              title={student.name}
+                              aria-label={`Nombre de ${student.name}`}
                               disabled={!canManageStudents || savingStudents || Boolean(student.certificateFolio)}
                               onBlur={(event) => {
                                 const nextName = event.target.value.trim();
@@ -17293,8 +17308,9 @@ Mariana Torres`}
                               </div>
                             )}
                           </td>
-                          <td>
+                          <td data-label="Tipo de entrega">
                             <select
+                              aria-label={`Tipo de entrega de ${student.name}`}
                               value={student.deliveryType}
                               disabled={!canManageStudents || savingStudents || Boolean(student.certificateFolio)}
                               onChange={(event) => onUpdateStudent(student.id, { deliveryType: event.target.value })}
@@ -17304,17 +17320,17 @@ Mariana Torres`}
                               ))}
                             </select>
                           </td>
-                          <td>
+                          <td data-label="Estado">
                             <StatusBadge tone={student.status === "Pendiente" ? "purple" : "green"}>
                               {student.status || "Pendiente"}
                             </StatusBadge>
                           </td>
-                          <td>
+                          <td data-label="Folio / QR">
                             {student.certificateFolio ? (
                               <div className="request-student-validation-card">
-                                <div>
-                                  <strong>{student.certificateFolio}</strong>
-                                  <small>{student.validationCode}</small>
+                                <div className="request-student-folio-copy">
+                                  <strong title={student.certificateFolio}>{student.certificateFolio}</strong>
+                                  <small title={student.validationCode}>{student.validationCode}</small>
                                 </div>
                                 {student.qrDataUrl && (
                                   <img
@@ -17327,7 +17343,7 @@ Mariana Torres`}
                               <span className="request-student-no-folio">Sin folio</span>
                             )}
                           </td>
-                          <td>
+                          <td data-label="Acciones">
                             <div className="table-actions request-student-actions">
                               {!student.certificateFolio && (
                                 <button
@@ -17349,6 +17365,7 @@ Mariana Torres`}
                                 <button
                                   type="button"
                                   className="visual-outline-button"
+                                  aria-pressed={previewStudent?.id === student.id}
                                   onClick={() => setPreviewStudentId(student.id)}
                                 >
                                   Ver certificado
@@ -17698,11 +17715,103 @@ function openCertificateActionWindow(message) {
         <title>Certificado</title>
         <style>
           * { box-sizing: border-box; }
-          body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; color: #17345f; background: #f5f8fb; }
+          @page { size: Letter portrait; margin: 0; }
+          html, body { width: 100%; min-height: 100%; margin: 0; padding: 0; }
+          body { display: grid; place-items: center; font-family: Arial, sans-serif; color: #17345f; background: #f5f8fb; }
+          body.ready { display: block; background: #fff; }
           main { max-width: 520px; padding: 32px; border-radius: 20px; background: #fff; box-shadow: 0 18px 45px rgba(23, 52, 95, .12); text-align: center; }
+          main.error { color: #7f1d1d; }
+          iframe { display: block; width: 100%; height: 100vh; margin: 0; padding: 0; border: 0; background: #fff; }
+          .print-controls { display: none; position: fixed; z-index: 2; top: 12px; right: 12px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.96); box-shadow: 0 4px 18px rgba(0,0,0,.16); }
+          .print-controls button { min-height: 38px; padding: 8px 14px; cursor: pointer; }
+          body.print-mode { justify-items: center; }
+          body.print-mode .print-controls { display: block; }
+          body.print-mode iframe { width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; margin: 0 auto; }
+          @media print {
+            html, body { width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; overflow: hidden; }
+            .print-controls { display: none !important; }
+            iframe { width: ${CERTIFICATE_PAGE.widthIn}in !important; height: ${CERTIFICATE_PAGE.heightIn}in !important; }
+          }
         </style>
       </head>
-      <body><main><h1>${escapePrintableHtml(message)}</h1><p>No cierres esta pestaña.</p></main></body>
+      <body>
+        <main id="certificate-status"><h1>${escapePrintableHtml(message)}</h1><p>No cierres esta pestaña.</p></main>
+        <div class="print-controls"><button type="button">Imprimir de nuevo</button></div>
+        <iframe id="certificate-pdf-frame" title="Certificado PDF" hidden></iframe>
+        <script>
+          (() => {
+            const status = document.getElementById('certificate-status');
+            const frame = document.getElementById('certificate-pdf-frame');
+            const printButton = document.querySelector('.print-controls button');
+            let objectUrl = '';
+            let loadTimer = 0;
+            let releaseTimer = 0;
+
+            const releaseObjectUrl = () => {
+              if (!objectUrl) return;
+              URL.revokeObjectURL(objectUrl);
+              objectUrl = '';
+            };
+            const showError = (technicalMessage, port) => {
+              window.clearTimeout(loadTimer);
+              status.classList.add('error');
+              status.innerHTML = '<h1>No se pudo abrir el certificado</h1><p></p>';
+              status.querySelector('p').textContent = technicalMessage || 'Error desconocido al cargar el PDF.';
+              status.hidden = false;
+              frame.hidden = true;
+              port?.postMessage({ status: 'error', message: technicalMessage || 'Error desconocido.' });
+            };
+
+            window.addEventListener('message', (event) => {
+              const payload = event.data;
+              if (event.origin !== window.location.origin || payload?.type !== 'certificate-pdf') return;
+
+              const port = event.ports?.[0];
+              if (!(payload.blob instanceof Blob)) {
+                showError('La pestaña recibió datos PDF inválidos.', port);
+                return;
+              }
+
+              window.clearTimeout(loadTimer);
+              window.clearTimeout(releaseTimer);
+              releaseObjectUrl();
+              objectUrl = URL.createObjectURL(payload.blob);
+              document.title = payload.fileName || 'Certificado.pdf';
+              frame.title = payload.fileName || 'Certificado PDF';
+              document.body.classList.toggle('print-mode', Boolean(payload.print));
+
+              const requestPrint = () => {
+                try {
+                  frame.contentWindow?.focus();
+                  frame.contentWindow?.print();
+                } catch (error) {
+                  window.focus();
+                  window.print();
+                }
+              };
+
+              printButton.onclick = requestPrint;
+              frame.onload = () => {
+                window.clearTimeout(loadTimer);
+                status.hidden = true;
+                frame.hidden = false;
+                document.body.classList.add('ready');
+                port?.postMessage({ status: 'loaded' });
+                if (payload.print) window.setTimeout(requestPrint, 450);
+                releaseTimer = window.setTimeout(releaseObjectUrl, 10 * 60 * 1000);
+              };
+              frame.onerror = () => showError('El visor del navegador no pudo cargar los bytes del PDF.', port);
+              loadTimer = window.setTimeout(
+                () => showError('Tiempo agotado al cargar el PDF en el visor.', port),
+                90000
+              );
+              frame.src = objectUrl;
+            });
+
+            window.addEventListener('beforeunload', releaseObjectUrl, { once: true });
+          })();
+        </script>
+      </body>
     </html>`);
   actionWindow.document.close();
 
@@ -17721,66 +17830,46 @@ function renderCertificateActionWindowError(actionWindow, message) {
   actionWindow.document.close();
 }
 
-function openCertificatePdfBlob(actionWindow, pdfBlob) {
-  if (!actionWindow || actionWindow.closed) {
-    throw new Error("La pestaña del PDF se cerró antes de terminar la carga.");
-  }
-
-  const pdfUrl = URL.createObjectURL(pdfBlob);
-  actionWindow.location.replace(pdfUrl);
-  window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 10 * 60 * 1000);
+function openCertificatePdfBlob(actionWindow, pdfBlob, fileName = "certificado.pdf") {
+  deliverCertificatePdfToWindow(actionWindow, pdfBlob, { fileName, print: false });
 }
 
 function renderCertificatePrintWindow(printWindow, pdfBlob, fileName) {
-  if (!printWindow || printWindow.closed) {
-    throw new Error("La pestaña de impresión se cerró antes de cargar el PDF.");
+  deliverCertificatePdfToWindow(printWindow, pdfBlob, { fileName, print: true });
+}
+
+function deliverCertificatePdfToWindow(actionWindow, pdfBlob, { fileName = "certificado.pdf", print = false } = {}) {
+  if (!actionWindow || actionWindow.closed) {
+    throw new Error("La pestaña del PDF se cerró antes de recibir el archivo.");
+  }
+  if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
+    throw new Error("El archivo PDF generado está vacío o es inválido.");
   }
 
-  const pdfUrl = URL.createObjectURL(pdfBlob);
-  const safeFileName = escapePrintableHtml(fileName || "certificado.pdf");
-
-  printWindow.document.open();
-  printWindow.document.write(`<!doctype html>
-    <html lang="es">
-      <head>
-        <meta charset="utf-8" />
-        <title>${safeFileName}</title>
-        <style>
-          @page { size: Letter portrait; margin: 0; }
-          * { box-sizing: border-box; }
-          html, body { width: 100%; min-height: 100%; margin: 0; padding: 0; background: #fff; }
-          body { display: grid; justify-items: center; font-family: Arial, sans-serif; }
-          .print-controls { position: fixed; z-index: 2; top: 12px; right: 12px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.96); box-shadow: 0 4px 18px rgba(0,0,0,.16); }
-          .print-controls button { min-height: 38px; padding: 8px 14px; cursor: pointer; }
-          iframe { display: block; width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; margin: 0; padding: 0; border: 0; background: #fff; }
-          @media print {
-            html, body { width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; overflow: hidden; }
-            .print-controls { display: none; }
-            iframe { width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; }
-          }
-        </style>
-      </head>
-      <body><div class="print-controls"><button type="button">Imprimir de nuevo</button></div></body>
-    </html>`);
-  printWindow.document.close();
-
-  const iframe = printWindow.document.createElement("iframe");
-  iframe.title = safeFileName;
-  iframe.src = pdfUrl;
-  const requestPrint = () => {
-    try {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-    } catch {
-      printWindow.focus();
-      printWindow.print();
+  const channel = new MessageChannel();
+  const cleanupTimer = window.setTimeout(() => channel.port1.close(), 2 * 60 * 1000);
+  channel.port1.onmessage = (event) => {
+    if (event.data?.status === "error") {
+      console.error("La pestaña receptora no pudo cargar el PDF:", event.data.message);
+    }
+    if (["loaded", "error"].includes(event.data?.status)) {
+      window.clearTimeout(cleanupTimer);
+      channel.port1.close();
     }
   };
+  channel.port1.start();
 
-  printWindow.document.querySelector("button")?.addEventListener("click", requestPrint);
-  iframe.addEventListener("load", () => window.setTimeout(requestPrint, 350), { once: true });
-  printWindow.document.body.appendChild(iframe);
-  window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 10 * 60 * 1000);
+  try {
+    actionWindow.postMessage(
+      { type: "certificate-pdf", blob: pdfBlob, fileName, print },
+      window.location.origin,
+      [channel.port2]
+    );
+  } catch (error) {
+    window.clearTimeout(cleanupTimer);
+    channel.port1.close();
+    throw new Error(`No se pudieron enviar los bytes del PDF a la pestaña: ${error.message}`, { cause: error });
+  }
 }
 
 async function resolveStoredCertificatePdf(certificate, request = null, student = null) {
@@ -17858,7 +17947,11 @@ async function appendCertificateElementToPdf(pdf, element, addPage = false) {
 
   await waitForCertificateAssets(element);
 
+  const previewScaleLayer = element.closest(".certificate-preview-scale-layer");
+  const previewViewport = element.closest(".certificate-preview-viewport");
   element.classList.add("pdf-export-mode");
+  previewScaleLayer?.classList.add("pdf-export-active");
+  previewViewport?.classList.add("pdf-export-active");
 
   try {
     const exportWidth = CERTIFICATE_PAGE.widthPx;
@@ -17889,6 +17982,8 @@ async function appendCertificateElementToPdf(pdf, element, addPage = false) {
     pdf.addImage(imageData, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
   } finally {
     element.classList.remove("pdf-export-mode");
+    previewScaleLayer?.classList.remove("pdf-export-active");
+    previewViewport?.classList.remove("pdf-export-active");
   }
 }
 
@@ -17902,6 +17997,61 @@ async function buildCertificatePdfBlobFromElement(element) {
   await appendCertificateElementToPdf(pdf, element, false);
 
   return pdf.output("blob");
+}
+
+async function buildDetachedCertificatePdfBlob({
+  request,
+  student,
+  principalSigner,
+  teacherSigner,
+  certificateTemplate,
+}) {
+  const host = document.createElement("div");
+  host.className = "bulk-certificate-render-zone";
+  host.setAttribute("aria-hidden", "true");
+  Object.assign(host.style, {
+    position: "fixed",
+    left: "-12000px",
+    top: "0",
+    width: `${CERTIFICATE_PAGE.widthPx}px`,
+    height: `${CERTIFICATE_PAGE.heightPx}px`,
+    overflow: "hidden",
+    pointerEvents: "none",
+    zIndex: "-1",
+  });
+  document.body.appendChild(host);
+
+  const root = createRoot(host);
+  let certificateElement = null;
+
+  try {
+    flushSync(() => {
+      root.render(
+        <CertificateStaticStage
+          request={request}
+          student={student}
+          principalSigner={principalSigner}
+          teacherSigner={teacherSigner}
+          certificateTemplate={certificateTemplate}
+          elementRef={(node) => {
+            certificateElement = node;
+          }}
+        />
+      );
+    });
+
+    if (!certificateElement) {
+      throw new Error("No se pudo montar el certificado en el render aislado.");
+    }
+
+    return await buildCertificatePdfBlobFromElement(certificateElement);
+  } finally {
+    try {
+      flushSync(() => root.unmount());
+    } finally {
+      host.remove();
+    }
+  }
 }
 
 async function saveGeneratedCertificatePdfBlob({ request, student, fileName, pdfBlob }) {
@@ -18317,7 +18467,10 @@ function CertificatePreviewCard({
   canGenerateCertificate = true,
 }) {
   const certificateRef = useRef(null);
+  const previewViewportRef = useRef(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [openingPreviewPdf, setOpeningPreviewPdf] = useState(false);
+  const [previewScale, setPreviewScale] = useState(1);
   const [embeddedPrincipalSignatureUrl, setEmbeddedPrincipalSignatureUrl] = useState("");
   const [embeddedTeacherSignatureUrl, setEmbeddedTeacherSignatureUrl] = useState("");
   const [generationMessage, setGenerationMessage] = useState("");
@@ -18401,6 +18554,36 @@ function CertificatePreviewCard({
     teacherSignatureUrl,
     teacherSignatureStoragePath,
   ]);
+
+  useEffect(() => {
+    const viewport = previewViewportRef.current;
+    if (!viewport) return undefined;
+
+    const updatePreviewScale = () => {
+      const availableWidth = viewport.clientWidth;
+      const availableHeight = viewport.clientHeight;
+      if (!availableWidth || !availableHeight) return;
+
+      const nextScale = Math.min(
+        availableWidth / CERTIFICATE_PAGE.widthPx,
+        availableHeight / CERTIFICATE_PAGE.heightPx,
+        1
+      );
+      setPreviewScale((current) => Math.abs(current - nextScale) > 0.001 ? nextScale : current);
+    };
+
+    updatePreviewScale();
+    const resizeObserver = typeof ResizeObserver === "function"
+      ? new ResizeObserver(updatePreviewScale)
+      : null;
+    resizeObserver?.observe(viewport);
+    window.addEventListener("resize", updatePreviewScale);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updatePreviewScale);
+    };
+  }, []);
 
   if (!request || !student) return null;
 
@@ -18499,6 +18682,29 @@ function CertificatePreviewCard({
     }
   }
 
+  async function openFullCertificatePreview() {
+    if (!certificateRef.current || openingPreviewPdf) return;
+
+    let previewWindow = null;
+
+    try {
+      previewWindow = openCertificateActionWindow("Preparando vista completa...");
+      setOpeningPreviewPdf(true);
+      const pdfBlob = await buildCertificatePdfBlobFromElement(certificateRef.current);
+      openCertificatePdfBlob(
+        previewWindow,
+        pdfBlob,
+        `${sanitizePdfFileName(`${student.certificateFolio || "certificado"}-${student.name || "alumno"}`)}.pdf`
+      );
+    } catch (error) {
+      console.error("No se pudo abrir la vista completa del certificado:", error);
+      renderCertificateActionWindowError(previewWindow, error.message);
+      setGenerationMessage(`No se pudo abrir la vista completa: ${error.message}`);
+    } finally {
+      setOpeningPreviewPdf(false);
+    }
+  }
+
   return (
     <div className="certificate-preview-shell">
       <div className="certificate-preview-actions">
@@ -18510,15 +18716,32 @@ function CertificatePreviewCard({
         >
           {downloadingPdf ? "Generando PDF..." : "Descargar PDF"}
         </button>
+        <button
+          type="button"
+          className="visual-outline-button"
+          onClick={openFullCertificatePreview}
+          disabled={openingPreviewPdf || downloadingPdf}
+        >
+          {openingPreviewPdf ? "Abriendo..." : "Abrir vista completa"}
+        </button>
       </div>
 
       {generationMessage && <div className="message-box certificate-generation-message">{generationMessage}</div>}
 
-      <div
-        ref={certificateRef}
-        className={`certificate-preview-stage ${templateImageUrl ? "template-mode" : ""}`}
-        style={{ ...CERTIFICATE_STAGE_STYLE, "--certificate-level-color": levelColor }}
-      >
+      <div ref={previewViewportRef} className="certificate-preview-viewport">
+        <div
+          className="certificate-preview-scale-layer"
+          style={{
+            width: `${CERTIFICATE_PAGE.widthPx}px`,
+            height: `${CERTIFICATE_PAGE.heightPx}px`,
+            transform: `translate(-50%, -50%) scale(${previewScale})`,
+          }}
+        >
+          <div
+            ref={certificateRef}
+            className={`certificate-preview-stage ${templateImageUrl ? "template-mode" : ""}`}
+            style={{ ...CERTIFICATE_STAGE_STYLE, "--certificate-level-color": levelColor }}
+          >
         {!templateImageUrl && (certificateTemplate || request.certificateTemplateId) ? (
           <div className="certificate-template-loading">
             Esta plantilla necesita optimizarse. Ve a Imprenta → Plantillas, edita la plantilla y vuelve a subir su imagen.
@@ -18629,6 +18852,8 @@ function CertificatePreviewCard({
             <div className="certificate-preview-course-bar"><span>{trackLabel}</span></div>
           </>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );
