@@ -3658,13 +3658,16 @@
 .certificate-preview-stage {
   --certificate-level-color: #0e7a37;
   position: relative;
-  width: min(100%, 820px);
-  min-height: 1060px;
+  width: var(--certificate-page-width);
+  min-width: var(--certificate-page-width);
+  height: var(--certificate-page-height);
+  min-height: var(--certificate-page-height);
   margin: 0 auto;
-  background: #f7f8f8;
+  background: #ffffff;
   border-radius: 22px;
   overflow: hidden;
-  border: 1px solid #d5dfe9;
+  border: 0;
+  outline: 1px solid #d5dfe9;
   box-shadow: 0 20px 55px rgba(13, 35, 64, 0.14);
 }
 
@@ -3922,13 +3925,16 @@
 /* ===== Certificate preview v2 corrections ===== */
 .certificate-preview-stage {
   position: relative;
-  width: min(100%, 820px);
-  min-height: 1060px;
+  width: var(--certificate-page-width);
+  min-width: var(--certificate-page-width);
+  height: var(--certificate-page-height);
+  min-height: var(--certificate-page-height);
   margin: 0 auto;
-  background: #f7f8f8;
+  background: #ffffff;
   border-radius: 22px;
   overflow: hidden;
-  border: 1px solid #d5dfe9;
+  border: 0;
+  outline: 1px solid #d5dfe9;
   box-shadow: 0 20px 55px rgba(13, 35, 64, 0.14);
 }
 
@@ -4310,9 +4316,6 @@
 }
 
 /* ===== PDF export fixes for certificate ===== */
-.certificate-preview-stage {
-  aspect-ratio: 8.5 / 11;
-}
 
 .certificate-preview-shape {
   display: none;
@@ -4329,13 +4332,19 @@
 }
 
 .certificate-preview-stage.pdf-export-mode {
-  width: 816px !important;
-  min-height: 1056px !important;
-  height: 1056px !important;
+  width: var(--certificate-page-width) !important;
+  min-width: var(--certificate-page-width) !important;
+  max-width: var(--certificate-page-width) !important;
+  min-height: var(--certificate-page-height) !important;
+  height: var(--certificate-page-height) !important;
+  max-height: var(--certificate-page-height) !important;
   border: none !important;
+  outline: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   margin: 0 !important;
+  padding: 0 !important;
+  background: #ffffff !important;
 }
 
 .certificate-preview-stage.pdf-export-mode .certificate-preview-logo-wrap {
@@ -4600,7 +4609,8 @@
 
 /* ===== Certificate image-template rendering ===== */
 .certificate-preview-stage.template-mode {
-  height: 1060px;
+  width: var(--certificate-page-width);
+  height: var(--certificate-page-height);
   background: #ffffff;
 }
 
@@ -4689,9 +4699,9 @@
 }
 
 .certificate-preview-stage.pdf-export-mode.template-mode {
-  width: 816px !important;
-  height: 1056px !important;
-  min-height: 1056px !important;
+  width: var(--certificate-page-width) !important;
+  height: var(--certificate-page-height) !important;
+  min-height: var(--certificate-page-height) !important;
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
@@ -6162,13 +6172,50 @@
 }
 
 .bulk-certificate-render-zone .certificate-preview-stage {
-  width: 816px !important;
-  height: 1056px !important;
-  min-height: 1056px !important;
+  width: var(--certificate-page-width) !important;
+  height: var(--certificate-page-height) !important;
+  min-height: var(--certificate-page-height) !important;
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   margin: 0 0 24px !important;
+}
+
+@media print {
+  @page {
+    size: Letter portrait;
+    margin: 0;
+  }
+
+  .certificate-preview-shell {
+    width: 8.5in;
+    height: 11in;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #ffffff;
+  }
+
+  .certificate-preview-actions,
+  .certificate-generation-message {
+    display: none !important;
+  }
+
+  .certificate-preview-stage {
+    width: 8.5in !important;
+    min-width: 8.5in !important;
+    max-width: 8.5in !important;
+    height: 11in !important;
+    min-height: 11in !important;
+    max-height: 11in !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
 }
 
 @media (max-width: 860px) {

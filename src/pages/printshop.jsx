@@ -24,6 +24,22 @@ import { deleteObject, getBytes, getDownloadURL, ref as storageRef, uploadBytes 
 import { db, storage } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
 import { buildCertificateStatistics, CERTIFICATE_QUICK_RANGES } from "../services/certificateStats";
+import {
+  findCertificateRequest,
+  getCertificateAssociation,
+  getCertificatePdfReferences,
+  getCertificatePdfStoragePath,
+  getCertificatePdfUrl,
+  getCertificateRequestId,
+  normalizeCertificateStatus,
+} from "../utils/certificateHistory";
+import { resolveStoredCertificatePdf as resolveCertificatePdfFromStorage } from "../services/certificatePdfService";
+import {
+  CERTIFICATE_PAGE,
+  CERTIFICATE_PAGE_VERSION,
+  CERTIFICATE_STAGE_STYLE,
+  isLetterPortraitPdf,
+} from "../utils/certificatePage";
 import { findMatchingCertificateTemplateInList } from "../utils/certificateTemplateMatching";
 
 const productCategories = [
@@ -1810,8 +1826,8 @@ async function readTemplateFileAsDataUrl(file) {
     });
 
     const canvas = document.createElement("canvas");
-    const targetWidth = 816;
-    const targetHeight = 1056;
+    const targetWidth = CERTIFICATE_PAGE.widthPx;
+    const targetHeight = CERTIFICATE_PAGE.heightPx;
 
     canvas.width = targetWidth;
     canvas.height = targetHeight;
@@ -3360,6 +3376,27 @@ function findDefaultCertificateResponsibleUser(users = []) {
   }) || null;
 }
 
+function toCertificateDate(value) {
+  if (!value) return null;
+  const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getOriginalCertificateGenerationValue(students = [], request = null, certificates = []) {
+  const generationValues = [
+    ...students.flatMap((student) => [student?.certificateGeneratedAt, student?.generatedAt]),
+    ...certificates.map((certificate) => certificate?.generatedAt),
+  ].filter((value) => toCertificateDate(value));
+
+  if (generationValues.length > 0) {
+    return generationValues.reduce((earliest, value) =>
+      toCertificateDate(value) < toCertificateDate(earliest) ? value : earliest
+    );
+  }
+
+  return request?.certificateGeneratedAt || request?.generatedAt || request?.createdAt || serverTimestamp();
+}
+
 function findPrintshopShiftCollaborators(users = []) {
   const findByIdentity = (targets) => (users || []).find((person) => {
     const identity = `${getUserDisplayName(person)} ${getUserEmail(person)}`.toLowerCase();
@@ -3692,7 +3729,6 @@ export default function PrintShop() {
   const [credentialMessage, setCredentialMessage] = useState("");
 
   const [generatedCertificates, setGeneratedCertificates] = useState([]);
-  const normalizedDeliveredRequestIdsRef = useRef(new Set());
   const [loadingGeneratedCertificates, setLoadingGeneratedCertificates] = useState(true);
   const [generatedCertificatesError, setGeneratedCertificatesError] = useState("");
   const [generatedCertificateSearch, setGeneratedCertificateSearch] = useState("");
@@ -3702,6 +3738,8 @@ export default function PrintShop() {
   const [generatedCertificateTeacherFilter, setGeneratedCertificateTeacherFilter] = useState("Todos");
   const [generatedCertificateLevelFilter, setGeneratedCertificateLevelFilter] = useState("Todos");
   const [updatingGeneratedCertificateId, setUpdatingGeneratedCertificateId] = useState(null);
+  const [generatedCertificateAction, setGeneratedCertificateAction] = useState(null);
+  const [generatedCertificateActionMessage, setGeneratedCertificateActionMessage] = useState("");
 
   const [printshopLogs, setPrintshopLogs] = useState([]);
   const [loadingPrintshopLogs, setLoadingPrintshopLogs] = useState(true);
@@ -3757,79 +3795,6 @@ export default function PrintShop() {
 
     return () => unsubscribe();
   }, []);
-
-  useEffect(() => {
-    if (!isAdmin || printRequests.length === 0) return;
-
-    const staleRequests = printRequests.filter((request) => {
-      if (normalizedDeliveredRequestIdsRef.current.has(request.id)) return false;
-      const studentsWithFolios = normalizeRequestStudents(request.students || []).filter(
-        (student) => student.certificateFolio && student.validationCode
-      );
-      const missingCertificate = studentsWithFolios.some((student) =>
-        !generatedCertificates.some((certificate) =>
-          certificate.requestId === request.id &&
-          (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
-        )
-      );
-      const staleDelivered = request.status === "Entregada" && generatedCertificates.some((certificate) =>
-        certificate.requestId === request.id && certificate.status === "Generado"
-      );
-      return studentsWithFolios.length > 0 && (missingCertificate || staleDelivered || request.status === "Entregada");
-    });
-    if (staleRequests.length === 0) return;
-
-    staleRequests.forEach((request) => normalizedDeliveredRequestIdsRef.current.add(request.id));
-    const normalize = async () => {
-      const auditUser = getAuditUser();
-      for (const request of staleRequests) {
-        const batch = writeBatch(db);
-        addCertificateHistoryUpserts(
-          batch,
-          request,
-          request.students || [],
-          auditUser,
-          request.status === "Entregada" ? "Entregado" : ""
-        );
-        batch.update(doc(db, "printRequests", request.id), {
-          students: normalizeRequestStudents(request.students || []).map((student) =>
-            student.status === "Cancelado" ? student : { ...student, status: "Entregado" }
-          ),
-          updatedAt: serverTimestamp(),
-          updatedByUid: auditUser.uid,
-          updatedByName: auditUser.name,
-          updatedByEmail: auditUser.email,
-        });
-        const certificates = generatedCertificates.filter((certificate) =>
-          certificate.requestId === request.id && certificate.status === "Generado"
-        );
-        certificates.forEach((certificate) => {
-          batch.update(doc(db, "generatedCertificates", certificate.id), {
-            status: "Entregado",
-            deliveredAt: serverTimestamp(),
-            deliveredByUid: auditUser.uid,
-            deliveredByName: auditUser.name,
-            deliveredByEmail: auditUser.email,
-            updatedAt: serverTimestamp(),
-            updatedByUid: auditUser.uid,
-            updatedByName: auditUser.name,
-            updatedByEmail: auditUser.email,
-          });
-          batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(certificate.validationCode || certificate.id || certificate.folio)), {
-            status: "Entregado",
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        });
-        try {
-          await batch.commit();
-        } catch (error) {
-          normalizedDeliveredRequestIdsRef.current.delete(request.id);
-          console.error("No se pudo normalizar una solicitud entregada:", error);
-        }
-      }
-    };
-    normalize();
-  }, [generatedCertificates, isAdmin, printRequests]);
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -6468,9 +6433,6 @@ export default function PrintShop() {
     setSelectedRequestId(request.id);
     setReprintCertificateStudentId("");
     setRequestMessage("");
-    publishRequestStudentValidations(request).catch((error) => {
-      console.error("No se pudo publicar la validaciÃ³n de folios existentes:", error);
-    });
     setRequestForm({
       productId: request.productId || "",
       requestType: request.requestType || "Volante",
@@ -6765,12 +6727,22 @@ export default function PrintShop() {
 
         const changedToDelivered = basePayload.status === "Entregada" && currentRequest?.status !== "Entregada";
         if (changedToDelivered && isRequestCertificateLike(currentRequest?.requestType)) {
+          const deliveredCertificates = generatedCertificates.filter((certificate) => {
+            const association = getCertificateAssociation(certificate, [currentRequest]);
+            return association.request?.id === selectedRequestId &&
+              normalizeCertificateStatus(certificate.status) !== "Cancelado";
+          });
+          const publicDocumentsByCertificate = new Map();
+          for (const certificate of deliveredCertificates) {
+            publicDocumentsByCertificate.set(
+              certificate.id,
+              await getExistingPublicValidationDocuments(certificate)
+            );
+          }
           const batch = writeBatch(db);
           batch.update(doc(db, "printRequests", selectedRequestId), payload);
           addCertificateHistoryUpserts(batch, { ...currentRequest, ...basePayload }, basePayload.students, auditUser, "Entregado");
-          generatedCertificates
-            .filter((certificate) => certificate.requestId === selectedRequestId && certificate.status !== "Cancelado")
-            .forEach((certificate) => {
+          deliveredCertificates.forEach((certificate) => {
               const deliveredPayload = {
                 status: "Entregado",
                 deliveredAt: serverTimestamp(),
@@ -6783,10 +6755,12 @@ export default function PrintShop() {
                 updatedByEmail: auditUser.email,
               };
               batch.update(doc(db, "generatedCertificates", certificate.id), deliveredPayload);
-              batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(certificate.validationCode || certificate.id || certificate.folio)), {
-                status: "Entregado",
-                updatedAt: serverTimestamp(),
-              }, { merge: true });
+              (publicDocumentsByCertificate.get(certificate.id) || []).forEach((validationDocument) => {
+                batch.set(doc(db, "publicCertificateValidations", validationDocument.id), {
+                  status: "Entregado",
+                  updatedAt: serverTimestamp(),
+                }, { merge: true });
+              });
             });
           await batch.commit();
         } else {
@@ -7000,33 +6974,6 @@ export default function PrintShop() {
     );
   }
 
-  async function publishRequestStudentValidations(request) {
-    if (
-      !canCurrentUserEditRequest(request) ||
-      !isRequestCertificateLike(request?.requestType)
-    ) {
-      return;
-    }
-
-    const studentsWithFolios = normalizeRequestStudents(request.students || []).filter(
-      (student) => student.certificateFolio && student.validationCode
-    );
-
-    if (studentsWithFolios.length === 0) return;
-
-    const batch = writeBatch(db);
-
-    studentsWithFolios.forEach((student) => {
-      batch.set(
-        doc(db, "publicCertificateValidations", getRequestStudentValidationId(request, student)),
-        buildRequestStudentPublicValidationPayload(request, student),
-        { merge: true }
-      );
-    });
-
-    await batch.commit();
-  }
-
   function getCertificateRecordId(request, student) {
     const existing = generatedCertificates.find((certificate) =>
       certificate.requestId === request.id &&
@@ -7072,7 +7019,10 @@ export default function PrintShop() {
       pdfFileName: existing?.pdfFileName || "",
       ...(existing?.pdfUrl ? { pdfUrl: existing.pdfUrl } : {}),
       ...(existing?.pdfStoragePath ? { pdfStoragePath: existing.pdfStoragePath } : {}),
-      generatedAt: existing?.generatedAt || serverTimestamp(),
+      ...(existing?.pdfPageVersion ? { pdfPageVersion: existing.pdfPageVersion } : {}),
+      ...(existing?.pdfPageWidthPt ? { pdfPageWidthPt: existing.pdfPageWidthPt } : {}),
+      ...(existing?.pdfPageHeightPt ? { pdfPageHeightPt: existing.pdfPageHeightPt } : {}),
+      generatedAt: existing?.generatedAt || student.certificateGeneratedAt || student.generatedAt || serverTimestamp(),
       generatedByUid: existing?.generatedByUid || auditUser.uid,
       generatedByName: existing?.generatedByName || auditUser.name,
       generatedByEmail: existing?.generatedByEmail || auditUser.email,
@@ -7083,14 +7033,32 @@ export default function PrintShop() {
     };
   }
 
-  function addCertificateHistoryUpserts(batch, request, students, auditUser, forcedStatus = "") {
-    const generatedStudents = normalizeRequestStudents(students).filter(
+  function addCertificateHistoryUpserts(
+    batch,
+    request,
+    students,
+    auditUser,
+    forcedStatus = "",
+    pendingCertificateIds = []
+  ) {
+    const studentsWithFolios = normalizeRequestStudents(students).filter(
       (student) => student.certificateFolio && student.validationCode
     );
+    const pendingIds = new Set(pendingCertificateIds);
+    const generatedStudents = studentsWithFolios.filter((student) => {
+      const certificateId = getCertificateRecordId(request, student);
+      return pendingIds.has(certificateId) || generatedCertificates.some((certificate) =>
+        certificate.id === certificateId ||
+        certificate.requestId === request.id && (
+          certificate.studentId === student.id ||
+          certificate.validationCode === student.validationCode
+        )
+      );
+    });
     if (generatedStudents.length === 0) return;
-    const requestDelivered = forcedStatus === "Entregado" || request.status === "Entregada";
+    const requestDelivered = normalizeCertificateStatus(forcedStatus || request.status) === "Entregado";
     const activeStatuses = generatedStudents.map((student) =>
-      student.status === "Cancelado" ? "Cancelado" : requestDelivered ? "Entregado" : "Generado"
+      normalizeCertificateStatus(student.status) === "Cancelado" ? "Cancelado" : requestDelivered ? "Entregado" : "Generado"
     );
     const loteStatus = activeStatuses.every((status) => status === activeStatuses[0])
       ? activeStatuses[0]
@@ -7109,6 +7077,7 @@ export default function PrintShop() {
       templateId: request.certificateTemplateId || "",
       templateName: request.certificateTemplateName || "",
       issueDate: getCertificateIssueDate(request),
+      generatedAt: getOriginalCertificateGenerationValue(generatedStudents, request),
       responsibleUid: request.responsibleUid || "",
       collaboratorUid: request.collaboratorUid || "",
       createdAt: request.createdAt || serverTimestamp(),
@@ -7248,6 +7217,10 @@ export default function PrintShop() {
       throw new Error("Primero genera folio y QR para este alumno.");
     }
 
+    if (!pdfStoragePath && !pdfUrl) {
+      throw new Error("El PDF no se almacenó en Storage; no se registrará un historial sin archivo original.");
+    }
+
     const auditUser = getAuditUser();
     const nowIso = new Date().toISOString();
     const certificateId = getCertificateRecordId(request, student);
@@ -7263,7 +7236,7 @@ export default function PrintShop() {
             ...currentStudent,
             status: nextStatus,
             certificateRecordId: certificateId,
-            certificateGeneratedAt: nowIso,
+            certificateGeneratedAt: currentStudent.certificateGeneratedAt || currentStudent.generatedAt || existingCertificate?.generatedAt || nowIso,
             certificateGeneratedByUid: auditUser.uid,
             certificateGeneratedByName: auditUser.name,
             certificateGeneratedByEmail: auditUser.email,
@@ -7311,11 +7284,17 @@ export default function PrintShop() {
       pdfFileName: fileName || "",
       pdfUrl: pdfUrl || existingCertificate?.pdfUrl || "",
       pdfStoragePath: pdfStoragePath || existingCertificate?.pdfStoragePath || "",
-      ...(pdfStoragePath || pdfUrl ? { pdfSavedAt: serverTimestamp() } : {}),
-      generatedAt: serverTimestamp(),
-      generatedByUid: auditUser.uid,
-      generatedByName: auditUser.name,
-      generatedByEmail: auditUser.email,
+      ...(pdfStoragePath || pdfUrl ? {
+        pdfSavedAt: serverTimestamp(),
+        pdfPageVersion: CERTIFICATE_PAGE_VERSION,
+        pdfPageWidthPt: CERTIFICATE_PAGE.widthPt,
+        pdfPageHeightPt: CERTIFICATE_PAGE.heightPt,
+        pdfPageOrientation: CERTIFICATE_PAGE.orientation,
+      } : {}),
+      generatedAt: existingCertificate?.generatedAt || student.certificateGeneratedAt || student.generatedAt || serverTimestamp(),
+      generatedByUid: existingCertificate?.generatedByUid || auditUser.uid,
+      generatedByName: existingCertificate?.generatedByName || auditUser.name,
+      generatedByEmail: existingCertificate?.generatedByEmail || auditUser.email,
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
       updatedByName: auditUser.name,
@@ -7327,7 +7306,7 @@ export default function PrintShop() {
     });
 
     const batch = writeBatch(db);
-    addCertificateHistoryUpserts(batch, request, nextStudents, auditUser);
+    addCertificateHistoryUpserts(batch, request, nextStudents, auditUser, "", [certificateId]);
     batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
     batch.set(doc(db, "publicCertificateValidations", certificateId), publicCertificatePayload, { merge: true });
     batch.update(doc(db, "printRequests", request.id), {
@@ -7426,11 +7405,17 @@ export default function PrintShop() {
       pdfFileName: fileName || "",
       pdfUrl: pdfUrl || existingCertificate?.pdfUrl || "",
       pdfStoragePath: pdfStoragePath || existingCertificate?.pdfStoragePath || "",
-      ...(pdfStoragePath || pdfUrl ? { pdfSavedAt: serverTimestamp() } : {}),
-      generatedAt: serverTimestamp(),
-      generatedByUid: auditUser.uid,
-      generatedByName: auditUser.name,
-      generatedByEmail: auditUser.email,
+      ...(pdfStoragePath || pdfUrl ? {
+        pdfSavedAt: serverTimestamp(),
+        pdfPageVersion: CERTIFICATE_PAGE_VERSION,
+        pdfPageWidthPt: CERTIFICATE_PAGE.widthPt,
+        pdfPageHeightPt: CERTIFICATE_PAGE.heightPt,
+        pdfPageOrientation: CERTIFICATE_PAGE.orientation,
+      } : {}),
+      generatedAt: existingCertificate?.generatedAt || student.certificateGeneratedAt || student.generatedAt || serverTimestamp(),
+      generatedByUid: existingCertificate?.generatedByUid || auditUser.uid,
+      generatedByName: existingCertificate?.generatedByName || auditUser.name,
+      generatedByEmail: existingCertificate?.generatedByEmail || auditUser.email,
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
       updatedByName: auditUser.name,
@@ -7466,11 +7451,14 @@ export default function PrintShop() {
   }
 
   async function updateGeneratedCertificateStatus(certificate, nextStatus) {
-    if (!certificate?.id || !generatedCertificateStatuses.includes(nextStatus)) return;
+    const normalizedNextStatus = normalizeCertificateStatus(nextStatus, "");
+    if (!certificate?.id || !generatedCertificateStatuses.includes(normalizedNextStatus)) return;
+    nextStatus = normalizedNextStatus;
 
     const auditUser = getAuditUser();
     const nowIso = new Date().toISOString();
-    const request = printRequests.find((item) => item.id === certificate.requestId) || null;
+    const request = findCertificateRequest(certificate, printRequests);
+    const publicValidationDocuments = await getExistingPublicValidationDocuments(certificate);
     const batch = writeBatch(db);
     const certificateRef = doc(db, "generatedCertificates", certificate.id);
     const statusPayload = {
@@ -7498,17 +7486,19 @@ export default function PrintShop() {
     batch.update(certificateRef, statusPayload);
     addHistoryBatchStatusWrite(batch, request, certificate.id, nextStatus, auditUser);
 
-    const publicCertificateId = sanitizeGeneratedCertificateId(
-      certificate.validationCode || certificate.id || certificate.folio
-    );
-    batch.set(
-      doc(db, "publicCertificateValidations", publicCertificateId),
-      buildPublicCertificateValidationPayload(certificate, {
-        status: nextStatus,
-        updatedAt: serverTimestamp(),
-      }),
-      { merge: true }
-    );
+    const publicCertificateIds = publicValidationDocuments.length > 0
+      ? publicValidationDocuments.map((validationDocument) => validationDocument.id)
+      : [sanitizeGeneratedCertificateId(certificate.validationCode || certificate.id || certificate.folio)];
+    publicCertificateIds.forEach((publicCertificateId) => {
+      batch.set(
+        doc(db, "publicCertificateValidations", publicCertificateId),
+        buildPublicCertificateValidationPayload(certificate, {
+          status: nextStatus,
+          updatedAt: serverTimestamp(),
+        }),
+        { merge: true }
+      );
+    });
 
     if (request) {
       const nextStudents = normalizeRequestStudents(request.students || []).map((student) => {
@@ -7580,14 +7570,248 @@ export default function PrintShop() {
     }
   }
 
-  function openRequestFromGeneratedCertificate(certificate) {
-    const request = printRequests.find((item) => item.id === certificate.requestId);
+  async function getRequestForGeneratedCertificate(certificate) {
+    const loadedRequest = findCertificateRequest(certificate, printRequests);
 
-    if (request) {
-      selectRequest(request);
+    if (loadedRequest) return loadedRequest;
+
+    const requestId = getCertificateRequestId(certificate);
+    if (!requestId) return null;
+
+    const requestSnapshot = await withCertificateActionTimeout(
+      getDoc(doc(db, "printRequests", requestId)),
+      "consultar la solicitud"
+    );
+    return requestSnapshot.exists()
+      ? { id: requestSnapshot.id, ...requestSnapshot.data() }
+      : null;
+  }
+
+  async function getExistingPublicValidationDocuments(certificate) {
+    const matches = new Map();
+    const candidateIds = [...new Set([
+      certificate?.validationCode,
+      sanitizeGeneratedCertificateId(certificate?.validationCode),
+      certificate?.id,
+      certificate?.folio,
+    ].map((value) => String(value || "").trim()).filter(Boolean))];
+
+    for (const candidateId of candidateIds) {
+      try {
+        const snapshot = await getDoc(doc(db, "publicCertificateValidations", candidateId));
+        if (snapshot.exists()) matches.set(snapshot.id, { id: snapshot.id, ...snapshot.data() });
+      } catch (error) {
+        console.warn("[Certificados] No se pudo consultar índice QR", { candidateId, error });
+      }
     }
 
-    setActiveSection("certificates");
+    for (const [field, value] of [
+      ["validationCode", certificate?.validationCode],
+      ["folio", certificate?.folio],
+      ["certificateId", certificate?.id],
+    ]) {
+      if (!value) continue;
+      try {
+        const snapshot = await getDocs(query(
+          collection(db, "publicCertificateValidations"),
+          where(field, "==", value)
+        ));
+        snapshot.docs.forEach((snapshotDoc) => {
+          matches.set(snapshotDoc.id, { id: snapshotDoc.id, ...snapshotDoc.data() });
+        });
+      } catch (error) {
+        console.warn("[Certificados] No se pudo consultar índice QR por campo", { field, value, error });
+      }
+    }
+
+    return [...matches.values()];
+  }
+
+  async function repairCertificateHistoryConsistency() {
+    if (!isAdmin) return { synchronized: 0, dated: 0 };
+
+    const historySnapshot = await getDocs(collection(db, "certificateHistoryBatches"));
+    const historyById = new Map(historySnapshot.docs.map((snapshotDoc) => [
+      snapshotDoc.id,
+      { id: snapshotDoc.id, ...snapshotDoc.data() },
+    ]));
+    let synchronized = 0;
+    let dated = 0;
+
+    for (const request of printRequests) {
+      const history = historyById.get(request.id) || null;
+      const delivered = normalizeCertificateStatus(request.status) === "Entregado" ||
+        normalizeCertificateStatus(history?.status) === "Entregado";
+      if (!delivered) continue;
+
+      const historyCertificateIds = new Set(Array.isArray(history?.certificateIds) ? history.certificateIds : []);
+      const certificates = generatedCertificates.filter((certificate) => {
+        const association = getCertificateAssociation(certificate, [request]);
+        return association.request?.id === request.id || historyCertificateIds.has(certificate.id);
+      });
+      const publicDocuments = new Map();
+      for (const certificate of certificates) {
+        publicDocuments.set(certificate.id, await getExistingPublicValidationDocuments(certificate));
+      }
+
+      const batch = writeBatch(db);
+      let writes = 0;
+      const currentStudents = Array.isArray(request.students) ? request.students : [];
+      const requestPatch = {};
+      const nextStudents = currentStudents.map((student) => {
+        const status = normalizeCertificateStatus(student?.status, "");
+        if (status === "Cancelado" || status === "Entregado") return student;
+        synchronized += 1;
+        return { ...student, status: "Entregado" };
+      });
+      if (nextStudents.some((student, index) => student !== currentStudents[index])) {
+        requestPatch.students = nextStudents;
+      }
+      if (normalizeCertificateStatus(request.status) !== "Entregado") {
+        requestPatch.status = "Entregada";
+        synchronized += 1;
+      }
+      if (Object.keys(requestPatch).length > 0) {
+        batch.update(doc(db, "printRequests", request.id), requestPatch);
+        writes += 1;
+      }
+
+      certificates.forEach((certificate) => {
+        if (normalizeCertificateStatus(certificate.status) !== "Entregado" &&
+            normalizeCertificateStatus(certificate.status) !== "Cancelado") {
+          batch.update(doc(db, "generatedCertificates", certificate.id), { status: "Entregado" });
+          writes += 1;
+          synchronized += 1;
+        }
+
+        const validationDocuments = publicDocuments.get(certificate.id) || [];
+        if (validationDocuments.length === 0) {
+          const publicId = sanitizeGeneratedCertificateId(
+            certificate.validationCode || certificate.id || certificate.folio
+          );
+          batch.set(
+            doc(db, "publicCertificateValidations", publicId),
+            buildPublicCertificateValidationPayload(certificate, { status: "Entregado" }),
+            { merge: true }
+          );
+          writes += 1;
+          synchronized += 1;
+        } else {
+          validationDocuments.forEach((validationDocument) => {
+            if (normalizeCertificateStatus(validationDocument.status) !== "Entregado") {
+              batch.set(doc(db, "publicCertificateValidations", validationDocument.id), {
+                status: "Entregado",
+              }, { merge: true });
+              writes += 1;
+              synchronized += 1;
+            }
+          });
+        }
+      });
+
+      const originalGeneratedAt = getOriginalCertificateGenerationValue(
+        currentStudents,
+        request,
+        certificates
+      );
+      const historyPatch = {};
+      if (normalizeCertificateStatus(history?.status) !== "Entregado") historyPatch.status = "Entregado";
+      if (toCertificateDate(originalGeneratedAt) &&
+          toCertificateDate(history?.generatedAt)?.getTime() !== toCertificateDate(originalGeneratedAt)?.getTime()) {
+        historyPatch.generatedAt = originalGeneratedAt;
+        dated += 1;
+      }
+      if (Object.keys(historyPatch).length > 0) {
+        batch.set(doc(db, "certificateHistoryBatches", request.id), {
+          requestId: request.id,
+          loteId: request.id,
+          ...historyPatch,
+        }, { merge: true });
+        writes += 1;
+      }
+
+      if (writes > 0) await batch.commit();
+    }
+
+    return { synchronized, dated };
+  }
+
+  async function persistGeneratedCertificatePdfRepair(certificate, request, pdfSource, regenerated) {
+    if (!certificate?.id || !pdfSource?.url || !pdfSource?.storagePath) {
+      throw new Error("Faltan referencias estables para guardar la reparación del certificado.");
+    }
+
+    const patch = {
+      ...(request?.id && certificate.requestId !== request.id ? { requestId: request.id } : {}),
+      ...(request?.folio && certificate.requestFolio !== request.folio ? { requestFolio: request.folio } : {}),
+      ...(certificate.pdfUrl !== pdfSource.url ? { pdfUrl: pdfSource.url } : {}),
+      ...(certificate.pdfStoragePath !== pdfSource.storagePath ? { pdfStoragePath: pdfSource.storagePath } : {}),
+      ...(certificate.pdfPath !== pdfSource.storagePath ? { pdfPath: pdfSource.storagePath } : {}),
+      ...(regenerated ? {
+        pdfPageVersion: CERTIFICATE_PAGE_VERSION,
+        pdfPageWidthPt: CERTIFICATE_PAGE.widthPt,
+        pdfPageHeightPt: CERTIFICATE_PAGE.heightPt,
+        pdfPageOrientation: CERTIFICATE_PAGE.orientation,
+        pdfRepairVersion: CERTIFICATE_PAGE_VERSION,
+      } : {}),
+    };
+
+    if (Object.entries(patch).some(([key, value]) => certificate[key] !== value)) {
+      await updateDoc(doc(db, "generatedCertificates", certificate.id), patch);
+    }
+  }
+
+  async function openOriginalGeneratedCertificate(certificate) {
+    let pdfWindow;
+
+    try {
+      pdfWindow = openCertificateActionWindow("Abriendo PDF original...");
+    } catch (error) {
+      setGeneratedCertificateActionMessage(error.message);
+      return false;
+    }
+
+    try {
+      setGeneratedCertificateAction({ id: certificate.id, type: "original" });
+      setGeneratedCertificateActionMessage("");
+      const request = await getRequestForGeneratedCertificate(certificate);
+      const association = getCertificateAssociation(certificate, request ? [request] : printRequests);
+      const pdfSource = await resolveStoredCertificatePdf(certificate, association.request, association.student);
+
+      pdfWindow.location.replace(pdfSource.url);
+      setGeneratedCertificateActionMessage("PDF original abierto en una pestaña nueva.");
+      return true;
+    } catch (error) {
+      console.error("No se pudo abrir el PDF original:", error);
+      renderCertificateActionWindowError(pdfWindow, error?.message || "No se encontró el PDF original.");
+      setGeneratedCertificateActionMessage(error?.message || "No se encontró el PDF original.");
+      return false;
+    } finally {
+      setGeneratedCertificateAction(null);
+    }
+  }
+
+  async function openRequestFromGeneratedCertificate(certificate) {
+    try {
+      setGeneratedCertificateAction({ id: certificate.id, type: "request" });
+      setGeneratedCertificateActionMessage("");
+      const request = await getRequestForGeneratedCertificate(certificate);
+
+      if (!request) {
+        throw new Error("No se encontró la solicitud asociada a este certificado.");
+      }
+
+      selectRequest(request);
+      setActiveSection("certificates");
+      setGeneratedCertificateActionMessage(`Solicitud ${request.folio || request.id} abierta.`);
+      return true;
+    } catch (error) {
+      console.error("No se pudo abrir la solicitud del certificado:", error);
+      setGeneratedCertificateActionMessage(error?.message || "No se pudo abrir la solicitud asociada.");
+      return false;
+    } finally {
+      setGeneratedCertificateAction(null);
+    }
   }
 
   function openCertificateRequest(request) {
@@ -7597,38 +7821,57 @@ export default function PrintShop() {
     setActiveSection("certificates");
   }
 
-  function reprintGeneratedCertificate(certificate) {
-    const request = printRequests.find((item) => item.id === certificate.requestId);
+  async function reprintGeneratedCertificate(certificate) {
+    let printWindow;
 
-    if (!request) {
-      setGeneratedCertificatesError("No se encontró la solicitud original de este certificado.");
-      return;
+    try {
+      printWindow = openCertificateActionWindow("Cargando PDF original para imprimir...");
+    } catch (error) {
+      setGeneratedCertificateActionMessage(error.message);
+      return false;
     }
 
-    selectRequest(request);
-    setReprintCertificateStudentId(certificate.studentId || "");
-    setRequestMessage(
-      `Certificado ${certificate.folio || ""} listo para reimpresión. Revisa la vista previa y presiona Descargar PDF.`
-    );
-    createPrintshopLog({
-      type: "CERTIFICATE_REPRINT_OPENED",
-      module: "certificates",
-      title: "Certificado preparado para reimpresión",
-      description: `Se abrió para reimprimir el certificado de ${certificate.studentName || "alumno"}.`,
-      referenceType: "certificate",
-      referenceId: certificate.id || "",
-      requestId: certificate.requestId || "",
-      requestFolio: certificate.requestFolio || "",
-      certificateId: certificate.id || "",
-      certificateFolio: certificate.folio || "",
-      validationCode: certificate.validationCode || "",
-      studentName: certificate.studentName || "",
-      productId: certificate.productId || "",
-      productName: certificate.productName || "",
-      campus: certificate.campus || "",
-      level: certificate.level || "",
-    });
-    setActiveSection("certificates");
+    try {
+      setGeneratedCertificateAction({ id: certificate.id, type: "reprint" });
+      setGeneratedCertificateActionMessage("");
+      const request = await getRequestForGeneratedCertificate(certificate);
+      const association = getCertificateAssociation(certificate, request ? [request] : printRequests);
+      const pdfSource = await resolveStoredCertificatePdf(certificate, association.request, association.student);
+      const pdfBlob = await loadStoredCertificatePdfBlob(pdfSource);
+
+      renderCertificatePrintWindow(
+        printWindow,
+        pdfBlob,
+        certificate.pdfFileName || `${certificate.folio || "certificado"}.pdf`
+      );
+      setGeneratedCertificateActionMessage("PDF original cargado; diálogo de impresión solicitado.");
+      createPrintshopLog({
+        type: "CERTIFICATE_REPRINT_OPENED",
+        module: "certificates",
+        title: "PDF original abierto para reimpresión",
+        description: `Se abrió el PDF original de ${certificate.studentName || "alumno"} y se solicitó impresión.`,
+        referenceType: "certificate",
+        referenceId: certificate.id || "",
+        requestId: association.requestId || "",
+        requestFolio: association.request?.folio || certificate.requestFolio || "",
+        certificateId: certificate.id || "",
+        certificateFolio: certificate.folio || "",
+        validationCode: certificate.validationCode || "",
+        studentName: certificate.studentName || "",
+        productId: certificate.productId || "",
+        productName: certificate.productName || "",
+        campus: certificate.campus || "",
+        level: certificate.level || "",
+      }).catch((error) => console.error("No se pudo registrar la reimpresión:", error));
+      return true;
+    } catch (error) {
+      console.error("No se pudo reimprimir el PDF original:", error);
+      renderCertificateActionWindowError(printWindow, error?.message || "No se encontró el PDF original.");
+      setGeneratedCertificateActionMessage(error?.message || "No se encontró el PDF original.");
+      return false;
+    } finally {
+      setGeneratedCertificateAction(null);
+    }
   }
 
   async function addSingleRequestStudent(event) {
@@ -9935,7 +10178,12 @@ export default function PrintShop() {
           onMarkCertificateDelivered={(certificate) => updateGeneratedCertificateStatus(certificate, "Entregado")}
           onCancelCertificate={(certificate) => updateGeneratedCertificateStatus(certificate, "Cancelado")}
           onOpenCertificateRequest={openRequestFromGeneratedCertificate}
+          onOpenOriginalCertificate={openOriginalGeneratedCertificate}
           onReprintCertificate={reprintGeneratedCertificate}
+          certificateAction={generatedCertificateAction}
+          certificateActionMessage={generatedCertificateActionMessage}
+          onPersistCertificatePdfRepair={persistGeneratedCertificatePdfRepair}
+          onRepairCertificateHistoryConsistency={repairCertificateHistoryConsistency}
           onSoftDeleteCertificate={(certificate) => softDeletePrintshopRecord("generatedCertificates", certificate, {
             module: "certificates",
             sectionLabel: "Historial de certificados",
@@ -14717,7 +14965,12 @@ function CertificatesWorkspaceView({
   onMarkCertificateDelivered,
   onCancelCertificate,
   onOpenCertificateRequest,
+  onOpenOriginalCertificate,
   onReprintCertificate,
+  certificateAction,
+  certificateActionMessage,
+  onPersistCertificatePdfRepair,
+  onRepairCertificateHistoryConsistency,
   onSoftDeleteCertificate,
   onOpenRequests,
 }) {
@@ -14735,7 +14988,10 @@ function CertificatesWorkspaceView({
   const generatedCount = generatedCertificates.filter((certificate) =>
     certificateRequests.some((request) => request.id === certificate.requestId)
   ).length;
-  const safeFilteredCertificates = Array.isArray(filteredCertificates) ? filteredCertificates : [];
+  const safeFilteredCertificates = useMemo(
+    () => Array.isArray(filteredCertificates) ? filteredCertificates : [],
+    [filteredCertificates]
+  );
   const pendingRequests = certificateRequests.filter(
     (request) => !["Lista para entrega", "Entregada", "Cancelada"].includes(request.status)
   ).length;
@@ -14746,6 +15002,8 @@ function CertificatesWorkspaceView({
   const [standaloneWorking, setStandaloneWorking] = useState(false);
   const [certificateHistoryOpen, setCertificateHistoryOpen] = useState(false);
   const [expandedCertificateLoteKey, setExpandedCertificateLoteKey] = useState("");
+  const [repairingCertificateHistory, setRepairingCertificateHistory] = useState(false);
+  const [certificateRepairMessage, setCertificateRepairMessage] = useState("");
 
   const certificateLotes = useMemo(() => {
     const groups = new Map();
@@ -14766,12 +15024,11 @@ function CertificatesWorkspaceView({
         : null;
       const distinctStatuses = new Set(loteCertificates.map((certificate) => certificate.status));
       const loteStatus = distinctStatuses.size === 1 ? loteCertificates[0].status : "Mixto";
-      const latestGeneratedAt = loteCertificates.reduce((latest, certificate) => {
-        const currentDate = certificate.generatedAt?.toDate
-          ? certificate.generatedAt.toDate()
-          : new Date(certificate.generatedAt || 0);
-        return !latest || currentDate > latest ? currentDate : latest;
-      }, null);
+      const originalGeneratedAt = toCertificateDate(getOriginalCertificateGenerationValue(
+        matchedRequest?.students || [],
+        matchedRequest,
+        loteCertificates
+      ));
 
       return {
         loteKey,
@@ -14783,13 +15040,26 @@ function CertificatesWorkspaceView({
         group: matchedRequest?.group || loteCertificates[0].group || "",
         level: loteCertificates[0].level || "",
         templateName: loteCertificates[0].templateName || "",
-        latestGeneratedAt,
+        originalGeneratedAt,
         certificates: loteCertificates,
         count: loteCertificates.length,
         status: loteStatus,
       };
-    }).sort((a, b) => (b.latestGeneratedAt?.getTime() || 0) - (a.latestGeneratedAt?.getTime() || 0));
+    }).sort((a, b) => (b.originalGeneratedAt?.getTime() || 0) - (a.originalGeneratedAt?.getTime() || 0));
   }, [safeFilteredCertificates, certificateRequests]);
+
+  const historyRepairDescriptors = useMemo(() => (
+    generatedCertificates.map((certificate) => {
+      const association = getCertificateAssociation(certificate, certificateRequests);
+      return {
+        certificate,
+        ...association,
+      };
+    })
+  ), [
+    certificateRequests,
+    generatedCertificates,
+  ]);
 
   useEffect(() => {
     if (!activeRequest?.id || activeRequest.id === selectedRequest?.id) return;
@@ -14821,6 +15091,56 @@ function CertificatesWorkspaceView({
   function openCertificateHistory() {
     setCertificateGeneratorOpen(false);
     setCertificateHistoryOpen(true);
+  }
+
+  async function repairCertificateHistory() {
+    if (!isAdmin || repairingCertificateHistory) return;
+
+    const confirmed = window.confirm(
+      "Se repararán referencias de PDFs ya existentes, fechas históricas y estados QR. No se subirán ni regenerarán archivos."
+    );
+    if (!confirmed) return;
+
+    let normalizedCount = 0;
+    let skippedCount = 0;
+    let nonLetterCount = 0;
+
+    try {
+      setCertificateRepairMessage("Preparando certificados históricos...");
+      setRepairingCertificateHistory(true);
+      await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+
+      for (let index = 0; index < historyRepairDescriptors.length; index += 1) {
+        const descriptor = historyRepairDescriptors[index];
+        const { certificate, request, student } = descriptor;
+
+        setCertificateRepairMessage(
+          `Revisando ${index + 1} de ${historyRepairDescriptors.length}: ${certificate.folio || certificate.id}`
+        );
+
+        try {
+          const pdfSource = await resolveStoredCertificatePdf(certificate, request, student);
+          const storedBlob = await loadStoredCertificatePdfBlob(pdfSource);
+          if (!isLetterPortraitPdf(await storedBlob.arrayBuffer())) nonLetterCount += 1;
+          await onPersistCertificatePdfRepair?.(certificate, request, pdfSource, false);
+          normalizedCount += 1;
+        } catch (error) {
+          console.error(`No se pudo reparar el certificado ${certificate.id}:`, error);
+          skippedCount += 1;
+        }
+      }
+
+      const consistency = await onRepairCertificateHistoryConsistency?.() || { synchronized: 0, dated: 0 };
+
+      setCertificateRepairMessage(
+        `Reparación terminada: ${normalizedCount} PDFs vinculados, ${consistency.synchronized} estados sincronizados, ${consistency.dated} fechas recuperadas, ${nonLetterCount} PDFs no Carta detectados y ${skippedCount} omitidos.`
+      );
+    } catch (error) {
+      console.error("No se pudo reparar el historial de certificados:", error);
+      setCertificateRepairMessage(error?.message || "No se pudo completar la reparación del historial.");
+    } finally {
+      setRepairingCertificateHistory(false);
+    }
   }
 
   function handleCertificateGeneratorInputChange(event) {
@@ -14991,6 +15311,28 @@ function CertificatesWorkspaceView({
           </div>
 
           <Panel title="Historial de certificados generados" icon="history" actionLabel={`${safeFilteredCertificates.length} registros`}>
+            {certificateActionMessage && (
+              <div className="message-box certificate-generation-message" role="status">
+                {certificateActionMessage}
+              </div>
+            )}
+            {certificateRepairMessage && (
+              <div className="message-box certificate-generation-message" role="status">
+                {certificateRepairMessage}
+              </div>
+            )}
+            {isAdmin && (
+              <div className="template-editor-actions-row">
+                <button
+                  type="button"
+                  className="visual-outline-button"
+                  onClick={repairCertificateHistory}
+                  disabled={repairingCertificateHistory}
+                >
+                  {repairingCertificateHistory ? "Reparando historial..." : "Reparar historial y PDFs"}
+                </button>
+              </div>
+            )}
             <div className="catalog-toolbar request-toolbar request-toolbar-redesign">
               <label className="visual-search catalog-search request-search-redesign">
                 <span><PrintshopIcon name="search" /></span>
@@ -15042,7 +15384,7 @@ function CertificatesWorkspaceView({
                             {lote.status}
                           </StatusBadge>
                           <span>{lote.count} {lote.count === 1 ? "certificado" : "certificados"}</span>
-                          <span>{lote.latestGeneratedAt ? formatCertificatePreviewDate(lote.latestGeneratedAt) : "Sin fecha"}</span>
+                          <span>{lote.originalGeneratedAt ? formatCertificatePreviewDate(lote.originalGeneratedAt) : "Sin fecha"}</span>
                           <span aria-hidden="true">{isExpanded ? "▲" : "▼"}</span>
                         </div>
                       </button>
@@ -15056,6 +15398,9 @@ function CertificatesWorkspaceView({
                               ["admin", "responsible", "collaborator"].includes(certificateRole) ||
                               isSameUid(currentUserUid, certificate.responsibleUid);
                             const updating = updatingCertificateId === certificate.id;
+                            const actionType = certificateAction?.id === certificate.id
+                              ? certificateAction.type
+                              : "";
 
                             return (
                               <article key={certificate.id} className="certificate-history-card certificate-history-card-redesign">
@@ -15101,23 +15446,37 @@ function CertificatesWorkspaceView({
                                   <button
                                     type="button"
                                     className="visual-outline-button certificate-action-button"
-                                    disabled={!certificate.pdfUrl}
-                                    onClick={() => {
-                                      if (certificate.pdfUrl) {
-                                        window.open(certificate.pdfUrl, "_blank", "noopener,noreferrer");
-                                      }
+                                    disabled={Boolean(actionType)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onOpenOriginalCertificate?.(certificate);
                                     }}
                                   >
-                                    PDF original
+                                    {actionType === "original" ? "Abriendo..." : "PDF original"}
                                   </button>
-                                  <button type="button" className="visual-outline-button certificate-action-button" onClick={() => onReprintCertificate?.(certificate)}>
-                                    Reimprimir
+                                  <button
+                                    type="button"
+                                    className="visual-outline-button certificate-action-button"
+                                    disabled={Boolean(actionType)}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onReprintCertificate?.(certificate);
+                                    }}
+                                  >
+                                    {actionType === "reprint" ? "Cargando..." : "Reimprimir"}
                                   </button>
-                                  {certificate.requestId && (
-                                    <button type="button" className="certificate-action-button" onClick={() => onOpenCertificateRequest?.(certificate)}>
-                                      Ver solicitud
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    className="certificate-action-button"
+                                    disabled={Boolean(actionType)}
+                                    onClick={async (event) => {
+                                      event.stopPropagation();
+                                      const opened = await onOpenCertificateRequest?.(certificate);
+                                      if (opened) setCertificateHistoryOpen(false);
+                                    }}
+                                  >
+                                    {actionType === "request" ? "Abriendo..." : "Ver solicitud"}
+                                  </button>
                                   <button
                                     type="button"
                                     className="certificate-action-button"
@@ -15682,7 +16041,10 @@ function RequestDetailCard({
   }
 
   const certificateStudentsMissingPdf = certificateStudentsWithFolios.filter(
-    (student) => !getGeneratedCertificateRecordForStudent(student)?.pdfUrl
+    (student) => {
+      const certificate = getGeneratedCertificateRecordForStudent(student);
+      return !getCertificatePdfUrl(certificate) && !getCertificatePdfStoragePath(certificate);
+    }
   );
 
   async function buildAndStoreStudentCertificatePdf(student) {
@@ -15926,9 +16288,9 @@ function RequestDetailCard({
       );
 
       const pdf = new jsPDF({
-        orientation: "portrait",
+        orientation: CERTIFICATE_PAGE.orientation,
         unit: "pt",
-        format: "letter",
+        format: [CERTIFICATE_PAGE.widthPt, CERTIFICATE_PAGE.heightPt],
       });
 
       for (let index = 0; index < certificateStudentsWithFolios.length; index += 1) {
@@ -16966,6 +17328,150 @@ function sortTextValues(values) {
     .sort((a, b) => a.localeCompare(b, "es"));
 }
 
+function openCertificateActionWindow(message) {
+  const actionWindow = window.open("", "_blank");
+
+  if (!actionWindow) {
+    throw new Error("El navegador bloqueó la pestaña. Permite ventanas emergentes para Imprenta e intenta de nuevo.");
+  }
+
+  actionWindow.opener = null;
+  actionWindow.document.open();
+  actionWindow.document.write(`<!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>Certificado</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; color: #17345f; background: #f5f8fb; }
+          main { max-width: 520px; padding: 32px; border-radius: 20px; background: #fff; box-shadow: 0 18px 45px rgba(23, 52, 95, .12); text-align: center; }
+        </style>
+      </head>
+      <body><main><h1>${escapePrintableHtml(message)}</h1><p>No cierres esta pestaña.</p></main></body>
+    </html>`);
+  actionWindow.document.close();
+
+  return actionWindow;
+}
+
+function renderCertificateActionWindowError(actionWindow, message) {
+  if (!actionWindow || actionWindow.closed) return;
+
+  actionWindow.document.open();
+  actionWindow.document.write(`<!doctype html>
+    <html lang="es"><head><meta charset="utf-8" /><title>Error al abrir certificado</title></head>
+    <body style="margin:0;padding:32px;font-family:Arial,sans-serif;color:#7f1d1d;background:#fff;">
+      <h1>No se pudo abrir el certificado</h1><p>${escapePrintableHtml(message)}</p>
+    </body></html>`);
+  actionWindow.document.close();
+}
+
+function renderCertificatePrintWindow(printWindow, pdfBlob, fileName) {
+  if (!printWindow || printWindow.closed) {
+    throw new Error("La pestaña de impresión se cerró antes de cargar el PDF.");
+  }
+
+  const pdfUrl = URL.createObjectURL(pdfBlob);
+  const safeFileName = escapePrintableHtml(fileName || "certificado.pdf");
+
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <title>${safeFileName}</title>
+        <style>
+          @page { size: Letter portrait; margin: 0; }
+          * { box-sizing: border-box; }
+          html, body { width: 100%; min-height: 100%; margin: 0; padding: 0; background: #fff; }
+          body { display: grid; justify-items: center; font-family: Arial, sans-serif; }
+          .print-controls { position: fixed; z-index: 2; top: 12px; right: 12px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.96); box-shadow: 0 4px 18px rgba(0,0,0,.16); }
+          .print-controls button { min-height: 38px; padding: 8px 14px; cursor: pointer; }
+          iframe { display: block; width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; margin: 0; padding: 0; border: 0; background: #fff; }
+          @media print {
+            html, body { width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; overflow: hidden; }
+            .print-controls { display: none; }
+            iframe { width: ${CERTIFICATE_PAGE.widthIn}in; height: ${CERTIFICATE_PAGE.heightIn}in; }
+          }
+        </style>
+      </head>
+      <body><div class="print-controls"><button type="button">Imprimir de nuevo</button></div></body>
+    </html>`);
+  printWindow.document.close();
+
+  const iframe = printWindow.document.createElement("iframe");
+  iframe.title = safeFileName;
+  iframe.src = pdfUrl;
+  const requestPrint = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch {
+      printWindow.focus();
+      printWindow.print();
+    }
+  };
+
+  printWindow.document.querySelector("button")?.addEventListener("click", requestPrint);
+  iframe.addEventListener("load", () => window.setTimeout(requestPrint, 350), { once: true });
+  printWindow.document.body.appendChild(iframe);
+  window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 10 * 60 * 1000);
+}
+
+async function resolveStoredCertificatePdf(certificate, request = null, student = null) {
+  return await resolveCertificatePdfFromStorage(certificate, request, student);
+}
+
+async function loadStoredCertificatePdfBlob(pdfSource) {
+  if (pdfSource?.storagePath) {
+    try {
+      const bytes = await withCertificateActionTimeout(
+        getBytes(storageRef(storage, pdfSource.storagePath)),
+        "descargar el PDF desde Storage"
+      );
+      return new Blob([bytes], { type: "application/pdf" });
+    } catch (error) {
+      console.warn("[Certificados] Falló descarga por storagePath", {
+        storagePath: pdfSource.storagePath,
+        code: error?.code || "",
+        message: error?.message || String(error),
+      });
+    }
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+  let response;
+  try {
+    response = await fetch(pdfSource?.url || "", { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("La descarga del PDF agotó el tiempo de espera.", { cause: error });
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar el PDF original (${response.status}).`);
+  }
+
+  return await response.blob();
+}
+
+function withCertificateActionTimeout(promise, action, timeoutMs = 12000) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(
+      () => reject(new Error(`Tiempo agotado al ${action}.`)),
+      timeoutMs
+    );
+  });
+
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+}
+
 function buildGeneratedCertificatePdfStoragePath(request, student, fileName) {
   const issueDate = getCertificateIssueDate(request);
   const year = getYearFromDateString(issueDate) || String(new Date().getFullYear());
@@ -16991,13 +17497,13 @@ async function appendCertificateElementToPdf(pdf, element, addPage = false) {
   element.classList.add("pdf-export-mode");
 
   try {
-    const exportWidth = 816;
-    const exportHeight = 1056;
+    const exportWidth = CERTIFICATE_PAGE.widthPx;
+    const exportHeight = CERTIFICATE_PAGE.heightPx;
     const canvas = await html2canvas(element, {
       scale: 3,
       useCORS: true,
       allowTaint: false,
-      backgroundColor: "#f7f8f8",
+      backgroundColor: "#ffffff",
       logging: false,
       width: exportWidth,
       height: exportHeight,
@@ -17010,7 +17516,7 @@ async function appendCertificateElementToPdf(pdf, element, addPage = false) {
     const imageData = canvas.toDataURL("image/png", 1.0);
 
     if (addPage) {
-      pdf.addPage("letter", "portrait");
+      pdf.addPage([CERTIFICATE_PAGE.widthPt, CERTIFICATE_PAGE.heightPt], CERTIFICATE_PAGE.orientation);
     }
 
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -17024,9 +17530,9 @@ async function appendCertificateElementToPdf(pdf, element, addPage = false) {
 
 async function buildCertificatePdfBlobFromElement(element) {
   const pdf = new jsPDF({
-    orientation: "portrait",
+    orientation: CERTIFICATE_PAGE.orientation,
     unit: "pt",
-    format: "letter",
+    format: [CERTIFICATE_PAGE.widthPt, CERTIFICATE_PAGE.heightPt],
   });
 
   await appendCertificateElementToPdf(pdf, element, false);
@@ -17086,12 +17592,12 @@ function normalizeGeneratedCertificate(certificate) {
     folio: String(certificate?.folio || ""),
     validationCode: String(certificate?.validationCode || ""),
     validationUrl: String(certificate?.validationUrl || ""),
-    studentId: String(certificate?.studentId || ""),
+    studentId: String(certificate?.studentId || certificate?.alumnoId || ""),
     studentName: String(certificate?.studentName || ""),
     studentDeliveryType: String(certificate?.studentDeliveryType || ""),
     campus: String(certificate?.campus || "Sin plantel"),
     group: String(certificate?.group || ""),
-    requestId: String(certificate?.requestId || ""),
+    requestId: getCertificateRequestId(certificate),
     requestFolio: String(certificate?.requestFolio || ""),
     generationMode: certificate?.generationMode === "individual" ? "individual" : "request",
     requestType: String(certificate?.requestType || "Certificado"),
@@ -17109,12 +17615,16 @@ function normalizeGeneratedCertificate(certificate) {
     generatedYear: String(certificate?.generatedYear || certificate?.issueYear || getYearFromDateString(certificate?.issueDate) || ""),
     principalName: String(certificate?.principalName || ""),
     teacherName: String(certificate?.teacherName || ""),
-    status: generatedCertificateStatuses.includes(certificate?.status)
-      ? certificate.status
-      : "Generado",
+    status: normalizeCertificateStatus(certificate?.status),
     pdfFileName: String(certificate?.pdfFileName || ""),
-    pdfUrl: String(certificate?.pdfUrl || ""),
-    pdfStoragePath: String(certificate?.pdfStoragePath || ""),
+    pdfReferences: getCertificatePdfReferences(certificate),
+    pdfUrl: getCertificatePdfUrl(certificate),
+    pdfStoragePath: getCertificatePdfStoragePath(certificate),
+    pdfPath: String(certificate?.pdfPath || ""),
+    pdfPageVersion: Number(certificate?.pdfPageVersion || 0),
+    pdfPageWidthPt: Number(certificate?.pdfPageWidthPt || 0),
+    pdfPageHeightPt: Number(certificate?.pdfPageHeightPt || 0),
+    pdfPageOrientation: String(certificate?.pdfPageOrientation || ""),
     pdfSavedAt: certificate?.pdfSavedAt || "",
     generatedAt: certificate?.generatedAt || "",
     generatedByUid: String(certificate?.generatedByUid || ""),
@@ -17240,8 +17750,8 @@ function HiddenBulkCertificateStages({
         position: "fixed",
         left: "-12000px",
         top: 0,
-        width: "816px",
-        height: "1056px",
+        width: `${CERTIFICATE_PAGE.widthPx}px`,
+        height: `${CERTIFICATE_PAGE.heightPx}px`,
         overflow: "hidden",
         pointerEvents: "none",
         opacity: 0,
@@ -17317,7 +17827,7 @@ function CertificateStaticStage({
     <div
       ref={elementRef}
       className={`certificate-preview-stage ${templateImageUrl ? "template-mode" : ""}`}
-      style={{ "--certificate-level-color": levelColor }}
+      style={{ ...CERTIFICATE_STAGE_STYLE, "--certificate-level-color": levelColor }}
     >
       {!templateImageUrl && (certificateTemplate || request.certificateTemplateId) ? (
         <div className="certificate-template-loading">
@@ -17572,7 +18082,7 @@ function CertificatePreviewCard({
 
       downloadBlobFile(pdfBlob, finalFileName);
 
-      if (typeof onCertificateGenerated === "function") {
+      if (typeof onCertificateGenerated === "function" && (pdfStoragePath || pdfUrl)) {
         try {
           await onCertificateGenerated({
             request,
@@ -17596,6 +18106,10 @@ function CertificatePreviewCard({
             `PDF descargado.${storageWarning} No se pudo registrar el certificado en el historial o en la validación pública. Revisa Firestore Rules y vuelve a presionar Descargar PDF.`
           );
         }
+      } else if (typeof onCertificateGenerated === "function") {
+        setGenerationMessage(
+          `PDF descargado.${storageWarning} No se registró en el historial porque no existe un original almacenado.`
+        );
       } else {
         setGenerationMessage(pdfUrl ? "PDF descargado y guardado en Storage." : `PDF descargado correctamente.${storageWarning}`);
       }
@@ -17628,7 +18142,7 @@ function CertificatePreviewCard({
       <div
         ref={certificateRef}
         className={`certificate-preview-stage ${templateImageUrl ? "template-mode" : ""}`}
-        style={{ "--certificate-level-color": levelColor }}
+        style={{ ...CERTIFICATE_STAGE_STYLE, "--certificate-level-color": levelColor }}
       >
         {!templateImageUrl && (certificateTemplate || request.certificateTemplateId) ? (
           <div className="certificate-template-loading">

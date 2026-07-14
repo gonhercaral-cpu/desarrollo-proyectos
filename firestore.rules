@@ -1515,6 +1515,7 @@ service cloud.firestore {
         && validPrintRequestType(request.resource.data.requestType)
         && request.resource.data.requesterName is string
         && request.resource.data.requesterName.size() > 0
+        && (!("requesterId" in request.resource.data) || request.resource.data.requesterId is string)
         && request.resource.data.requesterArea is string
         && request.resource.data.requesterArea.size() > 0
         && request.resource.data.campus is string
@@ -3104,6 +3105,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /publicCertificatePeople/{personId} {
+      allow read: if resource.data.active == true;
+      allow create, update, delete: if false;
+    }
+
     match /publicCredentialValidations/{validationId} {
       allow read: if true;
 
@@ -3174,6 +3180,7 @@ service cloud.firestore {
       return isPublicCertificateRequestEditable()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "requesterName",
+          "requesterId",
           "campus",
           "dueDate",
           "requestedDeliveryDate",
@@ -3220,6 +3227,7 @@ service cloud.firestore {
         && request.resource.data.requesterName is string
         && request.resource.data.requesterName.size() > 0
         && request.resource.data.requesterArea == "Dirección Académica"
+        && (!("requesterId" in request.resource.data) || request.resource.data.requesterId is string)
         && request.resource.data.campus in [
           "Plaza Estrella",
           "Plaza Bugambilias",

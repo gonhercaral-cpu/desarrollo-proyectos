@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, getDocs, query, serverTimestamp, where } from "firebase/firestore";
 import { db } from "../services/firebase";
 import {
+  findPublicCertificatePerson,
+  loadPublicCertificatePeople,
+} from "../services/publicCertificatePeopleService";
+import {
   acceptStudentSuggestion,
   keepStudentOriginal,
   prepareStudentNameReview
@@ -73,28 +77,6 @@ function getCertificateLevelOption(value = "") {
   ) || null;
 }
 
-function normalizePublicComparable(value = "") {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function normalizePublicSigner(signer) {
-  return {
-    id: signer?.id || "",
-    name: String(signer?.name || "").trim(),
-    role: String(signer?.role || "").trim(),
-    type: signer?.type === "Principal" ? "Principal" : "Teacher",
-    campus: String(signer?.campus || ""),
-    active: signer?.active !== false,
-    deleted: signer?.deleted === true,
-    signatureUrl: String(signer?.signatureUrl || ""),
-    signatureDataUrl: String(signer?.signatureDataUrl || "")
-  };
-}
-
 function normalizePublicCertificateTemplate(template) {
   return {
     id: template?.id || "",
@@ -106,30 +88,6 @@ function normalizePublicCertificateTemplate(template) {
     active: template?.active !== false,
   };
 }
-
-function getUniqueSignerNames(signers = []) {
-  const seen = new Set();
-
-  return signers
-    .map((signer) => signer.name)
-    .filter(Boolean)
-    .filter((name) => {
-      const key = normalizePublicComparable(name);
-
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function findPublicSignerByName(signers = [], name = "") {
-  const normalizedName = normalizePublicComparable(name);
-
-  if (!normalizedName) return null;
-
-  return (signers || []).find((signer) => normalizePublicComparable(signer.name) === normalizedName) || null;
-}
-
 
 function inferLevelFromCourse(value = "") {
   const selectedOption = getCertificateLevelOption(value);
@@ -194,14 +152,19 @@ function getDeliverySummary(students = []) {
 
 export default function PublicCertificateRequest() {
   const [campus, setCampus] = useState("");
+  const [requesterId, setRequesterId] = useState("");
   const [requesterName, setRequesterName] = useState("");
+  const [principalSignerId, setPrincipalSignerId] = useState("");
   const [certificateDirectorName, setCertificateDirectorName] = useState("");
   const [requestedDeliveryDate, setRequestedDeliveryDate] = useState("");
   const [courseLevel, setCourseLevel] = useState("");
+  const [teacherSignerId, setTeacherSignerId] = useState("");
   const [teacherName, setTeacherName] = useState("");
   const [schedule, setSchedule] = useState("");
   const [notes, setNotes] = useState("");
-  const [certificateSigners, setCertificateSigners] = useState([]);
+  const [certificatePeople, setCertificatePeople] = useState([]);
+  const [loadingCertificatePeople, setLoadingCertificatePeople] = useState(true);
+  const [certificatePeopleError, setCertificatePeopleError] = useState("");
   const [certificateTemplates, setCertificateTemplates] = useState([]);
 
   const [defaultStudentDeliveryType, setDefaultStudentDeliveryType] = useState("Impreso");
@@ -224,25 +187,26 @@ export default function PublicCertificateRequest() {
   useEffect(() => {
     let active = true;
 
-    async function loadCertificateSigners() {
+    async function loadPeople() {
       try {
-        const snapshot = await getDocs(collection(db, "certificateSigners"));
-        const nextSigners = snapshot.docs
-          .map((signerDoc) => normalizePublicSigner({ id: signerDoc.id, ...signerDoc.data() }))
-          .filter((signer) => signer.active && !signer.deleted && signer.name);
+        const nextPeople = await loadPublicCertificatePeople();
 
         if (active) {
-          setCertificateSigners(nextSigners);
+          setCertificatePeople(nextPeople);
+          setCertificatePeopleError("");
         }
       } catch (err) {
-        console.warn("No se pudieron cargar las firmas públicas:", err);
+        console.warn("No se pudieron cargar las personas públicas de certificados:", err);
         if (active) {
-          setCertificateSigners([]);
+          setCertificatePeople([]);
+          setCertificatePeopleError("No se pudieron cargar solicitantes, directores y maestros.");
         }
+      } finally {
+        if (active) setLoadingCertificatePeople(false);
       }
     }
 
-    loadCertificateSigners();
+    loadPeople();
 
     return () => {
       active = false;
@@ -278,19 +242,39 @@ export default function PublicCertificateRequest() {
     };
   }, []);
 
+  const activeRequesters = useMemo(
+    () => certificatePeople.filter((person) => person.type === "Requester"),
+    [certificatePeople]
+  );
+
   const activePrincipalSigners = useMemo(
-    () => certificateSigners.filter((signer) => signer.type === "Principal"),
-    [certificateSigners]
+    () => certificatePeople.filter((person) => person.type === "Principal"),
+    [certificatePeople]
   );
 
   const activeTeacherSigners = useMemo(
-    () => certificateSigners.filter((signer) => signer.type === "Teacher"),
-    [certificateSigners]
+    () => certificatePeople.filter((person) => person.type === "Teacher"),
+    [certificatePeople]
   );
 
   const currentDeliverySummary = useMemo(() => {
     return getDeliverySummary(students.filter((student) => student.fullName.trim()));
   }, [students]);
+
+  function selectCertificatePerson(type, id) {
+    const person = certificatePeople.find((item) => item.type === type && item.id === id) || null;
+
+    if (type === "Requester") {
+      setRequesterId(id);
+      setRequesterName(person?.name || "");
+    } else if (type === "Principal") {
+      setPrincipalSignerId(id);
+      setCertificateDirectorName(person?.name || "");
+    } else {
+      setTeacherSignerId(id);
+      setTeacherName(person?.name || "");
+    }
+  }
 
   function updateStudent(index, field, value) {
     setStudents((current) =>
@@ -448,8 +432,18 @@ export default function PublicCertificateRequest() {
       const cleanCertificateDirectorName = certificateDirectorName.trim();
       const cleanTeacherName = teacherName.trim();
       const cleanSchedule = schedule.trim();
-      const matchedPrincipalSigner = findPublicSignerByName(activePrincipalSigners, cleanCertificateDirectorName);
-      const matchedTeacherSigner = findPublicSignerByName(activeTeacherSigners, cleanTeacherName);
+      const matchedPrincipalSigner = findPublicCertificatePerson(
+        certificatePeople,
+        "Principal",
+        principalSignerId,
+        cleanCertificateDirectorName
+      );
+      const matchedTeacherSigner = findPublicCertificatePerson(
+        certificatePeople,
+        "Teacher",
+        teacherSignerId,
+        cleanTeacherName
+      );
       const certificateIssueDate = requestedDeliveryDate || requestDate;
 
       const templateMatchCandidates = findStrictMatchingCertificateTemplates(
@@ -471,6 +465,7 @@ export default function PublicCertificateRequest() {
         requestType: CERTIFICATE_TYPE,
 
         requesterName: cleanRequesterName,
+        requesterId,
         requesterArea: PUBLIC_REQUESTER_AREA,
         campus,
 
@@ -518,13 +513,13 @@ export default function PublicCertificateRequest() {
         principalSignerId: matchedPrincipalSigner?.id || "",
         principalSignerName: matchedPrincipalSigner?.name || cleanCertificateDirectorName,
         principalSignerRole: matchedPrincipalSigner?.role || "Director",
-        principalSignatureUrl: matchedPrincipalSigner?.signatureUrl || "",
-        principalSignatureDataUrl: matchedPrincipalSigner?.signatureDataUrl || "",
+        principalSignatureUrl: "",
+        principalSignatureDataUrl: "",
         teacherSignerId: matchedTeacherSigner?.id || "",
         teacherSignerName: matchedTeacherSigner?.name || cleanTeacherName,
         teacherSignerRole: matchedTeacherSigner?.role || "Teacher",
-        teacherSignatureUrl: matchedTeacherSigner?.signatureUrl || "",
-        teacherSignatureDataUrl: matchedTeacherSigner?.signatureDataUrl || "",
+        teacherSignatureUrl: "",
+        teacherSignatureDataUrl: "",
 
         students: preparedStudents,
 
@@ -696,17 +691,7 @@ export default function PublicCertificateRequest() {
               </div>
             </div>
 
-            <datalist id="public-principal-signer-options">
-              {activePrincipalSigners.map((signer) => (
-                <option key={signer.id || signer.name} value={signer.name} />
-              ))}
-            </datalist>
-
-            <datalist id="public-teacher-signer-options">
-              {activeTeacherSigners.map((signer) => (
-                <option key={signer.id || signer.name} value={signer.name} />
-              ))}
-            </datalist>
+            {certificatePeopleError && <div className="message-box">{certificatePeopleError}</div>}
 
             <div className="form-grid">
               <label>
@@ -724,13 +709,17 @@ export default function PublicCertificateRequest() {
               <label>
                 Nombre del solicitante
                 <select
-                  value={requesterName}
-                  onChange={(e) => setRequesterName(e.target.value)}
+                  value={requesterId}
+                  onChange={(e) => selectCertificatePerson("Requester", e.target.value)}
+                  disabled={loadingCertificatePeople}
                 >
-                  <option value="">Seleccionar solicitante</option>
-                  {activePrincipalSigners.map((signer) => (
-                    <option key={signer.id || signer.name} value={signer.name}>
-                      {signer.name} {signer.role ? `- ${signer.role}` : ""}
+                  <option value="">{loadingCertificatePeople ? "Cargando solicitantes..." : "Seleccionar solicitante"}</option>
+                  {!loadingCertificatePeople && activeRequesters.length === 0 && (
+                    <option value="" disabled>No hay solicitantes activos</option>
+                  )}
+                  {activeRequesters.map((person) => (
+                    <option key={person.projectionId || person.id} value={person.id}>
+                      {person.name}
                     </option>
                   ))}
                 </select>
@@ -739,13 +728,17 @@ export default function PublicCertificateRequest() {
               <label>
                 Director que aparecerá en los certificados
                 <select
-                  value={certificateDirectorName}
-                  onChange={(e) => setCertificateDirectorName(e.target.value)}
+                  value={principalSignerId}
+                  onChange={(e) => selectCertificatePerson("Principal", e.target.value)}
+                  disabled={loadingCertificatePeople}
                 >
-                  <option value="">Seleccionar director</option>
+                  <option value="">{loadingCertificatePeople ? "Cargando directores..." : "Seleccionar director"}</option>
+                  {!loadingCertificatePeople && activePrincipalSigners.length === 0 && (
+                    <option value="" disabled>No hay directores activos</option>
+                  )}
                   {activePrincipalSigners.map((signer) => (
-                    <option key={signer.id || signer.name} value={signer.name}>
-                      {signer.name} {signer.role ? `- ${signer.role}` : ""}
+                    <option key={signer.projectionId || signer.id} value={signer.id}>
+                      {signer.name}
                     </option>
                   ))}
                 </select>
@@ -783,13 +776,17 @@ export default function PublicCertificateRequest() {
               <label>
                 Nombre del maestro
                 <select
-                  value={teacherName}
-                  onChange={(e) => setTeacherName(e.target.value)}
+                  value={teacherSignerId}
+                  onChange={(e) => selectCertificatePerson("Teacher", e.target.value)}
+                  disabled={loadingCertificatePeople}
                 >
-                  <option value="">Seleccionar maestro</option>
+                  <option value="">{loadingCertificatePeople ? "Cargando maestros..." : "Seleccionar maestro"}</option>
+                  {!loadingCertificatePeople && activeTeacherSigners.length === 0 && (
+                    <option value="" disabled>No hay maestros activos</option>
+                  )}
                   {activeTeacherSigners.map((signer) => (
-                    <option key={signer.id || signer.name} value={signer.name}>
-                      {signer.name} {signer.role ? `- ${signer.role}` : ""}
+                    <option key={signer.projectionId || signer.id} value={signer.id}>
+                      {signer.name}
                     </option>
                   ))}
                 </select>

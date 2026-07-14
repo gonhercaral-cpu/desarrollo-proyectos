@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -8,6 +9,7 @@ initializeApp();
 const db = getFirestore();
 
 const ALLOWED_ROLES = ["admin", "collaborator", "requester"];
+const PUBLIC_CERTIFICATE_PEOPLE_COLLECTION = "publicCertificatePeople";
 
 async function assertAdmin(request) {
   if (!request.auth) {
@@ -45,6 +47,67 @@ async function assertAdmin(request) {
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
+
+async function syncPublicCertificatePerson(projectionId, sourceId, data, type) {
+  const projectionRef = db.collection(PUBLIC_CERTIFICATE_PEOPLE_COLLECTION).doc(projectionId);
+  const name = cleanString(data?.name || data?.displayName || data?.fullName || data?.nombre);
+  const activeValue = data?.active ?? data?.isActive ?? data?.activo;
+  const active = (activeValue === true || cleanString(activeValue).toLowerCase() === "activo") &&
+    data?.deleted !== true && data?.isDeleted !== true && data?.archived !== true;
+
+  if (!active || !name) {
+    await projectionRef.delete();
+    return;
+  }
+
+  await projectionRef.set({
+    sourceId,
+    name,
+    type,
+    active: true,
+  });
+}
+
+exports.syncPublicCertificateRequester = onDocumentWritten(
+  {
+    document: "users/{userId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const data = event.data?.after.exists ? event.data.after.data() : null;
+    const role = cleanString(data?.role || data?.privilege || data?.rol || data?.userType).toLowerCase();
+    const allowed = data && ALLOWED_ROLES.includes(role);
+
+    await syncPublicCertificatePerson(
+      `requester-${event.params.userId}`,
+      event.params.userId,
+      allowed ? data : null,
+      "Requester"
+    );
+  }
+);
+
+exports.syncPublicCertificateSigner = onDocumentWritten(
+  {
+    document: "certificateSigners/{signerId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const data = event.data?.after.exists ? event.data.after.data() : null;
+    const rawType = cleanString(
+      data?.type || data?.signerType || data?.role || data?.rol || data?.cargo
+    ).toLowerCase();
+    const type = rawType === "principal" || rawType === "director" ? "Principal" :
+      rawType === "teacher" || rawType === "maestro" ? "Teacher" : "";
+
+    await syncPublicCertificatePerson(
+      `signer-${event.params.signerId}`,
+      event.params.signerId,
+      type ? data : null,
+      type || "Teacher"
+    );
+  }
+);
 
 function createTemporaryPassword() {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";

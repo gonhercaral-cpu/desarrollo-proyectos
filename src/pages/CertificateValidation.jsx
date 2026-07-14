@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs, limit, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../services/firebase";
+import { normalizeCertificateStatus } from "../utils/certificateHistory";
 
 function sanitizeValidationCodeId(value) {
   return String(value || "certificado")
@@ -57,7 +58,7 @@ function getValidationStatusConfig(status) {
     };
   }
 
-  if (status === "Entregado") {
+  if (normalizeCertificateStatus(status) === "Entregado") {
     return {
       tone: "success",
       icon: "check",
@@ -140,42 +141,45 @@ function isVoidedCertificate(certificate) {
     ["eliminado", "anulado", "revocado"].includes(status);
 }
 
-async function getFirstValidationByField(field, value) {
+async function getValidationsByField(field, value) {
   const validationQuery = query(
     collection(db, "publicCertificateValidations"),
-    where(field, "==", value),
-    limit(1)
+    where(field, "==", value)
   );
   const snapshot = await getDocs(validationQuery);
+  return snapshot.docs.map((validationDoc) => ({ id: validationDoc.id, ...validationDoc.data() }));
+}
 
-  if (snapshot.empty) return null;
-
-  const validationDoc = snapshot.docs[0];
-  return {
-    id: validationDoc.id,
-    ...validationDoc.data(),
-  };
+function getValidationPriority(certificate) {
+  if (isVoidedCertificate(certificate)) return 4;
+  const status = normalizeCertificateStatus(certificate?.status);
+  if (status === "Cancelado") return 3;
+  if (status === "Entregado") return 2;
+  return 1;
 }
 
 async function findPublicCertificateValidation(validationCode) {
   const documentIds = getValidationDocumentIds(validationCode);
+  const matches = new Map();
 
   for (const validationId of documentIds) {
     const validationRef = doc(db, "publicCertificateValidations", validationId);
     const validationSnap = await getDoc(validationRef);
 
     if (validationSnap.exists()) {
-      return {
+      matches.set(validationSnap.id, {
         id: validationSnap.id,
         ...validationSnap.data(),
-      };
+      });
     }
   }
 
-  return (
-    await getFirstValidationByField("validationCode", validationCode) ||
-    await getFirstValidationByField("folio", validationCode)
-  );
+  for (const field of ["validationCode", "folio"]) {
+    const fieldMatches = await getValidationsByField(field, validationCode);
+    fieldMatches.forEach((match) => matches.set(match.id, match));
+  }
+
+  return [...matches.values()].sort((a, b) => getValidationPriority(b) - getValidationPriority(a))[0] || null;
 }
 
 function ValidationIcon({ name = "check" }) {
@@ -235,7 +239,9 @@ export default function CertificateValidation({ validationCode: validationCodePr
         } else {
           setCertificate({
             ...nextCertificate,
-            status: isVoidedCertificate(nextCertificate) ? "Eliminado" : nextCertificate.status,
+            status: isVoidedCertificate(nextCertificate)
+              ? "Eliminado"
+              : normalizeCertificateStatus(nextCertificate.status),
           });
         }
       } catch (loadError) {
@@ -243,11 +249,7 @@ export default function CertificateValidation({ validationCode: validationCodePr
 
         if (!cancelled) {
           setCertificate(null);
-          setError("Error temporal o falta de conexion.");
           setError("No se pudo consultar la validación. Inténtalo de nuevo más tarde.");
-        }
-        if (!cancelled) {
-          setError("Error temporal o falta de conexion.");
         }
       } finally {
         if (!cancelled) {

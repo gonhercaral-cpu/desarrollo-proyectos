@@ -165,6 +165,24 @@ async function seedBaseData() {
         students: [],
         deleted: false,
       }),
+      setDoc(doc(db, "publicCertificatePeople", "requester-requester"), {
+        sourceId: "requester",
+        name: "Requester",
+        type: "Requester",
+        active: true,
+      }),
+      setDoc(doc(db, "publicCertificatePeople", "signer-principal"), {
+        sourceId: "principal",
+        name: "Director Demo",
+        type: "Principal",
+        active: true,
+      }),
+      setDoc(doc(db, "publicCertificatePeople", "signer-inactive"), {
+        sourceId: "inactive-signer",
+        name: "Firmante inactivo",
+        type: "Teacher",
+        active: false,
+      }),
     ]);
   });
 }
@@ -541,6 +559,33 @@ describe("certificados individuales", () => {
         doc(db, "generatedCertificates", "missing-generation-mode"),
         validStandaloneCertificate({ generationMode: "" })
       )
+    );
+  });
+});
+
+describe("personas publicas de certificados", () => {
+  it("permite consultar solo personas activas con filtro compatible", async () => {
+    const peopleQuery = query(
+      collection(unauth(), "publicCertificatePeople"),
+      where("active", "==", true)
+    );
+
+    await assertSucceeds(getDocs(peopleQuery));
+  });
+
+  it("bloquea listar sin filtro y leer una persona inactiva", async () => {
+    await assertFails(getDocs(collection(unauth(), "publicCertificatePeople")));
+    await assertFails(getDoc(doc(unauth(), "publicCertificatePeople", "signer-inactive")));
+  });
+
+  it("bloquea escrituras cliente sobre la proyeccion publica", async () => {
+    await assertFails(
+      setDoc(doc(auth("admin"), "publicCertificatePeople", "manual"), {
+        sourceId: "manual",
+        name: "No permitido",
+        type: "Requester",
+        active: true,
+      })
     );
   });
 });
