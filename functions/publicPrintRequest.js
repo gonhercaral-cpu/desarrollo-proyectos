@@ -224,11 +224,40 @@ function sanitizePublicPrintRequest(payload, createdAt = new Date()) {
   };
 }
 
+function normalizeTemplateMatchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/discovery/g, "discover")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function validatePublicCertificateTemplate(templateData, requestData) {
+  const templateType = normalizeTemplateMatchText(templateData?.certificateType || "Certificado");
+  const templateLevel = normalizeTemplateMatchText(templateData?.level);
+  const requestLevel = normalizeTemplateMatchText(requestData?.level);
+  const templateAudience = normalizeTemplateMatchText(templateData?.audience);
+  const requestAudience = normalizeTemplateMatchText(requestData?.courseAudience);
+
+  if (templateType !== "certificado") {
+    invalidArgument("La plantilla seleccionada no es de certificado.");
+  }
+  if (templateLevel && requestLevel && templateLevel !== requestLevel) {
+    invalidArgument("La plantilla seleccionada no corresponde al nivel solicitado.");
+  }
+  if (templateAudience && requestAudience && templateAudience !== requestAudience) {
+    invalidArgument("La plantilla seleccionada no corresponde al público solicitado.");
+  }
+  return true;
+}
+
 module.exports = {
   MAX_PUBLIC_STUDENTS,
   PRINT_REQUEST_CALLABLE_CORS,
   createLegacyPublicRequestId,
   createPublicRequestId,
   sanitizePublicPrintRequest,
+  validatePublicCertificateTemplate,
   validatePublicSubmissionId,
 };

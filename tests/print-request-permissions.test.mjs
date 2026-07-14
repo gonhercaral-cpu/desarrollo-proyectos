@@ -288,7 +288,7 @@ describe("resolver único de Agenda y persistencia", () => {
   it("flujos público e interno usan creación server-side única", () => {
     const publicSource = readFileSync("src/pages/PublicCertificateRequest.jsx", "utf8");
     const internalSource = readFileSync("src/pages/printshop.jsx", "utf8");
-    assert.match(publicSource, /createPrintRequestWithAssignment\(\{/);
+    assert.match(publicSource, /createPrintRequestWithAssignment\(publicRequestPayload/);
     assert.match(internalSource, /createPrintRequestWithAssignment\(creationPayload\)/);
     assert.doesNotMatch(publicSource, /addDoc\(collection\(db,\s*"printRequests"/);
     assert.doesNotMatch(internalSource, /addDoc\(collection\(db,\s*"printRequests"/);

@@ -15,6 +15,7 @@ const {
   createLegacyPublicRequestId,
   createPublicRequestId,
   sanitizePublicPrintRequest,
+  validatePublicCertificateTemplate,
 } = require("./publicPrintRequest");
 
 initializeApp();
@@ -164,13 +165,14 @@ async function getActiveCertificateSigner(signerId, expectedType, fieldName) {
   return { id: signerId, name, type, data };
 }
 
-async function getActiveCertificateTemplate(templateId) {
+async function getActiveCertificateTemplate(templateId, requestData) {
   const snapshot = await db.collection("certificateTemplates").doc(templateId).get();
   const data = snapshot.exists ? snapshot.data() : null;
   const certificateType = cleanString(data?.certificateType || "Certificado");
   if (data?.active !== true || certificateType !== "Certificado" || !cleanString(data?.name)) {
     throw new HttpsError("invalid-argument", "La plantilla no existe, no está activa o no es de certificado.");
   }
+  validatePublicCertificateTemplate(data, requestData);
   return { id: templateId, data };
 }
 
@@ -180,7 +182,7 @@ async function buildTrustedPublicPrintRequest(payload, createdAt) {
     getActiveCertificateSigner(sanitized.requesterId, "Principal", "Solicitante"),
     getActiveCertificateSigner(sanitized.principalSignerId, "Principal", "Firmante principal"),
     getActiveCertificateSigner(sanitized.teacherSignerId, "Teacher", "Maestro"),
-    getActiveCertificateTemplate(sanitized.certificateTemplateId),
+    getActiveCertificateTemplate(sanitized.certificateTemplateId, sanitized),
   ]);
   const templateData = template.data;
   const principalRole = cleanString(

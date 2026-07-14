@@ -6,6 +6,7 @@ import {
   normalizeCertificatePersonText,
   normalizeCertificateSignerType,
 } from "../utils/certificatePeople";
+import { normalizeId } from "../utils/normalizeId";
 
 export const PUBLIC_CERTIFICATE_PEOPLE_COLLECTION = "publicCertificatePeople";
 
@@ -21,8 +22,8 @@ export function normalizePublicCertificatePerson(person) {
   );
 
   return {
-    id: String(person?.sourceId || person?.id || ""),
-    projectionId: String(person?.id || ""),
+    id: normalizeId(person?.sourceId || person?.id),
+    projectionId: normalizeId(person?.id),
     name: String(person?.name || person?.displayName || person?.fullName || person?.nombre || "").trim(),
     type,
     active: isActiveCertificatePerson(person),
@@ -46,10 +47,17 @@ export async function loadPublicCertificatePeople() {
   ).sort((a, b) => a.name.localeCompare(b.name, "es-MX", { sensitivity: "base" }));
 }
 
-export function findPublicCertificatePerson(people, type, id, name = "") {
+export function findPublicCertificatePerson(people, type, id, name = "", options = {}) {
   const normalizedType = normalizeCertificateSignerType(type);
+  const normalizedId = normalizeId(id);
   const cleanName = normalizeCertificatePersonText(name);
-  return people.find((person) => person.type === normalizedType && person.id === id) ||
-    people.find((person) => person.type === normalizedType && normalizeCertificatePersonText(person.name) === cleanName) ||
-    null;
+  if (normalizedId) {
+    const idMatch = people.find(
+      (person) => person.type === normalizedType && normalizeId(person.id) === normalizedId
+    ) || null;
+    if (idMatch || options.strictId === true) return idMatch;
+  }
+  return people.find(
+    (person) => person.type === normalizedType && normalizeCertificatePersonText(person.name) === cleanName
+  ) || null;
 }

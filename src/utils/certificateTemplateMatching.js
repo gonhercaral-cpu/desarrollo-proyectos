@@ -51,6 +51,11 @@ export function getCertificateRequestTemplateTargets(form = {}, selectedProduct 
 function matchesStrictTemplate(template, targets) {
   const { targetLevel, targetProgram, targetAudience, targetType } = targets;
   const matchesLevel = targetLevel ? certificateTextMatches(template.level, targetLevel) : false;
+  const hasComparableLevel = Boolean(
+    targetLevel && template.level && template.level !== "No aplica"
+  );
+  if (hasComparableLevel && !matchesLevel) return false;
+
   const matchesProgram = targetProgram
     ? certificateTextMatches(template.programName, targetProgram) ||
       certificateTextMatches(template.name, targetProgram) ||

@@ -15,6 +15,7 @@ import {
   prepareStudentNameReview
 } from "../utils/nameCorrectionUtils";
 import { findStrictMatchingCertificateTemplates } from "../utils/certificateTemplateMatching";
+import { normalizeId } from "../utils/normalizeId";
 
 const CAMPUS_OPTIONS = [
   "Plaza Estrella",
@@ -50,7 +51,7 @@ function getCertificateLevelOption(value = "") {
 
 function normalizePublicCertificateTemplate(template) {
   return {
-    id: template?.id || "",
+    id: normalizeId(template),
     name: String(template?.name || "").trim(),
     level: String(template?.level || "No aplica"),
     programName: String(template?.programName || "").trim(),
@@ -107,13 +108,13 @@ function getDeliverySummary(students = []) {
 
 export default function PublicCertificateRequest() {
   const [campus, setCampus] = useState("");
-  const [requesterId, setRequesterId] = useState("");
+  const [requesterSignatureId, setRequesterSignatureId] = useState("");
   const [requesterName, setRequesterName] = useState("");
-  const [principalSignerId, setPrincipalSignerId] = useState("");
+  const [directorSignatureId, setDirectorSignatureId] = useState("");
   const [certificateDirectorName, setCertificateDirectorName] = useState("");
   const [requestedDeliveryDate, setRequestedDeliveryDate] = useState("");
   const [courseLevel, setCourseLevel] = useState("");
-  const [teacherSignerId, setTeacherSignerId] = useState("");
+  const [teacherSignatureId, setTeacherSignatureId] = useState("");
   const [teacherName, setTeacherName] = useState("");
   const [schedule, setSchedule] = useState("");
   const [notes, setNotes] = useState("");
@@ -121,6 +122,9 @@ export default function PublicCertificateRequest() {
   const [loadingCertificatePeople, setLoadingCertificatePeople] = useState(true);
   const [certificatePeopleError, setCertificatePeopleError] = useState("");
   const [certificateTemplates, setCertificateTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState("");
+  const [loadingCertificateTemplates, setLoadingCertificateTemplates] = useState(true);
+  const [certificateTemplatesError, setCertificateTemplatesError] = useState("");
 
   const [defaultStudentDeliveryType, setDefaultStudentDeliveryType] = useState("Impreso");
   const [bulkNames, setBulkNames] = useState("");
@@ -183,12 +187,16 @@ export default function PublicCertificateRequest() {
 
         if (active) {
           setCertificateTemplates(nextTemplates);
+          setCertificateTemplatesError("");
         }
       } catch (err) {
         console.warn("No se pudieron cargar las plantillas de certificado:", err);
         if (active) {
           setCertificateTemplates([]);
+          setCertificateTemplatesError("No se pudieron cargar las plantillas de certificado.");
         }
+      } finally {
+        if (active) setLoadingCertificateTemplates(false);
       }
     }
 
@@ -214,22 +222,47 @@ export default function PublicCertificateRequest() {
     [certificatePeople]
   );
 
+  const compatibleCertificateTemplates = useMemo(() => {
+    const cleanCourseLevel = courseLevel.trim();
+    if (!cleanCourseLevel) return [];
+    const selectedCourseOption = getCertificateLevelOption(cleanCourseLevel);
+    return findStrictMatchingCertificateTemplates(
+      certificateTemplates,
+      {
+        level: inferLevelFromCourse(cleanCourseLevel),
+        certificateTemplateProgramName: selectedCourseOption?.programName || cleanCourseLevel,
+        certificateTemplateAudience: selectedCourseOption?.audience || "Adultos",
+        requestType: CERTIFICATE_TYPE,
+      },
+      null
+    );
+  }, [certificateTemplates, courseLevel]);
+
+  const normalizedTemplateId = normalizeId(templateId);
+  const selectedCertificateTemplate = compatibleCertificateTemplates.find(
+    (template) => normalizeId(template) === normalizedTemplateId
+  ) || (compatibleCertificateTemplates.length === 1 ? compatibleCertificateTemplates[0] : null);
+  const effectiveTemplateId = normalizeId(selectedCertificateTemplate);
+
   const currentDeliverySummary = useMemo(() => {
     return getDeliverySummary(students.filter((student) => student.fullName.trim()));
   }, [students]);
 
   function selectCertificatePerson(type, id) {
+    const normalizedId = normalizeId(id);
     const signerType = type === "Requester" ? "Principal" : type;
-    const person = certificatePeople.find((item) => item.type === signerType && item.id === id) || null;
+    const person = certificatePeople.find(
+      (item) => item.type === signerType && normalizeId(item) === normalizedId
+    ) || null;
 
     if (type === "Requester") {
-      setRequesterId(id);
+      setRequesterSignatureId(normalizedId);
       setRequesterName(person?.name || "");
     } else if (type === "Principal") {
-      setPrincipalSignerId(id);
+      setDirectorSignatureId(normalizedId);
       setCertificateDirectorName(person?.name || "");
     } else {
-      setTeacherSignerId(id);
+      setTeacherSignatureId(normalizedId);
       setTeacherName(person?.name || "");
     }
   }
@@ -356,6 +389,10 @@ export default function PublicCertificateRequest() {
       setError("Primero revisa los nombres antes de enviar la solicitud.");
       return;
     }
+    if (loadingCertificatePeople || loadingCertificateTemplates) {
+      setError("Espera a que terminen de cargar firmas y plantillas.");
+      return;
+    }
 
     try {
       savingRef.current = true;
@@ -373,49 +410,85 @@ export default function PublicCertificateRequest() {
       }));
 
       const cleanCourseLevel = courseLevel.trim();
-      const selectedCourseOption = getCertificateLevelOption(cleanCourseLevel);
-      const level = inferLevelFromCourse(cleanCourseLevel);
       const cleanRequesterName = requesterName.trim();
       const cleanCertificateDirectorName = certificateDirectorName.trim();
       const cleanTeacherName = teacherName.trim();
       const cleanSchedule = schedule.trim();
+      const normalizedRequesterId = normalizeId(requesterSignatureId);
+      const normalizedDirectorId = normalizeId(directorSignatureId);
+      const normalizedTeacherId = normalizeId(teacherSignatureId);
+      const normalizedTemplateSelectionId = normalizeId(effectiveTemplateId);
       const matchedRequester = findPublicCertificatePerson(
         certificatePeople,
         "Principal",
-        requesterId,
-        cleanRequesterName
+        normalizedRequesterId,
+        cleanRequesterName,
+        { strictId: true }
       );
       const matchedPrincipalSigner = findPublicCertificatePerson(
         certificatePeople,
         "Principal",
-        principalSignerId,
-        cleanCertificateDirectorName
+        normalizedDirectorId,
+        cleanCertificateDirectorName,
+        { strictId: true }
       );
       const matchedTeacherSigner = findPublicCertificatePerson(
         certificatePeople,
         "Teacher",
-        teacherSignerId,
-        cleanTeacherName
+        normalizedTeacherId,
+        cleanTeacherName,
+        { strictId: true }
       );
-      const templateMatchCandidates = findStrictMatchingCertificateTemplates(
-        certificateTemplates,
-        {
-          level,
-          certificateTemplateProgramName: selectedCourseOption?.programName || cleanCourseLevel,
-          certificateTemplateAudience: selectedCourseOption?.audience || "Adultos",
-          requestType: CERTIFICATE_TYPE
-        },
-        null
-      );
-      const matchedTemplate = templateMatchCandidates.length === 1 ? templateMatchCandidates[0] : null;
-      if (!matchedRequester || !matchedPrincipalSigner || !matchedTeacherSigner || !matchedTemplate) {
-        throw new Error("Selecciona solicitante, director, maestro y plantilla activos.");
+      const matchedTemplate = compatibleCertificateTemplates.find(
+        (template) => normalizeId(template) === normalizedTemplateSelectionId
+      ) || null;
+      const validationResults = {
+        requester: Boolean(matchedRequester),
+        director: Boolean(matchedPrincipalSigner),
+        teacher: Boolean(matchedTeacherSigner),
+        template: Boolean(matchedTemplate),
+      };
+
+      if (import.meta.env.DEV) {
+        console.debug("[public-certificate-request] selector-validation", {
+          selected: {
+            requester: { value: requesterSignatureId, normalizedId: normalizedRequesterId, valueType: typeof requesterSignatureId },
+            director: { value: directorSignatureId, normalizedId: normalizedDirectorId, valueType: typeof directorSignatureId },
+            teacher: { value: teacherSignatureId, normalizedId: normalizedTeacherId, valueType: typeof teacherSignatureId },
+            template: { value: templateId, normalizedId: normalizedTemplateSelectionId, valueType: typeof templateId },
+          },
+          available: {
+            requester: activeRequesters.map((item) => ({ id: normalizeId(item), projectionId: item.projectionId, type: item.type, active: item.active })),
+            director: activePrincipalSigners.map((item) => ({ id: normalizeId(item), projectionId: item.projectionId, type: item.type, active: item.active })),
+            teacher: activeTeacherSigners.map((item) => ({ id: normalizeId(item), projectionId: item.projectionId, type: item.type, active: item.active })),
+            template: compatibleCertificateTemplates.map((item) => ({
+              id: normalizeId(item),
+              active: item.active,
+              level: item.level,
+              audience: item.audience,
+              certificateType: item.certificateType,
+            })),
+          },
+          validationResults,
+        });
       }
+
+      if (!normalizedRequesterId) throw new Error("Selecciona un solicitante activo.");
+      if (!matchedRequester) throw new Error("El solicitante seleccionado ya no está activo.");
+      if (!normalizedDirectorId) throw new Error("Selecciona un director activo.");
+      if (!matchedPrincipalSigner) throw new Error("El director seleccionado ya no está activo.");
+      if (!normalizedTeacherId) throw new Error("Selecciona un maestro activo.");
+      if (!matchedTeacherSigner) throw new Error("El maestro seleccionado ya no está activo.");
+      if (compatibleCertificateTemplates.length === 0) {
+        throw new Error(`No existe una plantilla activa compatible con ${cleanCourseLevel}.`);
+      }
+      if (!normalizedTemplateSelectionId) throw new Error("Selecciona una plantilla activa.");
+      if (!matchedTemplate) throw new Error("La plantilla seleccionada ya no está activa o no corresponde al nivel.");
       if (!submissionIdRef.current) {
         submissionIdRef.current = createPrintRequestSubmissionId();
       }
 
-      const creationResult = await createPrintRequestWithAssignment({
+      const publicRequestPayload = {
         requesterId: matchedRequester.id,
         campus,
         requestedDeliveryDate: requestedDeliveryDate || "",
@@ -427,7 +500,21 @@ export default function PublicCertificateRequest() {
         teacherSignerId: matchedTeacherSigner.id,
         students: preparedStudents,
         publicRequestSource: "certificate-public-form",
-      }, {
+      };
+      if (import.meta.env.DEV) {
+        console.debug("[public-certificate-request] callable-payload", {
+          requesterId: publicRequestPayload.requesterId,
+          principalSignerId: publicRequestPayload.principalSignerId,
+          teacherSignerId: publicRequestPayload.teacherSignerId,
+          certificateTemplateId: publicRequestPayload.certificateTemplateId,
+          campus: publicRequestPayload.campus,
+          courseLevel: publicRequestPayload.courseLevel,
+          studentCount: publicRequestPayload.students.length,
+          payloadKeys: Object.keys(publicRequestPayload).sort(),
+        });
+      }
+
+      const creationResult = await createPrintRequestWithAssignment(publicRequestPayload, {
         submissionId: submissionIdRef.current,
       });
 
@@ -581,6 +668,7 @@ export default function PublicCertificateRequest() {
             </div>
 
             {certificatePeopleError && <div className="message-box">{certificatePeopleError}</div>}
+            {certificateTemplatesError && <div className="message-box">{certificateTemplatesError}</div>}
 
             <div className="form-grid">
               <label>
@@ -598,7 +686,7 @@ export default function PublicCertificateRequest() {
               <label>
                 Nombre del solicitante
                 <select
-                  value={requesterId}
+                  value={requesterSignatureId}
                   onChange={(e) => selectCertificatePerson("Requester", e.target.value)}
                   disabled={loadingCertificatePeople}
                 >
@@ -617,7 +705,7 @@ export default function PublicCertificateRequest() {
               <label>
                 Director que aparecerá en los certificados
                 <select
-                  value={principalSignerId}
+                  value={directorSignatureId}
                   onChange={(e) => selectCertificatePerson("Principal", e.target.value)}
                   disabled={loadingCertificatePeople}
                 >
@@ -651,7 +739,21 @@ export default function PublicCertificateRequest() {
                 Nivel, curso o grupo
                 <select
                   value={courseLevel}
-                  onChange={(e) => setCourseLevel(e.target.value)}
+                  onChange={(e) => {
+                    const nextCourseLevel = e.target.value;
+                    const nextCourseOption = getCertificateLevelOption(nextCourseLevel);
+                    const nextTemplates = nextCourseLevel
+                      ? findStrictMatchingCertificateTemplates(certificateTemplates, {
+                        level: inferLevelFromCourse(nextCourseLevel),
+                        certificateTemplateProgramName: nextCourseOption?.programName || nextCourseLevel,
+                        certificateTemplateAudience: nextCourseOption?.audience || "Adultos",
+                        requestType: CERTIFICATE_TYPE,
+                      })
+                      : [];
+                    setCourseLevel(nextCourseLevel);
+                    setTemplateId(nextTemplates.length === 1 ? normalizeId(nextTemplates[0]) : "");
+                  }}
+                  disabled={loadingCertificateTemplates}
                 >
                   <option value="">Seleccionar nivel</option>
                   {CERTIFICATE_LEVEL_OPTIONS.map((option) => (
@@ -663,9 +765,33 @@ export default function PublicCertificateRequest() {
               </label>
 
               <label>
+                Plantilla del certificado
+                <select
+                  value={effectiveTemplateId}
+                  onChange={(e) => setTemplateId(normalizeId(e.target.value))}
+                  disabled={loadingCertificateTemplates || !courseLevel}
+                >
+                  <option value="">
+                    {loadingCertificateTemplates
+                      ? "Cargando plantillas..."
+                      : !courseLevel
+                        ? "Selecciona primero el nivel"
+                        : compatibleCertificateTemplates.length === 0
+                          ? "No hay plantilla compatible"
+                          : "Seleccionar plantilla"}
+                  </option>
+                  {compatibleCertificateTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
                 Nombre del maestro
                 <select
-                  value={teacherSignerId}
+                  value={teacherSignatureId}
                   onChange={(e) => selectCertificatePerson("Teacher", e.target.value)}
                   disabled={loadingCertificatePeople}
                 >
@@ -980,7 +1106,11 @@ Angel Lopez`}
             </div>
 
             <div className="form-actions">
-              <button type="button" onClick={submitRequest} disabled={saving}>
+              <button
+                type="button"
+                onClick={submitRequest}
+                disabled={saving || loadingCertificatePeople || loadingCertificateTemplates}
+              >
                 {saving ? "Enviando..." : "Enviar solicitud"}
               </button>
             </div>
