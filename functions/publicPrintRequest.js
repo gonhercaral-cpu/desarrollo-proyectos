@@ -26,6 +26,7 @@ const COURSE_OPTIONS = new Map([
   ["Smile 3", { level: "Smile 3", programName: "Smile 3", audience: "Kids", productName: "Certificado Smile 3" }],
   ["Smile 4", { level: "Smile 4", programName: "Smile 4", audience: "Kids", productName: "Certificado Smile 4" }],
   ["Smile 5", { level: "Smile 5", programName: "Smile 5", audience: "Kids", productName: "Certificado Smile 5" }],
+  ["Smile 6", { level: "Smile 6", programName: "Smile 6", audience: "Kids", productName: "Certificado Smile 6" }],
   ["Mega Flash", { level: "Mega Flash", programName: "Mega Flash", audience: "Kids", productName: "Certificado Mega Flash" }],
 ]);
 

@@ -104,6 +104,7 @@ const levels = [
   "Smile 3",
   "Smile 4",
   "Smile 5",
+  "Smile 6",
   "Mega Flash",
   "Otro",
 ];

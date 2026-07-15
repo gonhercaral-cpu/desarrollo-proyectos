@@ -35,6 +35,7 @@ const CERTIFICATE_LEVEL_OPTIONS = [
   { value: "Smile 3", level: "Smile 3", programName: "Smile 3", audience: "Kids", productName: "Certificado Smile 3" },
   { value: "Smile 4", level: "Smile 4", programName: "Smile 4", audience: "Kids", productName: "Certificado Smile 4" },
   { value: "Smile 5", level: "Smile 5", programName: "Smile 5", audience: "Kids", productName: "Certificado Smile 5" },
+  { value: "Smile 6", level: "Smile 6", programName: "Smile 6", audience: "Kids", productName: "Certificado Smile 6" },
   { value: "Mega Flash", level: "Mega Flash", programName: "Mega Flash", audience: "Kids", productName: "Certificado Mega Flash" }
 ];
 
