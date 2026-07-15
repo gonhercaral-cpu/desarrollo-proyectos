@@ -247,6 +247,27 @@ function validAssignedPublicPrintRequest(overrides = {}) {
   };
 }
 
+function validCertificateTemplate(overrides = {}) {
+  return {
+    name: "Plantilla Smile 6",
+    level: "Smile 6",
+    programName: "Smile 6",
+    audience: "Kids",
+    certificateType: "Certificado",
+    bodyText: "Certifica que {student} completó {program}.",
+    bodySegments: [],
+    customTexts: [],
+    customImages: [],
+    active: true,
+    notes: "",
+    templateImageUrl: "https://firebasestorage.googleapis.com/template.png",
+    templateImageDataUrl: "data:image/png;base64,AA==",
+    storagePath: "printshop/certificate-templates/admin/template.png",
+    positions: {},
+    ...overrides,
+  };
+}
+
 function validBugReport(overrides = {}) {
   return {
     id: "bug-1",
@@ -676,6 +697,40 @@ describe("personas publicas de certificados", () => {
         type: "Requester",
         active: true,
       })
+    );
+  });
+});
+
+describe("plantillas de certificados", () => {
+  for (const level of [
+    "Smile 1",
+    "Smile 2",
+    "Smile 3",
+    "Smile 4",
+    "Smile 5",
+    "Smile 6",
+    "Mega Flash",
+  ]) {
+    it(`permite a admin guardar plantilla activa de ${level}`, async () => {
+      await assertSucceeds(
+        setDoc(
+          doc(auth("admin"), "certificateTemplates", `template-${level.replace(" ", "-").toLowerCase()}`),
+          validCertificateTemplate({
+            name: `Plantilla ${level}`,
+            level,
+            programName: level,
+          })
+        )
+      );
+    });
+  }
+
+  it("bloquea guardar plantilla a usuario no administrador", async () => {
+    await assertFails(
+      setDoc(
+        doc(auth("printer"), "certificateTemplates", "template-smile-6-printer"),
+        validCertificateTemplate()
+      )
     );
   });
 });
@@ -1226,6 +1281,26 @@ describe("eliminacion global de mensajes", () => {
 });
 
 describe("storage", () => {
+  it("permite a admin subir imagen base de plantilla de certificado", async () => {
+    const fileRef = storageAuth("admin").ref(
+      "printshop/certificate-templates/admin/smile-6.png"
+    );
+
+    await assertSucceeds(
+      fileRef.putString("template", "raw", { contentType: "image/png" })
+    );
+  });
+
+  it("bloquea subir imagen base de plantilla a usuario no administrador", async () => {
+    const fileRef = storageAuth("printer").ref(
+      "printshop/certificate-templates/printer/smile-6.png"
+    );
+
+    await assertFails(
+      fileRef.putString("template", "raw", { contentType: "image/png" })
+    );
+  });
+
   it("impide subir evidencia a proyecto ajeno", async () => {
     const storage = storageAuth("requester");
     const fileRef = storage.ref("evidence/other-project/requester/proof.txt");

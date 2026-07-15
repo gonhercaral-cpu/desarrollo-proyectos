@@ -1374,6 +1374,13 @@ service cloud.firestore {
           "B1",
           "B2",
           "C1",
+          "Smile 1",
+          "Smile 2",
+          "Smile 3",
+          "Smile 4",
+          "Smile 5",
+          "Smile 6",
+          "Mega Flash",
           "Otro"
         ]
         && request.resource.data.programName is string

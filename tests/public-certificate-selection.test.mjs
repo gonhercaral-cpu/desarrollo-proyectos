@@ -73,6 +73,40 @@ describe("selección pública de firmas y plantillas", () => {
     assert.equal(selected.id, "a1");
   });
 
+  for (const level of [
+    "Smile 1",
+    "Smile 2",
+    "Smile 3",
+    "Smile 4",
+    "Smile 5",
+    "Smile 6",
+    "Mega Flash",
+  ]) {
+    it(`backend asocia ${level} solo con su plantilla activa`, () => {
+      const request = {
+        requestType: "Certificado",
+        level,
+        courseLevel: level,
+        courseProgramName: level,
+        courseAudience: "Kids",
+      };
+      const selected = publicPrintRequest.selectPublicCertificateTemplate([
+        { ...activeTemplate, id: "journey", name: "Journey", level: "A1", programName: "Journey" },
+        {
+          ...activeTemplate,
+          id: `template-${level.replace(" ", "-").toLowerCase()}`,
+          name: `Plantilla ${level}`,
+          level,
+          programName: level,
+          audience: "Kids",
+        },
+      ], request);
+
+      assert.equal(selected.level, level);
+      assert.equal(selected.programName, level);
+    });
+  }
+
   it("backend aplica la plantilla predeterminada configurada si hay varias válidas", () => {
     const templates = [
       { ...activeTemplate, id: "a1-blue", name: "Journey azul", level: "A1", programName: "Journey" },
@@ -92,7 +126,7 @@ describe("selección pública de firmas y plantillas", () => {
       () => publicPrintRequest.selectPublicCertificateTemplate([
         { ...activeTemplate, id: "a2", name: "Explore", level: "A2", programName: "Explore" },
       ], a1Request),
-      /No existe una plantilla activa compatible con A1 Journey/
+      /No hay una plantilla activa configurada para A1 Journey/
     );
   });
 

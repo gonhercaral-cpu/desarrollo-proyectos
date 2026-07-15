@@ -202,6 +202,19 @@ describe("permisos de solicitudes de Imprenta", () => {
 });
 
 describe("entrada pública confiable de certificados", () => {
+  it("acepta Smile 6 y conserva sus campos canónicos", () => {
+    const result = publicPrintRequest.sanitizePublicPrintRequest(
+      validPublicPayload({ courseLevel: "Smile 6" }),
+      CREATED_AT
+    );
+
+    assert.equal(result.courseLevel, "Smile 6");
+    assert.equal(result.level, "Smile 6");
+    assert.equal(result.group, "Smile 6");
+    assert.equal(result.courseProgramName, "Smile 6");
+    assert.equal(result.courseAudience, "Kids");
+  });
+
   it("calcula en servidor folio, estado, cantidades y campos internos", () => {
     const result = publicPrintRequest.sanitizePublicPrintRequest(validPublicPayload(), CREATED_AT);
     assert.match(result.folio, /^CERT-2026-[A-F0-9]{10}$/);

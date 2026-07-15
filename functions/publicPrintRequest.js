@@ -333,7 +333,7 @@ function selectPublicCertificateTemplate(templates = [], requestData = {}, setti
   if (compatibleTemplates.length === 0) {
     throw new HttpsError(
       "failed-precondition",
-      `No existe una plantilla activa compatible con ${requestData.courseLevel || requestData.level || "la solicitud"}.`
+      `No hay una plantilla activa configurada para ${requestData.courseLevel || requestData.level || "la solicitud"}.`
     );
   }
   if (compatibleTemplates.length === 1) return compatibleTemplates[0];
