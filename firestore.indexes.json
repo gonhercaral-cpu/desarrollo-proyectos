@@ -1,6 +1,34 @@
 {
   "indexes": [
     {
+      "collectionGroup": "departmentMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "departmentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "memberIds",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "departmentMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "departmentName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "memberIds",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
       "collectionGroup": "departments",
       "queryScope": "COLLECTION",
       "fields": [

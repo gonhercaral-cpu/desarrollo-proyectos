@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   serverTimestamp,
   setDoc,
@@ -106,6 +107,22 @@ export function AuthProvider({ children }) {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!firebaseUser?.uid) return undefined;
+
+    return onSnapshot(
+      doc(db, "users", firebaseUser.uid),
+      (userSnapshot) => {
+        setProfile(userSnapshot.exists()
+          ? { id: userSnapshot.id, uid: firebaseUser.uid, ...userSnapshot.data() }
+          : null);
+      },
+      (error) => {
+        console.error("Error sincronizando el perfil del usuario:", error);
+      }
+    );
+  }, [firebaseUser?.uid]);
 
 
   useEffect(() => {

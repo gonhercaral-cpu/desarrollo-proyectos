@@ -1237,6 +1237,36 @@ describe("mensajeria departamental", () => {
     await assertSucceeds(getDoc(doc(auth("admin"), "departmentMessages", "msg-seeded")));
   });
 
+  it("revoca lectura inmediatamente aunque el UID permanezca en mensajes historicos", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "departmentMessages", "msg-revoked"), validDepartmentMessage());
+    });
+
+    const activeMembershipQuery = query(
+      collection(auth("deptmember"), "departmentMessages"),
+      where("memberIds", "array-contains", "deptmember"),
+      where("departmentId", "==", "dept-ops")
+    );
+    await assertSucceeds(getDocs(activeMembershipQuery));
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await updateDoc(doc(db, "users", "deptmember"), {
+        area: "Otra área",
+        department: "Otra área",
+        departmentName: "Otra área",
+        departmentIds: ["dept-other"],
+        departmentNames: ["Otra área"],
+        primaryDepartmentId: "dept-other",
+      });
+    });
+
+    await assertFails(getDoc(doc(auth("deptmember"), "departmentMessages", "msg-revoked")));
+    await assertFails(getDocs(activeMembershipQuery));
+    await assertSucceeds(getDoc(doc(auth("admin"), "departmentMessages", "msg-revoked")));
+  });
+
   it("bloquea a un usuario inactivo aunque tenga role admin", async () => {
     await assertFails(
       setDoc(

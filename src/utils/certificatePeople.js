@@ -55,6 +55,34 @@ export function isActiveCertificatePerson(person) {
   return active && person?.deleted !== true && person?.isDeleted !== true && person?.archived !== true;
 }
 
+export function normalizeCertificatePersonRecord(person = {}) {
+  const type = normalizeCertificateSignerType(
+    person?.type,
+    person?.category,
+    person?.categoria,
+    person?.signerType,
+    person?.role,
+    person?.rol,
+    person?.cargo
+  );
+
+  return {
+    id: String(person?.sourceId || person?.id || "").trim(),
+    projectionId: String(person?.id || "").trim(),
+    name: String(person?.name || person?.displayName || person?.fullName || person?.nombre || "").trim(),
+    type,
+    active: isActiveCertificatePerson(person),
+  };
+}
+
+export function buildActiveCertificatePeople(people = []) {
+  return dedupeCertificatePeople(
+    (Array.isArray(people) ? people : [])
+      .map(normalizeCertificatePersonRecord)
+      .filter((person) => person.active && person.id && person.name && person.type)
+  ).sort((a, b) => a.name.localeCompare(b.name, "es-MX", { sensitivity: "base" }));
+}
+
 export function dedupeCertificatePeople(people) {
   const seenIds = new Set();
   const seenNames = new Set();
@@ -73,4 +101,3 @@ export function dedupeCertificatePeople(people) {
     return true;
   });
 }
-

@@ -17,7 +17,11 @@ import MessageAudioPlayer from "./MessageAudioPlayer";
 import MessageText from "./MessageText";
 import DepartmentReadReceipt from "./DepartmentReadReceipt";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
-import { userBelongsToDepartmentId } from "../utils/departmentMembership";
+import {
+  filterVisibleDepartmentMessages,
+  userBelongsToDepartmentId,
+} from "../utils/departmentMembership";
+import { subscribeToVisibleDepartmentMessages } from "../services/departmentMessagesService";
 
 const MAX_RECENT_CONVERSATIONS = 8;
 const BOARD_ATTACHMENT_ACCEPT = [
@@ -331,23 +335,15 @@ export default function FloatingQuickTools({
   useEffect(() => {
     if (!currentUserId) return undefined;
 
-    const messagesRef = collection(db, "departmentMessages");
-    const messagesQuery = isAdmin
-      ? messagesRef
-      : query(messagesRef, where("memberIds", "array-contains", currentUserId));
-
-    return onSnapshot(
-      messagesQuery,
-      (snapshot) => {
-        setDepartmentMessages(
-          snapshot.docs
-            .map((messageDoc) => ({ id: messageDoc.id, ...messageDoc.data() }))
-            .sort(sortByCreatedAtDesc)
-        );
+    return subscribeToVisibleDepartmentMessages({
+      profile,
+      isAdmin,
+      onMessages: (messages) => {
+        setDepartmentMessages(messages.sort(sortByCreatedAtDesc));
       },
-      () => setDepartmentMessages([])
-    );
-  }, [currentUserId, isAdmin]);
+      onError: () => setDepartmentMessages([]),
+    });
+  }, [currentUserId, isAdmin, profile]);
 
   const departmentOptions = useMemo(
     () =>
@@ -371,14 +367,19 @@ export default function FloatingQuickTools({
     [inboxMessages, sentMessages, collaborators, currentUserId]
   );
 
+  const visibleDepartmentMessages = useMemo(
+    () => filterVisibleDepartmentMessages(departmentMessages, profile, isAdmin),
+    [departmentMessages, profile, isAdmin]
+  );
+
   const departmentConversations = useMemo(
     () =>
       buildDepartmentConversations(
-        departmentMessages,
+        visibleDepartmentMessages,
         departmentOptions,
         currentUserId
       ).filter((conversation) => conversation.messages.length > 0),
-    [departmentMessages, departmentOptions, currentUserId]
+    [visibleDepartmentMessages, departmentOptions, currentUserId]
   );
   const messageProfiles = useMemo(
     () => [{ ...profile, id: currentUserId }, ...collaborators],
@@ -422,6 +423,20 @@ export default function FloatingQuickTools({
   const selectedRecentConversation = recentConversations.find(
     (conversation) => conversation.key === selectedConversationKey
   );
+
+  useEffect(() => {
+    if (!selectedConversationKey || selectedRecentConversation) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSelectedConversationKey("");
+      setReplyTarget(null);
+      setMessageText("");
+      setMessageAttachments([]);
+      setMessageError("");
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [selectedConversationKey, selectedRecentConversation]);
   const selectedDirectConversation =
     selectedRecentConversation?.type === "direct"
       ? selectedRecentConversation.conversation
@@ -1677,8 +1692,12 @@ function buildDepartmentChatOptions({ departments, collaborators, profile, curre
 
 function buildDepartmentConversations(messages, departmentOptions, currentUserId) {
   const grouped = new Map();
+  const departmentIdByName = new Map();
 
   departmentOptions.forEach((department) => {
+    if (department.normalizedName) {
+      departmentIdByName.set(department.normalizedName, department.id);
+    }
     grouped.set(department.id, {
       departmentId: department.id,
       departmentName: department.name,
@@ -1691,18 +1710,11 @@ function buildDepartmentConversations(messages, departmentOptions, currentUserId
   });
 
   messages.forEach((message) => {
-    const departmentId = message.departmentId || getDepartmentOptionId(message.departmentName || "Departamento");
-    if (!grouped.has(departmentId)) {
-      grouped.set(departmentId, {
-        departmentId,
-        departmentName: message.departmentName || "Departamento",
-        normalizedName: normalizeText(message.departmentName || "Departamento"),
-        memberCount: Array.isArray(message.memberIds) ? message.memberIds.length : 0,
-        messages: [],
-        unreadCount: 0,
-        lastMessage: null,
-      });
-    }
+    const normalizedName = normalizeText(message.departmentName || "Departamento");
+    const departmentId = departmentIdByName.get(normalizedName) ||
+      message.departmentId ||
+      getDepartmentOptionId(message.departmentName || "Departamento");
+    if (!grouped.has(departmentId)) return;
 
     const conversation = grouped.get(departmentId);
     conversation.messages.push(message);

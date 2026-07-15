@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildActiveCertificatePeople,
   dedupeCertificatePeople,
   isActiveCertificatePerson,
   normalizeCertificatePersonText,
   normalizeCertificateSignerType,
 } from "../src/utils/certificatePeople.js";
+import { readFileSync } from "node:fs";
 
 test("normaliza categorias historicas de Firmas", () => {
   assert.equal(normalizeCertificateSignerType("PRINCIPAL"), "Principal");
@@ -34,4 +36,32 @@ test("elimina duplicados por id y por nombre normalizado dentro de la categoria"
 
   assert.deepEqual(people.map((person) => person.id), ["principal-1", "teacher-1"]);
   assert.equal(normalizeCertificatePersonText(" \u00c1NA/L\u00d3PEZ "), "ana lopez");
+});
+
+test("construye maestros activos desde firmas nuevas e historicas sin duplicarlos", () => {
+  const people = buildActiveCertificatePeople([
+    { id: "teacher-new", name: "María Ruiz", type: "Teacher", active: true },
+    { id: "teacher-old", nombre: "José López", categoria: "Maestro", activo: "Activo" },
+    { id: "teacher-duplicate", name: " maria ruiz ", role: "Docente", active: true },
+    { id: "teacher-inactive", name: "Inactivo", type: "Teacher", active: false },
+    { id: "principal-one", name: "Directora", role: "Directora académica", active: true },
+  ]);
+
+  assert.deepEqual(
+    people.map((person) => ({ id: person.id, name: person.name, type: person.type })),
+    [
+      { id: "principal-one", name: "Directora", type: "Principal" },
+      { id: "teacher-old", name: "José López", type: "Teacher" },
+      { id: "teacher-new", name: "María Ruiz", type: "Teacher" },
+    ]
+  );
+});
+
+test("formulario publico consulta directamente firmas activas vigentes", () => {
+  const clientSource = readFileSync("src/services/publicCertificatePeopleService.js", "utf8");
+  const backendSource = readFileSync("functions/index.js", "utf8");
+
+  assert.match(clientSource, /httpsCallable\(functions, "listPublicCertificatePeople"\)/);
+  assert.match(backendSource, /db\.collection\("certificateSigners"\)\.get\(\)/);
+  assert.doesNotMatch(clientSource, /PUBLIC_CERTIFICATE_PEOPLE_COLLECTION = "publicCertificatePeople"/);
 });

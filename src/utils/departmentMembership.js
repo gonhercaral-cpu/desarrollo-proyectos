@@ -64,6 +64,32 @@ export function getUserDepartmentIds(user = {}) {
     .filter((value, index, array) => array.indexOf(value) === index);
 }
 
+export function getUserExplicitDepartmentIds(user = {}) {
+  return [
+    user?.departmentId,
+    user?.primaryDepartmentId,
+    user?.areaId,
+    ...(Array.isArray(user?.departmentIds) ? user.departmentIds : []),
+  ]
+    .map((value) => normalizeDepartmentId(value))
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index);
+}
+
+export function getUserDepartmentLabels(user = {}) {
+  return [
+    user?.department,
+    user?.area,
+    user?.departmentName,
+    user?.team,
+    ...(Array.isArray(user?.departmentNames) ? user.departmentNames : []),
+    ...(Array.isArray(user?.departments) ? user.departments : []),
+  ]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim())
+    .filter((value, index, array) => array.indexOf(value) === index);
+}
+
 export function userBelongsToDepartmentId(user, departmentId) {
   const normalizedDepartmentId = normalizeDepartmentId(departmentId);
   const legacyDepartmentId = normalizeDepartmentId(departmentId, { labelFallback: true });
@@ -88,4 +114,17 @@ export function canAccessDepartment(user, departmentId) {
   if (!isActiveProfile(user)) return false;
   if (isAdminProfile(user)) return true;
   return userBelongsToDepartmentId(user, departmentId);
+}
+
+export function canAccessDepartmentMessage(user, message, isAdmin = false) {
+  if (!isActiveProfile(user)) return false;
+  if (isAdmin || isAdminProfile(user)) return true;
+
+  return userBelongsToDepartmentId(user, message?.departmentId) ||
+    userBelongsToDepartmentId(user, message?.departmentName);
+}
+
+export function filterVisibleDepartmentMessages(messages, user, isAdmin = false) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => canAccessDepartmentMessage(user, message, isAdmin));
 }

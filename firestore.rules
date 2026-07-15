@@ -2530,7 +2530,13 @@ service cloud.firestore {
       return hasProfile()
         && (
           isAdmin()
-          || request.auth.uid in resource.data.memberIds
+          || (
+            request.auth.uid in resource.data.memberIds
+            && (
+              userMatchesDepartmentId(resource.data.departmentId)
+              || userMatchesDepartmentName(resource.data.departmentName)
+            )
+          )
         );
     }
 

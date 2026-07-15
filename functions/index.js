@@ -18,6 +18,11 @@ const {
   selectPublicCertificateTemplate,
   validatePublicCertificateTemplate,
 } = require("./publicPrintRequest");
+const {
+  buildPublicCertificatePeople,
+  isActiveCertificateSigner,
+  normalizeCertificateSignerType,
+} = require("./certificatePeople");
 
 initializeApp();
 
@@ -70,41 +75,10 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeCertificatePersonText(value) {
-  return cleanString(value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[_/-]+/g, " ")
-    .replace(/\s+/g, " ");
-}
-
-function normalizeCertificateSignerType(data) {
-  const candidates = [
-    data?.type,
-    data?.signerType,
-    data?.category,
-    data?.categoria,
-    data?.role,
-    data?.rol,
-    data?.cargo,
-  ].map(normalizeCertificatePersonText).filter(Boolean);
-
-  if (candidates.some((value) => /(^|\s)(principal|director|directora)(\s|$)/.test(value))) {
-    return "Principal";
-  }
-  if (candidates.some((value) => /(^|\s)(teacher|maestr[oa]|docente|profesor[ae]?|instructor[ae]?)(\s|$)/.test(value))) {
-    return "Teacher";
-  }
-  return "";
-}
-
 async function syncPublicCertificatePerson(projectionId, sourceId, data, type) {
   const projectionRef = db.collection(PUBLIC_CERTIFICATE_PEOPLE_COLLECTION).doc(projectionId);
   const name = cleanString(data?.name || data?.displayName || data?.fullName || data?.nombre);
-  const activeValue = data?.active ?? data?.isActive ?? data?.activo;
-  const active = (activeValue === true || cleanString(activeValue).toLowerCase() === "activo") &&
-    data?.deleted !== true && data?.isDeleted !== true && data?.archived !== true;
+  const active = isActiveCertificateSigner(data);
 
   if (!active || !name) {
     await projectionRef.delete();
@@ -154,10 +128,29 @@ exports.syncPublicCertificateSigner = onDocumentWritten(
   }
 );
 
+exports.listPublicCertificatePeople = onCall(
+  {
+    region: "us-central1",
+    cors: PRINT_REQUEST_CALLABLE_CORS,
+    timeoutSeconds: 30,
+  },
+  async () => {
+    const snapshot = await db.collection("certificateSigners").get();
+    return {
+      people: buildPublicCertificatePeople(
+        snapshot.docs.map((signerSnapshot) => ({
+          id: signerSnapshot.id,
+          ...signerSnapshot.data(),
+        }))
+      ),
+    };
+  }
+);
+
 async function getActiveCertificateSigner(signerId, expectedType, fieldName) {
   const snapshot = await db.collection("certificateSigners").doc(signerId).get();
   const data = snapshot.exists ? snapshot.data() : null;
-  const active = data?.active === true && data?.deleted !== true && data?.archived !== true;
+  const active = isActiveCertificateSigner(data);
   const type = normalizeCertificateSignerType(data);
   const name = cleanString(data?.name || data?.displayName || data?.fullName || data?.nombre);
   if (!active || type !== expectedType || !name) {

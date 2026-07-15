@@ -39,7 +39,15 @@ import MessageAudioPlayer from "../components/MessageAudioPlayer";
 import MessageText from "../components/MessageText";
 import DepartmentReadReceipt from "../components/DepartmentReadReceipt";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
-import { normalizeDepartmentId, userBelongsToDepartmentId } from "../utils/departmentMembership";
+import {
+  filterVisibleDepartmentMessages,
+  normalizeDepartmentId,
+  userBelongsToDepartmentId,
+} from "../utils/departmentMembership";
+import {
+  loadVisibleDepartmentMessages,
+  subscribeToVisibleDepartmentMessages,
+} from "../services/departmentMessagesService";
 import {
   subscribeToUserNotifications,
   markNotificationRead,
@@ -3322,27 +3330,19 @@ function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isM
 
   useEffect(() => {
     departmentReadyRef.current = false;
-  }, [currentUserId, isAdmin]);
+  }, [currentUserId, isAdmin, profile]);
 
   useEffect(() => {
     if (!currentUserId) return undefined;
 
-    const departmentMessagesRef = collection(db, "departmentMessages");
-    const departmentMessagesQuery = isAdmin
-      ? departmentMessagesRef
-      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
-
-    return onSnapshot(
-      departmentMessagesQuery,
-      (snapshot) => {
-        const wasReady = departmentReadyRef.current;
+    return subscribeToVisibleDepartmentMessages({
+      profile,
+      isAdmin,
+      onChanges: (messages, isInitialSnapshot) => {
         departmentReadyRef.current = true;
-        if (!wasReady) return;
+        if (isInitialSnapshot) return;
 
-        const newItems = snapshot
-          .docChanges()
-          .filter((change) => change.type === "added")
-          .map((change) => ({ id: change.doc.id, ...change.doc.data() }))
+        const newItems = messages
           .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
           .map((message) => ({
             key: `department:${message.id}`,
@@ -3354,11 +3354,11 @@ function useGlobalMessageNotifications(profile, isAdmin, { activeChatKeyRef, isM
 
         alertNewMessages(newItems);
       },
-      (error) => {
+      onError: (error) => {
         console.error("No se pudo iniciar el listener global de mensajes por departamento:", error);
-      }
-    );
-  }, [currentUserId, isAdmin]);
+      },
+    });
+  }, [currentUserId, isAdmin, profile]);
 
   return { permission, requestPermission };
 }
@@ -3596,31 +3596,31 @@ function InternalMessages({
   useEffect(() => {
     if (!currentUserId) return undefined;
 
-    const departmentMessagesRef = collection(db, "departmentMessages");
-    const departmentMessagesQuery = isAdmin
-      ? departmentMessagesRef
-      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
-
-    return onSnapshot(
-      departmentMessagesQuery,
-      (snapshot) => {
-        const nextMessages = snapshot.docs
-          .map((messageDoc) => ({
-            id: messageDoc.id,
-            ...messageDoc.data(),
-            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
-            readBy: messageDoc.data()?.readBy || {},
+    return subscribeToVisibleDepartmentMessages({
+      profile,
+      isAdmin,
+      onMessages: (messages) => {
+        const nextMessages = messages
+          .map((message) => ({
+            ...message,
+            attachments: normalizeStoredAttachments(message.attachments),
+            readBy: message.readBy || {},
           }))
           .sort(sortByCreatedAtDesc);
 
         setDepartmentMessages(nextMessages);
+        setMessageError((current) =>
+          current === "No se pudieron cargar los chats por departamento." ? "" : current
+        );
       },
-      (error) => {
+      onError: (error) => {
         console.error("No se pudieron cargar los mensajes por departamento:", error);
+        setDepartmentMessages([]);
+        if (error?.code === "permission-denied") return;
         setMessageError("No se pudieron cargar los chats por departamento.");
-      }
-    );
-  }, [currentUserId, isAdmin]);
+      },
+    });
+  }, [currentUserId, isAdmin, profile]);
 
   useEffect(() => {
     return () => revokeDraftAttachmentPreviews(messageAttachments);
@@ -3664,8 +3664,9 @@ function InternalMessages({
   });
   const allMessages = [...inboxMessages, ...sentMessages].sort(sortByCreatedAtDesc);
   const conversations = buildInternalConversations(allMessages, collaborators, currentUserId);
+  const visibleDepartmentMessages = filterVisibleDepartmentMessages(departmentMessages, profile, isAdmin);
   const departmentConversations = buildDepartmentConversations(
-    departmentMessages,
+    visibleDepartmentMessages,
     departmentOptions,
     currentUserId
   );
@@ -3680,6 +3681,7 @@ function InternalMessages({
   const normalizedSelectedDepartmentId = normalizeDepartmentId(selectedDepartmentId) || "";
   const selectedDepartmentOption =
     departmentOptions.find((department) => normalizeDepartmentId(department) === normalizedSelectedDepartmentId) || null;
+  const selectedDepartmentIsVisible = Boolean(selectedDepartmentOption);
   const selectedDepartmentConversation =
     departmentConversations.find((conversation) => normalizeDepartmentId(conversation.departmentId) === normalizedSelectedDepartmentId) ||
     (selectedDepartmentOption
@@ -3732,9 +3734,9 @@ function InternalMessages({
   const selectedConversationTotalMessages = selectedConversation?.messages.length || 0;
   const selectedDepartmentTotalMessages = selectedDepartmentConversation?.messages.length || 0;
   const unreadCount = inboxMessages.filter((message) => !message.read).length;
-  const unreadDepartmentCount = departmentMessages.filter((message) => isUnreadDepartmentMessage(message, currentUserId)).length;
+  const unreadDepartmentCount = visibleDepartmentMessages.filter((message) => isUnreadDepartmentMessage(message, currentUserId)).length;
   const totalUnreadCount = unreadCount + unreadDepartmentCount;
-  const totalMessages = allMessages.length + departmentMessages.length;
+  const totalMessages = allMessages.length + visibleDepartmentMessages.length;
   const messageProfiles = [{ ...profile, id: currentUserId }, ...collaborators];
   const selectedRecipient = selectedConversation
     ? {
@@ -3802,6 +3804,22 @@ function InternalMessages({
   const departmentComposerRecording = voiceRecordingType === "department";
   const departmentComposerUsesVoiceButton = departmentComposerRecording || !departmentMessageCanSend;
   const voiceRecordingLabel = formatVoiceRecordingDuration(voiceRecordingElapsedMs);
+
+  useEffect(() => {
+    if (!normalizedSelectedDepartmentId || selectedDepartmentIsVisible || isAdmin) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSelectedDepartmentId("");
+      setThreadSearchTerm("");
+      setShowChatFilesPanel(false);
+      setReplyTarget(null);
+      setDepartmentForm({ message: "" });
+      setDepartmentAttachments([]);
+      setMessageError("");
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [normalizedSelectedDepartmentId, selectedDepartmentIsVisible, isAdmin]);
 
   function scrollActiveThreadToBottom(behavior = "smooth") {
     if (typeof window === "undefined") return;
@@ -5657,17 +5675,7 @@ function buildDepartmentConversations(messages, departmentOptions, currentUserId
       normalizeDepartmentId(message.departmentId || message.areaId || message.primaryDepartmentId) ||
       normalizeDepartmentId(messageDepartmentName, { labelFallback: true }) ||
       getDepartmentOptionId(messageDepartmentName);
-    if (!grouped.has(departmentId)) {
-      grouped.set(departmentId, {
-        departmentId,
-        departmentName: messageDepartmentName,
-        normalizedName,
-        memberCount: Array.isArray(message.memberIds) ? message.memberIds.length : 0,
-        messages: [],
-        unreadCount: 0,
-        lastMessage: null,
-      });
-    }
+    if (!grouped.has(departmentId)) return;
 
     const conversation = grouped.get(departmentId);
     conversation.messages.push(message);
@@ -5924,32 +5932,27 @@ function useWorkspaceCommunicationActivity(profile, isAdmin = false) {
       return undefined;
     }
 
-    const departmentMessagesRef = collection(db, "departmentMessages");
-    const departmentMessagesQuery = isAdmin
-      ? departmentMessagesRef
-      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
-
-    return onSnapshot(
-      departmentMessagesQuery,
-      (snapshot) => {
-        const nextMessages = snapshot.docs
-          .map((messageDoc) => ({
-            id: messageDoc.id,
-            ...messageDoc.data(),
-            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
-            readBy: messageDoc.data()?.readBy || {},
+    return subscribeToVisibleDepartmentMessages({
+      profile,
+      isAdmin,
+      onMessages: (messages) => {
+        const nextMessages = messages
+          .map((message) => ({
+            ...message,
+            attachments: normalizeStoredAttachments(message.attachments),
+            readBy: message.readBy || {},
           }))
           .sort(sortByCreatedAtDesc)
           .slice(0, 30);
 
         setDepartmentMessages(nextMessages);
       },
-      (error) => {
+      onError: (error) => {
         console.error("No se pudo cargar la actividad reciente de departamentos:", error);
         setDepartmentMessages([]);
-      }
-    );
-  }, [currentUserId, isAdmin]);
+      },
+    });
+  }, [currentUserId, isAdmin, profile]);
 
   return { directMessages, departmentMessages };
 }
@@ -6062,27 +6065,22 @@ function useUnreadDepartmentMessagesCount(profile, isAdmin = false) {
       return undefined;
     }
 
-    const departmentMessagesRef = collection(db, "departmentMessages");
-    const departmentMessagesQuery = isAdmin
-      ? departmentMessagesRef
-      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
-
-    return onSnapshot(
-      departmentMessagesQuery,
-      (snapshot) => {
-        const nextUnreadCount = snapshot.docs.filter((messageDoc) => {
-          const data = messageDoc.data();
-          return data.fromUserId !== currentUserId && !(data.readBy || {})[currentUserId];
+    return subscribeToVisibleDepartmentMessages({
+      profile,
+      isAdmin,
+      onMessages: (messages) => {
+        const nextUnreadCount = messages.filter((message) => {
+          return message.fromUserId !== currentUserId && !(message.readBy || {})[currentUserId];
         }).length;
 
         setUnreadCount(nextUnreadCount);
       },
-      (error) => {
+      onError: (error) => {
         console.error("No se pudo cargar el contador de mensajes por departamento:", error);
         setUnreadCount(0);
-      }
-    );
-  }, [currentUserId, isAdmin]);
+      },
+    });
+  }, [currentUserId, isAdmin, profile]);
 
   return unreadCount;
 }
@@ -7115,18 +7113,13 @@ async function markAllDashboardNotificationsRead({ profile, isAdmin }) {
       )
   );
 
-  const departmentMessagesRef = collection(db, "departmentMessages");
-  const departmentMessagesQuery = isAdmin
-    ? departmentMessagesRef
-    : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
-
-  const departmentMessagesSnapshot = await getDocs(departmentMessagesQuery);
+  const departmentMessages = await loadVisibleDepartmentMessages(profile, isAdmin);
 
   await Promise.all(
-    departmentMessagesSnapshot.docs
-      .filter((messageDoc) => isUnreadDepartmentMessage({ id: messageDoc.id, ...messageDoc.data() }, currentUserId))
-      .map((messageDoc) =>
-        updateDoc(doc(db, "departmentMessages", messageDoc.id), {
+    departmentMessages
+      .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
+      .map((message) =>
+        updateDoc(doc(db, "departmentMessages", message.id), {
           [`readBy.${currentUserId}`]: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -7189,32 +7182,27 @@ function useDashboardNotifications(profile, isAdmin = false) {
       return undefined;
     }
 
-    const departmentMessagesRef = collection(db, "departmentMessages");
-    const departmentMessagesQuery = isAdmin
-      ? departmentMessagesRef
-      : query(departmentMessagesRef, where("memberIds", "array-contains", currentUserId));
-
-    return onSnapshot(
-      departmentMessagesQuery,
-      (snapshot) => {
-        const nextMessages = snapshot.docs
-          .map((messageDoc) => ({
-            id: messageDoc.id,
-            ...messageDoc.data(),
-            attachments: normalizeStoredAttachments(messageDoc.data()?.attachments),
-            readBy: messageDoc.data()?.readBy || {},
+    return subscribeToVisibleDepartmentMessages({
+      profile,
+      isAdmin,
+      onMessages: (messages) => {
+        const nextMessages = messages
+          .map((message) => ({
+            ...message,
+            attachments: normalizeStoredAttachments(message.attachments),
+            readBy: message.readBy || {},
           }))
           .filter((message) => isUnreadDepartmentMessage(message, currentUserId))
           .sort(sortByCreatedAtDesc);
 
         setDepartmentMessages(nextMessages);
       },
-      (error) => {
+      onError: (error) => {
         console.error("No se pudieron cargar notificaciones de departamentos:", error);
         setDepartmentMessages([]);
-      }
-    );
-  }, [currentUserId, isAdmin]);
+      },
+    });
+  }, [currentUserId, isAdmin, profile]);
 
   useEffect(() => {
     if (!currentUserId) {
