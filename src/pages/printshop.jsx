@@ -3508,7 +3508,7 @@ function canProfileAccessPrintshop(profile, isAdmin) {
 }
 
 function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
-  return resolvePrintRequestMemberRole(actor.uid, request, isAdminUser);
+  return resolvePrintRequestMemberRole(actor?.uid, request, isAdminUser);
 }
 
 export default function PrintShop() {

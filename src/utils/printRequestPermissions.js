@@ -58,14 +58,15 @@ function collectSupportUserIds(request) {
 }
 
 export function normalizePrintRequestAssignments(request = {}) {
-  const assignedUserId = firstUserId(request, PRIMARY_USER_ID_FIELDS);
-  const supportUserIds = collectSupportUserIds(request);
+  const source = request && typeof request === "object" ? request : {};
+  const assignedUserId = firstUserId(source, PRIMARY_USER_ID_FIELDS);
+  const supportUserIds = collectSupportUserIds(source);
 
   return {
     assignedUserId,
-    assignedUserName: String(request.assignedUserName || request.responsibleName || "").trim(),
+    assignedUserName: String(source.assignedUserName || source.responsibleName || "").trim(),
     supportUserId: supportUserIds[0] || "",
-    supportUserName: String(request.supportUserName || request.collaboratorName || "").trim(),
+    supportUserName: String(source.supportUserName || source.collaboratorName || "").trim(),
     supportUserIds,
   };
 }

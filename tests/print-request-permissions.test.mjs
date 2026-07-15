@@ -152,6 +152,40 @@ function createAgendaSeed({ tonySchedule, ernestoSchedule, adjustments = {} } = 
 }
 
 describe("permisos de solicitudes de Imprenta", () => {
+  it("maneja solicitudes null sin bloquear la vista ni conceder permisos", () => {
+    assert.deepEqual(normalizePrintRequestAssignments(null), {
+      assignedUserId: "",
+      assignedUserName: "",
+      supportUserId: "",
+      supportUserName: "",
+      supportUserIds: [],
+    });
+    assert.equal(canManagePrintRequest("tony-uid", null), false);
+    assert.equal(getPrintRequestMemberRole("tony-uid", null), "viewer");
+  });
+
+  it("ignora valores de asignación incompletos y conserva UIDs válidos", () => {
+    const request = {
+      assignedUserId: null,
+      assignedUserName: null,
+      responsibleUid: "tony-uid",
+      supportUserId: undefined,
+      supportCollaborators: [null, {}, { uid: "ernesto-uid" }],
+      collaboratorName: "Ernesto",
+    };
+
+    assert.deepEqual(normalizePrintRequestAssignments(request), {
+      assignedUserId: "tony-uid",
+      assignedUserName: "",
+      supportUserId: "ernesto-uid",
+      supportUserName: "Ernesto",
+      supportUserIds: ["ernesto-uid"],
+    });
+    assert.equal(getPrintRequestMemberRole("tony-uid", request), "responsible");
+    assert.equal(getPrintRequestMemberRole("ernesto-uid", request), "collaborator");
+    assert.equal(getPrintRequestMemberRole("otro-uid", request), "viewer");
+  });
+
   it("autoriza admin, responsable y apoyo solo por UID", () => {
     const request = {
       assignedUserId: "tony-uid",
