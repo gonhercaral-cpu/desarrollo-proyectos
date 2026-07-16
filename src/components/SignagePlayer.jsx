@@ -4,6 +4,7 @@ import {
   subscribeSignageCampaigns,
   subscribeDeviceByToken,
   subscribePlaylist,
+  logPlaybackEvent,
   updateDeviceHeartbeat,
 } from "../services/digitalSignageService";
 import {
@@ -11,12 +12,19 @@ import {
   clearOldSignageCache,
   getCachedAssetUrl,
 } from "../utils/signageCache";
+import {
+  getCampaignPriorityWeight,
+  isPublished,
+  normalizePublishStatus,
+} from "../utils/digitalSignage";
 
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const FALLBACK_DURATION_SECONDS = 10;
 const VIDEO_SAFETY_BUFFER_MS = 1500;
 const MANIFEST_STORAGE_PREFIX = "signage:lastGoodManifest:";
 const CAMPAIGN_RECHECK_MS = 60 * 1000;
+const NO_CONTENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
+const PLAY_START_THROTTLE_MS = 5 * 1000;
 
 export default function SignagePlayer() {
   const { deviceToken = "" } = useParams();
@@ -46,6 +54,11 @@ export default function SignagePlayer() {
     cached: false,
   });
   const heartbeatTokenRef = useRef(deviceToken);
+  const resolvedLogRef = useRef("");
+  const noContentLogRef = useRef({ key: "", at: 0 });
+  const offlineLogRef = useRef("");
+  const playStartLogRef = useRef(new Map());
+  const currentPlayRef = useRef({ key: "", nonce: -1, startedAt: 0, ended: false });
   const device = deviceState.token === deviceToken ? deviceState.value : undefined;
   const canSubscribeCampaigns =
     deviceState.token === deviceToken &&
@@ -96,6 +109,60 @@ export default function SignagePlayer() {
     isOffline,
     isUsingCachedAsset,
   });
+  const playbackSource = canUseStoredManifest
+    ? "lastGoodManifest"
+    : activeCampaign && !campaignPlaylistUnavailable
+      ? "campaign"
+      : "devicePlaylist";
+  const playbackPlaylistId = canUseStoredManifest
+    ? storedManifest?.playlistId || ""
+    : effectivePlaylistId || "";
+  const playbackCampaignId = canUseStoredManifest
+    ? storedManifest?.campaignId || ""
+    : activeCampaign?.id || "";
+  const playbackCampaignName = canUseStoredManifest ? "" : activeCampaign?.name || "";
+  const playbackPlaylistName = canUseStoredManifest ? "" : playlist?.name || "";
+
+  const logPlayerEvent = useCallback(
+    (eventType, item = null, extra = {}) => {
+      const fallbackDeviceId = device?.id || device?.deviceToken || deviceToken;
+
+      if (!fallbackDeviceId) return;
+
+      logPlaybackEvent({
+        deviceId: fallbackDeviceId,
+        deviceName: device?.name || "",
+        plantel: device?.plantel || "",
+        location: device?.location || "",
+        eventType,
+        assetId: item?.assetId || "",
+        assetTitle: item?.title || "",
+        assetType: item?.type || "",
+        playlistId: extra.playlistId ?? playbackPlaylistId,
+        playlistName: extra.playlistName ?? playbackPlaylistName,
+        campaignId: extra.campaignId ?? playbackCampaignId,
+        campaignName: extra.campaignName ?? playbackCampaignName,
+        source: extra.source ?? playbackSource,
+        durationSeconds: extra.durationSeconds ?? item?.durationSeconds ?? null,
+        errorMessage: extra.errorMessage || "",
+        localTimestamp: new Date().toISOString(),
+        playerVersion: "web-player-v1",
+      });
+    },
+    [
+      device?.deviceToken,
+      device?.id,
+      device?.location,
+      device?.name,
+      device?.plantel,
+      deviceToken,
+      playbackCampaignId,
+      playbackCampaignName,
+      playbackPlaylistId,
+      playbackPlaylistName,
+      playbackSource,
+    ]
+  );
 
   useEffect(() => {
     heartbeatTokenRef.current = deviceToken;
@@ -162,6 +229,40 @@ export default function SignagePlayer() {
     activeCampaign,
     playlist,
     liveItems,
+  ]);
+
+  useEffect(() => {
+    if (!device || device.active === false || !effectivePlaylistId || liveItems.length === 0) return;
+
+    const signature = [
+      device.id || deviceToken,
+      effectivePlaylistId,
+      activeCampaign?.id || "",
+      playbackSource,
+      liveItems.map((item) => item.key).join("|"),
+    ].join("::");
+
+    if (resolvedLogRef.current === signature) return;
+    resolvedLogRef.current = signature;
+
+    logPlayerEvent("playlist_resolved", null, {
+      playlistId: effectivePlaylistId,
+      playlistName: playlist?.name || "",
+      campaignId: activeCampaign?.id || "",
+      campaignName: activeCampaign?.name || "",
+      source: playbackSource,
+      durationSeconds: liveItems.reduce((total, item) => total + Number(item.durationSeconds || 0), 0),
+    });
+  }, [
+    activeCampaign?.id,
+    activeCampaign?.name,
+    device,
+    deviceToken,
+    effectivePlaylistId,
+    liveItems,
+    logPlayerEvent,
+    playbackSource,
+    playlist?.name,
   ]);
 
   useEffect(() => {
@@ -262,15 +363,45 @@ export default function SignagePlayer() {
     goNext(items.length, setCurrentIndex);
   }, [items.length]);
 
+  const finishCurrentItem = useCallback(() => {
+    const currentPlay = currentPlayRef.current;
+
+    if (currentItem && currentPlay.key === currentItem.key && !currentPlay.ended) {
+      currentPlayRef.current = { ...currentPlay, ended: true };
+      const elapsedSeconds = currentPlay.startedAt
+        ? Math.max(0, Math.round((Date.now() - currentPlay.startedAt) / 1000))
+        : Number(currentItem.durationSeconds || 0);
+
+      logPlayerEvent("play_end", currentItem, { durationSeconds: elapsedSeconds });
+    }
+
+    advanceToNext();
+  }, [advanceToNext, currentItem, logPlayerEvent]);
+
+  const failCurrentItem = useCallback(
+    (item, errorMessage = "Error al cargar contenido") => {
+      if (item) {
+        logPlayerEvent("play_error", item, { errorMessage });
+        currentPlayRef.current = {
+          ...currentPlayRef.current,
+          ended: true,
+        };
+      }
+
+      handleItemFailure(item, advanceToNext, setFailedItemKeys);
+    },
+    [advanceToNext, logPlayerEvent]
+  );
+
   useEffect(() => {
     if (!currentItem) return undefined;
 
     const timeoutId = window.setTimeout(() => {
-      advanceToNext();
+      finishCurrentItem();
     }, getItemTimeoutMillis(currentItem));
 
     return () => window.clearTimeout(timeoutId);
-  }, [advanceToNext, currentItem]);
+  }, [currentItem, finishCurrentItem]);
 
   useEffect(() => {
     let cancelled = false;
@@ -308,7 +439,7 @@ export default function SignagePlayer() {
           return;
         }
 
-        handleItemFailure(currentItem, advanceToNext, setFailedItemKeys);
+        failCurrentItem(currentItem, "Asset no disponible en cache offline");
         return;
       }
 
@@ -323,13 +454,88 @@ export default function SignagePlayer() {
       cancelled = true;
       revokeObjectUrl(localObjectUrl);
     };
-  }, [advanceToNext, currentItem, isOffline]);
+  }, [currentItem, failCurrentItem, isOffline]);
 
   useEffect(() => {
     if (isOffline && currentItem?.type === "web") {
-      handleItemFailure(currentItem, advanceToNext, setFailedItemKeys);
+      failCurrentItem(currentItem, "Web no disponible sin conexion");
     }
-  }, [advanceToNext, currentItem, isOffline]);
+  }, [currentItem, failCurrentItem, isOffline]);
+
+  useEffect(() => {
+    if (!currentItem || !device || device.active === false) return;
+
+    const now = Date.now();
+    const lastStartedAt = playStartLogRef.current.get(currentItem.key) || 0;
+
+    currentPlayRef.current = {
+      key: currentItem.key,
+      nonce: playbackNonce,
+      startedAt: now,
+      ended: false,
+    };
+
+    if (now - lastStartedAt < PLAY_START_THROTTLE_MS) return;
+
+    playStartLogRef.current.set(currentItem.key, now);
+    logPlayerEvent("play_start", currentItem);
+  }, [currentItem, device, logPlayerEvent, playbackNonce]);
+
+  useEffect(() => {
+    const source = canUseStoredManifest
+      ? "lastGoodManifest"
+      : isUsingCachedAsset
+        ? "offlineCache"
+        : "";
+
+    if (!source || !device || device.active === false) return;
+
+    const signature = `${device.id || deviceToken}:${source}:${currentItem?.key || storedManifest?.resolvedAt || ""}`;
+    if (offlineLogRef.current === signature) return;
+
+    offlineLogRef.current = signature;
+    logPlayerEvent("offline_cache", currentItem, { source });
+  }, [
+    canUseStoredManifest,
+    currentItem,
+    device,
+    deviceToken,
+    isUsingCachedAsset,
+    logPlayerEvent,
+    storedManifest?.resolvedAt,
+  ]);
+
+  useEffect(() => {
+    const hasNoContent =
+      device &&
+      device.active !== false &&
+      !canUseStoredManifest &&
+      (!effectivePlaylistId || playlistError || !playlist || items.length === 0 || !currentItem);
+
+    if (!hasNoContent) return;
+
+    const key = `${device.id || deviceToken}:${effectivePlaylistId || "none"}:${playlistError || "no-content"}`;
+    const now = Date.now();
+
+    if (noContentLogRef.current.key === key && now - noContentLogRef.current.at < NO_CONTENT_LOG_INTERVAL_MS) {
+      return;
+    }
+
+    noContentLogRef.current = { key, at: now };
+    logPlayerEvent("no_content", null, {
+      errorMessage: playlistError || "Sin contenido asignado",
+    });
+  }, [
+    canUseStoredManifest,
+    currentItem,
+    device,
+    deviceToken,
+    effectivePlaylistId,
+    items.length,
+    logPlayerEvent,
+    playlist,
+    playlistError,
+  ]);
 
   if (playerError && !canUseStoredManifest) {
     return <PlayerMessage message={playerError} />;
@@ -371,7 +577,7 @@ export default function SignagePlayer() {
             key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
             src={currentAssetUrl}
             alt={currentItem.title || "Contenido"}
-            onError={() => handleItemFailure(currentItem, advanceToNext, setFailedItemKeys)}
+            onError={() => failCurrentItem(currentItem, "No se pudo cargar imagen")}
           />
         )}
 
@@ -383,8 +589,8 @@ export default function SignagePlayer() {
             muted
             playsInline
             controls={false}
-            onEnded={advanceToNext}
-            onError={() => handleItemFailure(currentItem, advanceToNext, setFailedItemKeys)}
+            onEnded={finishCurrentItem}
+            onError={() => failCurrentItem(currentItem, "No se pudo reproducir video")}
           />
         )}
 
@@ -392,7 +598,7 @@ export default function SignagePlayer() {
           <WebContentFrame
             key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
             item={currentItem}
-            onFailure={() => handleItemFailure(currentItem, advanceToNext, setFailedItemKeys)}
+            onFailure={() => failCurrentItem(currentItem, "No se pudo cargar web")}
           />
         )}
 
@@ -609,7 +815,7 @@ function buildWebPlaybackUrl(url = "", settings = {}, reloadNonce = 0) {
     const nextUrl = new URL(cleanUrl);
     nextUrl.searchParams.set("_signageTs", String(reloadNonce));
     return nextUrl.toString();
-  } catch (error) {
+  } catch {
     const separator = cleanUrl.includes("?") ? "&" : "?";
     return `${cleanUrl}${separator}_signageTs=${reloadNonce}`;
   }
@@ -623,17 +829,6 @@ function getWebCommandSignature(command = null) {
     command.createdAt ||
     "";
   return `${command.type}-${createdAt}-${command.createdBy || ""}`;
-}
-
-function normalizePublishStatus(value) {
-  const status = String(value || "").trim();
-  return ["draft", "review", "published", "archived"].includes(status)
-    ? status
-    : "published";
-}
-
-function isPublished(value) {
-  return normalizePublishStatus(value) === "published";
 }
 
 function normalizeVisualAdData(data = {}) {
@@ -877,13 +1072,6 @@ function compareCampaigns(first, second) {
   const priorityDiff = getCampaignPriorityWeight(second.priority) - getCampaignPriorityWeight(first.priority);
   if (priorityDiff !== 0) return priorityDiff;
   return getDateMillis(second.updatedAt) - getDateMillis(first.updatedAt);
-}
-
-function getCampaignPriorityWeight(priority) {
-  const normalizedPriority = String(priority || "normal").toLowerCase();
-  if (normalizedPriority === "urgente") return 3;
-  if (normalizedPriority === "alta") return 2;
-  return 1;
 }
 
 function getDateMillis(value) {

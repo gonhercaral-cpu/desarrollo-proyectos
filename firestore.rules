@@ -3629,6 +3629,50 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
+    match /digitalSignageAuditLogs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /digitalSignagePlaybackLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly([
+          "deviceId",
+          "deviceTokenHash",
+          "deviceName",
+          "plantel",
+          "location",
+          "eventType",
+          "assetId",
+          "assetTitle",
+          "assetType",
+          "playlistId",
+          "playlistName",
+          "campaignId",
+          "campaignName",
+          "source",
+          "durationSeconds",
+          "errorMessage",
+          "createdAt",
+          "localTimestamp",
+          "playerVersion"
+        ])
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() > 0
+        && request.resource.data.eventType in [
+          "play_start",
+          "play_end",
+          "play_error",
+          "playlist_resolved",
+          "no_content",
+          "offline_cache",
+          "heartbeat_status"
+        ]
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAt <= request.time;
+      allow update, delete: if false;
+    }
+
     match /digitalSignageDevices/{deviceId} {
       allow get: if isAdmin()
         || resource.data.deviceToken == deviceId;

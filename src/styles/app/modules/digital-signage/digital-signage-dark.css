@@ -1,0 +1,260 @@
+html[data-theme="dark"] .digital-signage-tabs,
+html[data-theme="dark"] .digital-signage-card,
+html[data-theme="dark"] .digital-signage-tabs button.active,
+html[data-theme="dark"] .digital-pill-list button.active,
+html[data-theme="dark"] .digital-signage-message {
+  background: #101826;
+  border-color: #253246;
+  color: #e5eefb;
+}
+
+html[data-theme="dark"] .digital-signage-card h3,
+html[data-theme="dark"] .digital-card-heading h3,
+html[data-theme="dark"] .digital-asset-row strong,
+html[data-theme="dark"] .digital-device-row strong,
+html[data-theme="dark"] .digital-playlist-item strong,
+html[data-theme="dark"] .digital-signage-page input,
+html[data-theme="dark"] .digital-signage-page select {
+  color: #e5eefb;
+}
+
+html[data-theme="dark"] .digital-signage-page p,
+html[data-theme="dark"] .digital-signage-page label,
+html[data-theme="dark"] .digital-asset-row span,
+html[data-theme="dark"] .digital-device-row span,
+html[data-theme="dark"] .digital-playlist-item small,
+html[data-theme="dark"] .digital-asset-row small,
+html[data-theme="dark"] .digital-card-heading span,
+html[data-theme="dark"] .digital-helper,
+html[data-theme="dark"] .digital-empty {
+  color: #a7b3c7;
+}
+
+html[data-theme="dark"] .digital-signage-page input,
+html[data-theme="dark"] .digital-signage-page select,
+html[data-theme="dark"] .digital-asset-row,
+html[data-theme="dark"] .digital-device-row,
+html[data-theme="dark"] .digital-playlist-item,
+html[data-theme="dark"] .digital-pill-list button,
+html[data-theme="dark"] .digital-device-row code {
+  background: #0b1220;
+  border-color: #253246;
+}
+
+html[data-theme="dark"] .digital-device-row code {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .signage-kpi-card,
+html[data-theme="dark"] .signage-panel,
+html[data-theme="dark"] .signage-list-row,
+html[data-theme="dark"] .signage-action-menu summary,
+html[data-theme="dark"] .signage-action-menu-popover,
+html[data-theme="dark"] .signage-device-card,
+html[data-theme="dark"] .signage-device-monitor-card,
+html[data-theme="dark"] .signage-search,
+html[data-theme="dark"] .signage-filter,
+html[data-theme="dark"] .signage-view-toggle,
+html[data-theme="dark"] .signage-device-actions button,
+html[data-theme="dark"] .signage-device-actions label,
+html[data-theme="dark"] .signage-device-monitor-actions button,
+html[data-theme="dark"] .signage-device-monitor-actions label,
+html[data-theme="dark"] .signage-quick-actions button,
+html[data-theme="dark"] .signage-pagination button,
+html[data-theme="dark"] .signage-asset-card,
+html[data-theme="dark"] .signage-library-toolbar,
+html[data-theme="dark"] .signage-playlist-card,
+html[data-theme="dark"] .signage-health-metric,
+html[data-theme="dark"] .signage-health-filters button,
+html[data-theme="dark"] .signage-health-row,
+html[data-theme="dark"] .signage-history-ranges button,
+html[data-theme="dark"] .signage-history-row,
+html[data-theme="dark"] .signage-campaign-card,
+html[data-theme="dark"] .signage-schedule-box,
+html[data-theme="dark"] .signage-day-picker button,
+html[data-theme="dark"] .signage-soft-badge,
+html[data-theme="dark"] .signage-tag-badge,
+html[data-theme="dark"] .signage-publish-select,
+html[data-theme="dark"] .signage-visual-controls button,
+html[data-theme="dark"] .signage-visual-editor-focused,
+html[data-theme="dark"] .signage-visual-editor-sidepanel,
+html[data-theme="dark"] .signage-visual-editor-section,
+html[data-theme="dark"] .signage-visual-editor-canvas-frame,
+html[data-theme="dark"] .signage-visual-editor-control-tabs button,
+html[data-theme="dark"] .signage-visual-preset-grid button,
+html[data-theme="dark"] .signage-visual-element-list button,
+html[data-theme="dark"] .signage-visual-template-card,
+html[data-theme="dark"] .signage-visual-align-actions button,
+html[data-theme="dark"] .signage-visual-layer-actions button,
+html[data-theme="dark"] .signage-visual-zoom-controls button,
+html[data-theme="dark"] .signage-visual-zoom-controls strong,
+html[data-theme="dark"] .signage-drive-import-modal,
+html[data-theme="dark"] .signage-drive-import-file,
+html[data-theme="dark"] .signage-drive-import-details,
+html[data-theme="dark"] .signage-drive-breadcrumbs button,
+html[data-theme="dark"] .signage-drive-breadcrumbs span,
+html[data-theme="dark"] .signage-drive-folder-list,
+html[data-theme="dark"] .signage-drive-folder-list button {
+  background: var(--surface, #101826);
+  border-color: var(--border, #253246);
+  color: var(--text, #e5eefb);
+}
+
+html[data-theme="dark"] .signage-inline-form,
+html[data-theme="dark"] .signage-playlist-card.active,
+html[data-theme="dark"] .signage-device-monitor-card.selected,
+html[data-theme="dark"] .signage-health-filters button.active,
+html[data-theme="dark"] .signage-history-ranges button.active,
+html[data-theme="dark"] .signage-day-picker button.active,
+html[data-theme="dark"] .signage-visual-controls button.active,
+html[data-theme="dark"] .signage-visual-editor-control-tabs button.active,
+html[data-theme="dark"] .signage-visual-element-list button.active,
+html[data-theme="dark"] .signage-drive-import-file.selected,
+html[data-theme="dark"] .signage-drive-import-file:hover,
+html[data-theme="dark"] .signage-drive-breadcrumbs button:disabled {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(147, 197, 253, 0.28);
+}
+
+html[data-theme="dark"] .signage-kpi-card strong,
+html[data-theme="dark"] .signage-panel h2,
+html[data-theme="dark"] .signage-panel h3,
+html[data-theme="dark"] .signage-device-title-row strong,
+html[data-theme="dark"] .signage-list-title strong,
+html[data-theme="dark"] .signage-list-main > strong,
+html[data-theme="dark"] .signage-device-monitor-title strong,
+html[data-theme="dark"] .signage-info-pair > strong,
+html[data-theme="dark"] .signage-search input,
+html[data-theme="dark"] .signage-filter select,
+html[data-theme="dark"] .signage-device-monitor-actions select,
+html[data-theme="dark"] .signage-asset-card strong,
+html[data-theme="dark"] .signage-playlist-selector strong,
+html[data-theme="dark"] .signage-health-metric strong,
+html[data-theme="dark"] .signage-health-main strong,
+html[data-theme="dark"] .signage-history-date strong,
+html[data-theme="dark"] .signage-campaign-main strong,
+html[data-theme="dark"] .signage-visual-editor-section h4,
+html[data-theme="dark"] .signage-visual-editor-topbar h3,
+html[data-theme="dark"] .signage-visual-editor-preview-header strong,
+html[data-theme="dark"] .signage-visual-template-card strong,
+html[data-theme="dark"] .signage-visual-element-list button strong,
+html[data-theme="dark"] .signage-drive-import-header h3,
+html[data-theme="dark"] .signage-drive-import-file-main strong,
+html[data-theme="dark"] .signage-drive-selected-file strong {
+  color: var(--text, #e5eefb);
+}
+
+html[data-theme="dark"] .signage-kpi-card small,
+html[data-theme="dark"] .signage-kpi-card p,
+html[data-theme="dark"] .signage-panel-heading p,
+html[data-theme="dark"] .signage-info-pair > span,
+html[data-theme="dark"] .signage-device-title-row span,
+html[data-theme="dark"] .signage-list-title span,
+html[data-theme="dark"] .signage-list-main > span,
+html[data-theme="dark"] .signage-device-monitor-title span,
+html[data-theme="dark"] .signage-asset-card span,
+html[data-theme="dark"] .signage-playlist-selector span,
+html[data-theme="dark"] .signage-playlist-selector small,
+html[data-theme="dark"] .signage-list-footer,
+html[data-theme="dark"] .signage-health-metric span,
+html[data-theme="dark"] .signage-health-main span,
+html[data-theme="dark"] .signage-history-date span,
+html[data-theme="dark"] .signage-campaign-main span,
+html[data-theme="dark"] .digital-preview-meta small,
+html[data-theme="dark"] .signage-visual-editor-control-tabs button,
+html[data-theme="dark"] .signage-visual-editor-topbar span,
+html[data-theme="dark"] .signage-visual-editor-preview-header,
+html[data-theme="dark"] .signage-visual-template-card span,
+html[data-theme="dark"] .signage-visual-template-card small,
+html[data-theme="dark"] .signage-drive-import-header p,
+html[data-theme="dark"] .signage-drive-import-file-main small,
+html[data-theme="dark"] .signage-drive-selected-file span,
+html[data-theme="dark"] .signage-drive-folder-list > span {
+  color: var(--muted, #a7b3c7);
+}
+
+html[data-theme="dark"] .signage-template-badge {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
+
+html[data-theme="dark"] .signage-warning-note,
+html[data-theme="dark"] .signage-attention-reason {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(251, 146, 60, 0.28);
+  color: #fdba74;
+}
+
+html[data-theme="dark"] .signage-helper-note {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(147, 197, 253, 0.22);
+  color: var(--muted, #a7b3c7);
+}
+
+html[data-theme="dark"] .signage-drive-selected-file {
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(147, 197, 253, 0.22);
+}
+
+html[data-theme="dark"] .signage-drive-import-warning {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(251, 146, 60, 0.28);
+  color: #fdba74;
+}
+
+html[data-theme="dark"] .signage-drive-import-error {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: #fca5a5;
+}
+
+html[data-theme="dark"] .signage-chip {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--muted, #a7b3c7);
+}
+
+html[data-theme="dark"] .signage-log-metric,
+html[data-theme="dark"] .signage-log-toolbar,
+html[data-theme="dark"] .signage-log-empty,
+html[data-theme="dark"] .signage-active-filters,
+html[data-theme="dark"] .signage-activity-summary,
+html[data-theme="dark"] .signage-timeline-content,
+html[data-theme="dark"] .signage-log-detail-toggle,
+html[data-theme="dark"] .signage-log-detail-panel {
+  background: var(--surface, #101826);
+  border-color: var(--border, #253246);
+}
+
+html[data-theme="dark"] .signage-log-metric strong,
+html[data-theme="dark"] .signage-log-side strong,
+html[data-theme="dark"] .signage-log-empty strong,
+html[data-theme="dark"] .signage-activity-summary h3,
+html[data-theme="dark"] .signage-timeline-title,
+html[data-theme="dark"] .signage-log-detail-pair strong {
+  color: var(--text, #e5eefb);
+}
+
+html[data-theme="dark"] .signage-log-metric span:last-child,
+html[data-theme="dark"] .signage-log-side span,
+html[data-theme="dark"] .signage-log-empty p,
+html[data-theme="dark"] .signage-log-toolbar label,
+html[data-theme="dark"] .signage-timeline-subtitle,
+html[data-theme="dark"] .signage-timeline-time,
+html[data-theme="dark"] .signage-log-detail-pair span {
+  color: var(--muted, #a7b3c7);
+}
+
+html[data-theme="dark"] .signage-timeline-icon {
+  box-shadow: 0 0 0 4px var(--surface, #101826);
+}
+
+html[data-theme="dark"] .signage-action-menu[open] summary {
+  background: rgba(96, 165, 250, 0.16);
+  border-color: rgba(147, 197, 253, 0.28);
+  color: #93c5fd;
+}
+
+html[data-theme="dark"] .signage-type-badge {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}

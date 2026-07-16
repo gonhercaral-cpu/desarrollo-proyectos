@@ -1,0 +1,136 @@
+.signage-inline-form {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid rgba(15, 79, 196, 0.22);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 92%, #0f4fc4 8%);
+}
+
+.signage-pairing-form {
+  border-color: rgba(22, 163, 74, 0.28);
+  background: color-mix(in srgb, var(--surface, #ffffff) 93%, #16a34a 7%);
+}
+
+.signage-list-footer {
+  margin-top: 14px;
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.signage-pagination {
+  display: flex;
+  gap: 8px;
+}
+
+.signage-pagination button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-weight: 850;
+}
+
+.signage-pagination button.active {
+  background: #0f4fc4;
+  border-color: #0f4fc4;
+  color: #ffffff;
+}
+
+.signage-preview-card {
+  overflow: hidden;
+}
+
+.signage-monitor-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 14px;
+  overflow: hidden;
+  border: 8px solid #111827;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(2, 6, 23, 0.96), rgba(15, 79, 196, 0.78)),
+    #020617;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.26);
+}
+
+.signage-monitor-preview::after {
+  content: "";
+  position: absolute;
+  left: 38%;
+  right: 38%;
+  bottom: -8px;
+  height: 8px;
+  border-radius: 0 0 8px 8px;
+  background: #111827;
+}
+
+.signage-monitor-preview img,
+.signage-monitor-preview video,
+.signage-monitor-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  object-fit: cover;
+  background: #ffffff;
+}
+
+.signage-monitor-preview > div {
+  display: grid;
+  gap: 10px;
+  place-items: center;
+  padding: 20px;
+  color: #ffffff;
+  text-align: center;
+}
+
+.signage-monitor-preview > div svg {
+  width: 42px;
+  height: 42px;
+}
+
+.signage-preview-details {
+  display: grid;
+  gap: 10px;
+}
+
+.signage-preview-details .signage-info-pair {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.signage-preview-meta-list {
+  display: grid;
+  gap: 10px;
+}
+
+.signage-quick-actions > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.signage-quick-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.signage-quick-actions button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}

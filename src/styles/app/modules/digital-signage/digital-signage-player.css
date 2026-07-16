@@ -1,0 +1,266 @@
+.signage-player-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000000;
+  color: #ffffff;
+  z-index: 9999;
+}
+
+.signage-player-stage {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #000000;
+}
+
+.signage-player-offline-badge {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.signage-player-stage img,
+.signage-player-stage video,
+.signage-player-stage iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.signage-player-stage img,
+.signage-player-stage video {
+  object-fit: contain;
+}
+
+.signage-player-stage iframe {
+  background: #ffffff;
+}
+
+.signage-player-web-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000000;
+}
+
+.signage-player-web-frame iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
+.signage-player-web-overlay {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 3;
+  max-width: min(520px, calc(100vw - 36px));
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.74);
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  backdrop-filter: blur(12px);
+}
+
+.signage-template-slide {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: clamp(48px, 7vw, 120px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 48%, #021024 100%);
+  color: #ffffff;
+  text-align: center;
+}
+
+.signage-template-slide::after {
+  content: "";
+  position: absolute;
+  inset: auto -12% -34% -12%;
+  height: 58%;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50% 50% 0 0;
+  pointer-events: none;
+}
+
+.signage-template-slide.verde {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #064e3b 0%, #138a54 52%, #02150f 100%);
+}
+
+.signage-template-slide.dorado {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #704500 0%, #d79516 52%, #1f1300 100%);
+}
+
+.signage-template-slide.rojo {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #7a271a 0%, #d92d20 52%, #260804 100%);
+}
+
+.signage-template-slide.cafe {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #3f2a1d 0%, #8b5e34 52%, #180f0a 100%);
+}
+
+.signage-player-visual-ad {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.signage-player-visual-element {
+  position: absolute;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
+  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.42);
+}
+
+.signage-player-visual-element.image {
+  overflow: hidden;
+  text-shadow: none;
+}
+
+.signage-player-visual-element.image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: inherit;
+}
+
+.signage-template-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: clamp(14px, 1.8vw, 28px);
+  width: min(92vw, 1320px);
+}
+
+.signage-template-kicker,
+.signage-template-content strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: clamp(18px, 1.7vw, 30px);
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.signage-template-content h1 {
+  max-width: 14ch;
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(64px, 8vw, 148px);
+  font-weight: 950;
+  line-height: 0.95;
+}
+
+.signage-template-content h2 {
+  max-width: 34ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: clamp(32px, 3.6vw, 68px);
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.signage-template-content p {
+  max-width: 42ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: clamp(26px, 2.6vw, 50px);
+  font-weight: 700;
+  line-height: 1.18;
+  white-space: pre-line;
+}
+
+.signage-template-content small {
+  margin-top: clamp(8px, 1vw, 18px);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: clamp(18px, 1.6vw, 30px);
+  font-weight: 800;
+}
+
+.signage-player-message {
+  display: grid;
+  place-items: center;
+  width: min(92vw, 620px);
+  min-height: 160px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.12), transparent 24%),
+    linear-gradient(135deg, rgba(8, 47, 115, 0.72), rgba(2, 6, 23, 0.92));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  text-align: center;
+}
+
+.signage-player-message span,
+.signage-player-message small {
+  display: block;
+  color: #dbeafe;
+  letter-spacing: 0;
+}
+
+.signage-player-message span {
+  font-size: clamp(18px, 2.4vw, 28px);
+  font-weight: 850;
+}
+
+.signage-player-message small {
+  margin: 6px 0 18px;
+  font-size: clamp(12px, 1.5vw, 16px);
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.signage-player-message strong {
+  font-size: clamp(24px, 5vw, 48px);
+  line-height: 1.1;
+}

@@ -1,0 +1,546 @@
+.signage-device-list {
+  display: grid;
+  gap: 12px;
+}
+
+.signage-device-card {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.signage-device-card:hover,
+.signage-device-card.selected {
+  border-color: rgba(15, 79, 196, 0.35);
+  box-shadow: 0 12px 28px rgba(15, 79, 196, 0.12);
+  transform: translateY(-1px);
+}
+
+.signage-device-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-device-icon.online {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.signage-device-icon.offline {
+  background: #ffedd5;
+  color: #f97316;
+}
+
+.signage-device-icon.no-connection {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.signage-device-icon.unassigned {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.signage-device-icon.inactive {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.signage-device-main {
+  min-width: 0;
+}
+
+.signage-device-title-row,
+.signage-playlist-toolbar,
+.signage-form-heading,
+.signage-form-actions,
+.signage-list-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signage-device-title-row {
+  margin-bottom: 12px;
+}
+
+.signage-device-title-row strong {
+  display: block;
+  color: var(--text, #0f2442);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.signage-device-title-row span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.signage-device-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border, #e5edf7);
+}
+
+.signage-info-pair {
+  min-width: 0;
+}
+
+.signage-info-pair > span {
+  display: block;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.signage-info-pair > strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--text, #0f2442);
+  font-size: 13px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.signage-info-pair > strong.linkish {
+  color: #0f4fc4;
+}
+
+.signage-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.signage-device-actions button,
+.signage-device-actions label,
+.signage-quick-actions button {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.signage-device-actions button,
+.signage-device-actions label {
+  display: inline-flex !important;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+  text-transform: none !important;
+}
+
+.signage-device-actions label {
+  flex: 1 1 180px;
+  max-width: 280px;
+}
+
+.signage-device-actions select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: 0;
+}
+
+.signage-device-actions .signage-action-menu summary,
+.signage-device-monitor-actions .signage-action-menu summary {
+  min-height: 32px;
+}
+
+.signage-device-monitor-actions .signage-action-menu summary {
+  width: 100%;
+}
+
+.signage-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 !important;
+}
+
+.signage-icon-button.danger {
+  color: #b42318;
+}
+
+.signage-device-monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.signage-device-monitor-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.signage-device-monitor-card:hover,
+.signage-device-monitor-card.selected {
+  border-color: rgba(15, 79, 196, 0.35);
+  box-shadow: 0 12px 28px rgba(15, 79, 196, 0.12);
+  transform: translateY(-1px);
+}
+
+.signage-device-monitor-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 7px solid #111827;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(2, 6, 23, 0.96), rgba(15, 79, 196, 0.75)),
+    #020617;
+  color: #ffffff;
+  text-align: center;
+}
+
+.signage-device-monitor-thumb::after {
+  content: "";
+  position: absolute;
+  left: 38%;
+  right: 38%;
+  bottom: -7px;
+  height: 7px;
+  border-radius: 0 0 8px 8px;
+  background: #111827;
+}
+
+.signage-device-monitor-thumb img,
+.signage-device-monitor-thumb video,
+.signage-device-monitor-thumb .digital-template-preview,
+.signage-device-monitor-thumb .signage-visual-ad-preview {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.signage-device-monitor-thumb .digital-template-preview,
+.signage-device-monitor-thumb .signage-visual-ad-preview {
+  min-height: 0;
+}
+
+.signage-device-monitor-thumb.empty,
+.signage-device-monitor-thumb.placeholder {
+  gap: 8px;
+  padding: 18px;
+}
+
+.signage-device-monitor-thumb svg {
+  width: 34px;
+  height: 34px;
+}
+
+.signage-device-monitor-thumb strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.signage-device-monitor-thumb span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-device-monitor-body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.signage-device-monitor-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.signage-device-monitor-title strong {
+  display: block;
+  color: var(--text, #0f2442);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.signage-device-monitor-title span {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-device-monitor-meta {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, #e5edf7);
+}
+
+.signage-device-monitor-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.signage-device-monitor-actions button,
+.signage-device-monitor-actions label {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-size: 13px;
+  font-weight: 780;
+  text-transform: none !important;
+}
+
+.signage-device-monitor-actions select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.signage-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.signage-status-badge.online,
+.signage-status-badge.active {
+  background: #dcfce7;
+  color: #148253;
+}
+
+.signage-status-badge.offline {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.signage-status-badge.no-connection {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.signage-status-badge.unassigned {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.signage-status-badge.inactive {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.signage-status-badge.scheduled {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.signage-status-badge.ended {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.signage-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.signage-type-badge,
+.signage-soft-badge,
+.signage-publish-badge,
+.signage-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: min(190px, 100%);
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-badge-row .signage-type-badge,
+.signage-badge-row .signage-soft-badge,
+.signage-badge-row .signage-publish-badge,
+.signage-badge-row .signage-tag-badge,
+.signage-badge-row .signage-status-badge,
+.signage-badge-row .signage-priority-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: fit-content;
+  margin: 0;
+}
+
+.signage-type-badge {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-type-badge.video {
+  background: #f3e8ff;
+  color: #6d28d9;
+}
+
+.signage-type-badge.web {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.signage-type-badge.template {
+  background: #ecfdf3;
+  color: #148253;
+}
+
+.signage-soft-badge {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.signage-soft-badge.warning {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.signage-publish-badge.draft {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.signage-publish-badge.review {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.signage-publish-badge.published {
+  background: #ecfdf3;
+  color: #148253;
+}
+
+.signage-publish-badge.archived {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.signage-publish-select {
+  width: fit-content;
+  max-width: 190px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-soft-badge.archived,
+.signage-tag-badge {
+  background: color-mix(in srgb, #64748b 13%, transparent);
+  color: var(--muted, #64748b);
+}
+
+.signage-tag-badge::before {
+  content: "#";
+  opacity: 0.7;
+}
+
+.signage-warning-note,
+.signage-attention-reason {
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.signage-health-panel {
+  display: grid;
+  gap: 16px;
+}

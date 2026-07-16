@@ -1,0 +1,272 @@
+.signage-health-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.signage-health-metric {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-health-metric span {
+  display: block;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.signage-health-metric strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text, #0f2442);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.signage-health-metric.online {
+  border-color: rgba(22, 163, 74, 0.24);
+}
+
+.signage-health-metric.offline,
+.signage-health-metric.attention {
+  border-color: rgba(249, 115, 22, 0.28);
+}
+
+.signage-health-metric.unassigned {
+  border-color: rgba(91, 33, 182, 0.22);
+}
+
+.signage-health-metric.inactive {
+  border-color: rgba(180, 35, 24, 0.22);
+}
+
+.signage-health-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.85fr) minmax(0, 1.15fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.signage-health-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.signage-health-filters button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 999px;
+  background: var(--surface, #ffffff);
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.signage-health-filters button.active {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-health-list {
+  display: grid;
+  gap: 12px;
+}
+
+.signage-health-row {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-health-row.needs-attention {
+  border-color: rgba(249, 115, 22, 0.32);
+  box-shadow: inset 3px 0 0 rgba(249, 115, 22, 0.78);
+}
+
+.signage-health-row .signage-card-actions {
+  gap: 7px;
+}
+
+.signage-health-row .visual-outline-button {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.signage-health-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signage-health-main strong {
+  display: block;
+  color: var(--text, #0f2442);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.signage-health-main span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.signage-health-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.signage-attention-badge {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.signage-health-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.signage-health-details .signage-info-pair > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.signage-history-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.signage-history-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 220px) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.signage-history-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.signage-history-ranges button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.signage-history-ranges button.active {
+  border-color: rgba(15, 79, 196, 0.35);
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.signage-history-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px;
+}
+
+.signage-history-date {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.signage-history-date strong {
+  overflow: hidden;
+  color: var(--text, #0f2442);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-history-date span {
+  overflow: hidden;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-audit-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 180px;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(15, 79, 196, 0.1);
+  color: #0f4fc4;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-audit-badge.device,
+.signage-audit-badge.pairing {
+  background: rgba(124, 58, 237, 0.1);
+  color: #6d28d9;
+}
+
+.signage-audit-badge.campaign {
+  background: rgba(234, 88, 12, 0.1);
+  color: #c2410c;
+}
+
+.signage-audit-badge.nube_aes_import,
+.signage-audit-badge.web_asset {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1;
+}

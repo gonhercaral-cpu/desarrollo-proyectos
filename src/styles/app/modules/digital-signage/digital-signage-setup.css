@@ -1,0 +1,100 @@
+.signage-setup-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  min-height: 100vh;
+  padding: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.28), transparent 26%),
+    linear-gradient(135deg, #020617 0%, #082f73 52%, #020617 100%);
+  color: #ffffff;
+  z-index: 9999;
+}
+
+.signage-setup-card {
+  display: grid;
+  justify-items: center;
+  width: min(92vw, 680px);
+  padding: clamp(24px, 5vw, 46px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.58);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  text-align: center;
+  backdrop-filter: blur(18px);
+}
+
+.signage-setup-card span {
+  color: #dbeafe;
+  font-size: clamp(18px, 2.4vw, 28px);
+  font-weight: 900;
+}
+
+.signage-setup-card small {
+  margin-top: 6px;
+  color: #bfdbfe;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.signage-setup-card h1 {
+  margin: 28px 0 14px;
+  color: #ffffff;
+  font-size: clamp(24px, 4vw, 42px);
+  line-height: 1.1;
+}
+
+.signage-setup-code {
+  width: 100%;
+  margin: 4px 0 18px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: clamp(46px, 11vw, 88px);
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.signage-setup-code.expired {
+  color: #fecaca;
+}
+
+.signage-setup-card p {
+  max-width: 520px;
+  margin: 0;
+  color: #dbeafe;
+  font-size: clamp(15px, 2vw, 18px);
+  line-height: 1.45;
+}
+
+.signage-setup-status {
+  display: inline-flex;
+  margin: 20px 0 0;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(219, 234, 254, 0.12);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.signage-setup-card button {
+  margin-top: 18px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f4fc4;
+  font-size: 14px;
+  font-weight: 900;
+}

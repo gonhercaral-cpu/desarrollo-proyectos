@@ -1,0 +1,120 @@
+.signage-campaign-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  padding: 13px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-campaign-card.needs-attention {
+  border-color: rgba(249, 115, 22, 0.32);
+}
+
+.signage-campaign-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signage-campaign-main strong {
+  display: block;
+  color: var(--text, #0f2442);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.signage-campaign-main span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.signage-campaign-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.signage-campaign-card .signage-list-actions {
+  padding-top: 2px;
+  border-top: 1px solid var(--border, #e5edf7);
+}
+
+.signage-priority-badge {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.signage-priority-badge.alta {
+  background: #ffedd5;
+  color: #c2410c !important;
+}
+
+.signage-priority-badge.urgente {
+  background: #fee2e2;
+  color: #b42318 !important;
+}
+
+.signage-schedule-box {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 14px;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 94%, #0f4fc4 6%);
+}
+
+.signage-toggle-row {
+  display: inline-flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 10px !important;
+  min-height: 28px;
+  text-transform: none !important;
+}
+
+.signage-toggle-row input {
+  width: 18px !important;
+  height: 18px;
+  min-width: 18px;
+}
+
+.signage-day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.signage-day-picker button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 999px;
+  background: var(--surface, #ffffff);
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-day-picker button.active {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
