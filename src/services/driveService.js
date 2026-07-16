@@ -45,6 +45,10 @@ const driveUnshareItemCallable = httpsCallable(functions, "driveUnshareItem");
 const driveListSharedWithMeCallable = httpsCallable(functions, "driveListSharedWithMe");
 const driveListItemSharesCallable = httpsCallable(functions, "driveListItemShares");
 const driveListShareableUsersCallable = httpsCallable(functions, "driveListShareableUsers");
+const importDriveFileToSignageStorageCallable = httpsCallable(
+  functions,
+  "importDriveFileToSignageStorage"
+);
 
 export async function listDriveFolder(folderId) {
   const response = await driveListFolderCallable({ folderId });
@@ -72,6 +76,15 @@ export async function createDriveResumableUpload({ folderId, name, mimeType, siz
     name,
     mimeType,
     size,
+  });
+  return response.data;
+}
+
+export async function importDriveFileToSignageStorage({ driveFileId, assetId, filename = "" }) {
+  const response = await importDriveFileToSignageStorageCallable({
+    driveFileId,
+    assetId,
+    filename,
   });
   return response.data;
 }

@@ -20,6 +20,8 @@ import {
   getSignageDevices,
   getSignagePlaylists,
   getVisualTemplates,
+  importSignageAssetFromDrive,
+  sendWebAssetCommand,
   updateSignageCampaign,
   updateSignageAsset,
   updateSignageDevice,
@@ -28,6 +30,9 @@ import {
   updateVisualAdAsset,
   uploadSignageAsset,
 } from "../services/digitalSignageService";
+import { getDriveRootSettings, listDriveFolder } from "../services/driveService";
+
+const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 const TABS = [
   { key: "library", label: "Biblioteca", icon: "library" },
@@ -64,11 +69,29 @@ const DEFAULT_ASSET_FORM = {
   durationSeconds: 10,
 };
 
+const DEFAULT_DRIVE_IMPORT_FORM = {
+  title: "",
+  plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+  durationSeconds: 10,
+  category: "institucional",
+  tags: "",
+  publishStatus: "draft",
+  active: true,
+};
+
 const DEFAULT_WEB_FORM = {
   title: "",
   url: "",
   plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
   durationSeconds: 20,
+  webSettings: {
+    mode: "iframe",
+    reloadIntervalSeconds: "",
+    zoom: 100,
+    showStatusOverlay: true,
+    allowInteraction: false,
+    cacheBustOnReload: true,
+  },
 };
 
 const TEMPLATE_OPTIONS = [
@@ -193,6 +216,7 @@ const VISUAL_AD_ZOOM_STEP = 0.1;
 const VISUAL_AD_DRAFT_PREFIX = "digitalSignage:visualAdDraft:";
 const VISUAL_AD_DRAFT_NEW_KEY = `${VISUAL_AD_DRAFT_PREFIX}new`;
 const VISUAL_AD_DRAFT_DEBOUNCE_MS = 800;
+const DEVICES_VIEW_MODE_KEY = "digitalSignage:devicesViewMode";
 
 export default function DigitalSignageAdmin() {
   const { profile, isAdmin } = useAuth();
@@ -222,10 +246,22 @@ export default function DigitalSignageAdmin() {
   const [visualAdZoom, setVisualAdZoom] = useState(1);
   const [visualAdDraftStatus, setVisualAdDraftStatus] = useState("");
   const [assetFile, setAssetFile] = useState(null);
+  const [driveImportOpen, setDriveImportOpen] = useState(false);
+  const [driveImportSearch, setDriveImportSearch] = useState("");
+  const [driveImportType, setDriveImportType] = useState("imagenes");
+  const [driveImportLoading, setDriveImportLoading] = useState(false);
+  const [driveImportFiles, setDriveImportFiles] = useState([]);
+  const [driveImportFolders, setDriveImportFolders] = useState([]);
+  const [driveImportFolderId, setDriveImportFolderId] = useState("");
+  const [driveImportBreadcrumbs, setDriveImportBreadcrumbs] = useState([]);
+  const [selectedDriveImportFile, setSelectedDriveImportFile] = useState(null);
+  const [driveImportForm, setDriveImportForm] = useState(DEFAULT_DRIVE_IMPORT_FORM);
+  const [driveImportError, setDriveImportError] = useState("");
   const [playlistForm, setPlaylistForm] = useState(DEFAULT_PLAYLIST_FORM);
   const [campaignForm, setCampaignForm] = useState(DEFAULT_CAMPAIGN_FORM);
   const [editingCampaignId, setEditingCampaignId] = useState("");
   const [editingPlaylistId, setEditingPlaylistId] = useState("");
+  const [editingWebAssetId, setEditingWebAssetId] = useState("");
   const [deviceForm, setDeviceForm] = useState(DEFAULT_DEVICE_FORM);
   const [pairingForm, setPairingForm] = useState(DEFAULT_PAIRING_FORM);
   const [editingDeviceId, setEditingDeviceId] = useState("");
@@ -240,6 +276,7 @@ export default function DigitalSignageAdmin() {
   const [assetSort, setAssetSort] = useState("recent");
   const [deviceSearch, setDeviceSearch] = useState("");
   const [deviceFilter, setDeviceFilter] = useState("all");
+  const [devicesViewMode, setDevicesViewMode] = useState(getStoredDevicesViewMode);
   const [healthSearch, setHealthSearch] = useState("");
   const [healthFilter, setHealthFilter] = useState("all");
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -312,6 +349,23 @@ export default function DigitalSignageAdmin() {
     assetTypeFilter,
     assets,
   ]);
+
+  const filteredDriveImportFiles = useMemo(() => {
+    const normalizedSearch = normalizeSearch(driveImportSearch);
+
+    return driveImportFiles.filter((file) => {
+      const mimeType = String(file?.mimeType || "");
+      const matchesType =
+        driveImportType === "videos"
+          ? mimeType.startsWith("video/")
+          : mimeType.startsWith("image/");
+      const matchesSearch =
+        !normalizedSearch ||
+        normalizeSearch(file?.name).includes(normalizedSearch);
+
+      return matchesType && matchesSearch;
+    });
+  }, [driveImportFiles, driveImportSearch, driveImportType]);
 
   const activeCampaignByDeviceId = useMemo(() => {
     const entries = devices.map((device) => [
@@ -503,6 +557,15 @@ export default function DigitalSignageAdmin() {
     return () => window.clearTimeout(timeoutId);
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(DEVICES_VIEW_MODE_KEY, devicesViewMode);
+    } catch (error) {
+      console.warn("No se pudo guardar preferencia de vista de dispositivos.", error);
+    }
+  }, [devicesViewMode]);
+
   useEffect(
     () => () => {
       if (visualAdBackgroundPreviewRef.current) {
@@ -621,19 +684,172 @@ export default function DigitalSignageAdmin() {
     }, "Contenido guardado.");
   }
 
+  async function openDriveImportModal() {
+    setDriveImportOpen(true);
+    setDriveImportError("");
+    setDriveImportSearch("");
+    setDriveImportFiles([]);
+    setDriveImportFolders([]);
+    setDriveImportFolderId("");
+    setDriveImportBreadcrumbs([]);
+    setSelectedDriveImportFile(null);
+    setDriveImportForm(DEFAULT_DRIVE_IMPORT_FORM);
+    await loadDriveImportRootFolder();
+  }
+
+  function closeDriveImportModal() {
+    if (saving) return;
+    setDriveImportOpen(false);
+    setDriveImportError("");
+    setSelectedDriveImportFile(null);
+  }
+
+  async function loadDriveImportRootFolder() {
+    setDriveImportLoading(true);
+    setDriveImportError("");
+
+    try {
+      const settings = await getDriveRootSettings();
+      const rootFolderId = String(settings?.rootFolderId || "").trim();
+
+      if (!rootFolderId) {
+        throw new Error("Configura una carpeta raíz en Nube AES antes de importar.");
+      }
+
+      await loadDriveImportFolder(rootFolderId, [{ id: rootFolderId, name: "Raíz" }]);
+    } catch (error) {
+      setDriveImportFiles([]);
+      setDriveImportFolders([]);
+      setDriveImportFolderId("");
+      setDriveImportBreadcrumbs([]);
+      setDriveImportError(error.message || "No se pudo cargar Nube AES.");
+    } finally {
+      setDriveImportLoading(false);
+    }
+  }
+
+  async function loadDriveImportFolder(folderId, breadcrumbs) {
+    const cleanFolderId = String(folderId || "").trim();
+    if (!cleanFolderId) return;
+
+    setDriveImportLoading(true);
+    setDriveImportError("");
+    setSelectedDriveImportFile(null);
+
+    try {
+      const result = await listDriveFolder(cleanFolderId);
+      const items = Array.isArray(result?.files) ? result.files : [];
+
+      setDriveImportFolderId(cleanFolderId);
+      setDriveImportBreadcrumbs(breadcrumbs);
+      setDriveImportFolders(items.filter(isDriveFolder));
+      setDriveImportFiles(items.filter((item) => !isDriveFolder(item)));
+    } catch (error) {
+      setDriveImportError(error.message || "No se pudo cargar la carpeta de Nube AES.");
+      setDriveImportFolders([]);
+      setDriveImportFiles([]);
+    } finally {
+      setDriveImportLoading(false);
+    }
+  }
+
+  function openDriveImportFolder(folder) {
+    loadDriveImportFolder(folder.id, [
+      ...driveImportBreadcrumbs,
+      { id: folder.id, name: folder.name || "Carpeta" },
+    ]);
+  }
+
+  function goToDriveImportBreadcrumb(index) {
+    const breadcrumb = driveImportBreadcrumbs[index];
+    if (!breadcrumb || breadcrumb.id === driveImportFolderId) return;
+    loadDriveImportFolder(breadcrumb.id, driveImportBreadcrumbs.slice(0, index + 1));
+  }
+
+  function goBackDriveImportFolder() {
+    if (driveImportBreadcrumbs.length <= 1) return;
+    goToDriveImportBreadcrumb(driveImportBreadcrumbs.length - 2);
+  }
+
+  function selectDriveImportFile(file) {
+    setSelectedDriveImportFile(file);
+    setDriveImportError("");
+    setDriveImportForm((current) => ({
+      ...current,
+      title: current.title || getTitleFromFileName(file?.name),
+      durationSeconds: String(file?.mimeType || "").startsWith("video/") ? 30 : current.durationSeconds,
+    }));
+  }
+
+  async function handleDriveImportSearch(event) {
+    event.preventDefault();
+    if (!driveImportFolderId) {
+      setDriveImportError("Selecciona una carpeta para buscar archivos.");
+    }
+  }
+
+  async function handleImportDriveAsset(event) {
+    event.preventDefault();
+
+    if (!selectedDriveImportFile) {
+      setDriveImportError("Selecciona un archivo de Nube AES.");
+      return;
+    }
+
+    if (isDriveFileAlreadyImported(selectedDriveImportFile, assets)) {
+      setDriveImportError("Este archivo de Nube AES ya fue importado a Digital Signage.");
+      return;
+    }
+
+    await runAction(async () => {
+      await importSignageAssetFromDrive(
+        selectedDriveImportFile,
+        {
+          ...driveImportForm,
+          sourceFolderId: driveImportFolderId,
+          sourceFolderName: driveImportBreadcrumbs.at(-1)?.name || "",
+        },
+        profile
+      );
+      setDriveImportOpen(false);
+      setSelectedDriveImportFile(null);
+      setDriveImportForm(DEFAULT_DRIVE_IMPORT_FORM);
+    }, "Contenido importado desde Nube AES.");
+  }
+
   async function handleCreateWebAsset(event) {
     event.preventDefault();
 
     await runAction(async () => {
-      await createWebAsset(
-        {
-          ...webForm,
-          url: normalizeUrl(webForm.url),
-        },
-        profile
-      );
-      setWebForm(DEFAULT_WEB_FORM);
-    }, "Contenido web guardado.");
+      const payload = {
+        ...webForm,
+        url: normalizeUrl(webForm.url),
+        webSettings: normalizeWebSettingsForSave(webForm.webSettings),
+      };
+
+      if (editingWebAssetId) {
+        await updateSignageAsset(editingWebAssetId, payload);
+      } else {
+        await createWebAsset(payload, profile);
+      }
+
+      resetWebAssetForm();
+    }, editingWebAssetId ? "Contenido web actualizado." : "Contenido web guardado.");
+  }
+
+  function updateWebFormSettings(updates) {
+    setWebForm((current) => ({
+      ...current,
+      webSettings: {
+        ...current.webSettings,
+        ...updates,
+      },
+    }));
+  }
+
+  function resetWebAssetForm() {
+    setWebForm(DEFAULT_WEB_FORM);
+    setEditingWebAssetId("");
   }
 
   async function handleCreateTemplateAsset(event) {
@@ -1401,6 +1617,29 @@ export default function DigitalSignageAdmin() {
     );
   }
 
+  function openEditWebAssetForm(asset) {
+    if (!asset?.id || asset.type !== "web") return;
+
+    setEditingWebAssetId(asset.id);
+    setWebForm({
+      title: asset.title || "",
+      url: asset.url || "",
+      plantel: asset.plantel || DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+      durationSeconds: asset.durationSeconds || 20,
+      webSettings: normalizeWebSettingsForForm(asset.webSettings),
+    });
+    setMessage("Editando opciones web. Guarda cambios en el panel lateral.");
+  }
+
+  async function sendWebReloadCommand(asset) {
+    if (!asset?.id || asset.type !== "web") return;
+
+    await runAction(
+      () => sendWebAssetCommand(asset.id, { type: "reload" }, profile),
+      "Recarga enviada a pantallas."
+    );
+  }
+
   async function toggleAssetArchive(asset) {
     if (!asset?.id) return;
 
@@ -1530,6 +1769,13 @@ export default function DigitalSignageAdmin() {
       return {
         ...baseItem,
         visualAdData: asset.visualAdData,
+      };
+    }
+
+    if (asset.type === "web") {
+      return {
+        ...baseItem,
+        webSettings: normalizeWebSettingsForSave(asset.webSettings),
       };
     }
 
@@ -1699,6 +1945,23 @@ export default function DigitalSignageAdmin() {
                   <option value="inactive">Inactivo</option>
                 </select>
               </label>
+
+              <div className="signage-view-toggle" aria-label="Vista de dispositivos">
+                <button
+                  type="button"
+                  className={devicesViewMode === "list" ? "active" : ""}
+                  onClick={() => setDevicesViewMode("list")}
+                >
+                  Lista
+                </button>
+                <button
+                  type="button"
+                  className={devicesViewMode === "monitors" ? "active" : ""}
+                  onClick={() => setDevicesViewMode("monitors")}
+                >
+                  Monitores
+                </button>
+              </div>
             </div>
 
             <p className="signage-helper-note">
@@ -1818,38 +2081,71 @@ export default function DigitalSignageAdmin() {
               </form>
             )}
 
-            <div className="signage-device-list">
-              {filteredDevices.length === 0 && <p className="digital-empty">Sin dispositivos para mostrar.</p>}
-              {filteredDevices.map((device) => (
-                <DeviceCard
-                  key={device.id}
-                  device={device}
-                  active={selectedDevice?.id === device.id}
-                  playlists={playlists}
-                  activeCampaign={activeCampaignByDeviceId.get(device.id)}
-                  saving={saving}
-                  onSelect={() => setSelectedDeviceId(device.id)}
-                  onEdit={() => openEditDeviceForm(device)}
-                  onCopy={() => copyPlayerUrl(device)}
-                  onPlaylistChange={(playlistId) =>
-                    runAction(
-                      () => updateSignageDevice(device.id, { assignedPlaylistId: playlistId }),
-                      "Playlist asignada."
-                    )
-                  }
-                  onToggle={() =>
-                    runAction(
-                      () => updateSignageDevice(device.id, { active: device.active === false }),
-                      "Dispositivo actualizado."
-                    )
-                  }
-                  onDelete={() =>
-                    window.confirm("¿Eliminar dispositivo?") &&
-                    runAction(() => deleteSignageDevice(device.id), "Dispositivo eliminado.")
-                  }
-                />
-              ))}
-            </div>
+            {devicesViewMode === "monitors" ? (
+              <DeviceMonitorGrid
+                devices={filteredDevices}
+                selectedDevice={selectedDevice}
+                playlists={playlists}
+                activeCampaignByDeviceId={activeCampaignByDeviceId}
+                saving={saving}
+                onSelect={(device) => setSelectedDeviceId(device.id)}
+                onEdit={openEditDeviceForm}
+                onCopy={copyPlayerUrl}
+                onPlaylistChange={(device, playlistId) =>
+                  runAction(
+                    () => updateSignageDevice(device.id, { assignedPlaylistId: playlistId }),
+                    "Playlist asignada."
+                  )
+                }
+                onClearContent={(device) =>
+                  window.confirm("Esta pantalla quedará sin contenido asignado. ¿Continuar?") &&
+                  runAction(
+                    () => updateSignageDevice(device.id, { assignedPlaylistId: "" }),
+                    "Contenido asignado removido."
+                  )
+                }
+              />
+            ) : (
+              <div className="signage-device-list">
+                {filteredDevices.length === 0 && <p className="digital-empty">Sin dispositivos para mostrar.</p>}
+                {filteredDevices.map((device) => (
+                  <DeviceCard
+                    key={device.id}
+                    device={device}
+                    active={selectedDevice?.id === device.id}
+                    playlists={playlists}
+                    activeCampaign={activeCampaignByDeviceId.get(device.id)}
+                    saving={saving}
+                    onSelect={() => setSelectedDeviceId(device.id)}
+                    onEdit={() => openEditDeviceForm(device)}
+                    onCopy={() => copyPlayerUrl(device)}
+                    onPlaylistChange={(playlistId) =>
+                      runAction(
+                        () => updateSignageDevice(device.id, { assignedPlaylistId: playlistId }),
+                        "Playlist asignada."
+                      )
+                    }
+                    onClearContent={() =>
+                      window.confirm("Esta pantalla quedará sin contenido asignado. ¿Continuar?") &&
+                      runAction(
+                        () => updateSignageDevice(device.id, { assignedPlaylistId: "" }),
+                        "Contenido asignado removido."
+                      )
+                    }
+                    onToggle={() =>
+                      runAction(
+                        () => updateSignageDevice(device.id, { active: device.active === false }),
+                        "Dispositivo actualizado."
+                      )
+                    }
+                    onDelete={() =>
+                      window.confirm("¿Eliminar dispositivo?") &&
+                      runAction(() => deleteSignageDevice(device.id), "Dispositivo eliminado.")
+                    }
+                  />
+                ))}
+              </div>
+            )}
 
             <footer className="signage-list-footer">
               <span>Mostrando {filteredDevices.length ? 1 : 0} a {filteredDevices.length} de {devices.length} dispositivos</span>
@@ -1984,6 +2280,13 @@ export default function DigitalSignageAdmin() {
               <button
                 type="button"
                 className="visual-primary-button"
+                onClick={openDriveImportModal}
+              >
+                Importar desde Nube AES
+              </button>
+              <button
+                type="button"
+                className="visual-outline-button"
                 onClick={() => setTemplateFormOpen((current) => !current)}
               >
                 Nueva plantilla
@@ -2082,13 +2385,17 @@ export default function DigitalSignageAdmin() {
                 <p className="digital-empty">No hay contenidos que coincidan con los filtros.</p>
               )}
               {filteredAssets.map((asset) => (
-                <article className={`signage-asset-card ${asset.archived === true ? "archived" : ""}`} key={asset.id}>
-                  <AssetThumb asset={asset} />
-                  <div>
+                <article className={`signage-list-row signage-asset-card ${asset.archived === true ? "archived" : ""}`} key={asset.id}>
+                  <div className="signage-list-thumb">
+                    <AssetThumb asset={asset} />
+                  </div>
+                  <div className="signage-list-main">
                     <strong>{asset.title || "Sin título"}</strong>
                     <span>{getAssetTypeLabel(asset.type)} - {asset.plantel || "Sin plantel"} - {asset.durationSeconds || 10}s - {getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
-                    <div className="signage-badge-row">
+                    <div className="signage-list-meta">
                       <TypeBadge type={asset.type} />
+                      <span className="signage-chip">{asset.plantel || "Sin plantel"}</span>
+                      <span className="signage-chip">{asset.durationSeconds || 10}s</span>
                       <StatusBadge status={asset.active === false ? "inactive" : "active"} />
                       <PublishStatusBadge status={asset.publishStatus} />
                       {asset.archived === true && <span className="signage-soft-badge archived">Archivado</span>}
@@ -2100,11 +2407,21 @@ export default function DigitalSignageAdmin() {
                       ))}
                     </div>
                   </div>
-                  <div className="signage-card-actions">
+                  <div className="signage-list-actions">
                     {asset.type === "visual_ad" && (
                       <button type="button" className="visual-outline-button" onClick={() => openEditVisualAdEditor(asset)} disabled={saving}>
                         Editar anuncio
                       </button>
+                    )}
+                    {asset.type === "web" && (
+                      <>
+                        <button type="button" className="visual-outline-button" onClick={() => openEditWebAssetForm(asset)} disabled={saving}>
+                          Opciones web
+                        </button>
+                        <button type="button" className="visual-outline-button" onClick={() => sendWebReloadCommand(asset)} disabled={saving}>
+                          Enviar recarga
+                        </button>
+                      </>
                     )}
                     <button type="button" className="visual-outline-button" onClick={() => editAssetOrganization(asset)} disabled={saving}>
                       Editar
@@ -2222,7 +2539,7 @@ export default function DigitalSignageAdmin() {
             </form>
 
             <form className="signage-panel" onSubmit={handleCreateWebAsset}>
-              <h3>Crear asset web</h3>
+              <h3>{editingWebAssetId ? "Editar asset web" : "Crear asset web"}</h3>
               <div className="digital-form-grid">
                 <label>
                   Título
@@ -2240,13 +2557,81 @@ export default function DigitalSignageAdmin() {
                   Duración seg.
                   <input type="number" min="1" max="3600" value={webForm.durationSeconds} onChange={(event) => setWebForm({ ...webForm, durationSeconds: event.target.value })} />
                 </label>
+                <label>
+                  Modo
+                  <select value={webForm.webSettings.mode} onChange={(event) => updateWebFormSettings({ mode: event.target.value })}>
+                    <option value="iframe">Iframe</option>
+                    <option value="redirect">Pagina completa / redirect</option>
+                  </select>
+                </label>
+                <label>
+                  Recargar cada seg.
+                  <input type="number" min="0" max="86400" value={webForm.webSettings.reloadIntervalSeconds} onChange={(event) => updateWebFormSettings({ reloadIntervalSeconds: event.target.value })} placeholder="Sin recarga" />
+                </label>
+                <label>
+                  Zoom %
+                  <input type="number" min="50" max="150" value={webForm.webSettings.zoom} onChange={(event) => updateWebFormSettings({ zoom: event.target.value })} />
+                </label>
+                <label className="digital-checkbox-label">
+                  <input type="checkbox" checked={webForm.webSettings.showStatusOverlay} onChange={(event) => updateWebFormSettings({ showStatusOverlay: event.target.checked })} />
+                  Mostrar overlay
+                </label>
+                <label className="digital-checkbox-label">
+                  <input type="checkbox" checked={webForm.webSettings.allowInteraction} onChange={(event) => updateWebFormSettings({ allowInteraction: event.target.checked })} />
+                  Permitir interaccion
+                </label>
+                <label className="digital-checkbox-label">
+                  <input type="checkbox" checked={webForm.webSettings.cacheBustOnReload} onChange={(event) => updateWebFormSettings({ cacheBustOnReload: event.target.checked })} />
+                  Cache bust al recargar
+                </label>
+                <p className="digital-helper digital-full-field">
+                  Algunas paginas externas bloquean iframe por seguridad. En ese caso usa modo pagina completa/redirect.
+                </p>
               </div>
-              <button type="submit" className="visual-primary-button" disabled={saving}>Crear web</button>
+              <div className="signage-form-actions">
+                {editingWebAssetId && (
+                  <button type="button" className="visual-outline-button" onClick={resetWebAssetForm} disabled={saving}>
+                    Cancelar edicion
+                  </button>
+                )}
+                <button type="submit" className="visual-primary-button" disabled={saving}>
+                  {editingWebAssetId ? "Guardar web" : "Crear web"}
+                </button>
+              </div>
             </form>
           </aside>
           </div>
           )}
         </>
+      )}
+
+      {driveImportOpen && (
+        <DriveImportModal
+          files={filteredDriveImportFiles}
+          folders={driveImportFolders}
+          folderId={driveImportFolderId}
+          breadcrumbs={driveImportBreadcrumbs}
+          search={driveImportSearch}
+          type={driveImportType}
+          loading={driveImportLoading}
+          saving={saving}
+          selectedFile={selectedDriveImportFile}
+          form={driveImportForm}
+          error={driveImportError}
+          assets={assets}
+          onClose={closeDriveImportModal}
+          onSearchChange={setDriveImportSearch}
+          onTypeChange={(value) => {
+            setDriveImportType(value);
+          }}
+          onSearch={handleDriveImportSearch}
+          onOpenFolder={openDriveImportFolder}
+          onBackFolder={goBackDriveImportFolder}
+          onBreadcrumbClick={goToDriveImportBreadcrumb}
+          onSelectFile={selectDriveImportFile}
+          onFormChange={(updates) => setDriveImportForm((current) => ({ ...current, ...updates }))}
+          onSubmit={handleImportDriveAsset}
+        />
       )}
 
       {!loading && activeTab === "playlists" && (
@@ -2266,7 +2651,7 @@ export default function DigitalSignageAdmin() {
               {playlists.map((playlist) => (
                 <article
                   key={playlist.id}
-                  className={`signage-playlist-card ${effectiveSelectedPlaylistId === playlist.id ? "active" : ""}`}
+                  className={`signage-list-row signage-playlist-card ${effectiveSelectedPlaylistId === playlist.id ? "active" : ""}`}
                 >
                   <button
                     type="button"
@@ -2283,7 +2668,7 @@ export default function DigitalSignageAdmin() {
                     </div>
                     <small>{getPlaylistSummary(playlist)}</small>
                   </button>
-                  <div className="signage-card-actions signage-compact-actions">
+                  <div className="signage-list-actions signage-compact-actions">
                     <button type="button" className="visual-outline-button" onClick={() => setSelectedPlaylistId(playlist.id)} disabled={saving}>
                       Ver contenido
                     </button>
@@ -2293,19 +2678,27 @@ export default function DigitalSignageAdmin() {
                     <button type="button" className="visual-outline-button" onClick={() => duplicatePlaylist(playlist)} disabled={saving}>
                       Duplicar
                     </button>
-                    <select
-                      className="signage-publish-select"
-                      value={getPublishStatus(playlist.publishStatus)}
-                      onChange={(event) => changePlaylistPublishStatus(playlist, event.target.value)}
-                      disabled={saving}
-                    >
-                      {PUBLISH_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                    <button type="button" className="danger-table-button" onClick={() => handleDeletePlaylist(playlist)} disabled={saving}>
-                      Eliminar
-                    </button>
+                    <details className="signage-action-menu">
+                      <summary>MÃ¡s</summary>
+                      <div className="signage-action-menu-popover">
+                      <label>
+                        PublicaciÃ³n
+                        <select
+                          className="signage-publish-select"
+                          value={getPublishStatus(playlist.publishStatus)}
+                          onChange={(event) => changePlaylistPublishStatus(playlist, event.target.value)}
+                          disabled={saving}
+                        >
+                          {PUBLISH_STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" className="danger" onClick={() => handleDeletePlaylist(playlist)} disabled={saving}>
+                        Eliminar
+                      </button>
+                      </div>
+                    </details>
                   </div>
                 </article>
               ))}
@@ -2340,19 +2733,27 @@ export default function DigitalSignageAdmin() {
                     <button type="button" className="visual-outline-button" onClick={() => runAction(() => updateSignagePlaylist(selectedPlaylist.id, { active: selectedPlaylist.active === false }), "Playlist guardada.")} disabled={saving}>
                       {selectedPlaylist.active === false ? "Activar" : "Desactivar"}
                     </button>
-                    <select
-                      className="signage-publish-select"
-                      value={getPublishStatus(selectedPlaylist.publishStatus)}
-                      onChange={(event) => changePlaylistPublishStatus(selectedPlaylist, event.target.value)}
-                      disabled={saving}
-                    >
-                      {PUBLISH_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                    <button type="button" className="danger-table-button" onClick={() => handleDeletePlaylist(selectedPlaylist)} disabled={saving}>
-                      Eliminar
-                    </button>
+                    <details className="signage-action-menu">
+                      <summary>MÃ¡s</summary>
+                      <div className="signage-action-menu-popover">
+                      <label>
+                        PublicaciÃ³n
+                        <select
+                          className="signage-publish-select"
+                          value={getPublishStatus(selectedPlaylist.publishStatus)}
+                          onChange={(event) => changePlaylistPublishStatus(selectedPlaylist, event.target.value)}
+                          disabled={saving}
+                        >
+                          {PUBLISH_STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" className="danger" onClick={() => handleDeletePlaylist(selectedPlaylist)} disabled={saving}>
+                        Eliminar
+                      </button>
+                      </div>
+                    </details>
                   </div>
                 </div>
 
@@ -2558,7 +2959,7 @@ function CampaignsPanel({
             const playlistHasIssue = !playlist || playlist.active === false;
 
             return (
-              <article className={`signage-campaign-card ${playlistHasIssue ? "needs-attention" : ""}`} key={campaign.id}>
+              <article className={`signage-list-row signage-campaign-card ${playlistHasIssue ? "needs-attention" : ""}`} key={campaign.id}>
                 <div className="signage-campaign-main">
                   <div>
                     <strong>{campaign.name || "Campaña sin nombre"}</strong>
@@ -2590,7 +2991,7 @@ function CampaignsPanel({
                   <p className="signage-warning-note">La playlist asignada no está publicada.</p>
                 )}
 
-                <div className="signage-card-actions">
+                <div className="signage-list-actions">
                   <button type="button" className="visual-outline-button" onClick={() => onEdit(campaign)} disabled={saving}>
                     Editar
                   </button>
@@ -2600,19 +3001,27 @@ function CampaignsPanel({
                   <button type="button" className="visual-outline-button" onClick={() => onToggle(campaign)} disabled={saving}>
                     {campaign.active === false ? "Activar" : "Desactivar"}
                   </button>
-                  <select
-                    className="signage-publish-select"
-                    value={getPublishStatus(campaign.publishStatus)}
-                    onChange={(event) => onPublishStatusChange(campaign, event.target.value)}
-                    disabled={saving}
-                  >
-                    {PUBLISH_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="danger-table-button" onClick={() => onDelete(campaign)} disabled={saving}>
-                    Eliminar
-                  </button>
+                  <details className="signage-action-menu">
+                    <summary>MÃ¡s</summary>
+                    <div className="signage-action-menu-popover">
+                    <label>
+                      PublicaciÃ³n
+                      <select
+                        className="signage-publish-select"
+                        value={getPublishStatus(campaign.publishStatus)}
+                        onChange={(event) => onPublishStatusChange(campaign, event.target.value)}
+                        disabled={saving}
+                      >
+                        {PUBLISH_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="button" className="danger" onClick={() => onDelete(campaign)} disabled={saving}>
+                      Eliminar
+                    </button>
+                    </div>
+                  </details>
                 </div>
               </article>
             );
@@ -2725,6 +3134,251 @@ function CampaignsPanel({
           </div>
         </form>
       </aside>
+    </div>
+  );
+}
+
+function DriveImportModal({
+  files,
+  folders,
+  folderId,
+  breadcrumbs,
+  search,
+  type,
+  loading,
+  saving,
+  selectedFile,
+  form,
+  error,
+  assets,
+  onClose,
+  onSearchChange,
+  onTypeChange,
+  onSearch,
+  onOpenFolder,
+  onBackFolder,
+  onBreadcrumbClick,
+  onSelectFile,
+  onFormChange,
+  onSubmit,
+}) {
+  const duplicateAsset = selectedFile
+    ? getImportedDriveAsset(selectedFile.id, assets)
+    : null;
+
+  return (
+    <div className="signage-drive-import-backdrop" role="dialog" aria-modal="true" aria-label="Importar desde Nube AES">
+      <div className="signage-drive-import-modal">
+        <header className="signage-drive-import-header">
+          <div>
+            <span>Nube AES</span>
+            <h3>Importar desde Nube AES</h3>
+            <p>Selecciona una carpeta y luego una imagen o video. Digital Signage copiara el archivo a Storage antes de publicarlo.</p>
+          </div>
+          <button type="button" className="drive-preview-close" onClick={onClose} disabled={saving} aria-label="Cerrar">
+            <SignageIcon name="close" />
+          </button>
+        </header>
+
+        <div className="signage-drive-import-layout">
+          <section className="signage-drive-import-browser">
+            <div className="signage-drive-folder-bar">
+              <button
+                type="button"
+                className="visual-outline-button"
+                onClick={onBackFolder}
+                disabled={loading || saving || breadcrumbs.length <= 1}
+              >
+                Volver
+              </button>
+              <div className="signage-drive-breadcrumbs" aria-label="Ruta de carpeta Nube AES">
+                {breadcrumbs.length === 0 ? (
+                  <span>Sin carpeta seleccionada</span>
+                ) : (
+                  breadcrumbs.map((breadcrumb, index) => (
+                    <button
+                      type="button"
+                      key={`${breadcrumb.id}-${index}`}
+                      onClick={() => onBreadcrumbClick(index)}
+                      disabled={loading || breadcrumb.id === folderId}
+                    >
+                      {breadcrumb.name || "Carpeta"}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="signage-drive-folder-list">
+              {!loading && folders.length === 0 && folderId && (
+                <span>Sin subcarpetas en esta ubicación.</span>
+              )}
+              {folders.map((folder) => (
+                <button
+                  type="button"
+                  key={folder.id}
+                  onClick={() => onOpenFolder(folder)}
+                  disabled={loading || saving}
+                >
+                  <SignageIcon name="folder" />
+                  <span>{folder.name || "Carpeta sin nombre"}</span>
+                </button>
+              ))}
+            </div>
+
+            <form className="signage-drive-import-search" onSubmit={onSearch}>
+              <label>
+                Buscar dentro de carpeta
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder="Nombre del archivo..."
+                  disabled={!folderId}
+                />
+              </label>
+              <label>
+                Tipo
+                <select value={type} onChange={(event) => onTypeChange(event.target.value)} disabled={!folderId}>
+                  <option value="imagenes">Imágenes</option>
+                  <option value="videos">Videos</option>
+                </select>
+              </label>
+              <button type="submit" className="visual-outline-button" disabled={loading || saving}>
+                {loading ? "Cargando..." : "Buscar"}
+              </button>
+            </form>
+
+            <div className="signage-drive-import-list">
+              {loading && <p className="digital-empty">Cargando carpeta de Nube AES...</p>}
+              {!loading && !folderId && (
+                <p className="digital-empty">Selecciona una carpeta para buscar archivos.</p>
+              )}
+              {!loading && folderId && files.length === 0 && (
+                <p className="digital-empty">No hay archivos compatibles en esta carpeta.</p>
+              )}
+              {!loading && folderId && files.map((file) => {
+                const duplicate = getImportedDriveAsset(file.id, assets);
+                const selected = selectedFile?.id === file.id;
+
+                return (
+                  <button
+                    type="button"
+                    key={file.id}
+                    className={`signage-drive-import-file ${selected ? "selected" : ""}`}
+                    onClick={() => onSelectFile(file)}
+                  >
+                    <span className="signage-drive-import-file-icon">
+                      <SignageIcon name={String(file.mimeType || "").startsWith("video/") ? "video" : "file"} />
+                    </span>
+                    <span className="signage-drive-import-file-main">
+                      <strong>{file.name || "Archivo sin nombre"}</strong>
+                      <small>
+                        {getDriveImportTypeLabel(file)} · {formatFileSize(file.size)} · {formatDriveFileDate(file.modifiedTime)}
+                      </small>
+                    </span>
+                    {duplicate && <span className="signage-soft-badge warning">Ya importado</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <form className="signage-drive-import-details" onSubmit={onSubmit}>
+            <div className="signage-panel-heading compact">
+              <div>
+                <h3>Datos del asset</h3>
+                <p>Se guardara como borrador para evitar publicación accidental.</p>
+              </div>
+            </div>
+
+            {selectedFile ? (
+              <div className="signage-drive-selected-file">
+                <strong>{selectedFile.name || "Archivo seleccionado"}</strong>
+                <span>{getDriveImportTypeLabel(selectedFile)} · {formatFileSize(selectedFile.size)}</span>
+              </div>
+            ) : (
+              <p className="digital-empty">Selecciona un archivo para continuar.</p>
+            )}
+
+            {duplicateAsset && (
+              <div className="signage-drive-import-warning">
+                Este archivo ya existe como: <strong>{duplicateAsset.title || "Contenido sin título"}</strong>
+              </div>
+            )}
+
+            {error && <div className="signage-drive-import-error">{error}</div>}
+
+            <div className="digital-form-grid">
+              <label>
+                Título
+                <input
+                  value={form.title}
+                  onChange={(event) => onFormChange({ title: event.target.value })}
+                  placeholder="Ej. Video institucional"
+                  required
+                />
+              </label>
+              <label>
+                Plantel
+                <PlantelSelect value={form.plantel} onChange={(value) => onFormChange({ plantel: value })} />
+              </label>
+              <label>
+                Duración seg.
+                <input
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value={form.durationSeconds}
+                  onChange={(event) => onFormChange({ durationSeconds: event.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Categoría
+                <select value={form.category} onChange={(event) => onFormChange({ category: event.target.value })}>
+                  {VISUAL_TEMPLATE_CATEGORIES.map((category) => (
+                    <option key={category.value} value={category.value}>{category.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="digital-full-field">
+                Tags
+                <input
+                  value={form.tags}
+                  onChange={(event) => onFormChange({ tags: event.target.value })}
+                  placeholder="Separados por coma"
+                />
+              </label>
+              <label>
+                Publicación
+                <select value={form.publishStatus} onChange={(event) => onFormChange({ publishStatus: event.target.value })}>
+                  {PUBLISH_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="digital-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(event) => onFormChange({ active: event.target.checked })}
+                />
+                Activo
+              </label>
+            </div>
+
+            <div className="signage-form-actions">
+              <button type="button" className="visual-outline-button" onClick={onClose} disabled={saving}>
+                Cancelar
+              </button>
+              <button type="submit" className="visual-primary-button" disabled={saving || !selectedFile || Boolean(duplicateAsset)}>
+                {saving ? "Importando..." : "Importar contenido"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2861,6 +3515,7 @@ function DeviceCard({
   onEdit,
   onCopy,
   onPlaylistChange,
+  onClearContent,
   onToggle,
   onDelete,
   activeCampaign,
@@ -2914,6 +3569,14 @@ function DeviceCard({
             <SignageIcon name="link" />
             Copiar URL
           </button>
+          <button
+            type="button"
+            className="visual-outline-button"
+            onClick={(event) => { event.stopPropagation(); onClearContent(); }}
+            disabled={saving || !device.assignedPlaylistId}
+          >
+            Quitar contenido
+          </button>
           <button type="button" className="signage-icon-button" onClick={(event) => { event.stopPropagation(); onToggle(); }} disabled={saving} title={device.active === false ? "Activar" : "Desactivar"}>
             <SignageIcon name="power" />
           </button>
@@ -2923,6 +3586,172 @@ function DeviceCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function DeviceMonitorGrid({
+  devices,
+  selectedDevice,
+  playlists,
+  activeCampaignByDeviceId,
+  saving,
+  onSelect,
+  onEdit,
+  onCopy,
+  onPlaylistChange,
+  onClearContent,
+}) {
+  if (devices.length === 0) {
+    return <p className="digital-empty">Sin dispositivos para mostrar.</p>;
+  }
+
+  return (
+    <div className="signage-device-monitor-grid">
+      {devices.map((device) => {
+        const activeCampaign = activeCampaignByDeviceId.get(device.id);
+        const playlist = getDevicePreviewPlaylist(device, playlists, activeCampaign);
+
+        return (
+          <DeviceMonitorCard
+            key={device.id}
+            device={device}
+            active={selectedDevice?.id === device.id}
+            playlist={playlist}
+            playlists={playlists}
+            activeCampaign={activeCampaign}
+            saving={saving}
+            onSelect={() => onSelect(device)}
+            onEdit={() => onEdit(device)}
+            onCopy={() => onCopy(device)}
+            onPlaylistChange={(playlistId) => onPlaylistChange(device, playlistId)}
+            onClearContent={() => onClearContent(device)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function DeviceMonitorCard({
+  device,
+  active,
+  playlist,
+  playlists,
+  activeCampaign,
+  saving,
+  onSelect,
+  onEdit,
+  onCopy,
+  onPlaylistChange,
+  onClearContent,
+}) {
+  const status = getDeviceStatus(device);
+  const item = getMonitorPreviewItem(playlist);
+  const contentSource = activeCampaign
+    ? `Campaña: ${activeCampaign.name || "Sin nombre"}`
+    : playlist?.name
+      ? `Playlist: ${playlist.name}`
+      : "Sin contenido";
+
+  return (
+    <article className={`signage-device-monitor-card ${active ? "selected" : ""}`} onClick={onSelect}>
+      <DeviceMonitorThumb item={item} />
+
+      <div className="signage-device-monitor-body">
+        <div className="signage-device-monitor-title">
+          <div>
+            <strong>{device.name || "Pantalla sin nombre"}</strong>
+            <span>{device.plantel || "Sin plantel"} · {device.location || "Sin ubicación"}</span>
+          </div>
+          <StatusBadge status={status} />
+        </div>
+
+        <div className="signage-device-monitor-meta">
+          <InfoPair label="Contenido actual" value={contentSource} strong />
+          <InfoPair label="Última conexión" value={formatLastSeen(device)} />
+        </div>
+
+        <div className="signage-device-monitor-actions">
+          <button type="button" className="visual-outline-button" onClick={(event) => { event.stopPropagation(); onEdit(); }} disabled={saving}>
+            Editar
+          </button>
+          <label onClick={(event) => event.stopPropagation()}>
+            <select value={device.assignedPlaylistId || ""} onChange={(event) => onPlaylistChange(event.target.value)} disabled={saving}>
+              <option value="">Asignar playlist</option>
+              {playlists.map((playlistOption) => (
+                <option key={playlistOption.id} value={playlistOption.id}>{playlistOption.name}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="visual-outline-button" onClick={(event) => { event.stopPropagation(); onClearContent(); }} disabled={saving || !device.assignedPlaylistId}>
+            Quitar contenido
+          </button>
+          <button type="button" className="visual-outline-button" onClick={(event) => { event.stopPropagation(); onCopy(); }} disabled={saving}>
+            Copiar URL
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DeviceMonitorThumb({ item }) {
+  if (!item) {
+    return (
+      <div className="signage-device-monitor-thumb empty">
+        <SignageIcon name="screen" />
+        <strong>Sin contenido</strong>
+      </div>
+    );
+  }
+
+  if (item.type === "image") {
+    return (
+      <div className="signage-device-monitor-thumb">
+        <img src={item.url} alt={item.title || "Contenido"} loading="lazy" />
+      </div>
+    );
+  }
+
+  if (item.type === "template") {
+    return (
+      <div className="signage-device-monitor-thumb">
+        <TemplatePreview item={item} />
+      </div>
+    );
+  }
+
+  if (item.type === "visual_ad") {
+    return (
+      <div className="signage-device-monitor-thumb">
+        <VisualAdPreview visualAdData={item.visualAdData} mini />
+      </div>
+    );
+  }
+
+  if (item.type === "video") {
+    return (
+      <div className="signage-device-monitor-thumb placeholder">
+        <SignageIcon name="screen" />
+        <strong>Video</strong>
+        <span>{item.title || "Contenido de video"}</span>
+      </div>
+    );
+  }
+
+  if (item.type === "web") {
+    return (
+      <div className="signage-device-monitor-thumb placeholder">
+        <strong>WEB</strong>
+        <span>{getShortText(item.url || item.title || "Enlace web")}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="signage-device-monitor-thumb empty">
+      <strong>Vista no disponible</strong>
+    </div>
   );
 }
 
@@ -3908,6 +4737,26 @@ function SignageIcon({ name }) {
           <path d="M9 13h6M9 17h4" />
         </svg>
       );
+    case "folder":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <path d="M3 7V5a2 2 0 0 1 2-2h4l2 4" />
+        </svg>
+      );
+    case "video":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="6" width="12" height="12" rx="2" />
+          <path d="m16 10 4-2v8l-4-2z" />
+        </svg>
+      );
+    case "close":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      );
     case "list":
       return (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -4794,6 +5643,92 @@ function normalizeUrl(value = "") {
   return `https://${cleanValue}`;
 }
 
+function getImportedDriveAsset(driveFileId, assets = []) {
+  const cleanFileId = String(driveFileId || "").trim();
+  if (!cleanFileId) return null;
+  return assets.find((asset) => String(asset?.sourceFileId || "").trim() === cleanFileId) || null;
+}
+
+function isDriveFileAlreadyImported(file, assets = []) {
+  return Boolean(getImportedDriveAsset(file?.id, assets));
+}
+
+function isDriveFolder(file) {
+  return file?.mimeType === DRIVE_FOLDER_MIME_TYPE;
+}
+
+function getTitleFromFileName(fileName = "") {
+  const cleanName = String(fileName || "").trim();
+  if (!cleanName) return "";
+  return cleanName.replace(/\.[^/.]+$/, "");
+}
+
+function getDriveImportTypeLabel(file) {
+  const mimeType = String(file?.mimeType || "");
+  if (mimeType.startsWith("video/")) return "Video";
+  if (mimeType.startsWith("image/")) return "Imagen";
+  return "Archivo";
+}
+
+function formatFileSize(value) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return "Sin tamaño";
+
+  const units = ["B", "KB", "MB", "GB"];
+  let nextSize = size;
+  let unitIndex = 0;
+
+  while (nextSize >= 1024 && unitIndex < units.length - 1) {
+    nextSize /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = unitIndex === 0 || nextSize >= 10 ? 0 : 1;
+  return `${nextSize.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function formatDriveFileDate(value) {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+  return date.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function normalizeWebSettingsForForm(settings = {}) {
+  const reloadIntervalSeconds = Number(settings?.reloadIntervalSeconds);
+  const hasReload = Number.isFinite(reloadIntervalSeconds) && reloadIntervalSeconds > 0;
+  const zoom = Number(settings?.zoom);
+
+  return {
+    mode: settings?.mode === "redirect" ? "redirect" : "iframe",
+    reloadIntervalSeconds: hasReload ? String(Math.min(Math.round(reloadIntervalSeconds), 86400)) : "",
+    zoom: Number.isFinite(zoom) ? Math.min(Math.max(Math.round(zoom), 50), 150) : 100,
+    showStatusOverlay: settings?.showStatusOverlay === true,
+    allowInteraction: settings?.allowInteraction === true,
+    cacheBustOnReload: settings?.cacheBustOnReload !== false,
+  };
+}
+
+function normalizeWebSettingsForSave(settings = {}) {
+  const formSettings = normalizeWebSettingsForForm(settings);
+
+  return {
+    mode: formSettings.mode,
+    ...(formSettings.reloadIntervalSeconds
+      ? { reloadIntervalSeconds: Number(formSettings.reloadIntervalSeconds) }
+      : {}),
+    zoom: Number(formSettings.zoom) || 100,
+    showStatusOverlay: formSettings.showStatusOverlay,
+    allowInteraction: formSettings.allowInteraction,
+    cacheBustOnReload: formSettings.cacheBustOnReload,
+    ...(settings?.lastCommand ? { lastCommand: settings.lastCommand } : {}),
+  };
+}
+
 function getPlayerUrl(deviceToken) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   return `${origin}/signage/player/${deviceToken}`;
@@ -4867,6 +5802,28 @@ function getCampaignPriorityLabel(priority) {
   };
 
   return labels[priority] || "Normal";
+}
+
+function getStoredDevicesViewMode() {
+  if (typeof window === "undefined") return "list";
+
+  try {
+    const value = window.localStorage.getItem(DEVICES_VIEW_MODE_KEY);
+    return value === "monitors" ? "monitors" : "list";
+  } catch (error) {
+    console.warn("No se pudo leer preferencia de vista de dispositivos.", error);
+    return "list";
+  }
+}
+
+function getDevicePreviewPlaylist(device, playlists, activeCampaign) {
+  const playlistId = activeCampaign?.playlistId || device?.assignedPlaylistId || "";
+  return playlists.find((playlist) => playlist.id === playlistId) || null;
+}
+
+function getMonitorPreviewItem(playlist) {
+  const items = Array.isArray(playlist?.items) ? playlist.items : [];
+  return items.find((item) => item?.type) || null;
 }
 
 function deviceRequiresAttention(device, status = getDeviceStatus(device)) {

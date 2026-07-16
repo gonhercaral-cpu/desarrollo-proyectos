@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "./firebase";
+import { importDriveFileToSignageStorage } from "./driveService";
 
 const ASSETS_COLLECTION = "digitalSignageAssets";
 const PLAYLISTS_COLLECTION = "digitalSignagePlaylists";
@@ -32,6 +33,8 @@ const ASSET_TYPES = ["image", "video", "web", "template", "visual_ad"];
 const VISUAL_TEMPLATE_CATEGORIES = ["institucional", "promocion", "aviso", "coffee", "evento", "otro"];
 const ASSET_CATEGORIES = VISUAL_TEMPLATE_CATEGORIES;
 const PUBLISH_STATUSES = ["draft", "review", "published", "archived"];
+const WEB_MODES = ["iframe", "redirect"];
+const WEB_COMMAND_TYPES = ["reload", "refresh-url"];
 
 function assertAdminUser(user) {
   if (user?.role !== "admin") {
@@ -143,6 +146,11 @@ function normalizePlaylistItems(items = []) {
         url: cleanText(item?.url),
         durationSeconds: cleanDuration(item?.durationSeconds),
         publishStatus: cleanPublishStatus(item?.publishStatus),
+        ...(type === "web"
+          ? {
+              webSettings: cleanWebSettings(item?.webSettings),
+            }
+          : {}),
         ...(type === "template"
           ? {
               templateKey: cleanTemplateKey(item?.templateKey),
@@ -183,6 +191,33 @@ function cleanAssetCategory(value) {
 
 function cleanPublishStatus(value, fallback = "published") {
   return PUBLISH_STATUSES.includes(value) ? value : fallback;
+}
+
+function cleanWebSettings(settings = {}) {
+  const reloadIntervalSeconds = Number(settings?.reloadIntervalSeconds);
+  const hasReloadInterval =
+    Number.isFinite(reloadIntervalSeconds) && reloadIntervalSeconds > 0;
+  const lastCommand = settings?.lastCommand || null;
+  const cleanLastCommand =
+    lastCommand && WEB_COMMAND_TYPES.includes(lastCommand.type)
+      ? {
+          type: lastCommand.type,
+          createdAt: lastCommand.createdAt || null,
+          createdBy: cleanText(lastCommand.createdBy),
+        }
+      : null;
+
+  return {
+    ...(hasReloadInterval
+      ? { reloadIntervalSeconds: Math.min(Math.round(reloadIntervalSeconds), 86400) }
+      : {}),
+    zoom: clampNumber(settings?.zoom, 50, 150, 100),
+    mode: WEB_MODES.includes(settings?.mode) ? settings.mode : "iframe",
+    showStatusOverlay: settings?.showStatusOverlay === true,
+    allowInteraction: settings?.allowInteraction === true,
+    cacheBustOnReload: settings?.cacheBustOnReload === true,
+    ...(cleanLastCommand ? { lastCommand: cleanLastCommand } : {}),
+  };
 }
 
 function cleanTags(value = []) {
@@ -456,11 +491,82 @@ export async function createWebAsset(data, user) {
     storagePath: "",
     plantel,
     durationSeconds: cleanDuration(data?.durationSeconds),
+    webSettings: cleanWebSettings(data?.webSettings),
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
     archived: data?.archived === true,
     active: data?.active !== false,
     publishStatus: cleanPublishStatus(data?.publishStatus),
+    createdAt: serverTimestamp(),
+    createdBy: getUserName(user),
+    createdById: getUserId(user),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(assetRef, payload);
+
+  return {
+    id: assetRef.id,
+    ...payload,
+  };
+}
+
+export async function importSignageAssetFromDrive(driveFile, data, user) {
+  assertAdminUser(user);
+
+  const driveFileId = cleanText(driveFile?.id || data?.sourceFileId);
+  const title = cleanText(data?.title) || cleanText(driveFile?.name);
+  const plantel = cleanText(data?.plantel);
+
+  if (!driveFileId) {
+    throw new Error("Selecciona un archivo de Nube AES.");
+  }
+
+  if (!title) {
+    throw new Error("El titulo es obligatorio.");
+  }
+
+  if (!plantel) {
+    throw new Error("El plantel es obligatorio.");
+  }
+
+  const existingSnapshot = await getDocs(
+    query(collection(db, ASSETS_COLLECTION), where("sourceFileId", "==", driveFileId), limit(1))
+  );
+
+  if (!existingSnapshot.empty) {
+    throw new Error("Este archivo de Nube AES ya fue importado a Digital Signage.");
+  }
+
+  const assetRef = doc(collection(db, ASSETS_COLLECTION));
+  const importedFile = await importDriveFileToSignageStorage({
+    driveFileId,
+    assetId: assetRef.id,
+    filename: data?.filename || driveFile?.name || "",
+  });
+
+  const payload = {
+    title,
+    type: importedFile.type,
+    url: importedFile.url,
+    storagePath: importedFile.storagePath,
+    plantel,
+    durationSeconds: cleanDuration(data?.durationSeconds),
+    category: cleanAssetCategory(data?.category),
+    tags: cleanTags(data?.tags),
+    archived: false,
+    active: data?.active !== false,
+    publishStatus: cleanPublishStatus(data?.publishStatus, "draft"),
+    source: "nube_aes",
+    sourceFileId: driveFileId,
+    sourceFileName: cleanText(driveFile?.name || importedFile.fileName),
+    sourceFileMimeType: cleanText(driveFile?.mimeType || importedFile.mimeType),
+    sourceFileSize: cleanText(driveFile?.size || importedFile.size),
+    sourceFolderId: cleanText(data?.sourceFolderId),
+    sourceFolderName: cleanText(data?.sourceFolderName),
+    importedAt: serverTimestamp(),
+    importedBy: getUserName(user),
+    importedById: getUserId(user),
     createdAt: serverTimestamp(),
     createdBy: getUserName(user),
     createdById: getUserId(user),
@@ -723,6 +829,8 @@ export async function updateSignageAsset(id, data) {
       data?.templateTheme !== undefined ? cleanTemplateTheme(data.templateTheme) : data?.templateTheme,
     visualAdData:
       data?.visualAdData !== undefined ? normalizeVisualAdData(data.visualAdData) : data?.visualAdData,
+    webSettings:
+      data?.webSettings !== undefined ? cleanWebSettings(data.webSettings) : data?.webSettings,
     category:
       data?.category !== undefined ? cleanAssetCategory(data.category) : data?.category,
     tags:
@@ -739,6 +847,89 @@ export async function updateSignageAsset(id, data) {
   });
 
   await updateDoc(doc(db, ASSETS_COLLECTION, id), payload);
+
+  if (
+    payload.webSettings !== undefined ||
+    payload.url !== undefined ||
+    payload.title !== undefined ||
+    payload.durationSeconds !== undefined
+  ) {
+    await syncWebAssetInPlaylists(id, {
+      title: payload.title,
+      url: payload.url,
+      durationSeconds: payload.durationSeconds,
+      webSettings: payload.webSettings,
+    });
+  }
+}
+
+export async function sendWebAssetCommand(assetId, command, user) {
+  assertAdminUser(user);
+
+  const cleanAssetId = cleanText(assetId);
+  const commandType = cleanText(command?.type || "reload");
+
+  if (!cleanAssetId) throw new Error("Falta el ID del asset web.");
+  if (!WEB_COMMAND_TYPES.includes(commandType)) {
+    throw new Error("Comando web no permitido.");
+  }
+
+  const assetRef = doc(db, ASSETS_COLLECTION, cleanAssetId);
+  const snapshot = await getDoc(assetRef);
+
+  if (!snapshot.exists() || snapshot.data()?.type !== "web") {
+    throw new Error("Asset web no encontrado.");
+  }
+
+  const nextSettings = {
+    ...cleanWebSettings(snapshot.data()?.webSettings),
+    lastCommand: {
+      type: commandType,
+      createdAt: Timestamp.now(),
+      createdBy: getUserName(user),
+    },
+  };
+
+  await updateDoc(assetRef, {
+    webSettings: nextSettings,
+    updatedAt: serverTimestamp(),
+  });
+  await syncWebAssetInPlaylists(cleanAssetId, { webSettings: nextSettings });
+}
+
+async function syncWebAssetInPlaylists(assetId, updates = {}) {
+  const docs = await getOrderedCollection(PLAYLISTS_COLLECTION);
+  const cleanUpdates = {
+    ...(updates.title !== undefined ? { title: cleanText(updates.title) } : {}),
+    ...(updates.url !== undefined ? { url: cleanText(updates.url) } : {}),
+    ...(updates.durationSeconds !== undefined ? { durationSeconds: cleanDuration(updates.durationSeconds) } : {}),
+    ...(updates.webSettings !== undefined ? { webSettings: cleanWebSettings(updates.webSettings) } : {}),
+  };
+
+  if (Object.keys(cleanUpdates).length === 0) return;
+
+  await Promise.all(
+    docs
+      .map((playlistSnapshot) => {
+        const data = playlistSnapshot.data();
+        const items = Array.isArray(data.items) ? data.items : [];
+        const hasAsset = items.some((item) => item?.assetId === assetId && item?.type === "web");
+
+        if (!hasAsset) return null;
+
+        return updateDoc(doc(db, PLAYLISTS_COLLECTION, playlistSnapshot.id), {
+          items: normalizePlaylistItems(
+            items.map((item) =>
+              item?.assetId === assetId && item?.type === "web"
+                ? { ...item, ...cleanUpdates }
+                : item
+            )
+          ),
+          updatedAt: serverTimestamp(),
+        });
+      })
+      .filter(Boolean)
+  );
 }
 
 export async function deleteSignageAsset(id) {

@@ -4,8 +4,10 @@ const { setGlobalOptions } = require("firebase-functions/v2");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { Buffer } = require("buffer");
+const { randomUUID } = require("crypto");
 const { google } = require("googleapis");
 const { Readable } = require("stream");
+const { pipeline } = require("stream/promises");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10, region: "us-central1" });
@@ -26,6 +28,7 @@ const DRIVE_UPLOAD_ALLOWED_ORIGINS = new Set([
   "https://sistema-desarrollo-proyectos.web.app",
   "https://sistema-desarrollo-proyectos.firebaseapp.com",
 ]);
+const SIGNAGE_ASSET_STORAGE_ROOT = "digital-signage/assets";
 
 let driveClientPromise;
 let driveAuthClientPromise;
@@ -717,6 +720,63 @@ function normalizeMimeType(value) {
   return mimeType.slice(0, 180);
 }
 
+function getSignageAssetType(mimeType) {
+  const cleanMimeType = normalizeMimeType(mimeType);
+
+  if (cleanMimeType.startsWith("image/")) return "image";
+  if (cleanMimeType.startsWith("video/")) return "video";
+  return "";
+}
+
+function sanitizeStorageSegment(value, fieldName) {
+  const cleanValue = requireString(value, fieldName);
+
+  if (!/^[A-Za-z0-9_-]{6,128}$/.test(cleanValue)) {
+    throw new HttpsError("invalid-argument", `${fieldName} no es valido.`);
+  }
+
+  return cleanValue;
+}
+
+function cleanStorageFileName(value, fallback = "archivo") {
+  const baseName = String(value || fallback)
+    .trim()
+    .replace(/[\\/]/g, "-")
+    .replace(/[\r\n\t]/g, " ")
+    .replace(/[<>:"|?*\u0000-\u001F]/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 180);
+
+  const cleanName = baseName || fallback;
+  const compactName = cleanName.replace(/\s/g, "-");
+
+  return compactName || fallback;
+}
+
+function buildFirebaseStorageDownloadUrl(bucketName, storagePath, token) {
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${encodeURIComponent(token)}`;
+}
+
+function getSignageImportError(error) {
+  if (error instanceof HttpsError) {
+    return error;
+  }
+
+  const status = error?.code || error?.response?.status;
+
+  if (status === 403) {
+    return new HttpsError("permission-denied", "No autorizado para importar este archivo desde Nube AES.");
+  }
+
+  if (status === 404) {
+    return new HttpsError("not-found", "Archivo de Nube AES no encontrado.");
+  }
+
+  return new HttpsError("internal", "No se pudo importar el archivo a Digital Signage.", {
+    message: error?.message || "",
+  });
+}
+
 function getAllowedDriveUploadOrigins() {
   const origins = new Set(DRIVE_UPLOAD_ALLOWED_ORIGINS);
   const envOrigins = String(process.env.DRIVE_ALLOWED_ORIGINS || "")
@@ -1292,6 +1352,96 @@ exports.driveCreateResumableUpload = onCall(async (request) => {
     throw getDriveResumableUploadError(error);
   }
 });
+
+exports.importDriveFileToSignageStorage = onCall(
+  { timeoutSeconds: 540, memory: "1GiB" },
+  async (request) => {
+    const uid = request.auth?.uid;
+
+    try {
+      const profile = await assertAdmin(request);
+      const drive = await getDriveClient();
+      const driveFileId = await assertCanAccessDriveItem({
+        profile,
+        drive,
+        fileId: request.data?.driveFileId,
+        requireWrite: false,
+      });
+      const assetId = sanitizeStorageSegment(request.data?.assetId, "assetId");
+      const driveFile = await getDriveItem(drive, driveFileId);
+      const mimeType = normalizeMimeType(driveFile.mimeType);
+      const type = getSignageAssetType(mimeType);
+
+      if (!driveFile.id || driveFile.trashed) {
+        throw new HttpsError("not-found", "Archivo de Nube AES no encontrado.");
+      }
+
+      if (mimeType === DRIVE_FOLDER_MIME_TYPE) {
+        throw new HttpsError("invalid-argument", "No se pueden importar carpetas a Digital Signage.");
+      }
+
+      if (!type) {
+        throw new HttpsError("invalid-argument", "Solo se pueden importar imagenes y videos.");
+      }
+
+      const fileName = cleanStorageFileName(request.data?.filename || driveFile.name, driveFile.name || driveFile.id);
+      const storagePath = `${SIGNAGE_ASSET_STORAGE_ROOT}/${assetId}/${fileName}`;
+      const downloadToken = randomUUID();
+      const bucket = admin.storage().bucket();
+      const storageFile = bucket.file(storagePath);
+      const mediaResponse = await drive.files.get(
+        {
+          fileId: driveFileId,
+          alt: "media",
+          supportsAllDrives: true,
+        },
+        { responseType: "stream" }
+      );
+
+      await pipeline(
+        mediaResponse.data,
+        storageFile.createWriteStream({
+          resumable: true,
+          metadata: {
+            contentType: mimeType,
+            metadata: {
+              firebaseStorageDownloadTokens: downloadToken,
+              source: "nube_aes",
+              driveFileId,
+              originalName: driveFile.name || "",
+            },
+          },
+        })
+      );
+
+      await logDriveActivity({
+        uid,
+        profile,
+        action: "import_to_signage_storage",
+        fileId: driveFileId,
+        fileName: driveFile.name || fileName,
+        folderId: Array.isArray(driveFile.parents) ? driveFile.parents[0] || "" : "",
+        metadata: {
+          assetId,
+          storagePath,
+          mimeType,
+          size: driveFile.size || "",
+        },
+      });
+
+      return {
+        url: buildFirebaseStorageDownloadUrl(bucket.name, storagePath, downloadToken),
+        storagePath,
+        fileName,
+        mimeType,
+        size: driveFile.size || "",
+        type,
+      };
+    } catch (error) {
+      throw getSignageImportError(error);
+    }
+  }
+);
 
 exports.driveRenameItem = onCall(async (request) => {
   try {

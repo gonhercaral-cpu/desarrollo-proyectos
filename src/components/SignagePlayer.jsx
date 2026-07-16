@@ -389,11 +389,10 @@ export default function SignagePlayer() {
         )}
 
         {currentItem.type === "web" && (
-          <iframe
+          <WebContentFrame
             key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
-            src={currentItem.url}
-            title={currentItem.title || "Contenido web"}
-            allow="autoplay; fullscreen"
+            item={currentItem}
+            onFailure={() => handleItemFailure(currentItem, advanceToNext, setFailedItemKeys)}
           />
         )}
 
@@ -428,6 +427,60 @@ function PlayerMessage({ message }) {
   );
 }
 
+function WebContentFrame({ item, onFailure }) {
+  const settings = normalizeWebSettings(item?.webSettings);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const commandSignature = getWebCommandSignature(settings.lastCommand);
+  const commandSignatureRef = useRef(commandSignature);
+  const iframeUrl = buildWebPlaybackUrl(item?.url, settings, reloadNonce);
+  const zoom = Math.min(Math.max(Number(settings.zoom) || 100, 50), 150);
+  const zoomScale = zoom / 100;
+  const frameStyle = {
+    width: `${100 / zoomScale}%`,
+    height: `${100 / zoomScale}%`,
+    transform: `scale(${zoomScale})`,
+    pointerEvents: settings.allowInteraction ? "auto" : "none",
+  };
+
+  useEffect(() => {
+    if (!commandSignature || commandSignatureRef.current === commandSignature) return;
+    commandSignatureRef.current = commandSignature;
+    setReloadNonce((current) => current + 1);
+  }, [commandSignature]);
+
+  useEffect(() => {
+    const seconds = Number(settings.reloadIntervalSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      setReloadNonce((current) => current + 1);
+    }, Math.max(seconds, 5) * 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [settings.reloadIntervalSeconds]);
+
+  return (
+    <div className={`signage-player-web-frame ${settings.mode}`}>
+      {settings.showStatusOverlay && (
+        <div className="signage-player-web-overlay">
+          {settings.mode === "redirect"
+            ? "Modo pagina completa solicitado. Mostrando contenedor seguro."
+            : `Web ${zoom}%`}
+        </div>
+      )}
+      <iframe
+        key={`${item.assetId}-${reloadNonce}`}
+        src={iframeUrl}
+        title={item.title || "Contenido web"}
+        allow="autoplay; fullscreen"
+        referrerPolicy="no-referrer-when-downgrade"
+        onError={onFailure}
+        style={frameStyle}
+      />
+    </div>
+  );
+}
+
 function goNext(length, setCurrentIndex) {
   if (!length) return;
   setCurrentIndex((current) => (current + 1) % length);
@@ -446,6 +499,7 @@ function normalizePlayableItems(items = []) {
       const templateKey = normalizeTemplateKey(item?.templateKey);
       const templateTheme = normalizeTemplateTheme(item?.templateTheme);
       const visualAdData = normalizeVisualAdData(item?.visualAdData);
+      const webSettings = normalizeWebSettings(item?.webSettings);
 
       return {
         assetId,
@@ -459,6 +513,7 @@ function normalizePlayableItems(items = []) {
         templateData,
         templateTheme,
         visualAdData,
+        webSettings,
       };
     })
     .filter(
@@ -526,6 +581,48 @@ function normalizeTemplateTheme(value) {
   return ["azul", "verde", "dorado", "rojo", "cafe"].includes(theme)
     ? theme
     : "azul";
+}
+
+function normalizeWebSettings(settings = {}) {
+  const reloadIntervalSeconds = Number(settings?.reloadIntervalSeconds);
+  const zoom = Number(settings?.zoom);
+
+  return {
+    mode: settings?.mode === "redirect" ? "redirect" : "iframe",
+    reloadIntervalSeconds:
+      Number.isFinite(reloadIntervalSeconds) && reloadIntervalSeconds > 0
+        ? Math.min(Math.round(reloadIntervalSeconds), 86400)
+        : 0,
+    zoom: Number.isFinite(zoom) ? Math.min(Math.max(Math.round(zoom), 50), 150) : 100,
+    showStatusOverlay: settings?.showStatusOverlay === true,
+    allowInteraction: settings?.allowInteraction === true,
+    cacheBustOnReload: settings?.cacheBustOnReload === true,
+    lastCommand: settings?.lastCommand || null,
+  };
+}
+
+function buildWebPlaybackUrl(url = "", settings = {}, reloadNonce = 0) {
+  const cleanUrl = String(url || "").trim();
+  if (!cleanUrl || !settings.cacheBustOnReload) return cleanUrl;
+
+  try {
+    const nextUrl = new URL(cleanUrl);
+    nextUrl.searchParams.set("_signageTs", String(reloadNonce));
+    return nextUrl.toString();
+  } catch (error) {
+    const separator = cleanUrl.includes("?") ? "&" : "?";
+    return `${cleanUrl}${separator}_signageTs=${reloadNonce}`;
+  }
+}
+
+function getWebCommandSignature(command = null) {
+  if (!command?.type) return "";
+  const createdAt =
+    command.createdAt?.toMillis?.() ||
+    command.createdAt?.seconds ||
+    command.createdAt ||
+    "";
+  return `${command.type}-${createdAt}-${command.createdBy || ""}`;
 }
 
 function normalizePublishStatus(value) {
