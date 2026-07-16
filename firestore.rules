@@ -3620,6 +3620,15 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /digitalSignageCampaigns/{campaignId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /digitalSignageVisualTemplates/{templateId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
     match /digitalSignageDevices/{deviceId} {
       allow get: if isAdmin()
         || resource.data.deviceToken == deviceId;
@@ -3636,6 +3645,50 @@ service cloud.firestore {
             "updatedAt"
           ])
           && request.resource.data.lastSeenMillis is number
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /digitalSignagePairingSessions/{sessionId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly([
+          "code",
+          "status",
+          "deviceToken",
+          "createdAt",
+          "expiresAt",
+          "claimedAt",
+          "claimedBy",
+          "userAgent",
+          "lastSeenAt",
+          "setupSecret"
+        ])
+        && request.resource.data.code is string
+        && request.resource.data.code.matches("^AES-[0-9]{4,6}$")
+        && request.resource.data.status == "pending"
+        && request.resource.data.deviceToken == null
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAt <= request.time
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.claimedAt == null
+        && request.resource.data.claimedBy == ""
+        && request.resource.data.userAgent is string
+        && request.resource.data.lastSeenAt is timestamp
+        && request.resource.data.lastSeenAt <= request.time
+        && request.resource.data.setupSecret is string
+        && request.resource.data.setupSecret.size() >= 16;
+      allow update: if isAdmin()
+        || (
+          resource.data.status == "pending"
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.setupSecret == resource.data.setupSecret
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "lastSeenAt",
+            "setupSecret"
+          ])
+          && request.resource.data.lastSeenAt is timestamp
         );
       allow delete: if isAdmin();
     }

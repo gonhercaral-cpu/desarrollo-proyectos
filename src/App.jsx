@@ -9,6 +9,7 @@ import CredentialValidation from "./pages/CredentialValidation";
 import PublicCertificateRequest from "./pages/PublicCertificateRequest";
 import PublicCertificateStatus from "./pages/PublicCertificateStatus";
 import SignagePlayer from "./components/SignagePlayer";
+import SignageSetup from "./components/SignageSetup";
 
 import "./styles/app.css";
 
@@ -126,6 +127,11 @@ export default function App() {
           <Route
             path="/validar-credencial/*"
             element={<CredentialValidationRoute />}
+          />
+
+          <Route
+            path="/signage/setup"
+            element={<SignageSetup />}
           />
 
           <Route

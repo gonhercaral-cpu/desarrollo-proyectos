@@ -244,7 +244,8 @@
 
 .digital-asset-row img,
 .digital-asset-row video,
-.digital-web-thumb {
+.digital-web-thumb,
+.digital-template-thumb {
   width: 78px;
   aspect-ratio: 16 / 10;
   object-fit: cover;
@@ -258,6 +259,127 @@
   color: #ffffff;
   font-size: 12px;
   font-weight: 900;
+}
+
+.digital-template-thumb {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0f4fc4, #082f73);
+}
+
+.digital-template-thumb.verde {
+  background: linear-gradient(135deg, #138a54, #064e3b);
+}
+
+.digital-template-thumb.dorado {
+  background: linear-gradient(135deg, #d79516, #8a5a00);
+}
+
+.digital-template-thumb.rojo {
+  background: linear-gradient(135deg, #d92d20, #7a271a);
+}
+
+.digital-template-thumb.cafe {
+  background: linear-gradient(135deg, #8b5e34, #3f2a1d);
+}
+
+.digital-template-thumb span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.digital-template-thumb strong {
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.12;
+}
+
+.digital-visual-ad-thumb {
+  width: 78px;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #0f172a;
+}
+
+.digital-visual-ad-thumb .signage-visual-ad-preview {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.signage-visual-ad-preview {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: #0f4fc4;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.signage-visual-ad-preview-mini {
+  min-width: 0;
+  box-shadow: none;
+}
+
+.signage-visual-ad-preview-bg {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.signage-visual-ad-preview-element {
+  position: absolute;
+  min-height: 0;
+  overflow: hidden;
+  color: #ffffff;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
+}
+
+.signage-visual-ad-preview-element.image {
+  padding: 0;
+  text-shadow: none;
+}
+
+.signage-visual-ad-preview-element.image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: inherit;
+}
+
+.signage-visual-ad-preview-placeholder {
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.signage-playlist-visual-preview {
+  width: min(180px, 100%);
+  margin: 8px 0 6px;
 }
 
 .digital-asset-row strong,
@@ -366,7 +488,8 @@
 
 .digital-preview-screen img,
 .digital-preview-screen video,
-.digital-preview-screen iframe {
+.digital-preview-screen iframe,
+.digital-preview-screen .signage-visual-ad-preview {
   width: 100%;
   height: 100%;
   border: 0;
@@ -407,6 +530,25 @@
   background: #000000;
 }
 
+.signage-player-offline-badge {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
 .signage-player-stage img,
 .signage-player-stage video,
 .signage-player-stage iframe {
@@ -422,6 +564,145 @@
 
 .signage-player-stage iframe {
   background: #ffffff;
+}
+
+.signage-template-slide {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: clamp(48px, 7vw, 120px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #082f73 0%, #0f4fc4 48%, #021024 100%);
+  color: #ffffff;
+  text-align: center;
+}
+
+.signage-template-slide::after {
+  content: "";
+  position: absolute;
+  inset: auto -12% -34% -12%;
+  height: 58%;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50% 50% 0 0;
+  pointer-events: none;
+}
+
+.signage-template-slide.verde {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #064e3b 0%, #138a54 52%, #02150f 100%);
+}
+
+.signage-template-slide.dorado {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #704500 0%, #d79516 52%, #1f1300 100%);
+}
+
+.signage-template-slide.rojo {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #7a271a 0%, #d92d20 52%, #260804 100%);
+}
+
+.signage-template-slide.cafe {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #3f2a1d 0%, #8b5e34 52%, #180f0a 100%);
+}
+
+.signage-player-visual-ad {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.signage-player-visual-element {
+  position: absolute;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
+  text-shadow: 0 8px 26px rgba(0, 0, 0, 0.42);
+}
+
+.signage-player-visual-element.image {
+  overflow: hidden;
+  text-shadow: none;
+}
+
+.signage-player-visual-element.image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: inherit;
+}
+
+.signage-template-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: clamp(14px, 1.8vw, 28px);
+  width: min(92vw, 1320px);
+}
+
+.signage-template-kicker,
+.signage-template-content strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: clamp(18px, 1.7vw, 30px);
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.signage-template-content h1 {
+  max-width: 14ch;
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(64px, 8vw, 148px);
+  font-weight: 950;
+  line-height: 0.95;
+}
+
+.signage-template-content h2 {
+  max-width: 34ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: clamp(32px, 3.6vw, 68px);
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.signage-template-content p {
+  max-width: 42ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: clamp(26px, 2.6vw, 50px);
+  font-weight: 700;
+  line-height: 1.18;
+  white-space: pre-line;
+}
+
+.signage-template-content small {
+  margin-top: clamp(8px, 1vw, 18px);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: clamp(18px, 1.6vw, 30px);
+  font-weight: 800;
 }
 
 .signage-player-message {
@@ -461,6 +742,107 @@
 .signage-player-message strong {
   font-size: clamp(24px, 5vw, 48px);
   line-height: 1.1;
+}
+
+.signage-setup-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  min-height: 100vh;
+  padding: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.28), transparent 26%),
+    linear-gradient(135deg, #020617 0%, #082f73 52%, #020617 100%);
+  color: #ffffff;
+  z-index: 9999;
+}
+
+.signage-setup-card {
+  display: grid;
+  justify-items: center;
+  width: min(92vw, 680px);
+  padding: clamp(24px, 5vw, 46px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.58);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  text-align: center;
+  backdrop-filter: blur(18px);
+}
+
+.signage-setup-card span {
+  color: #dbeafe;
+  font-size: clamp(18px, 2.4vw, 28px);
+  font-weight: 900;
+}
+
+.signage-setup-card small {
+  margin-top: 6px;
+  color: #bfdbfe;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.signage-setup-card h1 {
+  margin: 28px 0 14px;
+  color: #ffffff;
+  font-size: clamp(24px, 4vw, 42px);
+  line-height: 1.1;
+}
+
+.signage-setup-code {
+  width: 100%;
+  margin: 4px 0 18px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: clamp(46px, 11vw, 88px);
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.signage-setup-code.expired {
+  color: #fecaca;
+}
+
+.signage-setup-card p {
+  max-width: 520px;
+  margin: 0;
+  color: #dbeafe;
+  font-size: clamp(15px, 2vw, 18px);
+  line-height: 1.45;
+}
+
+.signage-setup-status {
+  display: inline-flex;
+  margin: 20px 0 0;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(219, 234, 254, 0.12);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.signage-setup-card button {
+  margin-top: 18px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f4fc4;
+  font-size: 14px;
+  font-weight: 900;
 }
 
 html[data-theme="dark"] .digital-signage-tabs,
@@ -720,6 +1102,13 @@ html[data-theme="dark"] .digital-device-row code {
   white-space: nowrap;
 }
 
+.signage-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .signage-device-toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(150px, 180px);
@@ -976,6 +1365,394 @@ html[data-theme="dark"] .digital-device-row code {
   color: #b42318;
 }
 
+.signage-status-badge.scheduled {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.signage-status-badge.ended {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.signage-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.signage-type-badge,
+.signage-soft-badge,
+.signage-publish-badge,
+.signage-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.signage-type-badge {
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-type-badge.video {
+  background: #f3e8ff;
+  color: #6d28d9;
+}
+
+.signage-type-badge.web {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.signage-type-badge.template {
+  background: #ecfdf3;
+  color: #148253;
+}
+
+.signage-soft-badge {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.signage-soft-badge.warning {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.signage-publish-badge.draft {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.signage-publish-badge.review {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.signage-publish-badge.published {
+  background: #ecfdf3;
+  color: #148253;
+}
+
+.signage-publish-badge.archived {
+  background: #fee2e2;
+  color: #b42318;
+}
+
+.signage-publish-select {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-soft-badge.archived,
+.signage-tag-badge {
+  background: color-mix(in srgb, #64748b 13%, transparent);
+  color: var(--muted, #64748b);
+}
+
+.signage-tag-badge::before {
+  content: "#";
+  opacity: 0.7;
+}
+
+.signage-warning-note,
+.signage-attention-reason {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.signage-health-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.signage-health-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signage-health-metric {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-health-metric span {
+  display: block;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.signage-health-metric strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text, #0f2442);
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.signage-health-metric.online {
+  border-color: rgba(22, 163, 74, 0.24);
+}
+
+.signage-health-metric.offline,
+.signage-health-metric.attention {
+  border-color: rgba(249, 115, 22, 0.28);
+}
+
+.signage-health-metric.unassigned {
+  border-color: rgba(91, 33, 182, 0.22);
+}
+
+.signage-health-metric.inactive {
+  border-color: rgba(180, 35, 24, 0.22);
+}
+
+.signage-health-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.85fr) minmax(0, 1.15fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.signage-health-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.signage-health-filters button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 999px;
+  background: var(--surface, #ffffff);
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.signage-health-filters button.active {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-health-list {
+  display: grid;
+  gap: 12px;
+}
+
+.signage-health-row {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-health-row.needs-attention {
+  border-color: rgba(249, 115, 22, 0.32);
+  box-shadow: inset 3px 0 0 rgba(249, 115, 22, 0.78);
+}
+
+.signage-health-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signage-health-main strong {
+  display: block;
+  color: var(--text, #0f2442);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.signage-health-main span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.signage-health-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.signage-attention-badge {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.signage-health-details {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signage-campaign-list {
+  display: grid;
+  gap: 12px;
+}
+
+.signage-campaign-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-campaign-card.needs-attention {
+  border-color: rgba(249, 115, 22, 0.32);
+}
+
+.signage-campaign-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signage-campaign-main strong {
+  display: block;
+  color: var(--text, #0f2442);
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.signage-campaign-main span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.signage-campaign-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.signage-priority-badge {
+  display: inline-flex !important;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4 !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.signage-priority-badge.alta {
+  background: #ffedd5;
+  color: #c2410c !important;
+}
+
+.signage-priority-badge.urgente {
+  background: #fee2e2;
+  color: #b42318 !important;
+}
+
+.signage-schedule-box {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 14px;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 94%, #0f4fc4 6%);
+}
+
+.signage-toggle-row {
+  display: inline-flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 10px !important;
+  min-height: 28px;
+  text-transform: none !important;
+}
+
+.signage-toggle-row input {
+  width: 18px !important;
+  height: 18px;
+  min-width: 18px;
+}
+
+.signage-day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.signage-day-picker button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 999px;
+  background: var(--surface, #ffffff);
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-day-picker button.active {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
 .signage-inline-form {
   display: grid;
   gap: 14px;
@@ -984,6 +1761,11 @@ html[data-theme="dark"] .digital-device-row code {
   border: 1px solid rgba(15, 79, 196, 0.22);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface, #ffffff) 92%, #0f4fc4 8%);
+}
+
+.signage-pairing-form {
+  border-color: rgba(22, 163, 74, 0.28);
+  background: color-mix(in srgb, var(--surface, #ffffff) 93%, #16a34a 7%);
 }
 
 .signage-list-footer {
@@ -1083,6 +1865,11 @@ html[data-theme="dark"] .digital-device-row code {
   align-items: center;
 }
 
+.signage-preview-meta-list {
+  display: grid;
+  gap: 10px;
+}
+
 .signage-quick-actions > div {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1108,6 +1895,32 @@ html[data-theme="dark"] .digital-device-row code {
   gap: 12px;
 }
 
+.signage-library-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 96%, #0f4fc4 4%);
+}
+
+.signage-library-toolbar label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-library-toolbar input,
+.signage-library-toolbar select {
+  min-width: 0;
+}
+
 .signage-asset-card {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr) auto;
@@ -1119,9 +1932,16 @@ html[data-theme="dark"] .digital-device-row code {
   background: var(--surface, #ffffff);
 }
 
+.signage-asset-card.archived {
+  opacity: 0.72;
+  background: color-mix(in srgb, var(--surface, #ffffff) 92%, #64748b 8%);
+}
+
 .signage-asset-card img,
 .signage-asset-card video,
-.signage-asset-card .digital-web-thumb {
+.signage-asset-card .digital-web-thumb,
+.signage-asset-card .digital-template-thumb,
+.signage-asset-card .digital-visual-ad-thumb {
   width: 110px;
   aspect-ratio: 16 / 10;
   object-fit: cover;
@@ -1141,11 +1961,687 @@ html[data-theme="dark"] .digital-device-row code {
   font-size: 13px;
 }
 
+.signage-template-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 8px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #0f4fc4 12%, transparent);
+  color: #0f4fc4;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.digital-full-field {
+  grid-column: 1 / -1;
+}
+
+.digital-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 40px;
+  font-weight: 800;
+}
+
+.digital-checkbox-label input {
+  width: auto;
+}
+
+.signage-visual-canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.signage-visual-empty-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(18px, 2.2vw, 34px);
+  font-weight: 850;
+  text-align: center;
+  text-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.signage-visual-element {
+  position: absolute;
+  display: block;
+  min-height: 26px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
+  text-shadow: 0 7px 20px rgba(0, 0, 0, 0.38);
+  touch-action: none;
+  user-select: none;
+  cursor: move;
+}
+
+.signage-visual-element.selected {
+  border-color: rgba(255, 255, 255, 0.86);
+  background: rgba(15, 23, 42, 0.14);
+}
+
+.signage-visual-canvas-element.selected {
+  outline: 2px solid rgba(96, 165, 250, 0.9);
+  outline-offset: 2px;
+}
+
+.signage-visual-resize-handle {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #0f4fc4;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.24);
+  cursor: nwse-resize;
+}
+
+.signage-visual-guide {
+  position: absolute;
+  z-index: 999;
+  background: rgba(96, 165, 250, 0.85);
+  pointer-events: none;
+}
+
+.signage-visual-guide.vertical {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+}
+
+.signage-visual-guide.horizontal {
+  right: 0;
+  left: 0;
+  top: 50%;
+  height: 2px;
+}
+
+.signage-visual-image-element {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  text-shadow: none;
+}
+
+.signage-visual-image-element img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.signage-visual-text-element {
+  min-height: 26px;
+}
+
+.signage-visual-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.signage-visual-controls button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-weight: 850;
+  text-align: left;
+}
+
+.signage-visual-controls button.active {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-visual-element-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.signage-visual-element-panel input[type="range"] {
+  width: 100%;
+}
+
+.signage-visual-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.signage-visual-editor-focused {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 100%;
+  min-height: min(760px, calc(100vh - 220px));
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+}
+
+.signage-visual-editor-shell {
+  margin-bottom: 18px;
+}
+
+.signage-visual-editor-topbar,
+.signage-visual-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.signage-visual-editor-topbar {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border, #d9e2ef);
+}
+
+.signage-visual-editor-topbar > div:first-of-type {
+  min-width: 0;
+  flex: 1;
+}
+
+.signage-visual-editor-topbar .signage-form-actions {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.signage-visual-editor-topbar > .visual-outline-button {
+  flex: 0 0 auto;
+}
+
+.signage-visual-editor-topbar h3,
+.signage-visual-editor-toolbar h3 {
+  margin: 0;
+}
+
+.signage-visual-editor-topbar span,
+.signage-visual-editor-toolbar span {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-visual-editor-workspace,
+.signage-visual-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.signage-visual-editor-preview-area,
+.signage-visual-editor-preview-pane {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.signage-visual-editor-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.signage-visual-editor-preview-header > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.signage-visual-editor-preview-header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-visual-editor-preview-header strong {
+  color: var(--text, #0f2442);
+}
+
+.signage-visual-editor-canvas-frame {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 94%, #0f172a 6%);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14);
+}
+
+.signage-visual-editor-canvas-frame:fullscreen {
+  display: grid;
+  place-items: center;
+  padding: 3vw;
+  background: #020617;
+}
+
+.signage-visual-editor-canvas-frame:fullscreen .signage-visual-editor-viewport {
+  width: 100%;
+  max-width: min(94vw, 177vh);
+}
+
+.signage-visual-editor-canvas-frame:fullscreen .signage-visual-editor-canvas-large {
+  max-width: min(94vw, 177vh);
+  max-height: 94vh;
+}
+
+.signage-visual-editor-viewport {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
+.signage-visual-editor-zoom-shell {
+  width: 100%;
+  min-width: 260px;
+  max-width: none;
+  transition: width 160ms ease;
+}
+
+.signage-visual-editor-canvas-large {
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  border-color: rgba(15, 23, 42, 0.16);
+}
+
+.signage-visual-zoom-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.signage-visual-zoom-controls button,
+.signage-visual-zoom-controls strong {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.signage-visual-zoom-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.signage-visual-editor-sidepanel,
+.signage-visual-editor-controls {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.signage-visual-editor-sidepanel {
+  align-self: stretch;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  min-width: 320px;
+  max-width: 380px;
+  max-height: calc(100vh - 260px);
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #ffffff) 96%, #0f4fc4 4%);
+}
+
+.signage-visual-editor-control-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border, #d9e2ef);
+}
+
+.signage-visual-editor-control-tabs button {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.signage-visual-editor-control-tabs button.active {
+  border-color: rgba(15, 79, 196, 0.28);
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-visual-editor-scroll-panel {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.signage-visual-editor-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-visual-editor-section h4 {
+  margin: 0;
+  color: var(--text, #0f2442);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.signage-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.signage-visual-preset-grid,
+.signage-visual-element-list,
+.signage-visual-elements-list,
+.signage-visual-align-actions,
+.signage-visual-layer-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.signage-visual-preset-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.signage-visual-preset-grid button,
+.signage-visual-element-list button,
+.signage-visual-align-actions button,
+.signage-visual-layer-actions button {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #0f2442);
+  font-size: 12px;
+  font-weight: 820;
+  text-align: left;
+}
+
+.signage-visual-element-list button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.signage-visual-element-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.signage-visual-element-list-row.active > button:first-child {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-visual-element-list button span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #0f4fc4;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.signage-visual-element-list button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signage-visual-preset-grid button:hover,
+.signage-visual-element-list button.active {
+  border-color: #0f4fc4;
+  background: #eaf2ff;
+  color: #0f4fc4;
+}
+
+.signage-visual-layer-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.signage-visual-align-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.signage-visual-locked-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b42318;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.signage-visual-locked-badge.canvas {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  white-space: nowrap;
+}
+
+.signage-visual-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  cursor: pointer;
+}
+
+.signage-visual-file-button input {
+  display: none;
+}
+
+.signage-visual-template-list {
+  display: grid;
+  gap: 10px;
+}
+
+.signage-visual-template-card {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border, #d9e2ef);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+}
+
+.signage-visual-template-card.inactive {
+  opacity: 0.68;
+}
+
+.signage-visual-template-card .signage-visual-ad-preview {
+  align-self: start;
+  width: 96px;
+}
+
+.signage-visual-template-card strong,
+.signage-visual-template-card span,
+.signage-visual-template-card small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.signage-visual-template-card strong {
+  color: var(--text, #0f2442);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.signage-visual-template-card span,
+.signage-visual-template-card small {
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.signage-visual-template-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.signage-visual-template-actions button {
+  min-height: 34px;
+  padding: 7px 9px;
+}
+
+.digital-template-preview {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 22px;
+  background: linear-gradient(135deg, #082f73, #0f4fc4);
+  color: #ffffff;
+  text-align: center;
+}
+
+.digital-template-preview.verde {
+  background: linear-gradient(135deg, #064e3b, #138a54);
+}
+
+.digital-template-preview.dorado {
+  background: linear-gradient(135deg, #704500, #d79516);
+}
+
+.digital-template-preview.rojo {
+  background: linear-gradient(135deg, #7a271a, #d92d20);
+}
+
+.digital-template-preview.cafe {
+  background: linear-gradient(135deg, #3f2a1d, #8b5e34);
+}
+
+.digital-template-preview span,
+.digital-template-preview em {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.digital-template-preview strong {
+  color: #ffffff;
+  font-size: clamp(20px, 3vw, 34px);
+  line-height: 1;
+}
+
+.digital-template-preview p,
+.digital-template-preview small {
+  max-width: 34ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+}
+
 .signage-card-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.signage-compact-actions {
+  justify-content: flex-start;
+}
+
+.signage-helper-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 79, 196, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 79, 196, 0.06);
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
 }
 
 .signage-playlist-selector {
@@ -1155,19 +2651,37 @@ html[data-theme="dark"] .digital-device-row code {
   margin-bottom: 16px;
 }
 
-.signage-playlist-selector button {
+.signage-playlist-card {
   display: grid;
-  gap: 4px;
+  gap: 10px;
   padding: 12px;
   border: 1px solid var(--border, #d9e2ef);
   border-radius: 8px;
   background: var(--surface, #ffffff);
-  text-align: left;
 }
 
-.signage-playlist-selector button.active {
+.signage-playlist-card.active {
   border-color: rgba(15, 79, 196, 0.35);
   background: color-mix(in srgb, var(--surface, #ffffff) 92%, #0f4fc4 8%);
+}
+
+.signage-playlist-select {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.signage-playlist-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .signage-playlist-selector strong {
@@ -1179,6 +2693,14 @@ html[data-theme="dark"] .digital-device-row code {
   color: var(--muted, #64748b);
   font-size: 12px;
   font-weight: 750;
+}
+
+.signage-playlist-selector small {
+  display: block;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 740;
+  line-height: 1.35;
 }
 
 .signage-playlist-toolbar {
@@ -1193,6 +2715,14 @@ html[data-theme="dark"] .digital-device-row code {
   background: var(--surface, #ffffff);
 }
 
+.digital-preview-meta small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted, #64748b);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 html[data-theme="dark"] .signage-kpi-card,
 html[data-theme="dark"] .signage-panel,
 html[data-theme="dark"] .signage-device-card,
@@ -1203,14 +2733,42 @@ html[data-theme="dark"] .signage-device-actions label,
 html[data-theme="dark"] .signage-quick-actions button,
 html[data-theme="dark"] .signage-pagination button,
 html[data-theme="dark"] .signage-asset-card,
-html[data-theme="dark"] .signage-playlist-selector button {
+html[data-theme="dark"] .signage-library-toolbar,
+html[data-theme="dark"] .signage-playlist-card,
+html[data-theme="dark"] .signage-health-metric,
+html[data-theme="dark"] .signage-health-filters button,
+html[data-theme="dark"] .signage-health-row,
+html[data-theme="dark"] .signage-campaign-card,
+html[data-theme="dark"] .signage-schedule-box,
+html[data-theme="dark"] .signage-day-picker button,
+html[data-theme="dark"] .signage-soft-badge,
+html[data-theme="dark"] .signage-tag-badge,
+html[data-theme="dark"] .signage-publish-select,
+html[data-theme="dark"] .signage-visual-controls button,
+html[data-theme="dark"] .signage-visual-editor-focused,
+html[data-theme="dark"] .signage-visual-editor-sidepanel,
+html[data-theme="dark"] .signage-visual-editor-section,
+html[data-theme="dark"] .signage-visual-editor-canvas-frame,
+html[data-theme="dark"] .signage-visual-editor-control-tabs button,
+html[data-theme="dark"] .signage-visual-preset-grid button,
+html[data-theme="dark"] .signage-visual-element-list button,
+html[data-theme="dark"] .signage-visual-template-card,
+html[data-theme="dark"] .signage-visual-align-actions button,
+html[data-theme="dark"] .signage-visual-layer-actions button,
+html[data-theme="dark"] .signage-visual-zoom-controls button,
+html[data-theme="dark"] .signage-visual-zoom-controls strong {
   background: var(--surface, #101826);
   border-color: var(--border, #253246);
   color: var(--text, #e5eefb);
 }
 
 html[data-theme="dark"] .signage-inline-form,
-html[data-theme="dark"] .signage-playlist-selector button.active {
+html[data-theme="dark"] .signage-playlist-card.active,
+html[data-theme="dark"] .signage-health-filters button.active,
+html[data-theme="dark"] .signage-day-picker button.active,
+html[data-theme="dark"] .signage-visual-controls button.active,
+html[data-theme="dark"] .signage-visual-editor-control-tabs button.active,
+html[data-theme="dark"] .signage-visual-element-list button.active {
   background: rgba(96, 165, 250, 0.1);
   border-color: rgba(147, 197, 253, 0.28);
 }
@@ -1223,7 +2781,15 @@ html[data-theme="dark"] .signage-info-pair > strong,
 html[data-theme="dark"] .signage-search input,
 html[data-theme="dark"] .signage-filter select,
 html[data-theme="dark"] .signage-asset-card strong,
-html[data-theme="dark"] .signage-playlist-selector strong {
+html[data-theme="dark"] .signage-playlist-selector strong,
+html[data-theme="dark"] .signage-health-metric strong,
+html[data-theme="dark"] .signage-health-main strong,
+html[data-theme="dark"] .signage-campaign-main strong,
+html[data-theme="dark"] .signage-visual-editor-section h4,
+html[data-theme="dark"] .signage-visual-editor-topbar h3,
+html[data-theme="dark"] .signage-visual-editor-preview-header strong,
+html[data-theme="dark"] .signage-visual-template-card strong,
+html[data-theme="dark"] .signage-visual-element-list button strong {
   color: var(--text, #e5eefb);
 }
 
@@ -1234,8 +2800,41 @@ html[data-theme="dark"] .signage-info-pair > span,
 html[data-theme="dark"] .signage-device-title-row span,
 html[data-theme="dark"] .signage-asset-card span,
 html[data-theme="dark"] .signage-playlist-selector span,
-html[data-theme="dark"] .signage-list-footer {
+html[data-theme="dark"] .signage-playlist-selector small,
+html[data-theme="dark"] .signage-list-footer,
+html[data-theme="dark"] .signage-health-metric span,
+html[data-theme="dark"] .signage-health-main span,
+html[data-theme="dark"] .signage-campaign-main span,
+html[data-theme="dark"] .digital-preview-meta small,
+html[data-theme="dark"] .signage-visual-editor-control-tabs button,
+html[data-theme="dark"] .signage-visual-editor-topbar span,
+html[data-theme="dark"] .signage-visual-editor-preview-header,
+html[data-theme="dark"] .signage-visual-template-card span,
+html[data-theme="dark"] .signage-visual-template-card small {
   color: var(--muted, #a7b3c7);
+}
+
+html[data-theme="dark"] .signage-template-badge {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
+}
+
+html[data-theme="dark"] .signage-warning-note,
+html[data-theme="dark"] .signage-attention-reason {
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(251, 146, 60, 0.28);
+  color: #fdba74;
+}
+
+html[data-theme="dark"] .signage-helper-note {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(147, 197, 253, 0.22);
+  color: var(--muted, #a7b3c7);
+}
+
+html[data-theme="dark"] .signage-type-badge {
+  background: rgba(96, 165, 250, 0.16);
+  color: #93c5fd;
 }
 
 @media (max-width: 1180px) {
@@ -1244,6 +2843,38 @@ html[data-theme="dark"] .signage-list-footer {
   }
 
   .signage-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signage-library-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .signage-visual-editor-layout,
+  .signage-visual-editor-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .signage-visual-editor-preview-pane,
+  .signage-visual-editor-preview-area {
+    position: static;
+  }
+
+  .signage-visual-editor-sidepanel {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .signage-health-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .signage-health-toolbar,
+  .signage-health-details,
+  .signage-campaign-meta {
     grid-template-columns: 1fr;
   }
 }
@@ -1259,9 +2890,26 @@ html[data-theme="dark"] .signage-list-footer {
   .signage-panel-heading,
   .signage-list-footer,
   .signage-playlist-toolbar,
+  .signage-visual-editor-preview-header,
+  .signage-visual-editor-topbar,
+  .signage-visual-editor-toolbar,
   .signage-form-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .signage-panel-actions {
+    width: 100%;
+  }
+
+  .signage-health-main,
+  .signage-campaign-main {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .signage-health-badges {
+    justify-content: flex-start;
   }
 
   .signage-new-button,
@@ -1274,10 +2922,43 @@ html[data-theme="dark"] .signage-list-footer {
     grid-template-columns: 1fr;
     gap: 2px;
   }
+
+  .signage-library-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .signage-visual-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .signage-visual-editor-control-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .signage-visual-editor-canvas-large {
+    min-height: 260px;
+  }
+
+  .signage-visual-zoom-controls {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .signage-visual-template-card {
+    grid-template-columns: 1fr;
+  }
+
+  .signage-visual-template-card .signage-visual-ad-preview {
+    width: 100%;
+  }
 }
 
 @media (max-width: 620px) {
   .signage-kpi-grid,
+  .signage-health-kpis,
+  .signage-visual-preset-grid,
+  .signage-visual-align-actions,
+  .signage-visual-layer-actions,
   .signage-quick-actions > div {
     grid-template-columns: 1fr;
   }
@@ -1292,7 +2973,9 @@ html[data-theme="dark"] .signage-list-footer {
 
   .signage-asset-card img,
   .signage-asset-card video,
-  .signage-asset-card .digital-web-thumb {
+  .signage-asset-card .digital-web-thumb,
+  .signage-asset-card .digital-template-thumb,
+  .signage-asset-card .digital-visual-ad-thumb {
     width: 100%;
   }
 }
