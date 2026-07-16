@@ -36,6 +36,31 @@ service firebase.storage {
         && userDoc().data.role.lower() == "admin";
     }
 
+    function editorialProjectPath(projectId) {
+      return /databases/(default)/documents/editorialProjects/$(projectId);
+    }
+
+    function editorialProjectExists(projectId) {
+      return firestore.exists(editorialProjectPath(projectId));
+    }
+
+    function editorialProjectData(projectId) {
+      return firestore.get(editorialProjectPath(projectId)).data;
+    }
+
+    function canAccessEditorialProject(projectId) {
+      return hasProfile()
+        && editorialProjectExists(projectId)
+        && (
+          isAdmin()
+          || editorialProjectData(projectId).ownerUid == request.auth.uid
+          || (
+            editorialProjectData(projectId).collaboratorUids is list
+            && request.auth.uid in editorialProjectData(projectId).collaboratorUids
+          )
+        );
+    }
+
     match /profile-photos/{userId}/{fileName} {
       allow read: if signedIn() && hasProfile();
       allow create, update: if signedIn() && hasProfile()
@@ -646,6 +671,23 @@ service firebase.storage {
       allow update: if false;
 
       allow delete: if isAdmin();
+    }
+
+    match /editorial/{projectId}/{category}/{userUid}/{fileName} {
+      allow read: if canAccessEditorialProject(projectId);
+
+      allow create, update: if canAccessEditorialProject(projectId)
+        && (isAdmin() || request.auth.uid == userUid)
+        && category in ["images", "covers", "resources", "exports"]
+        && request.resource.size < 250 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/pdf'
+          || request.resource.contentType == 'application/zip'
+        );
+
+      allow delete: if canAccessEditorialProject(projectId)
+        && (isAdmin() || request.auth.uid == userUid);
     }
 
     match /digital-signage/assets/{assetId}/{fileName} {

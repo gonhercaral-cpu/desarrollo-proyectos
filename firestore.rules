@@ -42,6 +42,85 @@ service cloud.firestore {
       return hasProfile() && isAdminRole();
     }
 
+    function editorialProjectPath(projectId) {
+      return /databases/$(database)/documents/editorialProjects/$(projectId);
+    }
+
+    function editorialProjectExists(projectId) {
+      return exists(editorialProjectPath(projectId));
+    }
+
+    function editorialProjectData(projectId) {
+      return get(editorialProjectPath(projectId)).data;
+    }
+
+    function isEditorialProjectCollaborator(data) {
+      return hasProfile()
+        && data.collaboratorUids is list
+        && request.auth.uid in data.collaboratorUids;
+    }
+
+    function canAccessEditorialProjectData(data) {
+      return hasProfile()
+        && (
+          isAdmin()
+          || data.ownerUid == request.auth.uid
+          || isEditorialProjectCollaborator(data)
+        );
+    }
+
+    function canAccessEditorialProject(projectId) {
+      return editorialProjectExists(projectId)
+        && canAccessEditorialProjectData(editorialProjectData(projectId));
+    }
+
+    function canEditEditorialProject(projectId) {
+      return canAccessEditorialProject(projectId);
+    }
+
+    function canCreateEditorialProjectChild(projectId) {
+      return hasProfile()
+        && getAfter(editorialProjectPath(projectId)).data.ownerUid == request.auth.uid;
+    }
+
+    function validEditorialProjectCreate() {
+      return hasProfile()
+        && request.resource.data.keys().hasAll([
+          "name",
+          "type",
+          "size",
+          "orientation",
+          "margins",
+          "bleedIn",
+          "ownerUid",
+          "collaboratorUids",
+          "archived",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.type in [
+          "book",
+          "booklet",
+          "activity_sheet",
+          "song_sheet",
+          "exam",
+          "teacher_guide",
+          "extra_material",
+          "custom"
+        ]
+        && request.resource.data.size is string
+        && request.resource.data.orientation in ["portrait", "landscape"]
+        && request.resource.data.margins is map
+        && request.resource.data.bleedIn is number
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.collaboratorUids is list
+        && request.resource.data.archived == false
+        && request.resource.data.status == "active";
+    }
+
 
     function validAutoApprovalReason(reason) {
       return reason in ["assembly", "specialMeeting", "theocraticEvent"];
@@ -3691,6 +3770,70 @@ service cloud.firestore {
           && request.resource.data.lastSeenMillis is number
         );
       allow delete: if isAdmin();
+    }
+
+    match /editorialProjects/{projectId} {
+      allow get: if canAccessEditorialProjectData(resource.data);
+      allow list: if canAccessEditorialProjectData(resource.data);
+      allow create: if validEditorialProjectCreate();
+      allow update: if request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          isAdmin()
+          || (hasProfile() && resource.data.ownerUid == request.auth.uid)
+          || (
+            isEditorialProjectCollaborator(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "name",
+              "type",
+              "size",
+              "orientation",
+              "margins",
+              "bleedIn",
+              "widthIn",
+              "heightIn",
+              "updatedBy",
+              "updatedAt"
+            ])
+          )
+        );
+      allow delete: if isAdmin()
+        || (hasProfile() && resource.data.ownerUid == request.auth.uid);
+
+      match /documents/{documentId} {
+        allow read: if canAccessEditorialProject(projectId);
+        allow create: if canCreateEditorialProjectChild(projectId);
+        allow update, delete: if canEditEditorialProject(projectId);
+
+        match /pages/{pageId} {
+          allow read: if canAccessEditorialProject(projectId);
+          allow create: if canCreateEditorialProjectChild(projectId)
+            || canEditEditorialProject(projectId);
+          allow update, delete: if canEditEditorialProject(projectId);
+
+          match /elements/{elementId} {
+            allow read: if canAccessEditorialProject(projectId);
+            allow create, update, delete: if canEditEditorialProject(projectId);
+          }
+        }
+      }
+    }
+
+    match /editorialTemplates/{templateId} {
+      allow read: if hasProfile();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /editorialAssets/{assetId} {
+      allow read: if resource.data.projectId is string
+        && canAccessEditorialProject(resource.data.projectId);
+      allow create: if request.resource.data.projectId is string
+        && request.resource.data.ownerUid == request.auth.uid
+        && canEditEditorialProject(request.resource.data.projectId);
+      allow update: if resource.data.projectId == request.resource.data.projectId
+        && resource.data.ownerUid == request.resource.data.ownerUid
+        && canEditEditorialProject(resource.data.projectId);
+      allow delete: if canEditEditorialProject(resource.data.projectId);
     }
 
     match /digitalSignagePairingSessions/{sessionId} {

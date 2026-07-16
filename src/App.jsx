@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 
@@ -12,6 +12,8 @@ import SignagePlayer from "./components/SignagePlayer";
 import SignageSetup from "./components/SignageSetup";
 
 import "./styles/app.css";
+
+const EditorialModule = lazy(() => import("./editorial/EditorialModule"));
 
 const THEME_STORAGE_KEY = "dp.ui.theme";
 
@@ -90,6 +92,40 @@ function ProtectedSystem({ theme, onToggleTheme }) {
   return <Dashboard theme={theme} onToggleTheme={onToggleTheme} />;
 }
 
+function ProtectedEditorialSystem({ theme, onToggleTheme }) {
+  const { firebaseUser, profile, loading, isAdmin } = useAuth();
+
+  if (loading) {
+    return <div className="loading-screen"><h2>Cargando Editor Editorial...</h2></div>;
+  }
+
+  if (!firebaseUser) {
+    return <Login />;
+  }
+
+  if (!profile) {
+    return (
+      <div className="loading-screen">
+        <div className="card">
+          <h2>Usuario sin perfil</h2>
+          <p>Editor Editorial requiere un perfil activo en Firestore.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Suspense fallback={<div className="loading-screen"><h2>Cargando Editor Editorial...</h2></div>}>
+      <EditorialModule
+        profile={profile}
+        isAdmin={isAdmin}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+      />
+    </Suspense>
+  );
+}
+
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
 
@@ -137,6 +173,16 @@ export default function App() {
           <Route
             path="/signage/player/:deviceToken"
             element={<SignagePlayer />}
+          />
+
+          <Route
+            path="/editorial"
+            element={<ProtectedEditorialSystem theme={theme} onToggleTheme={toggleTheme} />}
+          />
+
+          <Route
+            path="/editorial/:projectId"
+            element={<ProtectedEditorialSystem theme={theme} onToggleTheme={toggleTheme} />}
           />
 
           <Route

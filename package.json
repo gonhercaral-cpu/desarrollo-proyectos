@@ -17,10 +17,12 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
+    "konva": "^10.3.0",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-konva": "^19.2.5",
     "react-router-dom": "^7.18.0"
   },
   "devDependencies": {

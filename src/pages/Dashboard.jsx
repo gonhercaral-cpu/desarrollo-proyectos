@@ -253,6 +253,13 @@ function renderDashboardNavIconPath(name) {
           <path d="M7 13h10" />
         </>
       );
+    case "editorial":
+      return (
+        <>
+          <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21z" />
+          <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5A2.5 2.5 0 0 1 20 21z" />
+        </>
+      );
     case "more":
       return (
         <>
@@ -282,6 +289,8 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
   items.push({ page: "ideas-incubator", label: "Incubadora de ideas", mobileLabel: "Ideas", icon: "ideas", section: "General" });
 
   items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects", section: "Operación" });
+
+  items.push({ page: "editorial", label: "Editor Editorial", mobileLabel: "Editorial", icon: "editorial", section: "Operación" });
 
   items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Operación" });
 
@@ -524,6 +533,11 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   }, [canUseTechnicalSupport, canUsePrintShop]);
 
   function goToPage(nextPage) {
+    if (nextPage === "editorial") {
+      window.location.assign("/editorial");
+      return;
+    }
+
     const safePage = getSafeDashboardPage(nextPage, {
       isAdmin,
       canUsePrintShop,

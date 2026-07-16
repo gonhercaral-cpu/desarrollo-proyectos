@@ -177,6 +177,34 @@ async function seedBaseData() {
         students: [],
         deleted: false,
       }),
+      setDoc(doc(db, "editorialProjects", "editorial-owned"), {
+        name: "Libro del colaborador",
+        type: "book",
+        size: "8x10",
+        orientation: "portrait",
+        margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+        bleedIn: 0.125,
+        ownerUid: "collab",
+        collaboratorUids: [],
+        archived: false,
+        status: "active",
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      }),
+      setDoc(doc(db, "editorialProjects", "editorial-shared"), {
+        name: "Libro compartido",
+        type: "teacher_guide",
+        size: "letter",
+        orientation: "portrait",
+        margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+        bleedIn: 0.125,
+        ownerUid: "requester",
+        collaboratorUids: ["collab"],
+        archived: false,
+        status: "active",
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      }),
       setDoc(doc(db, "publicCertificatePeople", "requester-requester"), {
         sourceId: "requester",
         name: "Requester",
@@ -1310,7 +1338,135 @@ describe("eliminacion global de mensajes", () => {
   });
 });
 
+describe("editor editorial", () => {
+  it("permite crear proyecto con documento y página inicial en un batch", async () => {
+    const db = auth("collab");
+    const projectRef = doc(db, "editorialProjects", "editorial-new");
+    const documentRef = doc(projectRef, "documents", "document-main");
+    const pageRef = doc(documentRef, "pages", "page-1");
+    const batch = writeBatch(db);
+
+    batch.set(projectRef, {
+      name: "Explore A2",
+      type: "book",
+      size: "8x10",
+      orientation: "portrait",
+      margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+      bleedIn: 0.125,
+      widthIn: 8,
+      heightIn: 10,
+      ownerUid: "collab",
+      collaboratorUids: [],
+      archived: false,
+      status: "active",
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    batch.set(documentRef, {
+      name: "Documento principal",
+      position: 0,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    batch.set(pageRef, {
+      name: "Página 1",
+      number: 1,
+      position: 0,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it("limita lectura y listado a dueño, colaborador y admin", async () => {
+    await assertSucceeds(getDoc(doc(auth("collab"), "editorialProjects", "editorial-owned")));
+    await assertSucceeds(getDoc(doc(auth("collab"), "editorialProjects", "editorial-shared")));
+    await assertSucceeds(getDoc(doc(auth("admin"), "editorialProjects", "editorial-owned")));
+    await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned")));
+
+    await assertSucceeds(
+      getDocs(query(collection(auth("collab"), "editorialProjects"), where("ownerUid", "==", "collab")))
+    );
+    await assertSucceeds(
+      getDocs(query(collection(auth("collab"), "editorialProjects"), where("collaboratorUids", "array-contains", "collab")))
+    );
+    await assertFails(getDocs(collection(auth("collab"), "editorialProjects")));
+    await assertSucceeds(getDocs(collection(auth("admin"), "editorialProjects")));
+  });
+
+  it("permite actualizar al miembro pero eliminar solo a dueño o admin", async () => {
+    await assertSucceeds(
+      updateDoc(doc(auth("collab"), "editorialProjects", "editorial-shared"), {
+        name: "Guía compartida actualizada",
+        updatedAt: Timestamp.now(),
+      })
+    );
+    await assertFails(deleteDoc(doc(auth("collab"), "editorialProjects", "editorial-shared")));
+    await assertSucceeds(deleteDoc(doc(auth("collab"), "editorialProjects", "editorial-owned")));
+  });
+
+  it("bloquea crear a usuario inactivo o suplantar ownerUid", async () => {
+    const payload = {
+      name: "Proyecto inválido",
+      type: "book",
+      size: "8x10",
+      orientation: "portrait",
+      margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+      bleedIn: 0.125,
+      ownerUid: "admin",
+      collaboratorUids: [],
+      archived: false,
+      status: "active",
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+
+    await assertFails(setDoc(doc(auth("inactive"), "editorialProjects", "inactive-create"), payload));
+    await assertFails(setDoc(doc(auth("collab"), "editorialProjects", "spoofed-owner"), payload));
+  });
+
+  it("protege documentos, páginas y elementos por membresía del proyecto", async () => {
+    const pageRef = doc(auth("collab"), "editorialProjects", "editorial-owned", "documents", "doc-1", "pages", "page-1");
+    await assertSucceeds(setDoc(pageRef, { name: "Página 1", number: 1, position: 0 }));
+    await assertSucceeds(setDoc(doc(pageRef, "elements", "element-1"), {
+      type: "text",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 30,
+      rotation: 0,
+      opacity: 1,
+      zIndex: 0,
+      locked: false,
+      visible: true,
+      content: "Título",
+      style: {},
+    }));
+    await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "documents", "doc-1", "pages", "page-1")));
+  });
+});
+
 describe("storage", () => {
+  it("protege recursos editoriales por membresía y tipo de archivo", async () => {
+    await assertSucceeds(
+      storageAuth("collab").ref("editorial/editorial-owned/images/collab/portada.png")
+        .putString("image", "raw", { contentType: "image/png" })
+    );
+    await assertSucceeds(
+      storageAuth("collab").ref("editorial/editorial-shared/resources/collab/guia.pdf")
+        .putString("%PDF", "raw", { contentType: "application/pdf" })
+    );
+    await assertFails(
+      storageAuth("outsider").ref("editorial/editorial-owned/images/outsider/ajena.png")
+        .putString("image", "raw", { contentType: "image/png" })
+    );
+    await assertFails(
+      storageAuth("collab").ref("editorial/editorial-owned/scripts/collab/recurso.js")
+        .putString("code", "raw", { contentType: "text/javascript" })
+    );
+  });
+
   it("permite a admin subir imagen base de plantilla de certificado", async () => {
     const fileRef = storageAuth("admin").ref(
       "printshop/certificate-templates/admin/smile-6.png"
