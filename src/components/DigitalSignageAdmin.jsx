@@ -2396,9 +2396,11 @@ export default function DigitalSignageAdmin() {
                       <TypeBadge type={asset.type} />
                       <span className="signage-chip">{asset.plantel || "Sin plantel"}</span>
                       <span className="signage-chip">{asset.durationSeconds || 10}s</span>
+                      <span className="signage-chip">{getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
                       <StatusBadge status={asset.active === false ? "inactive" : "active"} />
                       <PublishStatusBadge status={asset.publishStatus} />
                       {asset.archived === true && <span className="signage-soft-badge archived">Archivado</span>}
+                      {asset.source === "nube_aes" && <span className="signage-soft-badge">Nube AES</span>}
                       <span className="signage-soft-badge">
                         {getAssetUsageLabel(asset.id, assetUsageMap)}
                       </span>
@@ -2408,49 +2410,62 @@ export default function DigitalSignageAdmin() {
                     </div>
                   </div>
                   <div className="signage-list-actions">
-                    {asset.type === "visual_ad" && (
-                      <button type="button" className="visual-outline-button" onClick={() => openEditVisualAdEditor(asset)} disabled={saving}>
-                        Editar anuncio
-                      </button>
-                    )}
-                    {asset.type === "web" && (
-                      <>
-                        <button type="button" className="visual-outline-button" onClick={() => openEditWebAssetForm(asset)} disabled={saving}>
-                          Opciones web
-                        </button>
-                        <button type="button" className="visual-outline-button" onClick={() => sendWebReloadCommand(asset)} disabled={saving}>
-                          Enviar recarga
-                        </button>
-                      </>
-                    )}
-                    <button type="button" className="visual-outline-button" onClick={() => editAssetOrganization(asset)} disabled={saving}>
-                      Editar
+                    <button
+                      type="button"
+                      className="visual-outline-button"
+                      onClick={() => asset.type === "visual_ad" ? openEditVisualAdEditor(asset) : editAssetOrganization(asset)}
+                      disabled={saving}
+                    >
+                      {asset.type === "visual_ad" ? "Editar anuncio" : "Editar"}
                     </button>
                     <button type="button" className="visual-outline-button" onClick={() => prepareAssetForPlaylist(asset)} disabled={saving}>
                       Agregar a playlist
                     </button>
-                    <button type="button" className="visual-outline-button" onClick={() => duplicateAsset(asset)} disabled={saving}>
-                      Duplicar
-                    </button>
-                    <button type="button" className="visual-outline-button" onClick={() => runAction(() => updateSignageAsset(asset.id, { active: asset.active === false }), "Asset actualizado.")} disabled={saving}>
-                      {asset.active === false ? "Activar" : "Desactivar"}
-                    </button>
-                    <select
-                      className="signage-publish-select"
-                      value={getPublishStatus(asset.publishStatus)}
-                      onChange={(event) => changeAssetPublishStatus(asset, event.target.value)}
-                      disabled={saving}
-                    >
-                      {PUBLISH_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                    <button type="button" className="visual-outline-button" onClick={() => toggleAssetArchive(asset)} disabled={saving}>
-                      {asset.archived === true ? "Restaurar" : "Archivar"}
-                    </button>
-                    <button type="button" className="danger-table-button" onClick={() => window.confirm("¿Eliminar asset?") && runAction(() => deleteSignageAsset(asset.id), "Asset eliminado.")} disabled={saving}>
-                      Eliminar
-                    </button>
+                    <details className="signage-action-menu">
+                      <summary>Más</summary>
+                      <div className="signage-action-menu-popover">
+                        {asset.type === "web" && (
+                          <>
+                            <button type="button" onClick={() => openEditWebAssetForm(asset)} disabled={saving}>
+                              Opciones web
+                            </button>
+                            <button type="button" onClick={() => sendWebReloadCommand(asset)} disabled={saving}>
+                              Enviar recarga
+                            </button>
+                          </>
+                        )}
+                        {asset.type !== "visual_ad" && (
+                          <button type="button" onClick={() => editAssetOrganization(asset)} disabled={saving}>
+                            Organización
+                          </button>
+                        )}
+                        <button type="button" onClick={() => duplicateAsset(asset)} disabled={saving}>
+                          Duplicar
+                        </button>
+                        <button type="button" onClick={() => runAction(() => updateSignageAsset(asset.id, { active: asset.active === false }), "Asset actualizado.")} disabled={saving}>
+                          {asset.active === false ? "Activar" : "Desactivar"}
+                        </button>
+                        <label>
+                          Publicación
+                          <select
+                            className="signage-publish-select"
+                            value={getPublishStatus(asset.publishStatus)}
+                            onChange={(event) => changeAssetPublishStatus(asset, event.target.value)}
+                            disabled={saving}
+                          >
+                            {PUBLISH_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" onClick={() => toggleAssetArchive(asset)} disabled={saving}>
+                          {asset.archived === true ? "Restaurar" : "Archivar"}
+                        </button>
+                        <button type="button" className="danger" onClick={() => window.confirm("¿Eliminar asset?") && runAction(() => deleteSignageAsset(asset.id), "Asset eliminado.")} disabled={saving}>
+                          Eliminar
+                        </button>
+                      </div>
+                    </details>
                   </div>
                 </article>
               ))}
@@ -2675,28 +2690,31 @@ export default function DigitalSignageAdmin() {
                     <button type="button" className="visual-outline-button" onClick={() => editPlaylist(playlist)} disabled={saving}>
                       Editar
                     </button>
-                    <button type="button" className="visual-outline-button" onClick={() => duplicatePlaylist(playlist)} disabled={saving}>
-                      Duplicar
-                    </button>
                     <details className="signage-action-menu">
-                      <summary>MÃ¡s</summary>
+                      <summary>Más</summary>
                       <div className="signage-action-menu-popover">
-                      <label>
-                        PublicaciÃ³n
-                        <select
-                          className="signage-publish-select"
-                          value={getPublishStatus(playlist.publishStatus)}
-                          onChange={(event) => changePlaylistPublishStatus(playlist, event.target.value)}
-                          disabled={saving}
-                        >
-                          {PUBLISH_STATUS_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <button type="button" className="danger" onClick={() => handleDeletePlaylist(playlist)} disabled={saving}>
-                        Eliminar
-                      </button>
+                        <button type="button" onClick={() => duplicatePlaylist(playlist)} disabled={saving}>
+                          Duplicar
+                        </button>
+                        <button type="button" onClick={() => runAction(() => updateSignagePlaylist(playlist.id, { active: playlist.active === false }), "Playlist guardada.")} disabled={saving}>
+                          {playlist.active === false ? "Activar" : "Desactivar"}
+                        </button>
+                        <label>
+                          Publicación
+                          <select
+                            className="signage-publish-select"
+                            value={getPublishStatus(playlist.publishStatus)}
+                            onChange={(event) => changePlaylistPublishStatus(playlist, event.target.value)}
+                            disabled={saving}
+                          >
+                            {PUBLISH_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" className="danger" onClick={() => handleDeletePlaylist(playlist)} disabled={saving}>
+                          Eliminar
+                        </button>
                       </div>
                     </details>
                   </div>
@@ -2727,31 +2745,31 @@ export default function DigitalSignageAdmin() {
                     <button type="button" className="visual-outline-button" onClick={() => editPlaylist(selectedPlaylist)} disabled={saving}>
                       Editar
                     </button>
-                    <button type="button" className="visual-outline-button" onClick={() => duplicatePlaylist(selectedPlaylist)} disabled={saving}>
-                      Duplicar
-                    </button>
-                    <button type="button" className="visual-outline-button" onClick={() => runAction(() => updateSignagePlaylist(selectedPlaylist.id, { active: selectedPlaylist.active === false }), "Playlist guardada.")} disabled={saving}>
-                      {selectedPlaylist.active === false ? "Activar" : "Desactivar"}
-                    </button>
                     <details className="signage-action-menu">
-                      <summary>MÃ¡s</summary>
+                      <summary>Más</summary>
                       <div className="signage-action-menu-popover">
-                      <label>
-                        PublicaciÃ³n
-                        <select
-                          className="signage-publish-select"
-                          value={getPublishStatus(selectedPlaylist.publishStatus)}
-                          onChange={(event) => changePlaylistPublishStatus(selectedPlaylist, event.target.value)}
-                          disabled={saving}
-                        >
-                          {PUBLISH_STATUS_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <button type="button" className="danger" onClick={() => handleDeletePlaylist(selectedPlaylist)} disabled={saving}>
-                        Eliminar
-                      </button>
+                        <button type="button" onClick={() => duplicatePlaylist(selectedPlaylist)} disabled={saving}>
+                          Duplicar
+                        </button>
+                        <button type="button" onClick={() => runAction(() => updateSignagePlaylist(selectedPlaylist.id, { active: selectedPlaylist.active === false }), "Playlist guardada.")} disabled={saving}>
+                          {selectedPlaylist.active === false ? "Activar" : "Desactivar"}
+                        </button>
+                        <label>
+                          Publicación
+                          <select
+                            className="signage-publish-select"
+                            value={getPublishStatus(selectedPlaylist.publishStatus)}
+                            onChange={(event) => changePlaylistPublishStatus(selectedPlaylist, event.target.value)}
+                            disabled={saving}
+                          >
+                            {PUBLISH_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" className="danger" onClick={() => handleDeletePlaylist(selectedPlaylist)} disabled={saving}>
+                          Eliminar
+                        </button>
                       </div>
                     </details>
                   </div>
@@ -2998,28 +3016,28 @@ function CampaignsPanel({
                   <button type="button" className="visual-outline-button" onClick={() => onViewPlaylist(campaign.playlistId)} disabled={saving || !playlist}>
                     Ver playlist
                   </button>
-                  <button type="button" className="visual-outline-button" onClick={() => onToggle(campaign)} disabled={saving}>
-                    {campaign.active === false ? "Activar" : "Desactivar"}
-                  </button>
                   <details className="signage-action-menu">
-                    <summary>MÃ¡s</summary>
+                    <summary>Más</summary>
                     <div className="signage-action-menu-popover">
-                    <label>
-                      PublicaciÃ³n
-                      <select
-                        className="signage-publish-select"
-                        value={getPublishStatus(campaign.publishStatus)}
-                        onChange={(event) => onPublishStatusChange(campaign, event.target.value)}
-                        disabled={saving}
-                      >
-                        {PUBLISH_STATUS_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <button type="button" className="danger" onClick={() => onDelete(campaign)} disabled={saving}>
-                      Eliminar
-                    </button>
+                      <button type="button" onClick={() => onToggle(campaign)} disabled={saving}>
+                        {campaign.active === false ? "Activar" : "Desactivar"}
+                      </button>
+                      <label>
+                        Publicación
+                        <select
+                          className="signage-publish-select"
+                          value={getPublishStatus(campaign.publishStatus)}
+                          onChange={(event) => onPublishStatusChange(campaign, event.target.value)}
+                          disabled={saving}
+                        >
+                          {PUBLISH_STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="button" className="danger" onClick={() => onDelete(campaign)} disabled={saving}>
+                        Eliminar
+                      </button>
                     </div>
                   </details>
                 </div>
@@ -3565,10 +3583,6 @@ function DeviceCard({
               ))}
             </select>
           </label>
-          <button type="button" className="visual-outline-button" onClick={(event) => { event.stopPropagation(); onCopy(); }}>
-            <SignageIcon name="link" />
-            Copiar URL
-          </button>
           <button
             type="button"
             className="visual-outline-button"
@@ -3577,12 +3591,20 @@ function DeviceCard({
           >
             Quitar contenido
           </button>
-          <button type="button" className="signage-icon-button" onClick={(event) => { event.stopPropagation(); onToggle(); }} disabled={saving} title={device.active === false ? "Activar" : "Desactivar"}>
-            <SignageIcon name="power" />
-          </button>
-          <button type="button" className="signage-icon-button danger" onClick={(event) => { event.stopPropagation(); onDelete(); }} disabled={saving} title="Eliminar">
-            <SignageIcon name="more" />
-          </button>
+          <details className="signage-action-menu" onClick={(event) => event.stopPropagation()}>
+            <summary>Más</summary>
+            <div className="signage-action-menu-popover">
+              <button type="button" onClick={onCopy} disabled={saving}>
+                Copiar URL
+              </button>
+              <button type="button" onClick={onToggle} disabled={saving}>
+                {device.active === false ? "Activar" : "Desactivar"}
+              </button>
+              <button type="button" className="danger" onClick={onDelete} disabled={saving}>
+                Eliminar
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </article>
@@ -3686,9 +3708,14 @@ function DeviceMonitorCard({
           <button type="button" className="visual-outline-button" onClick={(event) => { event.stopPropagation(); onClearContent(); }} disabled={saving || !device.assignedPlaylistId}>
             Quitar contenido
           </button>
-          <button type="button" className="visual-outline-button" onClick={(event) => { event.stopPropagation(); onCopy(); }} disabled={saving}>
-            Copiar URL
-          </button>
+          <details className="signage-action-menu" onClick={(event) => event.stopPropagation()}>
+            <summary>Más</summary>
+            <div className="signage-action-menu-popover">
+              <button type="button" onClick={onCopy} disabled={saving}>
+                Copiar URL
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </article>
@@ -4690,7 +4717,7 @@ function SignagePreview({ playlist, contextLabel = "" }) {
   return (
     <div className="digital-preview-shell">
       {(!isPublished(playlist.publishStatus) || !isPublished(item.publishStatus)) && (
-        <p className="signage-warning-note">Vista previa: este contenido aÃºn no estÃ¡ publicado.</p>
+        <p className="signage-warning-note">Vista previa: este contenido aún no está publicado.</p>
       )}
       <div className="digital-preview-screen">
         {item.type === "image" && <img src={item.url} alt={item.title} />}

@@ -1111,10 +1111,20 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-panel-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 16px;
+}
+
+.signage-panel-heading > button {
+  flex: 0 0 auto;
+}
+
+.signage-panel-heading > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
 }
 
 .signage-panel-heading p,
@@ -1302,7 +1312,7 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-device-meta-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border, #e5edf7);
@@ -1381,6 +1391,15 @@ html[data-theme="dark"] .digital-device-row code {
   outline: 0;
 }
 
+.signage-device-actions .signage-action-menu summary,
+.signage-device-monitor-actions .signage-action-menu summary {
+  min-height: 32px;
+}
+
+.signage-device-monitor-actions .signage-action-menu summary {
+  width: 100%;
+}
+
 .signage-icon-button {
   display: inline-grid;
   place-items: center;
@@ -1396,13 +1415,13 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-device-monitor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
 }
 
 .signage-device-monitor-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--border, #d9e2ef);
@@ -1533,7 +1552,7 @@ html[data-theme="dark"] .digital-device-row code {
 .signage-device-monitor-actions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 7px;
 }
 
 .signage-device-monitor-actions button,
@@ -1629,13 +1648,16 @@ html[data-theme="dark"] .digital-device-row code {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(190px, 100%);
   min-height: 24px;
   padding: 4px 9px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 850;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .signage-badge-row .signage-type-badge,
@@ -1727,12 +1749,12 @@ html[data-theme="dark"] .digital-device-row code {
 .signage-warning-note,
 .signage-attention-reason {
   margin: 0;
-  padding: 9px 11px;
+  padding: 7px 10px;
   border: 1px solid rgba(249, 115, 22, 0.28);
   border-radius: 8px;
   background: #fff7ed;
   color: #c2410c;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 820;
 }
 
@@ -1743,7 +1765,7 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-health-kpis {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
 }
 
@@ -1893,8 +1915,15 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-health-details {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
+}
+
+.signage-health-details .signage-info-pair > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .signage-campaign-list {
@@ -1920,6 +1949,7 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-campaign-main {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -1942,7 +1972,7 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-campaign-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -2201,15 +2231,15 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-list-title span,
 .signage-list-main > span {
-  display: block;
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
   color: var(--muted, #64748b);
   font-size: 12px;
   font-weight: 760;
   line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .signage-list-meta {
@@ -2226,7 +2256,7 @@ html[data-theme="dark"] .digital-device-row code {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  max-width: 100%;
+  max-width: min(190px, 100%);
   min-height: 24px;
   padding: 4px 9px;
   border-radius: 999px;
@@ -2235,6 +2265,8 @@ html[data-theme="dark"] .digital-device-row code {
   font-size: 11px;
   font-weight: 850;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2354,11 +2386,11 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-library-toolbar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
   align-items: end;
-  margin-bottom: 14px;
-  padding: 12px;
+  margin-bottom: 12px;
+  padding: 10px;
   border: 1px solid var(--border, #d9e2ef);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface, #ffffff) 96%, #0f4fc4 4%);
@@ -2380,9 +2412,9 @@ html[data-theme="dark"] .digital-device-row code {
 
 .signage-asset-card {
   display: grid;
-  grid-template-columns: 124px minmax(0, 1fr);
+  grid-template-columns: 124px minmax(0, 1fr) auto;
   gap: 12px 14px;
-  align-items: start;
+  align-items: center;
   padding: 12px;
 }
 
@@ -2416,8 +2448,11 @@ html[data-theme="dark"] .digital-device-row code {
 }
 
 .signage-asset-card .signage-list-actions {
-  grid-column: 2 / -1;
-  padding-top: 2px;
+  grid-column: auto;
+  align-self: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  padding-top: 0;
 }
 
 .signage-asset-card .signage-badge-row span,
@@ -2427,7 +2462,11 @@ html[data-theme="dark"] .digital-device-row code {
 .signage-campaign-card .signage-badge-row span {
   display: inline-flex;
   width: fit-content;
+  max-width: min(190px, 100%);
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .signage-template-badge {
