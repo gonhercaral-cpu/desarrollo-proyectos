@@ -4615,6 +4615,87 @@ export default function PrintShop() {
     }
   }
 
+  async function invalidateGeneratedCertificate(record, auditUser) {
+    // Baja lógica del certificado + invalidación de TODOS sus documentos
+    // públicos (incluidos posibles IDs históricos) de forma atómica, para que
+    // la validación pública deje de mostrarlo como válido de inmediato.
+    const publicDocuments = await getExistingPublicValidationDocuments(record);
+
+    const invalidationBatch = writeBatch(db);
+    invalidationBatch.update(doc(db, "generatedCertificates", record.id), {
+      active: false,
+      deleted: true,
+      deletedAt: serverTimestamp(),
+      deletedByUid: auditUser.uid,
+      deletedByName: auditUser.name,
+      deletedByEmail: auditUser.email,
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    });
+
+    const seenPublicIds = new Set();
+    publicDocuments.forEach((publicDocument) => {
+      if (!publicDocument?.id || seenPublicIds.has(publicDocument.id)) return;
+      seenPublicIds.add(publicDocument.id);
+      invalidationBatch.set(
+        doc(db, "publicCertificateValidations", publicDocument.id),
+        {
+          deleted: true,
+          active: false,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    await invalidationBatch.commit();
+
+    // Recálculo de contadores/contenido del lote: mejor esfuerzo, sin afectar
+    // la atomicidad de la invalidación ni otros certificados del lote.
+    const requestId = getCertificateRequestId(record) || record.requestId || "";
+    const historyBatch = certificateHistoryBatches.find(
+      (item) => item.id === requestId || item.requestId === requestId
+    );
+
+    if (!requestId || !historyBatch) return;
+
+    try {
+      const remainingIds = (Array.isArray(historyBatch.certificateIds) ? historyBatch.certificateIds : [])
+        .filter((certificateId) => certificateId !== record.id);
+      const remainingStatuses = generatedCertificates
+        .filter((certificate) =>
+          certificate.id !== record.id &&
+          certificate.deleted !== true &&
+          (getCertificateRequestId(certificate) || certificate.requestId) === requestId
+        )
+        .map((certificate) => normalizeCertificateStatus(certificate.status));
+      const loteStatus = remainingStatuses.length === 0
+        ? "Eliminado"
+        : remainingStatuses.every((status) => status === remainingStatuses[0])
+          ? remainingStatuses[0]
+          : "Mixto";
+
+      await updateDoc(doc(db, "certificateHistoryBatches", requestId), {
+        requestId,
+        loteId: requestId,
+        certificateIds: remainingIds,
+        certificateCount: remainingIds.length,
+        status: loteStatus,
+        updatedAt: serverTimestamp(),
+        updatedByUid: auditUser.uid,
+        updatedByName: auditUser.name,
+        updatedByEmail: auditUser.email,
+      });
+    } catch (batchError) {
+      console.warn(
+        "El certificado se invalidó, pero no se pudo actualizar el contador del lote (certificateHistoryBatches):",
+        batchError
+      );
+    }
+  }
+
   async function softDeletePrintshopRecord(collectionName, record, options = {}) {
     if (!isAdmin || !record?.id) return;
 
@@ -4666,27 +4747,31 @@ export default function PrintShop() {
     let hardDeleted = false;
 
     try {
-      try {
-        await updateDoc(doc(db, collectionName, record.id), {
-          active: false,
-          deleted: true,
-          deletedAt: serverTimestamp(),
-          deletedByUid: auditUser.uid,
-          deletedByName: auditUser.name,
-          deletedByEmail: auditUser.email,
-          updatedAt: serverTimestamp(),
-          updatedByUid: auditUser.uid,
-          updatedByName: auditUser.name,
-          updatedByEmail: auditUser.email,
-        });
-      } catch (softDeleteError) {
-        if (!canUseHardDeleteFallback) {
-          throw softDeleteError;
-        }
+      if (collectionName === "generatedCertificates") {
+        await invalidateGeneratedCertificate(record, auditUser);
+      } else {
+        try {
+          await updateDoc(doc(db, collectionName, record.id), {
+            active: false,
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            deletedByUid: auditUser.uid,
+            deletedByName: auditUser.name,
+            deletedByEmail: auditUser.email,
+            updatedAt: serverTimestamp(),
+            updatedByUid: auditUser.uid,
+            updatedByName: auditUser.name,
+            updatedByEmail: auditUser.email,
+          });
+        } catch (softDeleteError) {
+          if (!canUseHardDeleteFallback) {
+            throw softDeleteError;
+          }
 
-        console.warn("La baja logica fue bloqueada; se usara eliminacion directa de administrador:", softDeleteError);
-        await deleteDoc(doc(db, collectionName, record.id));
-        hardDeleted = true;
+          console.warn("La baja logica fue bloqueada; se usara eliminacion directa de administrador:", softDeleteError);
+          await deleteDoc(doc(db, collectionName, record.id));
+          hardDeleted = true;
+        }
       }
 
       removeFromLocalState();
@@ -6904,6 +6989,11 @@ export default function PrintShop() {
     );
   }
 
+  // ID canónico del documento en publicCertificateValidations.
+  // Todos los flujos (generar folio, descargar PDF, entregar, cancelar) deben
+  // usar esta clave para no crear documentos públicos duplicados del mismo
+  // certificado. Se basa en validationCode porque es estable, único y es la
+  // clave que la validación pública consulta por getDoc directo.
   function getRequestStudentValidationId(request, student) {
     return sanitizeGeneratedCertificateId(
       student.validationCode ||
@@ -7076,7 +7166,7 @@ export default function PrintShop() {
         knownCertificates
       );
       batch.set(doc(db, "generatedCertificates", certificateId), payload, { merge: true });
-      batch.set(doc(db, "publicCertificateValidations", sanitizeGeneratedCertificateId(student.validationCode)), buildPublicCertificateValidationPayload(payload, {
+      batch.set(doc(db, "publicCertificateValidations", getRequestStudentValidationId(request, student)), buildPublicCertificateValidationPayload(payload, {
         status: activeStatuses[index],
         generationMode: "request",
         updatedAt: serverTimestamp(),
@@ -7103,6 +7193,94 @@ export default function PrintShop() {
       updatedByName: auditUser.name,
       updatedByEmail: auditUser.email,
     }, { merge: true });
+  }
+
+  function addGeneratedCertificateRegistration(batch, request, students, auditUser, forcedStatus = "") {
+    const studentsWithFolios = normalizeRequestStudents(students).filter(
+      (student) => student.certificateFolio && student.validationCode
+    );
+
+    if (studentsWithFolios.length === 0) return [];
+
+    const requestDelivered = normalizeCertificateStatus(forcedStatus || request.status) === "Entregado";
+    const registeredStudents = [];
+    const registeredIds = [];
+    const registeredStatuses = [];
+
+    studentsWithFolios.forEach((student) => {
+      const certificateId = getCertificateRecordId(request, student);
+      const existing = generatedCertificates.find(
+        (certificate) =>
+          certificate.id === certificateId ||
+          certificate.validationCode === student.validationCode
+      );
+
+      // No revivir certificados eliminados de forma lógica.
+      if (existing?.deleted === true) return;
+
+      const status =
+        normalizeCertificateStatus(student.status) === "Cancelado"
+          ? "Cancelado"
+          : existing?.status === "Entregado" || requestDelivered
+            ? "Entregado"
+            : "Generado";
+
+      const certificatePayload = buildGeneratedCertificateFromStudent(
+        request,
+        student,
+        auditUser,
+        status
+      );
+
+      batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
+      batch.set(
+        doc(db, "publicCertificateValidations", getRequestStudentValidationId(request, student)),
+        buildPublicCertificateValidationPayload(certificatePayload, {
+          publishedAt: serverTimestamp(),
+        }),
+        { merge: true }
+      );
+
+      registeredStudents.push(student);
+      registeredIds.push(certificateId);
+      registeredStatuses.push(status);
+    });
+
+    if (registeredIds.length === 0) return [];
+
+    const loteStatus = registeredStatuses.every((status) => status === registeredStatuses[0])
+      ? registeredStatuses[0]
+      : "Mixto";
+
+    batch.set(doc(db, "certificateHistoryBatches", request.id), {
+      requestId: request.id,
+      loteId: request.id,
+      requestFolio: request.folio || "",
+      certificateIds: registeredIds,
+      certificateCount: registeredIds.length,
+      status: loteStatus,
+      campus: request.campus || "",
+      group: request.group || "",
+      level: request.level || "No aplica",
+      templateId: request.certificateTemplateId || "",
+      templateName: request.certificateTemplateName || "",
+      teacherId: request.teacherSignerId || request.teacherId || "",
+      teacherName: request.teacherSignerName || request.teacherName || "",
+      groupSchedule: request.groupSchedule || request.schedule || "",
+      issueDate: getCertificateIssueDate(request),
+      generatedAt: getOriginalCertificateGenerationValue(registeredStudents, request),
+      responsibleUid: request.responsibleUid || "",
+      collaboratorUid: request.collaboratorUid || "",
+      assignedUserId: normalizePrintRequestAssignments(request).assignedUserId,
+      supportUserId: normalizePrintRequestAssignments(request).supportUserId,
+      createdAt: request.createdAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedByUid: auditUser.uid,
+      updatedByName: auditUser.name,
+      updatedByEmail: auditUser.email,
+    }, { merge: true });
+
+    return registeredIds;
   }
 
   async function updateSelectedRequestStudents(nextStudents, successMessage = "Lista de alumnos actualizada.") {
@@ -7165,25 +7343,24 @@ export default function PrintShop() {
         updatedByEmail: auditUser.email,
       });
 
-      const pendingCertificateIds = normalizedStudents
-        .filter((student) => student.certificateFolio && student.validationCode)
-        .map((student) => getCertificateRecordId(currentRequest, student));
-
-      addCertificateHistoryUpserts(
+      addGeneratedCertificateRegistration(
         batch,
         { ...currentRequest, status: shouldMoveToProduction ? "En producción" : currentRequest.status },
         normalizedStudents,
-        auditUser,
-        "",
-        pendingCertificateIds
+        auditUser
       );
 
       await batch.commit();
       setRequestMessage(successMessage);
       return true;
     } catch (error) {
-      console.error("No se pudo actualizar la lista de alumnos:", error);
-      setRequestMessage("No se pudo actualizar la lista de alumnos. Revisa las reglas de Firestore.");
+      console.error(
+        "No se pudo registrar la lista de alumnos ni los certificados. Colecciones: printRequests, generatedCertificates, publicCertificateValidations, certificateHistoryBatches.",
+        error
+      );
+      setRequestMessage(
+        "No se pudieron registrar los certificados en el historial ni habilitar la validación por QR. Revisa tus permisos o la conexión. No se marcó como completado."
+      );
       return false;
     } finally {
       setSavingStudents(false);
@@ -7301,7 +7478,7 @@ export default function PrintShop() {
     const batch = writeBatch(db);
     addCertificateHistoryUpserts(batch, request, nextStudents, auditUser, "", [certificateId]);
     batch.set(doc(db, "generatedCertificates", certificateId), certificatePayload, { merge: true });
-    batch.set(doc(db, "publicCertificateValidations", certificateId), publicCertificatePayload, { merge: true });
+    batch.set(doc(db, "publicCertificateValidations", getRequestStudentValidationId(request, student)), publicCertificatePayload, { merge: true });
     batch.update(doc(db, "printRequests", request.id), {
       students: nextStudents,
       updatedAt: serverTimestamp(),

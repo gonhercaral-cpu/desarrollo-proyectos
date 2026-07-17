@@ -163,20 +163,29 @@ async function findPublicCertificateValidation(validationCode) {
   const matches = new Map();
 
   for (const validationId of documentIds) {
-    const validationRef = doc(db, "publicCertificateValidations", validationId);
-    const validationSnap = await getDoc(validationRef);
+    try {
+      const validationRef = doc(db, "publicCertificateValidations", validationId);
+      const validationSnap = await getDoc(validationRef);
 
-    if (validationSnap.exists()) {
-      matches.set(validationSnap.id, {
-        id: validationSnap.id,
-        ...validationSnap.data(),
-      });
+      if (validationSnap.exists()) {
+        matches.set(validationSnap.id, {
+          id: validationSnap.id,
+          ...validationSnap.data(),
+        });
+      }
+    } catch (lookupError) {
+      // Un ID candidato inválido no debe abortar el resto de la búsqueda.
+      console.warn("No se pudo consultar el certificado por ID directo.", { validationId, lookupError });
     }
   }
 
   for (const field of ["validationCode", "folio"]) {
-    const fieldMatches = await getValidationsByField(field, validationCode);
-    fieldMatches.forEach((match) => matches.set(match.id, match));
+    try {
+      const fieldMatches = await getValidationsByField(field, validationCode);
+      fieldMatches.forEach((match) => matches.set(match.id, match));
+    } catch (queryError) {
+      console.warn("No se pudo consultar el certificado por campo.", { field, queryError });
+    }
   }
 
   return [...matches.values()].sort((a, b) => getValidationPriority(b) - getValidationPriority(a))[0] || null;
@@ -225,11 +234,21 @@ export default function CertificateValidation({ validationCode: validationCodePr
         return;
       }
 
+      let watchdog = null;
+
       try {
         setLoading(true);
         setError("");
 
-        const nextCertificate = await findPublicCertificateValidation(validationCode);
+        const nextCertificate = await Promise.race([
+          findPublicCertificateValidation(validationCode),
+          new Promise((_, reject) => {
+            watchdog = setTimeout(
+              () => reject(new Error("La consulta de validación tardó demasiado.")),
+              15000
+            );
+          }),
+        ]);
 
         if (cancelled) return;
 
@@ -252,6 +271,7 @@ export default function CertificateValidation({ validationCode: validationCodePr
           setError("No se pudo consultar la validación. Inténtalo de nuevo más tarde.");
         }
       } finally {
+        if (watchdog) clearTimeout(watchdog);
         if (!cancelled) {
           setLoading(false);
         }
