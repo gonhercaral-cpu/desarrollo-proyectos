@@ -3321,6 +3321,370 @@ function buildCertificateDeliveryListHtml(request, students) {
 }
 
 
+const REQUEST_REPORT_TIME_ZONE = "America/Tijuana";
+
+const REQUEST_REPORT_PERIOD_OPTIONS = [
+  "Todo el periodo",
+  "Esta semana",
+  "Semana anterior",
+  "Este mes",
+  "Mes anterior",
+  "Rango personalizado",
+];
+
+function toReportDate(value) {
+  if (!value) return null;
+
+  if (typeof value?.toDate === "function") {
+    const converted = value.toDate();
+    return Number.isNaN(converted.getTime()) ? null : converted;
+  }
+
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    const anchored = new Date(Date.UTC(year, month - 1, day, 12));
+    return Number.isNaN(anchored.getTime()) ? null : anchored;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatReportDate(value) {
+  const date = toReportDate(value);
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: REQUEST_REPORT_TIME_ZONE,
+  }).format(date);
+}
+
+function getReportPeriodRange(period, customStart, customEnd) {
+  const now = new Date();
+  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+  const endOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  const mondayOf = (date) => {
+    const base = startOfDay(date);
+    const offset = (base.getDay() + 6) % 7;
+    base.setDate(base.getDate() - offset);
+    return base;
+  };
+  const rangeLabel = (start, end) => `${formatReportDate(start)} al ${formatReportDate(end)}`;
+
+  if (period === "Esta semana") {
+    const start = mondayOf(now);
+    const end = endOfDay(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6));
+    return { startMs: start.getTime(), endMs: end.getTime(), label: `Esta semana (${rangeLabel(start, end)})` };
+  }
+
+  if (period === "Semana anterior") {
+    const thisMonday = mondayOf(now);
+    const start = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() - 7);
+    const end = endOfDay(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6));
+    return { startMs: start.getTime(), endMs: end.getTime(), label: `Semana anterior (${rangeLabel(start, end)})` };
+  }
+
+  if (period === "Este mes") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    return { startMs: start.getTime(), endMs: end.getTime(), label: `Este mes (${rangeLabel(start, end)})` };
+  }
+
+  if (period === "Mes anterior") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = endOfDay(new Date(now.getFullYear(), now.getMonth(), 0));
+    return { startMs: start.getTime(), endMs: end.getTime(), label: `Mes anterior (${rangeLabel(start, end)})` };
+  }
+
+  if (period === "Rango personalizado") {
+    const startDate = customStart ? toReportDate(customStart) : null;
+    const endDate = customEnd ? toReportDate(customEnd) : null;
+    return {
+      startMs: startDate ? startOfDay(startDate).getTime() : null,
+      endMs: endDate ? endOfDay(endDate).getTime() : null,
+      label: `Rango ${customStart ? formatReportDate(customStart) : "—"} al ${customEnd ? formatReportDate(customEnd) : "—"}`,
+    };
+  }
+
+  return { startMs: null, endMs: null, label: "Todo el periodo" };
+}
+
+function getRequestReportInstant(request) {
+  const date = toReportDate(request?.createdAt) || toReportDate(request?.requestDate);
+  return date ? date.getTime() : null;
+}
+
+function matchesReportPeriod(request, range) {
+  if (!range || (range.startMs == null && range.endMs == null)) return true;
+
+  const instant = getRequestReportInstant(request);
+  if (instant == null) return false;
+  if (range.startMs != null && instant < range.startMs) return false;
+  if (range.endMs != null && instant > range.endMs) return false;
+  return true;
+}
+
+function getReportEarliestStudentDate(request, fields) {
+  const dates = normalizeRequestStudents(request?.students || [])
+    .flatMap((student) => fields.map((field) => student?.[field]))
+    .map(toReportDate)
+    .filter(Boolean);
+  return dates.length > 0 ? dates.reduce((earliest, value) => (value < earliest ? value : earliest)) : null;
+}
+
+function getReportLatestStudentDate(request, fields) {
+  const dates = normalizeRequestStudents(request?.students || [])
+    .flatMap((student) => fields.map((field) => student?.[field]))
+    .map(toReportDate)
+    .filter(Boolean);
+  return dates.length > 0 ? dates.reduce((latest, value) => (value > latest ? value : latest)) : null;
+}
+
+function getReportPrintDate(request) {
+  return (
+    request?.certificateGeneratedAt ||
+    request?.readyForDeliveryAt ||
+    getReportEarliestStudentDate(request, ["certificateGeneratedAt", "generatedAt"]) ||
+    ""
+  );
+}
+
+function getReportDeliveryDate(request) {
+  return (
+    request?.deliveredAt ||
+    getReportLatestStudentDate(request, ["certificateDeliveredAt", "deliveredAt"]) ||
+    ""
+  );
+}
+
+function getReportPrintedQuantity(request) {
+  const printed = Number(request?.printedQuantity);
+  if (Number.isFinite(printed) && printed > 0) return printed;
+
+  const students = normalizeRequestStudents(request?.students || []);
+  if (students.length > 0) return students.length;
+
+  const requested = Number(request?.requestedQuantity);
+  return Number.isFinite(requested) && requested > 0 ? requested : 0;
+}
+
+function getReportProducedQuantity(request) {
+  const printed = Number(request?.printedQuantity || 0);
+  const digital = Number(request?.digitalQuantity || 0);
+  const total = printed + digital;
+  if (total > 0) return total;
+
+  const requested = Number(request?.requestedQuantity);
+  return Number.isFinite(requested) && requested > 0 ? requested : 0;
+}
+
+function getRequestReportConfig(reportType) {
+  if (reportType === "Certificado") {
+    return {
+      variant: "certificate",
+      title: "Reporte de certificados",
+      columns: [
+        { label: "Maestro", get: (request) => request.teacherSignerName || request.teacherName || "" },
+        { label: "Nivel", get: (request) => (request.level && request.level !== "No aplica" ? request.level : "") },
+        { label: "Horario", get: (request) => request.schedule || "" },
+        { label: "Plantel", get: (request) => request.campus || "" },
+        { label: "Solicitó", get: (request) => request.requesterName || "" },
+        { label: "Fecha de solicitud", get: (request) => formatReportDate(request.createdAt || request.requestDate) },
+        { label: "Responsable de impresión", get: (request) => request.responsibleName || "" },
+        { label: "Fecha de impresión", get: (request) => formatReportDate(getReportPrintDate(request)) },
+        { label: "Cant. impresa", get: (request) => String(getReportPrintedQuantity(request)), align: "center" },
+        { label: "Fecha de entrega", get: (request) => formatReportDate(getReportDeliveryDate(request)) },
+        { label: "Firma de recibido", get: () => "", signature: true },
+      ],
+    };
+  }
+
+  const title =
+    reportType && reportType !== "Todos"
+      ? `Reporte de ${reportType.toLowerCase()}`
+      : "Reporte de solicitudes";
+
+  return {
+    variant: "generic",
+    title,
+    columns: [
+      { label: "Tipo", get: (request) => request.requestType || "" },
+      { label: "Producto / descripción", get: (request) => getRequestProductLabel(request) },
+      { label: "Solicitó", get: (request) => request.requesterName || "" },
+      { label: "Fecha de solicitud", get: (request) => formatReportDate(request.createdAt || request.requestDate) },
+      { label: "Plantel", get: (request) => request.campus || "" },
+      { label: "Responsable", get: (request) => request.responsibleName || "" },
+      { label: "Cantidad", get: (request) => String(getReportProducedQuantity(request)), align: "center" },
+      { label: "Fecha de producción", get: (request) => formatReportDate(getReportPrintDate(request)) },
+      { label: "Fecha de entrega", get: (request) => formatReportDate(getReportDeliveryDate(request)) },
+      { label: "Estado", get: (request) => getEffectiveRequestStatus(request) },
+      { label: "Firma de recibido", get: () => "", signature: true },
+    ],
+  };
+}
+
+function computeRequestReportStats(requests, reportType) {
+  const total = requests.length;
+  const delivered = requests.filter((request) => getEffectiveRequestStatus(request) === "Entregada").length;
+  const cancelled = requests.filter((request) => getEffectiveRequestStatus(request) === "Cancelada").length;
+
+  if (reportType === "Certificado") {
+    const printed = requests.reduce((sum, request) => sum + getReportPrintedQuantity(request), 0);
+    return [
+      ["Total de solicitudes", total],
+      ["Certificados impresos", printed],
+      ["Entregas realizadas", delivered],
+      ["Pendientes de entrega", Math.max(0, total - delivered - cancelled)],
+    ];
+  }
+
+  const produced = requests.reduce((sum, request) => sum + getReportProducedQuantity(request), 0);
+  return [
+    ["Total de solicitudes", total],
+    ["Unidades producidas", produced],
+    ["Entregadas", delivered],
+    ["Pendientes", Math.max(0, total - delivered - cancelled)],
+    ["Canceladas", cancelled],
+  ];
+}
+
+function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSummary, generatedAtLabel }) {
+  const config = getRequestReportConfig(reportType);
+  const stats = computeRequestReportStats(requests, reportType);
+  const columnCount = config.columns.length;
+
+  const headerCells = config.columns
+    .map((column) => `<th class="${column.signature ? "signature-col" : ""} ${column.align === "center" ? "center-col" : ""}">${escapePrintableHtml(column.label)}</th>`)
+    .join("");
+
+  const bodyRows = requests.length > 0
+    ? requests.map((request) => {
+        const cells = config.columns
+          .map((column) => {
+            if (column.signature) return `<td class="signature-cell"></td>`;
+            const alignClass = column.align === "center" ? "center-col" : "";
+            return `<td class="${alignClass}">${getPrintableValue(column.get(request))}</td>`;
+          })
+          .join("");
+        return `<tr>${cells}</tr>`;
+      }).join("")
+    : `<tr><td class="empty-row" colspan="${columnCount}">Sin registros para los filtros seleccionados</td></tr>`;
+
+  const statsCards = stats
+    .map(([label, value]) => `
+      <div class="stat-card">
+        <span>${escapePrintableHtml(label)}</span>
+        <strong>${escapePrintableHtml(String(value))}</strong>
+      </div>
+    `).join("");
+
+  const filtersLine = filtersSummary
+    ? `<div class="filters-line">${escapePrintableHtml(filtersSummary)}</div>`
+    : "";
+
+  return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapePrintableHtml(config.title)}</title>
+    <style>
+      @page { size: letter portrait; margin: 12mm 8mm 16mm; }
+      @page { @bottom-center { content: "Página " counter(page) " de " counter(pages); font-size: 9px; color: #64748b; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: #f8fafc; }
+      .report-sheet { padding: 18px; background: #ffffff; border: 1px solid #d8e1ee; min-height: 100vh; }
+      .document-header {
+        display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; gap: 16px; align-items: center;
+        padding-bottom: 12px; margin-bottom: 12px; border-bottom: 3px solid #1d4f91;
+      }
+      .brand-logo { width: 74px; height: 74px; object-fit: contain; }
+      .brand-kicker { margin: 0 0 4px; color: #1d4f91; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+      .institution-name { margin: 0; color: #102f5c; font-size: 18px; font-weight: 800; }
+      .sheet-title { margin: 4px 0 0; color: #1f2937; font-size: 15px; font-weight: 700; text-transform: uppercase; }
+      .header-meta { text-align: right; font-size: 11px; color: #334155; }
+      .header-meta strong { color: #102f5c; }
+      .filters-line { margin: 0 0 12px; padding: 8px 10px; background: #f1f6fc; border-left: 4px solid #1d4f91; font-size: 11px; color: #1f2937; }
+      table { width: 100%; border-collapse: collapse; table-layout: auto; background: #ffffff; }
+      thead { display: table-header-group; }
+      thead th { background: #1d4f91; color: #ffffff; border: 1px solid #123a6d; padding: 7px 6px; font-size: 9.5px; text-transform: uppercase; text-align: left; }
+      thead th.center-col { text-align: center; }
+      tbody td { border: 1px solid #c6d2e1; padding: 6px 6px; font-size: 10px; vertical-align: middle; word-break: break-word; }
+      tbody td.center-col { text-align: center; }
+      tbody tr:nth-child(even) td { background: #f3f7fc; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
+      .signature-col { width: 16%; }
+      .signature-cell { height: 34px; }
+      .empty-row { text-align: center; font-style: italic; color: #64748b; padding: 24px 8px; }
+      .report-stats { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; break-inside: avoid; }
+      .stat-card { flex: 1 1 150px; border: 1px solid #d8e1ee; border-top: 4px solid #1d4f91; background: #f8fbff; padding: 8px 10px; }
+      .stat-card span { display: block; color: #1d4f91; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+      .stat-card strong { display: block; margin-top: 4px; color: #102f5c; font-size: 18px; }
+      .report-footer { margin-top: 14px; font-size: 10px; color: #64748b; text-align: right; }
+      .print-actions { position: sticky; top: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 0 14px; background: #f8fafc; }
+      .print-actions button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1d4f91; color: #ffffff; font-weight: 700; cursor: pointer; }
+      @media print {
+        .print-actions { display: none; }
+        body { background: #ffffff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        .report-sheet { min-height: auto; padding: 0; border: 0; }
+        thead th { padding: 4px 5px; font-size: 8.5px; }
+        tbody td { padding: 4px 5px; font-size: 9px; }
+        .stat-card strong { font-size: 15px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-actions">
+      <button type="button" onclick="window.print()">Imprimir</button>
+    </div>
+    <main class="report-sheet">
+      <header class="document-header">
+        <img class="brand-logo" src="/active-logo.png" alt="Active English School" onerror="this.style.display='none'" />
+        <div>
+          <p class="brand-kicker">Documento generado por sistema</p>
+          <h1 class="institution-name">Active English School</h1>
+          <p class="sheet-title">${escapePrintableHtml(config.title)}</p>
+        </div>
+        <div class="header-meta">
+          <div>Periodo: <strong>${escapePrintableHtml(periodLabel || "Todo el periodo")}</strong></div>
+          <div>Generado: <strong>${escapePrintableHtml(generatedAtLabel)}</strong></div>
+        </div>
+      </header>
+      ${filtersLine}
+      <table aria-label="${escapePrintableHtml(config.title)}">
+        <thead><tr>${headerCells}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+      <section class="report-stats">${statsCards}</section>
+      <p class="report-footer">Active English School · ${escapePrintableHtml(config.title)} · Generado el ${escapePrintableHtml(generatedAtLabel)}</p>
+    </main>
+    <script>
+      (function () {
+        var printed = false;
+        function printWhenReady() {
+          if (printed) return;
+          printed = true;
+          window.requestAnimationFrame(function () {
+            window.setTimeout(function () {
+              if (typeof window.focus === "function") window.focus();
+              window.print();
+            }, 350);
+          });
+        }
+        if (document.readyState === "complete") {
+          printWhenReady();
+        } else {
+          window.addEventListener("load", printWhenReady, { once: true });
+        }
+        window.setTimeout(printWhenReady, 900);
+      }());
+    </script>
+  </body>
+</html>`;
+}
+
 function getBatchProgress(batch) {
   const statusProgress = {
     Planeado: 10,
@@ -3583,6 +3947,11 @@ export default function PrintShop() {
   const [requestStatusFilter, setRequestStatusFilter] = useState("Todos");
   const [requestTypeFilter, setRequestTypeFilter] = useState("Todos");
   const [requestPriorityFilter, setRequestPriorityFilter] = useState("Todas");
+  const [requestPeriodFilter, setRequestPeriodFilter] = useState("Todo el periodo");
+  const [requestPeriodStart, setRequestPeriodStart] = useState("");
+  const [requestPeriodEnd, setRequestPeriodEnd] = useState("");
+  const [requestCampusFilter, setRequestCampusFilter] = useState("Todos");
+  const [requestResponsibleFilter, setRequestResponsibleFilter] = useState("Todos");
   const [studentName, setStudentName] = useState("");
   const [studentDeliveryType, setStudentDeliveryType] = useState("Impreso");
   const [bulkStudentsText, setBulkStudentsText] = useState("");
@@ -4415,6 +4784,27 @@ export default function PrintShop() {
     [productionBatches, selectedBatchId]
   );
 
+  const requestReportPeriodRange = useMemo(
+    () => getReportPeriodRange(requestPeriodFilter, requestPeriodStart, requestPeriodEnd),
+    [requestPeriodFilter, requestPeriodStart, requestPeriodEnd]
+  );
+
+  const requestCampusOptions = useMemo(
+    () =>
+      [...new Set(printRequests.map((request) => String(request.campus || "").trim()).filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b, "es")
+      ),
+    [printRequests]
+  );
+
+  const requestResponsibleOptions = useMemo(
+    () =>
+      [...new Set(printRequests.map((request) => String(request.responsibleName || "").trim()).filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b, "es")
+      ),
+    [printRequests]
+  );
+
   const filteredRequests = useMemo(() => {
     const normalizedSearch = requestSearch.trim().toLowerCase();
 
@@ -4434,9 +4824,88 @@ export default function PrintShop() {
       const matchesPriority =
         requestPriorityFilter === "Todas" || request.priority === requestPriorityFilter;
 
-      return matchesSearch && matchesStatus && matchesType && matchesPriority;
+      const matchesCampus =
+        requestCampusFilter === "Todos" || String(request.campus || "").trim() === requestCampusFilter;
+
+      const matchesResponsible =
+        requestResponsibleFilter === "Todos" ||
+        String(request.responsibleName || "").trim() === requestResponsibleFilter;
+
+      const matchesPeriod = matchesReportPeriod(request, requestReportPeriodRange);
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesType &&
+        matchesPriority &&
+        matchesCampus &&
+        matchesResponsible &&
+        matchesPeriod
+      );
     });
-  }, [printRequests, requestSearch, requestStatusFilter, requestTypeFilter, requestPriorityFilter]);
+  }, [
+    printRequests,
+    requestSearch,
+    requestStatusFilter,
+    requestTypeFilter,
+    requestPriorityFilter,
+    requestCampusFilter,
+    requestResponsibleFilter,
+    requestReportPeriodRange,
+  ]);
+
+  function generateRequestsReport() {
+    const reportRequests = filteredRequests;
+    const reportType = requestTypeFilter;
+    const generatedAtLabel = new Intl.DateTimeFormat("es-MX", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone: REQUEST_REPORT_TIME_ZONE,
+    }).format(new Date());
+
+    const filtersSummary = [
+      `Tipo: ${reportType}`,
+      `Estado: ${requestStatusFilter}`,
+      `Prioridad: ${requestPriorityFilter}`,
+      requestCampusFilter !== "Todos" ? `Plantel: ${requestCampusFilter}` : "",
+      requestResponsibleFilter !== "Todos" ? `Responsable: ${requestResponsibleFilter}` : "",
+      requestSearch.trim() ? `Búsqueda: "${requestSearch.trim()}"` : "",
+    ]
+      .filter(Boolean)
+      .join("  ·  ");
+
+    const reportWindow = window.open("", "_blank");
+
+    if (!reportWindow) {
+      setRequestMessage("No se pudo abrir el reporte. Revisa el bloqueo de ventanas emergentes.");
+      return;
+    }
+
+    const html = buildRequestsReportHtml({
+      requests: reportRequests,
+      reportType,
+      periodLabel: requestReportPeriodRange.label,
+      filtersSummary,
+      generatedAtLabel,
+    });
+
+    reportWindow.document.open();
+    reportWindow.document.write(html);
+    reportWindow.document.close();
+
+    if (typeof reportWindow.focus === "function") {
+      reportWindow.focus();
+    }
+
+    createPrintshopLog({
+      type: "REQUEST_REPORT_GENERATED",
+      module: "requests",
+      title: "Reporte de solicitudes generado",
+      description: `Se generó un reporte (${reportType}) con ${reportRequests.length} solicitudes. Periodo: ${requestReportPeriodRange.label}.`,
+      referenceType: "report",
+      referenceId: "print-requests-report",
+    }).catch(() => {});
+  }
 
   const certificateRequests = useMemo(
     () => printRequests.filter((request) => isRequestCertificateLike(request.requestType)),
