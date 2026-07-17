@@ -83,6 +83,37 @@ service cloud.firestore {
         && getAfter(editorialProjectPath(projectId)).data.ownerUid == request.auth.uid;
     }
 
+    function editorialTemplatePath(templateId) {
+      return /databases/$(database)/documents/editorialTemplates/$(templateId);
+    }
+
+    function editorialTemplateData(templateId) {
+      return get(editorialTemplatePath(templateId)).data;
+    }
+
+    function canAccessEditorialTemplate(templateId) {
+      return exists(editorialTemplatePath(templateId))
+        && (
+          isAdmin()
+          || (hasProfile() && editorialTemplateData(templateId).visibility == "institutional")
+          || (
+            editorialTemplateData(templateId).projectId is string
+            && canAccessEditorialProject(editorialTemplateData(templateId).projectId)
+          )
+        );
+    }
+
+    function canEditEditorialTemplate(templateId) {
+      return (
+          isAdmin()
+          || (
+            getAfter(editorialTemplatePath(templateId)).data.visibility == "project"
+            && getAfter(editorialTemplatePath(templateId)).data.ownerUid == request.auth.uid
+            && canEditEditorialProject(getAfter(editorialTemplatePath(templateId)).data.projectId)
+          )
+        );
+    }
+
     function validEditorialProjectCreate() {
       return hasProfile()
         && request.resource.data.keys().hasAll([
@@ -3805,6 +3836,13 @@ service cloud.firestore {
         allow create: if canCreateEditorialProjectChild(projectId);
         allow update, delete: if canEditEditorialProject(projectId);
 
+        match /sections/{sectionId} {
+          allow read: if canAccessEditorialProject(projectId);
+          allow create: if canCreateEditorialProjectChild(projectId)
+            || canEditEditorialProject(projectId);
+          allow update, delete: if canEditEditorialProject(projectId);
+        }
+
         match /pages/{pageId} {
           allow read: if canAccessEditorialProject(projectId);
           allow create: if canCreateEditorialProjectChild(projectId)
@@ -3816,12 +3854,78 @@ service cloud.firestore {
             allow create, update, delete: if canEditEditorialProject(projectId);
           }
         }
+
+        match /masterPages/{masterPageId} {
+          allow read: if canAccessEditorialProject(projectId);
+          allow create, update, delete: if canEditEditorialProject(projectId);
+
+          match /elements/{elementId} {
+            allow read: if canAccessEditorialProject(projectId);
+            allow create, update, delete: if canEditEditorialProject(projectId);
+          }
+        }
+      }
+
+      match /components/{componentId} {
+        allow read: if canAccessEditorialProject(projectId);
+        allow create, update, delete: if canEditEditorialProject(projectId);
+
+        match /elements/{elementId} {
+          allow read: if canAccessEditorialProject(projectId);
+          allow create, update, delete: if canEditEditorialProject(projectId);
+        }
+      }
+
+      match /styles/{styleId} {
+        allow read: if canAccessEditorialProject(projectId);
+        allow create, update, delete: if canEditEditorialProject(projectId);
+      }
+
+      match /variables/{variableId} {
+        allow read: if canAccessEditorialProject(projectId);
+        allow create, update, delete: if canEditEditorialProject(projectId);
       }
     }
 
     match /editorialTemplates/{templateId} {
-      allow read: if hasProfile();
-      allow create, update, delete: if isAdmin();
+      allow read: if isAdmin()
+        || (hasProfile() && resource.data.visibility == "institutional")
+        || (
+          resource.data.projectId is string
+          && canAccessEditorialProject(resource.data.projectId)
+        );
+      allow create: if isAdmin()
+        || (
+          request.resource.data.visibility == "project"
+          && request.resource.data.projectId is string
+          && request.resource.data.ownerUid == request.auth.uid
+          && canEditEditorialProject(request.resource.data.projectId)
+        );
+      allow update: if isAdmin()
+        || (
+          resource.data.visibility == "project"
+          && request.resource.data.visibility == "project"
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.projectId == resource.data.projectId
+          && canEditEditorialProject(resource.data.projectId)
+        );
+      allow delete: if isAdmin()
+        || (
+          resource.data.visibility == "project"
+          && resource.data.ownerUid == request.auth.uid
+          && canEditEditorialProject(resource.data.projectId)
+        );
+
+      match /pages/{pageId} {
+        allow read: if canAccessEditorialTemplate(templateId);
+        allow create, update, delete: if canEditEditorialTemplate(templateId);
+
+        match /elements/{elementId} {
+          allow read: if canAccessEditorialTemplate(templateId);
+          allow create, update, delete: if canEditEditorialTemplate(templateId);
+        }
+      }
     }
 
     match /editorialAssets/{assetId} {

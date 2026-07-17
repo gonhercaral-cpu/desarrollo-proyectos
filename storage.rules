@@ -61,6 +61,44 @@ service firebase.storage {
         );
     }
 
+    function editorialTemplatePath(templateId) {
+      return /databases/(default)/documents/editorialTemplates/$(templateId);
+    }
+
+    function editorialTemplateExists(templateId) {
+      return firestore.exists(editorialTemplatePath(templateId));
+    }
+
+    function editorialTemplateData(templateId) {
+      return firestore.get(editorialTemplatePath(templateId)).data;
+    }
+
+    function canAccessEditorialTemplate(templateId) {
+      return hasProfile()
+        && editorialTemplateExists(templateId)
+        && (
+          isAdmin()
+          || editorialTemplateData(templateId).visibility == "institutional"
+          || (
+            editorialTemplateData(templateId).projectId is string
+            && canAccessEditorialProject(editorialTemplateData(templateId).projectId)
+          )
+        );
+    }
+
+    function canEditEditorialTemplate(templateId) {
+      return hasProfile()
+        && editorialTemplateExists(templateId)
+        && (
+          isAdmin()
+          || (
+            editorialTemplateData(templateId).visibility == "project"
+            && editorialTemplateData(templateId).ownerUid == request.auth.uid
+            && canAccessEditorialProject(editorialTemplateData(templateId).projectId)
+          )
+        );
+    }
+
     match /profile-photos/{userId}/{fileName} {
       allow read: if signedIn() && hasProfile();
       allow create, update: if signedIn() && hasProfile()
@@ -687,6 +725,18 @@ service firebase.storage {
         );
 
       allow delete: if canAccessEditorialProject(projectId)
+        && (isAdmin() || request.auth.uid == userUid);
+    }
+
+    match /editorialTemplates/{templateId}/{userUid}/{fileName} {
+      allow read: if canAccessEditorialTemplate(templateId);
+
+      allow create, update: if canEditEditorialTemplate(templateId)
+        && (isAdmin() || request.auth.uid == userUid)
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if canEditEditorialTemplate(templateId)
         && (isAdmin() || request.auth.uid == userUid);
     }
 

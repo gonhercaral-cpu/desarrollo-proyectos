@@ -36,18 +36,20 @@ export function getPageMetrics(project) {
   };
 }
 
-export function getFitZoom({ viewportWidth, viewportHeight, metrics, facing, mode }) {
+export function getFitZoom({ viewportWidth, viewportHeight, metrics, facing, mode, spreadMetrics = [] }) {
   const horizontalPadding = 92;
   const verticalPadding = 76;
   const spreadGap = facing ? 18 : 0;
-  const contentWidth = metrics.stageWidth * (facing ? 2 : 1) + spreadGap;
+  const visibleMetrics = spreadMetrics.length ? spreadMetrics : [metrics];
+  const contentWidth = visibleMetrics.reduce((total, item) => total + item.stageWidth, 0) + spreadGap;
   const widthZoom = (viewportWidth - horizontalPadding) / contentWidth;
 
   if (mode === "width") {
     return clampZoom(widthZoom);
   }
 
-  const heightZoom = (viewportHeight - verticalPadding) / metrics.stageHeight;
+  const contentHeight = Math.max(...visibleMetrics.map((item) => item.stageHeight));
+  const heightZoom = (viewportHeight - verticalPadding) / contentHeight;
   return clampZoom(Math.min(widthZoom, heightZoom));
 }
 

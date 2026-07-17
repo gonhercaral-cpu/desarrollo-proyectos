@@ -9,18 +9,18 @@ const EditorialWorkspace = forwardRef(function EditorialWorkspace({
   viewMode,
   showRulers,
   guideSettings,
-  elements,
-  selectedElement,
+  spreadSlots,
   onZoomChange,
-  onSelect,
-  onChange,
+  onSelectPage,
+  onSelectElement,
+  onChangeElement,
 }, ref) {
   const workspaceRef = useRef(null);
   const [viewport, setViewport] = useState(() => ({
     width: Math.max(600, window.innerWidth - 590),
     height: Math.max(420, window.innerHeight - 290),
   }));
-  const facing = viewMode === "facing";
+  const facing = viewMode === "facing" && spreadSlots.length > 1;
 
   const resizeObserver = useMemo(() => new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
@@ -41,9 +41,10 @@ const EditorialWorkspace = forwardRef(function EditorialWorkspace({
         metrics,
         facing,
         mode,
+        spreadMetrics: spreadSlots.map((slot) => slot.metrics),
       }));
     },
-  }), [facing, metrics, onZoomChange, viewport.height, viewport.width]);
+  }), [facing, metrics, onZoomChange, spreadSlots, viewport.height, viewport.width]);
 
   function handleWheel(event) {
     if (!event.ctrlKey && !event.metaKey) return;
@@ -56,31 +57,34 @@ const EditorialWorkspace = forwardRef(function EditorialWorkspace({
       <div className={`editorial-canvas-scroll-content ${facing ? "facing" : "single"} ${showRulers ? "with-rulers" : ""}`}>
         {showRulers && <EditorialRulers metrics={metrics} zoom={zoom} facing={facing} />}
         <div className="editorial-page-spread">
-          {facing && (
-            <div className="editorial-konva-page blank" aria-label="Página enfrentada de referencia">
+          {spreadSlots.map((slot, index) => (
+            <div
+              key={slot.page?.id || `blank-${index}`}
+              className={`editorial-konva-page ${slot.active ? "active" : ""} ${slot.page ? "real" : "blank"}`}
+              aria-label={slot.page ? `${slot.page.name}${slot.active ? ", página editable" : ", seleccionar página"}` : "Página vacía del pliego"}
+              role={slot.page && !slot.active ? "button" : undefined}
+              tabIndex={slot.page && !slot.active ? 0 : undefined}
+              onClick={slot.page && !slot.active ? () => onSelectPage(slot.page.id) : undefined}
+              onKeyDown={slot.page && !slot.active ? (event) => {
+                if (event.key === "Enter" || event.key === " ") onSelectPage(slot.page.id);
+              } : undefined}
+            >
               <EditorialCanvas
-                metrics={metrics}
+                metrics={slot.metrics}
                 zoom={zoom}
-                elements={[]}
-                selectedElement={null}
+                elements={slot.elements}
+                backgroundElements={slot.backgroundElements}
+                selectedElement={slot.active ? slot.selectedElement : null}
+                selectedIds={slot.active ? slot.selectedIds : []}
                 guideSettings={guideSettings}
-                interactive={false}
-                onSelect={() => {}}
-                onChange={() => {}}
+                background={slot.background || slot.page?.background}
+                interactive={slot.active}
+                onSelect={slot.active ? onSelectElement : () => {}}
+                onChange={slot.active ? onChangeElement : () => {}}
               />
+              {slot.page && <span className="editorial-canvas-page-state">{slot.numberLabel || "Sin número"} · {slot.page.name}</span>}
             </div>
-          )}
-          <div className="editorial-konva-page active" aria-label="Página editable">
-            <EditorialCanvas
-              metrics={metrics}
-              zoom={zoom}
-              elements={elements}
-              selectedElement={selectedElement}
-              guideSettings={guideSettings}
-              onSelect={onSelect}
-              onChange={onChange}
-            />
-          </div>
+          ))}
           {facing && guideSettings.gutter && <span className="editorial-spread-gutter" aria-hidden="true" />}
         </div>
       </div>

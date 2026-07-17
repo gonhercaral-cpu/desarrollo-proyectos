@@ -1445,6 +1445,44 @@ describe("editor editorial", () => {
     }));
     await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "documents", "doc-1", "pages", "page-1")));
   });
+
+  it("protege secciones editoriales por membresía del proyecto", async () => {
+    const sectionRef = doc(auth("collab"), "editorialProjects", "editorial-owned", "documents", "doc-1", "sections", "section-1");
+    await assertSucceeds(setDoc(sectionRef, {
+      name: "Unidad 1",
+      type: "unit",
+      order: 0,
+      numberingStyle: "arabic",
+      numberingStart: 1,
+      startOnRight: true,
+      collapsed: false,
+    }));
+    await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "documents", "doc-1", "sections", "section-1")));
+  });
+
+  it("protege maestras, componentes, estilos y variables editoriales", async () => {
+    const ownerDb = auth("collab");
+    const masterRef = doc(ownerDb, "editorialProjects", "editorial-owned", "documents", "doc-1", "masterPages", "master-1");
+    await assertSucceeds(setDoc(masterRef, { name: "Maestra izquierda", side: "left", order: 0 }));
+    await assertSucceeds(setDoc(doc(masterRef, "elements", "element-1"), { type: "text", content: "{{page.number}}", style: {} }));
+    const componentRef = doc(ownerDb, "editorialProjects", "editorial-owned", "components", "component-1");
+    await assertSucceeds(setDoc(componentRef, { name: "Encabezado", category: "General" }));
+    await assertSucceeds(setDoc(doc(componentRef, "elements", "element-1"), { type: "shape", style: {} }));
+    await assertSucceeds(setDoc(doc(ownerDb, "editorialProjects", "editorial-owned", "styles", "style-1"), { name: "Título", type: "text", properties: {} }));
+    await assertSucceeds(setDoc(doc(ownerDb, "editorialProjects", "editorial-owned", "variables", "variable-1"), { key: "custom.level", value: "A2" }));
+    await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "components", "component-1")));
+  });
+
+  it("permite plantillas privadas al proyecto e institucionales solo a admin", async () => {
+    const privateRef = doc(auth("collab"), "editorialTemplates", "private-template");
+    await assertSucceeds(setDoc(privateRef, { name: "Unidad", visibility: "project", projectId: "editorial-owned", ownerUid: "collab" }));
+    await assertSucceeds(setDoc(doc(privateRef, "pages", "page-1"), { name: "Página", order: 0 }));
+    await assertFails(getDoc(doc(auth("outsider"), "editorialTemplates", "private-template")));
+    const institutionalRef = doc(auth("admin"), "editorialTemplates", "institutional-template");
+    await assertSucceeds(setDoc(institutionalRef, { name: "Institucional", visibility: "institutional", projectId: "editorial-owned", ownerUid: "admin" }));
+    await assertSucceeds(getDoc(doc(auth("outsider"), "editorialTemplates", "institutional-template")));
+    await assertFails(updateDoc(privateRef, { visibility: "institutional" }));
+  });
 });
 
 describe("storage", () => {
@@ -1464,6 +1502,20 @@ describe("storage", () => {
     await assertFails(
       storageAuth("collab").ref("editorial/editorial-owned/scripts/collab/recurso.js")
         .putString("code", "raw", { contentType: "text/javascript" })
+    );
+  });
+
+  it("protege imágenes independientes de plantillas editoriales", async () => {
+    await assertSucceeds(setDoc(doc(auth("collab"), "editorialTemplates", "storage-template"), {
+      name: "Plantilla privada", visibility: "project", projectId: "editorial-owned", ownerUid: "collab",
+    }));
+    await assertSucceeds(
+      storageAuth("collab").ref("editorialTemplates/storage-template/collab/imagen.png")
+        .putString("image", "raw", { contentType: "image/png" })
+    );
+    await assertFails(
+      storageAuth("outsider").ref("editorialTemplates/storage-template/outsider/imagen.png")
+        .putString("image", "raw", { contentType: "image/png" })
     );
   });
 

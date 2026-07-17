@@ -17,11 +17,17 @@ import {
   getEditorialProjectConfig,
   getOrientedDimensions,
 } from "../models/editorialModels";
+import {
+  BOOK_INITIAL_STRUCTURE,
+  normalizeEditorialPages,
+  normalizeEditorialSections,
+} from "../models/editorialStructure";
 
 export const EDITORIAL_COLLECTIONS = {
   projects: "editorialProjects",
   documents: "documents",
   pages: "pages",
+  sections: "sections",
   elements: "elements",
   templates: "editorialTemplates",
   assets: "editorialAssets",
@@ -112,7 +118,6 @@ export async function createEditorialProject(config, user) {
 
   const projectRef = doc(collection(db, EDITORIAL_COLLECTIONS.projects));
   const documentRef = doc(collection(projectRef, EDITORIAL_COLLECTIONS.documents));
-  const pageRef = doc(collection(documentRef, EDITORIAL_COLLECTIONS.pages));
   const dimensions = getOrientedDimensions(safeConfig.size, safeConfig.orientation);
   const audit = getAuditData(user);
   const batch = writeBatch(db);
@@ -136,12 +141,42 @@ export async function createEditorialProject(config, user) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  batch.set(pageRef, {
-    name: "Página 1",
-    number: 1,
-    position: 0,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  const initialStructure = safeConfig.type === "book"
+    ? BOOK_INITIAL_STRUCTURE
+    : [{ name: "Página 1", type: "custom", numberingStyle: "arabic", pageType: "content" }];
+  initialStructure.forEach((item, order) => {
+    const sectionRef = safeConfig.type === "book"
+      ? doc(collection(documentRef, EDITORIAL_COLLECTIONS.sections))
+      : null;
+    const pageRef = doc(collection(documentRef, EDITORIAL_COLLECTIONS.pages));
+    if (sectionRef) {
+      batch.set(sectionRef, {
+        name: item.name,
+        type: item.type,
+        order,
+        numberingStyle: item.numberingStyle || "arabic",
+        numberingMode: item.numberingMode || "continue",
+        numberingStart: item.numberingStart || 1,
+        startOnRight: item.startOnRight === true,
+        collapsed: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    batch.set(pageRef, {
+      name: item.name,
+      order,
+      sectionId: sectionRef?.id || "",
+      pageType: item.pageType || "content",
+      width: dimensions.widthIn,
+      height: dimensions.heightIn,
+      orientation: safeConfig.orientation,
+      background: "#ffffff",
+      isBlank: false,
+      numberingEnabled: !["cover", "back_cover"].includes(item.pageType),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   });
 
   await batch.commit();
@@ -171,14 +206,16 @@ export async function getEditorialProjectStructure(projectId) {
   const documentsSnapshot = await getDocs(collection(projectRef, EDITORIAL_COLLECTIONS.documents));
   const documents = await Promise.all(
     documentsSnapshot.docs.map(async (documentSnapshot) => {
-      const pagesSnapshot = await getDocs(
-        collection(documentSnapshot.ref, EDITORIAL_COLLECTIONS.pages)
-      );
+      const [pagesSnapshot, sectionsSnapshot] = await Promise.all([
+        getDocs(collection(documentSnapshot.ref, EDITORIAL_COLLECTIONS.pages)),
+        getDocs(collection(documentSnapshot.ref, EDITORIAL_COLLECTIONS.sections)),
+      ]);
 
       return {
         id: documentSnapshot.id,
         ...documentSnapshot.data(),
-        pages: mapSnapshot(pagesSnapshot).sort((a, b) => a.position - b.position),
+        pages: normalizeEditorialPages(mapSnapshot(pagesSnapshot)),
+        sections: normalizeEditorialSections(mapSnapshot(sectionsSnapshot)),
       };
     })
   );
@@ -246,7 +283,30 @@ async function collectProjectDocumentRefs(projectId) {
       refs.push(pageSnapshot.ref);
     }
 
+    const sectionsSnapshot = await getDocs(
+      collection(documentSnapshot.ref, EDITORIAL_COLLECTIONS.sections)
+    );
+    sectionsSnapshot.docs.forEach((sectionSnapshot) => refs.push(sectionSnapshot.ref));
+
+    const mastersSnapshot = await getDocs(collection(documentSnapshot.ref, "masterPages"));
+    for (const masterSnapshot of mastersSnapshot.docs) {
+      const elementsSnapshot = await getDocs(collection(masterSnapshot.ref, EDITORIAL_COLLECTIONS.elements));
+      elementsSnapshot.docs.forEach((elementSnapshot) => refs.push(elementSnapshot.ref));
+      refs.push(masterSnapshot.ref);
+    }
+
     refs.push(documentSnapshot.ref);
+  }
+
+  const componentsSnapshot = await getDocs(collection(projectRef, "components"));
+  for (const componentSnapshot of componentsSnapshot.docs) {
+    const elementsSnapshot = await getDocs(collection(componentSnapshot.ref, EDITORIAL_COLLECTIONS.elements));
+    elementsSnapshot.docs.forEach((elementSnapshot) => refs.push(elementSnapshot.ref));
+    refs.push(componentSnapshot.ref);
+  }
+  for (const childCollection of ["styles", "variables"]) {
+    const snapshot = await getDocs(collection(projectRef, childCollection));
+    snapshot.docs.forEach((item) => refs.push(item.ref));
   }
 
   const assetsSnapshot = await getDocs(
@@ -256,7 +316,6 @@ async function collectProjectDocumentRefs(projectId) {
     )
   );
   assetsSnapshot.docs.forEach((assetSnapshot) => refs.push(assetSnapshot.ref));
-  refs.push(projectRef);
   return refs;
 }
 
@@ -266,9 +325,32 @@ async function deleteStorageFolder(folderRef) {
   await Promise.all(contents.prefixes.map((prefixRef) => deleteStorageFolder(prefixRef)));
 }
 
+async function deleteProjectTemplates(projectId) {
+  const templatesSnapshot = await getDocs(query(collection(db, EDITORIAL_COLLECTIONS.templates), where("projectId", "==", projectId)));
+  for (const templateSnapshot of templatesSnapshot.docs) {
+    await deleteStorageFolder(ref(storage, `editorialTemplates/${templateSnapshot.id}`));
+    const childRefs = [];
+    const pagesSnapshot = await getDocs(collection(templateSnapshot.ref, EDITORIAL_COLLECTIONS.pages));
+    for (const pageSnapshot of pagesSnapshot.docs) {
+      const elementsSnapshot = await getDocs(collection(pageSnapshot.ref, EDITORIAL_COLLECTIONS.elements));
+      elementsSnapshot.docs.forEach((elementSnapshot) => childRefs.push(elementSnapshot.ref));
+      childRefs.push(pageSnapshot.ref);
+    }
+    for (let index = 0; index < childRefs.length; index += 450) {
+      const batch = writeBatch(db);
+      childRefs.slice(index, index + 450).forEach((childRef) => batch.delete(childRef));
+      await batch.commit();
+    }
+    const batch = writeBatch(db);
+    batch.delete(templateSnapshot.ref);
+    await batch.commit();
+  }
+}
+
 export async function deleteEditorialProject(projectId, user) {
   requireUser(user);
   await deleteStorageFolder(ref(storage, `editorial/${projectId}`));
+  await deleteProjectTemplates(projectId);
   const refs = await collectProjectDocumentRefs(projectId);
 
   for (let index = 0; index < refs.length; index += 450) {
@@ -276,4 +358,7 @@ export async function deleteEditorialProject(projectId, user) {
     refs.slice(index, index + 450).forEach((documentRef) => batch.delete(documentRef));
     await batch.commit();
   }
+  const batch = writeBatch(db);
+  batch.delete(doc(db, EDITORIAL_COLLECTIONS.projects, projectId));
+  await batch.commit();
 }

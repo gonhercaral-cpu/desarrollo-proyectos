@@ -58,10 +58,12 @@ function ImageElement({ element }) {
   );
 }
 
-export default function EditorialElementRenderer({ element, selected, onSelect, onChange }) {
+export default function EditorialElementRenderer({ element, selected, interactive = true, onSelect, onChange }) {
   function handleSelect(event) {
     event.cancelBubble = true;
-    onSelect(element.id);
+    if (interactive) onSelect(element.id, {
+      additive: Boolean(event.evt?.ctrlKey || event.evt?.metaKey || event.evt?.shiftKey),
+    });
   }
 
   function handleTransformEnd(event) {
@@ -90,24 +92,25 @@ export default function EditorialElementRenderer({ element, selected, onSelect, 
       rotation={element.rotation}
       opacity={element.opacity}
       visible={element.visible}
-      draggable={selected && !element.locked}
-      onClick={handleSelect}
-      onTap={handleSelect}
-      onDragStart={handleSelect}
-      onDragEnd={(event) => onChange(element.id, { x: event.target.x(), y: event.target.y() })}
-      onTransformEnd={handleTransformEnd}
+      draggable={interactive && selected && !element.locked}
+      onClick={interactive ? handleSelect : undefined}
+      onTap={interactive ? handleSelect : undefined}
+      onDragStart={interactive ? handleSelect : undefined}
+      onDragEnd={interactive ? (event) => onChange(element.id, { x: event.target.x(), y: event.target.y() }) : undefined}
+      onTransformEnd={interactive ? handleTransformEnd : undefined}
     >
       {element.type === EDITORIAL_ELEMENT_TYPES.TEXT && (
         <Text
           width={element.width}
           height={element.height}
-          text={element.content}
+          text={element.resolvedContent ?? element.content}
           fontFamily={element.style?.fontFamily || "Arial"}
           fontSize={Number(element.style?.fontSize || 24)}
           fontStyle={element.style?.fontWeight === "bold" ? "bold" : "normal"}
           fill={element.style?.fill || "#142033"}
           align={element.style?.align || "left"}
           lineHeight={Number(element.style?.lineHeight || 1.2)}
+          letterSpacing={Number(element.style?.letterSpacing || 0)}
           verticalAlign="top"
           wrap="word"
         />
@@ -123,6 +126,7 @@ export default function EditorialElementRenderer({ element, selected, onSelect, 
         />
       )}
       {element.type === EDITORIAL_ELEMENT_TYPES.IMAGE && <ImageElement element={element} />}
+      {selected && <Rect width={element.width} height={element.height} stroke="#1677eb" strokeWidth={1} dash={[4, 3]} listening={false} />}
     </Group>
   );
 }

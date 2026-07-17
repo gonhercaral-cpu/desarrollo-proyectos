@@ -5,6 +5,8 @@ import "./styles/editorial-base.css";
 import "./styles/editorial-projects.css";
 import "./styles/editorial-editor.css";
 import "./styles/editorial-canvas.css";
+import "./styles/editorial-structure.css";
+import "./styles/editorial-design.css";
 import "./styles/editorial-responsive.css";
 import "./styles/editorial-dark.css";
 

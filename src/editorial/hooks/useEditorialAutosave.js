@@ -8,7 +8,13 @@ import {
 const AUTOSAVE_DELAY_MS = 650;
 
 function getDraftKey(context) {
-  return `dp.editorial.draft.${context.projectId}.${context.documentId}.${context.pageId}`;
+  const kind = context.kind || "page";
+  const resourceId = kind === "master" ? context.masterPageId : kind === "component" ? context.componentId : context.pageId;
+  return `dp.editorial.draft.${context.projectId}.${kind}.${context.documentId || "project"}.${resourceId}`;
+}
+
+export function clearEditorialPageDraft(context) {
+  window.localStorage.removeItem(getDraftKey(context));
 }
 
 function readDraft(context) {
@@ -68,7 +74,7 @@ export function useEditorialAutosave({ context, user, elementsRef, onLoadElement
       persistedIdsRef.current = await savePromise;
       if (revisionRef.current === capturedRevision) {
         dirtyRef.current = false;
-        window.localStorage.removeItem(getDraftKey(context));
+        clearEditorialPageDraft(context);
         setStatus("saved");
       } else {
         setStatus("idle");

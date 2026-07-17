@@ -1,4 +1,4 @@
-import { roundEditorValue } from "../utils/editorialMeasurements";
+import { roundEditorValue } from "../utils/editorialMeasurements.js";
 
 export const EDITORIAL_ELEMENT_TYPES = {
   TEXT: "text",
@@ -101,6 +101,7 @@ export function normalizeEditorialElement(element, fallbackIndex = 0) {
     : EDITORIAL_ELEMENT_TYPES.SHAPE;
 
   return {
+    ...element,
     id: String(element?.id || createEditorialElementId()),
     name: String(element?.name || getDefaultElementName(type)),
     type,

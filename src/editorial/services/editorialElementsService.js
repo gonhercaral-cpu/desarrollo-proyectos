@@ -11,26 +11,42 @@ import { db, storage } from "../../services/firebase";
 import { normalizeElementOrder, normalizeEditorialElement } from "../models/editorialElements";
 import { EDITORIAL_COLLECTIONS } from "./editorialProjectsService";
 
-function requireEditorContext({ projectId, documentId, pageId }) {
-  if (!projectId || !documentId || !pageId) {
-    throw new Error("Falta contexto de proyecto, documento o página.");
+function requireEditorContext(context) {
+  if (!context?.projectId) {
+    throw new Error("Falta contexto de proyecto editorial.");
+  }
+  if (context.kind === "master" && (!context.documentId || !context.masterPageId)) {
+    throw new Error("Falta contexto de página maestra.");
+  }
+  if (context.kind === "component" && !context.componentId) {
+    throw new Error("Falta contexto de componente.");
+  }
+  if ((!context.kind || context.kind === "page") && (!context.documentId || !context.pageId)) {
+    throw new Error("Falta contexto de página.");
   }
 }
 
-function getPageRef({ projectId, documentId, pageId }) {
+export function getEditorialEditableRef(context) {
+  requireEditorContext(context);
+  if (context.kind === "master") {
+    return doc(db, EDITORIAL_COLLECTIONS.projects, context.projectId, EDITORIAL_COLLECTIONS.documents, context.documentId, "masterPages", context.masterPageId);
+  }
+  if (context.kind === "component") {
+    return doc(db, EDITORIAL_COLLECTIONS.projects, context.projectId, "components", context.componentId);
+  }
   return doc(
     db,
     EDITORIAL_COLLECTIONS.projects,
-    projectId,
+    context.projectId,
     EDITORIAL_COLLECTIONS.documents,
-    documentId,
+    context.documentId,
     EDITORIAL_COLLECTIONS.pages,
-    pageId
+    context.pageId
   );
 }
 
 function getElementsCollection(context) {
-  return collection(getPageRef(context), EDITORIAL_COLLECTIONS.elements);
+  return collection(getEditorialEditableRef(context), EDITORIAL_COLLECTIONS.elements);
 }
 
 export function subscribeEditorialPageElements(context, onChange, onError) {
@@ -80,7 +96,7 @@ export async function saveEditorialPageElements({ context, elements, persistedId
   }
 
   const metadataBatch = writeBatch(db);
-  metadataBatch.update(getPageRef(context), {
+  metadataBatch.update(getEditorialEditableRef(context), {
     updatedAt: serverTimestamp(),
     updatedByUid: uid,
   });
@@ -112,8 +128,9 @@ export async function readImageDimensions(file) {
   return dimensions;
 }
 
-export async function uploadEditorialImage({ projectId, file, user }) {
+export async function uploadEditorialImage({ context, file, user }) {
   const uid = user?.uid || user?.id;
+  const { projectId, documentId, pageId, masterPageId, componentId, kind = "page" } = context || {};
   if (!projectId || !uid || !file) throw new Error("No se pudo preparar la imagen.");
   if (!file.type.startsWith("image/")) throw new Error("Selecciona un archivo de imagen válido.");
 
@@ -126,6 +143,11 @@ export async function uploadEditorialImage({ projectId, file, user }) {
   const asset = {
     id: assetRef.id,
     projectId,
+    documentId,
+    pageId,
+    masterPageId,
+    componentId,
+    contextKind: kind,
     ownerUid: uid,
     name: file.name || "Imagen",
     type: "image",
