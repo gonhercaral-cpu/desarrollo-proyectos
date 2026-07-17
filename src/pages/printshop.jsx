@@ -7165,11 +7165,17 @@ export default function PrintShop() {
         updatedByEmail: auditUser.email,
       });
 
+      const pendingCertificateIds = normalizedStudents
+        .filter((student) => student.certificateFolio && student.validationCode)
+        .map((student) => getCertificateRecordId(currentRequest, student));
+
       addCertificateHistoryUpserts(
         batch,
-        { ...currentRequest, status: shouldMoveToProduction ? "En producciÃ³n" : currentRequest.status },
+        { ...currentRequest, status: shouldMoveToProduction ? "En producción" : currentRequest.status },
         normalizedStudents,
-        auditUser
+        auditUser,
+        "",
+        pendingCertificateIds
       );
 
       await batch.commit();
