@@ -66,7 +66,12 @@ export async function createEditorialSection({ projectId, documentId, values, us
 
 export async function updateEditorialSection({ projectId, documentId, sectionId, changes, user }) {
   const uid = requireUser(user);
-  const allowed = ["name", "type", "numberingStyle", "numberingMode", "numberingStart", "startOnRight", "collapsed"];
+  const allowed = [
+    "name", "type", "numberingStyle", "numberingMode", "numberingStart", "startOnRight",
+    "collapsed", "academicMetadata", "seriesId", "seriesName", "levelId", "levelName",
+    "bookId", "bookName", "unitNumber", "unitTitle", "lessonNumber", "lessonTitle",
+    "academicType", "activityNumber",
+  ];
   const safeChanges = Object.fromEntries(
     Object.entries(changes).filter(([key]) => allowed.includes(key))
   );

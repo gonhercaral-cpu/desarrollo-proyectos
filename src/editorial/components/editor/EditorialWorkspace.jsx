@@ -14,6 +14,7 @@ const EditorialWorkspace = forwardRef(function EditorialWorkspace({
   onSelectPage,
   onSelectElement,
   onChangeElement,
+  onAcademicDrop,
 }, ref) {
   const workspaceRef = useRef(null);
   const [viewport, setViewport] = useState(() => ({
@@ -53,7 +54,12 @@ const EditorialWorkspace = forwardRef(function EditorialWorkspace({
   }
 
   return (
-    <main ref={setWorkspaceNode} className="editorial-canvas-workspace" onWheel={handleWheel}>
+    <main ref={setWorkspaceNode} className="editorial-canvas-workspace" onWheel={handleWheel} onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-editorial-academic")) event.preventDefault(); }} onDrop={(event) => {
+      const raw = event.dataTransfer.getData("application/x-editorial-academic");
+      if (!raw) return;
+      event.preventDefault();
+      try { onAcademicDrop?.(JSON.parse(raw)); } catch { /* payload externo inválido */ }
+    }}>
       <div className={`editorial-canvas-scroll-content ${facing ? "facing" : "single"} ${showRulers ? "with-rulers" : ""}`}>
         {showRulers && <EditorialRulers metrics={metrics} zoom={zoom} facing={facing} />}
         <div className="editorial-page-spread">

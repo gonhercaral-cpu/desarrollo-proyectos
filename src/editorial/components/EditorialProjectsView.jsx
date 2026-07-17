@@ -11,6 +11,7 @@ import {
 import EditorialConfirmDialog from "./EditorialConfirmDialog";
 import EditorialIcon from "./EditorialIcon";
 import EditorialProjectDialog from "./EditorialProjectDialog";
+import { ACADEMIC_TYPE_OPTIONS } from "../models/editorialAcademic";
 
 function formatProjectDate(value) {
   const date = value?.toDate?.();
@@ -30,6 +31,7 @@ function getInitials(profile) {
 export default function EditorialProjectsView({ profile, isAdmin, theme, onToggleTheme, onOpenProject }) {
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
+  const [academicFilters, setAcademicFilters] = useState({ academicType: "", seriesId: "", levelId: "" });
   const [createOpen, setCreateOpen] = useState(false);
   const [renameProject, setRenameProject] = useState(null);
   const [deleteProject, setDeleteProject] = useState(null);
@@ -40,6 +42,7 @@ export default function EditorialProjectsView({ profile, isAdmin, theme, onToggl
     isAdmin,
     filter,
     search,
+    academicFilters,
   });
 
   const activeCount = projects.filter((project) => project.archived !== true).length;
@@ -119,6 +122,11 @@ export default function EditorialProjectsView({ profile, isAdmin, theme, onToggl
             <EditorialIcon name="search" size={18} />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar proyecto" aria-label="Buscar proyecto" />
           </label>
+          <div className="editorial-academic-catalog-filters">
+            <select value={academicFilters.academicType} onChange={(event) => setAcademicFilters((current) => ({ ...current, academicType: event.target.value }))} aria-label="Filtrar por tipo académico">{ACADEMIC_TYPE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>
+            <input value={academicFilters.seriesId} onChange={(event) => setAcademicFilters((current) => ({ ...current, seriesId: event.target.value }))} placeholder="Serie" aria-label="Filtrar por serie" />
+            <input value={academicFilters.levelId} onChange={(event) => setAcademicFilters((current) => ({ ...current, levelId: event.target.value }))} placeholder="Nivel" aria-label="Filtrar por nivel" />
+          </div>
         </section>
 
         {(error || actionError) && <p className="editorial-page-error" role="alert">{error || actionError}</p>}
@@ -159,6 +167,8 @@ export default function EditorialProjectsView({ profile, isAdmin, theme, onToggl
                       <span>{size.label}</span>
                       <span>{project.orientation === "landscape" ? "Horizontal" : "Vertical"}</span>
                       <span>{formatProjectDate(project.updatedAt || project.createdAt)}</span>
+                      {project.unitTitle && <span>{project.unitTitle}</span>}
+                      {project.lessonTitle && <span>{project.lessonTitle}</span>}
                     </div>
                     <div className="editorial-project-actions">
                       <button type="button" className="editorial-button compact primary" onClick={() => onOpenProject(project.id)}>Abrir</button>

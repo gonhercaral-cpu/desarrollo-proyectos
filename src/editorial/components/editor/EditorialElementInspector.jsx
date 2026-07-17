@@ -1,4 +1,5 @@
 import EditorialIcon from "../EditorialIcon";
+import EditorialAcademicElementInspector from "../academic/EditorialAcademicElementInspector";
 
 function NumberField({ label, value, min, max, step = 1, onChange }) {
   return (
@@ -9,7 +10,7 @@ function NumberField({ label, value, min, max, step = 1, onChange }) {
   );
 }
 
-export default function EditorialElementInspector({ element, actions }) {
+export default function EditorialElementInspector({ element, actions, onRegenerate }) {
   if (!element) {
     return <div className="editorial-inspector-empty"><span className="editorial-panel-empty-icon"><EditorialIcon name="settings" size={27} /></span><strong>Propiedades</strong><p>Selecciona un elemento para editarlo.</p></div>;
   }
@@ -46,7 +47,8 @@ export default function EditorialElementInspector({ element, actions }) {
       {element.type === "text" && (
         <section>
           <header><strong>Texto</strong></header>
-          <label className="editorial-inspector-field wide"><span>Contenido</span><textarea rows="4" value={element.content} onChange={(event) => update({ content: event.target.value })} /></label>
+          <label className="editorial-inspector-field wide"><span>Contenido</span><textarea rows="4" value={element.content} readOnly={Boolean(element.automaticIndex)} onChange={(event) => update({ content: event.target.value })} /></label>
+          {element.automaticIndex && <div className="editorial-inline-notice"><span>Contenido vinculado a estructura.</span><button type="button" onClick={() => update({ automaticIndex: null, generatedKind: "", content: element.content })}>Convertir en texto fijo</button></div>}
           <div className="editorial-inspector-grid two">
             <label className="editorial-inspector-field"><span>Fuente</span><select value={element.style?.fontFamily || "Arial"} onChange={(event) => updateStyle({ fontFamily: event.target.value })}><option>Arial</option><option>Georgia</option><option>Verdana</option><option>Times New Roman</option><option>Courier New</option></select></label>
             <NumberField label="Tamaño" value={element.style?.fontSize || 24} min={6} max={240} onChange={(fontSize) => updateStyle({ fontSize })} />
@@ -77,6 +79,8 @@ export default function EditorialElementInspector({ element, actions }) {
           <label className="editorial-inspector-checkbox"><input type="checkbox" checked={element.style?.maintainAspect !== false} onChange={(event) => updateStyle({ maintainAspect: event.target.checked })} />Mantener proporción</label>
         </section>
       )}
+
+      <EditorialAcademicElementInspector key={element.id} element={element} actions={actions} onRegenerate={onRegenerate} />
 
       <section className="editorial-inspector-actions">
         <button type="button" onClick={() => actions.reorderLayer(element.id, "front")}><EditorialIcon name="arrowUp" size={15} />Al frente</button>

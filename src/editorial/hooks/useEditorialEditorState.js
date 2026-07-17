@@ -109,6 +109,9 @@ export function useEditorialEditorState({ context, user }) {
         if (target.componentInstanceId && element.componentInstanceId === target.componentInstanceId && (deltaX || deltaY)) {
           return normalizeEditorialElement({ ...element, x: element.x + deltaX, y: element.y + deltaY }, element.zIndex);
         }
+        if (target.academicGroupId && element.academicGroupId === target.academicGroupId && (deltaX || deltaY)) {
+          return normalizeEditorialElement({ ...element, x: element.x + deltaX, y: element.y + deltaY }, element.zIndex);
+        }
         return element;
       }
       const directChanges = { ...nextChanges };
@@ -119,6 +122,19 @@ export function useEditorialEditorState({ context, user }) {
         componentOverrides = { ...(componentOverrides || {}), content: directChanges.content };
         delete directChanges.content;
       }
+      if (element.componentId && Object.hasOwn(directChanges, "visibilityMode")) {
+        componentOverrides = { ...(componentOverrides || {}), visibilityMode: directChanges.visibilityMode };
+        delete directChanges.visibilityMode;
+      }
+      if (element.componentId && Object.hasOwn(directChanges, "answerData")) {
+        componentOverrides = { ...(componentOverrides || {}), answerData: directChanges.answerData };
+        delete directChanges.answerData;
+      }
+      ["studentContent", "teacherContent"].forEach((field) => {
+        if (!element.componentId || !Object.hasOwn(directChanges, field)) return;
+        componentOverrides = { ...(componentOverrides || {}), [field]: directChanges[field] };
+        delete directChanges[field];
+      });
       if (Object.hasOwn(directChanges, "style")) {
         if (element.styleId) {
           styleOverrides = { ...(styleOverrides || {}), ...directChanges.style };
@@ -145,6 +161,7 @@ export function useEditorialEditorState({ context, user }) {
   const addElements = useCallback((sourceElements, options = {}) => {
     const existing = history.elementsRef.current.present;
     const instanceId = options.componentId ? createEditorialElementId() : "";
+    const academicGroupIds = new Map();
     const created = sourceElements.map((source, index) => {
       const next = {
       ...source,
@@ -161,9 +178,14 @@ export function useEditorialEditorState({ context, user }) {
         componentBase: {
           x: Number(source.x || 0), y: Number(source.y || 0), width: Number(source.width || 1), height: Number(source.height || 1),
           rotation: Number(source.rotation || 0), opacity: Number(source.opacity ?? 1),
+          visibilityMode: source.visibilityMode || "both",
         },
       } : {}),
       };
+      if (options.componentId && source.academicGroupId) {
+        if (!academicGroupIds.has(source.academicGroupId)) academicGroupIds.set(source.academicGroupId, createEditorialElementId());
+        next.academicGroupId = academicGroupIds.get(source.academicGroupId);
+      }
       delete next.createdAt;
       delete next.updatedAt;
       delete next.updatedByUid;
@@ -181,6 +203,41 @@ export function useEditorialEditorState({ context, user }) {
   const insertComponent = useCallback((component) => (
     addElements(component?.elements || [], { componentId: component?.id })
   ), [addElements]);
+
+  const replaceAcademicGroup = useCallback((academicGroupId, sourceElements) => {
+    if (!academicGroupId || !sourceElements?.length) return [];
+    const existing = history.elementsRef.current.present;
+    const removed = existing.filter((element) => element.academicGroupId === academicGroupId);
+    const anchor = removed[0] || { x: 64, y: 64 };
+    const sourceAnchor = sourceElements[0] || { x: 0, y: 0 };
+    const nextGroupId = sourceElements[0]?.academicGroupId || academicGroupId;
+    const created = sourceElements.map((source, index) => normalizeEditorialElement({
+      ...source,
+      id: createEditorialElementId(),
+      academicGroupId: nextGroupId,
+      x: Number(source.x || 0) + Number(anchor.x || 0) - Number(sourceAnchor.x || 0),
+      y: Number(source.y || 0) + Number(anchor.y || 0) - Number(sourceAnchor.y || 0),
+      zIndex: existing.length - removed.length + index,
+    }, existing.length - removed.length + index));
+    commit((elements) => [...elements.filter((element) => element.academicGroupId !== academicGroupId), ...created]);
+    setSelectedId(created[0]?.id || "");
+    setSelectedIds(created.map((element) => element.id));
+    return created;
+  }, [commit, history.elementsRef]);
+
+  const updateAcademicGroup = useCallback((academicGroupId, changes) => {
+    if (!academicGroupId) return;
+    commit((elements) => elements.map((element) => {
+      if (element.academicGroupId !== academicGroupId) return element;
+      if (element.componentId && Object.hasOwn(changes, "visibilityMode")) {
+        return normalizeEditorialElement({
+          ...element,
+          componentOverrides: { ...(element.componentOverrides || {}), visibilityMode: changes.visibilityMode },
+        }, element.zIndex);
+      }
+      return normalizeEditorialElement({ ...element, ...changes }, element.zIndex);
+    }));
+  }, [commit]);
 
   const detachComponentInstance = useCallback((instanceId, resolvedById = new Map()) => {
     commit((elements) => elements.map((element) => {
@@ -234,27 +291,40 @@ export function useEditorialEditorState({ context, user }) {
 
   const copy = useCallback(() => {
     const element = history.elementsRef.current.present.find((item) => item.id === selectedId);
-    clipboardRef.current = element ? JSON.parse(JSON.stringify(element)) : null;
+    const source = element?.academicGroupId
+      ? history.elementsRef.current.present.filter((item) => item.academicGroupId === element.academicGroupId)
+      : element ? [element] : [];
+    clipboardRef.current = source.length ? JSON.parse(JSON.stringify(source)) : null;
   }, [history.elementsRef, selectedId]);
 
   const paste = useCallback(() => {
     if (!clipboardRef.current) return;
-    const element = cloneElement(
-      clipboardRef.current,
-      history.elementsRef.current.present.length
-    );
-    commit((elements) => [...elements, element]);
-    setSelectedId(element.id);
-    setSelectedIds([element.id]);
+    const source = Array.isArray(clipboardRef.current) ? clipboardRef.current : [clipboardRef.current];
+    const sourceGroupId = source[0]?.academicGroupId;
+    const nextGroupId = sourceGroupId ? createEditorialElementId() : "";
+    const created = source.map((item, index) => {
+      const element = cloneElement(item, history.elementsRef.current.present.length + index);
+      return sourceGroupId ? { ...element, academicGroupId: nextGroupId } : element;
+    });
+    commit((elements) => [...elements, ...created]);
+    setSelectedId(created[0]?.id || "");
+    setSelectedIds(created.map((element) => element.id));
   }, [commit, history.elementsRef]);
 
   const duplicate = useCallback(() => {
     const element = history.elementsRef.current.present.find((item) => item.id === selectedId);
     if (!element) return;
-    const duplicateElement = cloneElement(element, history.elementsRef.current.present.length);
-    commit((elements) => [...elements, duplicateElement]);
-    setSelectedId(duplicateElement.id);
-    setSelectedIds([duplicateElement.id]);
+    const source = element.academicGroupId
+      ? history.elementsRef.current.present.filter((item) => item.academicGroupId === element.academicGroupId)
+      : [element];
+    const nextGroupId = element.academicGroupId ? createEditorialElementId() : "";
+    const duplicates = source.map((item, index) => {
+      const duplicateElement = cloneElement(item, history.elementsRef.current.present.length + index);
+      return nextGroupId ? { ...duplicateElement, academicGroupId: nextGroupId } : duplicateElement;
+    });
+    commit((elements) => [...elements, ...duplicates]);
+    setSelectedId(duplicates[0].id);
+    setSelectedIds(duplicates.map((item) => item.id));
   }, [commit, history.elementsRef, selectedId]);
 
   const reorderLayer = useCallback((elementId, direction) => {
@@ -314,6 +384,8 @@ export function useEditorialEditorState({ context, user }) {
     replaceImage,
     addElements,
     insertComponent,
+    replaceAcademicGroup,
+    updateAcademicGroup,
     detachComponentInstance,
     applyStyle,
     restoreStyle,
@@ -347,11 +419,13 @@ export function useEditorialEditorState({ context, user }) {
     removeElement,
     reorderLayer,
     replaceImage,
+    replaceAcademicGroup,
     restoreStyle,
     select,
     selectedElement,
     undo,
     unlinkStyle,
+    updateAcademicGroup,
     updateElement,
   ]);
 

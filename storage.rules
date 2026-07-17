@@ -716,12 +716,13 @@ service firebase.storage {
 
       allow create, update: if canAccessEditorialProject(projectId)
         && (isAdmin() || request.auth.uid == userUid)
-        && category in ["images", "covers", "resources", "exports"]
+        && category in ["images", "covers", "resources", "exports", "versions"]
         && request.resource.size < 250 * 1024 * 1024
         && (
           request.resource.contentType.matches('image/.*')
           || request.resource.contentType == 'application/pdf'
           || request.resource.contentType == 'application/zip'
+          || (category == "versions" && request.resource.contentType == 'application/json')
         );
 
       allow delete: if canAccessEditorialProject(projectId)

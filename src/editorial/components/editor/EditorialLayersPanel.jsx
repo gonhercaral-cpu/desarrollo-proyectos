@@ -1,6 +1,7 @@
 import EditorialIcon from "../EditorialIcon";
+import { getElementVisibilityState } from "../../utils/editorialAcademicVisibility";
 
-export default function EditorialLayersPanel({ elements, selectedId, actions, onSelect }) {
+export default function EditorialLayersPanel({ elements, selectedId, actions, onSelect, variant = "student" }) {
   const ordered = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
   if (ordered.length === 0) {
@@ -10,12 +11,15 @@ export default function EditorialLayersPanel({ elements, selectedId, actions, on
   return (
     <div className="editorial-layers-panel">
       <div className="editorial-layers-heading"><span>{ordered.length} elementos</span><small>Frente arriba</small></div>
-      {ordered.map((element, index) => (
-        <div className={`editorial-layer-row ${selectedId === element.id ? "active" : ""}`} key={element.id}>
+      {ordered.map((element, index) => {
+        const visibility = getElementVisibilityState(element, variant);
+        return (
+        <div className={`editorial-layer-row ${selectedId === element.id ? "active" : ""} ${visibility.reason === "variant" ? "variant-hidden" : ""}`} key={element.id} title={visibility.reason === "variant" ? `Oculto en vista ${variant === "teacher" ? "Maestro" : "Alumno"}` : undefined}>
           <button type="button" className="editorial-layer-select" onClick={() => onSelect(element.id)} aria-label={`Seleccionar ${element.name}`}>
             <EditorialIcon name={element.type === "shape" ? "rectangle" : element.type} size={16} />
           </button>
           <input value={element.name} onFocus={() => onSelect(element.id)} onChange={(event) => actions.updateElement(element.id, { name: event.target.value })} aria-label={`Nombre de capa ${element.name}`} />
+          {element.visibilityMode && element.visibilityMode !== "both" && <span className="editorial-layer-variant">{element.visibilityMode === "teacher" ? "M" : "A"}</span>}
           <button type="button" onClick={() => actions.updateElement(element.id, { visible: !element.visible })} title={element.visible ? "Ocultar" : "Mostrar"}><EditorialIcon name={element.visible ? "eye" : "eyeOff"} size={15} /></button>
           <button type="button" onClick={() => actions.updateElement(element.id, { locked: !element.locked })} title={element.locked ? "Desbloquear" : "Bloquear"}><EditorialIcon name={element.locked ? "lock" : "unlock"} size={15} /></button>
           <div className="editorial-layer-order">
@@ -23,7 +27,7 @@ export default function EditorialLayersPanel({ elements, selectedId, actions, on
             <button type="button" onClick={() => actions.reorderLayer(element.id, "down")} disabled={index === ordered.length - 1} title="Bajar capa"><EditorialIcon name="arrowDown" size={13} /></button>
           </div>
         </div>
-      ))}
+      );})}
     </div>
   );
 }

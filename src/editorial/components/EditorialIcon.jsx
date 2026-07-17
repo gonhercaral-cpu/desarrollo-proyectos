@@ -21,6 +21,8 @@ export default function EditorialIcon({ name, size = 20 }) {
     styles: <><path d="m4 16 8-11 8 11" /><path d="M7 12h10M8 20h8" /></>,
     reviews: <><path d="M4 4h16v13H8l-4 3z" /><path d="M8 9h8M8 13h5" /></>,
     approvals: <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16.5 8" /></>,
+    academic: <><path d="m3 8 9-5 9 5-9 5z" /><path d="M6 10v5c3 2 9 2 12 0v-5M21 8v7" /></>,
+    answers: <><path d="M5 4h14v16H5z" /><path d="m8 9 2 2 4-4M8 15h8" /></>,
     plus: <><path d="M12 5v14M5 12h14" /></>,
     search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
     more: <><circle cx="5" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="19" cy="12" r="1" fill="currentColor" /></>,

@@ -3,6 +3,7 @@ import { db } from "../../services/firebase";
 import { cloneDesignElements, normalizeDesignComponent } from "../models/editorialDesign";
 import { EDITORIAL_COLLECTIONS } from "./editorialProjectsService";
 import { cleanupUnusedEditorialAssets } from "./editorialAssetUsageService";
+import { normalizeAcademicMetadata } from "../models/editorialAcademic";
 
 export const EDITORIAL_COMPONENTS_COLLECTION = "components";
 
@@ -51,11 +52,13 @@ export async function createEditorialComponent({ projectId, values, elements, us
   if (!elements?.length) throw new Error("Selecciona al menos un elemento.");
   const snapshot = await getDocs(componentsCollection(projectId));
   const componentRef = doc(componentsCollection(projectId));
-  const cloned = cloneDesignElements(elements);
+  const cloned = cloneDesignElements(elements, { preserveStyleLinks: true });
+  const academicMetadata = normalizeAcademicMetadata(values);
   const componentData = {
     name: String(values.name || "Nuevo componente").trim() || "Nuevo componente",
     description: String(values.description || ""),
     category: String(values.category || "General"),
+    ...(Object.keys(academicMetadata).length ? { ...academicMetadata, academicMetadata } : {}),
     order: snapshot.size,
     usageCount: 0,
     elementCount: cloned.length,
@@ -86,7 +89,7 @@ export async function createEditorialComponent({ projectId, values, elements, us
 
 export async function updateEditorialComponent({ projectId, componentId, changes, user }) {
   const uid = requireUser(user);
-  const allowed = ["name", "description", "category", "order"];
+  const allowed = ["name", "description", "category", "order", "academicMetadata", "seriesId", "seriesName", "levelId", "levelName", "bookId", "bookName", "unitNumber", "unitTitle", "lessonNumber", "lessonTitle", "academicType", "activityNumber"];
   const safe = Object.fromEntries(Object.entries(changes).filter(([key]) => allowed.includes(key)));
   const batch = writeBatch(db);
   batch.update(getEditorialComponentRef(projectId, componentId), { ...safe, updatedAt: serverTimestamp(), updatedByUid: uid });
@@ -141,6 +144,10 @@ export async function deleteEditorialComponent({ projectId, componentId, detachI
       } : {}),
       content: Object.hasOwn(override, "content") ? override.content : master.content ?? instanceData.content,
       style: { ...(master.style || instanceData.style || {}), ...(override.style || {}) },
+      visibilityMode: override.visibilityMode || master.visibilityMode || instanceData.visibilityMode || "both",
+      ...(master.answerData || override.answerData ? { answerData: Object.hasOwn(override, "answerData") ? override.answerData : master.answerData } : {}),
+      ...(master.studentContent || override.studentContent ? { studentContent: override.studentContent ?? master.studentContent } : {}),
+      ...(master.teacherContent || override.teacherContent ? { teacherContent: override.teacherContent ?? master.teacherContent } : {}),
       updatedAt: serverTimestamp(),
       updatedByUid: uid,
     };

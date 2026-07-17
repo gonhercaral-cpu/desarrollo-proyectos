@@ -45,6 +45,12 @@ export function resolveComponentElement(instance, componentsById = new Map()) {
     style: overridden.style,
     type: masterElement.type,
     name: masterElement.name,
+    visibilityMode: instance.componentOverrides?.visibilityMode || masterElement.visibilityMode || "both",
+    answerData: Object.hasOwn(instance.componentOverrides || {}, "answerData") ? instance.componentOverrides.answerData : masterElement.answerData,
+    studentContent: instance.componentOverrides?.studentContent ?? masterElement.studentContent,
+    teacherContent: instance.componentOverrides?.teacherContent ?? masterElement.teacherContent,
+    exerciseData: masterElement.exerciseData,
+    academicBlockType: masterElement.academicBlockType || instance.academicBlockType,
     ...(masterElement.type === "image" ? {
       assetId: masterElement.assetId || "",
       assetUrl: masterElement.assetUrl || "",

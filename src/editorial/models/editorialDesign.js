@@ -59,7 +59,7 @@ export function normalizeEditorialTemplate(template = {}, index = 0) {
   };
 }
 
-export function cloneDesignElements(elements, { offsetX = 0, offsetY = 0, stripLinks = true } = {}) {
+export function cloneDesignElements(elements, { offsetX = 0, offsetY = 0, stripLinks = true, preserveStyleLinks = false } = {}) {
   return elements.map((element, index) => {
     const clone = {
       ...element,
@@ -75,8 +75,10 @@ export function cloneDesignElements(elements, { offsetX = 0, offsetY = 0, stripL
       delete clone.componentElementId;
       delete clone.componentOverrides;
       delete clone.componentBase;
-      delete clone.styleId;
-      delete clone.styleOverrides;
+      if (!preserveStyleLinks) {
+        delete clone.styleId;
+        delete clone.styleOverrides;
+      }
       delete clone._inheritance;
       delete clone.resolvedContent;
     }

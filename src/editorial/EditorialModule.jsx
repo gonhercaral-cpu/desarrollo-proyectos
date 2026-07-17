@@ -7,6 +7,8 @@ import "./styles/editorial-editor.css";
 import "./styles/editorial-canvas.css";
 import "./styles/editorial-structure.css";
 import "./styles/editorial-design.css";
+import "./styles/editorial-academic.css";
+import "./styles/editorial-production.css";
 import "./styles/editorial-responsive.css";
 import "./styles/editorial-dark.css";
 
@@ -22,6 +24,7 @@ export default function EditorialModule({ profile, isAdmin, theme, onToggleTheme
         theme={theme}
         onToggleTheme={onToggleTheme}
         onBack={() => navigate("/editorial")}
+        onOpenProject={(nextProjectId) => navigate(`/editorial/${nextProjectId}`)}
       />
     );
   }

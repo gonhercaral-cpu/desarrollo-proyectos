@@ -5,9 +5,12 @@ import EditorialStructureTree from "./EditorialStructureTree";
 import EditorialThumbnailList from "./EditorialThumbnailList";
 import EditorialDesignLibraryPanel from "../design/EditorialDesignLibraryPanel";
 import EditorialMasterList from "../design/EditorialMasterList";
+import EditorialAcademicLibraryPanel from "../academic/EditorialAcademicLibraryPanel";
+import EditorialProductionPanel from "../production/EditorialProductionPanel";
 
 export default function EditorialStructurePanel({
   projectId,
+  project,
   activeRail,
   railItems,
   navigation,
@@ -24,10 +27,25 @@ export default function EditorialStructurePanel({
   editorMode,
   onDesignAction,
   canManageInstitutional,
+  academicMetadata,
+  relatedProjects,
+  onAcademicAction,
+  production,
+  indexState,
+  onIndexAction,
+  onNavigateIssue,
+  onExport,
+  onDownloadExport,
 }) {
   const [menuPage, setMenuPage] = useState(null);
   if (["templates", "components", "styles"].includes(activeRail)) {
     return <EditorialDesignLibraryPanel activeRail={activeRail} design={design} editor={editor} canManageInstitutional={canManageInstitutional} onAction={onDesignAction} />;
+  }
+  if (activeRail === "material") {
+    return <EditorialAcademicLibraryPanel project={project} metadata={academicMetadata} design={design} relatedProjects={relatedProjects} editorMode={editorMode} onAction={onAcademicAction} />;
+  }
+  if (["reviews", "approvals"].includes(activeRail)) {
+    return <EditorialProductionPanel key={activeRail} activeRail={activeRail} navigation={navigation} editor={editor} production={production} indexState={indexState} onIndexAction={onIndexAction} onNavigateIssue={onNavigateIssue} onExport={onExport} onDownloadExport={onDownloadExport} />;
   }
   if (activeRail !== "books") {
     const label = railItems.find(([name]) => name === activeRail)?.[1] || "Panel";

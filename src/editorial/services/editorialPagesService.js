@@ -118,7 +118,12 @@ export async function createEditorialPage({
 
 export async function updateEditorialPage({ projectId, documentId, pageId, changes, user }) {
   const uid = requireUser(user);
-  const allowed = ["name", "sectionId", "pageType", "width", "height", "orientation", "background", "isBlank", "numberingEnabled", "masterPageId", "masterOverrides"];
+  const allowed = [
+    "name", "sectionId", "pageType", "width", "height", "orientation", "background",
+    "isBlank", "numberingEnabled", "masterPageId", "masterOverrides", "academicMetadata",
+    "seriesId", "seriesName", "levelId", "levelName", "bookId", "bookName", "unitNumber",
+    "unitTitle", "lessonNumber", "lessonTitle", "academicType", "activityNumber",
+  ];
   const safeChanges = Object.fromEntries(
     Object.entries(changes).filter(([key]) => allowed.includes(key))
   );

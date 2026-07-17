@@ -1399,6 +1399,13 @@ describe("editor editorial", () => {
     await assertSucceeds(
       updateDoc(doc(auth("collab"), "editorialProjects", "editorial-shared"), {
         name: "Guía compartida actualizada",
+        academicType: "teacher_guide",
+        seriesId: "explore",
+        levelId: "a2",
+        bookId: "student-book",
+        unitNumber: 3,
+        lessonNumber: 2,
+        academicMetadata: { seriesId: "explore", levelId: "a2", bookId: "student-book", unitNumber: 3, lessonNumber: 2 },
         updatedAt: Timestamp.now(),
       })
     );
@@ -1440,7 +1447,11 @@ describe("editor editorial", () => {
       zIndex: 0,
       locked: false,
       visible: true,
+      visibilityMode: "teacher",
       content: "Título",
+      academicGroupId: "exercise-1",
+      exerciseData: { type: "multiple_choice", options: ["A", "B"], correctOption: 1 },
+      answerData: { type: "multiple_choice", value: "B", acceptedValues: [], explanation: "" },
       style: {},
     }));
     await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "documents", "doc-1", "pages", "page-1")));
@@ -1473,6 +1484,16 @@ describe("editor editorial", () => {
     await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "components", "component-1")));
   });
 
+  it("protege comentarios, versiones y exportaciones editoriales", async () => {
+    const ownerDb = auth("collab");
+    const base = ["editorialProjects", "editorial-owned", "documents", "doc-1"];
+    await assertSucceeds(setDoc(doc(ownerDb, ...base, "comments", "comment-1"), { pageId: "page-1", message: "Revisar", status: "open" }));
+    await assertSucceeds(setDoc(doc(ownerDb, ...base, "versions", "version-1"), { name: "v1", versionNumber: 1, storagePath: "editorial/editorial-owned/versions/collab/v1.json" }));
+    await assertSucceeds(setDoc(doc(ownerDb, ...base, "exports", "export-1"), { type: "review", variant: "student", status: "processing" }));
+    await assertFails(getDoc(doc(auth("outsider"), ...base, "comments", "comment-1")));
+    await assertFails(setDoc(doc(auth("outsider"), ...base, "exports", "external"), { type: "review" }));
+  });
+
   it("permite plantillas privadas al proyecto e institucionales solo a admin", async () => {
     const privateRef = doc(auth("collab"), "editorialTemplates", "private-template");
     await assertSucceeds(setDoc(privateRef, { name: "Unidad", visibility: "project", projectId: "editorial-owned", ownerUid: "collab" }));
@@ -1502,6 +1523,18 @@ describe("storage", () => {
     await assertFails(
       storageAuth("collab").ref("editorial/editorial-owned/scripts/collab/recurso.js")
         .putString("code", "raw", { contentType: "text/javascript" })
+    );
+    await assertSucceeds(
+      storageAuth("collab").ref("editorial/editorial-owned/exports/collab/revision.pdf")
+        .putString("%PDF", "raw", { contentType: "application/pdf" })
+    );
+    await assertSucceeds(
+      storageAuth("collab").ref("editorial/editorial-owned/versions/collab/version.json")
+        .putString("{}", "raw", { contentType: "application/json" })
+    );
+    await assertFails(
+      storageAuth("outsider").ref("editorial/editorial-owned/versions/outsider/version.json")
+        .putString("{}", "raw", { contentType: "application/json" })
     );
   });
 

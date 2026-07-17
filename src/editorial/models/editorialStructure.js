@@ -53,6 +53,7 @@ export function normalizeEditorialPage(page = {}, index = 0, project = {}) {
     numberingEnabled: page.numberingEnabled !== false && !["cover", "back_cover"].includes(pageType),
     masterPageId: page.masterPageId || "",
     masterOverrides: { ...(page.masterOverrides || {}) },
+    academicMetadata: { ...(page.academicMetadata || {}) },
   };
 }
 
@@ -76,6 +77,7 @@ export function normalizeEditorialSection(section = {}, index = 0) {
     numberingStart: Math.max(1, Number(section.numberingStart || 1)),
     startOnRight: section.startOnRight === true,
     collapsed: section.collapsed === true,
+    academicMetadata: { ...(section.academicMetadata || {}) },
   };
 }
 

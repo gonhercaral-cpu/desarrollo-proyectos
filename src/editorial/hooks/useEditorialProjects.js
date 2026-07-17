@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { subscribeEditorialProjects } from "../services/editorialProjectsService";
 
-export function useEditorialProjects({ profile, isAdmin, filter, search }) {
+export function useEditorialProjects({ profile, isAdmin, filter, search, academicFilters = {} }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -30,11 +30,14 @@ export function useEditorialProjects({ profile, isAdmin, filter, search }) {
     return projects.filter((project) => {
       const matchesFilter = filter === "all" ||
         (filter === "archived" ? project.archived === true : project.archived !== true);
-      const matchesSearch = !normalizedSearch ||
-        project.name?.toLocaleLowerCase("es-MX").includes(normalizedSearch);
-      return matchesFilter && matchesSearch;
+      const searchable = [project.name, project.seriesName, project.levelName, project.bookName, project.unitTitle, project.lessonTitle].filter(Boolean).join(" ").toLocaleLowerCase("es-MX");
+      const matchesSearch = !normalizedSearch || searchable.includes(normalizedSearch);
+      const matchesAcademicType = !academicFilters.academicType || project.academicType === academicFilters.academicType;
+      const matchesSeries = !academicFilters.seriesId || project.seriesId === academicFilters.seriesId;
+      const matchesLevel = !academicFilters.levelId || project.levelId === academicFilters.levelId;
+      return matchesFilter && matchesSearch && matchesAcademicType && matchesSeries && matchesLevel;
     });
-  }, [projects, filter, search]);
+  }, [academicFilters.academicType, academicFilters.levelId, academicFilters.seriesId, projects, filter, search]);
 
   return { projects, visibleProjects, loading, error };
 }

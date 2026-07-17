@@ -22,6 +22,7 @@ import {
   normalizeEditorialPages,
   normalizeEditorialSections,
 } from "../models/editorialStructure";
+import { normalizeAcademicMetadata } from "../models/editorialAcademic";
 
 export const EDITORIAL_COLLECTIONS = {
   projects: "editorialProjects",
@@ -120,6 +121,7 @@ export async function createEditorialProject(config, user) {
   const documentRef = doc(collection(projectRef, EDITORIAL_COLLECTIONS.documents));
   const dimensions = getOrientedDimensions(safeConfig.size, safeConfig.orientation);
   const audit = getAuditData(user);
+  const academicMetadata = normalizeAcademicMetadata(config);
   const batch = writeBatch(db);
 
   batch.set(projectRef, {
@@ -130,6 +132,7 @@ export async function createEditorialProject(config, user) {
     collaboratorUids: [],
     status: "active",
     archived: false,
+    ...(Object.keys(academicMetadata).length ? { ...academicMetadata, academicMetadata } : {}),
     createdBy: audit,
     updatedBy: audit,
     createdAt: serverTimestamp(),
@@ -293,6 +296,11 @@ async function collectProjectDocumentRefs(projectId) {
       const elementsSnapshot = await getDocs(collection(masterSnapshot.ref, EDITORIAL_COLLECTIONS.elements));
       elementsSnapshot.docs.forEach((elementSnapshot) => refs.push(elementSnapshot.ref));
       refs.push(masterSnapshot.ref);
+    }
+
+    for (const childCollection of ["comments", "versions", "exports"]) {
+      const snapshot = await getDocs(collection(documentSnapshot.ref, childCollection));
+      snapshot.docs.forEach((item) => refs.push(item.ref));
     }
 
     refs.push(documentSnapshot.ref);
