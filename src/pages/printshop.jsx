@@ -3365,15 +3365,14 @@ function normalizeBatchQualityChecklist(checklist) {
   });
 }
 
-function isQualityChecklistComplete(checklist) {
-  const normalized = normalizeBatchQualityChecklist(checklist);
-  return normalized.length > 0 && normalized.every((item) => item.checked === true);
-}
-
 function isBatchQualityApproved(batch) {
   const status = batch?.qualityStatus || "Pendiente";
+  // Criterio de ingreso alineado con el guardado y con las Firestore Rules:
+  // basta un resultado aprobatorio con la revisión marcada como completada.
+  // No se exige checklist al 100 %, para permitir "Aprobado con observaciones"
+  // (que por definición deja puntos sin marcar, explicados en Observaciones).
   return (
-    isQualityChecklistComplete(batch?.qualityChecklist) &&
+    batch?.qualityCompleted === true &&
     (status === "Aprobado" || status === "Aprobado con observaciones")
   );
 }
@@ -9654,9 +9653,11 @@ export default function PrintShop() {
 
     const normalizedQualityChecklist = normalizeBatchQualityChecklist(batchForm.qualityChecklist);
     const qualityStatus = batchForm.qualityStatus || "Pendiente";
+    // La revisión se considera completada cuando el auditor elige un resultado
+    // aprobatorio, no cuando marca todos los puntos. "Aprobado con observaciones"
+    // implica que hay puntos sin marcar (defectos) explicados en Observaciones.
     const qualityCompleted =
-      isQualityChecklistComplete(normalizedQualityChecklist) &&
-      (qualityStatus === "Aprobado" || qualityStatus === "Aprobado con observaciones");
+      qualityStatus === "Aprobado" || qualityStatus === "Aprobado con observaciones";
     const requiresApprovedQuality = ["Aprobado", "Ingresado a inventario", "Cerrado"].includes(
       batchForm.status
     );
@@ -11634,9 +11635,8 @@ function ProductionBatchesView({
   const [batchFocusMode, setBatchFocusMode] = useState("edit");
   const isBatchDetailMode = batchFocusMode === "detail";
   const canSaveBatch =
-    !isBatchDetailMode &&
-    ((!selectedBatchId && canCreateBatch) ||
-      (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole)));
+    (!selectedBatchId && canCreateBatch) ||
+    (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole));
   const availableStatusOptions = isAdmin
     ? productionBatchStatuses
     : selectedRole === "responsible"
@@ -11684,6 +11684,9 @@ function ProductionBatchesView({
   }, [productionBatches, batchSearchTerm, batchStatusFilter, batchSummaryFrom, batchSummaryTo]);
 
   function openBatchFocus(batch = null) {
+    // La creación de lotes (sin lote seleccionado) es exclusiva de administradores.
+    if (!batch && !canCreateBatch) return;
+
     setBatchFocusMode("edit");
     if (batch) {
       onSelectBatch(batch);
@@ -11895,9 +11898,6 @@ function ProductionBatchesView({
                             <div className="printshop-product-actions batch-actions">
                               <button type="button" onClick={() => openBatchDetails(batch)}>
                                 Detalles
-                              </button>
-                              <button type="button" onClick={() => openBatchFocus(batch)}>
-                                Editar
                               </button>
                               <button
                                 type="button"
@@ -12328,9 +12328,8 @@ function ProductionBatchesView({
 
               {batchMessage && <div className="message-box full">{batchMessage}</div>}
 
-              {!isBatchDetailMode && (
               <div className="printshop-form-actions full">
-                {selectedBatchId && (
+                {canCreateBatch && !isBatchDetailMode && selectedBatchId && (
                   <button type="button" className="visual-outline-button" onClick={onResetBatchForm}>
                     Nuevo lote
                   </button>
@@ -12348,7 +12347,6 @@ function ProductionBatchesView({
                       : "Crear lote"}
                 </button>
               </div>
-              )}
 
               {inventoryProducts.length === 0 && (
                 <p className="inventory-side-help full">
