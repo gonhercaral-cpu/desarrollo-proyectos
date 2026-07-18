@@ -3362,49 +3362,140 @@ function formatReportDate(value) {
   }).format(date);
 }
 
+// Los límites de periodo se calculan como hora de pared de America/Tijuana y se
+// convierten a epoch absoluto con el offset real de esa fecha (respeta horario de
+// verano), independientemente de la zona horaria del navegador.
+function getTijuanaOffsetMs(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: REQUEST_REPORT_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(date)
+    .reduce((acc, part) => {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  const hour = parts.hour === "24" ? 0 : Number(parts.hour);
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    hour,
+    Number(parts.minute),
+    Number(parts.second)
+  );
+
+  // Los offsets de zona horaria son de minutos enteros; se comparan ambos lados
+  // truncados al segundo para no arrastrar los milisegundos del instante.
+  return asUtc - (date.getTime() - date.getUTCMilliseconds());
+}
+
+function tijuanaWallClockToMs(year, month, day, hour, minute, second, milli) {
+  const guess = Date.UTC(year, month, day, hour, minute, second, milli);
+  const firstOffset = getTijuanaOffsetMs(new Date(guess));
+  let result = guess - firstOffset;
+  const secondOffset = getTijuanaOffsetMs(new Date(result));
+  if (secondOffset !== firstOffset) {
+    result = guess - secondOffset;
+  }
+  return result;
+}
+
+function getTijuanaCalendarParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: REQUEST_REPORT_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(date)
+    .reduce((acc, part) => {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+
+  return { year: Number(parts.year), month: Number(parts.month) - 1, day: Number(parts.day) };
+}
+
+function addCalendarDays({ year, month, day }, amount) {
+  const shifted = new Date(Date.UTC(year, month, day));
+  shifted.setUTCDate(shifted.getUTCDate() + amount);
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth(), day: shifted.getUTCDate() };
+}
+
+function getMondayIndex({ year, month, day }) {
+  return (new Date(Date.UTC(year, month, day)).getUTCDay() + 6) % 7;
+}
+
+function getLastDayOfMonth(year, month) {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+function tijuanaStartOfDayMs({ year, month, day }) {
+  return tijuanaWallClockToMs(year, month, day, 0, 0, 0, 0);
+}
+
+function tijuanaEndOfDayMs({ year, month, day }) {
+  return tijuanaWallClockToMs(year, month, day, 23, 59, 59, 999);
+}
+
+function parseCalendarInput(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]) - 1, day: Number(match[3]) };
+}
+
 function getReportPeriodRange(period, customStart, customEnd) {
-  const now = new Date();
-  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-  const endOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
-  const mondayOf = (date) => {
-    const base = startOfDay(date);
-    const offset = (base.getDay() + 6) % 7;
-    base.setDate(base.getDate() - offset);
-    return base;
-  };
-  const rangeLabel = (start, end) => `${formatReportDate(start)} al ${formatReportDate(end)}`;
+  const today = getTijuanaCalendarParts();
+  const rangeLabel = (startMs, endMs) => `${formatReportDate(startMs)} al ${formatReportDate(endMs)}`;
 
   if (period === "Esta semana") {
-    const start = mondayOf(now);
-    const end = endOfDay(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6));
-    return { startMs: start.getTime(), endMs: end.getTime(), label: `Esta semana (${rangeLabel(start, end)})` };
+    const monday = addCalendarDays(today, -getMondayIndex(today));
+    const sunday = addCalendarDays(monday, 6);
+    const startMs = tijuanaStartOfDayMs(monday);
+    const endMs = tijuanaEndOfDayMs(sunday);
+    return { startMs, endMs, label: `Esta semana (${rangeLabel(startMs, endMs)})` };
   }
 
   if (period === "Semana anterior") {
-    const thisMonday = mondayOf(now);
-    const start = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() - 7);
-    const end = endOfDay(new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6));
-    return { startMs: start.getTime(), endMs: end.getTime(), label: `Semana anterior (${rangeLabel(start, end)})` };
+    const thisMonday = addCalendarDays(today, -getMondayIndex(today));
+    const monday = addCalendarDays(thisMonday, -7);
+    const sunday = addCalendarDays(monday, 6);
+    const startMs = tijuanaStartOfDayMs(monday);
+    const endMs = tijuanaEndOfDayMs(sunday);
+    return { startMs, endMs, label: `Semana anterior (${rangeLabel(startMs, endMs)})` };
   }
 
   if (period === "Este mes") {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-    return { startMs: start.getTime(), endMs: end.getTime(), label: `Este mes (${rangeLabel(start, end)})` };
+    const first = { year: today.year, month: today.month, day: 1 };
+    const last = { year: today.year, month: today.month, day: getLastDayOfMonth(today.year, today.month) };
+    const startMs = tijuanaStartOfDayMs(first);
+    const endMs = tijuanaEndOfDayMs(last);
+    return { startMs, endMs, label: `Este mes (${rangeLabel(startMs, endMs)})` };
   }
 
   if (period === "Mes anterior") {
-    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const end = endOfDay(new Date(now.getFullYear(), now.getMonth(), 0));
-    return { startMs: start.getTime(), endMs: end.getTime(), label: `Mes anterior (${rangeLabel(start, end)})` };
+    const previous = addCalendarDays({ year: today.year, month: today.month, day: 1 }, -1);
+    const first = { year: previous.year, month: previous.month, day: 1 };
+    const last = { year: previous.year, month: previous.month, day: getLastDayOfMonth(previous.year, previous.month) };
+    const startMs = tijuanaStartOfDayMs(first);
+    const endMs = tijuanaEndOfDayMs(last);
+    return { startMs, endMs, label: `Mes anterior (${rangeLabel(startMs, endMs)})` };
   }
 
   if (period === "Rango personalizado") {
-    const startDate = customStart ? toReportDate(customStart) : null;
-    const endDate = customEnd ? toReportDate(customEnd) : null;
+    const startParts = parseCalendarInput(customStart);
+    const endParts = parseCalendarInput(customEnd);
     return {
-      startMs: startDate ? startOfDay(startDate).getTime() : null,
-      endMs: endDate ? endOfDay(endDate).getTime() : null,
+      startMs: startParts ? tijuanaStartOfDayMs(startParts) : null,
+      endMs: endParts ? tijuanaEndOfDayMs(endParts) : null,
       label: `Rango ${customStart ? formatReportDate(customStart) : "—"} al ${customEnd ? formatReportDate(customEnd) : "—"}`,
     };
   }
@@ -3452,12 +3543,54 @@ function getReportPrintDate(request) {
   );
 }
 
-function getReportDeliveryDate(request) {
-  return (
+// Mapa requestId -> fecha de entrega más reciente tomada de los certificados ya
+// cargados en memoria (evita consultas N+1 al generar el reporte).
+function buildCertificateDeliveryDateMap(certificates) {
+  const map = new Map();
+
+  (Array.isArray(certificates) ? certificates : []).forEach((certificate) => {
+    const requestId = certificate?.requestId;
+    if (!requestId) return;
+    if (normalizeCertificateStatus(certificate.status) !== "Entregado") return;
+
+    const deliveryDate = toReportDate(certificate.deliveredAt);
+    if (!deliveryDate) return;
+
+    const existing = map.get(requestId);
+    if (!existing || deliveryDate > existing) {
+      map.set(requestId, deliveryDate);
+    }
+  });
+
+  return map;
+}
+
+function getReportDeliveryDate(request, certificateDeliveryByRequest) {
+  const direct =
     request?.deliveredAt ||
-    getReportLatestStudentDate(request, ["certificateDeliveredAt", "deliveredAt"]) ||
-    ""
-  );
+    getReportLatestStudentDate(request, [
+      "certificateDeliveredAt",
+      "deliveredAt",
+      "deliveryDate",
+    ]);
+  if (direct) return direct;
+
+  if (certificateDeliveryByRequest && request?.id) {
+    const fromCertificates = certificateDeliveryByRequest.get(request.id);
+    if (fromCertificates) return fromCertificates;
+  }
+
+  return "";
+}
+
+function getReportDeliveryCellValue(request, certificateDeliveryByRequest) {
+  const deliveryDate = getReportDeliveryDate(request, certificateDeliveryByRequest);
+  if (deliveryDate) return formatReportDate(deliveryDate);
+
+  // Entregada sin timestamp recuperable: no dejar la celda vacía ni inventar fecha.
+  if (getEffectiveRequestStatus(request) === "Entregada") return "Sin fecha registrada";
+
+  return "—";
 }
 
 function getReportPrintedQuantity(request) {
@@ -3496,7 +3629,7 @@ function getRequestReportConfig(reportType) {
         { label: "Responsable de impresión", get: (request) => request.responsibleName || "" },
         { label: "Fecha de impresión", get: (request) => formatReportDate(getReportPrintDate(request)) },
         { label: "Cant. impresa", get: (request) => String(getReportPrintedQuantity(request)), align: "center" },
-        { label: "Fecha de entrega", get: (request) => formatReportDate(getReportDeliveryDate(request)) },
+        { label: "Fecha de entrega", get: (request, context) => getReportDeliveryCellValue(request, context?.certificateDeliveryByRequest) },
         { label: "Firma de recibido", get: () => "", signature: true },
       ],
     };
@@ -3519,7 +3652,7 @@ function getRequestReportConfig(reportType) {
       { label: "Responsable", get: (request) => request.responsibleName || "" },
       { label: "Cantidad", get: (request) => String(getReportProducedQuantity(request)), align: "center" },
       { label: "Fecha de producción", get: (request) => formatReportDate(getReportPrintDate(request)) },
-      { label: "Fecha de entrega", get: (request) => formatReportDate(getReportDeliveryDate(request)) },
+      { label: "Fecha de entrega", get: (request, context) => getReportDeliveryCellValue(request, context?.certificateDeliveryByRequest) },
       { label: "Estado", get: (request) => getEffectiveRequestStatus(request) },
       { label: "Firma de recibido", get: () => "", signature: true },
     ],
@@ -3551,7 +3684,7 @@ function computeRequestReportStats(requests, reportType) {
   ];
 }
 
-function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSummary, generatedAtLabel }) {
+function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSummary, generatedAtLabel, certificateDeliveryByRequest }) {
   const config = getRequestReportConfig(reportType);
   const stats = computeRequestReportStats(requests, reportType);
   const columnCount = config.columns.length;
@@ -3566,7 +3699,7 @@ function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSum
           .map((column) => {
             if (column.signature) return `<td class="signature-cell"></td>`;
             const alignClass = column.align === "center" ? "center-col" : "";
-            return `<td class="${alignClass}">${getPrintableValue(column.get(request))}</td>`;
+            return `<td class="${alignClass}">${getPrintableValue(column.get(request, { certificateDeliveryByRequest }))}</td>`;
           })
           .join("");
         return `<tr>${cells}</tr>`;
@@ -3870,6 +4003,15 @@ function canProfileAccessPrintshop(profile, isAdmin) {
   );
 }
 
+// Reporte de solicitudes: exclusivo de administradores e Imprenta (excluye Soporte
+// Técnico, que sí accede a otras funciones del módulo). Usa la representación
+// normalizada de departamentos del perfil, no un texto literal sin normalizar.
+function canProfileGeneratePrintshopReport(profile, isAdmin) {
+  if (isAdmin) return true;
+
+  return getProfileDepartmentNames(profile).includes("imprenta");
+}
+
 function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
   return resolvePrintRequestMemberRole(actor?.uid, request, isAdminUser);
 }
@@ -3877,6 +4019,8 @@ function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin);
+  const canGeneratePrintshopReport =
+    canProfileGeneratePrintshopReport(profile, isAdmin) && profile?.active !== false;
   const canViewCertificateStatistics =
     isAdmin || getProfileDepartmentNames(profile).includes("imprenta");
   const assignmentRepairStartedRef = useRef(false);
@@ -4855,7 +4999,28 @@ export default function PrintShop() {
   ]);
 
   function generateRequestsReport() {
+    if (!canGeneratePrintshopReport) {
+      setRequestMessage("No tienes permisos para generar reportes de Imprenta.");
+      return;
+    }
+
+    if (
+      requestPeriodFilter === "Rango personalizado" &&
+      requestPeriodStart &&
+      requestPeriodEnd &&
+      requestPeriodStart > requestPeriodEnd
+    ) {
+      setRequestMessage("La fecha inicial no puede ser posterior a la fecha final.");
+      return;
+    }
+
     const reportRequests = filteredRequests;
+
+    if (reportRequests.length === 0) {
+      setRequestMessage("No hay solicitudes para los filtros seleccionados.");
+      return;
+    }
+
     const reportType = requestTypeFilter;
     const generatedAtLabel = new Intl.DateTimeFormat("es-MX", {
       dateStyle: "long",
@@ -4887,6 +5052,7 @@ export default function PrintShop() {
       periodLabel: requestReportPeriodRange.label,
       filtersSummary,
       generatedAtLabel,
+      certificateDeliveryByRequest: buildCertificateDeliveryDateMap(generatedCertificates),
     });
 
     reportWindow.document.open();
@@ -7223,6 +7389,16 @@ export default function PrintShop() {
         const fieldChangeSummary = buildFieldChangeDescription(currentRequest, payload);
 
         const changedToDelivered = basePayload.status === "Entregada" && currentRequest?.status !== "Entregada";
+        // Timestamp canónico de entrega en la propia solicitud. Solo al transicionar
+        // a "Entregada", para no sobrescribirlo en guardados posteriores.
+        const deliveryStamp = changedToDelivered
+          ? {
+              deliveredAt: serverTimestamp(),
+              deliveredByUid: auditUser.uid,
+              deliveredByName: auditUser.name,
+              deliveredByEmail: auditUser.email,
+            }
+          : null;
         if (changedToDelivered && isRequestCertificateLike(currentRequest?.requestType)) {
           const freshCertificatesSnapshot = await getDocs(query(
             collection(db, "generatedCertificates"),
@@ -7252,7 +7428,7 @@ export default function PrintShop() {
             );
           }
           const batch = writeBatch(db);
-          batch.update(doc(db, "printRequests", selectedRequestId), payload);
+          batch.update(doc(db, "printRequests", selectedRequestId), deliveryStamp ? { ...payload, ...deliveryStamp } : payload);
           addCertificateHistoryUpserts(
             batch,
             { ...currentRequest, ...basePayload },
@@ -7284,7 +7460,7 @@ export default function PrintShop() {
             });
           await batch.commit();
         } else {
-          await updateDoc(doc(db, "printRequests", selectedRequestId), payload);
+          await updateDoc(doc(db, "printRequests", selectedRequestId), deliveryStamp ? { ...payload, ...deliveryStamp } : payload);
         }
         await createPrintshopLog({
           type: "REQUEST_UPDATED",
@@ -10752,6 +10928,14 @@ export default function PrintShop() {
           requestStatusFilter={requestStatusFilter}
           requestTypeFilter={requestTypeFilter}
           requestPriorityFilter={requestPriorityFilter}
+          requestPeriodFilter={requestPeriodFilter}
+          requestPeriodStart={requestPeriodStart}
+          requestPeriodEnd={requestPeriodEnd}
+          requestCampusFilter={requestCampusFilter}
+          requestResponsibleFilter={requestResponsibleFilter}
+          requestCampusOptions={requestCampusOptions}
+          requestResponsibleOptions={requestResponsibleOptions}
+          canGenerateReport={canGeneratePrintshopReport}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
           onRequestInputChange={handleRequestInputChange}
@@ -10763,6 +10947,12 @@ export default function PrintShop() {
           onRequestStatusFilterChange={setRequestStatusFilter}
           onRequestTypeFilterChange={setRequestTypeFilter}
           onRequestPriorityFilterChange={setRequestPriorityFilter}
+          onRequestPeriodFilterChange={setRequestPeriodFilter}
+          onRequestPeriodStartChange={setRequestPeriodStart}
+          onRequestPeriodEndChange={setRequestPeriodEnd}
+          onRequestCampusFilterChange={setRequestCampusFilter}
+          onRequestResponsibleFilterChange={setRequestResponsibleFilter}
+          onGenerateReport={generateRequestsReport}
           studentName={studentName}
           studentDeliveryType={studentDeliveryType}
           bulkStudentsText={bulkStudentsText}
@@ -14658,6 +14848,14 @@ function PrintRequestsView({
   requestStatusFilter,
   requestTypeFilter,
   requestPriorityFilter,
+  requestPeriodFilter,
+  requestPeriodStart,
+  requestPeriodEnd,
+  requestCampusFilter,
+  requestResponsibleFilter,
+  requestCampusOptions,
+  requestResponsibleOptions,
+  canGenerateReport,
   isAdmin,
   currentUserUid,
   onRequestInputChange,
@@ -14669,6 +14867,12 @@ function PrintRequestsView({
   onRequestStatusFilterChange,
   onRequestTypeFilterChange,
   onRequestPriorityFilterChange,
+  onRequestPeriodFilterChange,
+  onRequestPeriodStartChange,
+  onRequestPeriodEndChange,
+  onRequestCampusFilterChange,
+  onRequestResponsibleFilterChange,
+  onGenerateReport,
   studentName,
   studentDeliveryType,
   bulkStudentsText,
@@ -14894,6 +15098,77 @@ function PrintRequestsView({
                   <option key={priority}>{priority}</option>
                 ))}
               </select>
+
+              {canGenerateReport && (
+                <>
+                  <select
+                    value={requestPeriodFilter}
+                    onChange={(event) => onRequestPeriodFilterChange(event.target.value)}
+                    aria-label="Periodo del reporte"
+                    title="Periodo del reporte"
+                  >
+                    {REQUEST_REPORT_PERIOD_OPTIONS.map((period) => (
+                      <option key={period}>{period}</option>
+                    ))}
+                  </select>
+
+                  {requestPeriodFilter === "Rango personalizado" && (
+                    <>
+                      <input
+                        type="date"
+                        value={requestPeriodStart}
+                        onChange={(event) => onRequestPeriodStartChange(event.target.value)}
+                        aria-label="Fecha inicial"
+                        title="Fecha inicial"
+                      />
+                      <input
+                        type="date"
+                        value={requestPeriodEnd}
+                        onChange={(event) => onRequestPeriodEndChange(event.target.value)}
+                        aria-label="Fecha final"
+                        title="Fecha final"
+                      />
+                    </>
+                  )}
+
+                  {(requestCampusOptions || []).length > 0 && (
+                    <select
+                      value={requestCampusFilter}
+                      onChange={(event) => onRequestCampusFilterChange(event.target.value)}
+                      aria-label="Plantel"
+                      title="Plantel"
+                    >
+                      <option>Todos</option>
+                      {(requestCampusOptions || []).map((campus) => (
+                        <option key={campus}>{campus}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {(requestResponsibleOptions || []).length > 0 && (
+                    <select
+                      value={requestResponsibleFilter}
+                      onChange={(event) => onRequestResponsibleFilterChange(event.target.value)}
+                      aria-label="Responsable"
+                      title="Responsable"
+                    >
+                      <option>Todos</option>
+                      {(requestResponsibleOptions || []).map((responsible) => (
+                        <option key={responsible}>{responsible}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  <button
+                    type="button"
+                    className="visual-primary-button request-report-button"
+                    onClick={onGenerateReport}
+                    title="Genera un reporte imprimible con los filtros activos"
+                  >
+                    Generar reporte
+                  </button>
+                </>
+              )}
             </div>
 
             {requestsError && <div className="form-error">{requestsError}</div>}

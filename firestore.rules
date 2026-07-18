@@ -1863,7 +1863,11 @@ service cloud.firestore {
           "updatedAt",
           "updatedByUid",
           "updatedByName",
-          "updatedByEmail"
+          "updatedByEmail",
+          "deliveredAt",
+          "deliveredByUid",
+          "deliveredByName",
+          "deliveredByEmail"
         ])
         && request.resource.data.status in [
           "Solicitud recibida",
@@ -1922,7 +1926,11 @@ service cloud.firestore {
           "updatedAt",
           "updatedByUid",
           "updatedByName",
-          "updatedByEmail"
+          "updatedByEmail",
+          "deliveredAt",
+          "deliveredByUid",
+          "deliveredByName",
+          "deliveredByEmail"
         ])
         && request.resource.data.status in [
           "Solicitud recibida",
