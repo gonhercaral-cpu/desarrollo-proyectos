@@ -116,6 +116,20 @@ export function canAccessDepartment(user, departmentId) {
   return userBelongsToDepartmentId(user, departmentId);
 }
 
+export const EDITORIAL_DEPARTMENT_NAME = "Desarrollo de Material";
+
+// Editor Editorial: solo administradores activos y colaboradores activos del
+// departamento Desarrollo de Material. Usa la pertenencia canónica por ID/nombre
+// (no un texto literal frágil) y no amplía a departamentos similares.
+export function canAccessEditorial(user, isAdmin = false) {
+  if (!isActiveProfile(user)) return false;
+  if (isAdmin || isAdminProfile(user)) return true;
+  return (
+    normalizeRole(user?.role) === "collaborator" &&
+    userBelongsToDepartmentId(user, EDITORIAL_DEPARTMENT_NAME)
+  );
+}
+
 export function canAccessDepartmentMessage(user, message, isAdmin = false) {
   if (!isActiveProfile(user)) return false;
   if (isAdmin || isAdminProfile(user)) return true;

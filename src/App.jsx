@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
+import { canAccessEditorial } from "./utils/departmentMembership";
 
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -109,6 +110,20 @@ function ProtectedEditorialSystem({ theme, onToggleTheme }) {
         <div className="card">
           <h2>Usuario sin perfil</h2>
           <p>Editor Editorial requiere un perfil activo en Firestore.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canAccessEditorial(profile, isAdmin)) {
+    return (
+      <div className="loading-screen">
+        <div className="card">
+          <h2>No tienes permiso para acceder</h2>
+          <p>
+            El Editor Editorial está disponible solo para el departamento de
+            Desarrollo de Material.
+          </p>
         </div>
       </div>
     );

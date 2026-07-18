@@ -40,6 +40,7 @@ import MessageText from "../components/MessageText";
 import DepartmentReadReceipt from "../components/DepartmentReadReceipt";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
 import {
+  canAccessEditorial,
   filterVisibleDepartmentMessages,
   normalizeDepartmentId,
   userBelongsToDepartmentId,
@@ -274,7 +275,7 @@ function renderDashboardNavIconPath(name) {
 }
 
 
-function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager }) {
+function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial }) {
   const items = [];
 
   if (isAdmin) {
@@ -290,7 +291,9 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
 
   items.push({ page: "my-projects", label: "Mis proyectos", mobileLabel: "Proyectos", icon: "myProjects", section: "Operación" });
 
-  items.push({ page: "editorial", label: "Editor Editorial", mobileLabel: "Editorial", icon: "editorial", section: "Operación" });
+  if (canUseEditorial) {
+    items.push({ page: "editorial", label: "Editor Editorial", mobileLabel: "Editorial", icon: "editorial", section: "Operación" });
+  }
 
   items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Operación" });
 
@@ -431,6 +434,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
   const canUseTechnicalSupport = canAccessTechnicalSupport(profile, isAdmin);
   const canUseDriveManager = isAdmin || profile?.role === "collaborator";
+  const canUseEditorial = canAccessEditorial(profile, isAdmin);
 
   const defaultDashboardPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const defaultReturnPage = isAdmin ? "all-projects" : "workspace-dashboard";
@@ -898,6 +902,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     canUsePrintShop,
     canUseTechnicalSupport,
     canUseDriveManager,
+    canUseEditorial,
   }).map((item) => {
     if (item.page === "workspace-dashboard") {
       return { ...item, badgeCount: unreadAnnouncementsCount };
