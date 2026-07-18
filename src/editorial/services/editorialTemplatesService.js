@@ -6,6 +6,7 @@ import { resolveLocalElements, resolveMasterElements } from "../utils/editorialI
 import { EDITORIAL_COLLECTIONS } from "./editorialProjectsService";
 import { getEditorialDocumentRef, getEditorialPageRef } from "./editorialPagesService";
 import { getMasterPageRef } from "./editorialMasterPagesService";
+import { sanitizeFirestoreData } from "../utils/editorialFirestore";
 
 function requireUser(user) {
   const uid = user?.uid || user?.id;
@@ -221,7 +222,7 @@ export async function applyEditorialTemplate({ projectId, documentId, template, 
       projectId, documentId, pageId: target.id, uid,
       elements: cloneDesignElements(elements.docs.map((item) => ({ id: item.id, ...item.data() }))),
     });
-    copied.assets.forEach((asset) => operations.push((batch) => batch.set(asset.ref, asset.data)));
+    copied.assets.forEach((asset) => operations.push((batch) => batch.set(asset.ref, sanitizeFirestoreData(asset.data))));
     copied.elements.forEach((element) => operations.push((batch) => batch.set(doc(target, EDITORIAL_COLLECTIONS.elements, element.id), { ...element, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })));
   }
   for (let index = 0; index < operations.length; index += 440) {

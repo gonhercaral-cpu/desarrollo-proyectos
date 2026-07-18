@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { listAllowedDriveDepartmentFolders } from "../../../services/driveService";
 import { EDITORIAL_PRINT_OPTIONS } from "../../utils/editorialPrintPayload";
+import { driveFolderLabel, driveFolderSubLabel, exportDisplayName } from "../../utils/editorialLabels";
+import EditorialSearchPicker from "../EditorialSearchPicker";
 
 // Fase 7 — Diálogo de integraciones operativas: guardar exportación en Nube AES
 // (Drive vía Cloud Functions) o enviar PDF de imprenta a Imprenta. Reutiliza los
 // backends existentes; no llama a Google Drive desde el navegador.
 export default function EditorialIntegrationsDialog({ mode, exportItem, autofill, canManage, busy, error, onClose, onSaveDrive, onSendPrint, onCreateFolder }) {
   const [folders, setFolders] = useState([]);
+  const [foldersLoading, setFoldersLoading] = useState(mode === "drive");
+  const [foldersError, setFoldersError] = useState("");
   const [folderId, setFolderId] = useState("");
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -24,11 +28,15 @@ export default function EditorialIntegrationsDialog({ mode, exportItem, autofill
   });
 
   useEffect(() => {
-    if (mode !== "drive") return;
+    if (mode !== "drive") return undefined;
     let active = true;
     listAllowedDriveDepartmentFolders()
       .then((result) => { if (active) setFolders(Array.isArray(result) ? result : result?.folders || []); })
-      .catch(() => { if (active) setFolders([]); });
+      .catch((loadError) => {
+        console.error("Editorial: no se pudieron cargar las carpetas de Nube AES", loadError);
+        if (active) setFoldersError("No se pudieron cargar las carpetas de Nube AES.");
+      })
+      .finally(() => { if (active) setFoldersLoading(false); });
     return () => { active = false; };
   }, [mode]);
 
@@ -68,16 +76,23 @@ export default function EditorialIntegrationsDialog({ mode, exportItem, autofill
 
         {mode === "drive" ? (
           <div className="editorial-production-form">
-            <p className="editorial-hint">Archivo: {exportItem?.type} · {exportItem?.variant}</p>
-            <label>
-              Carpeta destino
-              <select value={folderId} onChange={(event) => { setFolderId(event.target.value); setConfirmReplace(false); }}>
-                <option value="">Selecciona una carpeta</option>
-                {folders.map((folder) => (
-                  <option value={folder.id} key={folder.id}>{folder.name || folder.id}</option>
-                ))}
-              </select>
-            </label>
+            <p className="editorial-hint">Archivo: {exportDisplayName(exportItem)}</p>
+            <div className="editorial-field">
+              <span className="editorial-field-label">Carpeta destino</span>
+              <EditorialSearchPicker
+                items={folders}
+                loading={foldersLoading}
+                error={foldersError}
+                getId={(folder) => folder.id}
+                getLabel={driveFolderLabel}
+                getDescription={driveFolderSubLabel}
+                selectedId={folderId}
+                onSelect={(id) => { setFolderId(id); setConfirmReplace(false); }}
+                placeholder="Buscar carpeta…"
+                ariaLabel="Buscar carpeta de destino"
+                emptyMessage="No hay carpetas disponibles."
+              />
+            </div>
             {canManage && (
               <div className="editorial-inline-form">
                 <input value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="Nueva carpeta" />

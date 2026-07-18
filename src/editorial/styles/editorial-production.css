@@ -105,3 +105,20 @@
 .editorial-download-toast.error { border-color: #c83e4d; color: #c83e4d; }
 .editorial-download-toast.success { border-color: #12834b; color: #12834b; }
 .editorial-download-toast button { border: 0; background: transparent; color: inherit; font-size: 15px; cursor: pointer; line-height: 1; }
+
+/* Estabilización 2 — selector buscable reutilizable + labels legibles */
+.editorial-field { display: grid; gap: 5px; }
+.editorial-field-label { color: var(--editorial-muted); font-size: 11px; }
+.editorial-search-picker { display: grid; gap: 6px; }
+.editorial-search-picker input[type="search"] { width: 100%; padding: 7px 9px; border: 1px solid var(--editorial-border); border-radius: 5px; background: var(--editorial-bg); color: var(--editorial-text); font-size: 12px; }
+.editorial-search-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; max-height: 220px; min-width: 220px; overflow: auto; }
+.editorial-search-options > li > button { width: 100%; display: grid; gap: 2px; text-align: left; padding: 7px 9px; border: 1px solid transparent; border-radius: 5px; background: var(--editorial-bg); color: var(--editorial-text); cursor: pointer; }
+.editorial-search-options > li > button:hover { background: var(--editorial-soft); }
+.editorial-search-options > li > button.selected { border-color: var(--editorial-accent); background: var(--editorial-soft); }
+.editorial-search-options > li > button strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editorial-search-options > li > button small { color: var(--editorial-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editorial-search-options > li > button:focus-visible { outline: 2px solid var(--editorial-accent); outline-offset: 1px; }
+.editorial-permission-user { display: grid; gap: 1px; min-width: 0; }
+.editorial-permission-user strong { font-size: 12px; }
+.editorial-permission-user small { color: var(--editorial-muted); font-size: 10px; }
+.editorial-menu-dropdown button.active { color: var(--editorial-accent); }

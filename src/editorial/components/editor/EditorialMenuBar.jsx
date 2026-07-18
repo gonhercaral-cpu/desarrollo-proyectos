@@ -31,17 +31,24 @@ export default function EditorialMenuBar({ menus }) {
           </button>
           {openMenu === menu.label && (
             <div className="editorial-menu-dropdown" role="menu" aria-label={menu.label}>
-              {menu.items.map((item, index) =>
+              {menu.items.filter((item) => item.separator || item.visible !== false).map((item, index) =>
                 item.separator ? (
                   <span className="editorial-menu-separator" key={`sep-${index}`} />
                 ) : (
                   <button
                     type="button"
                     role="menuitem"
-                    key={item.label}
-                    disabled={item.disabled}
-                    title={item.disabled && item.hint ? item.hint : undefined}
-                    onClick={() => { setOpenMenu(""); item.onSelect?.(); }}
+                    key={item.id || item.label}
+                    aria-disabled={item.enabled === false}
+                    disabled={item.enabled === false}
+                    className={item.active ? "active" : ""}
+                    title={item.enabled === false && item.hint ? item.hint : undefined}
+                    onClick={() => {
+                      if (item.enabled === false || typeof item.execute !== "function") return;
+                      setOpenMenu("");
+                      try { item.execute(); }
+                      catch (error) { console.error(`Editorial: comando "${item.id || item.label}" falló`, error); }
+                    }}
                   >
                     <span>{item.label}</span>
                     {item.shortcut && <kbd>{item.shortcut}</kbd>}

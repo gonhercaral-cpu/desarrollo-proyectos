@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getActiveDepartments } from "../../services/departmentsService";
 import { EDITORIAL_LEVELS } from "../models/editorialPermissions";
+import { userDisplayName, userSubLabel } from "../utils/editorialLabels";
 
 // Fase 7 — Asignación de permisos editoriales por usuario y departamento. No
 // modifica roles globales; sólo el mapa editorialPermissions del proyecto.
@@ -41,7 +42,7 @@ export default function EditorialPermissionsDialog({ open, project, users, busy,
           {assignableUsers.length === 0 && <p className="editorial-hint">Sin colaboradores.</p>}
           {assignableUsers.map((user) => (
             <label className="editorial-permission-row" key={user.id}>
-              <span>{user.name || user.email || user.id}</span>
+              <span className="editorial-permission-user"><strong>{userDisplayName(user)}</strong><small>{userSubLabel(user)}</small></span>
               <select value={userLevels[user.id] || ""} onChange={(event) => setUserLevels((prev) => ({ ...prev, [user.id]: event.target.value }))}>
                 <option value="">Predeterminado</option>
                 {EDITORIAL_LEVELS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}

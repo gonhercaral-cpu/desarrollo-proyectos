@@ -6,9 +6,10 @@ import {
   setDoc,
   writeBatch,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "../../services/firebase";
 import { normalizeElementOrder, normalizeEditorialElement } from "../models/editorialElements";
+import { sanitizeFirestoreData } from "../utils/editorialFirestore";
 import { EDITORIAL_COLLECTIONS } from "./editorialProjectsService";
 
 function requireEditorContext(context) {
@@ -86,11 +87,11 @@ export async function saveEditorialPageElements({ context, elements, persistedId
         return;
       }
 
-      batch.set(elementRef, {
+      batch.set(elementRef, sanitizeFirestoreData({
         ...operation.element,
         updatedByUid: uid,
         updatedAt: serverTimestamp(),
-      }, { merge: true });
+      }), { merge: true });
     });
     await batch.commit();
   }
@@ -140,13 +141,12 @@ export async function uploadEditorialImage({ context, file, user }) {
   const storageRef = ref(storage, storagePath);
   await uploadBytes(storageRef, file, { contentType: file.type });
   const url = await getDownloadURL(storageRef);
+  // Campos de contexto opcionales: se OMITEN si no aplican (nunca `undefined`,
+  // que Firestore rechaza). El modelo trata su ausencia como "no pertenece".
   const asset = {
     id: assetRef.id,
     projectId,
-    documentId,
-    pageId,
-    masterPageId,
-    componentId,
+    documentId: documentId || "",
     contextKind: kind,
     ownerUid: uid,
     name: file.name || "Imagen",
@@ -157,13 +157,27 @@ export async function uploadEditorialImage({ context, file, user }) {
     height: dimensions.height,
     storagePath,
     url,
+    ...(pageId ? { pageId } : {}),
+    ...(masterPageId ? { masterPageId } : {}),
+    ...(componentId ? { componentId } : {}),
   };
 
-  await setDoc(assetRef, {
-    ...asset,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    // Saneamiento defensivo: elimina cualquier `undefined` anidado antes de escribir.
+    await setDoc(assetRef, sanitizeFirestoreData({
+      ...asset,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+  } catch (error) {
+    // Rollback: el archivo se subió pero la metadata falló. Borra el archivo
+    // huérfano para no dejar Storage inconsistente y propaga el error.
+    console.error("Editorial: fallo al guardar metadata de imagen; revirtiendo Storage", error);
+    await deleteObject(storageRef).catch((cleanupError) => {
+      console.error("Editorial: no se pudo revertir el archivo subido", cleanupError);
+    });
+    throw error;
+  }
 
   return asset;
 }

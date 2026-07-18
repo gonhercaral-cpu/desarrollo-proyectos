@@ -47,6 +47,7 @@ import EditorialDesignDialog from "./design/EditorialDesignDialog";
 import EditorialProjectDialog from "./EditorialProjectDialog";
 import EditorialEditorToolbar from "./editor/EditorialEditorToolbar";
 import EditorialMenuBar from "./editor/EditorialMenuBar";
+import { buildEditorialCommands } from "../utils/editorialCommands";
 import EditorialInspectorPanel from "./editor/EditorialInspectorPanel";
 import EditorialWorkspace from "./editor/EditorialWorkspace";
 import EditorialBottomPanel from "./structure/EditorialBottomPanel";
@@ -660,39 +661,34 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
     catch (error) { console.error("Editorial: fallo al agregar imagen", error); }
   }
 
-  const hasSelection = Boolean(resolvedSelectedElement);
-  const canEdit = caps.edit_content;
-  const editorialMenus = [
-    { label: "Archivo", items: [
-      { label: "Configuración del proyecto", onSelect: () => setConfigOpen(true) },
-      { label: "Exportar…", onSelect: () => setExportDialog({}) },
-      { separator: true },
-      { label: "Modo lectura", onSelect: () => setReadViewOpen(true) },
-      { label: "Volver a proyectos", onSelect: handleBack },
-    ] },
-    { label: "Editar", items: [
-      { label: "Deshacer", shortcut: "Ctrl+Z", disabled: !editor.canUndo, onSelect: editor.actions.undo },
-      { label: "Rehacer", shortcut: "Ctrl+Y", disabled: !editor.canRedo, onSelect: editor.actions.redo },
-      { separator: true },
-      { label: "Duplicar", shortcut: "Ctrl+D", disabled: !hasSelection || !canEdit, hint: canEdit ? "Selecciona un elemento" : "Sin permiso de edición", onSelect: editor.actions.duplicate },
-      { label: "Eliminar", shortcut: "Supr", disabled: !hasSelection || !canEdit, hint: canEdit ? "Selecciona un elemento" : "Sin permiso de edición", onSelect: editor.actions.remove },
-    ] },
-    { label: "Ver", items: [
-      { label: "Acercar", onSelect: () => setZoom(zoom + 0.1) },
-      { label: "Alejar", onSelect: () => setZoom(zoom - 0.1) },
-      { label: "Ajustar a ventana", onSelect: () => workspaceRef.current?.fit("page") },
-      { separator: true },
-      { label: viewMode === "facing" ? "Vista individual" : "Vista de pliego", disabled: editorMode.kind !== "page", hint: "Sólo en contexto de página", onSelect: () => setViewMode(viewMode === "facing" ? "single" : "facing") },
-      { label: showRulers ? "Ocultar reglas" : "Mostrar reglas", onSelect: () => setShowRulers((value) => !value) },
-    ] },
-    { label: "Insertar", items: [
-      { label: "Texto", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: editor.actions.addText },
-      { label: "Figura", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: editor.actions.addShape },
-      { label: "Imagen…", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: () => menuFileInputRef.current?.click() },
-      { separator: true },
-      { label: "Índice automático", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: () => setIndexDialogOpen(true) },
-    ] },
-  ];
+  const pickMenuImage = useCallback(() => menuFileInputRef.current?.click(), []);
+  const fitWorkspace = useCallback((mode) => workspaceRef.current?.fit(mode), []);
+
+  // Capa única de comandos: menubar, toolbar y atajos comparten estas acciones.
+  // Los handlers sólo leen refs (input de imagen, workspace) al invocarse por un
+  // evento del usuario, nunca durante el render — seguro.
+  // eslint-disable-next-line react-hooks/refs
+  const editorialMenus = buildEditorialCommands({
+    editor: { actions: editor.actions, canUndo: editor.canUndo, canRedo: editor.canRedo },
+    caps,
+    editorMode,
+    hasSelection: Boolean(resolvedSelectedElement),
+    viewMode,
+    showRulers,
+    handlers: {
+      openConfig: () => setConfigOpen(true),
+      openExport: () => setExportDialog({}),
+      openReadView: () => setReadViewOpen(true),
+      back: handleBack,
+      pickImage: pickMenuImage,
+      openIndex: () => setIndexDialogOpen(true),
+      zoomBy: (delta) => setZoom(zoom + delta),
+      fit: fitWorkspace,
+      toggleSpread: () => setViewMode(viewMode === "facing" ? "single" : "facing"),
+      toggleRulers: () => setShowRulers((value) => !value),
+      reorderLayer: (direction) => resolvedSelectedElement && editor.actions.reorderLayer(resolvedSelectedElement.id, direction),
+    },
+  });
 
   return (
     <div className={`editorial-editor-shell ${leftOpen ? "left-open" : "left-closed"} ${rightOpen ? "right-open" : "right-closed"} ${bottomOpen ? "bottom-open" : "bottom-closed"} context-${editorMode.kind}`}>
