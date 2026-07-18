@@ -690,6 +690,100 @@ export async function addProjectLog({
   }
 }
 
+// Fase 7 — Vincula un documento editorial a un proyecto operativo. Reutiliza el
+// registro de actividad; las métricas se derivan del documento, no se copian.
+export async function linkEditorialDocument({ projectId, editorial, metrics = {}, currentUser }) {
+  const project = await getProjectById(projectId);
+  if (!project) throw new Error("Proyecto no encontrado.");
+  if (!canUpdateProject(project, currentUser)) {
+    throw new Error("No tienes permiso para vincular material a este proyecto.");
+  }
+  const editorialDocumentId = String(editorial?.editorialDocumentId || "");
+  if (!editorialDocumentId) throw new Error("Falta el documento editorial a vincular.");
+
+  const audit = getUserAuditData(currentUser);
+  const existing = Array.isArray(project.editorialLinks) ? project.editorialLinks : [];
+  const links = [
+    ...existing.filter((link) => link?.editorialDocumentId !== editorialDocumentId),
+    {
+      editorialProjectId: String(editorial.editorialProjectId || ""),
+      editorialProjectName: String(editorial.editorialProjectName || ""),
+      editorialDocumentId,
+      editorialDocumentTitle: String(editorial.editorialDocumentTitle || ""),
+      // Métricas derivadas del documento (no duplicadas manualmente); se
+      // refrescan al re-vincular. La fuente de verdad sigue siendo el editor.
+      metrics: {
+        reviewStatus: String(metrics.reviewStatus || ""),
+        pageCount: Number(metrics.pageCount || 0),
+        revision: Number(metrics.revision || 0),
+        preflightErrors: Number(metrics.preflightErrors || 0),
+        latestPublishedRevision: Number(metrics.latestPublishedRevision || 0),
+        isPublished: Boolean(metrics.isPublished),
+      },
+      linkedByUid: audit.uid,
+      linkedByName: audit.name,
+      linkedAt: new Date().toISOString(),
+    },
+  ];
+  const documentIds = Array.from(
+    new Set([...(Array.isArray(project.editorialDocumentIds) ? project.editorialDocumentIds : []), editorialDocumentId])
+  );
+
+  await updateDoc(doc(db, PROJECTS_COLLECTION, projectId), {
+    editorialLinks: links,
+    editorialDocumentIds: documentIds,
+    updatedAt: serverTimestamp(),
+  });
+  await addProjectLog({
+    projectId,
+    type: PROJECT_LOG_TYPES.PROJECT_UPDATED,
+    title: "Material editorial vinculado",
+    description: `Se vinculó el documento editorial "${editorial.editorialDocumentTitle || editorialDocumentId}".`,
+    currentUser,
+    metadata: { activity: "project_linked", editorialProjectId: editorial.editorialProjectId || "", editorialDocumentId },
+  });
+  return links;
+}
+
+export async function unlinkEditorialDocument({ projectId, editorialDocumentId, currentUser }) {
+  const project = await getProjectById(projectId);
+  if (!project) throw new Error("Proyecto no encontrado.");
+  if (!canUpdateProject(project, currentUser)) {
+    throw new Error("No tienes permiso para desvincular material de este proyecto.");
+  }
+  const id = String(editorialDocumentId || "");
+  const existing = Array.isArray(project.editorialLinks) ? project.editorialLinks : [];
+  const links = existing.filter((link) => link?.editorialDocumentId !== id);
+  const documentIds = (Array.isArray(project.editorialDocumentIds) ? project.editorialDocumentIds : []).filter((value) => value !== id);
+
+  await updateDoc(doc(db, PROJECTS_COLLECTION, projectId), {
+    editorialLinks: links,
+    editorialDocumentIds: documentIds,
+    updatedAt: serverTimestamp(),
+  });
+  await addProjectLog({
+    projectId,
+    type: PROJECT_LOG_TYPES.PROJECT_UPDATED,
+    title: "Material editorial desvinculado",
+    description: `Se desvinculó un documento editorial del proyecto.`,
+    currentUser,
+    metadata: { activity: "project_unlinked", editorialDocumentId: id },
+  });
+  return links;
+}
+
+// Proyectos operativos vinculados a un documento editorial (consulta inversa).
+export async function getProjectsLinkedToEditorialDocument(editorialDocumentId) {
+  const id = String(editorialDocumentId || "");
+  if (!id) return [];
+  const linkedQuery = query(
+    collection(db, PROJECTS_COLLECTION),
+    where("editorialDocumentIds", "array-contains", id)
+  );
+  const snapshot = await getDocs(linkedQuery);
+  return snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+}
+
 export async function getProjectLogs(projectId) {
   if (!projectId) {
     return [];

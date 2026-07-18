@@ -90,6 +90,77 @@ export async function getAdminUserIds() {
   return snapshot.docs.map((document) => document.id);
 }
 
+// Fase 7 — Tipos de notificación del Editor Editorial. Reutilizan la misma
+// colección `notifications` y el mismo mecanismo de fan-out; no tocan el flujo
+// de proyectos operativos.
+export const EDITORIAL_NOTIFICATION_TYPES = new Set([
+  "EDITORIAL_ASSIGNED",
+  "EDITORIAL_COMMENT",
+  "EDITORIAL_CORRECTIONS",
+  "EDITORIAL_APPROVED",
+  "EDITORIAL_PUBLISHED",
+  "EDITORIAL_UNPUBLISHED",
+  "EDITORIAL_PRINT_REQUESTED",
+  "EDITORIAL_PERMISSIONS_CHANGED",
+]);
+
+// Notificaciones editoriales. Reutiliza collectProjectRecipients (el proyecto
+// editorial usa collaboratorUids/ownerUid) y getAdminUserIds. Deduplica por
+// destinatario dentro del evento y guarda dedupeKey + enlace al contexto.
+export async function createEditorialEventNotifications({
+  project,
+  documentId = "",
+  type,
+  title,
+  message,
+  actorUid,
+  actorName,
+  actorIsAdmin = false,
+  extraRecipientUids = [],
+  dedupeKey = "",
+  link = "",
+}) {
+  if (!project?.id || !EDITORIAL_NOTIFICATION_TYPES.has(type)) {
+    return;
+  }
+
+  const recipients = collectProjectRecipients(project);
+  Object.keys(project.editorialPermissions?.users || {}).forEach((uid) => addUidsToSet(recipients, uid));
+  (Array.isArray(extraRecipientUids) ? extraRecipientUids : []).forEach((uid) => addUidsToSet(recipients, uid));
+
+  if (!actorIsAdmin) {
+    const adminIds = await getAdminUserIds();
+    adminIds.forEach((id) => recipients.add(id));
+  }
+
+  recipients.delete(actorUid);
+
+  if (recipients.size === 0) {
+    return;
+  }
+
+  const notificationsRef = collection(db, NOTIFICATIONS_COLLECTION);
+
+  await Promise.all(
+    Array.from(recipients).map((recipientId) =>
+      addDoc(notificationsRef, {
+        recipientId,
+        editorialProjectId: project.id,
+        editorialDocumentId: documentId || "",
+        link: link || "",
+        dedupeKey: dedupeKey || "",
+        tipo: type,
+        titulo: title || "Actualización editorial",
+        mensaje: message || "",
+        actorId: actorUid || "",
+        actorName: actorName || "Usuario",
+        read: false,
+        createdAt: serverTimestamp(),
+      })
+    )
+  );
+}
+
 export async function createProjectEventNotifications({
   project,
   type,

@@ -61,6 +61,22 @@ service firebase.storage {
         );
     }
 
+    // Fase 7 — Escrituras en Storage editorial (exportaciones/versiones) exigen
+    // capacidad de edición: viewer/commenter bloqueados. Sin nivel explícito =
+    // permitido (compatibilidad con Fases 1–6).
+    function editorialStorageUserLevel(projectId) {
+      return editorialProjectData(projectId).get("editorialPermissions", {}).get("users", {}).get(request.auth.uid, "");
+    }
+
+    function canWriteEditorialStorage(projectId) {
+      return canAccessEditorialProject(projectId)
+        && (
+          isAdmin()
+          || editorialProjectData(projectId).ownerUid == request.auth.uid
+          || (editorialStorageUserLevel(projectId) != "viewer" && editorialStorageUserLevel(projectId) != "commenter")
+        );
+    }
+
     function editorialTemplatePath(templateId) {
       return /databases/(default)/documents/editorialTemplates/$(templateId);
     }
@@ -714,7 +730,7 @@ service firebase.storage {
     match /editorial/{projectId}/{category}/{userUid}/{fileName} {
       allow read: if canAccessEditorialProject(projectId);
 
-      allow create, update: if canAccessEditorialProject(projectId)
+      allow create, update: if canWriteEditorialStorage(projectId)
         && (isAdmin() || request.auth.uid == userUid)
         && category in ["images", "covers", "resources", "exports", "versions"]
         && request.resource.size < 250 * 1024 * 1024

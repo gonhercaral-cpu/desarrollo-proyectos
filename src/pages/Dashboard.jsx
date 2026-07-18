@@ -6513,6 +6513,11 @@ function NotificationsCenter({
       console.error("No se pudo marcar la notificación como leída:", error);
     }
 
+    if (notification.type === "editorial") {
+      window.location.assign(notification.editorialLink || `/editorial/${notification.editorialProjectId || ""}`);
+      return;
+    }
+
     if (notification.type === "project" && notification.projectId) {
       onOpenProject?.(notification.projectId);
       return;
@@ -6735,7 +6740,9 @@ function TopProfileBar({
       console.error("No se pudo marcar la notificación como leída:", error);
     }
 
-    if (notification.type === "project" && notification.projectId) {
+    if (notification.type === "editorial") {
+      window.location.assign(notification.editorialLink || `/editorial/${notification.editorialProjectId || ""}`);
+    } else if (notification.type === "project" && notification.projectId) {
       onOpenProject?.(notification.projectId);
     } else if (notification.route) {
       onOpenModule?.(notification.route);
@@ -7347,16 +7354,21 @@ function buildRealDashboardNotifications({
 
   const projectEventNotifications = projectNotifications.map((notification) => {
     const visual = getNotificationVisual(notification.tipo);
+    // Fase 7 — Las notificaciones editoriales viven en la misma colección; se
+    // enrutan al Editor Editorial (no al detalle de proyecto operativo).
+    const isEditorial = Boolean(notification.editorialProjectId);
 
     return {
-      key: `project-${notification.id}`,
-      type: "project",
+      key: `${isEditorial ? "editorial" : "project"}-${notification.id}`,
+      type: isEditorial ? "editorial" : "project",
       group: "project",
       id: notification.id,
       projectId: notification.projectId,
+      editorialProjectId: notification.editorialProjectId || "",
+      editorialLink: notification.link || "",
       tone: visual.tone,
       icon: visual.icon,
-      title: notification.titulo || "Actualización de proyecto",
+      title: notification.titulo || (isEditorial ? "Actualización editorial" : "Actualización de proyecto"),
       detail: `${notification.actorName || "Un colaborador"}: ${truncateNotificationText(notification.mensaje || "", 90)}`,
       time: formatNotificationTime(notification.createdAt),
       dateValue: notification.createdAt,

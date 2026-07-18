@@ -83,6 +83,45 @@ service cloud.firestore {
         && getAfter(editorialProjectPath(projectId)).data.ownerUid == request.auth.uid;
     }
 
+    // Fase 7 — Permisos editoriales por usuario (mínimo privilegio). El nivel
+    // explícito puede degradar a viewer/commenter aunque sea colaborador. Los
+    // niveles por departamento no se evalúan aquí (limitación de reglas); el
+    // control fino de departamento vive en la capa de servicios/UI.
+    function editorialUserLevel(projectId) {
+      return editorialProjectData(projectId).get("editorialPermissions", {}).get("users", {}).get(request.auth.uid, "");
+    }
+
+    function isEditorialOwnerOrAdmin(projectId) {
+      return isAdmin() || (hasProfile() && editorialProjectData(projectId).ownerUid == request.auth.uid);
+    }
+
+    // Edición de contenido: colaborador con acceso y cuyo nivel explícito no sea
+    // viewer ni commenter (sin nivel explícito = editor de contenido por
+    // compatibilidad con Fases 1–6).
+    function canEditEditorialContent(projectId) {
+      return canEditEditorialProject(projectId)
+        && (
+          isEditorialOwnerOrAdmin(projectId)
+          || (editorialUserLevel(projectId) != "viewer" && editorialUserLevel(projectId) != "commenter")
+        );
+    }
+
+    // Comentarios: viewer bloqueado; commenter y superiores permitidos.
+    function canCommentEditorial(projectId) {
+      return canEditEditorialProject(projectId)
+        && (isEditorialOwnerOrAdmin(projectId) || editorialUserLevel(projectId) != "viewer");
+    }
+
+    // Publicar/despublicar/archivar: publisher, manager, propietario o admin.
+    function canPublishEditorial(projectId) {
+      return canAccessEditorialProject(projectId)
+        && (
+          isEditorialOwnerOrAdmin(projectId)
+          || editorialUserLevel(projectId) == "publisher"
+          || editorialUserLevel(projectId) == "manager"
+        );
+    }
+
     function editorialTemplatePath(templateId) {
       return /databases/$(database)/documents/editorialTemplates/$(templateId);
     }
@@ -3855,71 +3894,80 @@ service cloud.firestore {
       match /documents/{documentId} {
         allow read: if canAccessEditorialProject(projectId);
         allow create: if canCreateEditorialProjectChild(projectId);
-        allow update, delete: if canEditEditorialProject(projectId);
+        allow update, delete: if canEditEditorialContent(projectId);
 
         match /sections/{sectionId} {
           allow read: if canAccessEditorialProject(projectId);
           allow create: if canCreateEditorialProjectChild(projectId)
-            || canEditEditorialProject(projectId);
-          allow update, delete: if canEditEditorialProject(projectId);
+            || canEditEditorialContent(projectId);
+          allow update, delete: if canEditEditorialContent(projectId);
         }
 
         match /pages/{pageId} {
           allow read: if canAccessEditorialProject(projectId);
           allow create: if canCreateEditorialProjectChild(projectId)
-            || canEditEditorialProject(projectId);
-          allow update, delete: if canEditEditorialProject(projectId);
+            || canEditEditorialContent(projectId);
+          allow update, delete: if canEditEditorialContent(projectId);
 
           match /elements/{elementId} {
             allow read: if canAccessEditorialProject(projectId);
-            allow create, update, delete: if canEditEditorialProject(projectId);
+            allow create, update, delete: if canEditEditorialContent(projectId);
           }
         }
 
         match /masterPages/{masterPageId} {
           allow read: if canAccessEditorialProject(projectId);
-          allow create, update, delete: if canEditEditorialProject(projectId);
+          allow create, update, delete: if canEditEditorialContent(projectId);
 
           match /elements/{elementId} {
             allow read: if canAccessEditorialProject(projectId);
-            allow create, update, delete: if canEditEditorialProject(projectId);
+            allow create, update, delete: if canEditEditorialContent(projectId);
           }
         }
 
         match /comments/{commentId} {
           allow read: if canAccessEditorialProject(projectId);
-          allow create, update, delete: if canEditEditorialProject(projectId);
+          allow create, update, delete: if canCommentEditorial(projectId);
         }
 
         match /versions/{versionId} {
           allow read: if canAccessEditorialProject(projectId);
-          allow create, update, delete: if canEditEditorialProject(projectId);
+          allow create, update, delete: if canEditEditorialContent(projectId);
         }
 
         match /exports/{exportId} {
           allow read: if canAccessEditorialProject(projectId);
-          allow create, update, delete: if canEditEditorialProject(projectId);
+          allow create, update, delete: if canEditEditorialContent(projectId);
+        }
+
+        // Fase 7 — Publicaciones editoriales inmutables. Publicar/actualizar
+        // estado requiere capacidad de publicación. No se permite delete: las
+        // publicaciones se archivan, conservando historial y dependencias.
+        match /publications/{publicationId} {
+          allow read: if canAccessEditorialProject(projectId);
+          allow create, update: if canPublishEditorial(projectId);
+          allow delete: if false;
         }
       }
 
       match /components/{componentId} {
         allow read: if canAccessEditorialProject(projectId);
-        allow create, update, delete: if canEditEditorialProject(projectId);
+        allow create, update, delete: if canEditEditorialContent(projectId);
 
         match /elements/{elementId} {
           allow read: if canAccessEditorialProject(projectId);
-          allow create, update, delete: if canEditEditorialProject(projectId);
+          allow create, update, delete: if canEditEditorialContent(projectId);
         }
       }
 
       match /styles/{styleId} {
         allow read: if canAccessEditorialProject(projectId);
-        allow create, update, delete: if canEditEditorialProject(projectId);
+        allow create, update, delete: if canEditEditorialContent(projectId);
       }
 
       match /variables/{variableId} {
         allow read: if canAccessEditorialProject(projectId);
-        allow create, update, delete: if canEditEditorialProject(projectId);
+        allow create, update, delete: if canEditEditorialContent(projectId);
       }
     }
 

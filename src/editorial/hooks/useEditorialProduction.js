@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getActiveUsers } from "../../services/usersService";
+import { createEditorialEventNotifications } from "../../services/notificationsService";
+import { buildDedupeKey, buildEditorialLink } from "../utils/editorialNotifications";
 import { normalizeReviewState, reviewProgress } from "../models/editorialProduction";
 import { hasBlockingPreflight, runEditorialPreflight, summarizePreflight } from "../utils/editorialPreflight";
 import { deleteEditorialExport, runEditorialExport, subscribeEditorialExports } from "../services/editorialExportsService";
@@ -7,7 +9,12 @@ import { createEditorialComment, setEditorialCommentStatus, subscribeEditorialRe
 import { loadEditorialDocumentSnapshot } from "../services/editorialSnapshotService";
 import { compareEditorialVersion, createEditorialVersion, deleteEditorialVersion, restoreEditorialVersion, subscribeEditorialVersions } from "../services/editorialVersionsService";
 
-export function useEditorialProduction({ projectId, documentId, pages, user }) {
+const REVIEW_NOTIFICATION = {
+  approved: { type: "EDITORIAL_APPROVED", title: "Documento aprobado", message: "El documento fue aprobado." },
+  corrections_requested: { type: "EDITORIAL_CORRECTIONS", title: "Correcciones solicitadas", message: "Se solicitaron correcciones." },
+};
+
+export function useEditorialProduction({ projectId, documentId, pages, user, project, versionGuard, exportGuard }) {
   const [reviewState, setReviewState] = useState(normalizeReviewState());
   const [comments, setComments] = useState([]);
   const [versions, setVersions] = useState([]);
@@ -36,7 +43,22 @@ export function useEditorialProduction({ projectId, documentId, pages, user }) {
     finally { setBusy(false); }
   }, []);
 
-  const saveReview = useCallback((changes) => run(() => updateEditorialReviewState({ projectId, documentId, changes: { ...reviewState, ...changes }, user })), [documentId, projectId, reviewState, run, user]);
+  const saveReview = useCallback((changes) => run(async () => {
+    const result = await updateEditorialReviewState({ projectId, documentId, changes: { ...reviewState, ...changes }, user });
+    // Notifica sólo cambios de estado importantes (no cada checklist ni Konva).
+    const nextStatus = changes.status;
+    if (nextStatus && nextStatus !== reviewState.status && REVIEW_NOTIFICATION[nextStatus] && project?.id) {
+      const meta = REVIEW_NOTIFICATION[nextStatus];
+      createEditorialEventNotifications({
+        project, documentId, type: meta.type, title: meta.title, message: meta.message,
+        actorUid: String(user?.uid || user?.id || ""), actorName: String(user?.name || user?.email || "Usuario"),
+        actorIsAdmin: String(user?.role || "").toLowerCase() === "admin",
+        dedupeKey: buildDedupeKey({ type: meta.type, editorialProjectId: project.id, editorialDocumentId: documentId, targetId: nextStatus }),
+        link: buildEditorialLink({ editorialProjectId: project.id, editorialDocumentId: documentId }),
+      }).catch(() => {});
+    }
+    return result;
+  }), [documentId, project, projectId, reviewState, run, user]);
   const loadPreflight = useCallback(async () => {
     const snapshot = await loadEditorialDocumentSnapshot({ projectId, documentId });
     const results = runEditorialPreflight(snapshot);
@@ -50,7 +72,11 @@ export function useEditorialProduction({ projectId, documentId, pages, user }) {
   const createVersion = useCallback((values) => run(() => createEditorialVersion({ projectId, documentId, ...values, user })), [documentId, projectId, run, user]);
   const compareVersion = useCallback((versionId) => run(() => compareEditorialVersion({ projectId, documentId, versionId })), [documentId, projectId, run]);
   const restoreVersion = useCallback((versionId) => run(() => restoreEditorialVersion({ projectId, documentId, versionId, user })), [documentId, projectId, run, user]);
-  const removeVersion = useCallback((version) => run(() => deleteEditorialVersion({ projectId, documentId, version })), [documentId, projectId, run]);
+  const removeVersion = useCallback((version) => run(() => {
+    const guard = versionGuard?.(version.id);
+    if (guard && !guard.allowed) throw new Error("La versión está usada por una publicación y no puede eliminarse.");
+    return deleteEditorialVersion({ projectId, documentId, version });
+  }), [documentId, projectId, run, versionGuard]);
   const exportDocument = useCallback((settings) => run(async () => {
     const { snapshot, results } = await loadPreflight();
     if (settings.type === "print" && hasBlockingPreflight(results)) throw new Error("Preflight contiene errores críticos. PDF de imprenta bloqueado.");
@@ -69,7 +95,11 @@ export function useEditorialProduction({ projectId, documentId, pages, user }) {
       createComment: (pageId, elementId, message) => run(() => createEditorialComment({ projectId, documentId, pageId, elementId, message, user })),
       setCommentStatus: (commentId, status) => run(() => setEditorialCommentStatus({ projectId, documentId, commentId, status, user })),
       createVersion, compareVersion, restoreVersion, removeVersion, exportDocument,
-      removeExport: (item) => run(() => deleteEditorialExport({ projectId, documentId, item })),
+      removeExport: (item) => run(() => {
+        const guard = exportGuard?.(item.id);
+        if (guard && !guard.allowed) throw new Error("La exportación está usada por una publicación y no puede eliminarse.");
+        return deleteEditorialExport({ projectId, documentId, item });
+      }),
       cancelExport: () => abortRef.current?.abort(),
     },
   };

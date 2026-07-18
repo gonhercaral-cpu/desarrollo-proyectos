@@ -235,6 +235,34 @@ export async function updateEditorialProject(projectId, changes, user) {
   });
 }
 
+// Fase 7 — Permisos editoriales por usuario y departamento. Escritura sólo por
+// propietario o admin (Firestore Rules). No modifica roles globales. Notifica el
+// cambio (actividad: permission_changed).
+export async function updateEditorialPermissions({ projectId, project, permissions, user }) {
+  const safe = {
+    users: { ...(permissions?.users || {}) },
+    departments: { ...(permissions?.departments || {}) },
+  };
+  await updateEditorialProject(projectId, { editorialPermissions: safe }, user);
+  try {
+    const mod = await import("../../services/notificationsService");
+    await mod.createEditorialEventNotifications({
+      project: { ...(project || {}), id: projectId, editorialPermissions: safe },
+      type: "EDITORIAL_PERMISSIONS_CHANGED",
+      title: "Permisos editoriales actualizados",
+      message: "Se actualizaron los permisos del documento editorial.",
+      actorUid: String(user?.uid || user?.id || ""),
+      actorName: String(user?.name || user?.email || "Usuario"),
+      actorIsAdmin: String(user?.role || "").toLowerCase() === "admin",
+      dedupeKey: `EDITORIAL_PERMISSIONS_CHANGED:${projectId}:${Date.now()}`,
+      link: `/editorial/${projectId}`,
+    });
+  } catch (error) {
+    console.warn("No se pudo notificar el cambio de permisos:", error);
+  }
+  return safe;
+}
+
 export async function renameEditorialProject(projectId, name, user) {
   const nextName = String(name || "").trim();
 

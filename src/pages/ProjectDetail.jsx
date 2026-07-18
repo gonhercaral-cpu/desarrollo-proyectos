@@ -19,6 +19,7 @@ import {
   addProjectLog,
   getProjectLogs,
   updateEvidenceReviewStatus,
+  unlinkEditorialDocument,
   PROJECT_LOG_TYPES,
 } from "../services/projectsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
@@ -1282,6 +1283,50 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               </p>
             </div>
           </section>
+
+          {Array.isArray(project.editorialLinks) && project.editorialLinks.length > 0 && (
+            <section className="visual-card project-editorial-links-card">
+              <SectionTitle icon={<SvgIcon name="description" />} title="Material editorial vinculado" color="blue" />
+              <div className="project-editorial-links">
+                {project.editorialLinks.map((link) => (
+                  <article className="project-editorial-link" key={link.editorialDocumentId}>
+                    <div>
+                      <strong>{link.editorialDocumentTitle || link.editorialProjectName || "Documento editorial"}</strong>
+                      <small>
+                        {link.metrics
+                          ? `Estado: ${link.metrics.reviewStatus || "—"} · ${link.metrics.pageCount || 0} págs · v${link.metrics.revision || 0}`
+                            + ` · Preflight: ${link.metrics.preflightErrors || 0}`
+                            + ` · ${link.metrics.isPublished ? `Publicado rev. ${link.metrics.latestPublishedRevision || 0}` : "Sin publicar"}`
+                          : "Sin métricas registradas."}
+                      </small>
+                    </div>
+                    <div className="project-editorial-link-actions">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => window.location.assign(`/editorial/${link.editorialProjectId}`)}
+                      >
+                        Abrir editor
+                      </button>
+                      {(isAdmin || project.ownerUid === firebaseUser?.uid || project.assignedToUid === firebaseUser?.uid) && (
+                        <button
+                          type="button"
+                          className="ghost-button danger"
+                          onClick={() => {
+                            unlinkEditorialDocument({ projectId: project.id, editorialDocumentId: link.editorialDocumentId, currentUser: { ...profile, uid: firebaseUser?.uid } })
+                              .then(() => setProject((current) => ({ ...current, editorialLinks: normalizeArray(current?.editorialLinks).filter((item) => item.editorialDocumentId !== link.editorialDocumentId) })))
+                              .catch(() => {});
+                          }}
+                        >
+                          Desvincular
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="visual-card project-documents-card">
             <div className="project-documents-header">

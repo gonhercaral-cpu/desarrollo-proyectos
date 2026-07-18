@@ -205,6 +205,21 @@ async function seedBaseData() {
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       }),
+      setDoc(doc(db, "editorialProjects", "editorial-perms"), {
+        name: "Libro con permisos",
+        type: "book",
+        size: "8x10",
+        orientation: "portrait",
+        margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+        bleedIn: 0.125,
+        ownerUid: "requester",
+        collaboratorUids: ["collab", "deptmember", "tech"],
+        editorialPermissions: { users: { collab: "publisher", deptmember: "viewer", tech: "content_editor" } },
+        archived: false,
+        status: "active",
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      }),
       setDoc(doc(db, "publicCertificatePeople", "requester-requester"), {
         sourceId: "requester",
         name: "Requester",
@@ -1455,6 +1470,41 @@ describe("editor editorial", () => {
       style: {},
     }));
     await assertFails(getDoc(doc(auth("outsider"), "editorialProjects", "editorial-owned", "documents", "doc-1", "pages", "page-1")));
+  });
+
+  it("Fase 7: publicar requiere capacidad publisher/manager/propietario/admin", async () => {
+    const publication = {
+      documentId: "doc-1",
+      status: "published",
+      revision: 1,
+      variant: "student",
+      versionId: "v1",
+      versionStoragePath: "editorial/editorial-perms/versions/collab/doc-1-v1.json",
+      pageCount: 4,
+      exports: [{ exportId: "e1", storagePath: "editorial/editorial-perms/exports/collab/e1.pdf", downloadUrl: "https://x/e1.pdf" }],
+      publishedByUid: "collab",
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+    const pubPath = ["editorialProjects", "editorial-perms", "documents", "doc-1", "publications", "pub-1"];
+    // publisher y propietario pueden publicar
+    await assertSucceeds(setDoc(doc(auth("collab"), ...pubPath), publication));
+    await assertSucceeds(setDoc(doc(auth("requester"), ...pubPath), { ...publication, publishedByUid: "requester" }));
+    // viewer y content_editor NO pueden publicar
+    await assertFails(setDoc(doc(auth("deptmember"), ...pubPath), { ...publication, publishedByUid: "deptmember" }));
+    await assertFails(setDoc(doc(auth("tech"), ...pubPath), { ...publication, publishedByUid: "tech" }));
+    // lectura permitida a cualquier miembro; delete bloqueado (inmutable)
+    await assertSucceeds(getDoc(doc(auth("deptmember"), ...pubPath)));
+    await assertFails(deleteDoc(doc(auth("collab"), ...pubPath)));
+  });
+
+  it("Fase 7: viewer no puede escribir contenido; content_editor sí", async () => {
+    const viewerPage = doc(auth("deptmember"), "editorialProjects", "editorial-perms", "documents", "doc-1", "pages", "vp-1");
+    const editorPage = doc(auth("tech"), "editorialProjects", "editorial-perms", "documents", "doc-1", "pages", "ep-1");
+    await assertFails(setDoc(viewerPage, { name: "P", number: 1, position: 0 }));
+    await assertSucceeds(setDoc(editorPage, { name: "P", number: 1, position: 0 }));
+    // viewer puede leer y descargar (lectura permitida)
+    await assertSucceeds(getDoc(doc(auth("deptmember"), "editorialProjects", "editorial-perms")));
   });
 
   it("protege secciones editoriales por membresía del proyecto", async () => {
