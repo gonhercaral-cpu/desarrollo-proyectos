@@ -7,6 +7,15 @@ import { getEditorialDocumentRef } from "./editorialPagesService";
 import { loadEditorialDocumentSnapshot } from "./editorialSnapshotService";
 
 function exportsRef(projectId, documentId) { return collection(getEditorialDocumentRef(projectId, documentId), "exports"); }
+
+// Resuelve una URL descargable: usa downloadUrl si existe; si no, la deriva del
+// storagePath vía getDownloadURL. Lanza si no hay ninguno.
+export async function resolveEditorialDownloadUrl({ downloadUrl, downloadURL, storagePath } = {}) {
+  const direct = downloadUrl || downloadURL;
+  if (direct) return direct;
+  if (storagePath) return getDownloadURL(ref(storage, storagePath));
+  throw new Error("La exportación no tiene archivo descargable.");
+}
 function safeName(value) { return String(value || "documento").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "documento"; }
 
 export function subscribeEditorialExports({ projectId, documentId, onChange, onError }) {

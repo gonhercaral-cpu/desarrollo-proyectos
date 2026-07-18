@@ -81,3 +81,27 @@
 .editorial-readview-controls { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 8px; border-top: 1px solid var(--editorial-border); }
 .editorial-readview-download { display: grid; gap: 4px; margin-bottom: 8px; }
 @media (max-width: 960px) { .editorial-readview-body { grid-template-columns: 1fr; } .editorial-readview-index,.editorial-readview-meta { display: none; } }
+
+/* Estabilización — selector de proyectos buscable */
+.editorial-project-picker { display: grid; gap: 7px; padding: 9px; border: 1px solid var(--editorial-border); border-radius: 6px; background: var(--editorial-panel); margin-bottom: 10px; }
+.editorial-project-picker > h4 { margin: 0; font-size: 12px; }
+.editorial-project-picker input[type="search"] { width: 100%; padding: 7px 9px; border: 1px solid var(--editorial-border); border-radius: 5px; background: var(--editorial-bg); color: var(--editorial-text); font-size: 12px; }
+.editorial-project-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; max-height: 220px; overflow: auto; }
+.editorial-project-options > li { display: block; }
+.editorial-project-options > li > button { width: 100%; display: grid; gap: 2px; text-align: left; padding: 7px 9px; border: 1px solid transparent; border-radius: 5px; background: var(--editorial-bg); color: var(--editorial-text); cursor: pointer; }
+.editorial-project-options > li > button:hover { background: var(--editorial-soft); }
+.editorial-project-options > li > button.selected { border-color: var(--editorial-accent); background: var(--editorial-soft); }
+.editorial-project-options > li > button strong { font-size: 12px; }
+.editorial-project-options > li > button small { color: var(--editorial-muted); font-size: 10px; }
+.editorial-project-options > li > button:focus-visible { outline: 2px solid var(--editorial-accent); outline-offset: 1px; }
+.editorial-project-picker-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* Descargas prominentes */
+.editorial-pub-downloads { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
+.editorial-pub-downloads .editorial-button.primary.compact { padding: 5px 10px; font-size: 11px; }
+
+/* Toast de descarga */
+.editorial-download-toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 80; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 8px; font-size: 12px; box-shadow: 0 10px 30px rgba(15,23,42,.22); background: var(--editorial-panel); color: var(--editorial-text); border: 1px solid var(--editorial-border); }
+.editorial-download-toast.error { border-color: #c83e4d; color: #c83e4d; }
+.editorial-download-toast.success { border-color: #12834b; color: #12834b; }
+.editorial-download-toast button { border: 0; background: transparent; color: inherit; font-size: 15px; cursor: pointer; line-height: 1; }

@@ -609,3 +609,16 @@ button.editorial-tree-row { cursor: pointer; }
 
 .editorial-editor-state strong { color: var(--editorial-text); }
 .editorial-editor-state p { margin: 0; color: var(--editorial-muted); }
+
+/* Estabilización — barra de menús funcional (dropdowns) */
+.editorial-editor-menubar { gap: 2px; position: relative; z-index: 30; }
+.editorial-menu { position: relative; }
+.editorial-menu > button { border: 0; background: transparent; color: var(--editorial-text); font-size: 11px; padding: 5px 9px; border-radius: 5px; cursor: pointer; }
+.editorial-menu > button:hover,.editorial-menu.open > button { background: var(--editorial-soft); }
+.editorial-menu > button:focus-visible { outline: 2px solid var(--editorial-accent); outline-offset: 1px; }
+.editorial-menu-dropdown { position: absolute; top: 100%; left: 0; min-width: 210px; display: grid; gap: 1px; padding: 5px; margin-top: 3px; background: var(--editorial-panel); border: 1px solid var(--editorial-border); border-radius: 8px; box-shadow: 0 12px 30px rgba(15,23,42,.18); z-index: 40; }
+.editorial-menu-dropdown button { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 0; background: transparent; color: var(--editorial-text); font-size: 12px; padding: 7px 9px; border-radius: 5px; text-align: left; cursor: pointer; }
+.editorial-menu-dropdown button:hover:not(:disabled) { background: var(--editorial-soft); }
+.editorial-menu-dropdown button:disabled { color: var(--editorial-muted); cursor: not-allowed; opacity: .6; }
+.editorial-menu-dropdown button kbd { font-size: 9px; color: var(--editorial-muted); background: var(--editorial-soft); border-radius: 3px; padding: 1px 5px; }
+.editorial-menu-separator { height: 1px; background: var(--editorial-border); margin: 3px 2px; }

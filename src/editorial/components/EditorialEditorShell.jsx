@@ -35,7 +35,8 @@ import { resolveAcademicViewElements } from "../utils/editorialAcademicVisibilit
 import { validateAcademicElements, validateAcademicLink } from "../utils/editorialAcademicValidation";
 import { normalizeAcademicMetadata } from "../models/editorialAcademic";
 import { createAutomaticIndexElement, isAutomaticIndexStale, refreshAutomaticIndexElement, resolveAutomaticIndexElement } from "../utils/editorialAutomaticIndex";
-import { downloadEditorialBlob } from "../services/editorialExportsService";
+import { downloadEditorialBlob, resolveEditorialDownloadUrl } from "../services/editorialExportsService";
+import { resolveDownloadTarget } from "../utils/editorialDownloads";
 import EditorialIcon from "./EditorialIcon";
 import EditorialAcademicMetadataDialog from "./academic/EditorialAcademicMetadataDialog";
 import EditorialExerciseDialog from "./academic/EditorialExerciseDialog";
@@ -45,6 +46,7 @@ import EditorialExportDialog from "./production/EditorialExportDialog";
 import EditorialDesignDialog from "./design/EditorialDesignDialog";
 import EditorialProjectDialog from "./EditorialProjectDialog";
 import EditorialEditorToolbar from "./editor/EditorialEditorToolbar";
+import EditorialMenuBar from "./editor/EditorialMenuBar";
 import EditorialInspectorPanel from "./editor/EditorialInspectorPanel";
 import EditorialWorkspace from "./editor/EditorialWorkspace";
 import EditorialBottomPanel from "./structure/EditorialBottomPanel";
@@ -123,6 +125,7 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
   const [integrationsBusy, setIntegrationsBusy] = useState(false);
   const [integrationsError, setIntegrationsError] = useState("");
   const [readViewOpen, setReadViewOpen] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [permissionsError, setPermissionsError] = useState("");
@@ -189,6 +192,7 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
   }
 
   const workspaceRef = useRef(null);
+  const menuFileInputRef = useRef(null);
   const [activeRail, setActiveRail] = useState("books");
   const [activeInspector, setActiveInspector] = useState("Propiedades");
   const [leftOpen, setLeftOpen] = useState(true);
@@ -315,9 +319,22 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
     } catch { /* error visible in production panel */ }
   }
 
-  function downloadStoredExport(item) {
-    if (!item.downloadUrl) return;
-    const anchor = document.createElement("a"); anchor.href = item.downloadUrl; anchor.download = ""; anchor.target = "_blank"; anchor.rel = "noreferrer"; anchor.click();
+  async function downloadStoredExport(item) {
+    if (!caps.download) { setDownloadNotice({ type: "error", text: "No tienes permiso para descargar." }); return; }
+    const target = resolveDownloadTarget(item, { projectName: project.name });
+    if (!target) { setDownloadNotice({ type: "error", text: "Esta exportación no tiene archivo descargable." }); return; }
+    setDownloadNotice({ type: "loading", text: "Preparando descarga…" });
+    try {
+      const url = await resolveEditorialDownloadUrl(item);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = target.name; anchor.target = "_blank"; anchor.rel = "noreferrer";
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      setDownloadNotice({ type: "success", text: "Descarga iniciada." });
+      setTimeout(() => setDownloadNotice(null), 2500);
+    } catch (error) {
+      console.error("Editorial: fallo al descargar exportación", error);
+      setDownloadNotice({ type: "error", text: error.message || "No fue posible descargar el archivo." });
+    }
   }
 
   function handlePublish(payload) {
@@ -635,6 +652,48 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
   const contextLabel = editorMode.kind === "master" ? `Maestra · ${activeMaster?.name || "Cargando"}` : editorMode.kind === "component" ? `Componente · ${activeComponent?.name || "Cargando"}` : `Página · ${activePage?.name || ""}`;
   const displayEditor = { ...editor, elements: resolvedElements, selectedElement: resolvedSelectedElement, selectedElements: resolvedSelectedElements, mode: editorMode, section: activeSection };
 
+  async function handleMenuImage(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try { await editor.actions.addImageFile(file); }
+    catch (error) { console.error("Editorial: fallo al agregar imagen", error); }
+  }
+
+  const hasSelection = Boolean(resolvedSelectedElement);
+  const canEdit = caps.edit_content;
+  const editorialMenus = [
+    { label: "Archivo", items: [
+      { label: "Configuración del proyecto", onSelect: () => setConfigOpen(true) },
+      { label: "Exportar…", onSelect: () => setExportDialog({}) },
+      { separator: true },
+      { label: "Modo lectura", onSelect: () => setReadViewOpen(true) },
+      { label: "Volver a proyectos", onSelect: handleBack },
+    ] },
+    { label: "Editar", items: [
+      { label: "Deshacer", shortcut: "Ctrl+Z", disabled: !editor.canUndo, onSelect: editor.actions.undo },
+      { label: "Rehacer", shortcut: "Ctrl+Y", disabled: !editor.canRedo, onSelect: editor.actions.redo },
+      { separator: true },
+      { label: "Duplicar", shortcut: "Ctrl+D", disabled: !hasSelection || !canEdit, hint: canEdit ? "Selecciona un elemento" : "Sin permiso de edición", onSelect: editor.actions.duplicate },
+      { label: "Eliminar", shortcut: "Supr", disabled: !hasSelection || !canEdit, hint: canEdit ? "Selecciona un elemento" : "Sin permiso de edición", onSelect: editor.actions.remove },
+    ] },
+    { label: "Ver", items: [
+      { label: "Acercar", onSelect: () => setZoom(zoom + 0.1) },
+      { label: "Alejar", onSelect: () => setZoom(zoom - 0.1) },
+      { label: "Ajustar a ventana", onSelect: () => workspaceRef.current?.fit("page") },
+      { separator: true },
+      { label: viewMode === "facing" ? "Vista individual" : "Vista de pliego", disabled: editorMode.kind !== "page", hint: "Sólo en contexto de página", onSelect: () => setViewMode(viewMode === "facing" ? "single" : "facing") },
+      { label: showRulers ? "Ocultar reglas" : "Mostrar reglas", onSelect: () => setShowRulers((value) => !value) },
+    ] },
+    { label: "Insertar", items: [
+      { label: "Texto", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: editor.actions.addText },
+      { label: "Figura", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: editor.actions.addShape },
+      { label: "Imagen…", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: () => menuFileInputRef.current?.click() },
+      { separator: true },
+      { label: "Índice automático", disabled: !canEdit, hint: "Sin permiso de edición", onSelect: () => setIndexDialogOpen(true) },
+    ] },
+  ];
+
   return (
     <div className={`editorial-editor-shell ${leftOpen ? "left-open" : "left-closed"} ${rightOpen ? "right-open" : "right-closed"} ${bottomOpen ? "bottom-open" : "bottom-closed"} context-${editorMode.kind}`}>
       <header className="editorial-editor-topbar">
@@ -642,7 +701,9 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
         <div className="editorial-editor-breadcrumb"><span>{getProjectTypeLabel(project.type)}</span><EditorialIcon name="chevron" size={13} /><strong>{project.name}</strong><EditorialIcon name="chevron" size={13} /><span className={`editorial-context-badge ${editorMode.kind}`}>{contextLabel}</span><b>{editorMode.kind === "page" ? navigation.numbering.get(activePage?.id)?.label || "Sin número" : "Edición aislada"}</b></div>
         <div className="editorial-editor-top-actions"><div className="editorial-variant-toggle" aria-label="Vista académica"><button type="button" className={variantState.variant === "student" ? "active" : ""} onClick={() => variantState.changeVariant("student", editor.selectedElement, () => editor.select(""))}>Alumno</button><button type="button" className={variantState.variant === "teacher" ? "active" : ""} onClick={() => variantState.changeVariant("teacher", editor.selectedElement, () => editor.select(""))}>Maestro</button></div><span className={`editorial-save-status ${editor.saveStatus}`} title={editor.saveError || statusLabels[editor.saveStatus]}><i />{statusLabels[editor.saveStatus]}</span><button type="button" className="editorial-top-action-button" onClick={() => setQuickPreviewOpen(true)}><EditorialIcon name="eye" size={17} /> Vista rápida</button><button type="button" className="editorial-top-action-button" onClick={() => setReadViewOpen(true)}><EditorialIcon name="eye" size={17} /> Modo lectura</button>{caps.manage && <button type="button" className="editorial-top-action-button" onClick={() => { setPermissionsError(""); setPermissionsOpen(true); }}>Permisos</button>}<button type="button" className="editorial-top-action-button primary" onClick={() => setExportDialog({})}>Exportar</button><button type="button" className="editorial-top-icon-button" onClick={onToggleTheme} aria-label={theme === "dark" ? "Usar modo claro" : "Usar modo oscuro"}><EditorialIcon name={theme === "dark" ? "sun" : "moon"} /></button><span className="editorial-user-avatar">{getInitials(profile)}</span></div>
       </header>
-      <div className="editorial-editor-menubar" aria-label="Menú editorial"><span>Archivo</span><span>Editar</span><span>Ver</span><span>Insertar</span><span>Formato</span><span>Disposición</span><span>Texto</span><span>Tabla</span><span>Herramientas</span></div>
+      <EditorialMenuBar menus={editorialMenus} />
+      <input ref={menuFileInputRef} type="file" accept="image/*" hidden onChange={handleMenuImage} />
+
       <EditorialEditorToolbar leftOpen={leftOpen} rightOpen={rightOpen} bottomOpen={bottomOpen} selectedElement={resolvedSelectedElement} canUndo={editor.canUndo} canRedo={editor.canRedo} zoomProps={{ ...zoomProps, viewMode: editorMode.kind === "page" ? viewMode : "single" }} actions={editor.actions} onToggleLeft={() => setLeftOpen((value) => !value)} onToggleRight={() => setRightOpen((value) => !value)} onToggleBottom={() => setBottomOpen((value) => !value)} onOpenConfig={() => setConfigOpen(true)} />
       <nav className="editorial-editor-rail" aria-label="Navegación editorial">{RAIL_ITEMS.map(([name, label]) => <button type="button" className={activeRail === name ? "active" : ""} onClick={() => setActiveRail(name)} disabled={!ACTIVE_RAILS.has(name)} title={!ACTIVE_RAILS.has(name) ? "Disponible en una fase posterior" : undefined} key={name}><EditorialIcon name={name} /><span>{label}</span></button>)}<button type="button" className="editorial-rail-back" onClick={handleBack}><EditorialIcon name="arrowLeft" /><span>Proyectos</span></button></nav>
       {leftOpen && <EditorialStructurePanel projectId={project.id} project={project} activeRail={activeRail} railItems={RAIL_ITEMS} navigation={navigation} ordering={ordering} activeElements={editorMode.kind === "page" ? renderedElements : []} onSelectPage={handleSelectPage} onCreatePage={openCreatePage} onCreateSection={(initialType) => setSectionDialog({ initialType })} onEditSection={(section) => setSectionDialog({ section })} onDeleteSection={(section) => setDeleteTarget({ kind: "section", item: section })} onPageAction={handlePageAction} design={design} editor={displayEditor} editorMode={editorMode} academicMetadata={academicMetadata} relatedProjects={relatedProjects} onAcademicAction={handleAcademicAction} onDesignAction={handleDesignAction} canManageInstitutional={String(profile?.role || "").toLowerCase() === "admin"} production={production} publications={publications.publications} pubBusy={publications.busy} pubError={publications.error} caps={caps} indexState={indexState} onIndexAction={handleIndexAction} onNavigateIssue={handleNavigateIssue} onExport={(settings) => setExportDialog(settings || {})} onDownloadExport={downloadStoredExport} onPublish={handlePublish} onUnpublish={(pub) => publications.actions.unpublish(pub).catch(() => {})} onRepublish={(pub) => publications.actions.republish(pub).catch(() => {})} onArchive={(pub) => publications.actions.archive(pub).catch(() => {})} onOpenSource={() => setReadViewOpen(true)} onSaveExportToDrive={(item) => { setIntegrationsError(""); setIntegrationsDialog({ mode: "drive", exportItem: item }); }} onSendExportToPrint={(item) => { setIntegrationsError(""); setIntegrationsDialog({ mode: "print", exportItem: item, autofill: buildPrintAutofill({ project, document: { id: navigation.documentId, title: project.name }, exportItem: item, user: profile }) }); }} onOpenReadView={() => setReadViewOpen(true)} projectLink={{ metrics: editorialMetrics, visibleProjects, linkedProjects, busy: projectLinkBusy, error: projectLinkError, onLink: handleLinkProject, onUnlink: handleUnlinkProject, onAttachEvidence: handleAttachEvidence }} />}
@@ -664,6 +725,7 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
       {integrationsDialog && <EditorialIntegrationsDialog mode={integrationsDialog.mode} exportItem={integrationsDialog.exportItem} autofill={integrationsDialog.autofill} canManage={caps.manage} busy={integrationsBusy} error={integrationsError} onClose={() => setIntegrationsDialog(null)} onSaveDrive={saveIntegrationsDrive} onSendPrint={sendIntegrationsPrint} onCreateFolder={createIntegrationsFolder} />}
       {readViewOpen && <EditorialReadView project={project} navigation={navigation} metrics={metrics} spreadSlots={spreadSlots} zoom={zoom} viewMode={editorMode.kind === "page" ? viewMode : "single"} onZoomChange={setZoom} onViewModeChange={setViewMode} variant={variantState.variant} onVariantChange={(next) => variantState.changeVariant(next, editor.selectedElement, () => editor.select(""))} caps={caps} publications={publications.publications} relatedProjects={relatedProjects} onDownloadPublication={downloadStoredExport} onClose={() => setReadViewOpen(false)} />}
       {permissionsOpen && <EditorialPermissionsDialog open project={project} users={production.users} busy={permissionsBusy} error={permissionsError} onClose={() => setPermissionsOpen(false)} onSubmit={handleSavePermissions} />}
+      {downloadNotice && <div className={`editorial-download-toast ${downloadNotice.type}`} role="status">{downloadNotice.text}{downloadNotice.type !== "loading" && <button type="button" aria-label="Cerrar aviso" onClick={() => setDownloadNotice(null)}>×</button>}</div>}
     </div>
   );
 }

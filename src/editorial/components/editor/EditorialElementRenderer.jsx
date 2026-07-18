@@ -1,22 +1,50 @@
 import { useEffect, useState } from "react";
 import { Group, Image as KonvaImage, Rect, Text } from "react-konva";
 import { EDITORIAL_ELEMENT_TYPES } from "../../models/editorialElements";
+import { resolveImageUrl } from "../../utils/editorialImageSource";
 
+// Carga imagen para Konva. Intenta primero con crossOrigin="anonymous" (permite
+// exportación a canvas si el bucket tiene CORS). Si falla (bucket sin CORS), NO
+// falla en silencio: reintenta sin crossOrigin para que la imagen se vea en
+// pantalla, y sólo marca error si tampoco carga. Registra el detalle en consola.
 function useLoadedImage(url) {
-  const [image, setImage] = useState(null);
+  // El componente se remonta por `key={url}` (ver ImageElement), así que el
+  // estado inicial ya refleja la URL actual; el efecto sólo actualiza en los
+  // callbacks async de carga (permitido, sin setState síncrono en el efecto).
+  const [state, setState] = useState({ image: null, status: url ? "loading" : "idle" });
 
   useEffect(() => {
     if (!url) return undefined;
-    const nextImage = new window.Image();
-    nextImage.crossOrigin = "anonymous";
-    nextImage.onload = () => setImage(nextImage);
-    nextImage.src = url;
+    let cancelled = false;
+
+    const attempt = (useCrossOrigin) => {
+      const nextImage = new window.Image();
+      if (useCrossOrigin) nextImage.crossOrigin = "anonymous";
+      nextImage.onload = () => {
+        if (!cancelled) setState({ image: nextImage, status: "loaded" });
+      };
+      nextImage.onerror = () => {
+        if (cancelled) return;
+        if (useCrossOrigin) {
+          attempt(false); // reintento sin CORS: prioriza mostrar la imagen
+          return;
+        }
+        console.error("Editorial: no se pudo cargar la imagen", url);
+        setState({ image: null, status: "error" });
+      };
+      nextImage.src = url;
+      return nextImage;
+    };
+
+    const current = attempt(true);
     return () => {
-      nextImage.onload = null;
+      cancelled = true;
+      current.onload = null;
+      current.onerror = null;
     };
   }, [url]);
 
-  return image;
+  return state;
 }
 
 function getCoverCrop(image, width, height) {
@@ -31,9 +59,30 @@ function getCoverCrop(image, width, height) {
 }
 
 function ImageElement({ element }) {
-  const image = useLoadedImage(element.assetUrl);
+  const imageUrl = resolveImageUrl(element);
+  const { image, status } = useLoadedImage(imageUrl);
   if (!image) {
-    return <Rect width={element.width} height={element.height} fill="#e6ebf1" stroke="#a9b5c4" dash={[6, 4]} />;
+    const isError = status === "error";
+    return (
+      <>
+        <Rect
+          width={element.width}
+          height={element.height}
+          fill={isError ? "#fbeaec" : "#e6ebf1"}
+          stroke={isError ? "#c83e4d" : "#a9b5c4"}
+          dash={[6, 4]}
+        />
+        <Text
+          width={element.width}
+          height={element.height}
+          align="center"
+          verticalAlign="middle"
+          fontSize={12}
+          fill={isError ? "#c83e4d" : "#6b7889"}
+          text={isError ? "Imagen no disponible" : imageUrl ? "Cargando imagen…" : "Sin imagen"}
+        />
+      </>
+    );
   }
 
   if (element.style?.fit === "contain") {
@@ -125,7 +174,7 @@ export default function EditorialElementRenderer({ element, selected, interactiv
           cornerRadius={Number(element.style?.cornerRadius || 0)}
         />
       )}
-      {element.type === EDITORIAL_ELEMENT_TYPES.IMAGE && <ImageElement element={element} />}
+      {element.type === EDITORIAL_ELEMENT_TYPES.IMAGE && <ImageElement key={resolveImageUrl(element)} element={element} />}
       {selected && <Rect width={element.width} height={element.height} stroke="#1677eb" strokeWidth={1} dash={[4, 3]} listening={false} />}
     </Group>
   );

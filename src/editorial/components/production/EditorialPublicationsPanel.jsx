@@ -7,6 +7,7 @@ import {
   isPublishableExport,
   isPublishableVersion,
 } from "../../models/editorialPublication";
+import { downloadableExports, variantLabel } from "../../utils/editorialDownloads";
 
 // Fase 7 — Panel de publicaciones inmutables. Sólo publica documentos aprobados
 // o listos para imprenta; congela versión (snapshot) + exportaciones terminadas.
@@ -136,14 +137,19 @@ export default function EditorialPublicationsPanel({
               {pub.publishedByName ? ` · ${pub.publishedByName}` : ""}
             </small>
             {pub.notes && <p className="editorial-pub-notes">{pub.notes}</p>}
+            <div className="editorial-pub-downloads">
+              {caps.download && downloadableExports(pub).length > 0 ? (
+                downloadableExports(pub).map((ref) => (
+                  <button type="button" className="editorial-button primary compact" key={ref.exportId} title={`Descargar PDF ${variantLabel(ref.variant || ref.type)}`} onClick={() => onDownloadExport(ref)}>
+                    Descargar {variantLabel(ref.variant || ref.type)}
+                  </button>
+                ))
+              ) : (
+                <span className="editorial-hint">{caps.download ? "Sin archivo descargable." : "Sin permiso de descarga."}</span>
+              )}
+            </div>
             <div className="editorial-pub-actions">
               <button type="button" onClick={() => onOpenSource(pub)}>Abrir documento fuente</button>
-              {caps.download &&
-                (pub.exports || []).map((ref) => (
-                  <button type="button" key={ref.exportId} onClick={() => onDownloadExport(ref)}>
-                    Descargar {ref.variant || ref.type}
-                  </button>
-                ))}
               {caps.publish && pub.status === "published" && (
                 <button type="button" onClick={() => onUnpublish(pub)}>Despublicar</button>
               )}

@@ -62,3 +62,19 @@ html[data-theme="dark"] .editorial-form-error,
 html[data-theme="dark"] .editorial-page-error {
   color: #ffb8bd;
 }
+
+/* Estabilización — legibilidad de selects/inputs/menús en modo oscuro */
+html[data-theme="dark"] .editorial-editor-shell select,
+html[data-theme="dark"] .editorial-editor-shell input,
+html[data-theme="dark"] .editorial-editor-shell textarea,
+html[data-theme="dark"] .editorial-dialog select,
+html[data-theme="dark"] .editorial-dialog input,
+html[data-theme="dark"] .editorial-dialog textarea,
+html[data-theme="dark"] .editorial-readview-layer select,
+html[data-theme="dark"] .editorial-readview-layer input { background: var(--editorial-bg); color: var(--editorial-text); border-color: var(--editorial-border); }
+html[data-theme="dark"] .editorial-editor-shell select option,
+html[data-theme="dark"] .editorial-dialog select option { background: #1b2430; color: #e7edf5; }
+html[data-theme="dark"] .editorial-editor-shell ::placeholder,
+html[data-theme="dark"] .editorial-dialog ::placeholder { color: var(--editorial-muted); }
+html[data-theme="dark"] .editorial-menu-dropdown,
+html[data-theme="dark"] .editorial-download-toast { background: #1b2430; }

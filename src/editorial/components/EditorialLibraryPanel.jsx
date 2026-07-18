@@ -1,5 +1,6 @@
 import EditorialIcon from "./EditorialIcon";
 import { getPublicationStateLabel, getPublicationVariantLabel } from "../models/editorialPublication";
+import { downloadableExports, variantLabel } from "../utils/editorialDownloads";
 
 // Fase 7 — Biblioteca interna de materiales publicados (rail "Recursos"). Sólo
 // lectura y descargas autorizadas; abre la vista de lectura reutilizando el
@@ -38,9 +39,9 @@ export default function EditorialLibraryPanel({ project, publications, caps, onO
                   <EditorialIcon name="eye" size={15} /> Leer
                 </button>
                 {caps.download &&
-                  (pub.exports || []).map((ref) => (
-                    <button type="button" key={ref.exportId} onClick={() => onDownload(ref)}>
-                      Descargar {ref.variant || ref.type}
+                  downloadableExports(pub).map((ref) => (
+                    <button type="button" className="editorial-button primary compact" key={ref.exportId} title={`Descargar PDF ${variantLabel(ref.variant || ref.type)}`} onClick={() => onDownload(ref)}>
+                      Descargar {variantLabel(ref.variant || ref.type)}
                     </button>
                   ))}
               </div>

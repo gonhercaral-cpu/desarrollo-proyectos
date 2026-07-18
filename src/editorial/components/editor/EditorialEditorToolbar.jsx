@@ -18,7 +18,14 @@ export default function EditorialEditorToolbar({
   async function handleImage(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (file) await actions.addImageFile(file).catch(() => {});
+    if (!file) return;
+    try {
+      await actions.addImageFile(file);
+    } catch (error) {
+      // El estado de error ya es visible en la barra de guardado; se registra el
+      // detalle técnico para diagnóstico (no se oculta el error).
+      console.error("Editorial: fallo al agregar imagen", error);
+    }
   }
 
   return (

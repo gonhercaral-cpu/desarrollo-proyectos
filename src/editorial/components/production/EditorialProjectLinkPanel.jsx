@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { getReviewStatusLabel } from "../../models/editorialProduction";
+import { projectDisplayLabel, projectSubLabel, filterLinkableProjects } from "../../utils/editorialProjectPicker";
 
 // Fase 7 — Vinculación con proyectos operativos. Muestra métricas derivadas del
 // documento (no duplicadas), permite vincular/desvincular y adjuntar
@@ -18,9 +19,10 @@ export default function EditorialProjectLinkPanel({
   onAttachEvidence,
 }) {
   const [pickProjectId, setPickProjectId] = useState("");
+  const [search, setSearch] = useState("");
   const [evidenceExportId, setEvidenceExportId] = useState("");
   const linkedIds = useMemo(() => new Set(linkedProjects.map((project) => project.id)), [linkedProjects]);
-  const selectable = visibleProjects.filter((project) => !linkedIds.has(project.id));
+  const selectable = useMemo(() => filterLinkableProjects(visibleProjects, linkedIds, search), [linkedIds, search, visibleProjects]);
   const completedExports = exports.filter((item) => item.status === "completed");
 
   return (
@@ -39,16 +41,41 @@ export default function EditorialProjectLinkPanel({
       </div>
 
       {caps.edit_content && (
-        <div className="editorial-inline-form">
-          <select value={pickProjectId} onChange={(event) => setPickProjectId(event.target.value)}>
-            <option value="">Selecciona proyecto operativo</option>
-            {selectable.map((project) => (
-              <option value={project.id} key={project.id}>{project.name || project.id}</option>
-            ))}
-          </select>
-          <button type="button" disabled={busy || !pickProjectId} onClick={() => { onLink(pickProjectId); setPickProjectId(""); }}>
-            {busy ? "Vinculando…" : "Vincular"}
-          </button>
+        <div className="editorial-project-picker">
+          <h4>Vincular a proyecto operativo</h4>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar proyecto por nombre…"
+            aria-label="Buscar proyecto"
+          />
+          <ul className="editorial-project-options" role="listbox" aria-label="Proyectos disponibles">
+            {selectable.length === 0 ? (
+              <li className="editorial-hint">{visibleProjects.length === 0 ? "No hay proyectos disponibles." : "Sin coincidencias."}</li>
+            ) : (
+              selectable.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={pickProjectId === project.id}
+                    className={pickProjectId === project.id ? "selected" : ""}
+                    onClick={() => setPickProjectId(project.id)}
+                  >
+                    <strong>{projectDisplayLabel(project)}</strong>
+                    <small>{projectSubLabel(project)}</small>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="editorial-project-picker-actions">
+            <button type="button" onClick={() => { setPickProjectId(""); setSearch(""); }}>Cancelar</button>
+            <button type="button" className="editorial-button primary compact" disabled={busy || !pickProjectId} onClick={() => { onLink(pickProjectId); setPickProjectId(""); setSearch(""); }}>
+              {busy ? "Vinculando…" : "Vincular"}
+            </button>
+          </div>
         </div>
       )}
 

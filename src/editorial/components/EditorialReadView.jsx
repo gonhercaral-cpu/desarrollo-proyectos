@@ -2,6 +2,7 @@ import EditorialIcon from "./EditorialIcon";
 import EditorialWorkspace from "./editor/EditorialWorkspace";
 import EditorialZoomControls from "./editor/EditorialZoomControls";
 import { getPublicationStateLabel } from "../models/editorialPublication";
+import { downloadableExports, variantLabel } from "../utils/editorialDownloads";
 
 const noop = () => {};
 
@@ -111,9 +112,9 @@ export default function EditorialReadView({
               {published.map((pub) => (
                 <div className="editorial-readview-download" key={pub.id}>
                   <strong>Rev. {pub.revision} · {getPublicationStateLabel(pub.status)}</strong>
-                  {(pub.exports || []).map((ref) => (
-                    <button type="button" key={ref.exportId} onClick={() => onDownloadPublication(ref)}>
-                      {ref.variant || ref.type}
+                  {downloadableExports(pub).map((ref) => (
+                    <button type="button" className="editorial-button primary compact" key={ref.exportId} title={`Descargar PDF ${variantLabel(ref.variant || ref.type)}`} onClick={() => onDownloadPublication(ref)}>
+                      Descargar {variantLabel(ref.variant || ref.type)}
                     </button>
                   ))}
                 </div>
