@@ -136,6 +136,77 @@ export async function logDriveResumableUploadCompleted({
   return response.data;
 }
 
+// Fase 7 fix — ID canónico de carpeta de Nube AES. Las carpetas permitidas
+// traen `folderId` (id real de Google Drive) además de `id` (id de documento
+// visual). La subida DEBE usar `folderId`. Mismo criterio que DriveManager.
+export function resolveNubeAesFolderId(folder) {
+  if (!folder || typeof folder !== "object") return "";
+  return String(folder.folderId || folder.id || "").trim();
+}
+
+// Sube el archivo a la sesión resumable de Drive (PUT directo a la URL de
+// sesión que devuelve la Cloud Function). Genérico, sin dependencias de UI.
+function putFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const cleanUploadUrl = String(uploadUrl || "").trim();
+    if (!cleanUploadUrl) {
+      reject(new Error("No se pudo preparar la sesión de subida."));
+      return;
+    }
+    const request = new XMLHttpRequest();
+    let lastProgress = 0;
+    const uploadError = (message) => {
+      const error = new Error(message);
+      error.uploadProgress = lastProgress;
+      error.maybeCompleted = lastProgress >= 98;
+      error.status = request.status || 0;
+      return error;
+    };
+    request.open("PUT", cleanUploadUrl);
+    request.setRequestHeader("Content-Type", mimeType || "application/octet-stream");
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !event.total) return;
+      lastProgress = Math.max(1, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      onProgress?.(lastProgress);
+    };
+    request.onload = () => {
+      let data = null;
+      try {
+        if (request.responseText) data = JSON.parse(request.responseText);
+      } catch {
+        // Respuesta no-JSON de Drive; se ignora, el archivo puede haberse creado.
+      }
+      if ([200, 201, 204].includes(request.status)) { onProgress?.(100); resolve(data); return; }
+      if (request.status === 308) { resolve({ incomplete: true, status: 308, uploadProgress: lastProgress }); return; }
+      reject(uploadError(`Google Drive rechazó la subida (${request.status}).`));
+    };
+    request.onerror = () => reject(uploadError("No se pudo confirmar la subida por CORS o red."));
+    request.onabort = () => reject(uploadError("La subida fue cancelada."));
+    request.send(file);
+  });
+}
+
+// Adaptador compartido de subida a Nube AES. Mismo contrato que el módulo
+// funcional DriveManager: folderId canónico + subida resumable + registro de
+// actividad. `file` es un File/Blob real. Devuelve { id, name, folderId }.
+export async function uploadFileToNubeAES({ folder, file, replaceFileId = "", onProgress } = {}) {
+  const folderId = resolveNubeAesFolderId(folder);
+  if (!folderId) throw new Error("La carpeta seleccionada no tiene carpeta de Drive sincronizada.");
+  if (!file) throw new Error("No hay archivo para subir.");
+  const mimeType = file.type || "application/octet-stream";
+  const name = file.name || "archivo";
+  const session = await createDriveResumableUpload({ folderId, name, mimeType, size: file.size });
+  const result = await putFileToDriveSession({ file, uploadUrl: session?.uploadUrl, mimeType, onProgress });
+  const fileId = result?.id || "";
+  // El registro de actividad no debe bloquear una subida ya completada.
+  await logDriveResumableUploadCompleted({ folderId, fileId, name, mimeType, size: file.size }).catch(() => {});
+  // Reemplazo: sólo tras subir el nuevo archivo con éxito, borra el anterior.
+  if (replaceFileId && fileId && replaceFileId !== fileId) {
+    await deleteDriveItem(replaceFileId).catch(() => {});
+  }
+  return { id: fileId, name, folderId, mimeType, size: file.size, incomplete: Boolean(result?.incomplete) };
+}
+
 export async function searchDriveFiles({ query, type, folderId }) {
   const response = await driveSearchFilesCallable({ query, type, folderId });
   return response.data;

@@ -42,7 +42,9 @@ export default function EditorialIntegrationsDialog({ mode, exportItem, autofill
 
   if (!mode) return null;
 
-  const selectedFolder = folders.find((folder) => folder.id === folderId) || null;
+  // ID canónico de Drive (folderId), igual que el módulo Nube AES funcional.
+  const folderKey = (folder) => String(folder?.folderId || folder?.id || "");
+  const selectedFolder = folders.find((folder) => folderKey(folder) === folderId) || null;
 
   function handleCreateFolder() {
     const name = newFolderName.trim();
@@ -83,7 +85,7 @@ export default function EditorialIntegrationsDialog({ mode, exportItem, autofill
                 items={folders}
                 loading={foldersLoading}
                 error={foldersError}
-                getId={(folder) => folder.id}
+                getId={folderKey}
                 getLabel={driveFolderLabel}
                 getDescription={driveFolderSubLabel}
                 selectedId={folderId}

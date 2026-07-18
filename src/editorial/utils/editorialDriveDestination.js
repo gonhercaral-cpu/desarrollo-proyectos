@@ -3,6 +3,14 @@
 // Functions existentes (driveService). Aquí sólo hay lógica pura: normalizar el
 // registro de destino y evitar duplicaciones accidentales.
 
+// ID canónico de carpeta de Drive. Las carpetas permitidas traen `folderId`
+// (id real de Google Drive) además de `id` (id de documento visual). Mismo
+// criterio que el módulo Nube AES funcional (DriveManager: folderId || id).
+export function canonicalDriveFolderId(folder) {
+  if (!folder || typeof folder !== "object") return "";
+  return String(folder.folderId || folder.id || "").trim();
+}
+
 // Registro que se guarda en el export tras subir a Drive.
 export function buildDriveDestinationRecord({ driveFile = {}, folder = {}, sourceExportId = "", user = {} } = {}) {
   const fileId = String(driveFile.id || driveFile.fileId || "");
@@ -12,8 +20,9 @@ export function buildDriveDestinationRecord({ driveFile = {}, folder = {}, sourc
   return {
     fileId,
     fileName: String(driveFile.name || ""),
-    folderId: String(folder.id || folder.folderId || ""),
-    folderName: String(folder.name || ""),
+    // ID canónico de Drive (folderId), no el id de documento visual.
+    folderId: canonicalDriveFolderId(folder),
+    folderName: String(folder.name || folder.folderName || folder.departmentName || ""),
     url: String(driveFile.webViewLink || driveFile.url || ""),
     sourceExportId: String(sourceExportId || ""),
     savedByUid: String(user.uid || user.id || ""),
