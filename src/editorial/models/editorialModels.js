@@ -9,18 +9,16 @@ export const EDITORIAL_PROJECT_TYPES = [
   { value: "custom", label: "Personalizado" },
 ];
 
-export const PAGE_SIZE_PRESETS = [
-  { value: "8x10", label: "8 × 10 pulgadas", widthIn: 8, heightIn: 10 },
-  { value: "letter", label: "Carta · 8.5 × 11 pulgadas", widthIn: 8.5, heightIn: 11 },
-  { value: "a4", label: "A4 · 210 × 297 mm", widthIn: 8.2677, heightIn: 11.6929 },
-  { value: "square", label: "Cuadrado · 8 × 8 pulgadas", widthIn: 8, heightIn: 8 },
-];
+export const PAGE_SIZE_PRESETS = DOCUMENT_SIZE_PRESETS;
 
 export const DEFAULT_EDITORIAL_CONFIG = {
   name: "",
   type: "book",
   size: "8x10",
+  unit: "in",
   orientation: "portrait",
+  widthIn: 8,
+  heightIn: 10,
   margins: {
     top: 0.5,
     right: 0.5,
@@ -35,30 +33,29 @@ export function getProjectTypeLabel(type) {
 }
 
 export function getPageSizePreset(size) {
-  return PAGE_SIZE_PRESETS.find((item) => item.value === size) || PAGE_SIZE_PRESETS[0];
+  return getDocumentSizePreset(size);
 }
 
-export function getOrientedDimensions(size, orientation) {
-  const preset = getPageSizePreset(size);
-  const portrait = orientation !== "landscape";
-
-  return {
-    widthIn: portrait ? preset.widthIn : preset.heightIn,
-    heightIn: portrait ? preset.heightIn : preset.widthIn,
-  };
+export function getOrientedDimensions(sizeOrConfig, orientation) {
+  return resolveDocumentDimensions(typeof sizeOrConfig === "object" ? sizeOrConfig : { size: sizeOrConfig, orientation });
 }
 
 export function getEditorialProjectConfig(project = {}) {
+  const sizing = normalizeDocumentSizing({ ...DEFAULT_EDITORIAL_CONFIG, ...project });
   return {
     name: project.name || "",
     type: project.type || DEFAULT_EDITORIAL_CONFIG.type,
-    size: project.size || DEFAULT_EDITORIAL_CONFIG.size,
-    orientation: project.orientation || DEFAULT_EDITORIAL_CONFIG.orientation,
+    size: sizing.size,
+    unit: sizing.unit,
+    orientation: sizing.orientation,
+    widthIn: sizing.widthIn,
+    heightIn: sizing.heightIn,
     margins: {
       ...DEFAULT_EDITORIAL_CONFIG.margins,
       ...(project.margins || {}),
     },
     bleedIn: Number(project.bleedIn ?? DEFAULT_EDITORIAL_CONFIG.bleedIn),
+    resizeMode: "preserve",
   };
 }
 
@@ -67,3 +64,4 @@ export function formatInches(value) {
     maximumFractionDigits: 4,
   })} pulg`;
 }
+import { DOCUMENT_SIZE_PRESETS, getDocumentSizePreset, normalizeDocumentSizing, resolveDocumentDimensions } from "../utils/editorialDocumentSizing.js";

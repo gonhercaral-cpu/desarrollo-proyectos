@@ -20,7 +20,8 @@ export default function EditorialSelectionTransformer({ stageRef, selectedElemen
       ref={transformerRef}
       rotateEnabled={!selectedElement.locked}
       resizeEnabled={!selectedElement.locked}
-      keepRatio={selectedElement.type === "image" && selectedElement.style?.maintainAspect !== false}
+      keepRatio={(selectedElement.type === "image" && selectedElement.style?.maintainAspect !== false)
+        || (selectedElement.type === "shape" && ["square", "circle"].includes(selectedElement.shapeType))}
       borderStroke={selectedElement.locked ? "#f0a228" : "#1677eb"}
       borderDash={selectedElement.locked ? [5, 4] : []}
       anchorStroke="#1677eb"

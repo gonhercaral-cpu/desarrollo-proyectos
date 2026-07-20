@@ -39,6 +39,7 @@ export async function createEditorialMasterPage({ projectId, documentId, project
     width: Number(values.width || project.widthIn || 8),
     height: Number(values.height || project.heightIn || 10),
     background: values.background || "#ffffff",
+    ...(values.backgroundImage ? { backgroundImage: values.backgroundImage } : {}),
     order: snapshot.size,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -51,7 +52,7 @@ export async function createEditorialMasterPage({ projectId, documentId, project
 
 export async function updateEditorialMasterPage({ projectId, documentId, masterPageId, changes, user }) {
   const uid = requireUser(user);
-  const allowed = ["name", "side", "width", "height", "background", "order"];
+  const allowed = ["name", "side", "width", "height", "background", "backgroundImage", "order"];
   const safe = Object.fromEntries(Object.entries(changes).filter(([key]) => allowed.includes(key)));
   const batch = writeBatch(db);
   batch.update(getMasterPageRef(projectId, documentId, masterPageId), { ...safe, updatedAt: serverTimestamp(), updatedByUid: uid });
@@ -103,8 +104,10 @@ export async function deleteEditorialMasterPage({ projectId, documentId, masterP
     throw new Error(`Maestra asignada a ${assignedPages.length} página(s). Reasigna o desvincula antes de eliminar.`);
   }
   const masterRef = getMasterPageRef(projectId, documentId, masterPageId);
+  const masterSnapshot = await getDoc(masterRef);
   const elementsSnapshot = await getDocs(collection(masterRef, EDITORIAL_COLLECTIONS.elements));
   const candidateAssetIds = new Set(elementsSnapshot.docs.map((element) => element.data().assetId).filter(Boolean));
+  if (masterSnapshot.data()?.backgroundImage?.assetId) candidateAssetIds.add(masterSnapshot.data().backgroundImage.assetId);
   const operations = [];
   assignedPages.forEach((page) => operations.push((batch) => batch.update(page.ref, {
     masterPageId: replacementMasterPageId || "",

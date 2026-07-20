@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, serverTimestamp, writeBatch } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { normalizeEditorialElement, normalizeElementOrder } from "../models/editorialElements";
 import { normalizeReviewState } from "../models/editorialProduction";
@@ -31,10 +31,11 @@ async function mapWithElements(items, parentRef, childCollection) {
 export async function loadEditorialDocumentSnapshot({ projectId, documentId }) {
   const projectRef = doc(db, EDITORIAL_COLLECTIONS.projects, projectId);
   const documentRef = doc(projectRef, EDITORIAL_COLLECTIONS.documents, documentId);
-  const [projectSnapshot, documentSnapshot, pagesSnapshot, sectionsSnapshot, mastersSnapshot, componentsSnapshot, stylesSnapshot, variablesSnapshot] = await Promise.all([
+  const [projectSnapshot, documentSnapshot, pagesSnapshot, sectionsSnapshot, mastersSnapshot, componentsSnapshot, stylesSnapshot, variablesSnapshot, fontsSnapshot] = await Promise.all([
     getDoc(projectRef), getDoc(documentRef), getDocs(collection(documentRef, EDITORIAL_COLLECTIONS.pages)),
     getDocs(collection(documentRef, EDITORIAL_COLLECTIONS.sections)), getDocs(collection(documentRef, "masterPages")),
     getDocs(collection(projectRef, "components")), getDocs(collection(projectRef, "styles")), getDocs(collection(projectRef, "variables")),
+    getDocs(query(collection(db, EDITORIAL_COLLECTIONS.assets), where("projectId", "==", projectId), where("type", "==", "font"))),
   ]);
   if (!projectSnapshot.exists() || !documentSnapshot.exists()) throw new Error("Documento editorial no disponible.");
   const project = { id: projectSnapshot.id, ...projectSnapshot.data() };
@@ -48,7 +49,7 @@ export async function loadEditorialDocumentSnapshot({ projectId, documentId }) {
   ]);
   return {
     project, document: documentData, academicMetadata: { ...(documentData.academicMetadata || {}) },
-    pages: pagesWithElements, sections, masters, components, styles: mapDocs(stylesSnapshot), variables: mapDocs(variablesSnapshot),
+    pages: pagesWithElements, sections, masters, components, styles: mapDocs(stylesSnapshot), variables: mapDocs(variablesSnapshot), fonts: mapDocs(fontsSnapshot),
     numbering: calculateEditorialNumbering(pages, sections), reviewState: normalizeReviewState(documentData.reviewState),
   };
 }

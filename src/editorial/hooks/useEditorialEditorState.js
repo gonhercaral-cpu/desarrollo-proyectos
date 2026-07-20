@@ -56,27 +56,31 @@ export function useEditorialEditorState({ context, user }) {
     setSelectedIds([element.id]);
   }, [commit, history.elementsRef]);
 
-  const addShape = useCallback(() => {
-    const element = createShapeElement(history.elementsRef.current.present.length);
+  const addShape = useCallback((shapeType = "rectangle") => {
+    const element = createShapeElement(history.elementsRef.current.present.length, typeof shapeType === "string" ? shapeType : "rectangle");
     commit((elements) => [...elements, element]);
     setSelectedId(element.id);
     setSelectedIds([element.id]);
   }, [commit, history.elementsRef]);
 
-  const addImageFile = useCallback(async (file) => {
+  const uploadImageAsset = useCallback(async (file) => {
     autosave.reportExternalStatus("saving");
     try {
-      const asset = await uploadEditorialImage({ context, file, user });
-      const element = createImageElement(history.elementsRef.current.present.length, asset);
-      commit((elements) => [...elements, element]);
-      setSelectedId(element.id);
-      setSelectedIds([element.id]);
-      return element;
+      return await uploadEditorialImage({ context, file, user });
     } catch (error) {
       autosave.reportExternalStatus("error", error.message || "No fue posible subir la imagen.");
       throw error;
     }
-  }, [autosave, commit, context, history.elementsRef, user]);
+  }, [autosave, context, user]);
+
+  const addImageFile = useCallback(async (file) => {
+    const asset = await uploadImageAsset(file);
+    const element = createImageElement(history.elementsRef.current.present.length, asset);
+    commit((elements) => [...elements, element]);
+    setSelectedId(element.id);
+    setSelectedIds([element.id]);
+    return element;
+  }, [commit, history.elementsRef, uploadImageAsset]);
 
   const replaceImage = useCallback(async (elementId, file) => {
     autosave.reportExternalStatus("saving");
@@ -101,7 +105,12 @@ export function useEditorialEditorState({ context, user }) {
     commit((elements) => {
       const target = elements.find((element) => element.id === elementId);
       if (!target) return elements;
-      const nextChanges = typeof changes === "function" ? changes(target) : changes;
+      const calculatedChanges = typeof changes === "function" ? changes(target) : changes;
+      const nextChanges = { ...calculatedChanges };
+      if (target.type === "shape" && ["square", "circle"].includes(target.shapeType)) {
+        if (Object.hasOwn(nextChanges, "height") && !Object.hasOwn(nextChanges, "width")) nextChanges.width = nextChanges.height;
+        if (Object.hasOwn(nextChanges, "width") && !Object.hasOwn(nextChanges, "height")) nextChanges.height = nextChanges.width;
+      }
       const deltaX = Object.hasOwn(nextChanges, "x") ? Number(nextChanges.x) - target.x : 0;
       const deltaY = Object.hasOwn(nextChanges, "y") ? Number(nextChanges.y) - target.y : 0;
       return elements.map((element) => {
@@ -135,6 +144,11 @@ export function useEditorialEditorState({ context, user }) {
         componentOverrides = { ...(componentOverrides || {}), [field]: directChanges[field] };
         delete directChanges[field];
       });
+      ["shapeType", "points", "shadow", "imageBorder"].forEach((field) => {
+        if (!element.componentId || !Object.hasOwn(directChanges, field)) return;
+        componentOverrides = { ...(componentOverrides || {}), [field]: directChanges[field] };
+        delete directChanges[field];
+      });
       if (Object.hasOwn(directChanges, "style")) {
         if (element.styleId) {
           styleOverrides = { ...(styleOverrides || {}), ...directChanges.style };
@@ -157,6 +171,25 @@ export function useEditorialEditorState({ context, user }) {
       });
     });
   }, [commit]);
+
+  // Fase 8 — Cambio en vivo (arrastre de slider): actualiza sin empujar
+  // historial. Cerrar con commitLive para producir UNA entrada al terminar.
+  const updateElementLive = useCallback((elementId, changes) => {
+    history.replacePresent((elements) => elements.map((element) => {
+      if (element.id !== elementId) return element;
+      return normalizeEditorialElement({
+        ...element,
+        ...changes,
+        style: changes.style ? { ...element.style, ...changes.style } : element.style,
+      }, element.zIndex);
+    }));
+    autosave.markDirty(history.elementsRef.current.present);
+  }, [autosave, history]);
+
+  const commitLive = useCallback(() => {
+    history.commitTransient();
+    autosave.markDirty(history.elementsRef.current.present);
+  }, [autosave, history]);
 
   const addElements = useCallback((sourceElements, options = {}) => {
     const existing = history.elementsRef.current.present;
@@ -381,6 +414,7 @@ export function useEditorialEditorState({ context, user }) {
     addText,
     addShape,
     addImageFile,
+    uploadImageAsset,
     replaceImage,
     addElements,
     insertComponent,
@@ -391,6 +425,8 @@ export function useEditorialEditorState({ context, user }) {
     restoreStyle,
     unlinkStyle,
     updateElement,
+    updateElementLive,
+    commitLive,
     removeElement,
     remove,
     copy,
@@ -427,6 +463,9 @@ export function useEditorialEditorState({ context, user }) {
     unlinkStyle,
     updateAcademicGroup,
     updateElement,
+    updateElementLive,
+    commitLive,
+    uploadImageAsset,
   ]);
 
   return {

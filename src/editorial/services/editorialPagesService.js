@@ -120,6 +120,7 @@ export async function updateEditorialPage({ projectId, documentId, pageId, chang
   const uid = requireUser(user);
   const allowed = [
     "name", "sectionId", "pageType", "width", "height", "orientation", "background",
+    "backgroundImage",
     "isBlank", "numberingEnabled", "masterPageId", "masterOverrides", "academicMetadata",
     "seriesId", "seriesName", "levelId", "levelName", "bookId", "bookName", "unitNumber",
     "unitTitle", "lessonNumber", "lessonTitle", "academicType", "activityNumber",
@@ -213,6 +214,8 @@ export async function deleteEditorialPages({ projectId, documentId, pageIds, pro
   const candidateAssetIds = new Set();
   for (const pageId of deletedIds) {
     const pageRef = getEditorialPageRef(projectId, documentId, pageId);
+    const pageSnapshot = await getDoc(pageRef);
+    if (pageSnapshot.data()?.backgroundImage?.assetId) candidateAssetIds.add(pageSnapshot.data().backgroundImage.assetId);
     const elementsSnapshot = await getDocs(collection(pageRef, EDITORIAL_COLLECTIONS.elements));
     elementsSnapshot.docs.forEach((element) => {
       if (element.data().assetId) candidateAssetIds.add(element.data().assetId);

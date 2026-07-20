@@ -11,7 +11,10 @@ async function collectUsedAssetIds(projectId) {
   for (const documentSnapshot of documents.docs) {
     for (const collectionName of [EDITORIAL_COLLECTIONS.pages, "masterPages"]) {
       const parents = await getDocs(collection(documentSnapshot.ref, collectionName));
-      parents.docs.forEach((parent) => elementCollections.push(collection(parent.ref, EDITORIAL_COLLECTIONS.elements)));
+      parents.docs.forEach((parent) => {
+        if (parent.data().backgroundImage?.assetId) used.add(parent.data().backgroundImage.assetId);
+        elementCollections.push(collection(parent.ref, EDITORIAL_COLLECTIONS.elements));
+      });
     }
   }
   const components = await getDocs(collection(projectRef, "components"));

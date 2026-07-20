@@ -150,6 +150,7 @@
 }
 
 .editorial-editor-toolbar {
+  position: relative;
   grid-column: 2 / -1;
   grid-row: 3;
   padding: 0 12px;
@@ -159,7 +160,7 @@
   gap: 12px;
   background: var(--editorial-panel);
   box-shadow: 0 2px 8px rgba(13, 35, 64, 0.04);
-  z-index: 4;
+  z-index: 40;
 }
 
 .editorial-toolbar-group {

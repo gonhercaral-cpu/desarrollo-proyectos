@@ -8,11 +8,27 @@ function createEmptyHistory() {
   return { loaded: false, past: [], present: [], future: [] };
 }
 
+export function replaceHistoryPresent(current, nextElements) {
+  if (sameElements(current.present, nextElements)) return current;
+  return { ...current, loaded: true, present: nextElements };
+}
+
+export function commitTransientHistory(current, start, limit = 50) {
+  if (!start || sameElements(start, current.present)) return current;
+  return {
+    loaded: true,
+    past: [...current.past, start].slice(-limit),
+    present: current.present,
+    future: [],
+  };
+}
+
 export function useEditorialHistory(limit = 50, historyKey = "default") {
   const [history, setHistory] = useState(createEmptyHistory);
   const historyRef = useRef(history);
   const historiesRef = useRef(new Map());
   const activeKeyRef = useRef(historyKey);
+  const transientRef = useRef({ key: historyKey, start: null });
 
   const applyHistory = useCallback((nextHistory) => {
     historyRef.current = nextHistory;
@@ -46,6 +62,7 @@ export function useEditorialHistory(limit = 50, historyKey = "default") {
   }, [applyHistory, limit]);
 
   const commit = useCallback((updater) => {
+    transientRef.current = { key: activeKeyRef.current, start: null };
     const current = historyRef.current;
     const nextElements = typeof updater === "function" ? updater(current.present) : updater;
     if (sameElements(current.present, nextElements)) return current.present;
@@ -59,7 +76,29 @@ export function useEditorialHistory(limit = 50, historyKey = "default") {
     return nextElements;
   }, [applyHistory, limit]);
 
+  // Fase 8 — Actualización transitoria (arrastre de slider): cambia `present`
+  // SIN empujar historial. Se cierra con `commitTransient` para producir UNA
+  // sola entrada de historial al terminar el ajuste.
+  const replacePresent = useCallback((updater) => {
+    const current = historyRef.current;
+    if (transientRef.current.key !== activeKeyRef.current) transientRef.current = { key: activeKeyRef.current, start: null };
+    if (transientRef.current.start === null) transientRef.current.start = current.present;
+    const nextElements = typeof updater === "function" ? updater(current.present) : updater;
+    if (sameElements(current.present, nextElements)) return current.present;
+    applyHistory(replaceHistoryPresent(current, nextElements));
+    return nextElements;
+  }, [applyHistory]);
+
+  const commitTransient = useCallback(() => {
+    const start = transientRef.current.key === activeKeyRef.current ? transientRef.current.start : null;
+    transientRef.current = { key: activeKeyRef.current, start: null };
+    const current = historyRef.current;
+    if (start === null) return;
+    applyHistory(commitTransientHistory(current, start, limit));
+  }, [applyHistory, limit]);
+
   const undo = useCallback(() => {
+    transientRef.current = { key: activeKeyRef.current, start: null };
     const current = historyRef.current;
     if (current.past.length === 0) return null;
     const previous = current.past[current.past.length - 1];
@@ -73,6 +112,7 @@ export function useEditorialHistory(limit = 50, historyKey = "default") {
   }, [applyHistory, limit]);
 
   const redo = useCallback(() => {
+    transientRef.current = { key: activeKeyRef.current, start: null };
     const current = historyRef.current;
     if (current.future.length === 0) return null;
     const next = current.future[0];
@@ -92,6 +132,8 @@ export function useEditorialHistory(limit = 50, historyKey = "default") {
     canRedo: history.future.length > 0,
     load,
     commit,
+    replacePresent,
+    commitTransient,
     undo,
     redo,
   };

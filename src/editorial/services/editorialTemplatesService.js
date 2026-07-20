@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, onSnapshot, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, writeBatch } from "firebase/firestore";
 import { deleteObject, getBytes, getDownloadURL, getMetadata, listAll, ref, uploadBytes } from "firebase/storage";
 import { db, storage } from "../../services/firebase";
 import { cloneDesignElements, normalizeEditorialTemplate } from "../models/editorialDesign";
@@ -7,6 +7,7 @@ import { EDITORIAL_COLLECTIONS } from "./editorialProjectsService";
 import { getEditorialDocumentRef, getEditorialPageRef } from "./editorialPagesService";
 import { getMasterPageRef } from "./editorialMasterPagesService";
 import { sanitizeFirestoreData } from "../utils/editorialFirestore";
+import { normalizeBackgroundImage } from "../models/editorialBackground";
 
 function requireUser(user) {
   const uid = user?.uid || user?.id;
@@ -42,6 +43,29 @@ async function copyImagesToTemplate(templateId, uid, elements) {
     const assetUrl = await copyStoredFile(element.storagePath, storagePath);
     return { ...element, assetId: "", assetUrl, storagePath, templateAsset: true };
   }));
+}
+
+async function copyBackgroundToTemplate(templateId, uid, page) {
+  const background = normalizeBackgroundImage(page.backgroundImage);
+  if (!background?.storagePath) return background;
+  const storagePath = `editorialTemplates/${templateId}/${uid}/background-${safeAssetName(background)}`;
+  const url = await copyStoredFile(background.storagePath, storagePath);
+  return { ...background, assetId: "", url, storagePath, templateAsset: true };
+}
+
+async function copyTemplateBackgroundToProject({ projectId, documentId, pageId, uid, backgroundImage }) {
+  const background = normalizeBackgroundImage(backgroundImage);
+  if (!background?.storagePath?.startsWith("editorialTemplates/")) return { backgroundImage: background, asset: null };
+  const assetRef = doc(collection(db, EDITORIAL_COLLECTIONS.assets));
+  const storagePath = `editorial/${projectId}/images/${uid}/${assetRef.id}-background-${safeAssetName(background)}`;
+  const url = await copyStoredFile(background.storagePath, storagePath);
+  return {
+    backgroundImage: { ...background, assetId: assetRef.id, url, storagePath, templateAsset: false },
+    asset: {
+      ref: assetRef,
+      data: { projectId, documentId, pageId, ownerUid: uid, name: "Fondo", type: "image", url, storagePath, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
+    },
+  };
 }
 
 async function copyTemplateImagesToProject({ projectId, documentId, pageId, uid, elements }) {
@@ -109,6 +133,17 @@ async function readFlattenedPageElements({ projectId, documentId, page, design }
   return [...resolveMasterElements(masterElements, page.masterOverrides, design), ...local];
 }
 
+async function resolveTemplatePageSurface({ projectId, documentId, page }) {
+  if (!page.masterPageId) return page;
+  const masterSnapshot = await getDoc(getMasterPageRef(projectId, documentId, page.masterPageId));
+  const master = masterSnapshot.data() || {};
+  return {
+    ...page,
+    background: master.background || page.background,
+    backgroundImage: page.backgroundImage || master.backgroundImage || null,
+  };
+}
+
 export async function createEditorialTemplate({ projectId, documentId, pages, section, values, user }) {
   const uid = requireUser(user);
   if (!pages?.length) throw new Error("Selecciona página o unidad para guardar.");
@@ -137,13 +172,15 @@ export async function createEditorialTemplate({ projectId, documentId, pages, se
     let elementCount = 0;
     const design = await readTemplateDesign(projectId);
     for (const page of pages) {
-      const flattened = await readFlattenedPageElements({ projectId, documentId, page, design });
+      const surface = await resolveTemplatePageSurface({ projectId, documentId, page });
+      const flattened = await readFlattenedPageElements({ projectId, documentId, page: surface, design });
       const elements = await copyImagesToTemplate(nextTemplateRef.id, uid, cloneDesignElements(flattened));
+      const backgroundImage = await copyBackgroundToTemplate(nextTemplateRef.id, uid, surface);
       elementCount += elements.length;
-      pagePayloads.push({ page, elements });
+      pagePayloads.push({ page: surface, elements, backgroundImage });
     }
     const operations = [];
-    pagePayloads.forEach(({ page, elements }, pageIndex) => {
+    pagePayloads.forEach(({ page, elements, backgroundImage }, pageIndex) => {
     const nextPageRef = doc(templatePages(nextTemplateRef.id));
     operations.push((batch) => batch.set(nextPageRef, {
       name: page.name,
@@ -153,6 +190,7 @@ export async function createEditorialTemplate({ projectId, documentId, pages, se
       height: page.height,
       orientation: page.orientation,
       background: page.background,
+      ...(backgroundImage ? { backgroundImage } : {}),
       isBlank: page.isBlank,
       numberingEnabled: page.numberingEnabled,
       createdAt: serverTimestamp(),
@@ -204,6 +242,9 @@ export async function applyEditorialTemplate({ projectId, documentId, template, 
   for (let pageIndex = 0; pageIndex < orderedTemplatePages.length; pageIndex += 1) {
     const source = orderedTemplatePages[pageIndex];
     const target = doc(collection(getEditorialDocumentRef(projectId, documentId), EDITORIAL_COLLECTIONS.pages));
+    const copiedBackground = await copyTemplateBackgroundToProject({
+      projectId, documentId, pageId: target.id, uid, backgroundImage: source.data().backgroundImage,
+    });
     createdPageIds.push(target.id);
     operations.push((batch) => batch.set(target, {
       ...source.data(),
@@ -213,10 +254,12 @@ export async function applyEditorialTemplate({ projectId, documentId, template, 
       height: Number(source.data().height || project.heightIn || 10),
       masterPageId: "",
       masterOverrides: {},
+      ...(copiedBackground.backgroundImage ? { backgroundImage: copiedBackground.backgroundImage } : {}),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       updatedByUid: uid,
     }));
+    if (copiedBackground.asset) operations.push((batch) => batch.set(copiedBackground.asset.ref, sanitizeFirestoreData(copiedBackground.asset.data)));
     const elements = await getDocs(collection(source.ref, EDITORIAL_COLLECTIONS.elements));
     const copied = await copyTemplateImagesToProject({
       projectId, documentId, pageId: target.id, uid,
@@ -262,13 +305,15 @@ export async function replaceEditorialTemplateContent({ template, projectId, doc
   let elementCount = 0;
   const design = await readTemplateDesign(projectId);
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-    const page = pages[pageIndex];
+    const page = await resolveTemplatePageSurface({ projectId, documentId, page: pages[pageIndex] });
     const elements = await copyImagesToTemplate(template.id, uid, cloneDesignElements(await readFlattenedPageElements({ projectId, documentId, page, design })));
+    const backgroundImage = await copyBackgroundToTemplate(template.id, uid, page);
     elementCount += elements.length;
     const nextPageRef = doc(templatePages(template.id));
     operations.push((batch) => batch.set(nextPageRef, {
       name: page.name, order: pageIndex, pageType: page.pageType, width: page.width, height: page.height,
       orientation: page.orientation, background: page.background, isBlank: page.isBlank,
+      ...(backgroundImage ? { backgroundImage } : {}),
       numberingEnabled: page.numberingEnabled, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     }));
     elements.forEach((element) => operations.push((batch) => batch.set(doc(nextPageRef, EDITORIAL_COLLECTIONS.elements, element.id), { ...element, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })));

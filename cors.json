@@ -1,0 +1,20 @@
+﻿[
+  {
+    "origin": [
+      "http://localhost:5173",
+      "https://sistema-desarrollo-proyectos.web.app",
+      "https://sistema-desarrollo-proyectos.firebaseapp.com"
+    ],
+    "method": [
+      "GET",
+      "HEAD"
+    ],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Disposition",
+      "ETag"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

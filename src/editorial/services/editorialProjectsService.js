@@ -23,6 +23,7 @@ import {
   normalizeEditorialSections,
 } from "../models/editorialStructure";
 import { normalizeAcademicMetadata } from "../models/editorialAcademic";
+import { physicalSizeChanged, resizeEditorialElements } from "../utils/editorialDocumentSizing";
 
 export const EDITORIAL_COLLECTIONS = {
   projects: "editorialProjects",
@@ -111,6 +112,8 @@ export function subscribeEditorialProjects({ user, isAdmin, onChange, onError })
 export async function createEditorialProject(config, user) {
   const uid = requireUser(user);
   const safeConfig = { ...DEFAULT_EDITORIAL_CONFIG, ...getEditorialProjectConfig(config) };
+  const persistedConfig = { ...safeConfig };
+  delete persistedConfig.resizeMode;
   const name = safeConfig.name.trim();
 
   if (!name) {
@@ -119,13 +122,13 @@ export async function createEditorialProject(config, user) {
 
   const projectRef = doc(collection(db, EDITORIAL_COLLECTIONS.projects));
   const documentRef = doc(collection(projectRef, EDITORIAL_COLLECTIONS.documents));
-  const dimensions = getOrientedDimensions(safeConfig.size, safeConfig.orientation);
+  const dimensions = getOrientedDimensions(safeConfig);
   const audit = getAuditData(user);
   const academicMetadata = normalizeAcademicMetadata(config);
   const batch = writeBatch(db);
 
   batch.set(projectRef, {
-    ...safeConfig,
+    ...persistedConfig,
     ...dimensions,
     name,
     ownerUid: uid,
@@ -274,9 +277,51 @@ export async function renameEditorialProject(projectId, name, user) {
 }
 
 export async function updateEditorialProjectConfig(projectId, config, user) {
+  const uid = requireUser(user);
+  const projectRef = doc(db, EDITORIAL_COLLECTIONS.projects, projectId);
+  const previousSnapshot = await getDoc(projectRef);
+  if (!previousSnapshot.exists()) throw new Error("El proyecto editorial no existe.");
+  const previous = getEditorialProjectConfig(previousSnapshot.data());
   const safeConfig = getEditorialProjectConfig(config);
-  const dimensions = getOrientedDimensions(safeConfig.size, safeConfig.orientation);
-  return updateEditorialProject(projectId, { ...safeConfig, ...dimensions }, user);
+  const dimensions = getOrientedDimensions(safeConfig);
+  const next = { ...safeConfig, ...dimensions };
+  const resizeMode = ["preserve", "scale", "center"].includes(config.resizeMode) ? config.resizeMode : "preserve";
+
+  if (physicalSizeChanged(previous, next)) {
+    const operations = [];
+    const documentsSnapshot = await getDocs(collection(projectRef, EDITORIAL_COLLECTIONS.documents));
+    for (const documentSnapshot of documentsSnapshot.docs) {
+      for (const collectionName of [EDITORIAL_COLLECTIONS.pages, "masterPages"]) {
+        const surfaces = await getDocs(collection(documentSnapshot.ref, collectionName));
+        for (const surface of surfaces.docs) {
+          const data = surface.data();
+          const width = Number(data.width || previous.widthIn);
+          const height = Number(data.height || previous.heightIn);
+          const followsDocumentSize = Math.abs(width - previous.widthIn) < 0.001 && Math.abs(height - previous.heightIn) < 0.001;
+          if (!followsDocumentSize) continue;
+          operations.push((batch) => batch.update(surface.ref, { width: dimensions.widthIn, height: dimensions.heightIn, orientation: next.orientation, updatedAt: serverTimestamp(), updatedByUid: uid }));
+          if (resizeMode === "preserve") continue;
+          const elementsSnapshot = await getDocs(collection(surface.ref, EDITORIAL_COLLECTIONS.elements));
+          const resized = resizeEditorialElements(elementsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })), { widthIn: width, heightIn: height }, dimensions, resizeMode);
+          resized.forEach((element) => operations.push((batch) => batch.update(doc(surface.ref, EDITORIAL_COLLECTIONS.elements, element.id), {
+            x: element.x, y: element.y, width: element.width, height: element.height, style: element.style,
+            ...(element.shadow ? { shadow: element.shadow } : {}),
+            ...(element.imageBorder ? { imageBorder: element.imageBorder } : {}),
+            updatedAt: serverTimestamp(),
+          })));
+        }
+      }
+    }
+    for (let index = 0; index < operations.length; index += 400) {
+      const batch = writeBatch(db);
+      operations.slice(index, index + 400).forEach((operation) => operation(batch));
+      await batch.commit();
+    }
+  }
+
+  const persisted = { ...next };
+  delete persisted.resizeMode;
+  return updateEditorialProject(projectId, persisted, user);
 }
 
 export async function duplicateEditorialProject(project, user) {

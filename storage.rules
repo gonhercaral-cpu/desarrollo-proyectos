@@ -732,12 +732,19 @@ service firebase.storage {
 
       allow create, update: if canWriteEditorialStorage(projectId)
         && (isAdmin() || request.auth.uid == userUid)
-        && category in ["images", "covers", "resources", "exports", "versions"]
+        && category in ["images", "covers", "resources", "exports", "versions", "fonts"]
         && request.resource.size < 250 * 1024 * 1024
         && (
           request.resource.contentType.matches('image/.*')
           || request.resource.contentType == 'application/pdf'
           || request.resource.contentType == 'application/zip'
+          || (category == "fonts" && (
+            fileName.matches('.*\\.(ttf|otf|woff|woff2)$')
+            && (
+              request.resource.contentType.matches('font/.*')
+              || request.resource.contentType in ['application/font-sfnt', 'application/vnd.ms-opentype', 'application/octet-stream']
+            )
+          ))
           || (category == "versions" && request.resource.contentType == 'application/json')
         );
 

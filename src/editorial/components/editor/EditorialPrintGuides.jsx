@@ -1,18 +1,19 @@
 import { Group, Line, Rect } from "react-konva";
 
 export default function EditorialPrintGuides({ metrics, settings }) {
+  const visible = settings || {};
   const { bleed, trimWidth, trimHeight, margins, stageWidth, stageHeight } = metrics;
   const safeInset = 12;
 
   return (
     <Group listening={false}>
-      {settings.bleed && (
+      {visible.bleed && (
         <Rect x={0.5} y={0.5} width={stageWidth - 1} height={stageHeight - 1} stroke="#ef4db8" strokeWidth={1} dash={[5, 4]} />
       )}
-      {settings.cut && (
+      {visible.cut && (
         <Rect x={bleed} y={bleed} width={trimWidth} height={trimHeight} stroke="#263442" strokeWidth={1} />
       )}
-      {settings.margins && (
+      {visible.margins && (
         <Rect
           x={bleed + margins.left}
           y={bleed + margins.top}
@@ -23,7 +24,7 @@ export default function EditorialPrintGuides({ metrics, settings }) {
           dash={[6, 4]}
         />
       )}
-      {settings.safe && (
+      {visible.safe && (
         <Rect
           x={bleed + margins.left + safeInset}
           y={bleed + margins.top + safeInset}
@@ -34,7 +35,7 @@ export default function EditorialPrintGuides({ metrics, settings }) {
           dash={[3, 4]}
         />
       )}
-      {settings.gutter && (
+      {visible.gutter && (
         <Line
           points={[bleed + trimWidth / 2, bleed, bleed + trimWidth / 2, bleed + trimHeight]}
           stroke="#2d80e8"

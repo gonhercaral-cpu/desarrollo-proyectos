@@ -48,7 +48,7 @@ export function normalizeEditorialPage(page = {}, index = 0, project = {}) {
     width,
     height,
     orientation: page.orientation || (width > height ? "landscape" : "portrait"),
-    background: page.background || "#ffffff",
+    background: page.background ?? "#ffffff",
     isBlank: page.isBlank === true,
     numberingEnabled: page.numberingEnabled !== false && !["cover", "back_cover"].includes(pageType),
     masterPageId: page.masterPageId || "",

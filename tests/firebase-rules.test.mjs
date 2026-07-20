@@ -1557,6 +1557,25 @@ describe("editor editorial", () => {
 });
 
 describe("storage", () => {
+  it("permite fuentes editoriales autorizadas solo a editores del proyecto", async () => {
+    await assertSucceeds(
+      storageAuth("collab").ref("editorial/editorial-owned/fonts/collab/aes-sans.woff2")
+        .putString("font", "raw", { contentType: "font/woff2" })
+    );
+    await assertSucceeds(
+      storageAuth("collab").ref("editorial/editorial-owned/fonts/collab/aes-serif.ttf")
+        .putString("font", "raw", { contentType: "application/octet-stream" })
+    );
+    await assertFails(
+      storageAuth("outsider").ref("editorial/editorial-owned/fonts/outsider/ajena.ttf")
+        .putString("font", "raw", { contentType: "font/ttf" })
+    );
+    await assertFails(
+      storageAuth("collab").ref("editorial/editorial-owned/fonts/collab/falsa.exe")
+        .putString("code", "raw", { contentType: "font/ttf" })
+    );
+  });
+
   it("protege recursos editoriales por membresía y tipo de archivo", async () => {
     await assertSucceeds(
       storageAuth("collab").ref("editorial/editorial-owned/images/collab/portada.png")

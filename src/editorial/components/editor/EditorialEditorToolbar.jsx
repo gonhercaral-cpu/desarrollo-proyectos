@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import EditorialIcon from "../EditorialIcon";
 import EditorialZoomControls from "./EditorialZoomControls";
+import { EDITORIAL_SHAPE_TYPES } from "../../models/editorialShapes";
 
 export default function EditorialEditorToolbar({
   leftOpen,
@@ -15,6 +17,16 @@ export default function EditorialEditorToolbar({
   onToggleBottom,
   onOpenConfig,
 }) {
+  const [shapesOpen, setShapesOpen] = useState(false);
+  const shapesRef = useRef(null);
+
+  useEffect(() => {
+    if (!shapesOpen) return undefined;
+    const onDown = (event) => { if (shapesRef.current && !shapesRef.current.contains(event.target)) setShapesOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [shapesOpen]);
+
   async function handleImage(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -38,7 +50,16 @@ export default function EditorialEditorToolbar({
         <button type="button" onClick={actions.redo} disabled={!canRedo} title="Rehacer"><EditorialIcon name="redo" /></button>
         <span className="editorial-toolbar-divider" />
         <button type="button" onClick={actions.addText} title="Agregar texto"><EditorialIcon name="text" /></button>
-        <button type="button" onClick={actions.addShape} title="Agregar rectángulo"><EditorialIcon name="rectangle" /></button>
+        <div className="editorial-toolbar-shapes" ref={shapesRef}>
+          <button type="button" className={shapesOpen ? "active" : ""} aria-haspopup="true" aria-expanded={shapesOpen} onClick={() => setShapesOpen((value) => !value)} title="Agregar figura"><EditorialIcon name="rectangle" /></button>
+          {shapesOpen && (
+            <div className="editorial-toolbar-shapes-menu" role="menu" aria-label="Figuras">
+              {EDITORIAL_SHAPE_TYPES.map(([type, label]) => (
+                <button type="button" role="menuitem" key={type} onClick={() => { setShapesOpen(false); actions.addShape(type); }}>{label}</button>
+              ))}
+            </div>
+          )}
+        </div>
         <label className="editorial-toolbar-file-button" title="Agregar imagen">
           <EditorialIcon name="image" />
           <input type="file" accept="image/*" onChange={handleImage} />

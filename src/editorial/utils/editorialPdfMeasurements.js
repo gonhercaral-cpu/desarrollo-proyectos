@@ -1,3 +1,5 @@
+import { documentCoordinateToInches } from "./editorialPdfCoordinateAdapter.js";
+
 export const PDF_POINTS_PER_INCH = 72;
 
 export function getPdfPageSize(page, bleedIn = 0) {
@@ -15,9 +17,8 @@ export function getPdfPageSize(page, bleedIn = 0) {
   };
 }
 
-export function editorUnitsToInches(value, page, metrics = {}) {
-  const internalWidth = Number(metrics.internalWidth || page.internalWidth || 768);
-  return Number(value || 0) * (Number(page.width || page.widthIn || 8) / internalWidth);
+export function editorUnitsToInches(value) {
+  return documentCoordinateToInches(value);
 }
 
 export function effectiveImageDpi(element, page) {

@@ -17,7 +17,7 @@ export function normalizeMasterPage(master = {}, index = 0, project = {}) {
     side: MASTER_SIDES.includes(master.side) ? master.side : "any",
     width: Number(master.width || project.widthIn || 8),
     height: Number(master.height || project.heightIn || 10),
-    background: master.background || "#ffffff",
+    background: master.background ?? "#ffffff",
     order: Number(master.order ?? index),
   };
 }

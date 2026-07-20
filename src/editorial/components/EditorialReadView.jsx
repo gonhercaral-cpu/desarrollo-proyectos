@@ -75,6 +75,7 @@ export default function EditorialReadView({
           <EditorialWorkspace
             metrics={metrics}
             zoom={zoom}
+            unit={project.unit || "in"}
             viewMode={viewMode}
             showRulers={false}
             guideSettings={{}}

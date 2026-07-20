@@ -5,6 +5,7 @@ function mergeOverride(base, override = {}) {
   return {
     ...base,
     ...(Object.hasOwn(override, "content") ? { content: override.content } : {}),
+    ...Object.fromEntries(["shapeType", "points", "shadow", "imageBorder"].filter((field) => Object.hasOwn(override, field)).map((field) => [field, override[field]])),
     style: { ...(base.style || {}), ...(override.style || {}) },
   };
 }
@@ -45,6 +46,10 @@ export function resolveComponentElement(instance, componentsById = new Map()) {
     style: overridden.style,
     type: masterElement.type,
     name: masterElement.name,
+    shapeType: overridden.shapeType,
+    points: overridden.points,
+    shadow: overridden.shadow,
+    imageBorder: overridden.imageBorder,
     visibilityMode: instance.componentOverrides?.visibilityMode || masterElement.visibilityMode || "both",
     answerData: Object.hasOwn(instance.componentOverrides || {}, "answerData") ? instance.componentOverrides.answerData : masterElement.answerData,
     studentContent: instance.componentOverrides?.studentContent ?? masterElement.studentContent,
@@ -111,6 +116,9 @@ export function createMasterOverride(current = {}, changes = {}) {
   if (Object.hasOwn(changes, "hidden")) next.hidden = Boolean(changes.hidden);
   if (Object.hasOwn(changes, "content")) next.content = changes.content;
   if (changes.style) next.style = { ...(next.style || {}), ...changes.style };
+  ["shapeType", "points", "shadow", "imageBorder"].forEach((field) => {
+    if (Object.hasOwn(changes, field)) next[field] = changes[field];
+  });
   if (Object.hasOwn(changes, "detachedElementId")) next.detachedElementId = changes.detachedElementId;
   return next;
 }

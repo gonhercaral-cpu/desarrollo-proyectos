@@ -16,6 +16,8 @@ import { levelCan, resolveEditorialLevel } from "../models/editorialPermissions"
 import { getUserDepartmentIds } from "../../utils/departmentMembership";
 import { buildPrintAutofill } from "../utils/editorialPrintPayload";
 import { buildEditorialLinkRecord, deriveEditorialMetrics } from "../utils/editorialProjectLink";
+import { backgroundPersistenceFields, buildBackgroundFromAsset, normalizeEditorialBackground } from "../models/editorialBackground";
+import { cleanupUnusedEditorialAssets } from "../services/editorialAssetUsageService";
 import { createEditorialDriveFolder, createEditorialPrintRequest, saveEditorialExportToDrive } from "../services/editorialIntegrationsService";
 import { addProjectEvidence, getProjectsLinkedToEditorialDocument, getVisibleProjects, linkEditorialDocument, unlinkEditorialDocument } from "../../services/projectsService";
 import { createEditorialProject, updateEditorialPermissions, updateEditorialProjectConfig } from "../services/editorialProjectsService";
@@ -90,8 +92,9 @@ function QuickPreview({ project, pages, onClose }) {
 function EditorialEditorReady({ project, documents, profile, theme, onToggleTheme, onBack, onOpenProject }) {
   const navigation = useEditorialDocumentNavigation({ project, documents, user: profile });
   const activePage = navigation.activePage;
-  const design = useEditorialDesignSystem({ project, documentId: navigation.documentId });
+  const design = useEditorialDesignSystem({ project, documentId: navigation.documentId, user: profile });
   const [editorMode, setEditorMode] = useState({ kind: "page", id: "" });
+  const [backgroundHistories, setBackgroundHistories] = useState(() => new Map());
   const activeMaster = editorMode.kind === "master" ? design.mastersById.get(editorMode.id) : null;
   const activeComponent = editorMode.kind === "component" ? design.componentsById.get(editorMode.id) : null;
   const context = useMemo(() => editorMode.kind === "master"
@@ -218,7 +221,7 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
   const [zoom, setZoomState] = useState(0.75);
   const [viewMode, setViewMode] = useState("single");
   const [showRulers, setShowRulers] = useState(true);
-  const [guideSettings, setGuideSettings] = useState({ bleed: true, cut: true, safe: true, margins: true, gutter: true });
+  const [guideSettings, setGuideSettings] = useState({ bleed: true, cut: true, safe: true, margins: true, gutter: true, smartGuides: true, snapping: true });
   const editableSurface = useMemo(() => activeMaster || (activeComponent ? { ...activePage, name: activeComponent.name } : activePage), [activeComponent, activeMaster, activePage]);
   const metrics = useMemo(() => getPageMetrics(getPageProject(project, editableSurface)), [editableSurface, project]);
   const setZoom = useCallback((value) => setZoomState(clampZoom(value)), []);
@@ -353,6 +356,94 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
 
   function createIntegrationsFolder({ name, parentId }) {
     return createEditorialDriveFolder({ parentId, name });
+  }
+
+  // Fase 8 — Usar imagen seleccionada como fondo de la página actual. Referencia
+  // el asset existente (no duplica) y quita el elemento local.
+  function backgroundHistoryKey() {
+    return editorMode.kind === "master" ? `master:${activeMaster?.id || ""}` : `page:${activePage?.id || ""}`;
+  }
+
+  function currentBackground() {
+    const surface = editorMode.kind === "master" ? activeMaster : activePage;
+    return normalizeEditorialBackground(surface?.background, surface?.backgroundImage);
+  }
+
+  async function persistBackground(background) {
+    const changes = backgroundPersistenceFields(background);
+    if (editorMode.kind === "page" && activePage?.id) {
+      await navigation.updatePage(activePage.id, changes);
+      return;
+    }
+    if (editorMode.kind === "master" && activeMaster?.id) {
+      await updateEditorialMasterPage({ projectId: project.id, documentId: navigation.documentId, masterPageId: activeMaster.id, changes, user: profile });
+      return;
+    }
+    throw new Error("Este contexto no admite fondo.");
+  }
+
+  async function commitBackground(background) {
+    const before = currentBackground();
+    const next = normalizeEditorialBackground(background);
+    if (JSON.stringify(before) === JSON.stringify(next)) return;
+    await persistBackground(next);
+    const key = backgroundHistoryKey();
+    setBackgroundHistories((current) => {
+      const historyState = current.get(key) || { past: [], future: [] };
+      return new Map(current).set(key, { past: [...historyState.past, before].slice(-50), future: [] });
+    });
+  }
+
+  async function undoBackground() {
+    const key = backgroundHistoryKey(); const state = backgroundHistories.get(key);
+    if (!state?.past.length) return;
+    const previous = state.past.at(-1); const current = currentBackground();
+    await persistBackground(previous);
+    setBackgroundHistories((values) => new Map(values).set(key, { past: state.past.slice(0, -1), future: [current, ...state.future].slice(0, 50) }));
+  }
+
+  async function redoBackground() {
+    const key = backgroundHistoryKey(); const state = backgroundHistories.get(key);
+    if (!state?.future.length) return;
+    const next = state.future[0]; const current = currentBackground();
+    await persistBackground(next);
+    setBackgroundHistories((values) => new Map(values).set(key, { past: [...state.past, current].slice(-50), future: state.future.slice(1) }));
+  }
+
+  async function handleUseAsBackground(imageElement) {
+    if (editorMode.kind === "component") return;
+    const background = buildBackgroundFromAsset({
+      id: imageElement.assetId,
+      url: imageElement.assetUrl,
+      storagePath: imageElement.storagePath,
+    });
+    if (!background) return;
+    try {
+      await commitBackground({ ...currentBackground(), type: "image", image: background });
+      editor.actions.removeElement(imageElement.id);
+    } catch (error) {
+      console.error("Editorial: fallo al usar imagen como fondo", error);
+    }
+  }
+
+  async function handleReplaceBackground(file) {
+    const asset = await editor.actions.uploadImageAsset(file);
+    try {
+      await commitBackground({ ...currentBackground(), type: "image", image: buildBackgroundFromAsset(asset) });
+    } catch (error) {
+      await cleanupUnusedEditorialAssets(project.id, new Set([asset.id])).catch(() => {});
+      throw error;
+    }
+  }
+
+  function handleUpdateBackground(changes) {
+    const current = currentBackground();
+    const next = normalizeEditorialBackground({
+      ...current,
+      ...changes,
+      image: changes.image ? { ...(current.image || {}), ...changes.image } : current.image,
+    });
+    commitBackground(next).catch((error) => console.error("Editorial: fallo al actualizar fondo", error));
   }
 
   function sendIntegrationsPrint(form) {
@@ -623,8 +714,8 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
   const spreadSlots = useMemo(() => {
     if (editorMode.kind !== "page") {
       const resource = activeMaster || activeComponent;
-      const surface = { id: resource?.id || editorMode.id, name: resource?.name || "Contexto de diseño", width: resource?.width || activePage?.width, height: resource?.height || activePage?.height, orientation: activePage?.orientation, background: resource?.background || "#ffffff" };
-      return [{ page: surface, active: true, metrics: getPageMetrics(getPageProject(project, surface)), background: surface.background, elements: renderedElements, backgroundElements: [], selectedElement: resolvedSelectedElement, selectedIds: editor.selectedIds, numberLabel: editorMode.kind === "master" ? "Maestra" : "Componente" }];
+      const surface = { id: resource?.id || editorMode.id, name: resource?.name || "Contexto de diseño", width: resource?.width || activePage?.width, height: resource?.height || activePage?.height, orientation: activePage?.orientation, background: normalizeEditorialBackground(resource?.background, resource?.backgroundImage), backgroundImage: null };
+      return [{ page: surface, active: true, metrics: getPageMetrics(getPageProject(project, surface)), background: surface.background, backgroundImage: surface.backgroundImage, elements: renderedElements, backgroundElements: [], selectedElement: resolvedSelectedElement, selectedIds: editor.selectedIds, numberLabel: editorMode.kind === "master" ? "Maestra" : "Componente" }];
     }
     const slotPages = viewMode === "facing" && !spread.standalone ? [spread.left, spread.right] : [activePage];
     return slotPages.map((page) => {
@@ -637,7 +728,12 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
         page,
         active,
         metrics: getPageMetrics(getPageProject(project, page || activePage)),
-        background: master?.background || page?.background,
+        background: page?.background && typeof page.background === "object"
+          ? normalizeEditorialBackground(page.background, page.backgroundImage)
+          : page?.backgroundImage
+            ? normalizeEditorialBackground(page.background, page.backgroundImage)
+            : normalizeEditorialBackground(master?.background ?? page?.background, master?.backgroundImage),
+        backgroundImage: null,
         elements: localElements,
         backgroundElements: active ? activeMasterElements : master ? resolveAcademicViewElements(resolveMasterElements(master.elements || [], page.masterOverrides, { stylesById: design.stylesById, variables }), variantState.variant) : [],
         selectedElement: active ? resolvedSelectedElement : null,
@@ -652,6 +748,17 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
   const structureError = dialogError || navigation.error;
   const contextLabel = editorMode.kind === "master" ? `Maestra · ${activeMaster?.name || "Cargando"}` : editorMode.kind === "component" ? `Componente · ${activeComponent?.name || "Cargando"}` : `Página · ${activePage?.name || ""}`;
   const displayEditor = { ...editor, elements: resolvedElements, selectedElement: resolvedSelectedElement, selectedElements: resolvedSelectedElements, mode: editorMode, section: activeSection };
+  const backgroundState = {
+    kind: editorMode.kind,
+    background: currentBackground(),
+    onChange: handleUpdateBackground,
+    onReplace: handleReplaceBackground,
+    onRemove: () => commitBackground({ type: "none", color: "#ffffff", opacity: 1, image: null }).catch((error) => console.error("Editorial: fallo al eliminar fondo", error)),
+    onUndo: () => undoBackground().catch((error) => console.error("Editorial: fallo al deshacer fondo", error)),
+    onRedo: () => redoBackground().catch((error) => console.error("Editorial: fallo al rehacer fondo", error)),
+    canUndo: Boolean(backgroundHistories.get(backgroundHistoryKey())?.past.length),
+    canRedo: Boolean(backgroundHistories.get(backgroundHistoryKey())?.future.length),
+  };
 
   async function handleMenuImage(event) {
     const file = event.target.files?.[0];
@@ -703,8 +810,8 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
       <EditorialEditorToolbar leftOpen={leftOpen} rightOpen={rightOpen} bottomOpen={bottomOpen} selectedElement={resolvedSelectedElement} canUndo={editor.canUndo} canRedo={editor.canRedo} zoomProps={{ ...zoomProps, viewMode: editorMode.kind === "page" ? viewMode : "single" }} actions={editor.actions} onToggleLeft={() => setLeftOpen((value) => !value)} onToggleRight={() => setRightOpen((value) => !value)} onToggleBottom={() => setBottomOpen((value) => !value)} onOpenConfig={() => setConfigOpen(true)} />
       <nav className="editorial-editor-rail" aria-label="Navegación editorial">{RAIL_ITEMS.map(([name, label]) => <button type="button" className={activeRail === name ? "active" : ""} onClick={() => setActiveRail(name)} disabled={!ACTIVE_RAILS.has(name)} title={!ACTIVE_RAILS.has(name) ? "Disponible en una fase posterior" : undefined} key={name}><EditorialIcon name={name} /><span>{label}</span></button>)}<button type="button" className="editorial-rail-back" onClick={handleBack}><EditorialIcon name="arrowLeft" /><span>Proyectos</span></button></nav>
       {leftOpen && <EditorialStructurePanel projectId={project.id} project={project} activeRail={activeRail} railItems={RAIL_ITEMS} navigation={navigation} ordering={ordering} activeElements={editorMode.kind === "page" ? renderedElements : []} onSelectPage={handleSelectPage} onCreatePage={openCreatePage} onCreateSection={(initialType) => setSectionDialog({ initialType })} onEditSection={(section) => setSectionDialog({ section })} onDeleteSection={(section) => setDeleteTarget({ kind: "section", item: section })} onPageAction={handlePageAction} design={design} editor={displayEditor} editorMode={editorMode} academicMetadata={academicMetadata} relatedProjects={relatedProjects} onAcademicAction={handleAcademicAction} onDesignAction={handleDesignAction} canManageInstitutional={String(profile?.role || "").toLowerCase() === "admin"} production={production} publications={publications.publications} pubBusy={publications.busy} pubError={publications.error} caps={caps} indexState={indexState} onIndexAction={handleIndexAction} onNavigateIssue={handleNavigateIssue} onExport={(settings) => setExportDialog(settings || {})} onDownloadExport={downloadStoredExport} onPublish={handlePublish} onUnpublish={(pub) => publications.actions.unpublish(pub).catch(() => {})} onRepublish={(pub) => publications.actions.republish(pub).catch(() => {})} onArchive={(pub) => publications.actions.archive(pub).catch(() => {})} onOpenSource={() => setReadViewOpen(true)} onSaveExportToDrive={(item) => { setIntegrationsError(""); setIntegrationsDialog({ mode: "drive", exportItem: item }); }} onSendExportToPrint={(item) => { setIntegrationsError(""); setIntegrationsDialog({ mode: "print", exportItem: item, autofill: buildPrintAutofill({ project, document: { id: navigation.documentId, title: project.name }, exportItem: item, user: profile }) }); }} onOpenReadView={() => setReadViewOpen(true)} projectLink={{ metrics: editorialMetrics, visibleProjects, linkedProjects, busy: projectLinkBusy, error: projectLinkError, onLink: handleLinkProject, onUnlink: handleUnlinkProject, onAttachEvidence: handleAttachEvidence }} />}
-      <EditorialWorkspace ref={workspaceRef} metrics={metrics} zoom={zoom} viewMode={editorMode.kind === "page" ? viewMode : "single"} showRulers={showRulers} guideSettings={guideSettings} spreadSlots={spreadSlots} onZoomChange={setZoom} onSelectPage={handleSelectPage} onSelectElement={editor.select} onChangeElement={handleCanvasElementChange} onAcademicDrop={(payload) => payload.kind === "block" && handleAcademicAction("insert-block", payload.value)} />
-      {rightOpen && <EditorialInspectorPanel activeTab={activeInspector} onChangeTab={setActiveInspector} editor={editor} displayEditor={displayEditor} design={design} page={editorMode.kind === "page" ? activePage : null} master={activePageMaster} variant={variantState.variant} academicWarnings={academicWarnings} onDesignAction={handleDesignAction} onRegenerate={handleRegenerate} />}
+      <EditorialWorkspace ref={workspaceRef} metrics={metrics} zoom={zoom} unit={project.unit || "in"} viewMode={editorMode.kind === "page" ? viewMode : "single"} showRulers={showRulers} guideSettings={guideSettings} spreadSlots={spreadSlots} onZoomChange={setZoom} onSelectPage={handleSelectPage} onSelectElement={editor.select} onChangeElement={handleCanvasElementChange} onAcademicDrop={(payload) => payload.kind === "block" && handleAcademicAction("insert-block", payload.value)} />
+      {rightOpen && <EditorialInspectorPanel activeTab={activeInspector} onChangeTab={setActiveInspector} editor={editor} displayEditor={displayEditor} design={design} page={editorMode.kind === "page" ? activePage : null} master={activePageMaster} variant={variantState.variant} backgroundState={backgroundState} academicWarnings={academicWarnings} onDesignAction={handleDesignAction} onRegenerate={handleRegenerate} onUseAsBackground={editorMode.kind !== "component" ? handleUseAsBackground : undefined} />}
       {bottomOpen && <EditorialBottomPanel project={project} navigation={navigation} ordering={ordering} activeElements={editorMode.kind === "page" ? renderedElements : []} onSelectPage={handleSelectPage} />}
       {structureError && !pageDialog && !sectionDialog && !deleteTarget && !designDialog && <div className="editorial-structure-error" role="alert">{structureError}<button type="button" onClick={() => { setDialogError(""); navigation.clearError(); }}>Cerrar</button></div>}
       <EditorialProjectDialog key={configOpen ? `config-${project.updatedAt?.seconds || "open"}` : "config-closed"} open={configOpen} title="Configuración editorial" submitLabel="Guardar cambios" initialProject={project} busy={editor.saveStatus === "saving"} error={saveError} onClose={() => { setConfigOpen(false); setSaveError(""); }} onSubmit={handleSaveConfig} />
