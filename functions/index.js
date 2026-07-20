@@ -23,6 +23,13 @@ const {
   isActiveCertificateSigner,
   normalizeCertificateSignerType,
 } = require("./certificatePeople");
+const {
+  enterProductionBatchInventory,
+  reconcileAllProducts,
+  reconcileProductReplenishment,
+  reviewProductionBatchQuality,
+  updateProductionBatchProgress,
+} = require("./productionBatches");
 
 initializeApp();
 
@@ -73,6 +80,53 @@ async function assertAdmin(request) {
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function getProfileDepartmentNames(profile = {}) {
+  return [
+    profile.area,
+    profile.department,
+    profile.departmentName,
+    ...(Array.isArray(profile.departments) ? profile.departments : []),
+    ...(Array.isArray(profile.departmentNames) ? profile.departmentNames : []),
+  ]
+    .map((value) => cleanString(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())
+    .filter(Boolean);
+}
+
+async function getActiveBatchActor(request) {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Debes iniciar sesión para realizar esta acción.");
+  }
+  const snapshot = await db.collection("users").doc(request.auth.uid).get();
+  if (!snapshot.exists || snapshot.data().active !== true) {
+    throw new HttpsError("permission-denied", "Tu perfil no está activo.");
+  }
+  const profile = snapshot.data();
+  const isAdmin = cleanString(profile.role).toLowerCase() === "admin";
+  const inPrintshop = getProfileDepartmentNames(profile).some((name) =>
+    ["imprenta", "impresion", "soporte tecnico"].includes(name)
+      || name.split(" ").includes("imprenta"));
+  if (!isAdmin && !inPrintshop) {
+    throw new HttpsError("permission-denied", "Tu perfil no tiene acceso a Imprenta.");
+  }
+  return {
+    uid: request.auth.uid,
+    name: cleanString(profile.name || profile.displayName || profile.email),
+    email: cleanString(profile.email),
+    isAdmin,
+  };
+}
+
+function throwBatchHttpsError(error, fallbackMessage) {
+  if (error instanceof HttpsError) throw error;
+  const message = error?.message || fallbackMessage;
+  const permissionError = /solo |permiso|perfil|auditor|responsable/i.test(message);
+  const missingError = /no se encontr/i.test(message);
+  throw new HttpsError(
+    permissionError ? "permission-denied" : missingError ? "not-found" : "failed-precondition",
+    message
+  );
 }
 
 async function syncPublicCertificatePerson(projectionId, sourceId, data, type) {
@@ -361,6 +415,124 @@ exports.repairPrintRequestAssignmentsDaily = onSchedule(
       FieldValue
     );
   }
+);
+
+exports.reviewProductionBatchQuality = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const actor = await getActiveBatchActor(request);
+      const batchId = cleanString(request.data?.batchId);
+      const review = request.data?.review;
+      if (!batchId || !review || typeof review !== "object" || Array.isArray(review)) {
+        throw new HttpsError("invalid-argument", "Faltan lote o datos de revisión.");
+      }
+      return await reviewProductionBatchQuality(db, batchId, review, actor, FieldValue);
+    } catch (error) {
+      console.error("[production-batches] No se pudo guardar calidad", error);
+      throwBatchHttpsError(error, "No se pudo guardar la revisión de calidad.");
+    }
+  }
+);
+
+exports.updateProductionBatchProgress = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const actor = await getActiveBatchActor(request);
+      const batchId = cleanString(request.data?.batchId);
+      const update = request.data?.update;
+      if (!batchId || !update || typeof update !== "object" || Array.isArray(update)) {
+        throw new HttpsError("invalid-argument", "Faltan lote o datos de producción.");
+      }
+      return await updateProductionBatchProgress(db, batchId, update, actor, FieldValue);
+    } catch (error) {
+      console.error("[production-batches] No se pudo actualizar producción", error);
+      throwBatchHttpsError(error, "No se pudo actualizar el avance de producción.");
+    }
+  }
+);
+
+exports.enterProductionBatchInventory = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const actor = await getActiveBatchActor(request);
+      const batchId = cleanString(request.data?.batchId);
+      if (!batchId) throw new HttpsError("invalid-argument", "Falta el lote de producción.");
+      return await enterProductionBatchInventory(db, batchId, actor, FieldValue);
+    } catch (error) {
+      console.error("[production-batches] No se pudo ingresar inventario", error);
+      throwBatchHttpsError(error, "No se pudo ingresar el lote al inventario.");
+    }
+  }
+);
+
+async function reconcileProductFromEvent(event, fallbackProductId = "") {
+  const beforeProductId = cleanString(event.data?.before.exists ? event.data.before.data()?.productId : "");
+  const afterProductId = cleanString(event.data?.after.exists ? event.data.after.data()?.productId : "");
+  const productIds = [...new Set([fallbackProductId, beforeProductId, afterProductId].filter(Boolean))];
+  for (const productId of productIds) {
+    await reconcileProductReplenishment(db, productId, { fieldValue: FieldValue });
+  }
+}
+
+exports.reconcileProductionBatchFromProduct = onDocumentWritten(
+  {
+    document: "printProducts/{productId}",
+    region: "us-central1",
+    timeoutSeconds: 120,
+  },
+  async (event) => reconcileProductFromEvent(event, event.params.productId)
+);
+
+exports.reconcileProductionBatchFromInventory = onDocumentWritten(
+  {
+    document: "printFinishedInventory/{inventoryId}",
+    region: "us-central1",
+    timeoutSeconds: 120,
+  },
+  reconcileProductFromEvent
+);
+
+exports.reconcileProductionBatchFromMovement = onDocumentWritten(
+  {
+    document: "printInventoryMovements/{movementId}",
+    region: "us-central1",
+    timeoutSeconds: 120,
+  },
+  reconcileProductFromEvent
+);
+
+exports.reconcileProductionBatchFromBatch = onDocumentWritten(
+  {
+    document: "printProductionBatches/{batchId}",
+    region: "us-central1",
+    timeoutSeconds: 120,
+  },
+  reconcileProductFromEvent
+);
+
+exports.reconcileProductionBatchesHourly = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    timeZone: "America/Tijuana",
+    region: "us-central1",
+    timeoutSeconds: 540,
+  },
+  async () => reconcileAllProducts(db, { fieldValue: FieldValue })
 );
 
 function createTemporaryPassword() {

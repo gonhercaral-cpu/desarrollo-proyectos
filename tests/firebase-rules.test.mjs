@@ -78,6 +78,14 @@ async function seedBaseData() {
         area: "Imprenta",
         departments: ["Imprenta"],
       }),
+      setDoc(doc(db, "users", "auditor"), {
+        name: "Auditor",
+        email: "auditor@test.local",
+        role: "collaborator",
+        active: true,
+        area: "Imprenta",
+        departments: ["Imprenta"],
+      }),
       setDoc(doc(db, "users", "inactive"), {
         name: "Inactive",
         email: "inactive@test.local",
@@ -177,6 +185,36 @@ async function seedBaseData() {
         students: [],
         deleted: false,
       }),
+      setDoc(doc(db, "printProducts", "book-1"), {
+        name: "Journey A1",
+        category: "Libro",
+        productionType: "Producto terminado",
+        level: "A1",
+        unit: "Libro",
+        minStock: 10,
+        idealStock: 30,
+        requiresPrinting: true,
+        requiresBinding: true,
+        requiresCutting: true,
+        requiresQualityCheck: true,
+        requiresSignature: false,
+        requiresValidationQr: false,
+        active: true,
+        notes: "",
+      }),
+      setDoc(doc(db, "printFinishedInventory", "inventory-book-1"), {
+        productId: "book-1",
+        productName: "Journey A1",
+        category: "Libro",
+        level: "A1",
+        unit: "Libro",
+        currentStock: 10,
+        minStock: 10,
+        idealStock: 30,
+        active: true,
+        notes: "",
+      }),
+      setDoc(doc(db, "printProductionBatches", "batch-1"), validProductionBatch()),
       setDoc(doc(db, "editorialProjects", "editorial-owned"), {
         name: "Libro del colaborador",
         type: "book",
@@ -345,6 +383,51 @@ function validIdea(overrides = {}) {
     createdByEmail: "requester@test.local",
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
+    ...overrides,
+  };
+}
+
+function validProductionBatch(overrides = {}) {
+  const checklistIds = [
+    "cover", "level", "pagesComplete", "pageOrder", "printQuality",
+    "cleanPrint", "cutting", "binding", "quantityMatches", "approvedRejectedRegistered",
+  ];
+  return {
+    folio: "LOT-2026-001",
+    productId: "book-1",
+    productName: "Journey A1",
+    category: "Libro",
+    level: "A1",
+    unit: "Libro",
+    plannedQuantity: 20,
+    producedQuantity: 0,
+    approvedQuantity: 0,
+    rejectedQuantity: 0,
+    status: "Planeado",
+    progress: 10,
+    responsible: "Printer",
+    responsibleUid: "printer",
+    responsibleName: "Printer",
+    responsibleEmail: "printer@test.local",
+    auditorUid: "auditor",
+    auditorName: "Auditor",
+    auditorEmail: "auditor@test.local",
+    startDate: "2026-07-20",
+    dueDate: "2026-07-25",
+    notes: "",
+    qualityChecklist: checklistIds.map((id) => ({ id, label: id, checked: false })),
+    qualityStatus: "Pendiente",
+    qualityResult: "Pendiente",
+    qualityNotes: "",
+    qualityCompleted: false,
+    inventoryApplied: false,
+    inventoryId: "",
+    inventoryMovementId: "",
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+    updatedByUid: "admin",
+    updatedByName: "Admin",
+    updatedByEmail: "admin@test.local",
     ...overrides,
   };
 }
@@ -559,6 +642,117 @@ describe("roles y perfiles", () => {
   it("bloquea usuario inactivo aunque tenga role admin", async () => {
     const db = auth("inactive");
     await assertFails(getDocs(collection(db, "projects")));
+  });
+});
+
+describe("lotes de producción", () => {
+  it("permite al administrador crear y editar datos manuales", async () => {
+    const db = auth("admin");
+    await assertSucceeds(setDoc(
+      doc(db, "printProductionBatches", "batch-manual"),
+      validProductionBatch({ folio: "LOT-2026-002", plannedQuantity: 12 })
+    ));
+    await assertSucceeds(updateDoc(doc(db, "printProductionBatches", "batch-manual"), {
+      plannedQuantity: 15,
+      dueDate: "2026-07-28",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "admin",
+      updatedByName: "Admin",
+      updatedByEmail: "admin@test.local",
+    }));
+  });
+
+  it("limita responsable a cantidad producida y transición ordenada", async () => {
+    const batchRef = doc(auth("printer"), "printProductionBatches", "batch-1");
+    await assertSucceeds(updateDoc(batchRef, {
+      status: "En impresión",
+      producedQuantity: 5,
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    }));
+    await assertFails(updateDoc(batchRef, {
+      status: "En revisión de calidad",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    }));
+    await assertFails(updateDoc(batchRef, {
+      plannedQuantity: 99,
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    }));
+  });
+
+  it("limita auditor a revisión en curso y reserva cierre al servidor", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "printProductionBatches", "batch-1"), {
+        status: "En revisión de calidad",
+        producedQuantity: 20,
+        progress: 75,
+      });
+    });
+    const batchRef = doc(auth("auditor"), "printProductionBatches", "batch-1");
+    await assertSucceeds(updateDoc(batchRef, {
+      qualityStatus: "En revisión",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "auditor",
+      updatedByName: "Auditor",
+      updatedByEmail: "auditor@test.local",
+    }));
+    await assertFails(updateDoc(batchRef, {
+      status: "Aprobado",
+      progress: 100,
+      qualityStatus: "Aprobado",
+      qualityResult: "Aprobado",
+      qualityCompleted: true,
+      updatedAt: Timestamp.now(),
+      updatedByUid: "auditor",
+      updatedByName: "Auditor",
+      updatedByEmail: "auditor@test.local",
+    }));
+  });
+
+  it("bloquea ingreso directo y cambios críticos incluso con escrituras agrupadas", async () => {
+    const printerDb = auth("printer");
+    const batch = writeBatch(printerDb);
+    batch.update(doc(printerDb, "printFinishedInventory", "inventory-book-1"), {
+      currentStock: 30,
+      lastBatchId: "batch-1",
+      lastBatchFolio: "LOT-2026-001",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    });
+    batch.update(doc(printerDb, "printProductionBatches", "batch-1"), {
+      status: "Ingresado a inventario",
+      progress: 100,
+      inventoryApplied: true,
+      inventoryId: "inventory-book-1",
+      inventoryMovementId: "forged",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    });
+    await assertFails(batch.commit());
+
+    await assertFails(updateDoc(doc(auth("admin"), "printProductionBatches", "batch-1"), {
+      status: "Ingresado a inventario",
+      progress: 100,
+      inventoryApplied: true,
+      inventoryId: "inventory-book-1",
+      inventoryMovementId: "forged-admin",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "admin",
+      updatedByName: "Admin",
+      updatedByEmail: "admin@test.local",
+    }));
   });
 });
 

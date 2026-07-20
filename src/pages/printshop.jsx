@@ -72,6 +72,25 @@ import {
   resolveCertificateSignerCampus,
 } from "../utils/certificateSignerCampus";
 import { formatPrintRequestCreatedAt } from "../utils/printRequestDateTime";
+import {
+  enterProductionBatchInventory,
+  saveProductionBatchQualityReview,
+  updateProductionBatchProgress,
+} from "../services/productionBatchesService";
+import {
+  BATCH_STATUS,
+  QUALITY_STATUS,
+  canBatchEnterInventory,
+  getBatchStatusForQuality,
+  getProductionBatchProgress,
+  isFinishedQualityResult,
+  isResponsibleStatusTransitionAllowed,
+  isSuccessfulQualityResult,
+  normalizeProductionBatchStatus,
+  productionBatchStatuses,
+  productionResponsibleStatuses,
+  qualityStatuses,
+} from "../utils/productionBatches";
 
 const productCategories = [
   "Libro",
@@ -542,37 +561,6 @@ function createStandaloneCertificateForm() {
     notes: "",
   };
 }
-
-const productionBatchStatuses = [
-  "Planeado",
-  "En impresión",
-  "En encuadernado",
-  "En revisión de calidad",
-  "Aprobado",
-  "Ingresado a inventario",
-  "Cerrado",
-  "Cancelado",
-];
-
-const productionResponsibleStatuses = [
-  "En impresión",
-  "En encuadernado",
-  "En revisión de calidad",
-];
-
-const qualityAuditorStatuses = [
-  "En revisión de calidad",
-  "Aprobado",
-  "Cancelado",
-];
-
-const qualityStatuses = [
-  "Pendiente",
-  "En revisión",
-  "Aprobado",
-  "Aprobado con observaciones",
-  "Rechazado",
-];
 
 const qualityChecklistItems = [
   { id: "cover", label: "Portada correcta" },
@@ -3819,25 +3807,16 @@ function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSum
 }
 
 function getBatchProgress(batch) {
-  const statusProgress = {
-    Planeado: 10,
-    "En impresión": 35,
-    "En encuadernado": 55,
-    "En revisión de calidad": 75,
-    Aprobado: 90,
-    "Ingresado a inventario": 100,
-    Cerrado: 100,
-    Cancelado: 0,
-  };
-
-  return statusProgress[batch?.status] ?? 0;
+  return getProductionBatchProgress(batch);
 }
 
 function getBatchStatusTone(status) {
-  if (status === "Cancelado") return "red";
-  if (status === "Ingresado a inventario" || status === "Cerrado") return "green";
-  if (status === "Aprobado" || status === "En revisión de calidad") return "orange";
-  if (status === "En impresión" || status === "En encuadernado") return "blue";
+  const normalizedStatus = normalizeProductionBatchStatus(status);
+  if (normalizedStatus === BATCH_STATUS.CANCELLED) return "red";
+  if ([BATCH_STATUS.APPROVED, BATCH_STATUS.APPROVED_WITH_NOTES,
+    BATCH_STATUS.INVENTORIED, BATCH_STATUS.CLOSED].includes(normalizedStatus)) return "green";
+  if (normalizedStatus === BATCH_STATUS.QUALITY_REVIEW) return "orange";
+  if ([BATCH_STATUS.PRINTING, BATCH_STATUS.BINDING].includes(normalizedStatus)) return "blue";
   return "teal";
 }
 
@@ -3860,18 +3839,6 @@ function normalizeBatchQualityChecklist(checklist) {
       checked: savedItem?.checked === true,
     };
   });
-}
-
-function isBatchQualityApproved(batch) {
-  const status = batch?.qualityStatus || "Pendiente";
-  // Criterio de ingreso alineado con el guardado y con las Firestore Rules:
-  // basta un resultado aprobatorio con la revisión marcada como completada.
-  // No se exige checklist al 100 %, para permitir "Aprobado con observaciones"
-  // (que por definición deja puntos sin marcar, explicados en Observaciones).
-  return (
-    batch?.qualityCompleted === true &&
-    (status === "Aprobado" || status === "Aprobado con observaciones")
-  );
 }
 
 function getUserDisplayName(person) {
@@ -4811,18 +4778,19 @@ export default function PrintShop() {
   const batchStats = useMemo(() => {
     const activeBatches = productionBatches.filter(
       (batch) =>
-        !["Ingresado a inventario", "Cerrado", "Cancelado"].includes(batch.status)
+        ![BATCH_STATUS.INVENTORIED, BATCH_STATUS.CLOSED, BATCH_STATUS.CANCELLED]
+          .includes(normalizeProductionBatchStatus(batch.status))
     );
     const pendingInventory = productionBatches.filter(
-      (batch) =>
-        batch.status === "Aprobado" &&
-        batch.inventoryApplied !== true &&
-        Number(batch.approvedQuantity || 0) > 0
+      (batch) => canBatchEnterInventory(batch)
     );
     const completed = productionBatches.filter(
-      (batch) => batch.inventoryApplied === true || batch.status === "Ingresado a inventario"
+      (batch) => batch.inventoryApplied === true
+        || normalizeProductionBatchStatus(batch.status) === BATCH_STATUS.INVENTORIED
     );
-    const cancelled = productionBatches.filter((batch) => batch.status === "Cancelado");
+    const cancelled = productionBatches.filter(
+      (batch) => normalizeProductionBatchStatus(batch.status) === BATCH_STATUS.CANCELLED
+    );
 
     return {
       total: productionBatches.length,
@@ -4876,8 +4844,9 @@ export default function PrintShop() {
       0
     );
     const inventoryApplied = visibleBatches
-      .filter((batch) => batch.inventoryApplied === true || batch.status === "Ingresado a inventario")
-      .reduce((sum, batch) => sum + Number(batch.approvedQuantity || 0), 0);
+      .filter((batch) => batch.inventoryApplied === true
+        || normalizeProductionBatchStatus(batch.status) === BATCH_STATUS.INVENTORIED)
+      .reduce((sum, batch) => sum + Number(batch.producedQuantity || 0), 0);
 
     const rejectionRate = produced > 0 ? Math.round((rejected / produced) * 1000) / 10 : 0;
 
@@ -5475,15 +5444,7 @@ export default function PrintShop() {
 
   function canCurrentUserSendBatchToInventory(batch, auditUser = getAuditUser()) {
     if (!batch) return false;
-
-    const inventoryReady =
-      batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
-
-    return (
-      (isAdmin || isBatchResponsible(batch, auditUser)) &&
-      !inventoryReady &&
-      batch.status !== "Cancelado"
-    );
+    return (isAdmin || isBatchResponsible(batch, auditUser)) && canBatchEnterInventory(batch);
   }
 
   function getBatchUserRole(batch = selectedBatch) {
@@ -10235,7 +10196,7 @@ export default function PrintShop() {
       producedQuantity: Number(batch.producedQuantity || 0),
       approvedQuantity: Number(batch.approvedQuantity || 0),
       rejectedQuantity: Number(batch.rejectedQuantity || 0),
-      status: batch.status || "Planeado",
+      status: normalizeProductionBatchStatus(batch.status),
       responsible: batch.responsible || batch.responsibleName || "",
       responsibleUid: batch.responsibleUid || "",
       responsibleName: batch.responsibleName || batch.responsible || "",
@@ -10246,7 +10207,7 @@ export default function PrintShop() {
       startDate: batch.startDate || "",
       dueDate: batch.dueDate || "",
       notes: batch.notes || "",
-      qualityStatus: batch.qualityStatus || "Pendiente",
+      qualityStatus: batch.qualityStatus || batch.qualityResult || QUALITY_STATUS.PENDING,
       qualityChecklist: normalizeBatchQualityChecklist(batch.qualityChecklist),
       qualityNotes: batch.qualityNotes || "",
     });
@@ -10301,40 +10262,60 @@ export default function PrintShop() {
     // La revisión se considera completada cuando el auditor elige un resultado
     // aprobatorio, no cuando marca todos los puntos. "Aprobado con observaciones"
     // implica que hay puntos sin marcar (defectos) explicados en Observaciones.
-    const qualityCompleted =
-      qualityStatus === "Aprobado" || qualityStatus === "Aprobado con observaciones";
-    const requiresApprovedQuality = ["Aprobado", "Ingresado a inventario", "Cerrado"].includes(
-      batchForm.status
+    const qualityCompleted = isFinishedQualityResult(qualityStatus);
+    const qualityApproved = isSuccessfulQualityResult(qualityStatus);
+    const resolvedStatus = qualityCompleted
+      ? getBatchStatusForQuality(qualityStatus, batchForm.status)
+      : normalizeProductionBatchStatus(batchForm.status);
+    const requiresApprovedQuality = [
+      BATCH_STATUS.APPROVED,
+      BATCH_STATUS.APPROVED_WITH_NOTES,
+      BATCH_STATUS.INVENTORIED,
+      BATCH_STATUS.CLOSED,
+    ].includes(
+      resolvedStatus
     );
 
-    if (requiresApprovedQuality && !qualityCompleted) {
+    if (requiresApprovedQuality && !qualityApproved) {
       setBatchMessage(
         "Antes de aprobar, cerrar o ingresar este lote al inventario, completa y aprueba la revisión de calidad."
       );
       return;
     }
 
+    if ([QUALITY_STATUS.APPROVED_WITH_NOTES, QUALITY_STATUS.REJECTED].includes(qualityStatus)
+        && !String(batchForm.qualityNotes || "").trim()) {
+      setBatchMessage("Agrega observaciones para este resultado de calidad.");
+      return;
+    }
+
     if (!isAdmin && role === "responsible") {
-      if (!productionResponsibleStatuses.includes(batchForm.status)) {
+      if (!productionResponsibleStatuses.includes(resolvedStatus)
+          || !isResponsibleStatusTransitionAllowed(
+            selectedBatch?.status,
+            resolvedStatus,
+            selectedBatch?.qualityStatus || selectedBatch?.qualityResult
+          )) {
         setBatchMessage(
-          "El responsable de producción solo puede mover el lote a En impresión, En encuadernado o En revisión de calidad."
+          "Transición no permitida. Avanza en orden: En impresión, En encuadernado y En revisión de calidad."
         );
         return;
       }
 
       const payload = {
-        status: batchForm.status,
+        status: resolvedStatus,
         producedQuantity,
-        notes: batchForm.notes || "",
-        updatedAt: serverTimestamp(),
-        updatedByUid: auditUser.uid,
-        updatedByName: auditUser.name,
-        updatedByEmail: auditUser.email,
       };
 
       try {
         setSavingBatch(true);
-        await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        const result = await updateProductionBatchProgress(selectedBatchId, {
+          status: payload.status,
+          producedQuantity: payload.producedQuantity,
+        });
+        setProductionBatches((current) => current.map((batch) =>
+          batch.id === selectedBatchId ? { ...batch, ...result } : batch
+        ));
         await createPrintshopLog({
           type: "BATCH_UPDATED",
           module: "batches",
@@ -10351,7 +10332,7 @@ export default function PrintShop() {
         setBatchMessage("Avance de producción actualizado correctamente.");
       } catch (error) {
         console.error("No se pudo guardar el avance de producción:", error);
-        setBatchMessage("No se pudo guardar el avance. Revisa permisos de Firestore.");
+        setBatchMessage(error?.message || "No se pudo guardar el avance de producción.");
       } finally {
         setSavingBatch(false);
       }
@@ -10360,39 +10341,25 @@ export default function PrintShop() {
     }
 
     if (!isAdmin && role === "auditor") {
-      if (!qualityAuditorStatuses.includes(batchForm.status)) {
-        setBatchMessage(
-          "El auditor solo puede trabajar el lote en revisión de calidad, aprobado o cancelado."
-        );
-        return;
-      }
-
-      if (batchForm.status === "Aprobado" && !qualityCompleted) {
-        setBatchMessage("Para aprobar el lote, completa el checklist y marca la calidad como aprobada.");
-        return;
-      }
-
-      const payload = {
-        status: batchForm.status,
+      const review = {
         approvedQuantity,
         rejectedQuantity,
         qualityChecklist: normalizedQualityChecklist,
         qualityStatus,
         qualityNotes: batchForm.qualityNotes || "",
-        qualityCompleted,
-        qualityReviewedAt: qualityCompleted ? serverTimestamp() : selectedBatch?.qualityReviewedAt || null,
-        qualityReviewedByUid: qualityCompleted ? auditUser.uid : selectedBatch?.qualityReviewedByUid || "",
-        qualityReviewedByName: qualityCompleted ? auditUser.name : selectedBatch?.qualityReviewedByName || "",
-        qualityReviewedByEmail: qualityCompleted ? auditUser.email : selectedBatch?.qualityReviewedByEmail || "",
-        updatedAt: serverTimestamp(),
-        updatedByUid: auditUser.uid,
-        updatedByName: auditUser.name,
-        updatedByEmail: auditUser.email,
       };
 
       try {
         setSavingBatch(true);
-        await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        const result = await saveProductionBatchQualityReview(selectedBatchId, review);
+        setProductionBatches((current) => current.map((batch) =>
+          batch.id === selectedBatchId ? { ...batch, ...result } : batch
+        ));
+        setBatchForm((current) => ({
+          ...current,
+          status: result.status || current.status,
+          qualityStatus: result.qualityStatus || current.qualityStatus,
+        }));
         await createPrintshopLog({
           type: "BATCH_UPDATED",
           module: "batches",
@@ -10409,7 +10376,7 @@ export default function PrintShop() {
         setBatchMessage("Revisión de calidad actualizada correctamente.");
       } catch (error) {
         console.error("No se pudo guardar la revisión de calidad:", error);
-        setBatchMessage("No se pudo guardar la revisión. Revisa permisos de Firestore.");
+        setBatchMessage(error?.message || "No se pudo guardar la revisión de calidad.");
       } finally {
         setSavingBatch(false);
       }
@@ -10431,7 +10398,8 @@ export default function PrintShop() {
       producedQuantity,
       approvedQuantity,
       rejectedQuantity,
-      status: batchForm.status || "Planeado",
+      status: resolvedStatus,
+      progress: qualityApproved ? 100 : getProductionBatchProgress({ status: resolvedStatus }),
       responsible: batchForm.responsibleName || batchForm.responsible || "",
       responsibleUid: batchForm.responsibleUid || "",
       responsibleName: responsibleUser
@@ -10452,9 +10420,11 @@ export default function PrintShop() {
       notes: batchForm.notes || "",
       qualityChecklist: normalizedQualityChecklist,
       qualityStatus,
+      qualityResult: qualityStatus,
       qualityNotes: batchForm.qualityNotes || "",
       qualityCompleted,
       qualityReviewedAt: qualityCompleted ? serverTimestamp() : selectedBatch?.qualityReviewedAt || null,
+      qualityFinishedAt: qualityCompleted ? serverTimestamp() : selectedBatch?.qualityFinishedAt || null,
       qualityReviewedByUid: qualityCompleted ? auditUser.uid : selectedBatch?.qualityReviewedByUid || "",
       qualityReviewedByName: qualityCompleted ? auditUser.name : selectedBatch?.qualityReviewedByName || "",
       qualityReviewedByEmail: qualityCompleted ? auditUser.email : selectedBatch?.qualityReviewedByEmail || "",
@@ -10466,6 +10436,11 @@ export default function PrintShop() {
       updatedByName: auditUser.name,
       updatedByEmail: auditUser.email,
     };
+
+    if (!selectedBatchId) {
+      payload.origin = "manual";
+      payload.automatic = false;
+    }
 
     if (!payload.responsibleUid) {
       setBatchMessage("Selecciona un responsable de producción.");
@@ -10544,137 +10519,66 @@ export default function PrintShop() {
 
     if (!canCurrentUserSendBatchToInventory(batch, auditUser)) {
       setBatchMessage(
-        "Solo el responsable asignado o un administrador puede ingresar el lote al inventario, y el lote no debe estar cancelado ni ingresado previamente."
+        "El ingreso requiere responsable asignado o administrador, calidad aprobada, 100 % de avance y cantidad producida mayor que cero."
       );
       return;
     }
-
-    if (batch.inventoryApplied === true || batch.status === "Ingresado a inventario") {
-      setBatchMessage("Este lote ya fue ingresado al inventario.");
-      return;
-    }
-
-    const approvedQuantity = Number(batch.approvedQuantity || 0);
-
-    if (approvedQuantity <= 0) {
-      setBatchMessage("Para ingresar un lote al inventario, primero registra cantidad aprobada.");
-      return;
-    }
-
-    if (!isBatchQualityApproved(batch)) {
-      setBatchMessage(
-        "Antes de ingresar este lote al inventario, completa el checklist y marca la revisión de calidad como aprobada."
-      );
-      return;
-    }
-
-    const inventoryItem = inventoryItems.find(
-      (item) => item.productId === batch.productId && item.active !== false
-    );
-
-    if (!inventoryItem) {
-      setBatchMessage(
-        "Este producto todavía no tiene inventario terminado. Primero créalo en la pestaña Inventario terminado."
-      );
-      return;
-    }
-
-    const batchRef = doc(db, "printProductionBatches", batch.id);
-    const inventoryRef = doc(db, "printFinishedInventory", inventoryItem.id);
-    const movementRef = doc(collection(db, "printInventoryMovements"));
 
     try {
       setClosingBatchId(batch.id);
-
-      await runTransaction(db, async (transaction) => {
-        const inventorySnapshot = await transaction.get(inventoryRef);
-        const batchSnapshot = await transaction.get(batchRef);
-
-        if (!inventorySnapshot.exists()) {
-          throw new Error("No se encontró el inventario terminado para este producto.");
-        }
-
-        if (!batchSnapshot.exists()) {
-          throw new Error("No se encontró el lote de producción.");
-        }
-
-        const batchData = batchSnapshot.data();
-
-        if (batchData.inventoryApplied === true) {
-          throw new Error("Este lote ya fue ingresado al inventario.");
-        }
-
-        if (!isAdmin && !isBatchResponsible(batchData, auditUser)) {
-          throw new Error("Solo el responsable asignado puede ingresar este lote al inventario.");
-        }
-
-        if (!isBatchQualityApproved(batchData)) {
-          throw new Error("La revisión de calidad debe estar aprobada antes de ingresar al inventario.");
-        }
-
-        const inventoryData = inventorySnapshot.data();
-        const previousStock = Number(inventoryData.currentStock || 0);
-        const newStock = previousStock + approvedQuantity;
-
-        transaction.update(inventoryRef, {
-          currentStock: newStock,
-          lastBatchId: batch.id,
-          lastBatchFolio: batch.folio || "",
-          updatedAt: serverTimestamp(),
-          updatedByUid: auditUser.uid,
-          updatedByName: auditUser.name,
-          updatedByEmail: auditUser.email,
+      const result = await enterProductionBatchInventory(batch.id);
+      if (!result.alreadyApplied) {
+        setProductionBatches((current) => current.map((item) =>
+          item.id === batch.id
+            ? {
+              ...item,
+              status: BATCH_STATUS.INVENTORIED,
+              progress: 100,
+              inventoryApplied: true,
+              inventoryId: result.inventoryId,
+              inventoryMovementId: result.movementId,
+            }
+            : item
+        ));
+        setInventoryItems((current) => {
+          const exists = current.some((item) => item.id === result.inventoryId);
+          if (exists) {
+            return current.map((item) => item.id === result.inventoryId
+              ? { ...item, currentStock: result.newStock }
+              : item);
+          }
+          return [...current, {
+            id: result.inventoryId,
+            productId: batch.productId,
+            productName: batch.productName,
+            category: batch.category,
+            level: batch.level,
+            unit: batch.unit,
+            currentStock: result.newStock,
+            active: true,
+          }];
         });
+      }
 
-        transaction.set(movementRef, {
-          inventoryId: inventoryItem.id,
-          productId: batch.productId || "",
-          productName: batch.productName || "",
-          type: "Entrada",
-          quantity: approvedQuantity,
-          reason: "Lote de producción cerrado",
-          previousStock,
-          newStock,
-          notes: `Ingreso automático desde ${batch.folio || "lote de producción"}.`,
+      if (!result.alreadyApplied) {
+        await createPrintshopLog({
+          type: "BATCH_INVENTORY_APPLIED",
+          module: "batches",
+          title: "Lote ingresado a inventario",
+          description: `Se ingresó el lote ${batch.folio || ""} al inventario terminado.`,
+          referenceType: "batch",
+          referenceId: batch.id,
           batchId: batch.id,
           batchFolio: batch.folio || "",
-          createdAt: serverTimestamp(),
-          createdByUid: auditUser.uid,
-          createdByName: auditUser.name,
-          createdByEmail: auditUser.email,
+          productId: batch.productId || "",
+          productName: batch.productName || "",
+          level: batch.level || "",
         });
-
-        transaction.update(batchRef, {
-          status: "Ingresado a inventario",
-          inventoryApplied: true,
-          inventoryId: inventoryItem.id,
-          inventoryMovementId: movementRef.id,
-          inventoryAppliedAt: serverTimestamp(),
-          inventoryAppliedByUid: auditUser.uid,
-          inventoryAppliedByName: auditUser.name,
-          inventoryAppliedByEmail: auditUser.email,
-          updatedAt: serverTimestamp(),
-          updatedByUid: auditUser.uid,
-          updatedByName: auditUser.name,
-          updatedByEmail: auditUser.email,
-        });
-      });
-
-      await createPrintshopLog({
-        type: "BATCH_INVENTORY_APPLIED",
-        module: "batches",
-        title: "Lote ingresado a inventario",
-        description: `Se ingresó el lote ${batch.folio || ""} al inventario terminado.`,
-        referenceType: "batch",
-        referenceId: batch.id,
-        batchId: batch.id,
-        batchFolio: batch.folio || "",
-        productId: batch.productId || "",
-        productName: batch.productName || "",
-        level: batch.level || "",
-      });
-      setBatchMessage("Lote ingresado al inventario correctamente.");
+      }
       resetBatchForm();
+      setBatchMessage(result.alreadyApplied
+        ? "Este lote ya había sido ingresado; no se duplicó el movimiento."
+        : `Lote ingresado: ${Number(result.quantity || batch.producedQuantity || 0)} unidades producidas.`);
     } catch (error) {
       console.error("No se pudo ingresar el lote al inventario:", error);
       setBatchMessage(error?.message || "No se pudo ingresar el lote al inventario.");
@@ -11275,6 +11179,8 @@ export default function PrintShop() {
           closingBatchId={closingBatchId}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
+          currentUserName={getAuditUser().name}
+          currentUserEmail={getAuditUser().email}
           activeUsers={activeUsers}
           loadingUsers={loadingUsers}
           usersError={usersError}
@@ -12261,6 +12167,8 @@ function ProductionBatchesView({
   closingBatchId,
   isAdmin,
   currentUserUid,
+  currentUserName,
+  currentUserEmail,
   activeUsers,
   loadingUsers,
   usersError,
@@ -12280,29 +12188,51 @@ function ProductionBatchesView({
   onOpenInventory,
   onSoftDeleteBatch,
 }) {
+  function matchesCurrentUser(assignedUid, assignedEmail, assignedName) {
+    if (assignedUid) return isSameUid(currentUserUid, assignedUid);
+    if (assignedEmail) return isSameText(currentUserEmail, assignedEmail);
+    return isSameText(currentUserName, assignedName);
+  }
+
+  const selectedIsResponsible = matchesCurrentUser(
+    selectedBatch?.responsibleUid,
+    selectedBatch?.responsibleEmail,
+    selectedBatch?.responsibleName || selectedBatch?.responsible
+  );
+  const selectedIsAuditor = matchesCurrentUser(
+    selectedBatch?.auditorUid,
+    selectedBatch?.auditorEmail,
+    selectedBatch?.auditorName
+  );
   const selectedRole = isAdmin
     ? "admin"
-    : isSameUid(currentUserUid, selectedBatch?.responsibleUid)
+    : selectedIsResponsible
       ? "responsible"
-      : isSameUid(currentUserUid, selectedBatch?.auditorUid)
+      : selectedIsAuditor
         ? "auditor"
         : "viewer";
   const canCreateBatch = isAdmin;
   const canEditAdministrativeFields = isAdmin;
   const canEditProductionFields = isAdmin || selectedRole === "responsible";
   const canEditQualityFields = isAdmin || selectedRole === "auditor";
+  const selectedInventoryLocked = selectedBatch?.inventoryApplied === true
+    || normalizeProductionBatchStatus(selectedBatch?.status) === BATCH_STATUS.INVENTORIED;
   const [batchFocusMode, setBatchFocusMode] = useState("edit");
   const isBatchDetailMode = batchFocusMode === "detail";
   const canSaveBatch =
     (!selectedBatchId && canCreateBatch) ||
     (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole));
   const availableStatusOptions = isAdmin
-    ? productionBatchStatuses
+    ? selectedInventoryLocked
+      ? [normalizeProductionBatchStatus(batchForm.status)]
+      : [...new Set([
+        batchForm.status,
+        ...productionBatchStatuses.filter((status) =>
+          ![BATCH_STATUS.INVENTORIED, BATCH_STATUS.CLOSED].includes(status)),
+      ].filter(Boolean))]
     : selectedRole === "responsible"
-      ? productionResponsibleStatuses
-      : selectedRole === "auditor"
-        ? qualityAuditorStatuses
-        : [batchForm.status || "Planeado"];
+      ? [...new Set([batchForm.status || BATCH_STATUS.PLANNED, ...productionResponsibleStatuses])]
+      : [batchForm.status || BATCH_STATUS.PLANNED];
   const selectedBatchConsumption = selectedBatch
     ? getBatchSupplyConsumptionSummary(selectedBatch, supplyMovements, supplyItems, inventoryProducts)
     : null;
@@ -12328,14 +12258,16 @@ function ProductionBatchesView({
         ].some((value) => normalizeComparable(value).includes(normalizedSearchTerm));
 
       const inventoryReady =
-        batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
+        batch.inventoryApplied === true
+        || normalizeProductionBatchStatus(batch.status) === BATCH_STATUS.INVENTORIED;
+      const normalizedStatus = normalizeProductionBatchStatus(batch.status);
       const matchesStatus =
         batchStatusFilter === "Todos" ||
         (batchStatusFilter === "Activos" &&
-          !["Cancelado", "Cerrado", "Ingresado a inventario"].includes(batch.status)) ||
+          ![BATCH_STATUS.CANCELLED, BATCH_STATUS.CLOSED, BATCH_STATUS.INVENTORIED].includes(normalizedStatus)) ||
         (batchStatusFilter === "Ingresados" && inventoryReady) ||
-        (batchStatusFilter === "Cancelados" && batch.status === "Cancelado") ||
-        batch.status === batchStatusFilter;
+        (batchStatusFilter === "Cancelados" && normalizedStatus === BATCH_STATUS.CANCELLED) ||
+        normalizedStatus === batchStatusFilter;
       const matchesPeriod = isBatchInsideRange(batch, batchSummaryFrom, batchSummaryTo);
 
       return matchesSearch && matchesStatus && matchesPeriod;
@@ -12453,7 +12385,9 @@ function ProductionBatchesView({
                 >
                   <option value="Todos">Todos</option>
                   <option value="Activos">Activos</option>
+                  <option value={BATCH_STATUS.PENDING_ASSIGNMENT}>Pendiente de asignación</option>
                   <option value="Aprobado">Aprobado</option>
+                  <option value={BATCH_STATUS.APPROVED_WITH_NOTES}>Aprobado con observaciones</option>
                   <option value="Ingresados">Ingresados</option>
                   <option value="Cancelados">Cancelados</option>
                 </select>
@@ -12520,11 +12454,16 @@ function ProductionBatchesView({
                     {visibleProductionBatches.map((batch) => {
                       const tone = getBatchStatusTone(batch.status);
                       const inventoryReady =
-                        batch.inventoryApplied === true || batch.status === "Ingresado a inventario";
+                        batch.inventoryApplied === true
+                        || normalizeProductionBatchStatus(batch.status) === BATCH_STATUS.INVENTORIED;
                       const canSendToInventory =
-                        (isAdmin || isSameUid(currentUserUid, batch.responsibleUid)) &&
-                        !inventoryReady &&
-                        batch.status !== "Cancelado";
+                        (isAdmin
+                          || matchesCurrentUser(
+                            batch.responsibleUid,
+                            batch.responsibleEmail,
+                            batch.responsibleName || batch.responsible
+                          )) &&
+                        canBatchEnterInventory(batch);
 
                       return (
                         <tr
@@ -12571,8 +12510,8 @@ function ProductionBatchesView({
                                 disabled={!canSendToInventory || closingBatchId === batch.id}
                                 title={
                                   canSendToInventory
-                                    ? "Ingresar cantidad aprobada al inventario"
-                                    : "Disponible para el responsable asignado o administrador cuando el lote no esté cancelado ni ingresado"
+                                    ? "Ingresar cantidad producida al inventario"
+                                    : "Requiere calidad aprobada, avance al 100 %, producción mayor que cero y no haber sido ingresado"
                                 }
                               >
                                 {closingBatchId === batch.id ? "Ingresando..." : "Ingresar"}
@@ -12840,7 +12779,8 @@ function ProductionBatchesView({
                   name="status"
                   value={batchForm.status}
                   onChange={onBatchInputChange}
-                  disabled={selectedRole === "viewer"}
+                  disabled={selectedInventoryLocked
+                    || (!canEditAdministrativeFields && selectedRole !== "responsible")}
                 >
                   {availableStatusOptions.map((status) => (
                     <option key={status}>{status}</option>
@@ -12886,6 +12826,16 @@ function ProductionBatchesView({
                 </select>
               </label>
 
+              {(selectedBatch?.automatic === true || selectedBatch?.origin === "automatic") && (
+                <div className="batch-role-summary full">
+                  <span>Origen automático · Reposición de inventario</span>
+                  <strong>
+                    Stock detectado {Number(selectedBatch.detectedStock || 0)} · proyectado {Number(selectedBatch.projectedStock || 0)} · ideal {Number(selectedBatch.idealStockUsed || 0)}
+                  </strong>
+                  {selectedBatch.assignmentReason && <small>{selectedBatch.assignmentReason}</small>}
+                </div>
+              )}
+
               {selectedBatchId && (
                 <div className="batch-role-summary full">
                   <span>Tu rol en este lote</span>
@@ -12930,7 +12880,7 @@ function ProductionBatchesView({
                   value={batchForm.notes}
                   onChange={onBatchInputChange}
                   placeholder="Ej. Lote urgente para reponer stock bajo de Journey A1."
-                  disabled={!canEditProductionFields && !canEditAdministrativeFields}
+                  disabled={!canEditAdministrativeFields}
                 />
               </label>
 
@@ -13517,7 +13467,8 @@ function SupplyInventoryView({
       ? Math.floor(Number(supplyMovementForm.quantity || 0) * Number(selectedMovementSupply.expectedYield || 0))
       : 0;
   const activeProductionBatches = (productionBatches || []).filter(
-    (batch) => !["Cancelado", "Ingresado a inventario", "Cerrado"].includes(batch.status)
+    (batch) => ![BATCH_STATUS.CANCELLED, BATCH_STATUS.INVENTORIED, BATCH_STATUS.CLOSED]
+      .includes(normalizeProductionBatchStatus(batch.status))
   );
   const selectedRelatedBatch =
     activeProductionBatches.find((batch) => batch.id === supplyMovementForm.relatedId) || null;

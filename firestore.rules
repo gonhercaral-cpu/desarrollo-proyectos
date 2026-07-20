@@ -1139,18 +1139,6 @@ service cloud.firestore {
     }
 
 
-    function printBatchPath(batchId) {
-      return /databases/$(database)/documents/printProductionBatches/$(batchId);
-    }
-
-    function printBatchExists(batchId) {
-      return exists(printBatchPath(batchId));
-    }
-
-    function printBatchData(batchId) {
-      return get(printBatchPath(batchId)).data;
-    }
-
     function isPrintBatchResponsible() {
       return hasProfile()
         && resource.data.responsibleUid is string
@@ -1163,13 +1151,6 @@ service cloud.firestore {
         && resource.data.auditorUid == request.auth.uid;
     }
 
-    function isPrintBatchResponsibleId(batchId) {
-      return hasProfile()
-        && printBatchExists(batchId)
-        && printBatchData(batchId).responsibleUid is string
-        && printBatchData(batchId).responsibleUid == request.auth.uid;
-    }
-
     function isAllowedResponsibleBatchStatus(status) {
       return status in [
         "En impresión",
@@ -1178,12 +1159,28 @@ service cloud.firestore {
       ];
     }
 
-    function isAllowedAuditorBatchStatus(status) {
-      return status in [
-        "En revisión de calidad",
-        "Aprobado",
-        "Cancelado"
-      ];
+    function isAllowedResponsibleBatchTransition(previousStatus, nextStatus) {
+      return (
+          previousStatus == nextStatus
+          && isAllowedResponsibleBatchStatus(nextStatus)
+        )
+        || (
+          previousStatus in ["Planeado", "Pendiente de asignación"]
+          && nextStatus == "En impresión"
+        )
+        || (
+          previousStatus == "En impresión"
+          && nextStatus == "En encuadernado"
+        )
+        || (
+          previousStatus in ["En encuadernado", "En encuadernación"]
+          && nextStatus == "En revisión de calidad"
+        )
+        || (
+          previousStatus == "En revisión de calidad"
+          && resource.data.qualityStatus == "Rechazado"
+          && nextStatus == "En impresión"
+        );
     }
 
     function responsibleProductionBatchUpdate() {
@@ -1192,14 +1189,13 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "status",
           "producedQuantity",
-          "notes",
-          "students",
           "updatedAt",
           "updatedByUid",
           "updatedByName",
           "updatedByEmail"
         ])
         && isAllowedResponsibleBatchStatus(request.resource.data.status)
+        && isAllowedResponsibleBatchTransition(resource.data.status, request.resource.data.status)
         && request.resource.data.updatedByUid == request.auth.uid;
     }
 
@@ -1207,7 +1203,6 @@ service cloud.firestore {
       return isPrintBatchAuditor()
         && validPrintProductionBatchData()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "status",
           "approvedQuantity",
           "rejectedQuantity",
           "qualityChecklist",
@@ -1223,98 +1218,22 @@ service cloud.firestore {
           "updatedByName",
           "updatedByEmail"
         ])
-        && isAllowedAuditorBatchStatus(request.resource.data.status)
-        && (
-          request.resource.data.status != "Aprobado"
-          || request.resource.data.qualityCompleted == true
-        )
-        && (
-          request.resource.data.qualityCompleted == false
-          || request.resource.data.qualityReviewedByUid == request.auth.uid
-        )
+        && resource.data.status == "En revisión de calidad"
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.qualityStatus in ["Pendiente", "En revisión"]
+        && request.resource.data.qualityCompleted == false
         && request.resource.data.updatedByUid == request.auth.uid;
-    }
-
-    function responsibleInventoryBatchApplyUpdate() {
-      return isPrintBatchResponsible()
-        && validPrintProductionBatchData()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "status",
-          "inventoryApplied",
-          "inventoryId",
-          "inventoryMovementId",
-          "inventoryAppliedAt",
-          "inventoryAppliedByUid",
-          "inventoryAppliedByName",
-          "inventoryAppliedByEmail",
-          "updatedAt",
-          "updatedByUid",
-          "updatedByName",
-          "updatedByEmail"
-        ])
-        && resource.data.inventoryApplied != true
-        && resource.data.qualityCompleted == true
-        && resource.data.qualityStatus in [
-          "Aprobado",
-          "Aprobado con observaciones"
-        ]
-        && request.resource.data.status == "Ingresado a inventario"
-        && request.resource.data.inventoryApplied == true
-        && request.resource.data.inventoryAppliedByUid == request.auth.uid
-        && request.resource.data.updatedByUid == request.auth.uid;
-    }
-
-    function responsibleInventoryEntryUpdate() {
-      return hasProfile()
-        && validPrintFinishedInventoryData()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "currentStock",
-          "lastBatchId",
-          "lastBatchFolio",
-          "updatedAt",
-          "updatedByUid",
-          "updatedByName",
-          "updatedByEmail"
-        ])
-        && request.resource.data.lastBatchId is string
-        && printBatchExists(request.resource.data.lastBatchId)
-        && isPrintBatchResponsibleId(request.resource.data.lastBatchId)
-        && printBatchData(request.resource.data.lastBatchId).productId == resource.data.productId
-        && printBatchData(request.resource.data.lastBatchId).inventoryApplied != true
-        && printBatchData(request.resource.data.lastBatchId).qualityCompleted == true
-        && printBatchData(request.resource.data.lastBatchId).qualityStatus in [
-          "Aprobado",
-          "Aprobado con observaciones"
-        ]
-        && request.resource.data.currentStock == resource.data.currentStock + printBatchData(request.resource.data.lastBatchId).approvedQuantity
-        && request.resource.data.updatedByUid == request.auth.uid;
-    }
-
-    function responsibleBatchInventoryMovementCreate() {
-      return hasProfile()
-        && request.resource.data.batchId is string
-        && printBatchExists(request.resource.data.batchId)
-        && isPrintBatchResponsibleId(request.resource.data.batchId)
-        && printBatchData(request.resource.data.batchId).productId == request.resource.data.productId
-        && printBatchData(request.resource.data.batchId).inventoryApplied != true
-        && printBatchData(request.resource.data.batchId).qualityCompleted == true
-        && printBatchData(request.resource.data.batchId).qualityStatus in [
-          "Aprobado",
-          "Aprobado con observaciones"
-        ]
-        && request.resource.data.type == "Entrada"
-        && request.resource.data.quantity == printBatchData(request.resource.data.batchId).approvedQuantity
-        && request.resource.data.reason == "Lote de producción cerrado"
-        && request.resource.data.createdByUid == request.auth.uid;
     }
 
     function validPrintBatchStatus(status) {
       return status in [
         "Planeado",
+        "Pendiente de asignación",
         "En impresión",
         "En encuadernado",
         "En revisión de calidad",
         "Aprobado",
+        "Aprobado con observaciones",
         "Ingresado a inventario",
         "Cerrado",
         "Cancelado"
@@ -1393,16 +1312,25 @@ service cloud.firestore {
         && validPrintBatchStatus(request.resource.data.status)
         && request.resource.data.responsible is string
         && request.resource.data.responsibleUid is string
-        && request.resource.data.responsibleUid.size() > 0
         && request.resource.data.responsibleName is string
-        && request.resource.data.responsibleName.size() > 0
         && request.resource.data.responsibleEmail is string
         && request.resource.data.auditorUid is string
-        && request.resource.data.auditorUid.size() > 0
         && request.resource.data.auditorName is string
-        && request.resource.data.auditorName.size() > 0
         && request.resource.data.auditorEmail is string
-        && request.resource.data.responsibleUid != request.resource.data.auditorUid
+        && (
+          (
+            request.resource.data.status == "Pendiente de asignación"
+            && request.resource.data.responsibleUid.size() == 0
+            && request.resource.data.auditorUid.size() == 0
+          )
+          || (
+            request.resource.data.responsibleUid.size() > 0
+            && request.resource.data.responsibleName.size() > 0
+            && request.resource.data.auditorUid.size() > 0
+            && request.resource.data.auditorName.size() > 0
+            && request.resource.data.responsibleUid != request.resource.data.auditorUid
+          )
+        )
         && request.resource.data.startDate is string
         && request.resource.data.dueDate is string
         && request.resource.data.notes is string
@@ -1415,6 +1343,7 @@ service cloud.firestore {
         && (
           request.resource.data.status in [
             "Planeado",
+            "Pendiente de asignación",
             "En impresión",
             "En encuadernado",
             "En revisión de calidad",
@@ -1426,7 +1355,8 @@ service cloud.firestore {
           request.resource.data.qualityCompleted == false
           || request.resource.data.qualityStatus in [
             "Aprobado",
-            "Aprobado con observaciones"
+            "Aprobado con observaciones",
+            "Rechazado"
           ]
         )
         && (
@@ -1443,6 +1373,22 @@ service cloud.firestore {
         )
         && request.resource.data.inventoryApplied is bool
         && (
+          !request.resource.data.inventoryApplied
+          || request.resource.data.status in ["Ingresado a inventario", "Cerrado"]
+        )
+        && (
+          !(request.resource.data.status in ["Ingresado a inventario", "Cerrado"])
+          || request.resource.data.inventoryApplied == true
+        )
+        && (
+          !("progress" in request.resource.data)
+          || (
+            request.resource.data.progress is number
+            && request.resource.data.progress >= 0
+            && request.resource.data.progress <= 100
+          )
+        )
+        && (
           !("inventoryId" in request.resource.data) ||
           request.resource.data.inventoryId is string
         )
@@ -1450,6 +1396,46 @@ service cloud.firestore {
           !("inventoryMovementId" in request.resource.data) ||
           request.resource.data.inventoryMovementId is string
         );
+    }
+
+    function adminProductionBatchCreate() {
+      return isAdmin()
+        && validPrintProductionBatchData()
+        && request.resource.data.inventoryApplied == false;
+    }
+
+    function adminProductionBatchUpdate() {
+      return isAdmin()
+        && validPrintProductionBatchData()
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["inventoryApplied"])
+          || (
+            !("inventoryApplied" in resource.data)
+            && request.resource.data.inventoryApplied == false
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["inventoryId"])
+          || (
+            !("inventoryId" in resource.data)
+            && request.resource.data.inventoryId == ""
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(["inventoryMovementId"])
+          || (
+            !("inventoryMovementId" in resource.data)
+            && request.resource.data.inventoryMovementId == ""
+          )
+        )
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "inventoryAppliedAt",
+          "inventoryAppliedByUid",
+          "inventoryAppliedByName",
+          "inventoryAppliedByEmail",
+          "finalizedAt",
+          "finalizedByUid"
+        ]);
     }
 
 
@@ -3123,7 +3109,6 @@ service cloud.firestore {
           isAdmin()
           && validPrintFinishedInventoryData()
         )
-        || responsibleInventoryEntryUpdate()
         || validPrintshopSoftDeleteUpdate();
 
       allow delete: if false;
@@ -3134,7 +3119,6 @@ service cloud.firestore {
 
       allow create: if (
           isAdmin()
-          || responsibleBatchInventoryMovementCreate()
         )
         && validPrintInventoryMovementData();
 
@@ -3172,16 +3156,13 @@ service cloud.firestore {
     match /printProductionBatches/{batchId} {
       allow read: if canAccessPrintshop();
 
-      allow create: if isAdmin()
-        && validPrintProductionBatchData();
+      allow create: if adminProductionBatchCreate();
 
       allow update: if (
-          isAdmin()
-          && validPrintProductionBatchData()
+          adminProductionBatchUpdate()
         )
         || responsibleProductionBatchUpdate()
         || auditorQualityBatchUpdate()
-        || responsibleInventoryBatchApplyUpdate()
         || validPrintshopSoftDeleteUpdate();
 
       allow delete: if isAdmin();

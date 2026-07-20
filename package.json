@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test:production": "node --test tests/production-batches.test.cjs",
     "test:rules": "npx firebase emulators:exec --project security-rules-audit --only firestore,storage \"node --test tests/firebase-rules.test.mjs\"",
     "preview": "vite preview"
   },
