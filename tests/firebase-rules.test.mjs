@@ -754,6 +754,55 @@ describe("lotes de producción", () => {
       updatedByEmail: "admin@test.local",
     }));
   });
+  it("reserva la eliminación del último lote a la función protegida", async () => {
+    await assertFails(deleteDoc(doc(auth("printer"), "printProductionBatches", "batch-1")));
+    await assertFails(deleteDoc(doc(auth("admin"), "printProductionBatches", "batch-1")));
+    await assertFails(updateDoc(doc(auth("admin"), "printProductionBatches", "batch-1"), {
+      active: false,
+      deleted: true,
+      deletedAt: Timestamp.now(),
+      deletedByUid: "admin",
+      deletedByName: "Admin",
+      deletedByEmail: "admin@test.local",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "admin",
+      updatedByName: "Admin",
+      updatedByEmail: "admin@test.local",
+    }));
+  });
+
+  it("solo expone supresiones de reposición al administrador", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "printProductionReplenishment", "book-1"), {
+        productId: "book-1",
+        suppressed: true,
+        suppressedCurrentStock: 20,
+        suppressedMinimumStock: 10,
+        suppressedIdealStock: 50,
+      });
+    });
+    await assertSucceeds(getDoc(doc(auth("admin"), "printProductionReplenishment", "book-1")));
+    await assertFails(getDoc(doc(auth("printer"), "printProductionReplenishment", "book-1")));
+  });
+
+  it("permite consultar inventario a Imprenta pero bloquea salidas directas", async () => {
+    const printerDb = auth("printer");
+    await assertSucceeds(getDoc(doc(printerDb, "printFinishedInventory", "inventory-book-1")));
+    await assertFails(setDoc(doc(printerDb, "printInventoryMovements", "forged-output"), {
+      inventoryId: "inventory-book-1",
+      productId: "book-1",
+      productName: "Libro Uno",
+      type: "Salida",
+      quantity: 1,
+      reason: "Entrega",
+      previousStock: 20,
+      newStock: 19,
+      createdAt: Timestamp.now(),
+      createdByUid: "printer",
+      createdByName: "Printer",
+      createdByEmail: "printer@test.local",
+    }));
+  });
 });
 
 describe("acceso horizontal", () => {

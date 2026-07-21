@@ -4,6 +4,10 @@ import { functions } from "./firebase";
 const reviewQualityCallable = httpsCallable(functions, "reviewProductionBatchQuality");
 const enterInventoryCallable = httpsCallable(functions, "enterProductionBatchInventory");
 const updateProgressCallable = httpsCallable(functions, "updateProductionBatchProgress");
+const deleteBatchCallable = httpsCallable(functions, "deleteProductionBatch");
+const outputInventoryCallable = httpsCallable(functions, "registerFinishedInventoryOutput");
+const reactivateReplenishmentCallable = httpsCallable(functions, "reactivateProductReplenishment");
+const repairAutomaticBatchesCallable = httpsCallable(functions, "repairAutomaticProductionBatches");
 
 function callableError(error, fallback) {
   const result = new Error(error?.message || fallback);
@@ -35,5 +39,41 @@ export async function updateProductionBatchProgress(batchId, update) {
     return response.data;
   } catch (error) {
     throw callableError(error, "No se pudo actualizar el avance de producción.");
+  }
+}
+
+export async function deleteProductionBatch(batchId) {
+  try {
+    const response = await deleteBatchCallable({ batchId });
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudo eliminar el lote de producción.");
+  }
+}
+
+export async function registerFinishedInventoryOutput(input) {
+  try {
+    const response = await outputInventoryCallable(input);
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudo registrar la salida de inventario.");
+  }
+}
+
+export async function reactivateProductReplenishment(productId) {
+  try {
+    const response = await reactivateReplenishmentCallable({ productId });
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudo reactivar la reposición automática.");
+  }
+}
+
+export async function repairAutomaticProductionBatches() {
+  try {
+    const response = await repairAutomaticBatchesCallable({});
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudieron completar los lotes automáticos existentes.");
   }
 }

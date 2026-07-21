@@ -67,6 +67,19 @@ function isAssignedActor(batch, role, actor) {
   return Boolean(name && name === normalizeText(actor.name));
 }
 
+function isBatchAssignedToProfile(batch, role, profile, uid) {
+  const assignedUid = cleanText(batch?.[`${role}Uid`]);
+  if (assignedUid) return assignedUid === uid;
+  const assignedEmail = cleanText(batch?.[`${role}Email`]).toLowerCase();
+  const profileEmail = cleanText(profile.email).toLowerCase();
+  if (assignedEmail && profileEmail) return assignedEmail === profileEmail;
+  const assignedName = normalizeText(
+    batch?.[`${role}Name`] || (role === "responsible" ? batch?.responsible : "")
+  );
+  return Boolean(assignedName
+    && assignedName === normalizeText(profile.name || profile.displayName || profile.fullName));
+}
+
 function isSuccessfulQualityResult(status) {
   return status === QUALITY_STATUS.APPROVED || status === QUALITY_STATUS.APPROVED_WITH_NOTES;
 }
@@ -350,6 +363,143 @@ function consumeScheduledHours(blocks, requiredHours) {
   };
 }
 
+function resolveUnitsPerWorkday(product = {}, settings = {}) {
+  const byProduct = settings.capacityByProduct || {};
+  const byCategory = settings.capacityByCategory || {};
+  const productId = cleanText(product.id || product.productId);
+  const category = cleanText(product.category);
+  const candidates = [
+    byProduct[productId],
+    byCategory[category],
+    byCategory[normalizeText(category)],
+    product.productionUnitsPerWorkday,
+    product.unitsPerWorkday,
+    settings.defaultUnitsPerWorkday,
+  ].map(Number);
+  return candidates.find((value) => Number.isFinite(value) && value > 0) || 0;
+}
+
+function consumeScheduledCapacity(blocks, quantity, unitsPerWorkday, loadDays = 0) {
+  let pendingUnits = Number(quantity);
+  const capacity = Number(unitsPerWorkday);
+  if (!Number.isFinite(pendingUnits) || pendingUnits <= 0
+      || !Number.isFinite(capacity) || capacity <= 0) return null;
+  const usableBlocks = (blocks || []).slice(Math.max(0, Math.floor(Number(loadDays) || 0)));
+  const segments = [];
+  for (const block of usableBlocks) {
+    if (pendingUnits <= 0) break;
+    const blockMinutes = block.endMinute - block.startMinute;
+    if (blockMinutes <= 0) continue;
+    const units = Math.min(capacity, pendingUnits);
+    const duration = Math.max(1, Math.ceil(blockMinutes * (units / capacity)));
+    segments.push({ ...block, endMinute: Math.min(block.endMinute, block.startMinute + duration) });
+    pendingUnits -= units;
+  }
+  if (pendingUnits > 0 || segments.length === 0) return null;
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  return {
+    segments,
+    startDate: first.dateValue,
+    startTime: minutesToTime(first.startMinute),
+    productionDueDate: last.dateValue,
+    productionDueMinute: last.endMinute,
+  };
+}
+
+function consumeReviewTime(blocks, productionWindow, requiredMinutes, loadDays = 0) {
+  let pendingMinutes = Math.max(1, Math.ceil(Number(requiredMinutes) || 0));
+  const eligible = (blocks || [])
+    .filter((block) => block.dateValue >= productionWindow.productionDueDate)
+    .map((block) => ({
+      ...block,
+      startMinute: block.dateValue === productionWindow.productionDueDate
+        ? Math.max(block.startMinute, productionWindow.productionDueMinute)
+        : block.startMinute,
+    }))
+    .filter((block) => block.endMinute > block.startMinute)
+    .slice(Math.max(0, Math.floor(Number(loadDays) || 0)));
+  const segments = [];
+  for (const block of eligible) {
+    if (pendingMinutes <= 0) break;
+    const duration = Math.min(block.endMinute - block.startMinute, pendingMinutes);
+    segments.push({ ...block, endMinute: block.startMinute + duration });
+    pendingMinutes -= duration;
+  }
+  if (pendingMinutes > 0 || segments.length === 0) return null;
+  const last = segments[segments.length - 1];
+  return { segments, dueDate: last.dateValue, dueTime: minutesToTime(last.endMinute) };
+}
+
+function selectCapacityAssignmentPair({ candidates, quantity, unitsPerWorkday, qualityReviewMinutes }) {
+  const options = [];
+  for (const responsible of candidates || []) {
+    if (responsible.canProduce === false) continue;
+    const productionWindow = consumeScheduledCapacity(
+      responsible.blocks,
+      quantity,
+      unitsPerWorkday,
+      responsible.productionLoad
+    );
+    if (!productionWindow) continue;
+    for (const auditor of candidates || []) {
+      if (responsible.uid === auditor.uid || auditor.canAudit === false) continue;
+      const reviewWindow = consumeReviewTime(
+        auditor.blocks,
+        productionWindow,
+        qualityReviewMinutes,
+        auditor.auditLoad
+      );
+      if (!reviewWindow) continue;
+      options.push({ responsible, auditor, ...productionWindow, ...reviewWindow });
+    }
+  }
+  options.sort((first, second) =>
+    (first.responsible.productionLoad - second.responsible.productionLoad)
+    || (first.auditor.auditLoad - second.auditor.auditLoad)
+    || first.dueDate.localeCompare(second.dueDate)
+    || first.dueTime.localeCompare(second.dueTime)
+    || first.responsible.uid.localeCompare(second.responsible.uid)
+    || first.auditor.uid.localeCompare(second.auditor.uid));
+  return options[0] || null;
+}
+
+function selectHourlyAssignmentPair({ candidates, requiredHours, qualityReviewMinutes }) {
+  const options = [];
+  for (const responsible of candidates || []) {
+    if (responsible.canProduce === false) continue;
+    const production = consumeScheduledHours(
+      (responsible.blocks || []).slice(Math.max(0, responsible.productionLoad || 0)),
+      requiredHours
+    );
+    if (!production) continue;
+    const lastSegment = production.segments[production.segments.length - 1];
+    const productionWindow = {
+      ...production,
+      productionDueDate: lastSegment.dateValue,
+      productionDueMinute: lastSegment.endMinute,
+    };
+    for (const auditor of candidates || []) {
+      if (responsible.uid === auditor.uid || auditor.canAudit === false) continue;
+      const review = consumeReviewTime(
+        auditor.blocks,
+        productionWindow,
+        qualityReviewMinutes,
+        auditor.auditLoad
+      );
+      if (review) options.push({ responsible, auditor, ...productionWindow, ...review });
+    }
+  }
+  options.sort((first, second) =>
+    (first.responsible.productionLoad - second.responsible.productionLoad)
+    || (first.auditor.auditLoad - second.auditor.auditLoad)
+    || first.dueDate.localeCompare(second.dueDate)
+    || first.dueTime.localeCompare(second.dueTime)
+    || first.responsible.uid.localeCompare(second.responsible.uid)
+    || first.auditor.uid.localeCompare(second.auditor.uid));
+  return options[0] || null;
+}
+
 function countOverlapHours(segments, blocks) {
   let overlapMinutes = 0;
   for (const segment of segments) {
@@ -365,10 +515,11 @@ function countOverlapHours(segments, blocks) {
 function selectAssignmentPair({ candidates, requiredHours }) {
   const options = [];
   for (const responsible of candidates) {
+    if (responsible.canProduce === false) continue;
     const productionWindow = consumeScheduledHours(responsible.blocks || [], requiredHours);
     if (!productionWindow) continue;
     for (const auditor of candidates) {
-      if (responsible.uid === auditor.uid) continue;
+      if (responsible.uid === auditor.uid || auditor.canAudit === false) continue;
       const overlapHours = countOverlapHours(productionWindow.segments, auditor.blocks || []);
       if (overlapHours <= 0) continue;
       options.push({
@@ -399,6 +550,14 @@ function getDepartmentNames(profile) {
     ...(Array.isArray(profile.departments) ? profile.departments : []),
     ...(Array.isArray(profile.departmentNames) ? profile.departmentNames : []),
   ].map(normalizeText).filter(Boolean);
+}
+
+function canActiveProfileAccessPrintshop(profile = {}) {
+  if (profile.active !== true || profile.deleted === true || profile.archived === true) return false;
+  if (normalizeText(profile.role) === "admin") return true;
+  return getDepartmentNames(profile).some((name) =>
+    ["imprenta", "impresion", "soporte tecnico"].includes(name)
+      || name.split(" ").includes("imprenta"));
 }
 
 function isEligibleProfile(profile, configuredIds) {
@@ -466,8 +625,13 @@ async function resolveAutomaticAssignment(db, product, quantity, now = new Date(
         name: cleanText(profile.name || profile.displayName || profile.fullName),
         email: cleanText(profile.email),
         aliasIds,
-        productionLoad: activeBatches.filter((batch) => batch.responsibleUid === uid).length,
-        auditLoad: activeBatches.filter((batch) => batch.auditorUid === uid).length,
+        canProduce: profile.printshopProductionEligible !== false,
+        canAudit: profile.printshopQualityEligible !== false
+          && profile.printshopAuditEligible !== false,
+        productionLoad: activeBatches.filter((batch) =>
+          isBatchAssignedToProfile(batch, "responsible", profile, uid)).length,
+        auditLoad: activeBatches.filter((batch) =>
+          isBatchAssignedToProfile(batch, "auditor", profile, uid)).length,
       };
     });
   const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.uid, candidate])).values()]
@@ -475,18 +639,29 @@ async function resolveAutomaticAssignment(db, product, quantity, now = new Date(
       ...candidate,
       blocks: buildAvailabilityBlocks(candidate, schedules, adjustments, now),
     }));
+  const unitsPerWorkday = resolveUnitsPerWorkday(product, settings);
+  const qualityReviewMinutes = Number(settings.qualityReviewMinutes);
   const requiredHours = resolveRequiredProductionHours(product, settings, quantity);
   const adminIds = usersSnapshot.docs
     .filter((item) => item.data().active === true && normalizeText(item.data().role) === "admin")
     .map((item) => cleanText(item.data().uid || item.id));
-  if (requiredHours <= 0) {
+  if (unitsPerWorkday <= 0 && requiredHours <= 0) {
     return {
       assignment: null,
       adminIds,
-      reason: "Falta capacidad de producción por hora configurada para calcular fechas.",
+      reason: "Falta capacidad por jornada configurada para este producto o categoría.",
     };
   }
-  const assignment = selectAssignmentPair({ candidates: uniqueCandidates, requiredHours });
+  if (!Number.isFinite(qualityReviewMinutes) || qualityReviewMinutes <= 0) {
+    return {
+      assignment: null,
+      adminIds,
+      reason: "Falta configurar el tiempo de revisión de calidad.",
+    };
+  }
+  const assignment = unitsPerWorkday > 0
+    ? selectCapacityAssignmentPair({ candidates: uniqueCandidates, quantity, unitsPerWorkday, qualityReviewMinutes })
+    : selectHourlyAssignmentPair({ candidates: uniqueCandidates, requiredHours, qualityReviewMinutes });
   if (!assignment) {
     return {
       assignment: null,
@@ -494,7 +669,14 @@ async function resolveAutomaticAssignment(db, product, quantity, now = new Date(
       reason: "No existe una pareja distinta con horarios coincidentes suficientes.",
     };
   }
-  return { assignment, adminIds, reason: "" };
+  return { assignment, adminIds, reason: "", unitsPerWorkday, qualityReviewMinutes };
+}
+
+function matchesReplenishmentSuppression(lock = {}, currentStock, minStock, idealStock) {
+  return lock.suppressed === true
+    && Number(lock.suppressedCurrentStock) === Number(currentStock)
+    && Number(lock.suppressedMinimumStock) === Number(minStock)
+    && Number(lock.suppressedIdealStock) === Number(idealStock);
 }
 
 function automaticBatchFolio(productId, dateValue, sequence) {
@@ -508,7 +690,7 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
   const productRef = db.collection("printProducts").doc(cleanProductId);
   const productSnapshot = await productRef.get();
   if (!productSnapshot.exists) return { created: false, reason: "missing-product" };
-  const product = productSnapshot.data();
+  const product = { id: cleanProductId, ...productSnapshot.data() };
   if (product.active === false || product.deleted === true) return { created: false, reason: "inactive-product" };
 
   const inventoryPreview = await db.collection("printFinishedInventory").where("productId", "==", cleanProductId).get();
@@ -532,7 +714,7 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
   const newBatchRef = db.collection("printProductionBatches").doc();
   const timestamp = options.fieldValue.serverTimestamp();
 
-  return db.runTransaction(async (transaction) => {
+  const result = await db.runTransaction(async (transaction) => {
     const [lockSnapshot, freshProductSnapshot, inventorySnapshot, batchesSnapshot] = await Promise.all([
       transaction.get(lockRef),
       transaction.get(productRef),
@@ -550,8 +732,20 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
       idealStock: freshProduct.idealStock,
       activeBatches: batchesSnapshot.docs.map((item) => item.data()),
     });
+    const lock = lockSnapshot.exists ? lockSnapshot.data() : {};
+    if (matchesReplenishmentSuppression(
+      lock,
+      freshCurrentStock,
+      freshProduct.minStock,
+      freshProduct.idealStock
+    )) {
+      return { created: false, reason: "admin-suppressed", suppressed: true };
+    }
     if (!plan.valid || plan.quantity <= 0) {
       return { created: false, reason: plan.valid ? "stock-covered" : "invalid-stock-data" };
+    }
+    if (plan.quantity !== previewPlan.quantity) {
+      return { created: false, reason: "stale-replenishment-plan" };
     }
 
     const sequence = Number(lockSnapshot.data()?.generationSequence || 0) + 1;
@@ -593,6 +787,9 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
       assignmentPending: !assignment,
       assignmentReason: assignmentResult.reason,
       assignmentSource: assignment ? "automatic:schedule-load" : "automatic:pending",
+      capacityUnitsPerWorkday: assignmentResult.unitsPerWorkday || 0,
+      qualityReviewMinutes: assignmentResult.qualityReviewMinutes || 0,
+      assignmentTimeZone: PRINTSHOP_TIME_ZONE,
       scheduleOverlapHours: assignment ? assignment.overlapHours : 0,
       generationReason: `Stock proyectado ${plan.projectedStock} menor al ideal ${Number(freshProduct.idealStock)}.`,
       notes: assignmentResult.reason,
@@ -621,6 +818,8 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
       lastBatchId: newBatchRef.id,
       lastCalculatedQuantity: plan.quantity,
       lastProjectedStock: plan.projectedStock,
+      suppressed: false,
+      suppressionClearedAt: lock.suppressed === true ? timestamp : null,
       updatedAt: timestamp,
     }, { merge: true });
     if (!assignment) {
@@ -642,6 +841,10 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
     }
     return { created: true, batchId: newBatchRef.id, quantity: plan.quantity, assignmentPending: !assignment };
   });
+  if (result.reason === "stale-replenishment-plan" && options.retried !== true) {
+    return reconcileProductReplenishment(db, cleanProductId, { ...options, retried: true });
+  }
+  return result;
 }
 
 async function reconcileAllProducts(db, options = {}) {
@@ -848,22 +1051,310 @@ async function enterProductionBatchInventory(db, batchId, actor, fieldValue) {
   });
 }
 
+function getInventoryOutputMovementId(actorUid, requestId) {
+  const actorKey = cleanText(actorUid).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+  const requestKey = cleanText(requestId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+  if (!actorKey || !requestKey) throw new Error("Falta el identificador único de la operación.");
+  return `finished-output-${actorKey}-${requestKey}`;
+}
+
+function validateFinishedInventoryOutput(input = {}) {
+  const quantity = Number(input.quantity);
+  const reason = cleanText(input.reason);
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new Error("La cantidad de salida debe ser un entero mayor que cero.");
+  }
+  if (!reason) throw new Error("Indica el motivo o destino de la salida.");
+  return { quantity, reason, notes: cleanText(input.notes) };
+}
+
+function calculateFinishedInventoryOutputStock(previousStockValue, quantityValue) {
+  const previousStock = Number(previousStockValue);
+  const quantity = Number(quantityValue);
+  if (!Number.isFinite(previousStock) || previousStock < 0
+      || !Number.isInteger(quantity) || quantity <= 0
+      || previousStock < quantity) {
+    throw new Error("Stock insuficiente para registrar esta salida.");
+  }
+  return { previousStock, newStock: previousStock - quantity };
+}
+
+async function registerFinishedInventoryOutput(db, input, actor, fieldValue) {
+  if (!actor?.isAdmin && actor?.canAccessPrintshop !== true) {
+    throw new Error("Tu perfil no tiene acceso a Imprenta.");
+  }
+  const inventoryId = cleanText(input?.inventoryId);
+  if (!inventoryId) throw new Error("Selecciona un producto del inventario.");
+  const output = validateFinishedInventoryOutput(input);
+  const movementId = getInventoryOutputMovementId(actor.uid, input?.requestId);
+  const inventoryRef = db.collection("printFinishedInventory").doc(inventoryId);
+  const movementRef = db.collection("printInventoryMovements").doc(movementId);
+  const timestamp = fieldValue.serverTimestamp();
+
+  return db.runTransaction(async (transaction) => {
+    const [inventorySnapshot, movementSnapshot] = await Promise.all([
+      transaction.get(inventoryRef),
+      transaction.get(movementRef),
+    ]);
+    if (movementSnapshot.exists) {
+      const movement = movementSnapshot.data();
+      if (cleanText(movement.inventoryId) !== inventoryId
+          || Number(movement.quantity) !== output.quantity
+          || cleanText(movement.reason) !== output.reason) {
+        throw new Error("El identificador de operación ya fue usado con otros datos.");
+      }
+      return {
+        alreadyApplied: true,
+        movementId,
+        inventoryId,
+        previousStock: Number(movement.previousStock || 0),
+        newStock: Number(movement.newStock || 0),
+        quantity: Number(movement.quantity || output.quantity),
+      };
+    }
+    if (!inventorySnapshot.exists
+        || inventorySnapshot.data().deleted === true
+        || inventorySnapshot.data().active === false) {
+      throw new Error("No se encontró el producto activo en inventario terminado.");
+    }
+    const inventory = inventorySnapshot.data();
+    const { previousStock, newStock } = calculateFinishedInventoryOutputStock(
+      inventory.currentStock,
+      output.quantity
+    );
+    transaction.update(inventoryRef, {
+      currentStock: newStock,
+      updatedAt: timestamp,
+      updatedByUid: actor.uid,
+      updatedByName: actor.name,
+      updatedByEmail: actor.email,
+    });
+    transaction.create(movementRef, {
+      inventoryId,
+      productId: cleanText(inventory.productId),
+      productName: cleanText(inventory.productName),
+      type: "Salida",
+      quantity: output.quantity,
+      reason: output.reason,
+      destination: output.reason,
+      previousStock,
+      newStock,
+      notes: output.notes,
+      requestId: cleanText(input.requestId),
+      createdAt: timestamp,
+      createdByUid: actor.uid,
+      createdByName: actor.name,
+      createdByEmail: actor.email,
+    });
+    return { alreadyApplied: false, movementId, inventoryId, previousStock, newStock, quantity: output.quantity };
+  });
+}
+
+async function deleteProductionBatch(db, batchId, actor, fieldValue) {
+  if (!actor?.isAdmin) throw new Error("Solo un administrador puede eliminar lotes.");
+  const batchRef = db.collection("printProductionBatches").doc(cleanText(batchId));
+  const timestamp = fieldValue.serverTimestamp();
+  return db.runTransaction(async (transaction) => {
+    const batchSnapshot = await transaction.get(batchRef);
+    if (!batchSnapshot.exists) return { deleted: true, alreadyDeleted: true, batchId };
+    const batch = batchSnapshot.data();
+    if (batch.deleted === true || batch.active === false) {
+      return { deleted: true, alreadyDeleted: true, batchId };
+    }
+    const automatic = batch.automatic === true || cleanText(batch.origin) === "automatic";
+    let suppression = false;
+    let lockRef = null;
+    let lockSnapshot = null;
+    let productSnapshot = null;
+    let inventorySnapshot = null;
+    if (automatic && cleanText(batch.productId)) {
+      lockRef = db.collection("printProductionReplenishment").doc(batch.productId);
+      [lockSnapshot, productSnapshot, inventorySnapshot] = await Promise.all([
+        transaction.get(lockRef),
+        transaction.get(db.collection("printProducts").doc(batch.productId)),
+        transaction.get(db.collection("printFinishedInventory").where("productId", "==", batch.productId)),
+      ]);
+    }
+    transaction.update(batchRef, {
+      active: false,
+      deleted: true,
+      deletionMode: batch.inventoryApplied === true || cleanText(batch.inventoryMovementId)
+        ? "logical-accounting-preserved"
+        : "logical",
+      deletedAt: timestamp,
+      deletedByUid: actor.uid,
+      deletedByName: actor.name,
+      deletedByEmail: actor.email,
+      updatedAt: timestamp,
+      updatedByUid: actor.uid,
+      updatedByName: actor.name,
+      updatedByEmail: actor.email,
+    });
+    if (lockRef && productSnapshot?.exists) {
+      const product = productSnapshot.data();
+      const currentStock = inventorySnapshot.docs
+        .filter((item) => item.data().active !== false && item.data().deleted !== true)
+        .reduce((sum, item) => sum + Number(item.data().currentStock || 0), 0);
+      transaction.set(lockRef, {
+        productId: batch.productId,
+        productName: cleanText(product.name || batch.productName),
+        generationSequence: Number(lockSnapshot?.data()?.generationSequence || 0),
+        suppressed: true,
+        suppressedCurrentStock: currentStock,
+        suppressedMinimumStock: Number(product.minStock),
+        suppressedIdealStock: Number(product.idealStock),
+        suppressedBatchId: batchId,
+        suppressionReason: "Lote automático eliminado por administrador.",
+        suppressedAt: timestamp,
+        suppressedByUid: actor.uid,
+        suppressedByName: actor.name,
+        updatedAt: timestamp,
+      }, { merge: true });
+      suppression = true;
+    }
+    return { deleted: true, alreadyDeleted: false, batchId, suppression };
+  });
+}
+
+async function reactivateProductReplenishment(db, productId, actor, fieldValue) {
+  if (!actor?.isAdmin) throw new Error("Solo un administrador puede reactivar la reposición.");
+  const cleanProductId = cleanText(productId);
+  if (!cleanProductId) throw new Error("Falta el producto a reactivar.");
+  await db.collection("printProductionReplenishment").doc(cleanProductId).set({
+    productId: cleanProductId,
+    suppressed: false,
+    reactivatedAt: fieldValue.serverTimestamp(),
+    reactivatedByUid: actor.uid,
+    reactivatedByName: actor.name,
+    updatedAt: fieldValue.serverTimestamp(),
+  }, { merge: true });
+  return { reactivated: true, productId: cleanProductId };
+}
+
+function automaticBatchNeedsAssignment(batch = {}) {
+  const automatic = batch.automatic === true || cleanText(batch.origin) === "automatic";
+  const status = normalizeBatchStatus(batch.status);
+  return automatic && isActivePendingBatch(batch)
+    && [BATCH_STATUS.PENDING_ASSIGNMENT, BATCH_STATUS.PLANNED].includes(status) && (
+    batch.assignmentPending === true
+    || !cleanText(batch.responsibleUid)
+    || !cleanText(batch.auditorUid)
+    || !cleanText(batch.startDate)
+    || !cleanText(batch.dueDate)
+  );
+}
+
+async function backfillAutomaticProductionBatches(db, options = {}) {
+  const snapshot = await db.collection("printProductionBatches").get();
+  const candidates = snapshot.docs.filter((item) => automaticBatchNeedsAssignment(item.data()));
+  const results = [];
+  for (const batchSnapshot of candidates) {
+    const batch = batchSnapshot.data();
+    const productSnapshot = await db.collection("printProducts").doc(cleanText(batch.productId)).get();
+    if (!productSnapshot.exists) {
+      results.push({ batchId: batchSnapshot.id, repaired: false, reason: "missing-product" });
+      continue;
+    }
+    const product = { id: productSnapshot.id, ...productSnapshot.data() };
+    const assignmentResult = await resolveAutomaticAssignment(
+      db,
+      product,
+      Number(batch.plannedQuantity || batch.calculatedQuantity || 0),
+      options.now instanceof Date ? options.now : new Date()
+    );
+    const assignment = assignmentResult.assignment;
+    const timestamp = options.fieldValue.serverTimestamp();
+    const result = await db.runTransaction(async (transaction) => {
+      const freshSnapshot = await transaction.get(batchSnapshot.ref);
+      if (!freshSnapshot.exists || !automaticBatchNeedsAssignment(freshSnapshot.data())) {
+        return { batchId: batchSnapshot.id, repaired: false, reason: "already-complete" };
+      }
+      transaction.update(batchSnapshot.ref, {
+        status: assignment ? BATCH_STATUS.PLANNED : BATCH_STATUS.PENDING_ASSIGNMENT,
+        progress: assignment ? 10 : 0,
+        responsible: assignment?.responsible.name || "",
+        responsibleUid: assignment?.responsible.uid || "",
+        responsibleName: assignment?.responsible.name || "",
+        responsibleEmail: assignment?.responsible.email || "",
+        auditorUid: assignment?.auditor.uid || "",
+        auditorName: assignment?.auditor.name || "",
+        auditorEmail: assignment?.auditor.email || "",
+        startDate: assignment?.startDate || "",
+        startTime: assignment?.startTime || "",
+        dueDate: assignment?.dueDate || "",
+        dueTime: assignment?.dueTime || "",
+        assignmentPending: !assignment,
+        assignmentReason: assignmentResult.reason,
+        assignmentSource: assignment ? "automatic:backfill-schedule-load" : "automatic:pending",
+        capacityUnitsPerWorkday: assignmentResult.unitsPerWorkday || 0,
+        qualityReviewMinutes: assignmentResult.qualityReviewMinutes || 0,
+        assignmentTimeZone: PRINTSHOP_TIME_ZONE,
+        assignmentBackfilledAt: timestamp,
+        updatedAt: timestamp,
+        updatedByUid: "system",
+        updatedByName: "Corrección automática",
+      });
+      if (!assignment) {
+        for (const adminId of assignmentResult.adminIds || []) {
+          transaction.set(db.collection("notifications").doc(
+            `print-batch-pending-${batchSnapshot.id}-${adminId}`
+          ), {
+            recipientId: adminId,
+            batchId: batchSnapshot.id,
+            productId: batch.productId,
+            tipo: "PRINT_BATCH_ASSIGNMENT_PENDING",
+            titulo: "Lote automático pendiente de asignación",
+            mensaje: `${batch.folio || batchSnapshot.id}: ${assignmentResult.reason}`,
+            actorId: "system",
+            actorName: "Corrección automática",
+            read: false,
+            createdAt: timestamp,
+          }, { merge: true });
+        }
+      }
+      return { batchId: batchSnapshot.id, repaired: Boolean(assignment), pending: !assignment };
+    });
+    results.push(result);
+  }
+  return {
+    scanned: candidates.length,
+    repaired: results.filter((result) => result.repaired).length,
+    pending: results.filter((result) => result.pending).length,
+    results,
+  };
+}
+
 module.exports = {
   BATCH_STATUS,
   QUALITY_STATUS,
   buildAvailabilityBlocks,
   buildQualityReviewPatch,
+  backfillAutomaticProductionBatches,
+  automaticBatchNeedsAssignment,
+  canActiveProfileAccessPrintshop,
   calculateReplenishment,
+  calculateFinishedInventoryOutputStock,
+  consumeReviewTime,
+  consumeScheduledCapacity,
   consumeScheduledHours,
+  deleteProductionBatch,
   enterProductionBatchInventory,
   evaluateInventoryEntry,
   getEffectiveProgress,
   getInventoryMovementId,
+  getInventoryOutputMovementId,
   isActivePendingBatch,
   isResponsibleTransitionAllowed,
+  matchesReplenishmentSuppression,
+  reactivateProductReplenishment,
   reconcileAllProducts,
   reconcileProductReplenishment,
   reviewProductionBatchQuality,
+  registerFinishedInventoryOutput,
+  resolveUnitsPerWorkday,
+  selectCapacityAssignmentPair,
+  selectHourlyAssignmentPair,
   selectAssignmentPair,
   updateProductionBatchProgress,
+  validateFinishedInventoryOutput,
 };

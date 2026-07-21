@@ -3,12 +3,23 @@ const { describe, it } = require("node:test");
 const {
   BATCH_STATUS,
   QUALITY_STATUS,
+  automaticBatchNeedsAssignment,
   buildQualityReviewPatch,
+  canActiveProfileAccessPrintshop,
+  calculateFinishedInventoryOutputStock,
   calculateReplenishment,
+  consumeScheduledCapacity,
+  deleteProductionBatch,
   evaluateInventoryEntry,
+  getInventoryOutputMovementId,
   getInventoryMovementId,
   isResponsibleTransitionAllowed,
+  matchesReplenishmentSuppression,
+  registerFinishedInventoryOutput,
+  resolveUnitsPerWorkday,
+  selectCapacityAssignmentPair,
   selectAssignmentPair,
+  validateFinishedInventoryOutput,
 } = require("../functions/productionBatches");
 
 const checklist = [
@@ -149,5 +160,187 @@ describe("asignación automática", () => {
       ],
     });
     assert.equal(result, null);
+  });
+});
+
+describe("capacidad y fechas automáticas", () => {
+  it("usa capacidad central, carga activa y tiempo de auditoría", () => {
+    const blocks = [
+      { dateValue: "2026-07-20", startMinute: 540, endMinute: 1020 },
+      { dateValue: "2026-07-21", startMinute: 540, endMinute: 1020 },
+      { dateValue: "2026-07-22", startMinute: 540, endMinute: 1020 },
+    ];
+    const result = selectCapacityAssignmentPair({
+      quantity: 50,
+      unitsPerWorkday: 25,
+      qualityReviewMinutes: 60,
+      candidates: [
+        { uid: "tony", productionLoad: 1, auditLoad: 0, blocks },
+        { uid: "ernesto", productionLoad: 0, auditLoad: 0, blocks },
+        { uid: "ivan", productionLoad: 0, auditLoad: 1, blocks },
+      ],
+    });
+    assert.equal(result.responsible.uid, "ernesto");
+    assert.notEqual(result.responsible.uid, result.auditor.uid);
+    assert.equal(result.startDate, "2026-07-20");
+    assert.equal(result.dueDate, "2026-07-22");
+    assert.equal(result.dueTime, "10:00");
+  });
+
+  it("inicia en el siguiente bloque válido y detecta ausencia de personal", () => {
+    const window = consumeScheduledCapacity([
+      { dateValue: "2026-07-21", startMinute: 540, endMinute: 1020 },
+    ], 10, 20);
+    assert.equal(window.startDate, "2026-07-21");
+    assert.equal(window.startTime, "09:00");
+    assert.equal(selectCapacityAssignmentPair({
+      quantity: 10,
+      unitsPerWorkday: 20,
+      qualityReviewMinutes: 30,
+      candidates: [{ uid: "solo", productionLoad: 0, auditLoad: 0, blocks: window.segments }],
+    }), null);
+  });
+
+  it("resuelve capacidad por producto, categoría y fallback central", () => {
+    const settings = {
+      capacityByProduct: { book1: 40 },
+      capacityByCategory: { Libro: 30 },
+      defaultUnitsPerWorkday: 20,
+    };
+    assert.equal(resolveUnitsPerWorkday({ id: "book1", category: "Libro" }, settings), 40);
+    assert.equal(resolveUnitsPerWorkday({ id: "book2", category: "Libro" }, settings), 30);
+    assert.equal(resolveUnitsPerWorkday({ id: "poster", category: "Cartel" }, settings), 20);
+  });
+});
+
+describe("bajas y supresión de reposición", () => {
+  it("detecta lotes automáticos históricos incompletos", () => {
+    assert.equal(automaticBatchNeedsAssignment({
+      automatic: true,
+      status: BATCH_STATUS.PLANNED,
+      responsibleUid: "",
+      auditorUid: "auditor",
+      startDate: "",
+      dueDate: "2026-07-22",
+    }), true);
+  });
+
+  it("mantiene supresión mientras stock y umbrales no cambien", () => {
+    const lock = {
+      suppressed: true,
+      suppressedCurrentStock: 25,
+      suppressedMinimumStock: 10,
+      suppressedIdealStock: 50,
+    };
+    assert.equal(matchesReplenishmentSuppression(lock, 25, 10, 50), true);
+    assert.equal(matchesReplenishmentSuppression(lock, 24, 10, 50), false);
+  });
+
+  it("elimina lógicamente el último lote sin exigir otro registro", async () => {
+    const state = { folio: "LOT-ULTIMO", automatic: false, inventoryApplied: false };
+    const ref = { id: "last", path: "printProductionBatches/last" };
+    const db = {
+      collection: () => ({ doc: () => ref }),
+      runTransaction: async (callback) => callback({
+        get: async () => ({ exists: true, data: () => state }),
+        update: (_ref, patch) => Object.assign(state, patch),
+      }),
+    };
+    const result = await deleteProductionBatch(
+      db,
+      "last",
+      { uid: "admin", name: "Admin", email: "admin@test.local", isAdmin: true },
+      { serverTimestamp: () => "timestamp" }
+    );
+    assert.equal(result.deleted, true);
+    assert.equal(state.deleted, true);
+    assert.equal(state.active, false);
+  });
+});
+
+describe("salidas de inventario terminado", () => {
+  it("permite admin o colaborador activo de Imprenta, sin elevar otros perfiles", () => {
+    assert.equal(canActiveProfileAccessPrintshop({ active: true, role: "admin" }), true);
+    assert.equal(canActiveProfileAccessPrintshop({ active: true, department: "Imprenta" }), true);
+    assert.equal(canActiveProfileAccessPrintshop({ active: true, department: "Ventas" }), false);
+    assert.equal(canActiveProfileAccessPrintshop({ active: false, department: "Imprenta" }), false);
+  });
+
+  it("valida entero positivo, motivo e idempotencia estable", () => {
+    assert.deepEqual(validateFinishedInventoryOutput({ quantity: 3, reason: "Plantel Centro" }), {
+      quantity: 3,
+      reason: "Plantel Centro",
+      notes: "",
+    });
+    assert.throws(() => validateFinishedInventoryOutput({ quantity: 1.5, reason: "Plantel" }));
+    assert.throws(() => validateFinishedInventoryOutput({ quantity: 2, reason: "" }));
+    assert.equal(
+      getInventoryOutputMovementId("user", "same-request"),
+      getInventoryOutputMovementId("user", "same-request")
+    );
+    assert.deepEqual(calculateFinishedInventoryOutputStock(5, 5), { previousStock: 5, newStock: 0 });
+    assert.throws(() => calculateFinishedInventoryOutputStock(4, 5), /Stock insuficiente/);
+  });
+
+  it("descuenta una sola vez ante concurrencia y rechaza stock insuficiente", async () => {
+    const documents = new Map([
+      ["printFinishedInventory/inventory-1", {
+        active: true,
+        productId: "book-1",
+        productName: "Libro Uno",
+        currentStock: 10,
+      }],
+    ]);
+    let queue = Promise.resolve();
+    const db = {
+      collection(name) {
+        return {
+          doc(id) { return { id, path: `${name}/${id}` }; },
+        };
+      },
+      runTransaction(callback) {
+        const run = queue.then(() => callback({
+          async get(ref) {
+            const data = documents.get(ref.path);
+            return { exists: Boolean(data), data: () => data };
+          },
+          update(ref, patch) {
+            documents.set(ref.path, { ...documents.get(ref.path), ...patch });
+          },
+          create(ref, data) {
+            if (documents.has(ref.path)) throw new Error("already exists");
+            documents.set(ref.path, data);
+          },
+        }));
+        queue = run.catch(() => undefined);
+        return run;
+      },
+    };
+    const input = { inventoryId: "inventory-1", quantity: 3, reason: "Plantel", requestId: "same" };
+    const actor = {
+      uid: "printer",
+      name: "Printer",
+      email: "printer@test.local",
+      canAccessPrintshop: true,
+    };
+    const fieldValue = { serverTimestamp: () => "timestamp" };
+    const [first, retry] = await Promise.all([
+      registerFinishedInventoryOutput(db, input, actor, fieldValue),
+      registerFinishedInventoryOutput(db, input, actor, fieldValue),
+    ]);
+    assert.equal(documents.get("printFinishedInventory/inventory-1").currentStock, 7);
+    assert.equal([first, retry].filter((result) => result.alreadyApplied).length, 1);
+    await assert.rejects(() => registerFinishedInventoryOutput(
+      db,
+      { ...input, quantity: 8, requestId: "insufficient" },
+      actor,
+      fieldValue
+    ), /Stock insuficiente/);
+    await assert.rejects(() => registerFinishedInventoryOutput(
+      db,
+      { ...input, requestId: "unauthorized" },
+      { uid: "sales", name: "Ventas" },
+      fieldValue
+    ), /acceso a Imprenta/);
   });
 });

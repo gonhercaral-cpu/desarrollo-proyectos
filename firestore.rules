@@ -292,7 +292,9 @@ service cloud.firestore {
         && (
           userHasDepartmentName("Soporte Técnico") ||
           userHasDepartmentName("Soporte tecnico") ||
-          userHasDepartmentName("Soporte técnico")
+          userHasDepartmentName("Soporte técnico") ||
+          userHasDepartmentName("Soporte Técnico / Imprenta") ||
+          userHasDepartmentName("Soporte Tecnico / Imprenta")
         );
     }
 
@@ -1435,6 +1437,15 @@ service cloud.firestore {
           "inventoryAppliedByEmail",
           "finalizedAt",
           "finalizedByUid"
+        ])
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "active",
+          "deleted",
+          "deletedAt",
+          "deletedByUid",
+          "deletedByName",
+          "deletedByEmail",
+          "deletionMode"
         ]);
     }
 
@@ -3162,10 +3173,15 @@ service cloud.firestore {
           adminProductionBatchUpdate()
         )
         || responsibleProductionBatchUpdate()
-        || auditorQualityBatchUpdate()
-        || validPrintshopSoftDeleteUpdate();
+        || auditorQualityBatchUpdate();
 
-      allow delete: if isAdmin();
+      // Las bajas pasan por Cloud Functions para preservar contabilidad y supresión.
+      allow delete: if false;
+    }
+
+    match /printProductionReplenishment/{productId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
     }
 
 

@@ -24,7 +24,12 @@ const {
   normalizeCertificateSignerType,
 } = require("./certificatePeople");
 const {
+  backfillAutomaticProductionBatches,
+  canActiveProfileAccessPrintshop,
+  deleteProductionBatch,
   enterProductionBatchInventory,
+  reactivateProductReplenishment,
+  registerFinishedInventoryOutput,
   reconcileAllProducts,
   reconcileProductReplenishment,
   reviewProductionBatchQuality,
@@ -82,39 +87,22 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function getProfileDepartmentNames(profile = {}) {
-  return [
-    profile.area,
-    profile.department,
-    profile.departmentName,
-    ...(Array.isArray(profile.departments) ? profile.departments : []),
-    ...(Array.isArray(profile.departmentNames) ? profile.departmentNames : []),
-  ]
-    .map((value) => cleanString(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())
-    .filter(Boolean);
-}
-
 async function getActiveBatchActor(request) {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesión para realizar esta acción.");
   }
   const snapshot = await db.collection("users").doc(request.auth.uid).get();
-  if (!snapshot.exists || snapshot.data().active !== true) {
-    throw new HttpsError("permission-denied", "Tu perfil no está activo.");
+  if (!snapshot.exists || !canActiveProfileAccessPrintshop(snapshot.data())) {
+    throw new HttpsError("permission-denied", "Tu perfil no está activo o no tiene acceso a Imprenta.");
   }
   const profile = snapshot.data();
   const isAdmin = cleanString(profile.role).toLowerCase() === "admin";
-  const inPrintshop = getProfileDepartmentNames(profile).some((name) =>
-    ["imprenta", "impresion", "soporte tecnico"].includes(name)
-      || name.split(" ").includes("imprenta"));
-  if (!isAdmin && !inPrintshop) {
-    throw new HttpsError("permission-denied", "Tu perfil no tiene acceso a Imprenta.");
-  }
   return {
     uid: request.auth.uid,
     name: cleanString(profile.name || profile.displayName || profile.email),
     email: cleanString(profile.email),
     isAdmin,
+    canAccessPrintshop: true,
   };
 }
 
@@ -480,6 +468,90 @@ exports.enterProductionBatchInventory = onCall(
   }
 );
 
+exports.registerFinishedInventoryOutput = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const actor = await getActiveBatchActor(request);
+      return await registerFinishedInventoryOutput(db, request.data || {}, actor, FieldValue);
+    } catch (error) {
+      console.error("[print-inventory] No se pudo registrar salida", error);
+      throwBatchHttpsError(error, "No se pudo registrar la salida de inventario.");
+    }
+  }
+);
+
+exports.deleteProductionBatch = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const profile = await assertAdmin(request);
+      const batchId = cleanString(request.data?.batchId);
+      if (!batchId) throw new HttpsError("invalid-argument", "Falta el lote de producción.");
+      return await deleteProductionBatch(db, batchId, {
+        uid: request.auth.uid,
+        name: cleanString(profile.name || profile.displayName || profile.email),
+        email: cleanString(profile.email),
+        isAdmin: true,
+      }, FieldValue);
+    } catch (error) {
+      console.error("[production-batches] No se pudo eliminar lote", error);
+      throwBatchHttpsError(error, "No se pudo eliminar el lote.");
+    }
+  }
+);
+
+exports.reactivateProductReplenishment = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 120,
+  },
+  async (request) => {
+    try {
+      const profile = await assertAdmin(request);
+      const productId = cleanString(request.data?.productId);
+      const actor = {
+        uid: request.auth.uid,
+        name: cleanString(profile.name || profile.displayName || profile.email),
+        email: cleanString(profile.email),
+        isAdmin: true,
+      };
+      await reactivateProductReplenishment(db, productId, actor, FieldValue);
+      const reconciliation = await reconcileProductReplenishment(db, productId, { fieldValue: FieldValue });
+      return { reactivated: true, productId, reconciliation };
+    } catch (error) {
+      console.error("[production-batches] No se pudo reactivar reposición", error);
+      throwBatchHttpsError(error, "No se pudo reactivar la reposición automática.");
+    }
+  }
+);
+
+exports.repairAutomaticProductionBatches = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 540,
+  },
+  async (request) => {
+    try {
+      await assertAdmin(request);
+      return await backfillAutomaticProductionBatches(db, { fieldValue: FieldValue });
+    } catch (error) {
+      console.error("[production-batches] No se pudo reparar lotes automáticos", error);
+      throwBatchHttpsError(error, "No se pudieron reparar los lotes automáticos.");
+    }
+  }
+);
+
 async function reconcileProductFromEvent(event, fallbackProductId = "") {
   const beforeProductId = cleanString(event.data?.before.exists ? event.data.before.data()?.productId : "");
   const afterProductId = cleanString(event.data?.after.exists ? event.data.after.data()?.productId : "");
@@ -525,6 +597,15 @@ exports.reconcileProductionBatchFromBatch = onDocumentWritten(
   reconcileProductFromEvent
 );
 
+exports.repairAutomaticBatchesFromSettings = onDocumentWritten(
+  {
+    document: "systemSettings/printshopProduction",
+    region: "us-central1",
+    timeoutSeconds: 540,
+  },
+  async () => backfillAutomaticProductionBatches(db, { fieldValue: FieldValue })
+);
+
 exports.reconcileProductionBatchesHourly = onSchedule(
   {
     schedule: "every 60 minutes",
@@ -532,7 +613,11 @@ exports.reconcileProductionBatchesHourly = onSchedule(
     region: "us-central1",
     timeoutSeconds: 540,
   },
-  async () => reconcileAllProducts(db, { fieldValue: FieldValue })
+  async () => {
+    const reconciliation = await reconcileAllProducts(db, { fieldValue: FieldValue });
+    const backfill = await backfillAutomaticProductionBatches(db, { fieldValue: FieldValue });
+    return { reconciliation, backfill };
+  }
 );
 
 function createTemporaryPassword() {

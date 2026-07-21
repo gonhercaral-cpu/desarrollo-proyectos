@@ -18,6 +18,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -73,7 +74,11 @@ import {
 } from "../utils/certificateSignerCampus";
 import { formatPrintRequestCreatedAt } from "../utils/printRequestDateTime";
 import {
+  deleteProductionBatch,
   enterProductionBatchInventory,
+  reactivateProductReplenishment,
+  registerFinishedInventoryOutput,
+  repairAutomaticProductionBatches,
   saveProductionBatchQualityReview,
   updateProductionBatchProgress,
 } from "../services/productionBatchesService";
@@ -278,6 +283,7 @@ const movementFormInitialState = {
   quantity: 1,
   reason: "Producción terminada",
   notes: "",
+  requestId: "",
 };
 
 const movementReasons = [
@@ -3966,7 +3972,10 @@ function canProfileAccessPrintshop(profile, isAdmin) {
 
   return getProfileDepartmentNames(profile).some(
     (departmentName) =>
-      departmentName === "imprenta" || departmentName === "soporte tecnico"
+      departmentName === "imprenta"
+      || departmentName === "impresion"
+      || departmentName === "soporte tecnico"
+      || departmentName.includes("imprenta")
   );
 }
 
@@ -3985,12 +3994,14 @@ function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
 
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
-  const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin);
+  const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin)
+    && profile?.active !== false;
   const canGeneratePrintshopReport =
     canProfileGeneratePrintshopReport(profile, isAdmin) && profile?.active !== false;
   const canViewCertificateStatistics =
     isAdmin || getProfileDepartmentNames(profile).includes("imprenta");
   const assignmentRepairStartedRef = useRef(false);
+  const automaticBatchRepairStartedRef = useRef(false);
 
   const [activeSection, setActiveSection] = useState("dashboard");
   const [products, setProducts] = useState([]);
@@ -4041,6 +4052,16 @@ export default function PrintShop() {
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
   const [closingBatchId, setClosingBatchId] = useState(null);
+  const [deletingBatchId, setDeletingBatchId] = useState(null);
+  const [replenishmentControls, setReplenishmentControls] = useState([]);
+  const [reactivatingProductId, setReactivatingProductId] = useState("");
+  const [productionSettings, setProductionSettings] = useState({
+    defaultUnitsPerWorkday: 0,
+    qualityReviewMinutes: 0,
+    capacityByCategory: {},
+    capacityByProduct: {},
+  });
+  const [savingProductionSettings, setSavingProductionSettings] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState("");
@@ -4142,6 +4163,19 @@ export default function PrintShop() {
 
     repairMissingPrintRequestAssignments().catch((error) => {
       console.warn("No se pudo ejecutar la reparación de asignaciones de Imprenta:", error);
+    });
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin || automaticBatchRepairStartedRef.current) return;
+    automaticBatchRepairStartedRef.current = true;
+    repairAutomaticProductionBatches().then((result) => {
+      if (result.repaired > 0) {
+        setBatchMessage(`${result.repaired} lote(s) automático(s) completados con horarios reales.`);
+      }
+    }).catch((error) => {
+      console.warn("No se pudo ejecutar el backfill de lotes automáticos:", error);
+      automaticBatchRepairStartedRef.current = false;
     });
   }, [isAdmin]);
 
@@ -4376,6 +4410,25 @@ export default function PrintShop() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    return onSnapshot(collection(db, "printProductionReplenishment"), (snapshot) => {
+      setReplenishmentControls(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+        .filter((item) => item.suppressed === true));
+    }, (error) => {
+      console.warn("No se pudieron cargar las supresiones de reposición:", error);
+    });
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    return onSnapshot(doc(db, "systemSettings", "printshopProduction"), (snapshot) => {
+      if (snapshot.exists()) {
+        setProductionSettings((current) => ({ ...current, ...snapshot.data() }));
+      }
+    }, (error) => console.warn("No se pudo cargar la capacidad de Imprenta:", error));
+  }, [isAdmin]);
 
   useEffect(() => {
     setLoadingRequests(true);
@@ -5414,6 +5467,84 @@ export default function PrintShop() {
       } else {
         alert(`No se pudo eliminar el registro: ${error?.message || "error desconocido"}.`);
       }
+    }
+  }
+
+  async function removeProductionBatch(batch) {
+    if (!isAdmin || !batch?.id || deletingBatchId) return;
+    const accountingNotice = batch.inventoryApplied === true || batch.inventoryMovementId
+      ? "\n\nEl lote se ocultará, pero su movimiento contable se conservará."
+      : "";
+    if (!window.confirm(`¿Eliminar el lote ${batch.folio || batch.productName}?${accountingNotice}`)) return;
+    try {
+      setDeletingBatchId(batch.id);
+      setBatchMessage("");
+      const result = await deleteProductionBatch(batch.id);
+      setProductionBatches((current) => current.filter((item) => item.id !== batch.id));
+      if (selectedBatchId === batch.id) resetBatchForm();
+      setBatchMessage(result.suppression
+        ? "Lote eliminado. La reposición automática quedó suprimida hasta que cambie el inventario."
+        : "Lote eliminado correctamente.");
+    } catch (error) {
+      console.error("No se pudo eliminar el lote:", error);
+      setBatchMessage(error?.message || "No se pudo eliminar el lote.");
+    } finally {
+      setDeletingBatchId(null);
+    }
+  }
+
+  async function reactivateAutomaticReplenishment(productId) {
+    if (!isAdmin || !productId || reactivatingProductId) return;
+    try {
+      setReactivatingProductId(productId);
+      setBatchMessage("");
+      await reactivateProductReplenishment(productId);
+      setReplenishmentControls((current) => current.filter((item) => item.id !== productId));
+      setBatchMessage("Reposición automática reactivada y reconciliada.");
+    } catch (error) {
+      setBatchMessage(error?.message || "No se pudo reactivar la reposición automática.");
+    } finally {
+      setReactivatingProductId("");
+    }
+  }
+
+  function updateProductionSetting(field, value, key = "") {
+    const numericValue = Math.max(0, Number(value) || 0);
+    setProductionSettings((current) => key
+      ? {
+        ...current,
+        [field]: { ...(current[field] || {}), [key]: numericValue },
+      }
+      : { ...current, [field]: numericValue });
+  }
+
+  async function saveProductionSettings() {
+    const capacities = [
+      ...Object.values(productionSettings.capacityByCategory || {}),
+      ...Object.values(productionSettings.capacityByProduct || {}),
+    ].map(Number);
+    if (Number(productionSettings.qualityReviewMinutes) <= 0
+        || (Number(productionSettings.defaultUnitsPerWorkday) <= 0
+          && !capacities.some((value) => value > 0))) {
+      setBatchMessage("Configura capacidad por jornada y minutos de revisión válidos.");
+      return;
+    }
+    try {
+      setSavingProductionSettings(true);
+      await setDoc(doc(db, "systemSettings", "printshopProduction"), {
+        defaultUnitsPerWorkday: Number(productionSettings.defaultUnitsPerWorkday || 0),
+        qualityReviewMinutes: Number(productionSettings.qualityReviewMinutes || 0),
+        capacityByCategory: productionSettings.capacityByCategory || {},
+        capacityByProduct: productionSettings.capacityByProduct || {},
+        updatedAt: serverTimestamp(),
+        updatedByUid: getAuditUser().uid,
+        updatedByName: getAuditUser().name,
+      }, { merge: true });
+      setBatchMessage("Capacidad guardada. Los lotes pendientes se repararán automáticamente.");
+    } catch (error) {
+      setBatchMessage(error?.message || "No se pudo guardar la capacidad de producción.");
+    } finally {
+      setSavingProductionSettings(false);
     }
   }
 
@@ -9538,6 +9669,7 @@ export default function PrintShop() {
       reason: type === "Entrada" ? "Producción terminada" : "Entrega a plantel",
       quantity: 1,
       notes: "",
+      requestId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     }));
     setMovementMessage(
       `Se preparó una ${type.toLowerCase()} para ${item.productName}. Revisa la cantidad y el motivo, luego presiona “Registrar movimiento”.`
@@ -9664,8 +9796,9 @@ export default function PrintShop() {
     event.preventDefault();
     setMovementMessage("");
 
-    if (!isAdmin) {
-      setMovementMessage("Solo los administradores pueden registrar movimientos.");
+    const isOutput = movementForm.type === "Salida";
+    if ((!isOutput && !isAdmin) || (isOutput && !canManagePrintshopOperations)) {
+      setMovementMessage("No tienes permiso para registrar este movimiento.");
       return;
     }
 
@@ -9676,19 +9809,66 @@ export default function PrintShop() {
 
     const quantity = Number(movementForm.quantity || 0);
 
-    if (quantity <= 0) {
-      setMovementMessage("La cantidad debe ser mayor que cero.");
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setMovementMessage("La cantidad debe ser un entero mayor que cero.");
       return;
     }
+
+    if (!String(movementForm.reason || "").trim()) {
+      setMovementMessage("Indica el motivo o destino de la salida.");
+      return;
+    }
+
+    const selectedInventory = inventoryItems.find((item) => item.id === movementForm.inventoryId);
+    if (isOutput && quantity > Number(selectedInventory?.currentStock || 0)) {
+      setMovementMessage("La salida supera el stock disponible.");
+      return;
+    }
+
+    if (!window.confirm(
+      `¿Confirmar ${movementForm.type.toLowerCase()} de ${quantity} unidades de ${selectedInventory?.productName || "este producto"}?`
+    )) return;
 
     const auditUser = getAuditUser();
     const inventoryRef = doc(db, "printFinishedInventory", movementForm.inventoryId);
     const movementRef = doc(collection(db, "printInventoryMovements"));
+    let movementAlreadyApplied = false;
 
     try {
       setSavingMovement(true);
 
-      await runTransaction(db, async (transaction) => {
+      if (isOutput) {
+        const outputResult = await registerFinishedInventoryOutput({
+          inventoryId: movementForm.inventoryId,
+          quantity,
+          reason: movementForm.reason,
+          notes: movementForm.notes,
+          requestId: movementForm.requestId
+            || globalThis.crypto?.randomUUID?.()
+            || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        });
+        movementAlreadyApplied = outputResult.alreadyApplied === true;
+        setInventoryItems((current) => current.map((item) => item.id === movementForm.inventoryId
+          ? { ...item, currentStock: outputResult.newStock, updatedAt: new Date() }
+          : item));
+        if (!outputResult.alreadyApplied) {
+          setInventoryMovements((current) => [{
+            id: outputResult.movementId,
+            inventoryId: movementForm.inventoryId,
+            productId: selectedInventory?.productId || "",
+            productName: selectedInventory?.productName || "",
+            type: "Salida",
+            quantity,
+            reason: movementForm.reason,
+            previousStock: outputResult.previousStock,
+            newStock: outputResult.newStock,
+            notes: movementForm.notes || "",
+            createdAt: new Date(),
+            createdByUid: auditUser.uid,
+            createdByName: auditUser.name,
+          }, ...current.filter((item) => item.id !== outputResult.movementId)]);
+        }
+      } else await runTransaction(db, async (transaction) => {
         const inventorySnapshot = await transaction.get(inventoryRef);
 
         if (!inventorySnapshot.exists()) {
@@ -9697,14 +9877,7 @@ export default function PrintShop() {
 
         const inventoryData = inventorySnapshot.data();
         const previousStock = Number(inventoryData.currentStock || 0);
-        const newStock =
-          movementForm.type === "Entrada"
-            ? previousStock + quantity
-            : previousStock - quantity;
-
-        if (newStock < 0) {
-          throw new Error("No puedes registrar una salida mayor al stock disponible.");
-        }
+        const newStock = previousStock + quantity;
 
         transaction.update(inventoryRef, {
           currentStock: newStock,
@@ -9718,7 +9891,7 @@ export default function PrintShop() {
           inventoryId: movementForm.inventoryId,
           productId: inventoryData.productId || "",
           productName: inventoryData.productName || "",
-          type: movementForm.type,
+          type: "Entrada",
           quantity,
           reason: movementForm.reason || "Ajuste de inventario",
           previousStock,
@@ -9731,7 +9904,7 @@ export default function PrintShop() {
         });
       });
 
-      await createPrintshopLog({
+      if (!movementAlreadyApplied) await createPrintshopLog({
         type: "INVENTORY_MOVEMENT_CREATED",
         module: "inventory",
         title: "Movimiento de inventario registrado",
@@ -9741,7 +9914,9 @@ export default function PrintShop() {
         productName: movementForm.productName || "",
       });
       setMovementForm(movementFormInitialState);
-      setMovementMessage("Movimiento registrado correctamente.");
+      setMovementMessage(movementAlreadyApplied
+        ? "Esta salida ya había sido registrada; no se descontó stock nuevamente."
+        : "Movimiento registrado correctamente.");
     } catch (error) {
       console.error("No se pudo registrar el movimiento:", error);
       setMovementMessage(
@@ -10745,6 +10920,7 @@ export default function PrintShop() {
           inventoryMessage={inventoryMessage}
           movementMessage={movementMessage}
           isAdmin={isAdmin}
+          canRegisterInventoryOutput={canManagePrintshopOperations}
           onInventoryInputChange={handleInventoryInputChange}
           onInventoryNumberInputChange={handleInventoryNumberInputChange}
           onMovementInputChange={handleMovementInputChange}
@@ -11177,6 +11353,11 @@ export default function PrintShop() {
           savingBatch={savingBatch}
           batchMessage={batchMessage}
           closingBatchId={closingBatchId}
+          deletingBatchId={deletingBatchId}
+          replenishmentControls={replenishmentControls}
+          reactivatingProductId={reactivatingProductId}
+          productionSettings={productionSettings}
+          savingProductionSettings={savingProductionSettings}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
           currentUserName={getAuditUser().name}
@@ -11198,11 +11379,10 @@ export default function PrintShop() {
           onSendBatchToInventory={sendBatchToInventory}
           onPrepareBatchSupplyMovement={prepareBatchSupplyMovement}
           onOpenInventory={() => setActiveSection("inventory")}
-          onSoftDeleteBatch={(batch) => softDeletePrintshopRecord("printProductionBatches", batch, {
-            module: "batches",
-            sectionLabel: "Lotes de producción",
-            label: batch.folio || batch.productName,
-          })}
+          onSoftDeleteBatch={removeProductionBatch}
+          onReactivateReplenishment={reactivateAutomaticReplenishment}
+          onUpdateProductionSetting={updateProductionSetting}
+          onSaveProductionSettings={saveProductionSettings}
         />
       )}
     </div>
@@ -12165,6 +12345,11 @@ function ProductionBatchesView({
   savingBatch,
   batchMessage,
   closingBatchId,
+  deletingBatchId,
+  replenishmentControls,
+  reactivatingProductId,
+  productionSettings,
+  savingProductionSettings,
   isAdmin,
   currentUserUid,
   currentUserName,
@@ -12187,6 +12372,9 @@ function ProductionBatchesView({
   onPrepareBatchSupplyMovement,
   onOpenInventory,
   onSoftDeleteBatch,
+  onReactivateReplenishment,
+  onUpdateProductionSetting,
+  onSaveProductionSettings,
 }) {
   function matchesCurrentUser(assignedUid, assignedEmail, assignedName) {
     if (assignedUid) return isSameUid(currentUserUid, assignedUid);
@@ -12236,6 +12424,9 @@ function ProductionBatchesView({
   const selectedBatchConsumption = selectedBatch
     ? getBatchSupplyConsumptionSummary(selectedBatch, supplyMovements, supplyItems, inventoryProducts)
     : null;
+  const productionCategories = [...new Set(inventoryProducts
+    .map((product) => product.category)
+    .filter(Boolean))].sort((first, second) => first.localeCompare(second, "es"));
 
   const [batchFocusOpen, setBatchFocusOpen] = useState(false);
   const [batchSearchTerm, setBatchSearchTerm] = useState("");
@@ -12333,6 +12524,92 @@ function ProductionBatchesView({
           </button>
         )}
       </div>
+
+      {isAdmin && replenishmentControls.length > 0 && (
+        <div className="message-box">
+          <strong>Reposición automática suprimida</strong>
+          {replenishmentControls.map((control) => (
+            <div key={control.id} className="printshop-form-actions">
+              <span>
+                {control.productName
+                  || inventoryProducts.find((product) => product.id === control.id)?.name
+                  || control.id}
+                {control.suppressionReason ? ` — ${control.suppressionReason}` : ""}
+              </span>
+              <button
+                type="button"
+                className="visual-outline-button"
+                onClick={() => onReactivateReplenishment(control.id)}
+                disabled={reactivatingProductId === control.id}
+              >
+                {reactivatingProductId === control.id ? "Reactivando..." : "Reactivar reposición"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isAdmin && (
+        <details className="message-box">
+          <summary><strong>Capacidad automática de producción</strong></summary>
+          <div className="printshop-product-form">
+            <label>
+              <span>Unidades por jornada (predeterminado)</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={productionSettings.defaultUnitsPerWorkday || 0}
+                onChange={(event) => onUpdateProductionSetting("defaultUnitsPerWorkday", event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Minutos de revisión de calidad</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={productionSettings.qualityReviewMinutes || 0}
+                onChange={(event) => onUpdateProductionSetting("qualityReviewMinutes", event.target.value)}
+              />
+            </label>
+            {productionCategories.map((category) => (
+              <label key={category}>
+                <span>{category}: unidades por jornada</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productionSettings.capacityByCategory?.[category] || 0}
+                  onChange={(event) => onUpdateProductionSetting("capacityByCategory", event.target.value, category)}
+                />
+              </label>
+            ))}
+            {inventoryProducts.map((product) => (
+              <label key={product.id}>
+                <span>{product.name}: capacidad específica</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productionSettings.capacityByProduct?.[product.id] || 0}
+                  onChange={(event) => onUpdateProductionSetting("capacityByProduct", event.target.value, product.id)}
+                />
+              </label>
+            ))}
+            <div className="printshop-form-actions full">
+              <button
+                type="button"
+                className="visual-primary-button"
+                onClick={onSaveProductionSettings}
+                disabled={savingProductionSettings}
+              >
+                {savingProductionSettings ? "Guardando..." : "Guardar capacidad"}
+              </button>
+            </div>
+          </div>
+        </details>
+      )}
 
       <section className="batch-quick-summary" aria-label="Resumen rápido de lotes">
         <h3>Resumen rápido</h3>
@@ -12521,8 +12798,9 @@ function ProductionBatchesView({
                                   type="button"
                                   className="danger-table-button"
                                   onClick={() => onSoftDeleteBatch(batch)}
+                                  disabled={deletingBatchId === batch.id}
                                 >
-                                  Eliminar
+                                  {deletingBatchId === batch.id ? "Eliminando..." : "Eliminar"}
                                 </button>
                               )}
                             </div>
@@ -12986,6 +13264,7 @@ function FinishedInventoryView({
   inventoryMessage,
   movementMessage,
   isAdmin,
+  canRegisterInventoryOutput,
   onInventoryInputChange,
   onInventoryNumberInputChange,
   onMovementInputChange,
@@ -13107,12 +13386,16 @@ function FinishedInventoryView({
                           </td>
                           <td>
                             <div className="printshop-product-actions">
-                              <button type="button" onClick={() => openInventoryMovementFocus(item, "Entrada")}>
-                                Entrada
-                              </button>
-                              <button type="button" onClick={() => openInventoryMovementFocus(item, "Salida")}>
-                                Salida
-                              </button>
+                              {isAdmin && (
+                                <button type="button" onClick={() => openInventoryMovementFocus(item, "Entrada")}>
+                                  Entrada
+                                </button>
+                              )}
+                              {canRegisterInventoryOutput && (
+                                <button type="button" onClick={() => openInventoryMovementFocus(item, "Salida")}>
+                                  Salida
+                                </button>
+                              )}
                               {isAdmin && (
                                 <button
                                   type="button"
@@ -13279,7 +13562,7 @@ function FinishedInventoryView({
                   name="inventoryId"
                   value={movementForm.inventoryId}
                   onChange={onMovementInputChange}
-                  disabled={!isAdmin || inventoryItems.length === 0}
+                  disabled={savingMovement || inventoryItems.length === 0}
                 >
                   <option value="">Seleccionar inventario</option>
                   {inventoryItems.map((item) => (
@@ -13296,8 +13579,9 @@ function FinishedInventoryView({
                   name="type"
                   value={movementForm.type}
                   onChange={onMovementInputChange}
+                  disabled={!isAdmin}
                 >
-                  <option>Entrada</option>
+                  {isAdmin && <option>Entrada</option>}
                   <option>Salida</option>
                 </select>
               </label>
@@ -13343,7 +13627,9 @@ function FinishedInventoryView({
                 <button
                   type="submit"
                   className="visual-primary-button"
-                  disabled={savingMovement || !isAdmin || inventoryItems.length === 0}
+                  disabled={savingMovement
+                    || inventoryItems.length === 0
+                    || (movementForm.type === "Entrada" ? !isAdmin : !canRegisterInventoryOutput)}
                 >
                   {savingMovement ? "Registrando..." : "Registrar movimiento"}
                 </button>
