@@ -1383,6 +1383,42 @@ service cloud.firestore {
           || request.resource.data.inventoryApplied == true
         )
         && (
+          !("assignmentSource" in request.resource.data)
+          || request.resource.data.assignmentSource is string
+        )
+        && (
+          !("assignmentLocked" in request.resource.data)
+          || request.resource.data.assignmentLocked is bool
+        )
+        && (
+          !("assignmentPending" in request.resource.data)
+          || request.resource.data.assignmentPending is bool
+        )
+        && (
+          !("assignmentVersion" in request.resource.data)
+          || (
+            request.resource.data.assignmentVersion is number
+            && request.resource.data.assignmentVersion >= 0
+          )
+        )
+        && (
+          !("assignedAt" in request.resource.data)
+          || request.resource.data.assignedAt == null
+          || request.resource.data.assignedAt is timestamp
+        )
+        && (
+          !("assignedByUid" in request.resource.data)
+          || request.resource.data.assignedByUid is string
+        )
+        && (
+          !("assignedByName" in request.resource.data)
+          || request.resource.data.assignedByName is string
+        )
+        && (
+          !("assignedByEmail" in request.resource.data)
+          || request.resource.data.assignedByEmail is string
+        )
+        && (
           !("progress" in request.resource.data)
           || (
             request.resource.data.progress is number

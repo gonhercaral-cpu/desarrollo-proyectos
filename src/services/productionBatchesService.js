@@ -8,6 +8,7 @@ const deleteBatchCallable = httpsCallable(functions, "deleteProductionBatch");
 const outputInventoryCallable = httpsCallable(functions, "registerFinishedInventoryOutput");
 const reactivateReplenishmentCallable = httpsCallable(functions, "reactivateProductReplenishment");
 const repairAutomaticBatchesCallable = httpsCallable(functions, "repairAutomaticProductionBatches");
+const saveAdminChangesCallable = httpsCallable(functions, "saveProductionBatchAdminChanges");
 
 function callableError(error, fallback) {
   const result = new Error(error?.message || fallback);
@@ -75,5 +76,14 @@ export async function repairAutomaticProductionBatches() {
     return response.data;
   } catch (error) {
     throw callableError(error, "No se pudieron completar los lotes automáticos existentes.");
+  }
+}
+
+export async function saveProductionBatchAdminChanges(batchId, changes) {
+  try {
+    const response = await saveAdminChangesCallable({ batchId, changes });
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudieron guardar los cambios del lote.");
   }
 }

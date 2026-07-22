@@ -13,12 +13,14 @@ const {
   evaluateInventoryEntry,
   getInventoryOutputMovementId,
   getInventoryMovementId,
+  hasValidAssignmentPair,
   isResponsibleTransitionAllowed,
   matchesReplenishmentSuppression,
   registerFinishedInventoryOutput,
   resolveUnitsPerWorkday,
   selectCapacityAssignmentPair,
   selectAssignmentPair,
+  saveProductionBatchAdminChanges,
   validateFinishedInventoryOutput,
 } = require("../functions/productionBatches");
 
@@ -161,6 +163,21 @@ describe("asignación automática", () => {
     });
     assert.equal(result, null);
   });
+
+  it("considera válida solo una pareja completa y distinta", () => {
+    assert.equal(hasValidAssignmentPair({
+      responsibleUid: "producer",
+      responsibleName: "Producción",
+      auditorUid: "auditor",
+      auditorName: "Calidad",
+    }), true);
+    assert.equal(hasValidAssignmentPair({
+      responsibleUid: "same",
+      responsibleName: "Misma persona",
+      auditorUid: "same",
+      auditorName: "Misma persona",
+    }), false);
+  });
 });
 
 describe("capacidad y fechas automáticas", () => {
@@ -217,12 +234,99 @@ describe("bajas y supresión de reposición", () => {
   it("detecta lotes automáticos históricos incompletos", () => {
     assert.equal(automaticBatchNeedsAssignment({
       automatic: true,
-      status: BATCH_STATUS.PLANNED,
+      status: BATCH_STATUS.PENDING_ASSIGNMENT,
       responsibleUid: "",
       auditorUid: "auditor",
       startDate: "",
       dueDate: "2026-07-22",
     }), true);
+  });
+
+  it("no recalcula lotes planeados ni asignaciones manuales bloqueadas", () => {
+    assert.equal(automaticBatchNeedsAssignment({
+      automatic: true,
+      status: BATCH_STATUS.PLANNED,
+      responsibleUid: "",
+      auditorUid: "",
+    }), false);
+    assert.equal(automaticBatchNeedsAssignment({
+      automatic: true,
+      status: BATCH_STATUS.PENDING_ASSIGNMENT,
+      assignmentSource: "manual",
+      assignmentLocked: true,
+      responsibleUid: "producer",
+      auditorUid: "auditor",
+    }), false);
+  });
+
+  it("guarda asignación manual parcial y evita sobrescritura automática concurrente", async () => {
+    const state = {
+      automatic: true,
+      origin: "automatic",
+      status: BATCH_STATUS.PENDING_ASSIGNMENT,
+      progress: 0,
+      productId: "book-1",
+      responsible: "",
+      responsibleUid: "",
+      responsibleName: "",
+      responsibleEmail: "",
+      auditorUid: "",
+      auditorName: "",
+      auditorEmail: "",
+      startDate: "2026-07-21",
+      dueDate: "2026-07-24",
+      assignmentPending: true,
+      assignmentVersion: 0,
+    };
+    const ref = { id: "batch-1", path: "printProductionBatches/batch-1" };
+    let queue = Promise.resolve();
+    const db = {
+      collection: () => ({ doc: () => ref }),
+      runTransaction(callback) {
+        const run = queue.then(() => callback({
+          get: async () => ({ exists: true, data: () => ({ ...state }) }),
+          update: (_ref, patch) => Object.assign(state, patch),
+        }));
+        queue = run.catch(() => undefined);
+        return run;
+      },
+    };
+    const fieldValue = { serverTimestamp: () => "timestamp" };
+    const actor = { uid: "admin", name: "Admin", email: "admin@test.local", isAdmin: true };
+
+    const manualSave = saveProductionBatchAdminChanges(db, "batch-1", {
+      status: BATCH_STATUS.PLANNED,
+      responsibleUid: "producer",
+      responsibleName: "Producción",
+      responsibleEmail: "producer@test.local",
+      responsible: "Producción",
+      auditorUid: "auditor",
+      auditorName: "Calidad",
+      auditorEmail: "auditor@test.local",
+      startDate: "",
+      dueDate: "",
+    }, actor, fieldValue);
+    const automaticReconciliation = db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (automaticBatchNeedsAssignment(snapshot.data())) {
+        transaction.update(ref, {
+          status: BATCH_STATUS.PENDING_ASSIGNMENT,
+          responsibleUid: "",
+          auditorUid: "",
+        });
+      }
+    });
+
+    await Promise.all([manualSave, automaticReconciliation]);
+    assert.equal(state.assignmentSource, "manual");
+    assert.equal(state.assignmentLocked, true);
+    assert.equal(state.assignmentPending, false);
+    assert.equal(state.status, BATCH_STATUS.PLANNED);
+    assert.equal(state.responsibleUid, "producer");
+    assert.equal(state.auditorUid, "auditor");
+    assert.equal(state.startDate, "2026-07-21");
+    assert.equal(state.dueDate, "2026-07-24");
+    assert.equal(automaticBatchNeedsAssignment(state), false);
   });
 
   it("mantiene supresión mientras stock y umbrales no cambien", () => {

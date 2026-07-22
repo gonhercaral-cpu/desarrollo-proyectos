@@ -79,6 +79,7 @@ import {
   reactivateProductReplenishment,
   registerFinishedInventoryOutput,
   repairAutomaticProductionBatches,
+  saveProductionBatchAdminChanges,
   saveProductionBatchQualityReview,
   updateProductionBatchProgress,
 } from "../services/productionBatchesService";
@@ -8263,6 +8264,10 @@ export default function PrintShop() {
       throw new Error("Primero prepara folio y QR para este certificado.");
     }
 
+    if (!pdfStoragePath && !pdfUrl) {
+      throw new Error("El PDF no se almacenó en Storage; no se registrará un certificado sin archivo original.");
+    }
+
     const auditUser = getAuditUser();
     const certificateId = sanitizeGeneratedCertificateId(
       student.validationCode || student.certificateFolio || `${request.id}-${student.id}`
@@ -8354,6 +8359,7 @@ export default function PrintShop() {
       campus: request.campus || "",
       level: request.level || "",
     });
+    return { certificateId, certificatePayload };
   }
 
   async function updateGeneratedCertificateStatus(certificate, nextStatus) {
@@ -10636,7 +10642,41 @@ export default function PrintShop() {
       setSavingBatch(true);
 
       if (selectedBatchId) {
-        await updateDoc(doc(db, "printProductionBatches", selectedBatchId), payload);
+        const result = await saveProductionBatchAdminChanges(selectedBatchId, {
+          productId: payload.productId,
+          productName: payload.productName,
+          category: payload.category,
+          level: payload.level,
+          unit: payload.unit,
+          plannedQuantity: payload.plannedQuantity,
+          producedQuantity: payload.producedQuantity,
+          approvedQuantity: payload.approvedQuantity,
+          rejectedQuantity: payload.rejectedQuantity,
+          status: payload.status,
+          progress: payload.progress,
+          responsible: payload.responsible,
+          responsibleUid: payload.responsibleUid,
+          responsibleName: payload.responsibleName,
+          responsibleEmail: payload.responsibleEmail,
+          auditorUid: payload.auditorUid,
+          auditorName: payload.auditorName,
+          auditorEmail: payload.auditorEmail,
+          startDate: payload.startDate,
+          dueDate: payload.dueDate,
+          notes: payload.notes,
+          qualityChecklist: payload.qualityChecklist,
+          qualityStatus: payload.qualityStatus,
+          qualityResult: payload.qualityResult,
+          qualityNotes: payload.qualityNotes,
+          qualityCompleted: payload.qualityCompleted,
+        });
+        setProductionBatches((current) => current.map((batch) =>
+          batch.id === selectedBatchId ? { ...batch, ...result } : batch
+        ));
+        setBatchForm((current) => ({
+          ...current,
+          status: result.status || current.status,
+        }));
         await createPrintshopLog({
           type: "BATCH_UPDATED",
           module: "batches",
@@ -10654,6 +10694,15 @@ export default function PrintShop() {
       } else {
         const newBatchRef = await addDoc(collection(db, "printProductionBatches"), {
           ...payload,
+          assignmentPending: false,
+          assignmentReason: "Asignación definida por administrador.",
+          assignmentSource: "manual",
+          assignmentLocked: true,
+          assignmentVersion: 1,
+          assignedAt: serverTimestamp(),
+          assignedByUid: auditUser.uid,
+          assignedByName: auditUser.name,
+          assignedByEmail: auditUser.email,
           createdAt: serverTimestamp(),
           createdByUid: auditUser.uid,
           createdByName: auditUser.name,
@@ -16491,7 +16540,6 @@ function CertificatesWorkspaceView({
 
   function handleCertificateGeneratorInputChange(event) {
     const { name, value } = event.target;
-    setStandalonePreview(null);
     setStandaloneMessage("");
     setCertificateGeneratorForm((current) => ({ ...current, [name]: value }));
   }
@@ -16528,9 +16576,20 @@ function CertificatesWorkspaceView({
       return;
     }
 
+    if (!certificateGeneratorForm.certificateIssueDate) {
+      setStandaloneMessage("Indica la fecha de emisión.");
+      return;
+    }
+
+    if (!certificateGeneratorForm.campus) {
+      setStandaloneMessage("Selecciona un plantel.");
+      return;
+    }
+
     try {
       setStandaloneWorking(true);
-      const requestId = `individual-${Date.now()}`;
+      setStandaloneMessage("Generando hoja completa, PDF y validación QR...");
+      const requestId = standalonePreview?.request?.id || `individual-${Date.now()}`;
       const request = {
         id: requestId,
         folio: `IND-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
@@ -16572,8 +16631,10 @@ function CertificatesWorkspaceView({
         teacherSignatureDataUrl: teacherSigner?.signatureDataUrl || "",
         students: [],
       };
-      const certificateFolio = buildCertificateStudentFolio(request, 1);
-      const validationCode = buildValidationCode(certificateFolio);
+      const certificateFolio = standalonePreview?.student?.certificateFolio
+        || buildCertificateStudentFolio(request, 1);
+      const validationCode = standalonePreview?.student?.validationCode
+        || buildValidationCode(certificateFolio);
       const validationUrl = buildValidationUrl(validationCode);
       const qrDataUrl = await QRCode.toDataURL(validationUrl, {
         margin: 2,
@@ -16581,7 +16642,7 @@ function CertificatesWorkspaceView({
         errorCorrectionLevel: "M",
       });
       const student = {
-        id: `individual-student-${Date.now()}`,
+        id: standalonePreview?.student?.id || `individual-student-${Date.now()}`,
         name: studentName,
         deliveryType: "Digital",
         status: "Folio generado",
@@ -16592,13 +16653,35 @@ function CertificatesWorkspaceView({
       };
 
       request.students = [student];
-      await onRegisterStandaloneGeneratedCertificate({
+      const fileName = `${sanitizePdfFileName(`${certificateFolio}-${studentName}`)}.pdf`;
+      const pdfBlob = await buildDetachedCertificatePdfBlob({
+        request,
+        student,
+        principalSigner,
+        teacherSigner,
+        certificateTemplate,
+      });
+      const savedPdf = await saveGeneratedCertificatePdfBlob({
+        request,
+        student,
+        fileName,
+        pdfBlob,
+      });
+      const registration = await onRegisterStandaloneGeneratedCertificate({
         request,
         student,
         certificateTemplate,
         principalName: principalSigner?.name || "",
         teacherName: teacherSigner?.name || certificateGeneratorForm.teacherName || "",
-        fileName: "",
+        fileName,
+        pdfUrl: savedPdf.pdfUrl,
+        pdfStoragePath: savedPdf.pdfStoragePath,
+      });
+      Object.assign(student, {
+        certificateRecordId: registration?.certificateId || validationCode,
+        pdfFileName: fileName,
+        pdfUrl: savedPdf.pdfUrl,
+        pdfStoragePath: savedPdf.pdfStoragePath,
       });
       setStandalonePreview({
         request,
@@ -16607,7 +16690,7 @@ function CertificatesWorkspaceView({
         teacherSigner,
         certificateTemplate,
       });
-      setStandaloneMessage("Certificado listo. Revisa la vista previa y descarga el PDF para registrarlo en el historial.");
+      setStandaloneMessage("Certificado completo generado, guardado y registrado. PDF, impresión y QR ya disponibles.");
     } catch (error) {
       console.error("No se pudo preparar el certificado individual:", error);
       setStandaloneMessage(error?.message || "No se pudo preparar el certificado individual.");
@@ -16992,7 +17075,7 @@ function CertificatesWorkspaceView({
               </form>
             ) : (
               <div className="certificate-generator-individual-layout">
-                <form className="printshop-product-form certificate-generator-individual-form" onSubmit={prepareStandaloneCertificate}>
+                <form id="standalone-certificate-form" className="printshop-product-form certificate-generator-individual-form" onSubmit={prepareStandaloneCertificate}>
                   <label className="full">
                     <span>Nombre de la persona</span>
                     <input name="studentName" value={certificateGeneratorForm.studentName} onChange={handleCertificateGeneratorInputChange} placeholder="Nombre completo" />
@@ -17099,6 +17182,9 @@ function CertificatesWorkspaceView({
                       teacherSigner={standalonePreview.teacherSigner}
                       certificateTemplate={standalonePreview.certificateTemplate}
                       onCertificateGenerated={onRegisterStandaloneGeneratedCertificate}
+                      onEdit={() => {
+                        document.getElementById("standalone-certificate-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
                     />
                   ) : (
                     <div className="empty-state small">
@@ -19547,12 +19633,14 @@ function CertificatePreviewCard({
   teacherSigner,
   certificateTemplate,
   onCertificateGenerated,
+  onEdit,
   canGenerateCertificate = true,
 }) {
   const certificateRef = useRef(null);
   const previewViewportRef = useRef(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [openingPreviewPdf, setOpeningPreviewPdf] = useState(false);
+  const [printingPdf, setPrintingPdf] = useState(false);
   const [previewScale, setPreviewScale] = useState(1);
   const [embeddedPrincipalSignatureUrl, setEmbeddedPrincipalSignatureUrl] = useState("");
   const [embeddedTeacherSignatureUrl, setEmbeddedTeacherSignatureUrl] = useState("");
@@ -19692,10 +19780,12 @@ function CertificatePreviewCard({
           id: student.certificateRecordId || student.validationCode || student.certificateFolio,
           validationCode: student.validationCode,
           folio: student.certificateFolio,
+          pdfUrl: student.pdfUrl || "",
+          pdfStoragePath: student.pdfStoragePath || "",
         },
         request,
         student,
-        preferStored: false,
+        preferStored: Boolean(student.pdfUrl || student.pdfStoragePath),
         buildPdfBlob: () => buildCertificatePdfBlobFromElement(element),
       });
       const pdfBlob = pdfDocument.blob;
@@ -19756,8 +19846,8 @@ function CertificatePreviewCard({
       }
     } catch (error) {
       console.error("No se pudo descargar el certificado en PDF:", error);
-      alert(
-        "No se pudo generar el PDF. Revisa que las firmas e imágenes carguen correctamente y vuelve a intentar."
+      setGenerationMessage(
+        `No se pudo generar el PDF: ${error?.message || "revisa firmas, imágenes y conexión."}`
       );
     } finally {
       element.classList.remove("pdf-export-mode");
@@ -19788,25 +19878,60 @@ function CertificatePreviewCard({
     }
   }
 
+  async function printCertificatePdf() {
+    if (!certificateRef.current || printingPdf) return;
+    let printWindow = null;
+
+    try {
+      printWindow = openCertificateActionWindow("Preparando certificado para imprimir...");
+      setPrintingPdf(true);
+      const pdfBlob = await buildCertificatePdfBlobFromElement(certificateRef.current);
+      renderCertificatePrintWindow(
+        printWindow,
+        pdfBlob,
+        `${sanitizePdfFileName(`${student.certificateFolio || "certificado"}-${student.name || "alumno"}`)}.pdf`
+      );
+    } catch (error) {
+      console.error("No se pudo imprimir el certificado:", error);
+      renderCertificateActionWindowError(printWindow, error.message);
+      setGenerationMessage(`No se pudo imprimir: ${error.message}`);
+    } finally {
+      setPrintingPdf(false);
+    }
+  }
+
   return (
     <div className="certificate-preview-shell">
       <div className="certificate-preview-actions">
         <button
           type="button"
+          className="visual-outline-button"
+          onClick={openFullCertificatePreview}
+          disabled={openingPreviewPdf || downloadingPdf || printingPdf}
+        >
+          {openingPreviewPdf ? "Abriendo..." : "Abrir PDF para impresión"}
+        </button>
+        <button
+          type="button"
           className="visual-primary-button"
           onClick={downloadCertificatePdf}
-          disabled={downloadingPdf || !canGenerateCertificate}
+          disabled={downloadingPdf || openingPreviewPdf || printingPdf || !canGenerateCertificate}
         >
           {downloadingPdf ? "Generando PDF..." : "Descargar PDF"}
         </button>
         <button
           type="button"
           className="visual-outline-button"
-          onClick={openFullCertificatePreview}
-          disabled={openingPreviewPdf || downloadingPdf}
+          onClick={printCertificatePdf}
+          disabled={printingPdf || openingPreviewPdf || downloadingPdf}
         >
-          {openingPreviewPdf ? "Abriendo..." : "Abrir vista completa"}
+          {printingPdf ? "Preparando impresión..." : "Imprimir"}
         </button>
+        {typeof onEdit === "function" && (
+          <button type="button" className="visual-outline-button" onClick={onEdit}>
+            Volver a editar
+          </button>
+        )}
       </div>
 
       {generationMessage && <div className="message-box certificate-generation-message">{generationMessage}</div>}

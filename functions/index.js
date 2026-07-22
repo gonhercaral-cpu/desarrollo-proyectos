@@ -33,6 +33,7 @@ const {
   reconcileAllProducts,
   reconcileProductReplenishment,
   reviewProductionBatchQuality,
+  saveProductionBatchAdminChanges,
   updateProductionBatchProgress,
 } = require("./productionBatches");
 
@@ -445,6 +446,33 @@ exports.updateProductionBatchProgress = onCall(
     } catch (error) {
       console.error("[production-batches] No se pudo actualizar producción", error);
       throwBatchHttpsError(error, "No se pudo actualizar el avance de producción.");
+    }
+  }
+);
+
+exports.saveProductionBatchAdminChanges = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const profile = await assertAdmin(request);
+      const batchId = cleanString(request.data?.batchId);
+      const changes = request.data?.changes;
+      if (!batchId || !changes || typeof changes !== "object" || Array.isArray(changes)) {
+        throw new HttpsError("invalid-argument", "Faltan lote o cambios administrativos.");
+      }
+      return await saveProductionBatchAdminChanges(db, batchId, changes, {
+        uid: request.auth.uid,
+        name: cleanString(profile.name || profile.displayName || profile.email),
+        email: cleanString(profile.email),
+        isAdmin: true,
+      }, FieldValue);
+    } catch (error) {
+      console.error("[production-batches] No se pudieron guardar cambios administrativos", error);
+      throwBatchHttpsError(error, "No se pudieron guardar los cambios del lote.");
     }
   }
 );

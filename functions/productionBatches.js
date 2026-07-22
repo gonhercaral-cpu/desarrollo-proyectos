@@ -58,6 +58,34 @@ function normalizeBatchStatus(status) {
   return STATUS_ALIASES[status] || status || BATCH_STATUS.PLANNED;
 }
 
+function hasValidAssignmentPair(batch = {}) {
+  const responsibleUid = cleanText(batch.responsibleUid);
+  const auditorUid = cleanText(batch.auditorUid);
+  return Boolean(
+    responsibleUid
+    && auditorUid
+    && responsibleUid !== auditorUid
+    && cleanText(batch.responsibleName || batch.responsible)
+    && cleanText(batch.auditorName)
+  );
+}
+
+function isManualAssignment(batch = {}) {
+  return batch.assignmentLocked === true
+    || cleanText(batch.assignmentSource).toLowerCase().startsWith("manual");
+}
+
+function wasAdministrativelyAssigned(batch = {}) {
+  if (isManualAssignment(batch)) return true;
+  const updatedByUid = cleanText(batch.updatedByUid).toLowerCase();
+  return Boolean(updatedByUid && updatedByUid !== "system");
+}
+
+function nextAssignmentVersion(batch = {}) {
+  const current = Number(batch.assignmentVersion || 0);
+  return Number.isFinite(current) && current >= 0 ? Math.floor(current) + 1 : 1;
+}
+
 function isAssignedActor(batch, role, actor) {
   const uid = cleanText(batch?.[`${role}Uid`]);
   const email = cleanText(batch?.[`${role}Email`]).toLowerCase();
@@ -786,7 +814,12 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
       dueTime: assignment?.dueTime || "",
       assignmentPending: !assignment,
       assignmentReason: assignmentResult.reason,
-      assignmentSource: assignment ? "automatic:schedule-load" : "automatic:pending",
+      assignmentSource: "automatic",
+      assignmentLocked: false,
+      assignmentVersion: 1,
+      assignedAt: assignment ? timestamp : null,
+      assignedByUid: "system",
+      assignedByName: actor.name,
       capacityUnitsPerWorkday: assignmentResult.unitsPerWorkday || 0,
       qualityReviewMinutes: assignmentResult.qualityReviewMinutes || 0,
       assignmentTimeZone: PRINTSHOP_TIME_ZONE,
@@ -1234,14 +1267,117 @@ async function reactivateProductReplenishment(db, productId, actor, fieldValue) 
 function automaticBatchNeedsAssignment(batch = {}) {
   const automatic = batch.automatic === true || cleanText(batch.origin) === "automatic";
   const status = normalizeBatchStatus(batch.status);
-  return automatic && isActivePendingBatch(batch)
-    && [BATCH_STATUS.PENDING_ASSIGNMENT, BATCH_STATUS.PLANNED].includes(status) && (
-    batch.assignmentPending === true
-    || !cleanText(batch.responsibleUid)
-    || !cleanText(batch.auditorUid)
-    || !cleanText(batch.startDate)
-    || !cleanText(batch.dueDate)
-  );
+  return automatic
+    && isActivePendingBatch(batch)
+    && status === BATCH_STATUS.PENDING_ASSIGNMENT
+    && !isManualAssignment(batch);
+}
+
+function buildExistingAssignmentRepairPatch(batch, timestamp) {
+  const manual = wasAdministrativelyAssigned(batch);
+  return {
+    status: BATCH_STATUS.PLANNED,
+    progress: Math.max(10, Number(batch.progress || 0)),
+    assignmentPending: false,
+    assignmentReason: manual
+      ? "Asignación administrativa preservada."
+      : cleanText(batch.assignmentReason),
+    assignmentSource: manual ? "manual" : "automatic",
+    assignmentLocked: manual,
+    assignmentVersion: nextAssignmentVersion(batch),
+    assignedAt: batch.assignedAt || batch.updatedAt || timestamp,
+    assignedByUid: cleanText(batch.assignedByUid || batch.updatedByUid || (manual ? "" : "system")),
+    assignedByName: cleanText(batch.assignedByName || batch.updatedByName || (manual ? "" : "Corrección automática")),
+    assignmentBackfilledAt: timestamp,
+    updatedAt: timestamp,
+    updatedByUid: "system",
+    updatedByName: "Corrección automática",
+  };
+}
+
+async function saveProductionBatchAdminChanges(db, batchId, changes, actor, fieldValue) {
+  if (!actor?.isAdmin) throw new Error("Solo un administrador puede editar la asignación del lote.");
+  const cleanBatchId = cleanText(batchId);
+  if (!cleanBatchId) throw new Error("Falta el lote de producción.");
+
+  const allowedStringFields = new Set([
+    "productId", "productName", "category", "level", "unit", "status",
+    "responsible", "responsibleUid", "responsibleName", "responsibleEmail",
+    "auditorUid", "auditorName", "auditorEmail", "startDate", "dueDate", "notes",
+    "qualityStatus", "qualityResult", "qualityNotes",
+  ]);
+  const allowedNumberFields = new Set([
+    "plannedQuantity", "producedQuantity", "approvedQuantity", "rejectedQuantity", "progress",
+  ]);
+  const allowedBooleanFields = new Set(["qualityCompleted"]);
+  const batchRef = db.collection("printProductionBatches").doc(cleanBatchId);
+  const timestamp = fieldValue.serverTimestamp();
+
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(batchRef);
+    if (!snapshot.exists) throw new Error("No se encontró el lote de producción.");
+    const current = snapshot.data();
+    const patch = {};
+
+    for (const [key, value] of Object.entries(changes || {})) {
+      if (allowedStringFields.has(key)) {
+        const cleaned = cleanText(value);
+        if (cleaned && cleaned !== current[key]) patch[key] = cleaned;
+      } else if (allowedNumberFields.has(key)) {
+        const number = Number(value);
+        if (Number.isFinite(number) && number >= 0 && number !== Number(current[key])) patch[key] = number;
+      } else if (allowedBooleanFields.has(key) && typeof value === "boolean" && value !== current[key]) {
+        patch[key] = value;
+      } else if (key === "qualityChecklist" && Array.isArray(value)) {
+        patch[key] = value;
+      }
+    }
+
+    const merged = { ...current, ...patch };
+    if (!hasValidAssignmentPair(merged)) {
+      throw new Error("Selecciona responsable y auditor diferentes con datos válidos.");
+    }
+    if (normalizeBatchStatus(merged.status) === BATCH_STATUS.PENDING_ASSIGNMENT) {
+      patch.status = BATCH_STATUS.PLANNED;
+      patch.progress = Math.max(10, Number(merged.progress || 0));
+    }
+
+    Object.assign(patch, {
+      assignmentPending: false,
+      assignmentReason: "Asignación definida por administrador.",
+      assignmentSource: "manual",
+      assignmentLocked: true,
+      assignmentVersion: nextAssignmentVersion(current),
+      assignedAt: timestamp,
+      assignedByUid: actor.uid,
+      assignedByName: actor.name,
+      assignedByEmail: actor.email,
+      updatedAt: timestamp,
+      updatedByUid: actor.uid,
+      updatedByName: actor.name,
+      updatedByEmail: actor.email,
+    });
+
+    if (patch.qualityCompleted === true) {
+      Object.assign(patch, {
+        qualityReviewedAt: timestamp,
+        qualityFinishedAt: timestamp,
+        qualityReviewedByUid: actor.uid,
+        qualityReviewedByName: actor.name,
+        qualityReviewedByEmail: actor.email,
+      });
+    }
+
+    transaction.update(batchRef, patch);
+    return {
+      batchId: cleanBatchId,
+      ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== timestamp)),
+      assignmentSource: "manual",
+      assignmentLocked: true,
+      assignmentPending: false,
+      assignmentVersion: patch.assignmentVersion,
+    };
+  });
 }
 
 async function backfillAutomaticProductionBatches(db, options = {}) {
@@ -1250,6 +1386,23 @@ async function backfillAutomaticProductionBatches(db, options = {}) {
   const results = [];
   for (const batchSnapshot of candidates) {
     const batch = batchSnapshot.data();
+    if (hasValidAssignmentPair(batch)) {
+      const timestamp = options.fieldValue.serverTimestamp();
+      const result = await db.runTransaction(async (transaction) => {
+        const freshSnapshot = await transaction.get(batchSnapshot.ref);
+        const freshBatch = freshSnapshot.exists ? freshSnapshot.data() : null;
+        if (!freshBatch || !automaticBatchNeedsAssignment(freshBatch)) {
+          return { batchId: batchSnapshot.id, repaired: false, reason: "already-complete" };
+        }
+        if (!hasValidAssignmentPair(freshBatch)) {
+          return { batchId: batchSnapshot.id, repaired: false, reason: "assignment-changed" };
+        }
+        transaction.update(batchSnapshot.ref, buildExistingAssignmentRepairPatch(freshBatch, timestamp));
+        return { batchId: batchSnapshot.id, repaired: true, preserved: true };
+      });
+      results.push(result);
+      continue;
+    }
     const productSnapshot = await db.collection("printProducts").doc(cleanText(batch.productId)).get();
     if (!productSnapshot.exists) {
       results.push({ batchId: batchSnapshot.id, repaired: false, reason: "missing-product" });
@@ -1269,6 +1422,11 @@ async function backfillAutomaticProductionBatches(db, options = {}) {
       if (!freshSnapshot.exists || !automaticBatchNeedsAssignment(freshSnapshot.data())) {
         return { batchId: batchSnapshot.id, repaired: false, reason: "already-complete" };
       }
+      const freshBatch = freshSnapshot.data();
+      if (hasValidAssignmentPair(freshBatch)) {
+        transaction.update(batchSnapshot.ref, buildExistingAssignmentRepairPatch(freshBatch, timestamp));
+        return { batchId: batchSnapshot.id, repaired: true, preserved: true };
+      }
       transaction.update(batchSnapshot.ref, {
         status: assignment ? BATCH_STATUS.PLANNED : BATCH_STATUS.PENDING_ASSIGNMENT,
         progress: assignment ? 10 : 0,
@@ -1285,7 +1443,12 @@ async function backfillAutomaticProductionBatches(db, options = {}) {
         dueTime: assignment?.dueTime || "",
         assignmentPending: !assignment,
         assignmentReason: assignmentResult.reason,
-        assignmentSource: assignment ? "automatic:backfill-schedule-load" : "automatic:pending",
+        assignmentSource: "automatic",
+        assignmentLocked: false,
+        assignmentVersion: nextAssignmentVersion(freshBatch),
+        assignedAt: assignment ? timestamp : null,
+        assignedByUid: "system",
+        assignedByName: "Corrección automática",
         capacityUnitsPerWorkday: assignmentResult.unitsPerWorkday || 0,
         qualityReviewMinutes: assignmentResult.qualityReviewMinutes || 0,
         assignmentTimeZone: PRINTSHOP_TIME_ZONE,
@@ -1343,7 +1506,9 @@ module.exports = {
   getEffectiveProgress,
   getInventoryMovementId,
   getInventoryOutputMovementId,
+  hasValidAssignmentPair,
   isActivePendingBatch,
+  isManualAssignment,
   isResponsibleTransitionAllowed,
   matchesReplenishmentSuppression,
   reactivateProductReplenishment,
@@ -1355,6 +1520,7 @@ module.exports = {
   selectCapacityAssignmentPair,
   selectHourlyAssignmentPair,
   selectAssignmentPair,
+  saveProductionBatchAdminChanges,
   updateProductionBatchProgress,
   validateFinishedInventoryOutput,
 };

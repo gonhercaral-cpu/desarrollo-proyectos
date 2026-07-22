@@ -3124,6 +3124,69 @@ html[data-theme="dark"] .purchase-detail-grid strong {
   box-shadow: 0 12px 24px rgba(15, 79, 196, 0.23) !important;
 }
 
+.certificate-generator-individual-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.certificate-generator-individual-form,
+.certificate-generator-preview-panel {
+  min-width: 0;
+}
+
+.certificate-generator-preview-panel .certificate-preview-shell {
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.certificate-generator-preview-panel .certificate-preview-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.certificate-generator-preview-panel .certificate-preview-viewport {
+  position: relative;
+  width: min(100%, 68vh, 720px);
+  max-width: 100%;
+  aspect-ratio: 8.5 / 11;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #eef3f8;
+  border-radius: 16px;
+}
+
+.certificate-generator-preview-panel .certificate-preview-scale-layer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.certificate-generator-preview-panel .certificate-preview-stage {
+  width: var(--certificate-page-width) !important;
+  min-width: var(--certificate-page-width) !important;
+  max-width: var(--certificate-page-width) !important;
+  height: var(--certificate-page-height) !important;
+  min-height: var(--certificate-page-height) !important;
+  max-height: var(--certificate-page-height) !important;
+  margin: 0 !important;
+}
+
+.certificate-generator-preview-panel .certificate-preview-viewport.pdf-export-active {
+  overflow: visible !important;
+}
+
+.certificate-generator-preview-panel .certificate-preview-scale-layer.pdf-export-active {
+  transform: translate(-50%, -50%) scale(1) !important;
+}
+
 .credential-history-card-list {
   display: grid !important;
   gap: 14px !important;
@@ -3172,6 +3235,10 @@ html[data-theme="dark"] .purchase-detail-grid strong {
 }
 
 @media (max-width: 900px) {
+  .certificate-generator-individual-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .certificate-generator-mode-tabs {
     width: 100% !important;
   }
