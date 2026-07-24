@@ -64,7 +64,10 @@ function hasValidAssignmentPair(batch = {}) {
   return Boolean(
     responsibleUid
     && auditorUid
-    && responsibleUid !== auditorUid
+    && (
+      responsibleUid !== auditorUid
+      || batch.assignmentSinglePersonFallback === true
+    )
     && cleanText(batch.responsibleName || batch.responsible)
     && cleanText(batch.auditorName)
   );
@@ -570,6 +573,68 @@ function selectAssignmentPair({ candidates, requiredHours }) {
   return options[0] || null;
 }
 
+function selectCurrentShiftFallbackAssignment({ candidates, now = new Date() }) {
+  const nowParts = getLocalNowParts(now);
+  const available = (candidates || [])
+    .filter((candidate) => (candidate.blocks || []).some((block) =>
+      block.dateValue === nowParts.dateValue
+      && block.startMinute <= nowParts.minute
+      && block.endMinute > nowParts.minute));
+  const producers = available
+    .filter((candidate) => candidate.canProduce !== false)
+    .sort((first, second) =>
+      (first.productionLoad - second.productionLoad)
+      || first.uid.localeCompare(second.uid));
+  const auditors = available
+    .filter((candidate) => candidate.canAudit !== false)
+    .sort((first, second) =>
+      (first.auditLoad - second.auditLoad)
+      || first.uid.localeCompare(second.uid));
+
+  let responsible = null;
+  let auditor = null;
+  for (const producer of producers) {
+    const distinctAuditor = auditors.find((candidate) => candidate.uid !== producer.uid);
+    if (distinctAuditor) {
+      responsible = producer;
+      auditor = distinctAuditor;
+      break;
+    }
+  }
+
+  let singlePersonFallback = false;
+  if (!responsible && available.length === 1) {
+    const [onlyCandidate] = available;
+    if (onlyCandidate.canProduce !== false && onlyCandidate.canAudit !== false) {
+      responsible = onlyCandidate;
+      auditor = onlyCandidate;
+      singlePersonFallback = true;
+    }
+  }
+  if (!responsible || !auditor) return null;
+
+  const responsibleBlock = responsible.blocks.find((block) =>
+    block.dateValue === nowParts.dateValue
+    && block.startMinute <= nowParts.minute
+    && block.endMinute > nowParts.minute);
+  const auditorBlock = auditor.blocks.find((block) =>
+    block.dateValue === nowParts.dateValue
+    && block.startMinute <= nowParts.minute
+    && block.endMinute > nowParts.minute);
+  const dueMinute = Math.min(responsibleBlock.endMinute, auditorBlock.endMinute);
+
+  return {
+    responsible,
+    auditor,
+    singlePersonFallback,
+    overlapHours: Math.max(0, dueMinute - nowParts.minute) / 60,
+    startDate: nowParts.dateValue,
+    startTime: minutesToTime(nowParts.minute),
+    dueDate: nowParts.dateValue,
+    dueTime: minutesToTime(dueMinute),
+  };
+}
+
 function getDepartmentNames(profile) {
   return [
     profile.area,
@@ -590,7 +655,8 @@ function canActiveProfileAccessPrintshop(profile = {}) {
 
 function isEligibleProfile(profile, configuredIds) {
   const uid = cleanText(profile.uid || profile.authUid || profile.docId || profile.id);
-  if (!uid || profile.active === false || profile.deleted === true || profile.archived === true) return false;
+  if (!uid || profile.active !== true || profile.deleted === true || profile.archived === true) return false;
+  if (normalizeText(profile.role) !== "collaborator") return false;
   const configured = new Set((configuredIds || []).map(cleanText).filter(Boolean));
   const inPrintshop = getDepartmentNames(profile).some((name) =>
     name === "impresion" || name.split(" ").includes("imprenta"));
@@ -629,15 +695,30 @@ function resolveRequiredProductionHours(product, settings, quantity) {
 }
 
 async function resolveAutomaticAssignment(db, product, quantity, now = new Date()) {
-  const [usersSnapshot, schedulesSnapshot, adjustmentsSnapshot, batchesSnapshot, settingsSnapshot] = await Promise.all([
+  const [
+    usersSnapshot,
+    schedulesSnapshot,
+    adjustmentsSnapshot,
+    batchesSnapshot,
+    settingsSnapshot,
+    assignmentSettingsSnapshot,
+  ] = await Promise.all([
     db.collection("users").get(),
     db.collection("workSchedules").get(),
     db.collection("scheduleAdjustments").get(),
     db.collection("printProductionBatches").get(),
     db.collection("systemSettings").doc("printshopProduction").get(),
+    db.collection("systemSettings").doc("printshopAssignments").get(),
   ]);
   const settings = settingsSnapshot.exists ? settingsSnapshot.data() : {};
-  const configuredIds = [settings.tonyUserId, settings.ernestoUserId, settings.ivanUserId];
+  const assignmentSettings = assignmentSettingsSnapshot.exists
+    ? assignmentSettingsSnapshot.data()
+    : {};
+  const configuredIds = [
+    settings.tonyUserId || assignmentSettings.tonyUserId || process.env.PRINTSHOP_TONY_UID,
+    settings.ernestoUserId || assignmentSettings.ernestoUserId || process.env.PRINTSHOP_ERNESTO_UID,
+    settings.ivanUserId || assignmentSettings.ivanUserId || process.env.PRINTSHOP_IVAN_UID,
+  ];
   const schedules = schedulesSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
   const adjustments = adjustmentsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
   const activeBatches = batchesSnapshot.docs.map((item) => ({ id: item.id, ...item.data() })).filter(isActivePendingBatch);
@@ -667,37 +748,86 @@ async function resolveAutomaticAssignment(db, product, quantity, now = new Date(
       ...candidate,
       blocks: buildAvailabilityBlocks(candidate, schedules, adjustments, now),
     }));
+  const nowParts = getLocalNowParts(now);
+  const currentShiftCandidates = uniqueCandidates.filter((candidate) =>
+    candidate.blocks.some((block) =>
+      block.dateValue === nowParts.dateValue
+      && block.startMinute <= nowParts.minute
+      && block.endMinute > nowParts.minute));
   const unitsPerWorkday = resolveUnitsPerWorkday(product, settings);
   const qualityReviewMinutes = Number(settings.qualityReviewMinutes);
   const requiredHours = resolveRequiredProductionHours(product, settings, quantity);
   const adminIds = usersSnapshot.docs
     .filter((item) => item.data().active === true && normalizeText(item.data().role) === "admin")
     .map((item) => cleanText(item.data().uid || item.id));
+  let planningReason = "";
+  let assignment = null;
   if (unitsPerWorkday <= 0 && requiredHours <= 0) {
-    return {
-      assignment: null,
-      adminIds,
-      reason: "Falta capacidad por jornada configurada para este producto o categoría.",
-    };
+    planningReason = "Falta capacidad por jornada configurada para este producto o categoría.";
+  } else if (!Number.isFinite(qualityReviewMinutes) || qualityReviewMinutes <= 0) {
+    planningReason = "Falta configurar el tiempo de revisión de calidad.";
+  } else {
+    assignment = unitsPerWorkday > 0
+      ? selectCapacityAssignmentPair({
+          candidates: currentShiftCandidates,
+          quantity,
+          unitsPerWorkday,
+          qualityReviewMinutes,
+        })
+      : selectHourlyAssignmentPair({
+          candidates: currentShiftCandidates,
+          requiredHours,
+          qualityReviewMinutes,
+        });
   }
-  if (!Number.isFinite(qualityReviewMinutes) || qualityReviewMinutes <= 0) {
-    return {
-      assignment: null,
-      adminIds,
-      reason: "Falta configurar el tiempo de revisión de calidad.",
-    };
+  if (!assignment) {
+    assignment = selectCurrentShiftFallbackAssignment({ candidates: currentShiftCandidates, now });
   }
-  const assignment = unitsPerWorkday > 0
-    ? selectCapacityAssignmentPair({ candidates: uniqueCandidates, quantity, unitsPerWorkday, qualityReviewMinutes })
-    : selectHourlyAssignmentPair({ candidates: uniqueCandidates, requiredHours, qualityReviewMinutes });
   if (!assignment) {
     return {
       assignment: null,
       adminIds,
-      reason: "No existe una pareja distinta con horarios coincidentes suficientes.",
+      reason: "No hay colaboradores activos, autorizados y actualmente en turno.",
     };
   }
-  return { assignment, adminIds, reason: "", unitsPerWorkday, qualityReviewMinutes };
+  const reason = assignment.singlePersonFallback
+    ? "Solo hay una persona autorizada en turno; se asignó producción y calidad con fallback controlado."
+    : planningReason
+      ? `Asignación basada en turno actual. ${planningReason}`
+      : "";
+  return { assignment, adminIds, reason, unitsPerWorkday, qualityReviewMinutes };
+}
+
+function buildAutomaticAssignmentPatch(assignmentResult = {}, timestamp, options = {}) {
+  const assignment = assignmentResult.assignment || null;
+  return {
+    status: assignment ? BATCH_STATUS.PLANNED : BATCH_STATUS.PENDING_ASSIGNMENT,
+    progress: assignment ? 10 : 0,
+    responsible: assignment?.responsible.name || "",
+    responsibleUid: assignment?.responsible.uid || "",
+    responsibleName: assignment?.responsible.name || "",
+    responsibleEmail: assignment?.responsible.email || "",
+    auditorUid: assignment?.auditor.uid || "",
+    auditorName: assignment?.auditor.name || "",
+    auditorEmail: assignment?.auditor.email || "",
+    startDate: assignment?.startDate || "",
+    startTime: assignment?.startTime || "",
+    dueDate: assignment?.dueDate || "",
+    dueTime: assignment?.dueTime || "",
+    assignmentPending: !assignment,
+    assignmentReason: cleanText(assignmentResult.reason),
+    assignmentSource: "automatic",
+    assignmentSinglePersonFallback: assignment?.singlePersonFallback === true,
+    assignmentLocked: false,
+    assignmentVersion: Number(options.assignmentVersion || 1),
+    assignedAt: assignment ? timestamp : null,
+    assignedByUid: "system",
+    assignedByName: cleanText(options.assignedByName) || "Generación automática",
+    capacityUnitsPerWorkday: Number(assignmentResult.unitsPerWorkday || 0),
+    qualityReviewMinutes: Number(assignmentResult.qualityReviewMinutes || 0),
+    assignmentTimeZone: PRINTSHOP_TIME_ZONE,
+    scheduleOverlapHours: assignment ? Number(assignment.overlapHours || 0) : 0,
+  };
 }
 
 function matchesReplenishmentSuppression(lock = {}, currentStock, minStock, idealStock) {
@@ -780,6 +910,10 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
     const assignment = assignmentResult.assignment;
     const actor = { uid: "system", name: "Generación automática", email: "" };
     const dateValue = getLocalNowParts(now).dateValue;
+    const assignmentPatch = buildAutomaticAssignmentPatch(assignmentResult, timestamp, {
+      assignmentVersion: 1,
+      assignedByName: actor.name,
+    });
     const payload = {
       folio: automaticBatchFolio(cleanProductId, dateValue, sequence),
       origin: "automatic",
@@ -799,31 +933,7 @@ async function reconcileProductReplenishment(db, productId, options = {}) {
       producedQuantity: 0,
       approvedQuantity: 0,
       rejectedQuantity: 0,
-      status: assignment ? BATCH_STATUS.PLANNED : BATCH_STATUS.PENDING_ASSIGNMENT,
-      progress: assignment ? 10 : 0,
-      responsible: assignment?.responsible.name || "",
-      responsibleUid: assignment?.responsible.uid || "",
-      responsibleName: assignment?.responsible.name || "",
-      responsibleEmail: assignment?.responsible.email || "",
-      auditorUid: assignment?.auditor.uid || "",
-      auditorName: assignment?.auditor.name || "",
-      auditorEmail: assignment?.auditor.email || "",
-      startDate: assignment?.startDate || "",
-      startTime: assignment?.startTime || "",
-      dueDate: assignment?.dueDate || "",
-      dueTime: assignment?.dueTime || "",
-      assignmentPending: !assignment,
-      assignmentReason: assignmentResult.reason,
-      assignmentSource: "automatic",
-      assignmentLocked: false,
-      assignmentVersion: 1,
-      assignedAt: assignment ? timestamp : null,
-      assignedByUid: "system",
-      assignedByName: actor.name,
-      capacityUnitsPerWorkday: assignmentResult.unitsPerWorkday || 0,
-      qualityReviewMinutes: assignmentResult.qualityReviewMinutes || 0,
-      assignmentTimeZone: PRINTSHOP_TIME_ZONE,
-      scheduleOverlapHours: assignment ? assignment.overlapHours : 0,
+      ...assignmentPatch,
       generationReason: `Stock proyectado ${plan.projectedStock} menor al ideal ${Number(freshProduct.idealStock)}.`,
       notes: assignmentResult.reason,
       qualityChecklist: [],
@@ -1333,7 +1443,11 @@ async function saveProductionBatchAdminChanges(db, batchId, changes, actor, fiel
       }
     }
 
-    const merged = { ...current, ...patch };
+    const merged = {
+      ...current,
+      ...patch,
+      assignmentSinglePersonFallback: false,
+    };
     if (!hasValidAssignmentPair(merged)) {
       throw new Error("Selecciona responsable y auditor diferentes con datos válidos.");
     }
@@ -1346,6 +1460,7 @@ async function saveProductionBatchAdminChanges(db, batchId, changes, actor, fiel
       assignmentPending: false,
       assignmentReason: "Asignación definida por administrador.",
       assignmentSource: "manual",
+      assignmentSinglePersonFallback: false,
       assignmentLocked: true,
       assignmentVersion: nextAssignmentVersion(current),
       assignedAt: timestamp,
@@ -1428,30 +1543,10 @@ async function backfillAutomaticProductionBatches(db, options = {}) {
         return { batchId: batchSnapshot.id, repaired: true, preserved: true };
       }
       transaction.update(batchSnapshot.ref, {
-        status: assignment ? BATCH_STATUS.PLANNED : BATCH_STATUS.PENDING_ASSIGNMENT,
-        progress: assignment ? 10 : 0,
-        responsible: assignment?.responsible.name || "",
-        responsibleUid: assignment?.responsible.uid || "",
-        responsibleName: assignment?.responsible.name || "",
-        responsibleEmail: assignment?.responsible.email || "",
-        auditorUid: assignment?.auditor.uid || "",
-        auditorName: assignment?.auditor.name || "",
-        auditorEmail: assignment?.auditor.email || "",
-        startDate: assignment?.startDate || "",
-        startTime: assignment?.startTime || "",
-        dueDate: assignment?.dueDate || "",
-        dueTime: assignment?.dueTime || "",
-        assignmentPending: !assignment,
-        assignmentReason: assignmentResult.reason,
-        assignmentSource: "automatic",
-        assignmentLocked: false,
-        assignmentVersion: nextAssignmentVersion(freshBatch),
-        assignedAt: assignment ? timestamp : null,
-        assignedByUid: "system",
-        assignedByName: "Corrección automática",
-        capacityUnitsPerWorkday: assignmentResult.unitsPerWorkday || 0,
-        qualityReviewMinutes: assignmentResult.qualityReviewMinutes || 0,
-        assignmentTimeZone: PRINTSHOP_TIME_ZONE,
+        ...buildAutomaticAssignmentPatch(assignmentResult, timestamp, {
+          assignmentVersion: nextAssignmentVersion(freshBatch),
+          assignedByName: "Corrección automática",
+        }),
         assignmentBackfilledAt: timestamp,
         updatedAt: timestamp,
         updatedByUid: "system",
@@ -1491,6 +1586,7 @@ module.exports = {
   BATCH_STATUS,
   QUALITY_STATUS,
   buildAvailabilityBlocks,
+  buildAutomaticAssignmentPatch,
   buildQualityReviewPatch,
   backfillAutomaticProductionBatches,
   automaticBatchNeedsAssignment,
@@ -1518,6 +1614,7 @@ module.exports = {
   registerFinishedInventoryOutput,
   resolveUnitsPerWorkday,
   selectCapacityAssignmentPair,
+  selectCurrentShiftFallbackAssignment,
   selectHourlyAssignmentPair,
   selectAssignmentPair,
   saveProductionBatchAdminChanges,

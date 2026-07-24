@@ -322,6 +322,19 @@ service cloud.firestore {
       return isAdmin() || isPrintshopUser();
     }
 
+    function canCreatePrintProduct() {
+      return isAdmin()
+        || (
+          hasProfile()
+          && normalizedRole() == "collaborator"
+          && (
+            userHasDepartmentName("Imprenta")
+            || userHasDepartmentName("Impresión")
+            || userHasDepartmentName("Impresion")
+          )
+        );
+    }
+
     function projectPath(projectId) {
       return /databases/$(database)/documents/projects/$(projectId);
     }
@@ -899,6 +912,13 @@ service cloud.firestore {
           "B1",
           "B2",
           "C1",
+          "Smile 1",
+          "Smile 2",
+          "Smile 3",
+          "Smile 4",
+          "Smile 5",
+          "Smile 6",
+          "Mega Flash",
           "Otro"
         ]
         && request.resource.data.unit is string
@@ -928,7 +948,7 @@ service cloud.firestore {
     }
 
     function validPrintProductStatusUpdate() {
-      return canAccessPrintshop()
+      return isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "active",
           "updatedAt",
@@ -1320,6 +1340,10 @@ service cloud.firestore {
         && request.resource.data.auditorName is string
         && request.resource.data.auditorEmail is string
         && (
+          !("assignmentSinglePersonFallback" in request.resource.data)
+          || request.resource.data.assignmentSinglePersonFallback is bool
+        )
+        && (
           (
             request.resource.data.status == "Pendiente de asignación"
             && request.resource.data.responsibleUid.size() == 0
@@ -1330,7 +1354,14 @@ service cloud.firestore {
             && request.resource.data.responsibleName.size() > 0
             && request.resource.data.auditorUid.size() > 0
             && request.resource.data.auditorName.size() > 0
-            && request.resource.data.responsibleUid != request.resource.data.auditorUid
+            && (
+              request.resource.data.responsibleUid != request.resource.data.auditorUid
+              || (
+                request.resource.data.responsibleUid == request.resource.data.auditorUid
+                && request.resource.data.assignmentSinglePersonFallback == true
+                && request.resource.data.assignmentSource == "automatic"
+              )
+            )
           )
         )
         && request.resource.data.startDate is string
@@ -3132,11 +3163,13 @@ service cloud.firestore {
     match /printProducts/{productId} {
       allow read: if hasProfile();
 
-      allow create: if canAccessPrintshop()
-        && validPrintProductData();
+      allow create: if canCreatePrintProduct()
+        && validPrintProductData()
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid;
 
       allow update: if (
-          canAccessPrintshop()
+          isAdmin()
           && validPrintProductData()
         )
         || validPrintProductStatusUpdate()

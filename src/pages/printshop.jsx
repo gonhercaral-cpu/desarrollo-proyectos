@@ -74,6 +74,11 @@ import {
 } from "../utils/certificateSignerCampus";
 import { formatPrintRequestCreatedAt } from "../utils/printRequestDateTime";
 import {
+  getCertificateReportSchedule,
+  getCertificateReportTeacher,
+  isCertificateReportRequest,
+} from "../utils/printRequestReport";
+import {
   deleteProductionBatch,
   enterProductionBatchInventory,
   reactivateProductReplenishment,
@@ -3609,15 +3614,15 @@ function getReportProducedQuantity(request) {
   return Number.isFinite(requested) && requested > 0 ? requested : 0;
 }
 
-function getRequestReportConfig(reportType) {
+function getRequestReportConfig(reportType, requests = []) {
   if (reportType === "Certificado") {
     return {
       variant: "certificate",
       title: "Reporte de certificados",
       columns: [
-        { label: "Maestro", get: (request) => request.teacherSignerName || request.teacherName || "" },
+        { label: "Maestro", get: getCertificateReportTeacher },
         { label: "Nivel", get: (request) => (request.level && request.level !== "No aplica" ? request.level : "") },
-        { label: "Horario", get: (request) => request.schedule || "" },
+        { label: "Horario", get: getCertificateReportSchedule },
         { label: "Plantel", get: (request) => request.campus || "" },
         { label: "Solicitó", get: (request) => request.requesterName || "" },
         { label: "Fecha de solicitud", get: (request) => formatReportDate(request.createdAt || request.requestDate) },
@@ -3635,12 +3640,31 @@ function getRequestReportConfig(reportType) {
       ? `Reporte de ${reportType.toLowerCase()}`
       : "Reporte de solicitudes";
 
+  const includesCertificates = requests.some(isCertificateReportRequest);
+  const certificateColumns = includesCertificates
+    ? [
+        {
+          label: "Maestro",
+          get: (request) => isCertificateReportRequest(request)
+            ? getCertificateReportTeacher(request)
+            : "No aplica",
+        },
+        {
+          label: "Horario",
+          get: (request) => isCertificateReportRequest(request)
+            ? getCertificateReportSchedule(request)
+            : "No aplica",
+        },
+      ]
+    : [];
+
   return {
-    variant: "generic",
+    variant: includesCertificates ? "generic-with-certificates" : "generic",
     title,
     columns: [
       { label: "Tipo", get: (request) => request.requestType || "" },
       { label: "Producto / descripción", get: (request) => getRequestProductLabel(request) },
+      ...certificateColumns,
       { label: "Solicitó", get: (request) => request.requesterName || "" },
       { label: "Fecha de solicitud", get: (request) => formatReportDate(request.createdAt || request.requestDate) },
       { label: "Plantel", get: (request) => request.campus || "" },
@@ -3680,7 +3704,7 @@ function computeRequestReportStats(requests, reportType) {
 }
 
 function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSummary, generatedAtLabel, certificateDeliveryByRequest }) {
-  const config = getRequestReportConfig(reportType);
+  const config = getRequestReportConfig(reportType, requests);
   const stats = computeRequestReportStats(requests, reportType);
   const columnCount = config.columns.length;
 
@@ -3719,7 +3743,7 @@ function buildRequestsReportHtml({ requests, reportType, periodLabel, filtersSum
     <meta charset="utf-8" />
     <title>${escapePrintableHtml(config.title)}</title>
     <style>
-      @page { size: letter portrait; margin: 12mm 8mm 16mm; }
+      @page { size: letter ${config.variant === "generic-with-certificates" ? "landscape" : "portrait"}; margin: 12mm 8mm 16mm; }
       @page { @bottom-center { content: "Página " counter(page) " de " counter(pages); font-size: 9px; color: #64748b; } }
       * { box-sizing: border-box; }
       body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111827; background: #f8fafc; }
@@ -3980,6 +4004,19 @@ function canProfileAccessPrintshop(profile, isAdmin) {
   );
 }
 
+function canProfileCreatePrintProduct(profile, isAdmin) {
+  if (isAdmin) return true;
+  if (profile?.active !== true || normalizeProfileAccessText(profile?.role) !== "collaborator") {
+    return false;
+  }
+
+  return getProfileDepartmentNames(profile).some(
+    (departmentName) =>
+      departmentName === "imprenta"
+      || departmentName === "impresion"
+  );
+}
+
 // Reporte de solicitudes: exclusivo de administradores e Imprenta (excluye Soporte
 // Técnico, que sí accede a otras funciones del módulo). Usa la representación
 // normalizada de departamentos del perfil, no un texto literal sin normalizar.
@@ -3997,6 +4034,7 @@ export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin)
     && profile?.active !== false;
+  const canCreatePrintProduct = canProfileCreatePrintProduct(profile, isAdmin);
   const canGeneratePrintshopReport =
     canProfileGeneratePrintshopReport(profile, isAdmin) && profile?.active !== false;
   const canViewCertificateStatistics =
@@ -5583,8 +5621,15 @@ export default function PrintShop() {
     const auditUser = getAuditUser();
 
     if (isAdmin) return "admin";
-    if (isBatchResponsible(batch, auditUser)) return "responsible";
-    if (isBatchAuditor(batch, auditUser)) return "auditor";
+    const responsible = isBatchResponsible(batch, auditUser);
+    const auditor = isBatchAuditor(batch, auditUser);
+    if (responsible && auditor) {
+      return normalizeProductionBatchStatus(batch?.status) === BATCH_STATUS.QUALITY_REVIEW
+        ? "auditor"
+        : "responsible";
+    }
+    if (responsible) return "responsible";
+    if (auditor) return "auditor";
 
     return "viewer";
   }
@@ -9491,6 +9536,11 @@ export default function PrintShop() {
 
     const trimmedName = productForm.name.trim();
 
+    if ((selectedProductId && !isAdmin) || (!selectedProductId && !canCreatePrintProduct)) {
+      setFormMessage("No tienes permisos para guardar este producto.");
+      return;
+    }
+
     if (!trimmedName) {
       setFormMessage("Escribe el nombre del producto antes de guardar.");
       return;
@@ -9502,13 +9552,11 @@ export default function PrintShop() {
     }
 
     const auditUser = getAuditUser();
-    const {
-      recipeSupplyId,
-      recipeQuantityPerUnit,
-      recipeUnit,
-      recipeNotes,
-      ...productPayloadFields
-    } = productForm;
+    const productPayloadFields = { ...productForm };
+    delete productPayloadFields.recipeSupplyId;
+    delete productPayloadFields.recipeQuantityPerUnit;
+    delete productPayloadFields.recipeUnit;
+    delete productPayloadFields.recipeNotes;
     const payload = {
       ...productPayloadFields,
       name: trimmedName,
@@ -9540,9 +9588,9 @@ export default function PrintShop() {
       }
     } catch (error) {
       console.error("No se pudo guardar el producto de imprenta:", error);
-      setFormMessage(
-        "No se pudo guardar. Revisa que hayas publicado las reglas nuevas de Firestore."
-      );
+      setFormMessage(error?.code === "permission-denied"
+        ? "No tienes permisos para guardar este producto."
+        : "No se pudo guardar el producto. Intenta nuevamente.");
     } finally {
       setSavingProduct(false);
     }
@@ -10932,7 +10980,8 @@ export default function PrintShop() {
           typeFilter={typeFilter}
           statusFilter={statusFilter}
           isAdmin={isAdmin}
-          canManageCatalog={canManagePrintshopOperations}
+          canCreateCatalog={canCreatePrintProduct}
+          canManageCatalog={isAdmin}
           onSearchChange={setProductSearch}
           onCategoryFilterChange={setCategoryFilter}
           onTypeFilterChange={setTypeFilter}
@@ -12443,11 +12492,15 @@ function ProductionBatchesView({
   );
   const selectedRole = isAdmin
     ? "admin"
-    : selectedIsResponsible
-      ? "responsible"
-      : selectedIsAuditor
+    : selectedIsResponsible && selectedIsAuditor
+      ? normalizeProductionBatchStatus(selectedBatch?.status) === BATCH_STATUS.QUALITY_REVIEW
         ? "auditor"
-        : "viewer";
+        : "responsible"
+      : selectedIsResponsible
+        ? "responsible"
+        : selectedIsAuditor
+          ? "auditor"
+          : "viewer";
   const canCreateBatch = isAdmin;
   const canEditAdministrativeFields = isAdmin;
   const canEditProductionFields = isAdmin || selectedRole === "responsible";
@@ -22676,6 +22729,7 @@ function ProductCatalogView({
   typeFilter,
   statusFilter,
   isAdmin,
+  canCreateCatalog = isAdmin,
   canManageCatalog = isAdmin,
   supplyItems,
   onSearchChange,
@@ -22694,6 +22748,7 @@ function ProductCatalogView({
   onSoftDeleteProduct,
 }) {
   const [productFocusOpen, setProductFocusOpen] = useState(false);
+  const canEditProductForm = selectedProductId ? canManageCatalog : canCreateCatalog;
 
   function openProductFocus(product = null) {
     if (product) {
@@ -22801,7 +22856,7 @@ function ProductCatalogView({
                 </select>
               </label>
 
-              {canManageCatalog && (
+              {canCreateCatalog && (
                 <button
                   type="button"
                   className="visual-primary-button printshop-toolbar-action"
@@ -22874,12 +22929,16 @@ function ProductCatalogView({
                         </td>
                         <td>
                           <div className="printshop-product-actions">
-                            <button type="button" onClick={() => openProductFocus(product)}>
-                              Editar
-                            </button>
-                            <button type="button" onClick={() => onToggleStatus(product)}>
-                              {product.active === false ? "Activar" : "Desactivar"}
-                            </button>
+                            {canManageCatalog && (
+                              <>
+                                <button type="button" onClick={() => openProductFocus(product)}>
+                                  Editar
+                                </button>
+                                <button type="button" onClick={() => onToggleStatus(product)}>
+                                  {product.active === false ? "Activar" : "Desactivar"}
+                                </button>
+                              </>
+                            )}
                             {isAdmin && (
                               <button
                                 type="button"
@@ -23107,7 +23166,7 @@ function ProductCatalogView({
                     type="button"
                     className="visual-outline-button"
                     onClick={onAddRecipeItem}
-                    disabled={!canManageCatalog || !productForm.recipeSupplyId}
+                    disabled={!canEditProductForm || !productForm.recipeSupplyId}
                   >
                     Agregar a receta
                   </button>
@@ -23132,7 +23191,7 @@ function ProductCatalogView({
                           type="button"
                           className="danger-table-button"
                           onClick={() => onRemoveRecipeItem(item.id)}
-                          disabled={!canManageCatalog}
+                          disabled={!canEditProductForm}
                         >
                           Quitar
                         </button>
@@ -23173,7 +23232,7 @@ function ProductCatalogView({
                 <button
                   type="submit"
                   className="visual-primary-button"
-                  disabled={savingProduct || !canManageCatalog}
+                  disabled={savingProduct || !canEditProductForm}
                 >
                   {savingProduct
                     ? "Guardando..."

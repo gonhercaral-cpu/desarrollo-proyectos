@@ -4,6 +4,7 @@ const {
   BATCH_STATUS,
   QUALITY_STATUS,
   automaticBatchNeedsAssignment,
+  buildAutomaticAssignmentPatch,
   buildQualityReviewPatch,
   canActiveProfileAccessPrintshop,
   calculateFinishedInventoryOutputStock,
@@ -19,6 +20,7 @@ const {
   registerFinishedInventoryOutput,
   resolveUnitsPerWorkday,
   selectCapacityAssignmentPair,
+  selectCurrentShiftFallbackAssignment,
   selectAssignmentPair,
   saveProductionBatchAdminChanges,
   validateFinishedInventoryOutput,
@@ -177,6 +179,68 @@ describe("asignación automática", () => {
       auditorUid: "same",
       auditorName: "Misma persona",
     }), false);
+    assert.equal(hasValidAssignmentPair({
+      responsibleUid: "same",
+      responsibleName: "Misma persona",
+      auditorUid: "same",
+      auditorName: "Misma persona",
+      assignmentSinglePersonFallback: true,
+    }), true);
+  });
+
+  it("usa dos personas en turno y fallback explícito cuando solo hay una", () => {
+    const now = new Date("2026-07-24T18:00:00.000Z");
+    const currentBlock = [{ dateValue: "2026-07-24", startMinute: 600, endMinute: 780 }];
+    const pair = selectCurrentShiftFallbackAssignment({
+      now,
+      candidates: [
+        { uid: "tony", productionLoad: 0, auditLoad: 1, blocks: currentBlock },
+        { uid: "ernesto", productionLoad: 1, auditLoad: 0, blocks: currentBlock },
+      ],
+    });
+    assert.equal(pair.responsible.uid, "tony");
+    assert.equal(pair.auditor.uid, "ernesto");
+    assert.equal(pair.singlePersonFallback, false);
+
+    const single = selectCurrentShiftFallbackAssignment({
+      now,
+      candidates: [
+        { uid: "ivan", productionLoad: 0, auditLoad: 0, blocks: currentBlock },
+      ],
+    });
+    assert.equal(single.responsible.uid, "ivan");
+    assert.equal(single.auditor.uid, "ivan");
+    assert.equal(single.singlePersonFallback, true);
+    assert.equal(single.startDate, "2026-07-24");
+  });
+
+  it("persiste UIDs y nombres canónicos y conserva asignación al recargar", () => {
+    const stored = buildAutomaticAssignmentPatch({
+      assignment: {
+        responsible: { uid: "tony-uid", name: "Tony", email: "tony@test.local" },
+        auditor: { uid: "ivan-uid", name: "Iván", email: "ivan@test.local" },
+        startDate: "2026-07-24",
+        startTime: "11:00",
+        dueDate: "2026-07-25",
+        dueTime: "12:00",
+        overlapHours: 3,
+      },
+      reason: "",
+      unitsPerWorkday: 25,
+      qualityReviewMinutes: 60,
+    }, "server-timestamp", {
+      assignmentVersion: 1,
+      assignedByName: "Generación automática",
+    });
+    const reloaded = structuredClone(stored);
+
+    assert.equal(reloaded.responsibleUid, "tony-uid");
+    assert.equal(reloaded.responsibleName, "Tony");
+    assert.equal(reloaded.auditorUid, "ivan-uid");
+    assert.equal(reloaded.auditorName, "Iván");
+    assert.equal(reloaded.assignmentPending, false);
+    assert.equal(reloaded.status, BATCH_STATUS.PLANNED);
+    assert.equal(hasValidAssignmentPair(reloaded), true);
   });
 });
 

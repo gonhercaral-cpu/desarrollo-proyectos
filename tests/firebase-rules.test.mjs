@@ -387,6 +387,36 @@ function validIdea(overrides = {}) {
   };
 }
 
+function validPrintProduct(actorUid, overrides = {}) {
+  return {
+    name: "Smile Workbook",
+    category: "Libro",
+    productionType: "Producto terminado",
+    level: "Smile 1",
+    unit: "Libro",
+    minStock: 5,
+    idealStock: 15,
+    requiresPrinting: true,
+    requiresBinding: true,
+    requiresCutting: true,
+    requiresQualityCheck: true,
+    requiresSignature: false,
+    requiresValidationQr: false,
+    productionRecipe: [],
+    active: true,
+    notes: "",
+    createdAt: Timestamp.now(),
+    createdByUid: actorUid,
+    createdByName: actorUid,
+    createdByEmail: `${actorUid}@test.local`,
+    updatedAt: Timestamp.now(),
+    updatedByUid: actorUid,
+    updatedByName: actorUid,
+    updatedByEmail: `${actorUid}@test.local`,
+    ...overrides,
+  };
+}
+
 function validProductionBatch(overrides = {}) {
   const checklistIds = [
     "cover", "level", "pagesComplete", "pageOrder", "printQuality",
@@ -645,7 +675,76 @@ describe("roles y perfiles", () => {
   });
 });
 
+describe("catálogo de productos de Imprenta", () => {
+  it("permite crear a administrador y colaborador activo de Imprenta", async () => {
+    await assertSucceeds(setDoc(
+      doc(auth("admin"), "printProducts", "admin-product"),
+      validPrintProduct("admin")
+    ));
+    await assertSucceeds(setDoc(
+      doc(auth("printer"), "printProducts", "printer-product"),
+      validPrintProduct("printer")
+    ));
+  });
+
+  it("bloquea creación fuera de rol, departamento o estado autorizados", async () => {
+    await assertFails(setDoc(
+      doc(auth("collab"), "printProducts", "outsider-product"),
+      validPrintProduct("collab")
+    ));
+    await assertFails(setDoc(
+      doc(auth("tech"), "printProducts", "tech-product"),
+      validPrintProduct("tech")
+    ));
+    await assertFails(setDoc(
+      doc(auth("inactive"), "printProducts", "inactive-product"),
+      validPrintProduct("inactive")
+    ));
+  });
+
+  it("reserva edición y administración del catálogo al administrador", async () => {
+    await assertFails(updateDoc(doc(auth("printer"), "printProducts", "book-1"), {
+      name: "Cambio no autorizado",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    }));
+    await assertSucceeds(updateDoc(doc(auth("admin"), "printProducts", "book-1"), {
+      name: "Journey A1 actualizado",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "admin",
+      updatedByName: "Admin",
+      updatedByEmail: "admin@test.local",
+    }));
+  });
+});
+
 describe("lotes de producción", () => {
+  it("acepta fallback automático de una persona solo cuando queda explícito", async () => {
+    const db = auth("admin");
+    await assertSucceeds(setDoc(
+      doc(db, "printProductionBatches", "batch-single-fallback"),
+      validProductionBatch({
+        folio: "LOT-2026-FALLBACK",
+        auditorUid: "printer",
+        auditorName: "Printer",
+        auditorEmail: "printer@test.local",
+        assignmentSource: "automatic",
+        assignmentSinglePersonFallback: true,
+      })
+    ));
+    await assertFails(setDoc(
+      doc(db, "printProductionBatches", "batch-invalid-same-person"),
+      validProductionBatch({
+        folio: "LOT-2026-INVALID",
+        auditorUid: "printer",
+        auditorName: "Printer",
+        auditorEmail: "printer@test.local",
+      })
+    ));
+  });
+
   it("permite al administrador crear y editar datos manuales", async () => {
     const db = auth("admin");
     await assertSucceeds(setDoc(
