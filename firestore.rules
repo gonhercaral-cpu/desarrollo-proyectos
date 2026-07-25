@@ -42,6 +42,59 @@ service cloud.firestore {
       return hasProfile() && isAdminRole();
     }
 
+    function isMaterialDevelopmentDepartment() {
+      return (
+          userDoc().data.get("area", "") is string
+          && userDoc().data.get("area", "").lower() in [
+            "desarrollo de material",
+            "desarrollo-de-material"
+          ]
+        )
+        || (
+          userDoc().data.get("department", "") is string
+          && userDoc().data.get("department", "").lower() in [
+            "desarrollo de material",
+            "desarrollo-de-material"
+          ]
+        )
+        || (
+          userDoc().data.get("departmentName", "") is string
+          && userDoc().data.get("departmentName", "").lower() in [
+            "desarrollo de material",
+            "desarrollo-de-material"
+          ]
+        )
+        || (
+          userDoc().data.get("primaryDepartmentId", "") in [
+            "desarrollo-de-material",
+            "Desarrollo de Material"
+          ]
+        )
+        || (
+          userDoc().data.get("departmentIds", []) is list
+          && (
+            "desarrollo-de-material" in userDoc().data.get("departmentIds", [])
+            || "Desarrollo de Material" in userDoc().data.get("departmentIds", [])
+          )
+        )
+        || (
+          userDoc().data.get("departments", []) is list
+          && (
+            "desarrollo-de-material" in userDoc().data.get("departments", [])
+            || "Desarrollo de Material" in userDoc().data.get("departments", [])
+          )
+        );
+    }
+
+    function canAccessMaterialCorrections() {
+      return isAdmin()
+        || (
+          hasProfile()
+          && normalizedRole() == "collaborator"
+          && isMaterialDevelopmentDepartment()
+        );
+    }
+
     function editorialProjectPath(projectId) {
       return /databases/$(database)/documents/editorialProjects/$(projectId);
     }
@@ -3246,6 +3299,39 @@ service cloud.firestore {
 
       // Las bajas pasan por Cloud Functions para preservar contabilidad y supresión.
       allow delete: if false;
+    }
+
+    match /materialCorrectionReports/{reportId} {
+      allow get, list: if canAccessMaterialCorrections();
+      allow create, update, delete: if false;
+
+      match /comments/{commentId} {
+        allow get, list: if canAccessMaterialCorrections();
+        allow create, update, delete: if false;
+      }
+
+      match /history/{historyId} {
+        allow get, list: if canAccessMaterialCorrections();
+        allow create, update, delete: if false;
+      }
+
+      match /evidences/{evidenceId} {
+        allow get, list: if canAccessMaterialCorrections();
+        allow create, update, delete: if false;
+      }
+
+      match /duplicateReporters/{duplicateId} {
+        allow get, list: if canAccessMaterialCorrections();
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /materialCorrectionCounters/{counterId} {
+      allow read, write: if false;
+    }
+
+    match /materialCorrectionRateLimits/{rateLimitId} {
+      allow read, write: if false;
     }
 
     match /printProductionReplenishment/{productId} {

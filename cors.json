@@ -7,13 +7,15 @@
     ],
     "method": [
       "GET",
-      "HEAD"
+      "HEAD",
+      "PUT"
     ],
     "responseHeader": [
       "Content-Type",
       "Content-Length",
       "Content-Disposition",
-      "ETag"
+      "ETag",
+      "x-goog-content-length-range"
     ],
     "maxAgeSeconds": 3600
   }

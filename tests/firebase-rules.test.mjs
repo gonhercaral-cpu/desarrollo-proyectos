@@ -118,6 +118,15 @@ async function seedBaseData() {
         departmentIds: ["dept-other"],
         primaryDepartmentId: "dept-other",
       }),
+      setDoc(doc(db, "users", "material"), {
+        name: "Material",
+        email: "material@test.local",
+        role: "collaborator",
+        active: true,
+        area: "Desarrollo de Material",
+        departmentIds: ["desarrollo-de-material"],
+        primaryDepartmentId: "desarrollo-de-material",
+      }),
       setDoc(doc(db, "departments", "dept-ops"), {
         name: "Operación",
         active: true,
@@ -257,6 +266,34 @@ async function seedBaseData() {
         status: "active",
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
+      }),
+      setDoc(doc(db, "materialCorrectionReports", "material-report-1"), {
+        folio: "MAT-2026-000001",
+        publicTrackingTokenHash: "a".repeat(64),
+        reportedBy: {
+          name: "Dirección",
+          position: "director",
+          campus: "Centro",
+          contact: "direccion@test.local",
+        },
+        levelName: "A1",
+        bookName: "Journey",
+        unitNumber: 1,
+        materialType: "student_book",
+        errorType: "spelling",
+        description: "Error en página",
+        priority: "normal",
+        status: "reported",
+        archived: false,
+        deleted: false,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      }),
+      setDoc(doc(db, "materialCorrectionReports", "material-report-1", "comments", "comment-1"), {
+        type: "comment",
+        visibility: "internal",
+        message: "Comentario interno",
+        createdAt: Timestamp.now(),
       }),
       setDoc(doc(db, "publicCertificatePeople", "requester-requester"), {
         sourceId: "requester",
@@ -1898,7 +1935,64 @@ describe("editor editorial", () => {
   });
 });
 
+describe("correcciones de material", () => {
+  it("solo admin y Desarrollo de Material pueden leer bandeja y subcolecciones", async () => {
+    await assertSucceeds(getDoc(doc(auth("admin"), "materialCorrectionReports", "material-report-1")));
+    await assertSucceeds(getDoc(doc(auth("material"), "materialCorrectionReports", "material-report-1")));
+    await assertSucceeds(getDoc(doc(
+      auth("material"),
+      "materialCorrectionReports",
+      "material-report-1",
+      "comments",
+      "comment-1"
+    )));
+    await assertFails(getDoc(doc(auth("outsider"), "materialCorrectionReports", "material-report-1")));
+    await assertFails(getDoc(doc(unauth(), "materialCorrectionReports", "material-report-1")));
+  });
+
+  it("bloquea escrituras directas incluso a admin y colaborador autorizado", async () => {
+    await assertFails(updateDoc(
+      doc(auth("admin"), "materialCorrectionReports", "material-report-1"),
+      { status: "completed" }
+    ));
+    await assertFails(updateDoc(
+      doc(auth("material"), "materialCorrectionReports", "material-report-1"),
+      { priority: "urgent" }
+    ));
+    await assertFails(setDoc(
+      doc(auth("material"), "materialCorrectionReports", "material-report-1", "comments", "direct"),
+      { message: "Sin función" }
+    ));
+  });
+
+  it("protege contadores y rate limits contra lectura o escritura cliente", async () => {
+    await assertFails(getDoc(doc(auth("admin"), "materialCorrectionCounters", "2026")));
+    await assertFails(setDoc(doc(auth("admin"), "materialCorrectionCounters", "2026"), {
+      lastSequence: 9,
+    }));
+    await assertFails(getDoc(doc(auth("material"), "materialCorrectionRateLimits", "rate")));
+  });
+});
+
 describe("storage", () => {
+  it("protege evidencias de correcciones y bloquea toda escritura directa", async () => {
+    const path = "public-material-corrections/material-report-1/evidences/evidence-1.pdf";
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.storage().ref(path).putString("%PDF-1.4", "raw", {
+        contentType: "application/pdf",
+      });
+    });
+
+    await assertSucceeds(storageAuth("material").ref(path).getDownloadURL());
+    await assertSucceeds(storageAuth("admin").ref(path).getDownloadURL());
+    await assertFails(storageAuth("outsider").ref(path).getDownloadURL());
+    await assertFails(
+      storageAuth("material").ref(
+        "public-material-corrections/material-report-1/evidences/direct.pdf"
+      ).putString("%PDF-1.4", "raw", { contentType: "application/pdf" })
+    );
+  });
+
   it("permite fuentes editoriales autorizadas solo a editores del proyecto", async () => {
     await assertSucceeds(
       storageAuth("collab").ref("editorial/editorial-owned/fonts/collab/aes-sans.woff2")

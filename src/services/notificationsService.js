@@ -45,6 +45,11 @@ const NOTIFICATION_VISUALS = {
   PROJECT_APPROVED: { tone: "green", icon: "✓" },
   PROJECT_FINISHED: { tone: "green", icon: "✓" },
   PROJECT_CANCELLED: { tone: "red", icon: "✕" },
+  MATERIAL_CORRECTION_URGENT: { tone: "red", icon: "!" },
+  MATERIAL_CORRECTION_ASSIGNED: { tone: "blue", icon: "✓" },
+  MATERIAL_CORRECTION_INFO_REQUESTED: { tone: "gold", icon: "?" },
+  MATERIAL_CORRECTION_CORRECTED: { tone: "green", icon: "✓" },
+  MATERIAL_CORRECTION_COMPLETED: { tone: "green", icon: "✓" },
 };
 
 export function getNotificationVisual(tipo) {

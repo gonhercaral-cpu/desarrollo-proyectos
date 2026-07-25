@@ -9,6 +9,8 @@ import CertificateValidation from "./pages/CertificateValidation";
 import CredentialValidation from "./pages/CredentialValidation";
 import PublicCertificateRequest from "./pages/PublicCertificateRequest";
 import PublicCertificateStatus from "./pages/PublicCertificateStatus";
+import PublicMaterialCorrectionReport from "./pages/PublicMaterialCorrectionReport";
+import PublicMaterialCorrectionTracking from "./pages/PublicMaterialCorrectionTracking";
 import SignagePlayer from "./components/SignagePlayer";
 import SignageSetup from "./components/SignageSetup";
 
@@ -168,6 +170,16 @@ export default function App() {
           <Route
             path="/certificados/seguimiento/:requestId"
             element={<PublicCertificateStatus />}
+          />
+
+          <Route
+            path="/reportar-error-material"
+            element={<PublicMaterialCorrectionReport />}
+          />
+
+          <Route
+            path="/seguimiento-error-material/:folio"
+            element={<PublicMaterialCorrectionTracking />}
           />
 
           <Route

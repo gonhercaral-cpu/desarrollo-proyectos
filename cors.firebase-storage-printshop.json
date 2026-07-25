@@ -5,8 +5,8 @@
       "https://sistema-desarrollo-proyectos.web.app",
       "https://sistema-desarrollo-proyectos.firebaseapp.com"
     ],
-    "method": ["GET", "HEAD"],
-    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"],
+    "method": ["GET", "HEAD", "PUT"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Disposition", "ETag", "Access-Control-Allow-Origin"],
     "maxAgeSeconds": 3600
   }
 ]

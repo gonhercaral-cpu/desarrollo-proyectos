@@ -4,6 +4,8 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getStorage } = require("firebase-admin/storage");
+const { createMaterialCorrectionHandlers } = require("./materialCorrections");
 const {
   createPrintRequestWithAssignment: createAssignedPrintRequest,
   normalizePrintRequestAssignments,
@@ -40,6 +42,18 @@ const {
 initializeApp();
 
 const db = getFirestore();
+const firebaseRuntimeConfig = (() => {
+  try {
+    return JSON.parse(process.env.FIREBASE_CONFIG || "{}");
+  } catch {
+    return {};
+  }
+})();
+const storageBucket = getStorage().bucket(
+  process.env.MATERIAL_CORRECTIONS_STORAGE_BUCKET
+    || firebaseRuntimeConfig.storageBucket
+    || "sistema-desarrollo-proyectos.firebasestorage.app"
+);
 
 const ALLOWED_ROLES = ["admin", "collaborator", "requester"];
 const PUBLIC_CERTIFICATE_PEOPLE_COLLECTION = "publicCertificatePeople";
@@ -894,4 +908,13 @@ exports.updateUserByAdmin = onCall(
       );
     }
   }
+);
+
+Object.assign(
+  exports,
+  createMaterialCorrectionHandlers({
+    db,
+    bucket: storageBucket,
+    FieldValue,
+  })
 );

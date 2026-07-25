@@ -36,6 +36,60 @@ service firebase.storage {
         && userDoc().data.role.lower() == "admin";
     }
 
+    function isMaterialDevelopmentDepartment() {
+      return (
+          userDoc().data.get("area", "") is string
+          && userDoc().data.get("area", "").lower() in [
+            "desarrollo de material",
+            "desarrollo-de-material"
+          ]
+        )
+        || (
+          userDoc().data.get("department", "") is string
+          && userDoc().data.get("department", "").lower() in [
+            "desarrollo de material",
+            "desarrollo-de-material"
+          ]
+        )
+        || (
+          userDoc().data.get("departmentName", "") is string
+          && userDoc().data.get("departmentName", "").lower() in [
+            "desarrollo de material",
+            "desarrollo-de-material"
+          ]
+        )
+        || (
+          userDoc().data.get("primaryDepartmentId", "") in [
+            "desarrollo-de-material",
+            "Desarrollo de Material"
+          ]
+        )
+        || (
+          userDoc().data.get("departmentIds", []) is list
+          && (
+            "desarrollo-de-material" in userDoc().data.get("departmentIds", [])
+            || "Desarrollo de Material" in userDoc().data.get("departmentIds", [])
+          )
+        )
+        || (
+          userDoc().data.get("departments", []) is list
+          && (
+            "desarrollo-de-material" in userDoc().data.get("departments", [])
+            || "Desarrollo de Material" in userDoc().data.get("departments", [])
+          )
+        );
+    }
+
+    function canAccessMaterialCorrections() {
+      return isAdmin()
+        || (
+          hasProfile()
+          && userDoc().data.role is string
+          && userDoc().data.role.lower() == "collaborator"
+          && isMaterialDevelopmentDepartment()
+        );
+    }
+
     function editorialProjectPath(projectId) {
       return /databases/(default)/documents/editorialProjects/$(projectId);
     }
@@ -706,6 +760,11 @@ service firebase.storage {
       allow delete: if signedIn()
         && hasProfile()
         && (isAdmin() || request.auth.uid == userUid);
+    }
+
+    match /public-material-corrections/{reportId}/evidences/{fileName} {
+      allow read: if canAccessMaterialCorrections();
+      allow create, update, delete: if false;
     }
 
 

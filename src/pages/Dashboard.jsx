@@ -26,6 +26,7 @@ import PurchaseRequests from "./PurchaseRequests";
 import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
 import BugReports from "./BugReports";
+import MaterialCorrections from "./MaterialCorrections";
 import SubscriptionManager from "./SubscriptionManager";
 import DriveManager from "./DriveManager";
 import ProtectCameras from "./ProtectCameras";
@@ -261,6 +262,14 @@ function renderDashboardNavIconPath(name) {
           <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5A2.5 2.5 0 0 1 20 21z" />
         </>
       );
+    case "materialCorrections":
+      return (
+        <>
+          <path d="M5 4h14v16H5z" />
+          <path d="M8 8h8M8 12h5" />
+          <path d="m13.5 16 1.6 1.6L19 13.7" />
+        </>
+      );
     case "more":
       return (
         <>
@@ -293,6 +302,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
 
   if (canUseEditorial) {
     items.push({ page: "editorial", label: "Editor Editorial", mobileLabel: "Editorial", icon: "editorial", section: "Operación" });
+    items.push({ page: "material-corrections", label: "Correcciones de material", mobileLabel: "Correcciones", icon: "materialCorrections", section: "Operación" });
   }
 
   items.push({ page: "purchase-requests", label: "Solicitudes de compra", mobileLabel: "Compras", icon: "purchase", section: "Operación" });
@@ -362,7 +372,7 @@ function getMobilePrimaryNavigationItems(items, { isAdmin, canUsePrintShop, canU
   return [...preferred, ...fallback].slice(0, 4);
 }
 
-function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager }) {
+function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial }) {
   const defaultPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const adminOnlyPages = new Set([
     "executive-dashboard",
@@ -382,6 +392,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
   if (page === "drive-manager" && !canUseDriveManager) return defaultPage;
   if (page === "print-shop" && !canUsePrintShop) return defaultPage;
   if (page === "technical-support" && !canUseTechnicalSupport) return defaultPage;
+  if (page === "material-corrections" && !canUseEditorial) return defaultPage;
   if (page === "notifications-center") return "notifications-center";
 
   return page;
@@ -501,6 +512,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       canUsePrintShop,
       canUseTechnicalSupport,
       canUseDriveManager,
+      canUseEditorial,
     });
 
     if (safePage !== page) {
@@ -508,7 +520,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       setReturnPage(safePage);
       setPage(safePage);
     }
-  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager]);
+  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -533,8 +545,17 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       setPage("print-shop");
       setProfileMenuOpen(false);
       setProfilePanelOpen(false);
+      return;
     }
-  }, [canUseTechnicalSupport, canUsePrintShop]);
+
+    if (canUseEditorial && pageFromUrl === "material-corrections") {
+      setSelectedProjectId(null);
+      setReturnPage("material-corrections");
+      setPage("material-corrections");
+      setProfileMenuOpen(false);
+      setProfilePanelOpen(false);
+    }
+  }, [canUseTechnicalSupport, canUsePrintShop, canUseEditorial]);
 
   function goToPage(nextPage) {
     if (nextPage === "editorial") {
@@ -547,6 +568,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       canUsePrintShop,
       canUseTechnicalSupport,
       canUseDriveManager,
+      canUseEditorial,
     });
 
     setSelectedProjectId(null);
@@ -741,6 +763,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       return <BugReports />;
     }
 
+    if (page === "material-corrections" && canUseEditorial) {
+      return <MaterialCorrections />;
+    }
+
     if (page === "create-project" && isAdmin) {
       return <CreateProject />;
     }
@@ -888,6 +914,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (navPage === "bug-reports") {
       return page === "bug-reports";
+    }
+
+    if (navPage === "material-corrections") {
+      return page === "material-corrections";
     }
 
     if (navPage === "notifications-center") {
@@ -6518,6 +6548,11 @@ function NotificationsCenter({
       return;
     }
 
+    if (notification.type === "material-correction") {
+      window.location.assign(notification.materialLink || `/?page=material-corrections&reportId=${notification.materialReportId || ""}`);
+      return;
+    }
+
     if (notification.type === "project" && notification.projectId) {
       onOpenProject?.(notification.projectId);
       return;
@@ -6742,6 +6777,8 @@ function TopProfileBar({
 
     if (notification.type === "editorial") {
       window.location.assign(notification.editorialLink || `/editorial/${notification.editorialProjectId || ""}`);
+    } else if (notification.type === "material-correction") {
+      window.location.assign(notification.materialLink || `/?page=material-corrections&reportId=${notification.materialReportId || ""}`);
     } else if (notification.type === "project" && notification.projectId) {
       onOpenProject?.(notification.projectId);
     } else if (notification.route) {
@@ -7357,18 +7394,31 @@ function buildRealDashboardNotifications({
     // Fase 7 — Las notificaciones editoriales viven en la misma colección; se
     // enrutan al Editor Editorial (no al detalle de proyecto operativo).
     const isEditorial = Boolean(notification.editorialProjectId);
+    const isMaterialCorrection = Boolean(notification.materialCorrectionReportId);
+    const notificationType = isEditorial
+      ? "editorial"
+      : isMaterialCorrection
+        ? "material-correction"
+        : "project";
 
     return {
-      key: `${isEditorial ? "editorial" : "project"}-${notification.id}`,
-      type: isEditorial ? "editorial" : "project",
+      key: `${notificationType}-${notification.id}`,
+      type: notificationType,
       group: "project",
       id: notification.id,
       projectId: notification.projectId,
       editorialProjectId: notification.editorialProjectId || "",
       editorialLink: notification.link || "",
+      materialReportId: notification.materialCorrectionReportId || "",
+      materialLink: isMaterialCorrection ? notification.link || "" : "",
+      route: isMaterialCorrection ? "material-corrections" : "",
       tone: visual.tone,
       icon: visual.icon,
-      title: notification.titulo || (isEditorial ? "Actualización editorial" : "Actualización de proyecto"),
+      title: notification.titulo || (isEditorial
+        ? "Actualización editorial"
+        : isMaterialCorrection
+          ? "Corrección de material"
+          : "Actualización de proyecto"),
       detail: `${notification.actorName || "Un colaborador"}: ${truncateNotificationText(notification.mensaje || "", 90)}`,
       time: formatNotificationTime(notification.createdAt),
       dateValue: notification.createdAt,

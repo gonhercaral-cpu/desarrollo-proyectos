@@ -198,6 +198,99 @@
         }
       ],
       "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "priority", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "levelName", "order": "ASCENDING" },
+        { "fieldPath": "bookName", "order": "ASCENDING" },
+        { "fieldPath": "unitNumber", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "levelName", "order": "ASCENDING" },
+        { "fieldPath": "unitNumber", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "bookName", "order": "ASCENDING" },
+        { "fieldPath": "unitNumber", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "materialType", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "errorType", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reportedBy.campus", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "materialCorrectionReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assignedTo.uid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" },
+        { "fieldPath": "__name__", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []
