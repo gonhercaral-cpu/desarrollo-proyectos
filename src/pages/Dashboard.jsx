@@ -41,6 +41,7 @@ import MessageAudioPlayer from "../components/MessageAudioPlayer";
 import MessageText from "../components/MessageText";
 import DepartmentReadReceipt from "../components/DepartmentReadReceipt";
 import UserAvatar from "../components/UserAvatar";
+import ProfilePhotoCropper from "../components/ProfilePhotoCropper";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
 import {
   canAccessEditorial,
@@ -7548,6 +7549,7 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
   const [bio, setBio] = useState(profile?.bio || "");
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState("");
+  const [cropSource, setCropSource] = useState(null);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [preferences, setPreferences] = useState(() => ({ soundsEnabled: true, tone: "classic", volume: 70, mutedUntil: 0, ...profile?.notificationPreferences }));
   const [saving, setSaving] = useState(false);
@@ -7559,8 +7561,44 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
     };
   }, [photoPreview]);
 
+  useEffect(() => {
+    return () => {
+      if (cropSource?.url) URL.revokeObjectURL(cropSource.url);
+    };
+  }, [cropSource]);
+
+  function handlePhotoSelection(event) {
+    const file = event.target.files?.[0] || null;
+    event.target.value = "";
+
+    if (!file) return;
+
+    if (
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+      file.size > 5 * 1024 * 1024
+    ) {
+      setMessage("Selecciona una imagen JPG, PNG o WebP de máximo 5 MB.");
+      return;
+    }
+
+    setMessage("");
+    setCropSource({
+      file,
+      url: URL.createObjectURL(file),
+    });
+  }
+
+  function handleCropConfirm(croppedFile) {
+    setPhotoFile(croppedFile);
+    setPhotoPreview(URL.createObjectURL(croppedFile));
+    setCropSource(null);
+    setRemovePhoto(false);
+    setMessage("");
+  }
+
   async function saveProfile(event) {
     event.preventDefault();
+    if (cropSource) return setMessage("Confirma o cancela el ajuste de la foto antes de guardar.");
     if (phone.trim() && !/^[+\d][\d\s().-]{6,19}$/.test(phone.trim())) return setMessage("Ingresa un teléfono válido.");
     setSaving(true); setMessage("");
     try {
@@ -7581,7 +7619,7 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
       const savedPreferences = { ...preferences, mutedUntil: Number(preferences.muteDuration || 0) ? Date.now() + Number(preferences.muteDuration) : 0 };
       delete savedPreferences.muteDuration;
       await updateDoc(doc(db, "users", userId), { phone: phone.trim(), bio: bio.trim(), photoURL, notificationPreferences: savedPreferences, profileUpdatedAt: serverTimestamp() });
-      await onProfileUpdated(); setMessage("Cambios guardados correctamente."); setPhotoFile(null); setRemovePhoto(false);
+      await onProfileUpdated(); setMessage("Cambios guardados correctamente."); setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(false);
     } catch (error) { setMessage(error?.message || "No se pudieron guardar los cambios."); }
     finally { setSaving(false); }
   }
@@ -7595,7 +7633,7 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
           <div className="profile-photo-editor">
             <div className="profile-page-avatar"><UserAvatar user={profile} photoURL={removePhoto ? "" : undefined} preview={photoPreview} /></div>
             <strong>{profile?.name || "Usuario"}</strong>
-            <div className="profile-photo-actions"><label className="visual-outline-button">Cambiar foto<input hidden type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0] || null; setPhotoFile(file); setPhotoPreview(file ? URL.createObjectURL(file) : ""); setRemovePhoto(false); }} /></label>{(profile.photoURL || photoFile) && <button type="button" className="profile-remove-photo" onClick={() => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(true); }}>Eliminar</button>}</div>
+            <div className="profile-photo-actions"><label className="visual-outline-button">Cambiar foto<input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoSelection} /></label>{(profile.photoURL || photoFile) && <button type="button" className="profile-remove-photo" onClick={() => { setCropSource(null); setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(true); }}>Eliminar</button>}</div>
             <small>JPG, PNG o WebP. Máximo 5 MB.</small>
           </div>
           <label className="profile-bio-field"><span>Sobre mí</span><textarea rows="5" maxLength="400" value={bio} onChange={(event) => setBio(event.target.value)} placeholder="Escribe una breve presentación personal." /><small>{bio.length}/400</small></label>
@@ -7616,7 +7654,15 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
           <div className="profile-notification-settings"><label className="profile-toggle-field"><input type="checkbox" checked={preferences.soundsEnabled} onChange={(e) => setPreferences({ ...preferences, soundsEnabled: e.target.checked })} /> Activar sonidos</label><label>Tono<select value={preferences.tone} onChange={(e) => setPreferences({ ...preferences, tone: e.target.value })}>{NOTIFICATION_TONES.map((tone) => <option key={tone.id} value={tone.id}>{tone.label}</option>)}</select></label><label>Volumen: {preferences.volume}%<input type="range" min="0" max="100" value={preferences.volume} onChange={(e) => setPreferences({ ...preferences, volume: Number(e.target.value) })} /></label><label>Silenciar temporalmente<select value={preferences.muteDuration || 0} onChange={(e) => setPreferences({ ...preferences, muteDuration: Number(e.target.value) })}><option value="0">No silenciar</option><option value="3600000">1 hora</option><option value="28800000">8 horas</option><option value="86400000">24 horas</option></select></label><button type="button" className="visual-outline-button profile-preview-button" onClick={() => playMessageNotificationSound({ ...preferences, soundsEnabled: true, mutedUntil: 0 })}>Escuchar vista previa</button></div>
         </section>
       </div>
-      <div className="profile-page-footer">{message && <p className="profile-save-message" role="status">{message}</p>}<div className="profile-save-actions"><button className="visual-primary-button" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></div>
+      <div className="profile-page-footer">{message && <p className="profile-save-message" role="status">{message}</p>}<div className="profile-save-actions"><button className="visual-primary-button" disabled={saving || Boolean(cropSource)}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></div>
+      {cropSource && (
+        <ProfilePhotoCropper
+          sourceURL={cropSource.url}
+          fileName={cropSource.file.name}
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropSource(null)}
+        />
+      )}
     </form>
   );
 }
