@@ -12,6 +12,7 @@ import {
   buildActiveMaterialCorrectionLevels,
 } from "../src/utils/materialCorrectionCatalogs.js";
 import {
+  applyPersistedMaterialCorrectionPublicationSettings,
   buildMaterialCorrectionDetailUpdate,
   createMaterialCorrectionClassificationDraft,
   createMaterialCorrectionManagementDraft,
@@ -282,9 +283,67 @@ describe("bandeja de correcciones de material", () => {
         enabled: false,
         collaboratorCanEdit: true,
       },
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
     }), {
       enabled: false,
       collaboratorCanEdit: false,
     });
+    assert.deepEqual(inferMaterialCorrectionPublicationSettings({
+      publicationSettings: {},
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    }), {
+      enabled: true,
+      collaboratorCanEdit: false,
+    });
+  });
+
+  it("envía false explícito y mantiene formulario desmarcado tras guardar", () => {
+    const form = {
+      priority: "normal",
+      status: "corrected",
+      assignedUid: "material",
+      reviewResult: "Validado",
+      appliedSolution: "Corregido",
+      correctedFileLink: "",
+      duplicateFolio: "",
+      approvalComment: "",
+      publicationSettings: {
+        enabled: false,
+        collaboratorCanEdit: true,
+      },
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    };
+    const update = buildMaterialCorrectionDetailUpdate({
+      form,
+      classification: {},
+      assignees: [{ uid: "material", name: "María" }],
+      includeClassification: false,
+      includeAdministration: true,
+      includeDistribution: true,
+    });
+    assert.deepEqual(update.changes.publicationSettings, {
+      enabled: false,
+      collaboratorCanEdit: false,
+    });
+
+    const afterSave = applyPersistedMaterialCorrectionPublicationSettings(
+      form,
+      update.changes.publicationSettings
+    );
+    assert.equal(afterSave.publicationSettings.enabled, false);
+    assert.equal(afterSave.publicationSettings.collaboratorCanEdit, false);
+
+    const afterReload = createMaterialCorrectionManagementDraft({
+      publicationSettings: update.changes.publicationSettings,
+      distribution: form.distribution,
+    });
+    assert.equal(afterReload.publicationSettings.enabled, false);
+    assert.equal(afterReload.publicationSettings.collaboratorCanEdit, false);
   });
 });

@@ -473,21 +473,24 @@ function defaultDistribution() {
   };
 }
 
-function inferPublicationSettings(report = {}) {
-  if (report.publicationSettings && typeof report.publicationSettings === "object") {
-    const enabled = report.publicationSettings.enabled === true;
-    return {
-      enabled,
-      collaboratorCanEdit: enabled
-        && report.publicationSettings.collaboratorCanEdit === true,
-    };
-  }
-  const enabled = Boolean(report.distribution) && DISTRIBUTION_KEYS.some((key) => {
+function inferLegacyPublicationEnabled(report = {}) {
+  return Boolean(report.distribution) && DISTRIBUTION_KEYS.some((key) => {
     const destination = report.distribution?.[key];
     return destination?.required === true
       || ["pending", "in_progress", "completed"].includes(destination?.status);
   });
-  return { enabled, collaboratorCanEdit: false };
+}
+
+function inferPublicationSettings(report = {}) {
+  const explicitEnabled = report.publicationSettings?.enabled;
+  const enabled = typeof explicitEnabled === "boolean"
+    ? explicitEnabled
+    : inferLegacyPublicationEnabled(report);
+  return {
+    enabled,
+    collaboratorCanEdit: enabled
+      && report.publicationSettings?.collaboratorCanEdit === true,
+  };
 }
 
 function sanitizePublicationSettings(source = {}, previous = {}) {
@@ -500,6 +503,17 @@ function sanitizePublicationSettings(source = {}, previous = {}) {
       : previous.collaboratorCanEdit === true
   );
   return { enabled, collaboratorCanEdit };
+}
+
+function buildPublicationSettingsFirestoreUpdate(patch = {}) {
+  if (!Object.hasOwn(patch, "publicationSettings")) return patch;
+  const update = { ...patch };
+  const publicationSettings = update.publicationSettings;
+  delete update.publicationSettings;
+  update["publicationSettings.enabled"] = publicationSettings.enabled === true;
+  update["publicationSettings.collaboratorCanEdit"] = publicationSettings.enabled === true
+    && publicationSettings.collaboratorCanEdit === true;
+  return update;
 }
 
 function distributionDestinationChanged(incoming, current) {
@@ -1584,7 +1598,11 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       patch.manualOrder = manualOrder;
     }
     if (!Object.keys(patch).length) {
-      return { ok: true, changed: [] };
+      return {
+        ok: true,
+        changed: [],
+        publicationSettings: initialPublicationSettings,
+      };
     }
     const resultingStatus = patch.status || initial.status;
     const resultingDuplicateReportId = patch.duplicateReportId || initial.duplicateReportId;
@@ -1599,7 +1617,7 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
 
     const changed = changedKeys(initial, patch).filter((key) => !["updatedAt", "searchText"].includes(key));
     const batch = db.batch();
-    batch.update(reference, patch);
+    batch.update(reference, buildPublicationSettingsFirestoreUpdate(patch));
     for (const field of changed) {
       batch.set(reference.collection("history").doc(), {
         action,
@@ -1623,6 +1641,12 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       }, { merge: true });
     }
     await batch.commit();
+    const persistedSnapshot = await reference.get();
+    const persistedPublicationSettings = inferPublicationSettings(
+      persistedSnapshot.exists
+        ? persistedSnapshot.data()
+        : { ...initial, ...patch }
+    );
 
     const updatedReport = { id: reportId, ...initial, ...patch };
     if (changed.includes("assignedTo") && patch.assignedTo?.uid) {
@@ -1649,7 +1673,11 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
         actorUid: actor.uid,
       });
     }
-    return { ok: true, changed };
+    return {
+      ok: true,
+      changed,
+      publicationSettings: persistedPublicationSettings,
+    };
   });
 
   const addMaterialCorrectionComment = onCall(callableOptions, async (request) => {
@@ -1781,6 +1809,7 @@ module.exports = {
   assertActorCanEditDistribution,
   assertActorCanModifyReport,
   buildSearchText,
+  buildPublicationSettingsFirestoreUpdate,
   canProfileAccessMaterialCorrections,
   createMaterialCorrectionHandlers,
   descriptionSimilarity,

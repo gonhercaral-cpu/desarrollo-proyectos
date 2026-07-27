@@ -11,22 +11,35 @@ const DISTRIBUTION_KEYS = [
   "futurePrint",
 ];
 
-export function inferMaterialCorrectionPublicationSettings(report) {
-  if (report?.publicationSettings && typeof report.publicationSettings === "object") {
-    const enabled = report.publicationSettings.enabled === true;
-    return {
-      enabled,
-      collaboratorCanEdit: enabled
-        && report.publicationSettings.collaboratorCanEdit === true,
-    };
-  }
+function inferLegacyMaterialCorrectionPublicationEnabled(report) {
   const distribution = report?.distribution;
-  const enabled = Boolean(distribution) && DISTRIBUTION_KEYS.some((key) => {
+  return Boolean(distribution) && DISTRIBUTION_KEYS.some((key) => {
     const destination = distribution?.[key];
     return destination?.required === true
       || ["pending", "in_progress", "completed"].includes(destination?.status);
   });
-  return { enabled, collaboratorCanEdit: false };
+}
+
+export function inferMaterialCorrectionPublicationSettings(report) {
+  const explicitEnabled = report?.publicationSettings?.enabled;
+  const enabled = typeof explicitEnabled === "boolean"
+    ? explicitEnabled
+    : inferLegacyMaterialCorrectionPublicationEnabled(report);
+  return {
+    enabled,
+    collaboratorCanEdit: enabled
+      && report?.publicationSettings?.collaboratorCanEdit === true,
+  };
+}
+
+export function applyPersistedMaterialCorrectionPublicationSettings(form, persistedSettings) {
+  if (typeof persistedSettings?.enabled !== "boolean") return form;
+  return {
+    ...form,
+    publicationSettings: inferMaterialCorrectionPublicationSettings({
+      publicationSettings: persistedSettings,
+    }),
+  };
 }
 
 export function getMaterialCorrectionDetailPermissions({
@@ -177,7 +190,12 @@ export function buildMaterialCorrectionDetailUpdate({
     changes.assignedTo = assignedTo;
     changes.duplicateFolio = form.duplicateFolio;
     changes.approvalComment = form.approvalComment;
-    changes.publicationSettings = form.publicationSettings;
+    const publicationEnabled = form.publicationSettings?.enabled === true;
+    changes.publicationSettings = {
+      enabled: publicationEnabled,
+      collaboratorCanEdit: publicationEnabled
+        && form.publicationSettings?.collaboratorCanEdit === true,
+    };
   }
 
   if (includeClassification && includeAdministration) {

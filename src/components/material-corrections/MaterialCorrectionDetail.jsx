@@ -5,6 +5,7 @@ import {
   MATERIAL_TYPE_OPTIONS,
 } from "../../material-corrections/constants";
 import {
+  applyPersistedMaterialCorrectionPublicationSettings,
   buildMaterialCorrectionDetailUpdate,
   createMaterialCorrectionClassificationDraft,
   createMaterialCorrectionManagementDraft,
@@ -230,15 +231,25 @@ export default function MaterialCorrectionDetail({
     setError("");
     setSuccess("");
     try {
-      await updateMaterialCorrectionReport(
+      const result = await updateMaterialCorrectionReport(
         reportId,
         update.changes,
         update.action,
         permissions
       );
+      const persistedForm = applyPersistedMaterialCorrectionPublicationSettings(
+        form,
+        result.publicationSettings
+      );
       dirtyRef.current = false;
-      setBaselineForm(form);
+      setForm(persistedForm);
+      setBaselineForm(persistedForm);
       setBaselineClassification(classification);
+      setReport((current) => (
+        current
+          ? { ...current, publicationSettings: persistedForm.publicationSettings }
+          : current
+      ));
       setReclassifying(false);
       setSuccess("Cambios guardados correctamente.");
     } catch (saveError) {

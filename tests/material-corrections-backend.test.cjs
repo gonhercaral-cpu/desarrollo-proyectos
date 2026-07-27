@@ -4,6 +4,7 @@ const {
   allRequiredDestinationsCompleted,
   assertActorCanEditDistribution,
   assertActorCanModifyReport,
+  buildPublicationSettingsFirestoreUpdate,
   canProfileAccessMaterialCorrections,
   descriptionSimilarity,
   getTijuanaYear,
@@ -12,6 +13,7 @@ const {
   safeHashEquals,
   sanitizeClassification,
   sanitizeDistribution,
+  sanitizePublicationSettings,
   tokenHash,
   validateCompletionRequirements,
   validateEvidenceDeclaration,
@@ -302,6 +304,50 @@ describe("backend de correcciones de material", () => {
     });
     assert.deepEqual(inferPublicationSettings({}), {
       enabled: false,
+      collaboratorCanEdit: false,
+    });
+  });
+
+  it("conserva false y construye escritura Firestore explícita", () => {
+    const normalized = sanitizePublicationSettings(
+      { enabled: false, collaboratorCanEdit: true },
+      { enabled: true, collaboratorCanEdit: true }
+    );
+    assert.deepEqual(normalized, {
+      enabled: false,
+      collaboratorCanEdit: false,
+    });
+
+    const firestoreUpdate = buildPublicationSettingsFirestoreUpdate({
+      publicationSettings: normalized,
+      status: "corrected",
+    });
+    assert.equal(firestoreUpdate["publicationSettings.enabled"], false);
+    assert.equal(firestoreUpdate["publicationSettings.collaboratorCanEdit"], false);
+    assert.equal(Object.hasOwn(firestoreUpdate, "publicationSettings"), false);
+    assert.equal(firestoreUpdate.status, "corrected");
+  });
+
+  it("no aplica fallback heredado sobre enabled false", () => {
+    assert.deepEqual(inferPublicationSettings({
+      publicationSettings: {
+        enabled: false,
+        collaboratorCanEdit: true,
+      },
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    }), {
+      enabled: false,
+      collaboratorCanEdit: false,
+    });
+    assert.deepEqual(inferPublicationSettings({
+      publicationSettings: {},
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    }), {
+      enabled: true,
       collaboratorCanEdit: false,
     });
   });
