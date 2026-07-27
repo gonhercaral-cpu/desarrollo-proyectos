@@ -40,6 +40,7 @@ import { getPastedImageFiles } from "../utils/clipboardAttachments";
 import MessageAudioPlayer from "../components/MessageAudioPlayer";
 import MessageText from "../components/MessageText";
 import DepartmentReadReceipt from "../components/DepartmentReadReceipt";
+import UserAvatar from "../components/UserAvatar";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
 import {
   canAccessEditorial,
@@ -4912,7 +4913,11 @@ function InternalMessages({
                       onClick={() => handleSelectConversation(conversation)}
                     >
                       <div className={`chat-conversation-avatar presence-avatar ${presenceStatus.state || (presenceStatus.online ? "online" : "unavailable")}`}>
-                        {getInitials(conversation.participantName)}
+                        <UserAvatar
+                          userId={conversation.participantId}
+                          email={conversation.participantEmail}
+                          name={conversation.participantName}
+                        />
                       </div>
                       <div className="chat-conversation-main">
                         <div className="chat-conversation-topline">
@@ -5004,7 +5009,9 @@ function InternalMessages({
             ) : (
               <>
                 <div className="chat-thread-header">
-                  <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.state || (selectedPresenceStatus.online ? "online" : "unavailable")}`}>{getInitials(selectedRecipient.name)}</div>
+                  <div className={`chat-thread-avatar presence-avatar ${selectedPresenceStatus.state || (selectedPresenceStatus.online ? "online" : "unavailable")}`}>
+                    <UserAvatar user={selectedRecipient} />
+                  </div>
                   <div>
                     <span>Conversación con</span>
                     <h3>{selectedRecipient.name || selectedRecipient.email || "Usuario"}</h3>
@@ -5038,7 +5045,13 @@ function InternalMessages({
                       return (
                         <article key={message.id} className={`chat-bubble-row ${outgoing ? "outgoing" : "incoming"}`}>
                           {!outgoing && (
-                            <div className="chat-message-avatar">{getInitials(message.fromUserName)}</div>
+                            <div className="chat-message-avatar">
+                              <UserAvatar
+                                userId={message.fromUserId}
+                                email={message.fromUserEmail}
+                                name={message.fromUserName}
+                              />
+                            </div>
                           )}
                           <div className="chat-bubble">
                             <div className="chat-bubble-topline">
@@ -5259,7 +5272,13 @@ function InternalMessages({
                     return (
                       <article key={message.id} className={`chat-bubble-row ${outgoing ? "outgoing" : "incoming"}`}>
                         {!outgoing && (
-                          <div className="chat-message-avatar">{getInitials(message.fromUserName)}</div>
+                          <div className="chat-message-avatar">
+                            <UserAvatar
+                              userId={message.fromUserId}
+                              email={message.fromUserEmail}
+                              name={message.fromUserName}
+                            />
+                          </div>
                         )}
                         <div className="chat-bubble department-chat-bubble">
                           <div className="chat-bubble-topline">
@@ -5453,7 +5472,11 @@ function InternalMessages({
               <small>{conversationType === "department" ? "Departamento" : "Participante"}</small>
               <div className="chat-info-person">
                 <div className={`chat-conversation-avatar ${conversationType === "department" ? "department-chat-avatar" : "presence-avatar"} ${conversationType === "direct" ? selectedPresenceStatus.state || (selectedPresenceStatus.online ? "online" : "unavailable") : ""}`}>
-                  {getInitials(activeChatTitle)}
+                  {conversationType === "direct" ? (
+                    <UserAvatar user={selectedRecipient} name={activeChatTitle} />
+                  ) : (
+                    getInitials(activeChatTitle)
+                  )}
                 </div>
                 <div>
                   <strong>{activeChatTitle}</strong>
@@ -7530,6 +7553,12 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
+
   async function saveProfile(event) {
     event.preventDefault();
     if (phone.trim() && !/^[+\d][\d\s().-]{6,19}$/.test(phone.trim())) return setMessage("Ingresa un teléfono válido.");
@@ -7538,11 +7567,16 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
       const userId = profile.uid || profile.id;
       const photoRef = ref(storage, `profile-photos/${userId}/avatar`);
       let photoURL = profile.photoURL || "";
-      if (removePhoto || photoFile) { await deleteObject(photoRef).catch(() => {}); photoURL = ""; }
       if (photoFile) {
         if (!photoFile.type.startsWith("image/") || photoFile.size > 5 * 1024 * 1024) throw new Error("La foto debe ser una imagen de máximo 5 MB.");
-        await uploadBytes(photoRef, photoFile, { contentType: photoFile.type });
+        await uploadBytes(photoRef, photoFile, {
+          contentType: photoFile.type,
+          cacheControl: "no-cache, max-age=0",
+        });
         photoURL = await getDownloadURL(photoRef);
+      } else if (removePhoto) {
+        await deleteObject(photoRef).catch(() => {});
+        photoURL = "";
       }
       const savedPreferences = { ...preferences, mutedUntil: Number(preferences.muteDuration || 0) ? Date.now() + Number(preferences.muteDuration) : 0 };
       delete savedPreferences.muteDuration;
@@ -7559,7 +7593,7 @@ function ProfilePage({ profile, isAdmin, onProfileUpdated, onClose }) {
         <section className="profile-section-card profile-photo-card">
           <ProfileSectionTitle title="Foto de perfil" text="Visible en encabezado y avatares del sistema." />
           <div className="profile-photo-editor">
-            <div className="profile-page-avatar"><UserAvatar profile={{ ...profile, photoURL: removePhoto ? "" : profile.photoURL }} preview={photoPreview} /></div>
+            <div className="profile-page-avatar"><UserAvatar user={profile} photoURL={removePhoto ? "" : undefined} preview={photoPreview} /></div>
             <strong>{profile?.name || "Usuario"}</strong>
             <div className="profile-photo-actions"><label className="visual-outline-button">Cambiar foto<input hidden type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0] || null; setPhotoFile(file); setPhotoPreview(file ? URL.createObjectURL(file) : ""); setRemovePhoto(false); }} /></label>{(profile.photoURL || photoFile) && <button type="button" className="profile-remove-photo" onClick={() => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(true); }}>Eliminar</button>}</div>
             <small>JPG, PNG o WebP. Máximo 5 MB.</small>
@@ -7599,10 +7633,6 @@ const NOTIFICATION_TONES = [
   { id: "pulse", label: "Pulso", wave: "sawtooth", notes: [{ start: 0, frequency: 660, endFrequency: 620, duration: 0.09 }, { start: 0.13, frequency: 660, endFrequency: 620, duration: 0.09 }, { start: 0.26, frequency: 820, endFrequency: 760, duration: 0.12 }] },
   { id: "chime", label: "Armonía", wave: "sine", notes: [{ start: 0, frequency: 659, endFrequency: 622, duration: 0.32 }, { start: 0.14, frequency: 784, endFrequency: 740, duration: 0.34 }, { start: 0.28, frequency: 988, endFrequency: 932, duration: 0.36 }] },
 ];
-
-function UserAvatar({ profile, preview = "" }) {
-  return preview || profile?.photoURL ? <img className="user-avatar-image" src={preview || profile.photoURL} alt="Foto de perfil" /> : getInitials(profile?.name);
-}
 
 function ProfileSectionTitle({ title, text }) {
   return <div className="profile-section-title"><h2>{title}</h2><p>{text}</p></div>;

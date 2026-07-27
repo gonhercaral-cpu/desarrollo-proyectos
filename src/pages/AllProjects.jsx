@@ -5,6 +5,7 @@ import {
   softDeleteProject,
 } from "../services/projectsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
+import UserAvatar from "../components/UserAvatar";
 
 export default function AllProjects({ onOpenProject, onEditProject }) {
   const { profile, isAdmin } = useAuth();
@@ -560,11 +561,10 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                         <td>
                           <div className="collaborator-cell">
                             <span className="avatar-mini all-projects-responsible-avatar">
-                              {(project.assignedToName || "?")
-                                .split(" ")
-                                .map((word) => word[0])
-                                .join("")
-                                .slice(0, 2)}
+                              <UserAvatar
+                                userId={project.assignedToUid || project.assignedToId}
+                                name={project.assignedToName || "Sin responsable"}
+                              />
                             </span>
 
                             {project.assignedToName || "Sin responsable"}

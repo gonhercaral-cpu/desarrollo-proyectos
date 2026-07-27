@@ -9,6 +9,7 @@ import {
   calculateAutomaticProgress,
   getProgressLabel,
 } from "../utils/progressUtils";
+import UserAvatar from "../components/UserAvatar";
 
 export default function ProjectHistory({ onOpenProject }) {
   const { profile, isAdmin } = useAuth();
@@ -424,7 +425,10 @@ export default function ProjectHistory({ onOpenProject }) {
                         <td>
                           <div className="collaborator-cell">
                             <span className="avatar-mini project-history-responsible-avatar">
-                              {getInitials(project.assignedToName)}
+                              <UserAvatar
+                                userId={project.assignedToUid || project.assignedToId}
+                                name={project.assignedToName || "Sin responsable"}
+                              />
                             </span>
 
                             {project.assignedToName || "Sin responsable"}
@@ -740,14 +744,6 @@ function HistoryIcon({ name }) {
   };
 
   return icons[name] || icons.project;
-}
-
-function getInitials(name) {
-  return (name || "?")
-    .split(" ")
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2);
 }
 
 function getBadgeColor(type) {

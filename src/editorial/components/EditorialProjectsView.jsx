@@ -10,6 +10,7 @@ import {
 } from "../services/editorialProjectsService";
 import EditorialConfirmDialog from "./EditorialConfirmDialog";
 import EditorialIcon from "./EditorialIcon";
+import UserAvatar from "../../components/UserAvatar";
 import EditorialProjectDialog from "./EditorialProjectDialog";
 import { ACADEMIC_TYPE_OPTIONS } from "../models/editorialAcademic";
 
@@ -21,11 +22,6 @@ function formatProjectDate(value) {
     month: "short",
     year: "numeric",
   }).format(date);
-}
-
-function getInitials(profile) {
-  const source = profile?.name || profile?.email || "Usuario";
-  return source.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
 export default function EditorialProjectsView({ profile, isAdmin, theme, onToggleTheme, onOpenProject }) {
@@ -96,7 +92,7 @@ export default function EditorialProjectsView({ profile, isAdmin, theme, onToggl
           <button type="button" className="editorial-top-icon-button" onClick={onToggleTheme} aria-label={theme === "dark" ? "Usar modo claro" : "Usar modo oscuro"}>
             <EditorialIcon name={theme === "dark" ? "sun" : "moon"} />
           </button>
-          <span className="editorial-user-avatar" title={profile?.name || profile?.email}>{getInitials(profile)}</span>
+          <span className="editorial-user-avatar" title={profile?.name || profile?.email}><UserAvatar user={profile} /></span>
         </div>
       </header>
 

@@ -10,6 +10,7 @@ import { db } from "../services/firebase";
 import { getActiveUsers } from "../services/usersService";
 import { uploadEvidenceFile } from "../services/storageService";
 import { useAuth } from "../context/AuthContext";
+import UserAvatar from "../components/UserAvatar";
 
 const AREAS = [
   "Administración",
@@ -650,7 +651,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                           key={userUid}
                           onClick={() => toggleCollaborator(userUid)}
                         >
-                          <span>{getInitials(user.name)}</span>
+                          <span><UserAvatar user={user} /></span>
                           {user.name}
                           <b>×</b>
                         </button>
@@ -1074,16 +1075,6 @@ function getNameFromUrl(url = "") {
   } catch {
     return "Archivo";
   }
-}
-
-function getInitials(name = "") {
-  return String(name)
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }
 
 function getProjectCode(project) {

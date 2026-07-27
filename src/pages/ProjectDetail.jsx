@@ -23,6 +23,7 @@ import {
   PROJECT_LOG_TYPES,
 } from "../services/projectsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
+import UserAvatar from "../components/UserAvatar";
 
 const PROJECT_STATUSES = [
   "Por iniciar",
@@ -566,6 +567,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
       const commentItem = {
         text: cleanComment,
+        authorUid: firebaseUser?.uid || "",
         authorName: profile?.name || firebaseUser?.email || "Usuario",
         authorEmail: firebaseUser?.email || "",
         createdAt: now,
@@ -576,6 +578,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         title: "Comentario agregado",
         description: cleanComment,
         createdAt: now,
+        createdByUid: firebaseUser?.uid || "",
         createdByName: profile?.name || firebaseUser?.email || "Usuario",
         createdByEmail: firebaseUser?.email || "",
       };
@@ -781,6 +784,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
       const commentItem = {
         text: cleanComment,
+        authorUid: firebaseUser?.uid || "",
         authorName: profile?.name || firebaseUser?.email || "Usuario",
         authorEmail: firebaseUser?.email || "",
         createdAt: now,
@@ -793,6 +797,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         title: "Comentario en avance",
         description: cleanComment,
         createdAt: now,
+        createdByUid: firebaseUser?.uid || "",
         createdByName: profile?.name || firebaseUser?.email || "Usuario",
         createdByEmail: firebaseUser?.email || "",
       };
@@ -1480,7 +1485,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
             <form className="advance-composer" onSubmit={handlePublishAdvance}>
               <span className="avatar-mini advance-avatar">
-                {getInitials(profile?.name || firebaseUser?.email || "Usuario")}
+                <UserAvatar user={profile} />
               </span>
 
               <div className="advance-composer-box">
@@ -1559,7 +1564,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                       <div className="advance-entry">
                         <div className="advance-entry-header">
                           <span className="avatar-mini">
-                            {getInitials(advance.authorName || "Usuario")}
+                            <UserAvatar
+                              userId={advance.authorUid}
+                              email={advance.authorEmail}
+                              name={advance.authorName || "Usuario"}
+                            />
                           </span>
 
                           <div>
@@ -1726,7 +1735,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                             {commentsForAdvance.map((comment, index) => (
                               <div className="advance-comment" key={index}>
                                 <span className="avatar-mini">
-                                  {getInitials(comment.authorName || "Usuario")}
+                                  <UserAvatar
+                                    userId={comment.authorUid}
+                                    email={comment.authorEmail}
+                                    name={comment.authorName || "Usuario"}
+                                  />
                                 </span>
 
                                 <div>
@@ -1791,15 +1804,17 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
             <div className="responsible-list">
               <ResponsibleItem
+                userId={project.assignedToUid || project.assignedToId}
                 name={project.assignedToName || "Sin responsable"}
                 role="Líder del proyecto"
                 badge="Responsable"
                 color="blue"
               />
 
-              {normalizeArray(project.collaboratorNames).map((name) => (
+              {normalizeArray(project.collaboratorNames).map((name, index) => (
                 <ResponsibleItem
                   key={name}
+                  userId={normalizeArray(project.collaboratorIds)[index]}
                   name={name}
                   role="Colaborador(a)"
                   badge="Colaborador(a)"
@@ -1930,11 +1945,15 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     <article className="internal-note-history-item" key={note.id}>
                       <div className="internal-note-history-top">
                         <span className="avatar-mini">
-                          {getInitials(
-                            note.createdByName ||
+                          <UserAvatar
+                            userId={note.createdByUid}
+                            email={note.createdByEmail}
+                            name={
+                              note.createdByName ||
                               note.createdByEmail ||
                               "Administrador"
-                          )}
+                            }
+                          />
                         </span>
                         <div>
                           <strong>
@@ -2031,7 +2050,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 {comments.slice(0, 3).map((comment, index) => (
                   <div className="comment-item" key={index}>
                     <span className="avatar-mini">
-                      {getInitials(comment.authorName || "Usuario")}
+                      <UserAvatar
+                        userId={comment.authorUid}
+                        email={comment.authorEmail}
+                        name={comment.authorName || "Usuario"}
+                      />
                     </span>
 
                     <div>
@@ -2323,7 +2346,7 @@ function InfoItem({ label, value, avatar }) {
 
       {avatar ? (
         <div className="collaborator-cell">
-          <span className="avatar-mini">{getInitials(value)}</span>
+          <span className="avatar-mini"><UserAvatar name={value} /></span>
           <strong>{value || "Sin dato"}</strong>
         </div>
       ) : (
@@ -2333,10 +2356,10 @@ function InfoItem({ label, value, avatar }) {
   );
 }
 
-function ResponsibleItem({ name, role, badge, color }) {
+function ResponsibleItem({ userId, name, role, badge, color }) {
   return (
     <div className="responsible-item">
-      <span className="avatar-mini">{getInitials(name)}</span>
+      <span className="avatar-mini"><UserAvatar userId={userId} name={name} /></span>
 
       <div>
         <strong>{name}</strong>
@@ -2466,16 +2489,6 @@ function removeDuplicateFiles(files) {
     seen.add(key);
     return true;
   });
-}
-
-function getInitials(name = "") {
-  return String(name)
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }
 
 function getDaysDifference(deadline) {

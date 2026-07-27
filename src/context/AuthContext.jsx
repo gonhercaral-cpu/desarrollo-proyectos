@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -36,6 +43,7 @@ const ACTIVITY_EVENTS = [
 export function AuthProvider({ children }) {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState(null);
   const activeSessionRef = useRef(null);
@@ -123,6 +131,40 @@ export function AuthProvider({ children }) {
       }
     );
   }, [firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!firebaseUser?.uid) {
+      return undefined;
+    }
+
+    return onSnapshot(
+      query(collection(db, "users"), where("active", "==", true)),
+      (snapshot) => {
+        setUsers(
+          snapshot.docs.map((userDoc) => ({
+            id: userDoc.id,
+            uid: userDoc.id,
+            ...userDoc.data(),
+          }))
+        );
+      },
+      (error) => {
+        console.error("Error sincronizando el directorio de usuarios:", error);
+        setUsers([]);
+      }
+    );
+  }, [firebaseUser?.uid]);
+
+  const directoryUsers = useMemo(() => {
+    if (!profile) return users;
+
+    const profileId = profile.uid || profile.id;
+    const hasCurrentProfile = users.some(
+      (user) => user.id === profileId || user.uid === profileId
+    );
+
+    return hasCurrentProfile ? users : [profile, ...users];
+  }, [profile, users]);
 
 
   useEffect(() => {
@@ -434,6 +476,7 @@ export function AuthProvider({ children }) {
       value={{
         firebaseUser,
         profile,
+        users: directoryUsers,
         loading,
         login,
         logout,

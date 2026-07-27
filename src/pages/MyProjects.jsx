@@ -12,6 +12,7 @@ import {
   getNotificationVisual,
 } from "../services/notificationsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
+import UserAvatar from "../components/UserAvatar";
 
 const PROJECTS_COLLECTION = "projects";
 
@@ -708,7 +709,16 @@ function ProjectList({
                   <MetaItem
                     label="Responsable"
                     value={project.assignedToName || project.responsibleName || "Sin responsable"}
-                    icon="👤"
+                    icon={
+                      <UserAvatar
+                        userId={project.assignedToUid || project.assignedToId}
+                        name={
+                          project.assignedToName ||
+                          project.responsibleName ||
+                          "Sin responsable"
+                        }
+                      />
+                    }
                   />
                 </div>
 

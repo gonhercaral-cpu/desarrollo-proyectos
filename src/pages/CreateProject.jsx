@@ -3,6 +3,7 @@ import { createProject } from "../services/projectsService";
 import { getActiveUsers } from "../services/usersService";
 import { getActiveDepartments } from "../services/departmentsService";
 import { useAuth } from "../context/AuthContext";
+import UserAvatar from "../components/UserAvatar";
 
 const PRIORITIES = ["Alta", "Media", "Baja"];
 
@@ -588,7 +589,7 @@ export default function CreateProject() {
                           key={userUid}
                           onClick={() => toggleCollaborator(userUid)}
                         >
-                          <span>{getInitials(user.name)}</span>
+                          <span><UserAvatar user={user} /></span>
                           {user.name}
                           <b>×</b>
                         </button>
@@ -1087,16 +1088,6 @@ function SvgIcon({ name }) {
         </svg>
       );
   }
-}
-
-function getInitials(name = "") {
-  return String(name)
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }
 
 function getFileIcon(fileName = "") {

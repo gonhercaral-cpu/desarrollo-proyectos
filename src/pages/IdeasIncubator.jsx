@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import UserAvatar from "../components/UserAvatar";
 import {
   IDEA_AREAS,
   IDEA_IMPACTS,
@@ -50,22 +51,6 @@ function normalizeText(value) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-}
-
-function getInitials(nameOrEmail) {
-  const clean = String(nameOrEmail || "Usuario").trim();
-  if (!clean) return "U";
-
-  const parts = clean
-    .replace(/@.*/, "")
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
 function getDateFromValue(value) {
@@ -726,7 +711,13 @@ function IdeaListCard({ idea, selected, isAdmin, deleting, onSelect, onDelete })
           </p>
 
           <div className="ideas-modern-author-row">
-            <span className="ideas-mini-avatar">{getInitials(idea.createdByName || idea.createdByEmail)}</span>
+            <span className="ideas-mini-avatar">
+              <UserAvatar
+                userId={idea.createdByUid}
+                email={idea.createdByEmail}
+                name={idea.createdByName || "Usuario"}
+              />
+            </span>
             <small>{idea.createdByName || "Usuario"}</small>
             <i />
             <small>{idea.area || "General"}</small>
@@ -816,7 +807,11 @@ function IdeaDetailPanel({
 
       <div className="ideas-modern-detail-author">
         <span className="ideas-mini-avatar gold">
-          {getInitials(idea.createdByName || idea.createdByEmail)}
+          <UserAvatar
+            userId={idea.createdByUid}
+            email={idea.createdByEmail}
+            name={idea.createdByName || "Usuario"}
+          />
         </span>
         <strong>{idea.createdByName || "Usuario"}</strong>
         <small>{idea.area || "General"}</small>
@@ -1025,7 +1020,13 @@ function IdeaCommentsSection({ comments, commentsLoading }) {
         <div className="ideas-modern-comments-list">
           {comments.map((comment) => (
             <div key={comment.id} className="ideas-modern-comment-item">
-              <span className="ideas-mini-avatar">{getInitials(comment.createdByName)}</span>
+              <span className="ideas-mini-avatar">
+                <UserAvatar
+                  userId={comment.createdByUid}
+                  email={comment.createdByEmail}
+                  name={comment.createdByName || "Administrador"}
+                />
+              </span>
               <div>
                 <strong>{comment.createdByName || "Administrador"}</strong>
                 <p>{comment.comment}</p>

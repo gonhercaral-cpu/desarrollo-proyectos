@@ -40,6 +40,7 @@ import { createAutomaticIndexElement, isAutomaticIndexStale, refreshAutomaticInd
 import { downloadEditorialBlob, resolveEditorialDownloadUrl } from "../services/editorialExportsService";
 import { resolveDownloadTarget } from "../utils/editorialDownloads";
 import EditorialIcon from "./EditorialIcon";
+import UserAvatar from "../../components/UserAvatar";
 import EditorialAcademicMetadataDialog from "./academic/EditorialAcademicMetadataDialog";
 import EditorialExerciseDialog from "./academic/EditorialExerciseDialog";
 import EditorialSongDialog from "./academic/EditorialSongDialog";
@@ -67,10 +68,6 @@ const RAIL_ITEMS = [
   ["styles", "Estilos"], ["reviews", "Revisiones"], ["approvals", "Aprobaciones"],
 ];
 const ACTIVE_RAILS = new Set(["books", "material", "resources", "templates", "components", "styles", "reviews", "approvals"]);
-
-function getInitials(profile) {
-  return (profile?.name || profile?.email || "U").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-}
 
 function getPageProject(project, page) {
   return { ...project, widthIn: page?.width || project.widthIn, heightIn: page?.height || project.heightIn, orientation: page?.orientation || project.orientation };
@@ -802,7 +799,7 @@ function EditorialEditorReady({ project, documents, profile, theme, onToggleThem
       <header className="editorial-editor-topbar">
         <button type="button" className="editorial-editor-brand" onClick={handleBack} aria-label="Volver a proyectos editoriales"><img src="/active-logo.png" alt="AES" /><strong>AES</strong><span>Editor Editorial</span><EditorialIcon name="chevron" size={14} /></button>
         <div className="editorial-editor-breadcrumb"><span>{getProjectTypeLabel(project.type)}</span><EditorialIcon name="chevron" size={13} /><strong>{project.name}</strong><EditorialIcon name="chevron" size={13} /><span className={`editorial-context-badge ${editorMode.kind}`}>{contextLabel}</span><b>{editorMode.kind === "page" ? navigation.numbering.get(activePage?.id)?.label || "Sin número" : "Edición aislada"}</b></div>
-        <div className="editorial-editor-top-actions"><div className="editorial-variant-toggle" aria-label="Vista académica"><button type="button" className={variantState.variant === "student" ? "active" : ""} onClick={() => variantState.changeVariant("student", editor.selectedElement, () => editor.select(""))}>Alumno</button><button type="button" className={variantState.variant === "teacher" ? "active" : ""} onClick={() => variantState.changeVariant("teacher", editor.selectedElement, () => editor.select(""))}>Maestro</button></div><span className={`editorial-save-status ${editor.saveStatus}`} title={editor.saveError || statusLabels[editor.saveStatus]}><i />{statusLabels[editor.saveStatus]}</span><button type="button" className="editorial-top-action-button" onClick={() => setQuickPreviewOpen(true)}><EditorialIcon name="eye" size={17} /> Vista rápida</button><button type="button" className="editorial-top-action-button" onClick={() => setReadViewOpen(true)}><EditorialIcon name="eye" size={17} /> Modo lectura</button>{caps.manage && <button type="button" className="editorial-top-action-button" onClick={() => { setPermissionsError(""); setPermissionsOpen(true); }}>Permisos</button>}<button type="button" className="editorial-top-action-button primary" onClick={() => setExportDialog({})}>Exportar</button><button type="button" className="editorial-top-icon-button" onClick={onToggleTheme} aria-label={theme === "dark" ? "Usar modo claro" : "Usar modo oscuro"}><EditorialIcon name={theme === "dark" ? "sun" : "moon"} /></button><span className="editorial-user-avatar">{getInitials(profile)}</span></div>
+        <div className="editorial-editor-top-actions"><div className="editorial-variant-toggle" aria-label="Vista académica"><button type="button" className={variantState.variant === "student" ? "active" : ""} onClick={() => variantState.changeVariant("student", editor.selectedElement, () => editor.select(""))}>Alumno</button><button type="button" className={variantState.variant === "teacher" ? "active" : ""} onClick={() => variantState.changeVariant("teacher", editor.selectedElement, () => editor.select(""))}>Maestro</button></div><span className={`editorial-save-status ${editor.saveStatus}`} title={editor.saveError || statusLabels[editor.saveStatus]}><i />{statusLabels[editor.saveStatus]}</span><button type="button" className="editorial-top-action-button" onClick={() => setQuickPreviewOpen(true)}><EditorialIcon name="eye" size={17} /> Vista rápida</button><button type="button" className="editorial-top-action-button" onClick={() => setReadViewOpen(true)}><EditorialIcon name="eye" size={17} /> Modo lectura</button>{caps.manage && <button type="button" className="editorial-top-action-button" onClick={() => { setPermissionsError(""); setPermissionsOpen(true); }}>Permisos</button>}<button type="button" className="editorial-top-action-button primary" onClick={() => setExportDialog({})}>Exportar</button><button type="button" className="editorial-top-icon-button" onClick={onToggleTheme} aria-label={theme === "dark" ? "Usar modo claro" : "Usar modo oscuro"}><EditorialIcon name={theme === "dark" ? "sun" : "moon"} /></button><span className="editorial-user-avatar"><UserAvatar user={profile} /></span></div>
       </header>
       <EditorialMenuBar menus={editorialMenus} />
       <input ref={menuFileInputRef} type="file" accept="image/*" hidden onChange={handleMenuImage} />

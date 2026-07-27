@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import UserAvatar from "../components/UserAvatar";
 import { getActiveDepartments } from "../services/departmentsService";
 import {
   createUserByAdmin,
@@ -678,7 +679,7 @@ export default function CollaboratorsAdmin() {
           <div className="collaborator-focused-heading">
             <div className="collaborator-focused-title">
               <div className="profile-page-avatar collaborator-focused-avatar">
-                {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
+                <UserAvatar user={selectedUserDraft} />
               </div>
 
               <div>
@@ -812,7 +813,7 @@ export default function CollaboratorsAdmin() {
             <aside className="collaborator-focused-side-card">
               <div className="collaborator-focus-profile-card">
                 <div className="profile-page-avatar collaborator-focused-avatar large">
-                  {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
+                  <UserAvatar user={selectedUserDraft} />
                 </div>
 
                 <h3>{selectedUserDraft.name || "Usuario sin nombre"}</h3>
@@ -1018,7 +1019,7 @@ export default function CollaboratorsAdmin() {
                         <td>
                           <div className="user-name-cell">
                             <div className="avatar-mini">
-                              {getInitials(user.name || user.email)}
+                              <UserAvatar user={user} />
                             </div>
 
                             <div>
@@ -1105,7 +1106,7 @@ export default function CollaboratorsAdmin() {
             <>
               <div className="collaborator-editor-header">
                 <div className="profile-page-avatar small-avatar collaborator-editor-avatar">
-                  {getInitials(selectedUserDraft.name || selectedUserDraft.email)}
+                  <UserAvatar user={selectedUserDraft} />
                 </div>
 
                 <div>
@@ -1542,19 +1543,6 @@ function getPercentage(value, total) {
   }
 
   return Math.round((value / total) * 100);
-}
-
-function getInitials(name = "") {
-  const initials = String(name)
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  return initials || "U";
 }
 
 function getRoleLabel(role = "") {

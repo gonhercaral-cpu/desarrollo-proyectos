@@ -16,6 +16,7 @@ import { getPastedImageFiles } from "../utils/clipboardAttachments";
 import MessageAudioPlayer from "./MessageAudioPlayer";
 import MessageText from "./MessageText";
 import DepartmentReadReceipt from "./DepartmentReadReceipt";
+import UserAvatar from "./UserAvatar";
 import { getMessagePreview, isAudioMessage } from "../utils/messageUtils";
 import {
   filterVisibleDepartmentMessages,
@@ -392,6 +393,7 @@ export default function FloatingQuickTools({
         ...directConversations.map((conversation) => ({
           key: `direct:${conversation.participantId}`,
           type: "direct",
+          participantId: conversation.participantId,
           title: conversation.participantName,
           subtitle: conversation.participantEmail || "Chat individual",
           unreadCount: conversation.unreadCount,
@@ -990,7 +992,14 @@ export default function FloatingQuickTools({
                     onClick={() => selectConversation(conversation.key)}
                   >
                     <span className="quick-tools-conversation-avatar">
-                      {conversation.type === "department" ? <QuickToolIcon name="team" /> : getInitials(conversation.title)}
+                      {conversation.type === "department" ? (
+                        <QuickToolIcon name="team" />
+                      ) : (
+                        <UserAvatar
+                          userId={conversation.participantId}
+                          name={conversation.title}
+                        />
+                      )}
                     </span>
                     <span>
                       <strong>{conversation.title}</strong>
@@ -2071,13 +2080,4 @@ function truncateText(value = "", maxLength = 70) {
   const text = String(value || "").trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 1)}...`;
-}
-
-function getInitials(name = "") {
-  return String(name || "U")
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() || "")
-    .join("") || "U";
 }

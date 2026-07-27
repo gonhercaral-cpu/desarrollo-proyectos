@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { useAuth } from "../context/AuthContext";
+import UserAvatar from "../components/UserAvatar";
 
 const DAYS = [
   { key: "monday", label: "Lunes" },
@@ -1304,7 +1305,7 @@ export default function TeamAgenda({ onMessageUser = () => {} }) {
                         <td>
                           <div className="team-person-cell agenda-modern-person-cell">
                             <div className="team-person-avatar">
-                              {getInitials(person.name)}
+                              <UserAvatar user={person} />
                             </div>
 
                             <div>
@@ -2268,7 +2269,7 @@ function TodayTeamItem({ person, schedule, currentUserId, onMessage }) {
   return (
     <article className="agenda-modern-team-item">
       <div className="team-person-avatar agenda-modern-avatar">
-        {getInitials(person.name)}
+        <UserAvatar user={person} />
       </div>
 
       <div>
@@ -2300,7 +2301,11 @@ function CompactAgendaRequest({ request, isAdmin }) {
   return (
     <article className="agenda-modern-pending-item">
       <div className="team-person-avatar agenda-modern-avatar small">
-        {getInitials(request.userName || REQUEST_TYPES[request.type])}
+        <UserAvatar
+          userId={request.userId}
+          email={request.userEmail}
+          name={request.userName || REQUEST_TYPES[request.type]}
+        />
       </div>
 
       <div>
@@ -2514,7 +2519,7 @@ function AttendanceControlPanel({
             {filteredCollaboratorSummaryRows.map((row) => (
               <article key={row.userId} className="attendance-collaborator-summary-row">
                 <div className="team-person-avatar agenda-modern-avatar small">
-                  {getInitials(row.userName)}
+                  <UserAvatar userId={row.userId} name={row.userName} />
                 </div>
                 <div className="attendance-collaborator-person">
                   <strong>{row.userName}</strong>
@@ -2571,7 +2576,7 @@ function AttendanceControlPanel({
               {visibleRows.map((row) => (
                 <article key={row.userId} className="attendance-visual-row-card">
                   <div className="team-person-avatar agenda-modern-avatar small">
-                    {getInitials(row.userName)}
+                    <UserAvatar userId={row.userId} name={row.userName} />
                   </div>
                   <div className="attendance-visual-row-person">
                     <strong>{row.userName}</strong>
@@ -2622,7 +2627,7 @@ function AttendanceControlPanel({
               {visibleAlerts.map((alert) => (
                 <article key={`${alert.userId}-${alert.type}`} className="attendance-visual-alert-card">
                   <div className="team-person-avatar agenda-modern-avatar small">
-                    {getInitials(alert.userName)}
+                    <UserAvatar userId={alert.userId} name={alert.userName} />
                   </div>
                   <div>
                     <strong>{alert.userName}</strong>
@@ -4138,17 +4143,4 @@ function getRequestSortValue(request) {
   }
 
   return 0;
-}
-
-function getInitials(name = "") {
-  const initials = String(name)
-    .trim()
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  return initials || "U";
 }
