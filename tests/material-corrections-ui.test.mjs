@@ -8,13 +8,15 @@ import {
   validateInternalCorrectedFile,
   validateMaterialEvidenceFiles,
 } from "../src/material-corrections/utils.js";
+import {
+  buildActiveMaterialCorrectionLevels,
+} from "../src/utils/materialCorrectionCatalogs.js";
 
 const reports = [
   {
     id: "u10",
     folio: "MAT-2026-000010",
-    levelName: "A1",
-    bookName: "Journey",
+    levelName: "A1 Journey",
     unitNumber: 10,
     materialType: "student_book",
     errorType: "spelling",
@@ -32,8 +34,7 @@ const reports = [
   {
     id: "u2",
     folio: "MAT-2026-000002",
-    levelName: "A1",
-    bookName: "Journey",
+    levelName: "A1 Journey",
     unitNumber: 2,
     materialType: "slide",
     errorType: "design_or_format",
@@ -74,6 +75,8 @@ describe("bandeja de correcciones de material", () => {
   it("busca y filtra evidencia y publicación pendiente", () => {
     const bySearch = applyMaterialCorrectionFilters(reports, {}, "Ana unidad");
     assert.deepEqual(bySearch.map((report) => report.id), ["u10"]);
+    const byMaterial = applyMaterialCorrectionFilters(reports, {}, "Libro del alumno");
+    assert.deepEqual(byMaterial.map((report) => report.id), ["u10"]);
     const pending = applyMaterialCorrectionFilters(reports, {
       evidence: "without",
       pendingInPerson: true,
@@ -110,5 +113,20 @@ describe("bandeja de correcciones de material", () => {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       size: 1024,
     }).name, "fuente.pptx");
+  });
+
+  it("forma niveles desde Plantillas activas, con id y nombre histórico", () => {
+    const levels = buildActiveMaterialCorrectionLevels([
+      { id: "a1-blue", active: true, level: "A1", programName: "Journey" },
+      { id: "a1-green", active: true, level: "A1", programName: "Journey" },
+      { id: "d1", active: true, level: "D1", programName: "Discover" },
+      { id: "smile2", active: true, level: "Smile 2", programName: "Smile2" },
+      { id: "inactive", active: false, level: "B2", programName: "Summit" },
+    ]);
+    assert.deepEqual(levels, [
+      { id: "a1-blue", name: "A1 Journey" },
+      { id: "d1", name: "D1 Discover" },
+      { id: "smile2", name: "Smile 2" },
+    ]);
   });
 });

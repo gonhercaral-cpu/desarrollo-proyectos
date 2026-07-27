@@ -4,6 +4,7 @@ import {
   DISTRIBUTION_STATUS_OPTIONS,
   MATERIAL_CORRECTION_PRIORITY_OPTIONS,
   MATERIAL_CORRECTION_STATUS_OPTIONS,
+  MATERIAL_TYPES_WITH_PAGE,
   MATERIAL_TYPE_OPTIONS,
 } from "../../material-corrections/constants";
 import {
@@ -39,19 +40,12 @@ function managementForm(report) {
 function classificationForm(report) {
   const classification = report?.confirmedClassification || report?.originalClassification || {};
   return {
+    levelId: classification.levelId || report?.levelId || "",
     levelName: classification.levelName || report?.levelName || "",
-    bookName: classification.bookName || report?.bookName || "",
     unitNumber: classification.unitNumber || report?.unitNumber || "",
     unitName: classification.unitName || report?.unitName || "",
-    lessonNumber: classification.lessonNumber || report?.lessonNumber || "",
     materialType: classification.materialType || report?.materialType || "other",
-    materialName: classification.materialName || report?.materialName || "",
     pageNumber: classification.pageNumber || report?.pageNumber || "",
-    exerciseNumber: classification.exerciseNumber || report?.exerciseNumber || "",
-    questionNumber: classification.questionNumber || report?.questionNumber || "",
-    slideNumber: classification.slideNumber || report?.slideNumber || "",
-    songName: classification.songName || report?.songName || "",
-    timestamp: classification.timestamp || report?.timestamp || "",
   };
 }
 
@@ -73,24 +67,35 @@ function OriginalData({ report }) {
       <div className="material-original-grid">
         <dl className="material-data-list">
           <div><dt>Reportante</dt><dd>{report.reportedBy?.name}</dd></div>
-          <div><dt>Puesto</dt><dd>{report.reportedBy?.position}</dd></div>
+          {report.reportedBy?.position && (
+            <div><dt>Puesto histórico</dt><dd>{report.reportedBy.position}</dd></div>
+          )}
           <div><dt>Plantel</dt><dd>{report.reportedBy?.campus}</dd></div>
-          <div><dt>Contacto</dt><dd>{report.reportedBy?.contact}</dd></div>
+          {report.reportedBy?.contact && (
+            <div><dt>Contacto histórico</dt><dd>{report.reportedBy.contact}</dd></div>
+          )}
           <div><dt>Fecha</dt><dd>{formatMaterialCorrectionDate(report.createdAt)}</dd></div>
           <div><dt>Folio</dt><dd>{report.folio}</dd></div>
         </dl>
         <dl className="material-data-list">
           <div><dt>Nivel</dt><dd>{original.levelName || "—"}</dd></div>
-          <div><dt>Libro</dt><dd>{original.bookName || "—"}</dd></div>
-          <div><dt>Unidad</dt><dd>{original.unitNumber || original.unitName || "—"}</dd></div>
-          <div><dt>Lección</dt><dd>{original.lessonNumber || "—"}</dd></div>
-          <div><dt>Material</dt><dd>{getMaterialTypeLabel(original.materialType)}{original.materialName ? ` · ${original.materialName}` : ""}</dd></div>
+          {original.bookName && <div><dt>Libro histórico</dt><dd>{original.bookName}</dd></div>}
+          <div>
+            <dt>Unidad</dt>
+            <dd>
+              {original.unitNumber || "—"}
+              {original.unitName ? ` · ${original.unitName}` : ""}
+            </dd>
+          </div>
+          {original.lessonNumber && <div><dt>Lección histórica</dt><dd>{original.lessonNumber}</dd></div>}
+          <div><dt>Material</dt><dd>{getMaterialTypeLabel(original.materialType)}</dd></div>
+          {original.materialName && <div><dt>Nombre histórico</dt><dd>{original.materialName}</dd></div>}
           <div><dt>Ubicación</dt><dd>{[
             original.pageNumber && `Pág. ${original.pageNumber}`,
-            original.slideNumber && `Diap. ${original.slideNumber}`,
-            original.exerciseNumber && `Ej. ${original.exerciseNumber}`,
-            original.questionNumber && `Preg. ${original.questionNumber}`,
-            original.timestamp,
+            original.slideNumber && `Diap. ${original.slideNumber} (histórico)`,
+            original.exerciseNumber && `Ej. ${original.exerciseNumber} (histórico)`,
+            original.questionNumber && `Preg. ${original.questionNumber} (histórico)`,
+            original.timestamp && `${original.timestamp} (histórico)`,
           ].filter(Boolean).join(" · ") || "—"}</dd></div>
         </dl>
       </div>
@@ -112,6 +117,7 @@ function OriginalData({ report }) {
 export default function MaterialCorrectionDetail({
   reportId,
   assignees,
+  levels = [],
   isAdmin,
   onBack,
   onDeleted,
@@ -330,7 +336,10 @@ export default function MaterialCorrectionDetail({
         <div>
           <span>Correcciones de material</span>
           <h2>{report.folio}</h2>
-          <p>{report.bookName} · Unidad {report.unitNumber || report.unitName}</p>
+          <p>
+            {report.levelName || "Sin nivel"} · Unidad {report.unitNumber || "—"}
+            {report.unitName ? ` · ${report.unitName}` : ""}
+          </p>
         </div>
         <div className={`material-priority priority-${report.priority}`}>
           {getOptionLabel(MATERIAL_CORRECTION_PRIORITY_OPTIONS, report.priority)}
@@ -351,23 +360,57 @@ export default function MaterialCorrectionDetail({
         </header>
         {reclassifying ? (
           <div className="material-management-grid">
-            <label>Nivel<input value={classification.levelName} onChange={(event) => setClassification({ ...classification, levelName: event.target.value })} /></label>
-            <label>Libro<input value={classification.bookName} onChange={(event) => setClassification({ ...classification, bookName: event.target.value })} /></label>
+            <label>
+              Nivel
+              <select
+                value={classification.levelId}
+                onChange={(event) => {
+                  const level = levels.find((option) => option.id === event.target.value);
+                  setClassification({
+                    ...classification,
+                    levelId: level?.id || "",
+                    levelName: level?.name || "",
+                  });
+                }}
+              >
+                {!levels.some((option) => option.id === classification.levelId) && classification.levelName && (
+                  <option value={classification.levelId}>{classification.levelName} (histórico)</option>
+                )}
+                <option value="">Seleccionar nivel activo</option>
+                {levels.map((level) => (
+                  <option key={level.id} value={level.id}>{level.name}</option>
+                ))}
+              </select>
+            </label>
             <label>Unidad<input type="number" min="1" value={classification.unitNumber} onChange={(event) => setClassification({ ...classification, unitNumber: event.target.value })} /></label>
             <label>Nombre de unidad<input value={classification.unitName} onChange={(event) => setClassification({ ...classification, unitName: event.target.value })} /></label>
-            <label>Lección<input type="number" min="1" value={classification.lessonNumber} onChange={(event) => setClassification({ ...classification, lessonNumber: event.target.value })} /></label>
-            <label>Tipo de material<select value={classification.materialType} onChange={(event) => setClassification({ ...classification, materialType: event.target.value })}>{MATERIAL_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label>Material<input value={classification.materialName} onChange={(event) => setClassification({ ...classification, materialName: event.target.value })} /></label>
-            <label>Página<input value={classification.pageNumber} onChange={(event) => setClassification({ ...classification, pageNumber: event.target.value })} /></label>
-            <label>Diapositiva<input value={classification.slideNumber} onChange={(event) => setClassification({ ...classification, slideNumber: event.target.value })} /></label>
-            <label>Ejercicio<input value={classification.exerciseNumber} onChange={(event) => setClassification({ ...classification, exerciseNumber: event.target.value })} /></label>
-            <label>Pregunta<input value={classification.questionNumber} onChange={(event) => setClassification({ ...classification, questionNumber: event.target.value })} /></label>
-            <label>Minuto o sección<input value={classification.timestamp} onChange={(event) => setClassification({ ...classification, timestamp: event.target.value })} /></label>
+            <label>
+              Tipo de material
+              <select
+                value={classification.materialType}
+                onChange={(event) => {
+                  const materialType = event.target.value;
+                  setClassification({
+                    ...classification,
+                    materialType,
+                    pageNumber: MATERIAL_TYPES_WITH_PAGE.has(materialType)
+                      ? classification.pageNumber
+                      : "",
+                  });
+                }}
+              >
+                {MATERIAL_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            {MATERIAL_TYPES_WITH_PAGE.has(classification.materialType) && (
+              <label>Página<input value={classification.pageNumber} onChange={(event) => setClassification({ ...classification, pageNumber: event.target.value })} /></label>
+            )}
             <div className="material-grid-wide"><button type="button" onClick={saveReclassification} disabled={busy}>Guardar reclasificación</button></div>
           </div>
         ) : (
           <p>
-            {classification.levelName} · {classification.bookName} · Unidad {classification.unitNumber || classification.unitName}
+            {classification.levelName} · Unidad {classification.unitNumber || "—"}
+            {classification.unitName ? ` · ${classification.unitName}` : ""}
             {" · "}{getMaterialTypeLabel(classification.materialType)}
           </p>
         )}

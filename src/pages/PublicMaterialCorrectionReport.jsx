@@ -1,9 +1,8 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ERROR_TYPE_OPTIONS,
-  MATERIAL_LOCATION_FIELDS,
+  MATERIAL_TYPES_WITH_PAGE,
   MATERIAL_TYPE_OPTIONS,
-  REPORTER_POSITION_OPTIONS,
 } from "../material-corrections/constants";
 import {
   formatFileSize,
@@ -13,26 +12,19 @@ import {
   checkMaterialCorrectionDuplicates,
   createMaterialCorrectionReport,
   uploadMaterialCorrectionEvidence,
+  listActiveMaterialCorrectionLevels,
 } from "../services/materialCorrectionsService";
+import { loadPublicCertificatePeople } from "../services/publicCertificatePeopleService";
+import { PREDEFINED_CERTIFICATE_SIGNER_CAMPUSES } from "../utils/certificateSignerCampus";
 
 const INITIAL_FORM = {
-  reporterName: "",
-  reporterPosition: "director",
+  reporterId: "",
   campus: "",
-  contact: "",
-  levelName: "",
-  bookName: "",
+  levelId: "",
   unitNumber: "",
   unitName: "",
-  lessonNumber: "",
   materialType: "student_book",
-  materialName: "",
   pageNumber: "",
-  exerciseNumber: "",
-  questionNumber: "",
-  slideNumber: "",
-  songName: "",
-  timestamp: "",
   errorType: "spelling",
   description: "",
   currentContent: "",
@@ -42,41 +34,53 @@ const INITIAL_FORM = {
   website: "",
 };
 
-const LOCATION_LABELS = {
-  pageNumber: "Página",
-  exerciseNumber: "Ejercicio",
-  questionNumber: "Pregunta",
-  slideNumber: "Número de diapositiva",
-  songName: "Nombre de canción",
-  timestamp: "Minuto o sección",
-};
 const INITIAL_FORM_STARTED_AT = Date.now();
+const REPORTERS_CACHE_KEY = "dp.materialCorrections.publicReporters";
+const LEVELS_CACHE_KEY = "dp.materialCorrections.publicLevels";
 
-function buildPayload(form, formStartedAt, duplicateWarningAcknowledged) {
+function readCachedOptions(key) {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function cacheOptions(key, options) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(options));
+  } catch {
+    // El catálogo en memoria sigue disponible aunque el navegador bloquee storage.
+  }
+}
+
+function buildPayload(
+  form,
+  reporter,
+  level,
+  formStartedAt,
+  duplicateWarningAcknowledged
+) {
   return {
     formStartedAt,
     website: form.website,
     duplicateWarningAcknowledged,
     reportedBy: {
-      name: form.reporterName,
-      position: form.reporterPosition,
+      id: reporter?.id || "",
+      name: reporter?.name || "",
+      campusId: form.campus,
       campus: form.campus,
-      contact: form.contact,
     },
     classification: {
-      levelName: form.levelName,
-      bookName: form.bookName,
+      levelId: level?.id || "",
+      levelName: level?.name || "",
       unitNumber: form.unitNumber,
       unitName: form.unitName,
-      lessonNumber: form.lessonNumber,
       materialType: form.materialType,
-      materialName: form.materialName,
-      pageNumber: form.pageNumber,
-      exerciseNumber: form.exerciseNumber,
-      questionNumber: form.questionNumber,
-      slideNumber: form.slideNumber,
-      songName: form.songName,
-      timestamp: form.timestamp,
+      ...(MATERIAL_TYPES_WITH_PAGE.has(form.materialType)
+        ? { pageNumber: form.pageNumber }
+        : {}),
     },
     error: {
       errorType: form.errorType,
@@ -91,21 +95,16 @@ function buildPayload(form, formStartedAt, duplicateWarningAcknowledged) {
 
 function validateForm(form) {
   const required = [
-    ["reporterName", "Nombre"],
+    ["reporterId", "Nombre del reportante"],
     ["campus", "Plantel"],
-    ["contact", "Correo o teléfono"],
-    ["levelName", "Nivel"],
-    ["bookName", "Libro o programa"],
+    ["levelId", "Nivel"],
+    ["unitNumber", "Unidad"],
     ["description", "Descripción"],
   ];
   const missing = required.filter(([key]) => !String(form[key] || "").trim()).map(([, label]) => label);
-  if (!form.unitNumber && !form.unitName.trim()) missing.push("Unidad");
   if (missing.length) throw new Error(`Completa: ${missing.join(", ")}.`);
   if (form.unitNumber && (!Number.isInteger(Number(form.unitNumber)) || Number(form.unitNumber) < 1)) {
     throw new Error("Unidad debe ser un número entero positivo.");
-  }
-  if (form.lessonNumber && (!Number.isInteger(Number(form.lessonNumber)) || Number(form.lessonNumber) < 1)) {
-    throw new Error("Lección debe ser un número entero positivo.");
   }
   if (form.externalEvidenceUrl && !/^https:\/\//i.test(form.externalEvidenceUrl.trim())) {
     throw new Error("El enlace de evidencia debe usar HTTPS.");
@@ -114,6 +113,10 @@ function validateForm(form) {
 
 export default function PublicMaterialCorrectionReport() {
   const [form, setForm] = useState(INITIAL_FORM);
+  const [reporters, setReporters] = useState(() => readCachedOptions(REPORTERS_CACHE_KEY));
+  const [levels, setLevels] = useState(() => readCachedOptions(LEVELS_CACHE_KEY));
+  const [catalogLoading, setCatalogLoading] = useState({ reporters: true, levels: true });
+  const [catalogErrors, setCatalogErrors] = useState({ reporters: "", levels: "" });
   const [files, setFiles] = useState([]);
   const [fileStates, setFileStates] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -123,18 +126,63 @@ export default function PublicMaterialCorrectionReport() {
   const formStartedAtRef = useRef(INITIAL_FORM_STARTED_AT);
   const uploadControllerRef = useRef(null);
 
-  const visibleLocationFields = MATERIAL_LOCATION_FIELDS[form.materialType] || [];
+  const principalReporters = useMemo(
+    () => reporters.filter((person) => person.active !== false && person.type === "Principal"),
+    [reporters]
+  );
+  const showsPage = MATERIAL_TYPES_WITH_PAGE.has(form.materialType);
+
+  const loadReporters = useCallback(async () => {
+    setCatalogLoading((current) => ({ ...current, reporters: true }));
+    setCatalogErrors((current) => ({ ...current, reporters: "" }));
+    try {
+      const people = await loadPublicCertificatePeople();
+      const principals = people.filter((person) => person.type === "Principal");
+      setReporters(principals);
+      cacheOptions(REPORTERS_CACHE_KEY, principals);
+    } catch {
+      setCatalogErrors((current) => ({
+        ...current,
+        reporters: "No se pudo actualizar el catálogo de reportantes.",
+      }));
+    } finally {
+      setCatalogLoading((current) => ({ ...current, reporters: false }));
+    }
+  }, []);
+
+  const loadLevels = useCallback(async () => {
+    setCatalogLoading((current) => ({ ...current, levels: true }));
+    setCatalogErrors((current) => ({ ...current, levels: "" }));
+    try {
+      const activeLevels = await listActiveMaterialCorrectionLevels();
+      setLevels(activeLevels);
+      cacheOptions(LEVELS_CACHE_KEY, activeLevels);
+    } catch {
+      setCatalogErrors((current) => ({
+        ...current,
+        levels: "No se pudo actualizar el catálogo de niveles.",
+      }));
+    } finally {
+      setCatalogLoading((current) => ({ ...current, levels: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      loadReporters();
+      loadLevels();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadLevels, loadReporters]);
 
   function setField(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
     if ([
-      "levelName",
-      "bookName",
+      "levelId",
       "unitNumber",
       "unitName",
       "materialType",
       "pageNumber",
-      "slideNumber",
       "description",
     ].includes(key)) {
       setDuplicateWarning(0);
@@ -166,8 +214,18 @@ export default function PublicMaterialCorrectionReport() {
     try {
       validateForm(form);
       validateMaterialEvidenceFiles(files);
+      const reporter = principalReporters.find((person) => person.id === form.reporterId);
+      const level = levels.find((option) => option.id === form.levelId);
+      if (!reporter) throw new Error("Selecciona un reportante activo.");
+      if (!level) throw new Error("Selecciona un nivel activo.");
       setBusy(true);
-      const payload = buildPayload(form, formStartedAtRef.current, acknowledgeDuplicate);
+      const payload = buildPayload(
+        form,
+        reporter,
+        level,
+        formStartedAtRef.current,
+        acknowledgeDuplicate
+      );
       if (!acknowledgeDuplicate && !duplicateWarning) {
         const duplicateResult = await checkMaterialCorrectionDuplicates({
           formStartedAt: formStartedAtRef.current,
@@ -326,50 +384,81 @@ export default function PublicMaterialCorrectionReport() {
 
         <fieldset className="material-public-section">
           <legend><span>1</span> Reportante</legend>
-          <div className="material-public-grid">
+          <div className="material-public-grid material-reporter-grid">
             <label>
-              Nombre *
-              <input value={form.reporterName} onChange={(event) => setField("reporterName", event.target.value)} maxLength={160} required />
-            </label>
-            <label>
-              Puesto *
-              <select value={form.reporterPosition} onChange={(event) => setField("reporterPosition", event.target.value)}>
-                {REPORTER_POSITION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              Nombre del reportante *
+              <select
+                value={form.reporterId}
+                onChange={(event) => setField("reporterId", event.target.value)}
+                disabled={catalogLoading.reporters && principalReporters.length === 0}
+                required
+              >
+                <option value="">
+                  {catalogLoading.reporters
+                    ? "Cargando personas…"
+                    : principalReporters.length
+                      ? "Seleccionar persona"
+                      : "Sin personas principales activas"}
+                </option>
+                {principalReporters.map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
+                ))}
               </select>
+              {catalogErrors.reporters && (
+                <span className="material-catalog-status" role="status">
+                  {catalogErrors.reporters}
+                  <button type="button" onClick={loadReporters}>Reintentar</button>
+                </span>
+              )}
             </label>
             <label>
               Plantel *
-              <input value={form.campus} onChange={(event) => setField("campus", event.target.value)} maxLength={160} required />
-            </label>
-            <label>
-              Correo o teléfono *
-              <input value={form.contact} onChange={(event) => setField("contact", event.target.value)} maxLength={254} required />
+              <select value={form.campus} onChange={(event) => setField("campus", event.target.value)} required>
+                <option value="">Seleccionar plantel</option>
+                {PREDEFINED_CERTIFICATE_SIGNER_CAMPUSES.map((campus) => (
+                  <option key={campus} value={campus}>{campus}</option>
+                ))}
+              </select>
             </label>
           </div>
         </fieldset>
 
         <fieldset className="material-public-section">
           <legend><span>2</span> Ubicación del error</legend>
-          <div className="material-public-grid">
+          <div className="material-public-grid material-location-grid">
             <label>
               Nivel *
-              <input value={form.levelName} onChange={(event) => setField("levelName", event.target.value)} maxLength={160} required />
+              <select
+                value={form.levelId}
+                onChange={(event) => setField("levelId", event.target.value)}
+                disabled={catalogLoading.levels && levels.length === 0}
+                required
+              >
+                <option value="">
+                  {catalogLoading.levels
+                    ? "Cargando niveles…"
+                    : levels.length
+                      ? "Seleccionar nivel"
+                      : "Sin niveles activos"}
+                </option>
+                {levels.map((level) => (
+                  <option key={level.id} value={level.id}>{level.name}</option>
+                ))}
+              </select>
+              {catalogErrors.levels && (
+                <span className="material-catalog-status" role="status">
+                  {catalogErrors.levels}
+                  <button type="button" onClick={loadLevels}>Reintentar</button>
+                </span>
+              )}
             </label>
             <label>
-              Libro o programa *
-              <input value={form.bookName} onChange={(event) => setField("bookName", event.target.value)} maxLength={200} required />
+              Unidad *
+              <input type="number" min="1" max="9999" value={form.unitNumber} onChange={(event) => setField("unitNumber", event.target.value)} required />
             </label>
             <label>
-              Unidad número *
-              <input type="number" min="1" max="9999" value={form.unitNumber} onChange={(event) => setField("unitNumber", event.target.value)} />
-            </label>
-            <label>
-              Nombre de unidad
+              Nombre de la unidad
               <input value={form.unitName} onChange={(event) => setField("unitName", event.target.value)} maxLength={200} />
-            </label>
-            <label>
-              Lección
-              <input type="number" min="1" max="9999" value={form.lessonNumber} onChange={(event) => setField("lessonNumber", event.target.value)} />
             </label>
             <label>
               Tipo de material *
@@ -377,46 +466,41 @@ export default function PublicMaterialCorrectionReport() {
                 {MATERIAL_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
-            <label className="material-grid-wide">
-              Nombre del material
-              <input value={form.materialName} onChange={(event) => setField("materialName", event.target.value)} maxLength={240} />
-            </label>
-            {visibleLocationFields.map((key) => (
-              <label key={key}>
-                {LOCATION_LABELS[key]}
-                <input value={form[key]} onChange={(event) => setField(key, event.target.value)} maxLength={240} />
+            {showsPage && (
+              <label>
+                Página
+                <input value={form.pageNumber} onChange={(event) => setField("pageNumber", event.target.value)} maxLength={80} />
               </label>
-            ))}
+            )}
           </div>
         </fieldset>
 
         <fieldset className="material-public-section">
           <legend><span>3</span> Error</legend>
-          <div className="material-public-grid">
-            <label className="material-grid-wide">
+          <div className="material-public-grid material-error-grid">
+            <label>
               Tipo de error *
               <select value={form.errorType} onChange={(event) => setField("errorType", event.target.value)}>
                 {ERROR_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </label>
-            <label className="material-grid-wide">
+            <label className="material-error-description">
               Descripción *
-              <textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows="5" maxLength={5000} required />
+              <textarea value={form.description} onChange={(event) => setField("description", event.target.value)} rows="3" maxLength={5000} required />
             </label>
             <label>
               Texto actual
-              <textarea value={form.currentContent} onChange={(event) => setField("currentContent", event.target.value)} rows="4" maxLength={5000} />
+              <textarea value={form.currentContent} onChange={(event) => setField("currentContent", event.target.value)} rows="3" maxLength={5000} />
             </label>
             <label>
               Corrección sugerida
-              <textarea value={form.suggestedCorrection} onChange={(event) => setField("suggestedCorrection", event.target.value)} rows="4" maxLength={5000} />
+              <textarea value={form.suggestedCorrection} onChange={(event) => setField("suggestedCorrection", event.target.value)} rows="3" maxLength={5000} />
             </label>
           </div>
           <label className="material-blocks-class">
             <input type="checkbox" checked={form.blocksClass} onChange={(event) => setField("blocksClass", event.target.checked)} />
             <span>
               <strong>Este error impide impartir correctamente la clase</strong>
-              <small>Reporte será marcado urgente.</small>
             </span>
           </label>
         </fieldset>

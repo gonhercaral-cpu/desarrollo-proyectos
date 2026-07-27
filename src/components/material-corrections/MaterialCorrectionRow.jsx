@@ -29,8 +29,11 @@ export default function MaterialCorrectionRow({
       <button type="button" className="material-row-main" onClick={() => onOpen(report.id)}>
         <span className="material-row-folio">{report.folio}</span>
         <span className="material-row-location">
-          <strong>{report.levelName} · {report.bookName}</strong>
-          <small>Unidad {report.unitNumber || report.unitName || "—"}{report.lessonNumber ? ` · Lección ${report.lessonNumber}` : ""}</small>
+          <strong>{report.levelName || "Sin nivel"}</strong>
+          <small>
+            Unidad {report.unitNumber || "—"}
+            {report.unitName ? ` · ${report.unitName}` : ""}
+          </small>
         </span>
         <span className="material-row-classification">
           <strong>{getMaterialTypeLabel(report.materialType)}</strong>

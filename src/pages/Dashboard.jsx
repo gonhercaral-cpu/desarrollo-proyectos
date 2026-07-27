@@ -27,6 +27,7 @@ import TeamAgenda from "./TeamAgenda";
 import IdeasIncubator from "./IdeasIncubator";
 import BugReports from "./BugReports";
 import MaterialCorrections from "./MaterialCorrections";
+import MaterialCorrectionIcon from "../components/material-corrections/MaterialCorrectionIcon";
 import SubscriptionManager from "./SubscriptionManager";
 import DriveManager from "./DriveManager";
 import ProtectCameras from "./ProtectCameras";
@@ -86,6 +87,9 @@ function setStoredDashboardValue(key, value) {
 
 
 function DashboardNavIcon({ name }) {
+  if (name === "materialCorrections") {
+    return <MaterialCorrectionIcon />;
+  }
   return (
     <svg className="nav-svg-icon" viewBox="0 0 24 24" aria-hidden="true">
       {renderDashboardNavIconPath(name)}
@@ -260,14 +264,6 @@ function renderDashboardNavIconPath(name) {
         <>
           <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21z" />
           <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5A2.5 2.5 0 0 1 20 21z" />
-        </>
-      );
-    case "materialCorrections":
-      return (
-        <>
-          <path d="M5 4h14v16H5z" />
-          <path d="M8 8h8M8 12h5" />
-          <path d="m13.5 16 1.6 1.6L19 13.7" />
         </>
       );
     case "more":

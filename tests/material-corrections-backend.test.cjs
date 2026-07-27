@@ -52,20 +52,51 @@ describe("backend de correcciones de material", () => {
 
   it("conserva unidad numérica y rechaza clasificación incompleta", () => {
     const classification = sanitizeClassification({
+      levelId: "template-a1",
       levelName: "A1",
-      bookName: "Journey",
       unitNumber: "10",
       materialType: "student_book",
-    }, { requireCore: true });
+      pageNumber: "24",
+    }, { requireCore: true, includeLegacy: false });
     assert.equal(classification.unitNumber, 10);
+    assert.equal(classification.levelId, "template-a1");
+    assert.equal(Object.hasOwn(classification, "bookName"), false);
+    assert.equal(Object.hasOwn(classification, "lessonNumber"), false);
+    assert.equal(Object.hasOwn(classification, "materialName"), false);
+    assert.equal(Object.hasOwn(classification, "exerciseNumber"), false);
+    assert.equal(Object.hasOwn(classification, "questionNumber"), false);
+    const slide = sanitizeClassification({
+      levelName: "A1",
+      unitNumber: 1,
+      materialType: "slide",
+      pageNumber: "99",
+    }, { requireCore: true, includeLegacy: false });
+    assert.equal(Object.hasOwn(slide, "pageNumber"), false);
     assert.throws(
       () => sanitizeClassification({
         levelName: "A1",
-        bookName: "Journey",
         materialType: "student_book",
-      }, { requireCore: true }),
+      }, { requireCore: true, includeLegacy: false }),
       /Unidad es obligatoria/
     );
+  });
+
+  it("conserva campos heredados solo al leer clasificación histórica", () => {
+    const historical = sanitizeClassification({
+      levelName: "A1",
+      bookName: "Journey",
+      unitNumber: 2,
+      lessonNumber: 3,
+      materialType: "student_book",
+      materialName: "Student Book",
+      exerciseNumber: "4",
+      questionNumber: "5",
+    });
+    assert.equal(historical.bookName, "Journey");
+    assert.equal(historical.lessonNumber, 3);
+    assert.equal(historical.materialName, "Student Book");
+    assert.equal(historical.exerciseNumber, "4");
+    assert.equal(historical.questionNumber, "5");
   });
 
   it("valida extensión, MIME, tamaño y firma binaria", () => {

@@ -1,5 +1,10 @@
 const crypto = require("node:crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const {
+  isActiveCertificateSigner,
+  normalizeCertificateSignerType,
+} = require("./certificatePeople");
+const { CAMPUS_OPTIONS } = require("./publicPrintRequest");
 
 const REGION = "us-central1";
 const TIME_ZONE = "America/Tijuana";
@@ -20,6 +25,14 @@ const MATERIAL_TYPES = new Set([
   "answers",
   "other",
 ]);
+const MATERIAL_TYPES_WITH_PAGE = new Set([
+  "student_book",
+  "teacher_book",
+  "activity_sheet",
+  "exam",
+  "answers",
+  "other",
+]);
 
 const ERROR_TYPES = new Set([
   "spelling",
@@ -34,13 +47,6 @@ const ERROR_TYPES = new Set([
   "missing_content",
   "duplicate_content",
   "broken_link",
-  "other",
-]);
-
-const REPORTER_POSITIONS = new Set([
-  "director",
-  "subdirector",
-  "academic_coordinator",
   "other",
 ]);
 
@@ -355,7 +361,10 @@ function numberOrNull(value, { min = 0, max = 100000, integer = true } = {}) {
   return parsed;
 }
 
-function sanitizeClassification(source = {}, { requireCore = false } = {}) {
+function sanitizeClassification(
+  source = {},
+  { requireCore = false, includeLegacy = true } = {}
+) {
   const materialType = sanitizeText(source.materialType, 60);
   if (materialType && !MATERIAL_TYPES.has(materialType)) {
     throw new HttpsError("invalid-argument", "Tipo de material no válido.");
@@ -367,23 +376,26 @@ function sanitizeClassification(source = {}, { requireCore = false } = {}) {
       required: requireCore,
       field: "Nivel",
     }),
-    bookId: sanitizeText(source.bookId, 120),
-    bookName: sanitizeText(source.bookName, 200, {
-      required: requireCore,
-      field: "Libro o programa",
-    }),
     unitNumber,
     unitName: sanitizeText(source.unitName, 200),
-    lessonNumber: numberOrNull(source.lessonNumber, { min: 1, max: 9999 }),
     materialType,
-    materialName: sanitizeText(source.materialName, 240),
-    pageNumber: sanitizeText(source.pageNumber, 80),
-    exerciseNumber: sanitizeText(source.exerciseNumber, 80),
-    questionNumber: sanitizeText(source.questionNumber, 80),
-    slideNumber: sanitizeText(source.slideNumber, 80),
-    songName: sanitizeText(source.songName, 240),
-    timestamp: sanitizeText(source.timestamp, 120),
   };
+  if (includeLegacy || MATERIAL_TYPES_WITH_PAGE.has(materialType)) {
+    classification.pageNumber = sanitizeText(source.pageNumber, 80);
+  }
+  if (includeLegacy) {
+    Object.assign(classification, {
+      bookId: sanitizeText(source.bookId, 120),
+      bookName: sanitizeText(source.bookName, 200),
+      lessonNumber: numberOrNull(source.lessonNumber, { min: 1, max: 9999 }),
+      materialName: sanitizeText(source.materialName, 240),
+      exerciseNumber: sanitizeText(source.exerciseNumber, 80),
+      questionNumber: sanitizeText(source.questionNumber, 80),
+      slideNumber: sanitizeText(source.slideNumber, 80),
+      songName: sanitizeText(source.songName, 240),
+      timestamp: sanitizeText(source.timestamp, 120),
+    });
+  }
   if (requireCore && !unitNumber && !classification.unitName) {
     throw new HttpsError("invalid-argument", "Unidad es obligatoria.");
   }
@@ -391,6 +403,61 @@ function sanitizeClassification(source = {}, { requireCore = false } = {}) {
     throw new HttpsError("invalid-argument", "Tipo de material es obligatorio.");
   }
   return classification;
+}
+
+function getMaterialLevelName(template = {}) {
+  const level = sanitizeText(template.level, 160);
+  const programName = sanitizeText(template.programName, 160);
+  const compactLevel = normalizeText(level).replace(/\s+/g, "");
+  const compactProgram = normalizeText(programName).replace(/\s+/g, "");
+  if (!programName || compactLevel.includes(compactProgram)) {
+    return level;
+  }
+  return `${level} ${programName}`.trim();
+}
+
+async function resolveActiveMaterialLevel(db, source = {}) {
+  const levelId = sanitizeText(source.levelId, 120, {
+    required: true,
+    field: "Nivel",
+  });
+  if (levelId.includes("/")) {
+    throw new HttpsError("invalid-argument", "Nivel no válido.");
+  }
+  const snapshot = await db.collection("certificateTemplates").doc(levelId).get();
+  const data = snapshot.exists ? snapshot.data() : null;
+  const levelName = data?.active === true ? getMaterialLevelName(data) : "";
+  if (!levelName) {
+    throw new HttpsError("invalid-argument", "Nivel no existe o no está activo.");
+  }
+  return { levelId: snapshot.id, levelName };
+}
+
+async function resolveActivePrincipalReporter(db, source = {}) {
+  const reporterId = sanitizeText(source.id, 120, {
+    required: true,
+    field: "Nombre del reportante",
+  });
+  if (reporterId.includes("/")) {
+    throw new HttpsError("invalid-argument", "Reportante no válido.");
+  }
+  const snapshot = await db.collection("certificateSigners").doc(reporterId).get();
+  const data = snapshot.exists ? snapshot.data() : null;
+  const name = sanitizeText(
+    data?.name || data?.displayName || data?.fullName || data?.nombre,
+    160
+  );
+  if (
+    !name
+    || !isActiveCertificateSigner(data)
+    || normalizeCertificateSignerType(data) !== "Principal"
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Reportante no existe, no está activo o no es principal."
+    );
+  }
+  return { id: snapshot.id, name };
 }
 
 function defaultDistribution() {
@@ -439,15 +506,10 @@ function buildSearchText(report) {
   return normalizeText([
     report.folio,
     report.levelName,
-    report.bookName,
     report.unitNumber,
     report.unitName,
-    report.lessonNumber,
     report.materialType,
-    report.materialName,
     report.pageNumber,
-    report.slideNumber,
-    report.exerciseNumber,
     report.errorType,
     report.description,
     report.reportedBy?.name,
@@ -516,8 +578,8 @@ function assertHoneypot(data = {}) {
 async function findPossibleDuplicates(db, classification, description, excludeReportId = "") {
   let query = db.collection(REPORTS_COLLECTION)
     .where("levelName", "==", classification.levelName)
-    .where("bookName", "==", classification.bookName)
     .where("unitNumber", "==", classification.unitNumber)
+    .where("materialType", "==", classification.materialType)
     .limit(40);
   const snapshot = await query.get();
   return snapshot.docs
@@ -525,11 +587,8 @@ async function findPossibleDuplicates(db, classification, description, excludeRe
     .map((document) => ({ id: document.id, ...document.data() }))
     .filter((report) => !report.deleted && report.status !== "dismissed")
     .filter((report) => {
-      if (report.materialType !== classification.materialType) return false;
-      const sameLocation = (
-        cleanString(report.pageNumber) === cleanString(classification.pageNumber)
-        && cleanString(report.slideNumber) === cleanString(classification.slideNumber)
-      );
+      const sameLocation = Boolean(cleanString(classification.pageNumber))
+        && cleanString(report.pageNumber) === cleanString(classification.pageNumber);
       return sameLocation || descriptionSimilarity(report.description, description) >= 0.45;
     })
     .slice(0, 5);
@@ -760,24 +819,34 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
     assertHoneypot(data);
     await enforceRateLimit(db, request, {
       action: "create",
-      identity: sanitizeText(data.reportedBy?.contact, 254),
+      identity: sanitizeText(data.reportedBy?.id, 120),
       limit: 5,
       windowMs: 15 * 60 * 1000,
     });
 
-    const reportedBy = {
-      name: sanitizeText(data.reportedBy?.name, 160, { required: true, field: "Nombre" }),
-      position: sanitizeText(data.reportedBy?.position, 60),
-      campus: sanitizeText(data.reportedBy?.campus, 160, { required: true, field: "Plantel" }),
-      contact: sanitizeText(data.reportedBy?.contact, 254, {
-        required: true,
-        field: "Correo o teléfono",
-      }),
-    };
-    if (!REPORTER_POSITIONS.has(reportedBy.position)) {
-      throw new HttpsError("invalid-argument", "Puesto no válido.");
+    const [principalReporter, activeLevel] = await Promise.all([
+      resolveActivePrincipalReporter(db, data.reportedBy),
+      resolveActiveMaterialLevel(db, data.classification),
+    ]);
+    const campus = sanitizeText(data.reportedBy?.campus, 160, {
+      required: true,
+      field: "Plantel",
+    });
+    if (!CAMPUS_OPTIONS.includes(campus)) {
+      throw new HttpsError("invalid-argument", "Plantel no válido.");
     }
-    const classification = sanitizeClassification(data.classification, { requireCore: true });
+    const reportedBy = {
+      ...principalReporter,
+      campusId: campus,
+      campus,
+    };
+    const classification = {
+      ...sanitizeClassification(data.classification, {
+        requireCore: true,
+        includeLegacy: false,
+      }),
+      ...activeLevel,
+    };
     const errorType = sanitizeText(data.error?.errorType, 80);
     if (!ERROR_TYPES.has(errorType)) {
       throw new HttpsError("invalid-argument", "Tipo de error no válido.");
@@ -856,7 +925,7 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
         report: createdReport,
         type: "MATERIAL_CORRECTION_URGENT",
         title: `Reporte urgente ${folio}`,
-        message: `${classification.bookName}, unidad ${classification.unitNumber || classification.unitName}.`,
+        message: `${classification.levelName}, unidad ${classification.unitNumber || classification.unitName}.`,
       });
     }
     return {
@@ -876,7 +945,14 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       limit: 20,
       windowMs: 15 * 60 * 1000,
     });
-    const classification = sanitizeClassification(data.classification, { requireCore: true });
+    const activeLevel = await resolveActiveMaterialLevel(db, data.classification);
+    const classification = {
+      ...sanitizeClassification(data.classification, {
+        requireCore: true,
+        includeLegacy: false,
+      }),
+      ...activeLevel,
+    };
     const description = sanitizeMultiline(data.description, 5000, {
       required: true,
       field: "Descripción",
@@ -1265,7 +1341,14 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
         ...(initial.confirmedClassification || initial.originalClassification || {}),
         ...changes.confirmedClassification,
       };
-      const classification = sanitizeClassification(merged, { requireCore: true });
+      const activeLevel = await resolveActiveMaterialLevel(db, merged);
+      const classification = {
+        ...sanitizeClassification(merged, {
+          requireCore: true,
+          includeLegacy: false,
+        }),
+        ...activeLevel,
+      };
       patch.confirmedClassification = classification;
       Object.assign(patch, classification);
     }

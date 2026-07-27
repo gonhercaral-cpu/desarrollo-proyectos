@@ -379,6 +379,7 @@ function validatePublicCertificateTemplate(templateData, requestData) {
 }
 
 module.exports = {
+  CAMPUS_OPTIONS,
   MAX_PUBLIC_STUDENTS,
   PRINT_REQUEST_CALLABLE_CORS,
   createLegacyPublicRequestId,

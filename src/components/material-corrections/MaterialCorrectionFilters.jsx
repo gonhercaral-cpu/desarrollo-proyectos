@@ -9,9 +9,7 @@ const FILTER_DEFINITIONS = [
   ["status", "Estado", MATERIAL_CORRECTION_STATUS_OPTIONS],
   ["priority", "Prioridad", MATERIAL_CORRECTION_PRIORITY_OPTIONS],
   ["level", "Nivel"],
-  ["book", "Libro"],
   ["unit", "Unidad"],
-  ["lesson", "Lección"],
   ["materialType", "Tipo de material", MATERIAL_TYPE_OPTIONS],
   ["errorType", "Tipo de error", ERROR_TYPE_OPTIONS],
   ["reporter", "Reportante"],
@@ -28,9 +26,7 @@ function uniqueOptions(reports, key, assignees) {
   }
   const getter = {
     level: (report) => report.levelName,
-    book: (report) => report.bookName,
     unit: (report) => report.unitNumber,
-    lesson: (report) => report.lessonNumber,
     reporter: (report) => report.reportedBy?.name,
     campus: (report) => report.reportedBy?.campus,
   }[key];

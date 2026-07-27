@@ -194,9 +194,17 @@ export default function PublicMaterialCorrectionTracking() {
               <h2>Material reportado</h2>
               <dl className="material-data-list">
                 <div><dt>Nivel</dt><dd>{report.material.levelName}</dd></div>
-                <div><dt>Libro o programa</dt><dd>{report.material.bookName}</dd></div>
-                <div><dt>Unidad</dt><dd>{report.material.unitNumber || report.material.unitName || "Sin dato"}</dd></div>
-                <div><dt>Material</dt><dd>{getMaterialTypeLabel(report.material.materialType)}{report.material.materialName ? ` · ${report.material.materialName}` : ""}</dd></div>
+                {report.material.bookName && (
+                  <div><dt>Libro histórico</dt><dd>{report.material.bookName}</dd></div>
+                )}
+                <div>
+                  <dt>Unidad</dt>
+                  <dd>
+                    {report.material.unitNumber || "Sin dato"}
+                    {report.material.unitName ? ` · ${report.material.unitName}` : ""}
+                  </dd>
+                </div>
+                <div><dt>Material</dt><dd>{getMaterialTypeLabel(report.material.materialType)}</dd></div>
               </dl>
             </article>
             <article>

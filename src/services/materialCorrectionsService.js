@@ -1,12 +1,15 @@
 import {
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
+  where,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
+import { buildActiveMaterialCorrectionLevels } from "../utils/materialCorrectionCatalogs";
 
 const callable = (name, timeout = 70000) => httpsCallable(functions, name, { timeout });
 
@@ -234,4 +237,15 @@ export async function listMaterialCorrectionAssignees() {
     "No se pudieron cargar responsables."
   );
   return data.assignees || [];
+}
+
+export async function listActiveMaterialCorrectionLevels() {
+  const snapshot = await getDocs(query(
+    collection(db, "certificateTemplates"),
+    where("active", "==", true)
+  ));
+  return buildActiveMaterialCorrectionLevels(snapshot.docs.map((document) => ({
+    id: document.id,
+    ...document.data(),
+  })));
 }

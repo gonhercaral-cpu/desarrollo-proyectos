@@ -1,12 +1,5 @@
 export const MATERIAL_CORRECTION_TIME_ZONE = "America/Tijuana";
 
-export const REPORTER_POSITION_OPTIONS = [
-  { value: "director", label: "Director" },
-  { value: "subdirector", label: "Subdirector" },
-  { value: "academic_coordinator", label: "Coordinador académico" },
-  { value: "other", label: "Otro" },
-];
-
 export const MATERIAL_TYPE_OPTIONS = [
   { value: "student_book", label: "Libro del alumno" },
   { value: "teacher_book", label: "Libro del maestro" },
@@ -84,25 +77,20 @@ export const MATERIAL_CORRECTION_SORT_OPTIONS = [
 export const MATERIAL_CORRECTION_GROUP_OPTIONS = [
   { value: "none", label: "Sin agrupar" },
   { value: "level", label: "Nivel" },
-  { value: "book", label: "Libro" },
   { value: "unit", label: "Unidad" },
   { value: "material", label: "Material" },
   { value: "status", label: "Estado" },
   { value: "assigned", label: "Responsable" },
 ];
 
-export const MATERIAL_LOCATION_FIELDS = {
-  student_book: ["pageNumber", "exerciseNumber", "questionNumber"],
-  teacher_book: ["pageNumber", "exerciseNumber", "questionNumber"],
-  slide: ["slideNumber"],
-  song: ["songName", "timestamp"],
-  audio: ["timestamp"],
-  video: ["timestamp"],
-  activity_sheet: ["pageNumber", "exerciseNumber", "questionNumber"],
-  exam: ["pageNumber", "exerciseNumber", "questionNumber"],
-  answers: ["pageNumber", "exerciseNumber", "questionNumber"],
-  other: ["pageNumber", "timestamp"],
-};
+export const MATERIAL_TYPES_WITH_PAGE = new Set([
+  "student_book",
+  "teacher_book",
+  "activity_sheet",
+  "exam",
+  "answers",
+  "other",
+]);
 
 export const EVIDENCE_FILE_POLICIES = {
   jpg: { types: ["image/jpeg"], maxBytes: 10 * 1024 * 1024 },

@@ -224,8 +224,8 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "levelName", "order": "ASCENDING" },
-        { "fieldPath": "bookName", "order": "ASCENDING" },
         { "fieldPath": "unitNumber", "order": "ASCENDING" },
+        { "fieldPath": "materialType", "order": "ASCENDING" },
         { "fieldPath": "__name__", "order": "ASCENDING" }
       ],
       "density": "SPARSE_ALL"
@@ -235,17 +235,6 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "levelName", "order": "ASCENDING" },
-        { "fieldPath": "unitNumber", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" },
-        { "fieldPath": "__name__", "order": "DESCENDING" }
-      ],
-      "density": "SPARSE_ALL"
-    },
-    {
-      "collectionGroup": "materialCorrectionReports",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "bookName", "order": "ASCENDING" },
         { "fieldPath": "unitNumber", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" },
         { "fieldPath": "__name__", "order": "DESCENDING" }

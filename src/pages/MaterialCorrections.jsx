@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import MaterialCorrectionDetail from "../components/material-corrections/MaterialCorrectionDetail";
 import MaterialCorrectionFilters from "../components/material-corrections/MaterialCorrectionFilters";
 import MaterialCorrectionRow from "../components/material-corrections/MaterialCorrectionRow";
+import MaterialCorrectionIcon from "../components/material-corrections/MaterialCorrectionIcon";
 import {
   MATERIAL_CORRECTION_GROUP_OPTIONS,
   MATERIAL_CORRECTION_SORT_OPTIONS,
@@ -15,6 +16,7 @@ import {
 } from "../material-corrections/utils";
 import {
   listMaterialCorrectionAssignees,
+  listActiveMaterialCorrectionLevels,
   reorderMaterialCorrectionReports,
   subscribeToMaterialCorrectionReports,
 } from "../services/materialCorrectionsService";
@@ -23,9 +25,7 @@ const EMPTY_FILTERS = {
   status: "",
   priority: "",
   level: "",
-  book: "",
   unit: "",
-  lesson: "",
   materialType: "",
   errorType: "",
   reporter: "",
@@ -39,12 +39,12 @@ const EMPTY_FILTERS = {
 };
 
 const STAT_CARDS = [
-  ["new", "Nuevos"],
-  ["reviewing", "En revisión"],
-  ["correcting", "En corrección"],
-  ["publishing", "Pendientes de publicación"],
-  ["urgent", "Urgentes"],
-  ["completedWeek", "Completados esta semana"],
+  { key: "new", label: "Nuevos", hint: "Sin revisar", icon: "new", tone: "total" },
+  { key: "reviewing", label: "En revisión", hint: "Validación activa", icon: "review", tone: "pending" },
+  { key: "correcting", label: "En corrección", hint: "Trabajo en curso", icon: "correction", tone: "process" },
+  { key: "publishing", label: "Pendientes de publicación", hint: "Por distribuir", icon: "publish", tone: "publish" },
+  { key: "urgent", label: "Urgentes", hint: "Atención prioritaria", icon: "urgent", tone: "urgent" },
+  { key: "completedWeek", label: "Completados esta semana", hint: "Últimos 7 días", icon: "completed", tone: "delivered" },
 ];
 
 function updateReportQuery(reportId) {
@@ -58,6 +58,7 @@ export default function MaterialCorrections() {
   const { isAdmin } = useAuth();
   const [reports, setReports] = useState([]);
   const [assignees, setAssignees] = useState([]);
+  const [levels, setLevels] = useState([]);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [sortMode, setSortMode] = useState("recent");
@@ -89,6 +90,9 @@ export default function MaterialCorrections() {
     listMaterialCorrectionAssignees()
       .then(setAssignees)
       .catch((assigneeError) => setError(assigneeError.message));
+    listActiveMaterialCorrectionLevels()
+      .then(setLevels)
+      .catch((levelError) => setError(levelError.message));
     return unsubscribe;
   }, []);
 
@@ -154,6 +158,7 @@ export default function MaterialCorrections() {
       <MaterialCorrectionDetail
         reportId={selectedReportId}
         assignees={assignees}
+        levels={levels}
         isAdmin={isAdmin}
         onBack={closeReport}
         onDeleted={closeReport}
@@ -162,30 +167,54 @@ export default function MaterialCorrections() {
   }
 
   return (
-    <section className="material-corrections-page">
-      <header className="material-corrections-header">
-        <div>
-          <span>Desarrollo de Material</span>
-          <h2>Correcciones de material</h2>
-          <p>Recepción, corrección y publicación de errores académicos.</p>
+    <section className="material-corrections-page purchase-requests-page purchase-redesign visual-page">
+      <header className="module-topbar purchase-module-topbar material-corrections-module-topbar">
+        <div className="module-topbar-main">
+          <div className="module-topbar-module-icon purchase-topbar-module-icon">
+            <MaterialCorrectionIcon className="purchase-svg-icon" />
+          </div>
+          <div className="module-topbar-copy">
+            <p className="module-topbar-kicker">DESARROLLO DE MATERIAL</p>
+            <h1>Correcciones de material</h1>
+            <p>Recepción, corrección y publicación de errores académicos.</p>
+          </div>
         </div>
-        <a href="/reportar-error-material" target="_blank" rel="noreferrer" className="material-public-form-link">
-          Abrir formulario público
-        </a>
+        <div className="module-topbar-actions purchase-topbar-actions compact">
+          <a
+            href="/reportar-error-material"
+            target="_blank"
+            rel="noreferrer"
+            className="module-topbar-button primary purchase-topbar-button material-public-form-link"
+          >
+            <MaterialCorrectionIcon name="new" className="purchase-svg-icon" />
+            Abrir formulario público
+          </a>
+        </div>
       </header>
 
       {error && <div className="form-error" role="alert">{error}</div>}
 
-      <div className="material-stats-grid">
-        {STAT_CARDS.map(([key, label]) => (
-          <article key={key} className={key === "urgent" ? "urgent" : ""}>
-            <strong>{stats[key]}</strong>
-            <span>{label}</span>
+      <div className="material-stats-grid purchase-module-metrics-grid">
+        {STAT_CARDS.map((card) => (
+          <article
+            key={card.key}
+            className={`material-stat-card purchase-module-metric-card metric-${card.tone}`}
+          >
+            <MaterialCorrectionIcon name={card.icon} className="material-stat-icon" />
+            <div>
+              <span>{card.label}</span>
+              <strong>{stats[card.key]}</strong>
+              <p>{card.hint}</p>
+            </div>
           </article>
         ))}
-        <article>
-          <strong>{stats.averageDays ? `${stats.averageDays} d` : "—"}</strong>
-          <span>Tiempo promedio de resolución</span>
+        <article className="material-stat-card purchase-module-metric-card metric-time">
+          <MaterialCorrectionIcon name="time" className="material-stat-icon" />
+          <div>
+            <span>Tiempo promedio</span>
+            <strong>{stats.averageDays ? `${stats.averageDays} d` : "—"}</strong>
+            <p>Resolución total</p>
+          </div>
         </article>
       </div>
 

@@ -31,6 +31,7 @@ function resolveCertificateSignerCampus(campus, customCampus = "") {
 }
 
 export {
+  PREDEFINED_CERTIFICATE_SIGNER_CAMPUSES,
   CERTIFICATE_SIGNER_CAMPUS_OPTIONS,
   getCertificateSignerCampusFormState,
   resolveCertificateSignerCampus,

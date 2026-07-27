@@ -115,10 +115,8 @@ export function getReportSearchText(report) {
   return normalizeSearchText([
     report.folio,
     report.description,
-    report.materialName,
-    report.bookName,
+    getMaterialTypeLabel(report.materialType),
     report.pageNumber,
-    report.slideNumber,
     report.unitNumber,
     report.unitNumber && `unidad ${report.unitNumber}`,
     report.unitName,
@@ -149,7 +147,7 @@ export function sortMaterialCorrectionReports(reports, mode) {
     oldest: (a, b) => timestamp(a) - timestamp(b),
     priority: (a, b) => priorityRank(b) - priorityRank(a) || timestamp(b) - timestamp(a),
     level: (a, b) => compareText(a.levelName, b.levelName) || Number(a.unitNumber || 0) - Number(b.unitNumber || 0),
-    unit: (a, b) => Number(a.unitNumber || 0) - Number(b.unitNumber || 0) || compareText(a.bookName, b.bookName),
+    unit: (a, b) => Number(a.unitNumber || 0) - Number(b.unitNumber || 0) || compareText(a.unitName, b.unitName),
     status: (a, b) => statusRank(a) - statusRank(b) || timestamp(b) - timestamp(a),
     assigned: (a, b) => compareText(a.assignedTo?.name, b.assignedTo?.name) || timestamp(b) - timestamp(a),
     manual: (a, b) => Number(a.manualOrder ?? Number.MAX_SAFE_INTEGER) - Number(b.manualOrder ?? Number.MAX_SAFE_INTEGER),
@@ -161,7 +159,6 @@ export function groupMaterialCorrectionReports(reports, mode) {
   if (!mode || mode === "none") return [{ key: "all", label: "", reports }];
   const getValue = {
     level: (report) => report.levelName || "Sin nivel",
-    book: (report) => report.bookName || "Sin libro",
     unit: (report) => `Unidad ${report.unitNumber || report.unitName || "sin dato"}`,
     material: (report) => getMaterialTypeLabel(report.materialType),
     status: (report) => getStatusOption(report.status).label,
@@ -190,9 +187,7 @@ export function applyMaterialCorrectionFilters(reports, filters, search) {
       ["status", report.status],
       ["priority", report.priority],
       ["level", report.levelName],
-      ["book", report.bookName],
       ["unit", String(report.unitNumber || "")],
-      ["lesson", String(report.lessonNumber || "")],
       ["materialType", report.materialType],
       ["errorType", report.errorType],
       ["reporter", report.reportedBy?.name],
