@@ -11,6 +11,12 @@ import {
 import {
   buildActiveMaterialCorrectionLevels,
 } from "../src/utils/materialCorrectionCatalogs.js";
+import {
+  buildMaterialCorrectionDetailUpdate,
+  createMaterialCorrectionClassificationDraft,
+  createMaterialCorrectionManagementDraft,
+  materialCorrectionDraftsMatch,
+} from "../src/material-corrections/detailState.js";
 
 const reports = [
   {
@@ -128,5 +134,73 @@ describe("bandeja de correcciones de material", () => {
       { id: "d1", name: "D1 Discover" },
       { id: "smile2", name: "Smile 2" },
     ]);
+  });
+
+  it("detecta cambios pendientes sin alterar reportes históricos", () => {
+    const historical = {
+      priority: "normal",
+      status: "under_review",
+      assignedTo: { uid: "material", name: "María" },
+      originalClassification: {
+        levelId: "a1",
+        levelName: "A1 Journey",
+        unitNumber: 3,
+        unitName: "Welcome",
+        materialType: "student_book",
+        pageNumber: "14",
+        bookName: "Dato histórico",
+        lessonNumber: "2",
+      },
+    };
+    const management = createMaterialCorrectionManagementDraft(historical);
+    const classification = createMaterialCorrectionClassificationDraft(historical);
+
+    assert.equal(materialCorrectionDraftsMatch(
+      management,
+      createMaterialCorrectionManagementDraft(historical)
+    ), true);
+    assert.equal(materialCorrectionDraftsMatch(
+      { ...management, priority: "urgent" },
+      management
+    ), false);
+    assert.deepEqual(classification, {
+      levelId: "a1",
+      levelName: "A1 Journey",
+      unitNumber: 3,
+      unitName: "Welcome",
+      materialType: "student_book",
+      pageNumber: "14",
+    });
+  });
+
+  it("unifica gestión y reclasificación en un guardado", () => {
+    const form = {
+      priority: "high",
+      status: "confirmed",
+      assignedUid: "material",
+      reviewResult: "Error confirmado",
+      appliedSolution: "Texto corregido",
+      correctedFileLink: "https://drive.google.com/file",
+      duplicateFolio: "",
+      distribution: { sourceFile: { required: true, status: "completed" } },
+    };
+    const classification = {
+      levelId: "d1",
+      levelName: "D1 Discover",
+      unitNumber: 4,
+      unitName: "Science",
+      materialType: "slide",
+      pageNumber: "",
+    };
+    const update = buildMaterialCorrectionDetailUpdate({
+      form,
+      classification,
+      assignees: [{ uid: "material", name: "María" }],
+      includeClassification: true,
+    });
+
+    assert.equal(update.action, "reclassify");
+    assert.deepEqual(update.changes.assignedTo, { uid: "material", name: "María" });
+    assert.deepEqual(update.changes.confirmedClassification, classification);
   });
 });

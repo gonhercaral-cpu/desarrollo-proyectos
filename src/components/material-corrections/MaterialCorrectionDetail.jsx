@@ -1,20 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  DISTRIBUTION_DESTINATIONS,
-  DISTRIBUTION_STATUS_OPTIONS,
   MATERIAL_CORRECTION_PRIORITY_OPTIONS,
   MATERIAL_CORRECTION_STATUS_OPTIONS,
   MATERIAL_TYPES_WITH_PAGE,
   MATERIAL_TYPE_OPTIONS,
 } from "../../material-corrections/constants";
 import {
-  formatFileSize,
-  formatMaterialCorrectionDate,
-  getErrorTypeLabel,
-  getMaterialTypeLabel,
-  getOptionLabel,
-  validateInternalCorrectedFile,
-} from "../../material-corrections/utils";
+  buildMaterialCorrectionDetailUpdate,
+  createMaterialCorrectionClassificationDraft,
+  createMaterialCorrectionManagementDraft,
+  materialCorrectionDraftsMatch,
+} from "../../material-corrections/detailState";
+import { formatMaterialCorrectionDate, getMaterialTypeLabel } from "../../material-corrections/utils";
 import {
   addMaterialCorrectionComment,
   deleteMaterialCorrectionEvidence,
@@ -23,96 +20,20 @@ import {
   updateMaterialCorrectionReport,
   uploadMaterialCorrectionEvidence,
 } from "../../services/materialCorrectionsService";
-
-function managementForm(report) {
-  return {
-    priority: report?.priority || "normal",
-    status: report?.status || "reported",
-    assignedUid: report?.assignedTo?.uid || "",
-    reviewResult: report?.reviewResult || "",
-    appliedSolution: report?.appliedSolution || "",
-    correctedFileLink: report?.correctedFileLink || "",
-    duplicateFolio: report?.duplicateFolio || "",
-    distribution: report?.distribution || {},
-  };
-}
-
-function classificationForm(report) {
-  const classification = report?.confirmedClassification || report?.originalClassification || {};
-  return {
-    levelId: classification.levelId || report?.levelId || "",
-    levelName: classification.levelName || report?.levelName || "",
-    unitNumber: classification.unitNumber || report?.unitNumber || "",
-    unitName: classification.unitName || report?.unitName || "",
-    materialType: classification.materialType || report?.materialType || "other",
-    pageNumber: classification.pageNumber || report?.pageNumber || "",
-  };
-}
-
-function historyValue(value) {
-  if (value === null || value === undefined || value === "") return "Sin valor";
-  if (typeof value === "object") {
-    if (typeof value.toDate === "function") return formatMaterialCorrectionDate(value);
-    if (value.name) return value.name;
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
-
-function OriginalData({ report }) {
-  const original = report.originalClassification || {};
-  return (
-    <section className="material-detail-section">
-      <header><h3>Información original</h3><span>Solo lectura</span></header>
-      <div className="material-original-grid">
-        <dl className="material-data-list">
-          <div><dt>Reportante</dt><dd>{report.reportedBy?.name}</dd></div>
-          {report.reportedBy?.position && (
-            <div><dt>Puesto histórico</dt><dd>{report.reportedBy.position}</dd></div>
-          )}
-          <div><dt>Plantel</dt><dd>{report.reportedBy?.campus}</dd></div>
-          {report.reportedBy?.contact && (
-            <div><dt>Contacto histórico</dt><dd>{report.reportedBy.contact}</dd></div>
-          )}
-          <div><dt>Fecha</dt><dd>{formatMaterialCorrectionDate(report.createdAt)}</dd></div>
-          <div><dt>Folio</dt><dd>{report.folio}</dd></div>
-        </dl>
-        <dl className="material-data-list">
-          <div><dt>Nivel</dt><dd>{original.levelName || "—"}</dd></div>
-          {original.bookName && <div><dt>Libro histórico</dt><dd>{original.bookName}</dd></div>}
-          <div>
-            <dt>Unidad</dt>
-            <dd>
-              {original.unitNumber || "—"}
-              {original.unitName ? ` · ${original.unitName}` : ""}
-            </dd>
-          </div>
-          {original.lessonNumber && <div><dt>Lección histórica</dt><dd>{original.lessonNumber}</dd></div>}
-          <div><dt>Material</dt><dd>{getMaterialTypeLabel(original.materialType)}</dd></div>
-          {original.materialName && <div><dt>Nombre histórico</dt><dd>{original.materialName}</dd></div>}
-          <div><dt>Ubicación</dt><dd>{[
-            original.pageNumber && `Pág. ${original.pageNumber}`,
-            original.slideNumber && `Diap. ${original.slideNumber} (histórico)`,
-            original.exerciseNumber && `Ej. ${original.exerciseNumber} (histórico)`,
-            original.questionNumber && `Preg. ${original.questionNumber} (histórico)`,
-            original.timestamp && `${original.timestamp} (histórico)`,
-          ].filter(Boolean).join(" · ") || "—"}</dd></div>
-        </dl>
-      </div>
-      <div className="material-original-text">
-        <article><h4>Tipo de error</h4><p>{getErrorTypeLabel(report.errorType)}</p></article>
-        <article><h4>Descripción</h4><p>{report.description}</p></article>
-        <article><h4>Texto actual</h4><p>{report.currentContent || "Sin texto registrado."}</p></article>
-        <article><h4>Corrección sugerida</h4><p>{report.suggestedCorrection || "Sin sugerencia."}</p></article>
-      </div>
-      {report.externalEvidenceUrl && (
-        <a href={report.externalEvidenceUrl} target="_blank" rel="noreferrer" className="material-external-evidence">
-          Abrir evidencia externa
-        </a>
-      )}
-    </section>
-  );
-}
+import { validateInternalCorrectedFile } from "../../material-corrections/utils";
+import {
+  AdminActionsSection,
+  CommentsSection,
+  DistributionSection,
+  ErrorReportedSection,
+  EvidenceSection,
+  HistorySection,
+  MaterialCorrectionConfirmDialog,
+  MaterialCorrectionDetailHeader,
+  MaterialCorrectionDetailNavigation,
+  ReporterSection,
+} from "./MaterialCorrectionDetailSections";
+import MaterialCorrectionIcon from "./MaterialCorrectionIcon";
 
 export default function MaterialCorrectionDetail({
   reportId,
@@ -126,27 +47,55 @@ export default function MaterialCorrectionDetail({
   const [comments, setComments] = useState([]);
   const [history, setHistory] = useState([]);
   const [evidences, setEvidences] = useState([]);
-  const [form, setForm] = useState(() => managementForm(null));
-  const [classification, setClassification] = useState(() => classificationForm(null));
+  const [form, setForm] = useState(() => createMaterialCorrectionManagementDraft(null));
+  const [baselineForm, setBaselineForm] = useState(() => createMaterialCorrectionManagementDraft(null));
+  const [classification, setClassification] = useState(
+    () => createMaterialCorrectionClassificationDraft(null)
+  );
+  const [baselineClassification, setBaselineClassification] = useState(
+    () => createMaterialCorrectionClassificationDraft(null)
+  );
   const [reclassifying, setReclassifying] = useState(false);
+  const [commentTab, setCommentTab] = useState("internal");
+  const [commentsExpanded, setCommentsExpanded] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [comment, setComment] = useState("");
-  const [commentVisibility, setCommentVisibility] = useState("internal");
   const [informationRequest, setInformationRequest] = useState("");
+  const [confirmation, setConfirmation] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadingFile, setUploadingFile] = useState(false);
   const uploadAbortRef = useRef(null);
+  const dirtyRef = useRef(false);
+  const loadedReportRef = useRef(false);
+
+  const managementDirty = !materialCorrectionDraftsMatch(form, baselineForm);
+  const classificationDirty = reclassifying
+    && !materialCorrectionDraftsMatch(classification, baselineClassification);
+  const dirty = managementDirty || classificationDirty;
 
   useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  useEffect(() => {
+    loadedReportRef.current = false;
+    dirtyRef.current = false;
     const unsubscribe = subscribeToMaterialCorrectionDetail(reportId, {
       onReport: (nextReport) => {
         setReport(nextReport);
-        if (nextReport) {
-          setForm(managementForm(nextReport));
-          setClassification(classificationForm(nextReport));
+        if (nextReport && (!loadedReportRef.current || !dirtyRef.current)) {
+          const nextForm = createMaterialCorrectionManagementDraft(nextReport);
+          const nextClassification = createMaterialCorrectionClassificationDraft(nextReport);
+          setForm(nextForm);
+          setBaselineForm(nextForm);
+          setClassification(nextClassification);
+          setBaselineClassification(nextClassification);
         }
+        loadedReportRef.current = true;
         setLoading(false);
       },
       onComments: setComments,
@@ -160,6 +109,25 @@ export default function MaterialCorrectionDetail({
     return unsubscribe;
   }, [reportId]);
 
+  useEffect(() => {
+    function preventUnsavedExit(event) {
+      if (!dirtyRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", preventUnsavedExit);
+    return () => window.removeEventListener("beforeunload", preventUnsavedExit);
+  }, []);
+
+  useEffect(() => {
+    if (!confirmation) return undefined;
+    function closeOnEscape(event) {
+      if (event.key === "Escape" && !busy) setConfirmation(null);
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [confirmation, busy]);
+
   const publicComments = useMemo(
     () => comments.filter((item) => item.visibility === "public"),
     [comments]
@@ -168,12 +136,15 @@ export default function MaterialCorrectionDetail({
     () => comments.filter((item) => item.visibility === "internal"),
     [comments]
   );
+  const activeComments = commentTab === "public" ? publicComments : internalComments;
 
   function setManagementField(key, value) {
+    setSuccess("");
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   function setDistributionField(key, field, value) {
+    setSuccess("");
     setForm((current) => ({
       ...current,
       distribution: {
@@ -186,13 +157,13 @@ export default function MaterialCorrectionDetail({
     }));
   }
 
-  async function runAction(action, callback) {
+  async function runAction(action, callback, successMessage = "Cambios guardados.") {
     setBusy(true);
     setError("");
     setSuccess("");
     try {
       await callback();
-      setSuccess("Cambios guardados.");
+      setSuccess(successMessage);
       if (action === "delete") onDeleted?.();
     } catch (actionError) {
       setError(actionError.message || "No se pudo completar la acción.");
@@ -201,44 +172,91 @@ export default function MaterialCorrectionDetail({
     }
   }
 
-  function saveManagement() {
-    const assignedTo = assignees.find((assignee) => assignee.uid === form.assignedUid) || null;
-    runAction("update", () => updateMaterialCorrectionReport(reportId, {
-      priority: form.priority,
-      status: form.status,
-      assignedTo,
-      reviewResult: form.reviewResult,
-      appliedSolution: form.appliedSolution,
-      correctedFileLink: form.correctedFileLink,
-      duplicateFolio: form.duplicateFolio,
-      distribution: form.distribution,
-    }));
+  async function saveAllChanges() {
+    if (!dirty) return;
+    const update = buildMaterialCorrectionDetailUpdate({
+      form,
+      classification,
+      assignees,
+      includeClassification: classificationDirty,
+    });
+    setBusy(true);
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      await updateMaterialCorrectionReport(reportId, update.changes, update.action);
+      dirtyRef.current = false;
+      setBaselineForm(form);
+      setBaselineClassification(classification);
+      setReclassifying(false);
+      setSuccess("Cambios guardados correctamente.");
+    } catch (saveError) {
+      setError(saveError.message || "No se pudieron guardar los cambios.");
+    } finally {
+      setBusy(false);
+      setSaving(false);
+    }
   }
 
-  function saveReclassification() {
-    runAction("reclassify", async () => {
-      await updateMaterialCorrectionReport(reportId, {
-        confirmedClassification: classification,
-      }, "reclassify");
-      setReclassifying(false);
+  function discardChanges() {
+    const nextForm = createMaterialCorrectionManagementDraft(report);
+    const nextClassification = createMaterialCorrectionClassificationDraft(report);
+    dirtyRef.current = false;
+    setForm(nextForm);
+    setBaselineForm(nextForm);
+    setClassification(nextClassification);
+    setBaselineClassification(nextClassification);
+    setReclassifying(false);
+    setError("");
+    setSuccess("");
+  }
+
+  function requestBack() {
+    if (!dirty) {
+      onBack();
+      return;
+    }
+    setConfirmation({
+      type: "leave",
+      title: "Descartar cambios pendientes",
+      message: "Hay cambios sin guardar. Al volver a la bandeja se perderán.",
+      confirmLabel: "Descartar y volver",
+      danger: true,
     });
   }
 
+  function toggleReclassification() {
+    if (reclassifying) {
+      setClassification(baselineClassification);
+    }
+    setReclassifying((current) => !current);
+  }
+
   function reopenReport() {
-    runAction("reopen", () => updateMaterialCorrectionReport(
-      reportId,
-      { status: "under_review" },
-      "reopen"
-    ));
+    runAction(
+      "reopen",
+      () => updateMaterialCorrectionReport(reportId, { status: "under_review" }, "reopen"),
+      "Reporte reabierto."
+    );
   }
 
   function archiveReport() {
-    runAction("archive", () => updateMaterialCorrectionReport(reportId, {}, "archive"));
+    runAction(
+      "archive",
+      () => updateMaterialCorrectionReport(reportId, {}, "archive"),
+      "Reporte archivado."
+    );
   }
 
-  function deleteReport() {
-    if (!window.confirm("Ocultar este reporte como eliminado. Historial se conservará para auditoría.")) return;
-    runAction("delete", () => updateMaterialCorrectionReport(reportId, {}, "delete"));
+  function requestDeleteReport() {
+    setConfirmation({
+      type: "delete-report",
+      title: "Eliminar reporte",
+      message: "Esta acción oculta el reporte. Su historial se conserva para auditoría y sólo administradores pueden ejecutarla.",
+      confirmLabel: "Eliminar reporte",
+      danger: true,
+    });
   }
 
   function submitComment(event) {
@@ -247,11 +265,11 @@ export default function MaterialCorrectionDetail({
     runAction("comment", async () => {
       await addMaterialCorrectionComment(reportId, {
         message: comment,
-        visibility: commentVisibility,
+        visibility: commentTab,
         type: "comment",
       });
       setComment("");
-    });
+    }, "Comentario agregado.");
   }
 
   function requestInformation(event) {
@@ -264,24 +282,59 @@ export default function MaterialCorrectionDetail({
         type: "information_request",
       });
       setInformationRequest("");
-    });
+    }, "Solicitud enviada.");
   }
 
   async function openEvidence(evidence) {
     try {
+      setError("");
       const result = await getMaterialCorrectionEvidenceDownloadUrl({
         reportId,
         evidenceId: evidence.id,
       });
       window.location.assign(result.url);
     } catch (downloadError) {
-      setError(downloadError.message);
+      setError(downloadError.message || "No se pudo abrir la evidencia.");
     }
   }
 
-  function removeEvidence(evidence) {
-    if (!window.confirm(`Eliminar evidencia "${evidence.originalName}" de forma permanente.`)) return;
-    runAction("delete-evidence", () => deleteMaterialCorrectionEvidence(reportId, evidence.id));
+  function requestDeleteEvidence(evidence) {
+    setConfirmation({
+      type: "delete-evidence",
+      evidence,
+      title: "Eliminar evidencia",
+      message: `La evidencia “${evidence.originalName}” se eliminará de forma permanente.`,
+      confirmLabel: "Eliminar evidencia",
+      danger: true,
+    });
+  }
+
+  async function confirmAction() {
+    const current = confirmation;
+    if (!current) return;
+    if (current.type === "leave") {
+      setConfirmation(null);
+      discardChanges();
+      onBack();
+      return;
+    }
+    if (current.type === "delete-report") {
+      await runAction(
+        "delete",
+        () => updateMaterialCorrectionReport(reportId, {}, "delete"),
+        "Reporte eliminado."
+      );
+      setConfirmation(null);
+      return;
+    }
+    if (current.type === "delete-evidence") {
+      await runAction(
+        "delete-evidence",
+        () => deleteMaterialCorrectionEvidence(reportId, current.evidence.id),
+        "Evidencia eliminada."
+      );
+      setConfirmation(null);
+    }
   }
 
   async function uploadCorrectedFile(event) {
@@ -318,11 +371,16 @@ export default function MaterialCorrectionDetail({
   }
 
   if (loading) {
-    return <section className="material-corrections-page"><p>Cargando reporte…</p></section>;
+    return (
+      <section className="material-corrections-page purchase-requests-page purchase-redesign visual-page material-detail-page">
+        <div className="material-detail-loading" role="status">Cargando reporte…</div>
+      </section>
+    );
   }
+
   if (!report) {
     return (
-      <section className="material-corrections-page">
+      <section className="material-corrections-page purchase-requests-page purchase-redesign visual-page material-detail-page">
         <button type="button" className="secondary-button" onClick={onBack}>Volver</button>
         <div className="form-error">Reporte no encontrado.</div>
       </section>
@@ -330,244 +388,313 @@ export default function MaterialCorrectionDetail({
   }
 
   return (
-    <section className="material-corrections-page material-detail-page">
-      <header className="material-detail-header">
-        <button type="button" className="secondary-button" onClick={onBack}>← Volver</button>
-        <div>
-          <span>Correcciones de material</span>
-          <h2>{report.folio}</h2>
-          <p>
-            {report.levelName || "Sin nivel"} · Unidad {report.unitNumber || "—"}
-            {report.unitName ? ` · ${report.unitName}` : ""}
-          </p>
-        </div>
-        <div className={`material-priority priority-${report.priority}`}>
-          {getOptionLabel(MATERIAL_CORRECTION_PRIORITY_OPTIONS, report.priority)}
-        </div>
-      </header>
+    <section className="material-corrections-page purchase-requests-page purchase-redesign visual-page material-detail-page">
+      <MaterialCorrectionDetailHeader report={report} onBack={requestBack} />
+      <MaterialCorrectionDetailNavigation />
 
-      {error && <div className="form-error" role="alert">{error}</div>}
-      {success && <div className="success-box" role="status">{success}</div>}
+      {error && <div className="form-error material-detail-feedback" role="alert">{error}</div>}
+      {success && <div className="success-box material-detail-feedback" role="status">{success}</div>}
 
-      <OriginalData report={report} />
+      <div className="material-detail-layout">
+        <main className="material-detail-main">
+          <ErrorReportedSection report={report} />
 
-      <section className="material-detail-section">
-        <header>
-          <h3>Clasificación confirmada</h3>
-          <button type="button" className="secondary-button" onClick={() => setReclassifying((current) => !current)}>
-            {reclassifying ? "Cancelar" : "Reclasificar"}
-          </button>
-        </header>
-        {reclassifying ? (
-          <div className="material-management-grid">
-            <label>
-              Nivel
-              <select
-                value={classification.levelId}
-                onChange={(event) => {
-                  const level = levels.find((option) => option.id === event.target.value);
-                  setClassification({
-                    ...classification,
-                    levelId: level?.id || "",
-                    levelName: level?.name || "",
-                  });
-                }}
-              >
-                {!levels.some((option) => option.id === classification.levelId) && classification.levelName && (
-                  <option value={classification.levelId}>{classification.levelName} (histórico)</option>
-                )}
-                <option value="">Seleccionar nivel activo</option>
-                {levels.map((level) => (
-                  <option key={level.id} value={level.id}>{level.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>Unidad<input type="number" min="1" value={classification.unitNumber} onChange={(event) => setClassification({ ...classification, unitNumber: event.target.value })} /></label>
-            <label>Nombre de unidad<input value={classification.unitName} onChange={(event) => setClassification({ ...classification, unitName: event.target.value })} /></label>
-            <label>
-              Tipo de material
-              <select
-                value={classification.materialType}
-                onChange={(event) => {
-                  const materialType = event.target.value;
-                  setClassification({
-                    ...classification,
-                    materialType,
-                    pageNumber: MATERIAL_TYPES_WITH_PAGE.has(materialType)
-                      ? classification.pageNumber
-                      : "",
-                  });
-                }}
-              >
-                {MATERIAL_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
-            {MATERIAL_TYPES_WITH_PAGE.has(classification.materialType) && (
-              <label>Página<input value={classification.pageNumber} onChange={(event) => setClassification({ ...classification, pageNumber: event.target.value })} /></label>
-            )}
-            <div className="material-grid-wide"><button type="button" onClick={saveReclassification} disabled={busy}>Guardar reclasificación</button></div>
-          </div>
-        ) : (
-          <p>
-            {classification.levelName} · Unidad {classification.unitNumber || "—"}
-            {classification.unitName ? ` · ${classification.unitName}` : ""}
-            {" · "}{getMaterialTypeLabel(classification.materialType)}
-          </p>
-        )}
-      </section>
-
-      <section className="material-detail-section">
-        <header><h3>Gestión interna</h3><span>Editable según permisos</span></header>
-        <div className="material-management-grid">
-          <label>
-            Prioridad
-            <select value={form.priority} onChange={(event) => setManagementField("priority", event.target.value)}>
-              {MATERIAL_CORRECTION_PRIORITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label>
-            Responsable
-            <select value={form.assignedUid} onChange={(event) => setManagementField("assignedUid", event.target.value)}>
-              <option value="">Sin responsable</option>
-              {assignees.map((assignee) => <option key={assignee.uid} value={assignee.uid}>{assignee.name}</option>)}
-            </select>
-          </label>
-          <label>
-            Estado
-            <select value={form.status} onChange={(event) => setManagementField("status", event.target.value)}>
-              {MATERIAL_CORRECTION_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label>
-            Reporte duplicado relacionado
-            <input placeholder="MAT-2026-000001" value={form.duplicateFolio} onChange={(event) => setManagementField("duplicateFolio", event.target.value)} />
-          </label>
-          <label className="material-grid-wide">
-            Resultado de revisión
-            <textarea rows="4" value={form.reviewResult} onChange={(event) => setManagementField("reviewResult", event.target.value)} maxLength={6000} />
-          </label>
-          <label className="material-grid-wide">
-            Solución aplicada
-            <textarea rows="4" value={form.appliedSolution} onChange={(event) => setManagementField("appliedSolution", event.target.value)} maxLength={6000} />
-          </label>
-          <label className="material-grid-wide">
-            Enlace al archivo corregido
-            <input type="url" placeholder="https://..." value={form.correctedFileLink} onChange={(event) => setManagementField("correctedFileLink", event.target.value)} />
-          </label>
-          <label className="material-corrected-upload">
-            Archivo corregido
-            <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp3,.m4a,.wav,.ogg,.mp4,.mov,.webm,.docx,.pptx,.xlsx,.zip" onChange={uploadCorrectedFile} disabled={busy} />
-          </label>
-          {uploadingFile && <button type="button" className="secondary-button" onClick={() => uploadAbortRef.current?.abort()}>Cancelar carga</button>}
-        </div>
-      </section>
-
-      <section className="material-detail-section">
-        <header><h3>Publicación y distribución</h3><span>Todos los destinos requeridos deben completarse</span></header>
-        <div className="material-distribution-list">
-          {DISTRIBUTION_DESTINATIONS.map((destination) => {
-            const value = form.distribution?.[destination.key] || {};
-            return (
-              <article key={destination.key}>
-                <div className="material-distribution-title">
-                  <strong>{destination.label}</strong>
-                  <label><input type="checkbox" checked={value.required === true} onChange={(event) => setDistributionField(destination.key, "required", event.target.checked)} /> Requerido</label>
-                </div>
-                <label>Estado<select value={value.status || "pending"} onChange={(event) => setDistributionField(destination.key, "status", event.target.value)}>{DISTRIBUTION_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                <label>Enlace<input type="url" value={value.link || ""} onChange={(event) => setDistributionField(destination.key, "link", event.target.value)} placeholder="https://..." /></label>
-                <label>Comentario<input value={value.comment || ""} onChange={(event) => setDistributionField(destination.key, "comment", event.target.value)} maxLength={1200} /></label>
-                {value.date && <small>{formatMaterialCorrectionDate(value.date)} · {value.user?.name || "Usuario"}</small>}
-              </article>
-            );
-          })}
-        </div>
-        <button type="button" onClick={saveManagement} disabled={busy}>Guardar gestión y publicación</button>
-      </section>
-
-      <section className="material-detail-section">
-        <header><h3>Evidencias y archivos</h3><span>{evidences.filter((item) => item.status === "ready").length}</span></header>
-        {evidences.filter((item) => item.status === "ready").length === 0 ? (
-          <p className="material-empty">Sin evidencias validadas.</p>
-        ) : (
-          <ul className="material-detail-evidence-list">
-            {evidences.filter((item) => item.status === "ready").map((evidence) => (
-              <li key={evidence.id}>
-                <button type="button" onClick={() => openEvidence(evidence)}>
-                  {evidence.originalName}
-                  <small>{formatFileSize(evidence.size)} · {evidence.source}</small>
+          <div className={`material-save-bar ${dirty ? "has-changes" : ""}`}>
+            <div>
+              <MaterialCorrectionIcon name={dirty ? "error" : "completed"} />
+              <span>{dirty ? "Cambios pendientes" : "Todos los cambios guardados"}</span>
+            </div>
+            <div>
+              {dirty && (
+                <button type="button" className="secondary-button" onClick={discardChanges} disabled={busy}>
+                  Descartar
                 </button>
-                {isAdmin && (
-                  <button type="button" className="material-evidence-delete" onClick={() => removeEvidence(evidence)}>
-                    Eliminar
-                  </button>
+              )}
+              <button
+                type="button"
+                className="visual-primary-button"
+                onClick={saveAllChanges}
+                disabled={busy || !dirty}
+              >
+                <MaterialCorrectionIcon name="save" />
+                {saving ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+
+          <section id="material-detail-gestion" className="material-detail-section">
+            <header className="material-detail-section-heading">
+              <div>
+                <span className="material-detail-section-icon">
+                  <MaterialCorrectionIcon name="correction" />
+                </span>
+                <h2>Gestión interna</h2>
+              </div>
+              <span>Editable según permisos</span>
+            </header>
+
+            <div className="material-management-grid compact">
+              <label>
+                <span>Estado</span>
+                <select
+                  value={form.status}
+                  onChange={(event) => setManagementField("status", event.target.value)}
+                >
+                  {MATERIAL_CORRECTION_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Prioridad</span>
+                <select
+                  value={form.priority}
+                  onChange={(event) => setManagementField("priority", event.target.value)}
+                >
+                  {MATERIAL_CORRECTION_PRIORITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Responsable</span>
+                <select
+                  value={form.assignedUid}
+                  onChange={(event) => setManagementField("assignedUid", event.target.value)}
+                >
+                  <option value="">Sin responsable</option>
+                  {assignees.map((assignee) => (
+                    <option key={assignee.uid} value={assignee.uid}>{assignee.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Reporte duplicado</span>
+                <input
+                  placeholder="MAT-2026-000001"
+                  value={form.duplicateFolio}
+                  onChange={(event) => setManagementField("duplicateFolio", event.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="material-classification-summary">
+              <div>
+                <span>Clasificación confirmada</span>
+                <strong>
+                  {classification.levelName || "Sin nivel"} · Unidad {classification.unitNumber || "—"}
+                  {classification.unitName ? ` · ${classification.unitName}` : ""}
+                  {" · "}{getMaterialTypeLabel(classification.materialType)}
+                  {classification.pageNumber ? ` · Página ${classification.pageNumber}` : ""}
+                </strong>
+              </div>
+              <button type="button" className="secondary-button" onClick={toggleReclassification}>
+                {reclassifying ? "Cancelar reclasificación" : "Reclasificar"}
+              </button>
+            </div>
+
+            {reclassifying && (
+              <div className="material-management-grid compact material-reclassification-grid">
+                <label>
+                  <span>Nivel</span>
+                  <select
+                    value={classification.levelId}
+                    onChange={(event) => {
+                      const level = levels.find((option) => option.id === event.target.value);
+                      setClassification({
+                        ...classification,
+                        levelId: level?.id || "",
+                        levelName: level?.name || "",
+                      });
+                    }}
+                  >
+                    {!levels.some((option) => option.id === classification.levelId)
+                      && classification.levelName && (
+                        <option value={classification.levelId}>
+                          {classification.levelName} (histórico)
+                        </option>
+                    )}
+                    <option value="">Seleccionar nivel activo</option>
+                    {levels.map((level) => (
+                      <option key={level.id} value={level.id}>{level.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Unidad</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={classification.unitNumber}
+                    onChange={(event) => setClassification({
+                      ...classification,
+                      unitNumber: event.target.value,
+                    })}
+                  />
+                </label>
+                <label>
+                  <span>Nombre de unidad</span>
+                  <input
+                    value={classification.unitName}
+                    onChange={(event) => setClassification({
+                      ...classification,
+                      unitName: event.target.value,
+                    })}
+                  />
+                </label>
+                <label>
+                  <span>Tipo de material</span>
+                  <select
+                    value={classification.materialType}
+                    onChange={(event) => {
+                      const materialType = event.target.value;
+                      setClassification({
+                        ...classification,
+                        materialType,
+                        pageNumber: MATERIAL_TYPES_WITH_PAGE.has(materialType)
+                          ? classification.pageNumber
+                          : "",
+                      });
+                    }}
+                  >
+                    {MATERIAL_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                {MATERIAL_TYPES_WITH_PAGE.has(classification.materialType) && (
+                  <label>
+                    <span>Página</span>
+                    <input
+                      value={classification.pageNumber}
+                      onChange={(event) => setClassification({
+                        ...classification,
+                        pageNumber: event.target.value,
+                      })}
+                    />
+                  </label>
                 )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="material-detail-section material-comments-section">
-        <header><h3>Comentarios</h3><span>Públicos e internos separados</span></header>
-        <div className="material-comment-columns">
-          <article>
-            <h4>Internos</h4>
-            {internalComments.length === 0 ? <p className="material-empty">Sin comentarios internos.</p> : (
-              <ul>{internalComments.map((item) => <li key={item.id}><p>{item.message}</p><small>{item.author?.name} · {formatMaterialCorrectionDate(item.createdAt)}</small></li>)}</ul>
+              </div>
             )}
-          </article>
-          <article>
-            <h4>Públicos</h4>
-            {publicComments.length === 0 ? <p className="material-empty">Sin comentarios públicos.</p> : (
-              <ul>{publicComments.map((item) => <li key={item.id} className={item.type === "information_request" ? "request" : ""}><p>{item.message}</p><small>{item.author?.name} · {formatMaterialCorrectionDate(item.createdAt)}</small></li>)}</ul>
-            )}
-          </article>
-        </div>
-        <form onSubmit={submitComment} className="material-inline-form">
-          <label>
-            Nuevo comentario
-            <textarea rows="3" value={comment} onChange={(event) => setComment(event.target.value)} maxLength={4000} />
-          </label>
-          <label>
-            Visibilidad
-            <select value={commentVisibility} onChange={(event) => setCommentVisibility(event.target.value)}>
-              <option value="internal">Interno</option>
-              <option value="public">Público</option>
-            </select>
-          </label>
-          <button type="submit" disabled={busy || !comment.trim()}>Agregar comentario</button>
-        </form>
-        <form onSubmit={requestInformation} className="material-inline-form material-information-request">
-          <label>
-            Solicitud de información al reportante
-            <textarea rows="3" value={informationRequest} onChange={(event) => setInformationRequest(event.target.value)} maxLength={4000} />
-          </label>
-          <button type="submit" disabled={busy || !informationRequest.trim()}>Solicitar información</button>
-        </form>
-      </section>
 
-      <section className="material-detail-section">
-        <header><h3>Historial</h3><span>{history.length} cambios</span></header>
-        {history.length === 0 ? <p className="material-empty">Sin cambios registrados.</p> : (
-          <ol className="material-history-list">
-            {history.map((item) => (
-              <li key={item.id}>
-                <strong>{item.field || item.action}</strong>
-                <span>{historyValue(item.previousValue)} → {historyValue(item.newValue)}</span>
-                <small>{item.actor?.name || "Sistema"} · {formatMaterialCorrectionDate(item.createdAt)}</small>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+            <div className="material-management-long-fields">
+              <label>
+                <span>Resultado de revisión</span>
+                <textarea
+                  rows="3"
+                  value={form.reviewResult}
+                  onChange={(event) => setManagementField("reviewResult", event.target.value)}
+                  maxLength={6000}
+                />
+              </label>
+              <label>
+                <span>Solución aplicada</span>
+                <textarea
+                  rows="3"
+                  value={form.appliedSolution}
+                  onChange={(event) => setManagementField("appliedSolution", event.target.value)}
+                  maxLength={6000}
+                />
+              </label>
+              <label>
+                <span>Enlace al archivo corregido</span>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={form.correctedFileLink}
+                  onChange={(event) => setManagementField("correctedFileLink", event.target.value)}
+                />
+              </label>
+              <label className="material-corrected-upload">
+                <span>Subir archivo corregido</span>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,.mp3,.m4a,.wav,.ogg,.mp4,.mov,.webm,.docx,.pptx,.xlsx,.zip"
+                  onChange={uploadCorrectedFile}
+                  disabled={busy}
+                />
+              </label>
+              {uploadingFile && (
+                <button
+                  type="button"
+                  className="secondary-button material-cancel-upload"
+                  onClick={() => uploadAbortRef.current?.abort()}
+                >
+                  Cancelar carga
+                </button>
+              )}
+            </div>
 
-      {isAdmin && (
-        <section className="material-detail-section material-admin-actions">
-          <header><h3>Acciones administrativas</h3></header>
-          {["completed", "dismissed", "duplicate"].includes(report.status) && <button type="button" className="secondary-button" onClick={reopenReport} disabled={busy}>Reabrir</button>}
-          <button type="button" className="secondary-button" onClick={archiveReport} disabled={busy}>Archivar</button>
-          <button type="button" className="danger-button" onClick={deleteReport} disabled={busy}>Eliminar</button>
-        </section>
+            <dl className="material-relevant-dates">
+              <div><dt>Reportado</dt><dd>{formatMaterialCorrectionDate(report.createdAt)}</dd></div>
+              {report.correctedAt && (
+                <div><dt>Corregido</dt><dd>{formatMaterialCorrectionDate(report.correctedAt)}</dd></div>
+              )}
+              {report.completedAt && (
+                <div><dt>Completado</dt><dd>{formatMaterialCorrectionDate(report.completedAt)}</dd></div>
+              )}
+              {report.updatedAt && (
+                <div><dt>Actualizado</dt><dd>{formatMaterialCorrectionDate(report.updatedAt)}</dd></div>
+              )}
+            </dl>
+          </section>
+
+          <DistributionSection
+            distribution={form.distribution}
+            onChange={setDistributionField}
+          />
+        </main>
+
+        <aside className="material-detail-sidebar">
+          <ReporterSection report={report} />
+          <EvidenceSection
+            evidences={evidences}
+            externalUrl={report.externalEvidenceUrl}
+            isAdmin={isAdmin}
+            onOpen={openEvidence}
+            onDelete={requestDeleteEvidence}
+          />
+          <CommentsSection
+            activeTab={commentTab}
+            comments={activeComments}
+            expanded={commentsExpanded}
+            comment={comment}
+            informationRequest={informationRequest}
+            busy={busy}
+            onTabChange={(nextTab) => {
+              setCommentTab(nextTab);
+              setCommentsExpanded(false);
+            }}
+            onExpand={() => setCommentsExpanded((current) => !current)}
+            onCommentChange={setComment}
+            onInformationRequestChange={setInformationRequest}
+            onSubmitComment={submitComment}
+            onRequestInformation={requestInformation}
+          />
+          <HistorySection
+            history={history}
+            expanded={historyExpanded}
+            onExpand={() => setHistoryExpanded((current) => !current)}
+          />
+          {isAdmin && (
+            <AdminActionsSection
+              report={report}
+              busy={busy}
+              onReopen={reopenReport}
+              onArchive={archiveReport}
+              onDelete={requestDeleteReport}
+            />
+          )}
+        </aside>
+      </div>
+
+      {confirmation && (
+        <MaterialCorrectionConfirmDialog
+          {...confirmation}
+          busy={busy}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={confirmAction}
+        />
       )}
     </section>
   );
