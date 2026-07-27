@@ -1,3 +1,112 @@
+import {
+  COLLABORATOR_STATUS_TRANSITIONS,
+  MATERIAL_CORRECTION_STATUS_OPTIONS,
+} from "./constants.js";
+
+const DISTRIBUTION_KEYS = [
+  "sourceFile",
+  "inPersonDrive",
+  "onlineDrive",
+  "platform",
+  "futurePrint",
+];
+
+export function inferMaterialCorrectionPublicationSettings(report) {
+  if (report?.publicationSettings && typeof report.publicationSettings === "object") {
+    const enabled = report.publicationSettings.enabled === true;
+    return {
+      enabled,
+      collaboratorCanEdit: enabled
+        && report.publicationSettings.collaboratorCanEdit === true,
+    };
+  }
+  const distribution = report?.distribution;
+  const enabled = Boolean(distribution) && DISTRIBUTION_KEYS.some((key) => {
+    const destination = distribution?.[key];
+    return destination?.required === true
+      || ["pending", "in_progress", "completed"].includes(destination?.status);
+  });
+  return { enabled, collaboratorCanEdit: false };
+}
+
+export function getMaterialCorrectionDetailPermissions({
+  report,
+  isAdmin,
+  currentUserId,
+}) {
+  const publicationSettings = inferMaterialCorrectionPublicationSettings(report);
+  const isAssigned = Boolean(currentUserId)
+    && report?.assignedTo?.uid === currentUserId;
+  const canEditOperational = isAdmin || isAssigned;
+  const canEditDistribution = isAdmin || (
+    isAssigned
+    && publicationSettings.enabled
+    && publicationSettings.collaboratorCanEdit
+  );
+  const currentStatus = report?.status || "reported";
+  const allowedTargets = isAdmin
+    ? MATERIAL_CORRECTION_STATUS_OPTIONS.map((option) => option.value)
+    : (
+      isAssigned
+        ? (COLLABORATOR_STATUS_TRANSITIONS[currentStatus] || []).filter((status) => (
+          status !== "publishing"
+          || (publicationSettings.enabled && publicationSettings.collaboratorCanEdit)
+        ))
+        : []
+    );
+  const statusValues = Array.from(new Set([currentStatus, ...allowedTargets]));
+
+  return {
+    publicationSettings,
+    isAssigned,
+    canEditOperational,
+    canEditDistribution,
+    canEditAdministration: isAdmin,
+    canComment: isAdmin || isAssigned,
+    statusOptions: MATERIAL_CORRECTION_STATUS_OPTIONS.filter((option) => (
+      statusValues.includes(option.value)
+    )),
+  };
+}
+
+export function validateMaterialCorrectionClientUpdate({
+  changes,
+  action,
+  permissions,
+}) {
+  if (!permissions) {
+    throw new Error("No se pudo validar permiso para actualizar el reporte.");
+  }
+  if (permissions.canEditAdministration) return true;
+  if (!permissions.canEditOperational) {
+    throw new Error("Solo el responsable asignado puede modificar este reporte.");
+  }
+  if (action !== "update") {
+    throw new Error("Esta acción está reservada para administradores.");
+  }
+  const adminOnlyFields = [
+    "assignedTo",
+    "confirmedClassification",
+    "duplicateFolio",
+    "manualOrder",
+    "publicationSettings",
+    "approvalComment",
+  ];
+  if (adminOnlyFields.some((field) => Object.hasOwn(changes, field))) {
+    throw new Error("Intento de modificar campos administrativos.");
+  }
+  if (
+    Object.hasOwn(changes, "status")
+    && !permissions.statusOptions.some((option) => option.value === changes.status)
+  ) {
+    throw new Error("Transición de estado no permitida.");
+  }
+  if (Object.hasOwn(changes, "distribution") && !permissions.canEditDistribution) {
+    throw new Error("Publicación gestionada únicamente por administradores.");
+  }
+  return true;
+}
+
 export function createMaterialCorrectionManagementDraft(report) {
   return {
     priority: report?.priority || "normal",
@@ -7,6 +116,8 @@ export function createMaterialCorrectionManagementDraft(report) {
     appliedSolution: report?.appliedSolution || "",
     correctedFileLink: report?.correctedFileLink || "",
     duplicateFolio: report?.duplicateFolio || "",
+    approvalComment: report?.approvalComment || "",
+    publicationSettings: inferMaterialCorrectionPublicationSettings(report),
     distribution: report?.distribution || {},
   };
 }
@@ -46,20 +157,30 @@ export function buildMaterialCorrectionDetailUpdate({
   classification,
   assignees,
   includeClassification,
+  includeAdministration = false,
+  includeDistribution = false,
 }) {
   const assignedTo = assignees.find((assignee) => assignee.uid === form.assignedUid) || null;
   const changes = {
     priority: form.priority,
     status: form.status,
-    assignedTo,
     reviewResult: form.reviewResult,
     appliedSolution: form.appliedSolution,
     correctedFileLink: form.correctedFileLink,
-    duplicateFolio: form.duplicateFolio,
-    distribution: form.distribution,
   };
 
-  if (includeClassification) {
+  if (includeDistribution) {
+    changes.distribution = form.distribution;
+  }
+
+  if (includeAdministration) {
+    changes.assignedTo = assignedTo;
+    changes.duplicateFolio = form.duplicateFolio;
+    changes.approvalComment = form.approvalComment;
+    changes.publicationSettings = form.publicationSettings;
+  }
+
+  if (includeClassification && includeAdministration) {
     changes.confirmedClassification = classification;
   }
 

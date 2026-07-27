@@ -35,7 +35,7 @@ export const MATERIAL_CORRECTION_STATUS_OPTIONS = [
   { value: "needs_information", label: "Información requerida", publicLabel: "Se requiere información", rank: 2 },
   { value: "confirmed", label: "Confirmado", publicLabel: "Corrección programada", rank: 3 },
   { value: "in_correction", label: "En corrección", publicLabel: "En proceso", rank: 4 },
-  { value: "corrected", label: "Corregido", publicLabel: "Corregido, pendiente de publicación", rank: 5 },
+  { value: "corrected", label: "Corregido", publicLabel: "Corregido, pendiente de validación o publicación", rank: 5 },
   { value: "publishing", label: "En publicación", publicLabel: "Actualizando materiales", rank: 6 },
   { value: "completed", label: "Completado", publicLabel: "Completado", rank: 7 },
   { value: "dismissed", label: "Descartado", publicLabel: "No se requiere corrección", rank: 8 },
@@ -59,9 +59,23 @@ export const DISTRIBUTION_DESTINATIONS = [
 
 export const DISTRIBUTION_STATUS_OPTIONS = [
   { value: "pending", label: "Pendiente" },
+  { value: "in_progress", label: "En proceso" },
   { value: "not_applicable", label: "No aplica" },
   { value: "completed", label: "Publicado / completado" },
 ];
+
+export const COLLABORATOR_STATUS_TRANSITIONS = {
+  reported: ["under_review", "needs_information"],
+  under_review: ["needs_information", "in_correction"],
+  needs_information: ["under_review"],
+  confirmed: ["in_correction"],
+  in_correction: ["needs_information", "corrected"],
+  corrected: ["publishing"],
+  publishing: ["needs_information", "in_correction", "corrected"],
+  completed: [],
+  dismissed: [],
+  duplicate: [],
+};
 
 export const MATERIAL_CORRECTION_SORT_OPTIONS = [
   { value: "recent", label: "Más recientes" },

@@ -15,7 +15,10 @@ import {
   buildMaterialCorrectionDetailUpdate,
   createMaterialCorrectionClassificationDraft,
   createMaterialCorrectionManagementDraft,
+  getMaterialCorrectionDetailPermissions,
+  inferMaterialCorrectionPublicationSettings,
   materialCorrectionDraftsMatch,
+  validateMaterialCorrectionClientUpdate,
 } from "../src/material-corrections/detailState.js";
 
 const reports = [
@@ -197,10 +200,91 @@ describe("bandeja de correcciones de material", () => {
       classification,
       assignees: [{ uid: "material", name: "María" }],
       includeClassification: true,
+      includeAdministration: true,
+      includeDistribution: true,
     });
 
     assert.equal(update.action, "reclassify");
     assert.deepEqual(update.changes.assignedTo, { uid: "material", name: "María" });
     assert.deepEqual(update.changes.confirmedClassification, classification);
+  });
+
+  it("limita edición al colaborador asignado y filtra estados", () => {
+    const assigned = getMaterialCorrectionDetailPermissions({
+      report: {
+        status: "in_correction",
+        assignedTo: { uid: "material" },
+        publicationSettings: { enabled: true, collaboratorCanEdit: false },
+      },
+      isAdmin: false,
+      currentUserId: "material",
+    });
+    assert.equal(assigned.canEditOperational, true);
+    assert.equal(assigned.canEditDistribution, false);
+    assert.deepEqual(
+      assigned.statusOptions.map((option) => option.value),
+      ["needs_information", "in_correction", "corrected"]
+    );
+
+    const unassigned = getMaterialCorrectionDetailPermissions({
+      report: {
+        status: "reported",
+        assignedTo: { uid: "other" },
+      },
+      isAdmin: false,
+      currentUserId: "material",
+    });
+    assert.equal(unassigned.canEditOperational, false);
+    assert.deepEqual(unassigned.statusOptions.map((option) => option.value), ["reported"]);
+  });
+
+  it("reserva configuración y cierre al administrador en cliente", () => {
+    const collaborator = getMaterialCorrectionDetailPermissions({
+      report: {
+        status: "corrected",
+        assignedTo: { uid: "material" },
+        publicationSettings: { enabled: true, collaboratorCanEdit: true },
+      },
+      isAdmin: false,
+      currentUserId: "material",
+    });
+    assert.throws(
+      () => validateMaterialCorrectionClientUpdate({
+        action: "update",
+        changes: { status: "completed" },
+        permissions: collaborator,
+      }),
+      /Transición/
+    );
+    assert.throws(
+      () => validateMaterialCorrectionClientUpdate({
+        action: "update",
+        changes: {
+          publicationSettings: { enabled: false, collaboratorCanEdit: false },
+        },
+        permissions: collaborator,
+      }),
+      /administrativos/
+    );
+  });
+
+  it("infiere publicación histórica sin habilitar al colaborador", () => {
+    assert.deepEqual(inferMaterialCorrectionPublicationSettings({
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    }), {
+      enabled: true,
+      collaboratorCanEdit: false,
+    });
+    assert.deepEqual(inferMaterialCorrectionPublicationSettings({
+      publicationSettings: {
+        enabled: false,
+        collaboratorCanEdit: true,
+      },
+    }), {
+      enabled: false,
+      collaboratorCanEdit: false,
+    });
   });
 });

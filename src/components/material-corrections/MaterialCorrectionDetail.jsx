@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MATERIAL_CORRECTION_PRIORITY_OPTIONS,
-  MATERIAL_CORRECTION_STATUS_OPTIONS,
   MATERIAL_TYPES_WITH_PAGE,
   MATERIAL_TYPE_OPTIONS,
 } from "../../material-corrections/constants";
@@ -9,6 +8,7 @@ import {
   buildMaterialCorrectionDetailUpdate,
   createMaterialCorrectionClassificationDraft,
   createMaterialCorrectionManagementDraft,
+  getMaterialCorrectionDetailPermissions,
   materialCorrectionDraftsMatch,
 } from "../../material-corrections/detailState";
 import { formatMaterialCorrectionDate, getMaterialTypeLabel } from "../../material-corrections/utils";
@@ -40,6 +40,7 @@ export default function MaterialCorrectionDetail({
   assignees,
   levels = [],
   isAdmin,
+  currentUserId,
   onBack,
   onDeleted,
 }) {
@@ -137,10 +138,40 @@ export default function MaterialCorrectionDetail({
     [comments]
   );
   const activeComments = commentTab === "public" ? publicComments : internalComments;
+  const permissions = useMemo(() => getMaterialCorrectionDetailPermissions({
+    report,
+    isAdmin,
+    currentUserId,
+  }), [report, isAdmin, currentUserId]);
+  const pendingRequiredDestinations = Object.values(form.distribution || {}).filter(
+    (destination) => destination?.required === true && destination.status !== "completed"
+  ).length;
+  const completionBlocker = !form.appliedSolution.trim()
+    ? "Registra la solución aplicada."
+    : (
+      form.publicationSettings.enabled && pendingRequiredDestinations > 0
+        ? `Faltan ${pendingRequiredDestinations} destinos requeridos.`
+        : ""
+    );
 
   function setManagementField(key, value) {
     setSuccess("");
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setStatus(value) {
+    if (
+      value === "completed"
+      && !["corrected", "publishing"].includes(report.status)
+    ) {
+      setError("La corrección debe estar marcada como corregida antes de completar.");
+      return;
+    }
+    if (value === "completed" && completionBlocker) {
+      setError(`No se puede completar: ${completionBlocker}`);
+      return;
+    }
+    setManagementField("status", value);
   }
 
   function setDistributionField(key, field, value) {
@@ -153,6 +184,18 @@ export default function MaterialCorrectionDetail({
           ...(current.distribution?.[key] || {}),
           [field]: value,
         },
+      },
+    }));
+  }
+
+  function setPublicationSetting(field, value) {
+    setSuccess("");
+    setForm((current) => ({
+      ...current,
+      publicationSettings: {
+        ...current.publicationSettings,
+        [field]: value,
+        ...(field === "enabled" && !value ? { collaboratorCanEdit: false } : {}),
       },
     }));
   }
@@ -179,13 +222,20 @@ export default function MaterialCorrectionDetail({
       classification,
       assignees,
       includeClassification: classificationDirty,
+      includeAdministration: permissions.canEditAdministration,
+      includeDistribution: permissions.canEditDistribution,
     });
     setBusy(true);
     setSaving(true);
     setError("");
     setSuccess("");
     try {
-      await updateMaterialCorrectionReport(reportId, update.changes, update.action);
+      await updateMaterialCorrectionReport(
+        reportId,
+        update.changes,
+        update.action,
+        permissions
+      );
       dirtyRef.current = false;
       setBaselineForm(form);
       setBaselineClassification(classification);
@@ -236,24 +286,31 @@ export default function MaterialCorrectionDetail({
   function reopenReport() {
     runAction(
       "reopen",
-      () => updateMaterialCorrectionReport(reportId, { status: "under_review" }, "reopen"),
+      () => updateMaterialCorrectionReport(
+        reportId,
+        { status: "under_review" },
+        "reopen",
+        permissions
+      ),
       "Reporte reabierto."
     );
   }
 
-  function archiveReport() {
-    runAction(
-      "archive",
-      () => updateMaterialCorrectionReport(reportId, {}, "archive"),
-      "Reporte archivado."
-    );
+  function requestArchiveReport() {
+    setConfirmation({
+      type: "archive-report",
+      title: "Archivar reporte",
+      message: "El reporte dejará de aparecer en la bandeja activa, pero conservará toda su información e historial.",
+      confirmLabel: "Archivar reporte",
+      danger: false,
+    });
   }
 
   function requestDeleteReport() {
     setConfirmation({
       type: "delete-report",
       title: "Eliminar reporte",
-      message: "Esta acción oculta el reporte. Su historial se conserva para auditoría y sólo administradores pueden ejecutarla.",
+      message: "Esta acción es destructiva para la operación: ocultará el reporte de forma definitiva. Su historial se conserva para auditoría y sólo administradores pueden ejecutarla.",
       confirmLabel: "Eliminar reporte",
       danger: true,
     });
@@ -267,7 +324,7 @@ export default function MaterialCorrectionDetail({
         message: comment,
         visibility: commentTab,
         type: "comment",
-      });
+      }, permissions);
       setComment("");
     }, "Comentario agregado.");
   }
@@ -280,7 +337,7 @@ export default function MaterialCorrectionDetail({
         message: informationRequest,
         visibility: "public",
         type: "information_request",
-      });
+      }, permissions);
       setInformationRequest("");
     }, "Solicitud enviada.");
   }
@@ -321,8 +378,17 @@ export default function MaterialCorrectionDetail({
     if (current.type === "delete-report") {
       await runAction(
         "delete",
-        () => updateMaterialCorrectionReport(reportId, {}, "delete"),
+        () => updateMaterialCorrectionReport(reportId, {}, "delete", permissions),
         "Reporte eliminado."
+      );
+      setConfirmation(null);
+      return;
+    }
+    if (current.type === "archive-report") {
+      await runAction(
+        "archive",
+        () => updateMaterialCorrectionReport(reportId, {}, "archive", permissions),
+        "Reporte archivado."
       );
       setConfirmation(null);
       return;
@@ -330,7 +396,11 @@ export default function MaterialCorrectionDetail({
     if (current.type === "delete-evidence") {
       await runAction(
         "delete-evidence",
-        () => deleteMaterialCorrectionEvidence(reportId, current.evidence.id),
+        () => deleteMaterialCorrectionEvidence(
+          reportId,
+          current.evidence.id,
+          permissions
+        ),
         "Evidencia eliminada."
       );
       setConfirmation(null);
@@ -358,6 +428,7 @@ export default function MaterialCorrectionDetail({
         reportId,
         category: "internal_corrected",
         signal: controller.signal,
+        permissionContext: permissions,
       });
       setSuccess("Archivo corregido cargado y validado.");
       input.value = "";
@@ -422,6 +493,28 @@ export default function MaterialCorrectionDetail({
             </div>
           </div>
 
+          {report.status === "corrected" && (
+            <p className="material-workflow-notice review">
+              <MaterialCorrectionIcon name="review" />
+              Corrección pendiente de revisión administrativa.
+            </p>
+          )}
+          {report.status === "in_correction" && report.approvalComment && (
+            <p className="material-workflow-notice warning">
+              <MaterialCorrectionIcon name="error" />
+              <span>
+                <strong>El administrador devolvió el reporte para ajustes.</strong>
+                {report.approvalComment}
+              </span>
+            </p>
+          )}
+          {!isAdmin && !permissions.isAssigned && (
+            <p className="material-workflow-notice warning">
+              <MaterialCorrectionIcon name="person" />
+              Reporte de solo lectura: no eres responsable asignado.
+            </p>
+          )}
+
           <section id="material-detail-gestion" className="material-detail-section">
             <header className="material-detail-section-heading">
               <div>
@@ -438,9 +531,10 @@ export default function MaterialCorrectionDetail({
                 <span>Estado</span>
                 <select
                   value={form.status}
-                  onChange={(event) => setManagementField("status", event.target.value)}
+                  onChange={(event) => setStatus(event.target.value)}
+                  disabled={!permissions.canEditOperational || permissions.statusOptions.length <= 1}
                 >
-                  {MATERIAL_CORRECTION_STATUS_OPTIONS.map((option) => (
+                  {permissions.statusOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
@@ -450,6 +544,7 @@ export default function MaterialCorrectionDetail({
                 <select
                   value={form.priority}
                   onChange={(event) => setManagementField("priority", event.target.value)}
+                  disabled={!permissions.canEditOperational}
                 >
                   {MATERIAL_CORRECTION_PRIORITY_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -461,6 +556,7 @@ export default function MaterialCorrectionDetail({
                 <select
                   value={form.assignedUid}
                   onChange={(event) => setManagementField("assignedUid", event.target.value)}
+                  disabled={!permissions.canEditAdministration}
                 >
                   <option value="">Sin responsable</option>
                   {assignees.map((assignee) => (
@@ -468,14 +564,14 @@ export default function MaterialCorrectionDetail({
                   ))}
                 </select>
               </label>
-              <label>
+              {isAdmin && <label>
                 <span>Reporte duplicado</span>
                 <input
                   placeholder="MAT-2026-000001"
                   value={form.duplicateFolio}
                   onChange={(event) => setManagementField("duplicateFolio", event.target.value)}
                 />
-              </label>
+              </label>}
             </div>
 
             <div className="material-classification-summary">
@@ -488,9 +584,11 @@ export default function MaterialCorrectionDetail({
                   {classification.pageNumber ? ` · Página ${classification.pageNumber}` : ""}
                 </strong>
               </div>
-              <button type="button" className="secondary-button" onClick={toggleReclassification}>
-                {reclassifying ? "Cancelar reclasificación" : "Reclasificar"}
-              </button>
+              {isAdmin && (
+                <button type="button" className="secondary-button" onClick={toggleReclassification}>
+                  {reclassifying ? "Cancelar reclasificación" : "Reclasificar"}
+                </button>
+              )}
             </div>
 
             {reclassifying && (
@@ -585,6 +683,7 @@ export default function MaterialCorrectionDetail({
                   value={form.reviewResult}
                   onChange={(event) => setManagementField("reviewResult", event.target.value)}
                   maxLength={6000}
+                  disabled={!permissions.canEditOperational}
                 />
               </label>
               <label>
@@ -594,6 +693,7 @@ export default function MaterialCorrectionDetail({
                   value={form.appliedSolution}
                   onChange={(event) => setManagementField("appliedSolution", event.target.value)}
                   maxLength={6000}
+                  disabled={!permissions.canEditOperational}
                 />
               </label>
               <label>
@@ -603,6 +703,7 @@ export default function MaterialCorrectionDetail({
                   placeholder="https://..."
                   value={form.correctedFileLink}
                   onChange={(event) => setManagementField("correctedFileLink", event.target.value)}
+                  disabled={!permissions.canEditOperational}
                 />
               </label>
               <label className="material-corrected-upload">
@@ -611,7 +712,7 @@ export default function MaterialCorrectionDetail({
                   type="file"
                   accept=".jpg,.jpeg,.png,.webp,.pdf,.mp3,.m4a,.wav,.ogg,.mp4,.mov,.webm,.docx,.pptx,.xlsx,.zip"
                   onChange={uploadCorrectedFile}
-                  disabled={busy}
+                  disabled={busy || !permissions.canEditOperational}
                 />
               </label>
               {uploadingFile && (
@@ -624,6 +725,54 @@ export default function MaterialCorrectionDetail({
                 </button>
               )}
             </div>
+
+            {isAdmin && ["corrected", "publishing"].includes(report.status) && (
+              <section className="material-approval-panel" aria-labelledby="material-approval-title">
+                <div>
+                  <MaterialCorrectionIcon name="review" />
+                  <div>
+                    <h3 id="material-approval-title">Revisar y completar</h3>
+                    <p>Valida solución y publicación antes de aprobar cierre definitivo.</p>
+                  </div>
+                </div>
+                <label>
+                  <span>Observación de aprobación o devolución</span>
+                  <textarea
+                    rows="2"
+                    value={form.approvalComment}
+                    onChange={(event) => setManagementField(
+                      "approvalComment",
+                      event.target.value
+                    )}
+                    maxLength={4000}
+                    placeholder="Opcional al aprobar; recomendable si regresa a corrección."
+                  />
+                </label>
+                {completionBlocker && (
+                  <p className="material-approval-blocker">{completionBlocker}</p>
+                )}
+                <div className="material-approval-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setStatus("in_correction")}
+                    disabled={busy}
+                  >
+                    <MaterialCorrectionIcon name="back" />
+                    Regresar a corrección
+                  </button>
+                  <button
+                    type="button"
+                    className="visual-primary-button"
+                    onClick={() => setStatus("completed")}
+                    disabled={busy || Boolean(completionBlocker)}
+                  >
+                    <MaterialCorrectionIcon name="completed" />
+                    Aprobar y marcar como completado
+                  </button>
+                </div>
+              </section>
+            )}
 
             <dl className="material-relevant-dates">
               <div><dt>Reportado</dt><dd>{formatMaterialCorrectionDate(report.createdAt)}</dd></div>
@@ -641,7 +790,11 @@ export default function MaterialCorrectionDetail({
 
           <DistributionSection
             distribution={form.distribution}
+            publicationSettings={form.publicationSettings}
+            isAdmin={isAdmin}
+            canEdit={permissions.canEditDistribution}
             onChange={setDistributionField}
+            onSettingsChange={setPublicationSetting}
           />
         </main>
 
@@ -661,6 +814,7 @@ export default function MaterialCorrectionDetail({
             comment={comment}
             informationRequest={informationRequest}
             busy={busy}
+            canComment={permissions.canComment}
             onTabChange={(nextTab) => {
               setCommentTab(nextTab);
               setCommentsExpanded(false);
@@ -681,7 +835,7 @@ export default function MaterialCorrectionDetail({
               report={report}
               busy={busy}
               onReopen={reopenReport}
-              onArchive={archiveReport}
+              onArchive={requestArchiveReport}
               onDelete={requestDeleteReport}
             />
           )}

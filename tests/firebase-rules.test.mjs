@@ -1963,6 +1963,12 @@ describe("correcciones de material", () => {
       doc(auth("material"), "materialCorrectionReports", "material-report-1", "comments", "direct"),
       { message: "Sin función" }
     ));
+    await assertFails(deleteDoc(
+      doc(auth("admin"), "materialCorrectionReports", "material-report-1")
+    ));
+    await assertFails(deleteDoc(
+      doc(auth("material"), "materialCorrectionReports", "material-report-1")
+    ));
   });
 
   it("protege contadores y rate limits contra lectura o escritura cliente", async () => {

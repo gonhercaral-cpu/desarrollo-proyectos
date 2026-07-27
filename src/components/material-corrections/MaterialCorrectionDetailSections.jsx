@@ -14,15 +14,20 @@ import {
 import MaterialCorrectionIcon from "./MaterialCorrectionIcon";
 
 const HISTORY_FIELD_LABELS = {
+  approvalComment: "Observación administrativa",
   appliedSolution: "Solución aplicada",
   archived: "Archivo",
   assignedTo: "Responsable",
+  completedAt: "Fecha de cierre",
+  completedBy: "Aprobado por",
   confirmedClassification: "Clasificación",
   correctedFileLink: "Archivo corregido",
+  correctedAt: "Fecha de corrección",
   deleted: "Eliminación",
   distribution: "Publicación",
   duplicateFolio: "Reporte relacionado",
   priority: "Prioridad",
+  publicationSettings: "Configuración de publicación",
   reviewResult: "Resultado de revisión",
   status: "Estado",
 };
@@ -197,20 +202,72 @@ export function ReporterSection({ report }) {
   );
 }
 
-export function DistributionSection({ distribution, onChange }) {
+export function DistributionSection({
+  distribution,
+  publicationSettings,
+  isAdmin,
+  canEdit,
+  onChange,
+  onSettingsChange,
+}) {
+  const enabled = publicationSettings.enabled === true;
   return (
     <section id="material-detail-publicacion" className="material-detail-section">
       <SectionTitle
         icon="distribution"
         title="Publicación y distribución"
-        detail="Completar destinos requeridos"
+        detail={enabled ? "Completar destinos requeridos" : "Publicación no requerida"}
       />
-      <div className="material-distribution-compact">
+      {isAdmin && (
+        <div className="material-publication-settings">
+          <label>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(event) => onSettingsChange("enabled", event.target.checked)}
+            />
+            <span>
+              <strong>Requiere publicación y distribución</strong>
+              <small>Activa destinos y validación antes del cierre.</small>
+            </span>
+          </label>
+          <label className={!enabled ? "disabled" : ""}>
+            <input
+              type="checkbox"
+              checked={publicationSettings.collaboratorCanEdit === true}
+              onChange={(event) => onSettingsChange(
+                "collaboratorCanEdit",
+                event.target.checked
+              )}
+              disabled={!enabled}
+            />
+            <span>
+              <strong>Permitir al colaborador gestionar publicación</strong>
+              <small>Solo responsable asignado; no puede cambiar destinos requeridos.</small>
+            </span>
+          </label>
+        </div>
+      )}
+      {!enabled ? (
+        <p className="material-workflow-notice neutral">
+          <MaterialCorrectionIcon name="completed" />
+          Este reporte no requiere publicación ni distribución.
+        </p>
+      ) : (
+        <>
+          {!canEdit && (
+            <p className="material-workflow-notice neutral">
+              <MaterialCorrectionIcon name="archive" />
+              Publicación gestionada únicamente por administradores.
+            </p>
+          )}
+          <div className="material-distribution-compact">
         {DISTRIBUTION_DESTINATIONS.map((destination) => {
           const value = distribution?.[destination.key] || {};
-          const status = value.status || "pending";
+          const required = value.required === true;
+          const status = value.status || (required ? "pending" : "not_applicable");
           return (
-            <article key={destination.key}>
+            <article key={destination.key} className={!required ? "not-required" : ""}>
               <div className="material-distribution-row-heading">
                 <strong>{destination.label}</strong>
                 <span className={`material-distribution-badge status-${status}`}>
@@ -221,40 +278,53 @@ export function DistributionSection({ distribution, onChange }) {
                 <label className="material-required-toggle">
                   <input
                     type="checkbox"
-                    checked={value.required === true}
+                    checked={required}
                     onChange={(event) => onChange(destination.key, "required", event.target.checked)}
+                    disabled={!isAdmin}
                   />
-                  Requerido
+                  {required ? "Requerido" : "No requerido"}
                 </label>
-                <label>
+                {required && <label>
                   <span>Estado</span>
                   <select
                     value={status}
                     onChange={(event) => onChange(destination.key, "status", event.target.value)}
+                    disabled={!canEdit}
                   >
-                    {DISTRIBUTION_STATUS_OPTIONS.map((option) => (
+                    {DISTRIBUTION_STATUS_OPTIONS
+                      .filter((option) => option.value !== "not_applicable")
+                      .map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                </label>
-                <label>
+                </label>}
+                {required && <label>
                   <span>Enlace</span>
                   <input
                     type="url"
                     value={value.link || ""}
                     onChange={(event) => onChange(destination.key, "link", event.target.value)}
                     placeholder="https://..."
+                    disabled={!canEdit}
                   />
-                </label>
-                <label>
+                </label>}
+                {required && <label>
                   <span>Comentario</span>
                   <input
                     value={value.comment || ""}
                     onChange={(event) => onChange(destination.key, "comment", event.target.value)}
                     maxLength={1200}
+                    disabled={!canEdit}
                   />
-                </label>
+                </label>}
               </div>
+              {!required && (value.link || value.comment) && (
+                <p className="material-historical-context">
+                  Datos históricos conservados
+                  {value.link ? " · Enlace registrado" : ""}
+                  {value.comment ? ` · ${value.comment}` : ""}
+                </p>
+              )}
               {(value.date || value.user?.name) && (
                 <small>
                   {value.date ? formatMaterialCorrectionDate(value.date) : ""}
@@ -265,7 +335,9 @@ export function DistributionSection({ distribution, onChange }) {
             </article>
           );
         })}
-      </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -338,6 +410,7 @@ export function CommentsSection({
   comment,
   informationRequest,
   busy,
+  canComment,
   onTabChange,
   onExpand,
   onCommentChange,
@@ -384,7 +457,12 @@ export function CommentsSection({
           {expanded ? "Mostrar menos" : `Ver ${comments.length - 3} más`}
         </button>
       )}
-      <form onSubmit={onSubmitComment} className="material-comment-form">
+      {!canComment && (
+        <p className="material-workflow-notice neutral">
+          Solo responsable asignado o administrador puede comentar.
+        </p>
+      )}
+      {canComment && <form onSubmit={onSubmitComment} className="material-comment-form">
         <label>
           <span>Nuevo comentario {isPublic ? "público" : "interno"}</span>
           <textarea
@@ -395,8 +473,8 @@ export function CommentsSection({
           />
         </label>
         <button type="submit" disabled={busy || !comment.trim()}>Agregar</button>
-      </form>
-      {isPublic && (
+      </form>}
+      {canComment && isPublic && (
         <form onSubmit={onRequestInformation} className="material-comment-form information">
           <label>
             <span>Solicitud de información</span>
@@ -433,7 +511,12 @@ export function HistorySection({ history, expanded, onExpand }) {
               {(item.previousValue !== undefined || item.newValue !== undefined) && (
                 <span>{historyValue(item.previousValue)} → {historyValue(item.newValue)}</span>
               )}
-              <small>{item.actor?.name || "Sistema"} · {formatMaterialCorrectionDate(item.createdAt)}</small>
+              {item.comment && <em>{item.comment}</em>}
+              <small>
+                {item.actor?.name || "Sistema"}
+                {item.actor?.role ? ` · ${item.actor.role === "admin" ? "Administrador" : "Colaborador"}` : ""}
+                {" · "}{formatMaterialCorrectionDate(item.createdAt)}
+              </small>
             </li>
           ))}
         </ol>
@@ -454,13 +537,21 @@ export function AdminActionsSection({ report, busy, onReopen, onArchive, onDelet
       <div>
         {["completed", "dismissed", "duplicate"].includes(report.status) && (
           <button type="button" className="secondary-button" onClick={onReopen} disabled={busy}>
+            <MaterialCorrectionIcon name="review" />
             Reabrir
           </button>
         )}
         <button type="button" className="secondary-button" onClick={onArchive} disabled={busy}>
+          <MaterialCorrectionIcon name="archive" />
           Archivar
         </button>
-        <button type="button" className="danger-button" onClick={onDelete} disabled={busy}>
+        <button
+          type="button"
+          className="secondary-button danger-button"
+          onClick={onDelete}
+          disabled={busy}
+        >
+          <MaterialCorrectionIcon name="delete" />
           Eliminar
         </button>
       </div>
@@ -501,7 +592,7 @@ export function MaterialCorrectionConfirmDialog({
           </button>
           <button
             type="button"
-            className={danger ? "danger-button" : "visual-primary-button"}
+            className={danger ? "secondary-button danger-button" : "visual-primary-button"}
             onClick={onConfirm}
             disabled={busy}
           >

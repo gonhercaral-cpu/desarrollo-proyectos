@@ -1209,6 +1209,89 @@ form.request-main-card.material-public-card {
   font-weight: 700;
 }
 
+.material-workflow-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid #c9ddec;
+  border-radius: 11px;
+  background: #f1f7fc;
+  color: #34566f;
+  font-size: 0.8rem;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.material-workflow-notice svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+}
+
+.material-workflow-notice span {
+  display: grid;
+  gap: 2px;
+}
+
+.material-workflow-notice.review {
+  border-color: #c2d8ef;
+  background: #eef6ff;
+  color: #1e5d91;
+}
+
+.material-workflow-notice.warning {
+  border-color: #efca93;
+  background: #fff8e8;
+  color: #81500b;
+}
+
+.material-publication-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.material-publication-settings label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #d8e4ee;
+  border-radius: 11px;
+  background: #f7fafc;
+  cursor: pointer;
+}
+
+.material-publication-settings label.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.material-publication-settings input {
+  width: auto;
+  margin-top: 2px;
+}
+
+.material-publication-settings span {
+  display: grid;
+  gap: 3px;
+}
+
+.material-publication-settings strong {
+  color: #294863;
+  font-size: 0.78rem;
+}
+
+.material-publication-settings small {
+  color: #6f8294;
+  font-size: 0.69rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .material-distribution-compact {
   display: grid;
   gap: 8px;
@@ -1247,6 +1330,11 @@ form.request-main-card.material-public-card {
   color: #177042;
 }
 
+.material-distribution-badge.status-in_progress {
+  background: #e5efff;
+  color: #245f9a;
+}
+
 .material-distribution-badge.status-not_applicable {
   background: #e8edf2;
   color: #55697b;
@@ -1257,6 +1345,20 @@ form.request-main-card.material-public-card {
   grid-template-columns: 108px minmax(125px, 0.7fr) minmax(170px, 1fr) minmax(160px, 1fr);
   align-items: end;
   gap: 8px;
+}
+
+.material-distribution-compact article.not-required {
+  background: #f4f6f8;
+}
+
+.material-distribution-compact input:disabled,
+.material-distribution-compact select:disabled,
+.material-management-grid input:disabled,
+.material-management-grid select:disabled,
+.material-management-long-fields input:disabled,
+.material-management-long-fields textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .material-required-toggle {
@@ -1499,6 +1601,96 @@ form.request-main-card.material-public-card {
   overflow-wrap: anywhere;
 }
 
+.material-history-compact-list em {
+  color: #6c5a2b;
+  font-size: 0.69rem;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.material-approval-panel {
+  display: grid;
+  gap: 11px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #bcd7ef;
+  border-radius: 13px;
+  background: #f2f8fe;
+}
+
+.material-approval-panel > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.material-approval-panel > div:first-child > svg {
+  width: 24px;
+  height: 24px;
+  color: #0b5da8;
+}
+
+.material-approval-panel h3,
+.material-approval-panel p {
+  margin: 0;
+}
+
+.material-approval-panel h3 {
+  color: #183c5e;
+  font-size: 0.95rem;
+}
+
+.material-approval-panel p {
+  color: #60788e;
+  font-size: 0.73rem;
+}
+
+.material-approval-panel label {
+  display: grid;
+  gap: 6px;
+  color: #31465d;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.material-approval-panel textarea {
+  width: 100%;
+  border: 1px solid #c8d6e5;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: #fff;
+  color: #182c40;
+  font: inherit;
+  resize: vertical;
+}
+
+.material-approval-panel .material-approval-blocker {
+  color: #9a5410;
+  font-weight: 800;
+}
+
+.material-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.material-approval-actions button,
+.material-admin-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.material-approval-actions button svg,
+.material-admin-actions button svg {
+  width: 17px;
+  height: 17px;
+}
+
 .material-admin-actions {
   border-color: #efc5c7;
 }
@@ -1507,12 +1699,6 @@ form.request-main-card.material-public-card {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-}
-
-.material-admin-actions button {
-  min-height: 36px;
-  padding: 8px 10px;
-  font-size: 0.74rem;
 }
 
 .material-save-bar {
@@ -1634,12 +1820,6 @@ form.request-main-card.material-public-card {
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
-}
-
-.danger-button {
-  border-color: #b32834 !important;
-  background: #b32834 !important;
-  color: #fff !important;
 }
 
 @media (max-width: 1500px) {
@@ -1771,7 +1951,8 @@ form.request-main-card.material-public-card {
   .material-error-comparison,
   .material-management-grid.compact,
   .material-management-long-fields,
-  .material-relevant-dates {
+  .material-relevant-dates,
+  .material-publication-settings {
     grid-template-columns: 1fr;
   }
 
@@ -1799,6 +1980,15 @@ form.request-main-card.material-public-card {
 
   .material-comment-form {
     grid-template-columns: 1fr;
+  }
+
+  .material-approval-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .material-approval-actions button {
+    width: 100%;
   }
 
   .material-save-bar {
@@ -2154,4 +2344,40 @@ form.request-main-card.material-public-card {
 
 [data-theme="dark"] .material-confirm-dialog p {
   color: #aebfd0;
+}
+
+[data-theme="dark"] .material-workflow-notice,
+[data-theme="dark"] .material-publication-settings label,
+[data-theme="dark"] .material-approval-panel,
+[data-theme="dark"] .material-distribution-compact article.not-required {
+  border-color: #385169;
+  background: #13283a;
+  color: #c7d8e8;
+}
+
+[data-theme="dark"] .material-workflow-notice.warning {
+  border-color: #6d5734;
+  background: #302716;
+  color: #f2c778;
+}
+
+[data-theme="dark"] .material-publication-settings strong,
+[data-theme="dark"] .material-approval-panel h3,
+[data-theme="dark"] .material-approval-panel label {
+  color: #e1edf8;
+}
+
+[data-theme="dark"] .material-publication-settings small,
+[data-theme="dark"] .material-approval-panel p {
+  color: #9fb3c6;
+}
+
+[data-theme="dark"] .material-approval-panel textarea {
+  border-color: #425a71;
+  background: #101d2a;
+  color: #e4edf6;
+}
+
+[data-theme="dark"] .material-history-compact-list em {
+  color: #e6bd72;
 }

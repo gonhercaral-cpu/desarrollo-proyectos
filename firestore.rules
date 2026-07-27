@@ -3303,6 +3303,8 @@ service cloud.firestore {
 
     match /materialCorrectionReports/{reportId} {
       allow get, list: if canAccessMaterialCorrections();
+      // Toda mutación usa Cloud Functions. Ahí se valida asignación, rol,
+      // transición, publicación y aprobación; ningún cliente escribe directo.
       allow create, update, delete: if false;
 
       match /comments/{commentId} {

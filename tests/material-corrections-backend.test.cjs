@@ -2,14 +2,18 @@ const assert = require("node:assert/strict");
 const { describe, it } = require("node:test");
 const {
   allRequiredDestinationsCompleted,
+  assertActorCanEditDistribution,
+  assertActorCanModifyReport,
   canProfileAccessMaterialCorrections,
   descriptionSimilarity,
   getTijuanaYear,
   hasValidFileSignature,
+  inferPublicationSettings,
   safeHashEquals,
   sanitizeClassification,
   sanitizeDistribution,
   tokenHash,
+  validateCompletionRequirements,
   validateEvidenceDeclaration,
   validateStatusTransition,
 } = require("../functions/materialCorrections");
@@ -160,17 +164,146 @@ describe("backend de correcciones de material", () => {
     );
   });
 
-  it("valida transiciones y reapertura administrativa", () => {
-    assert.doesNotThrow(() => validateStatusTransition("reported", "under_review", false, "update"));
+  it("limita estados al colaborador asignado y reserva cierre", () => {
+    const assigned = {
+      isAssigned: true,
+      publicationSettings: { enabled: true, collaboratorCanEdit: true },
+    };
+    assert.doesNotThrow(
+      () => validateStatusTransition("reported", "under_review", false, "update", assigned)
+    );
+    assert.doesNotThrow(
+      () => validateStatusTransition("in_correction", "corrected", false, "update", assigned)
+    );
     assert.throws(
-      () => validateStatusTransition("reported", "completed", false, "update"),
-      /No se puede cambiar/
+      () => validateStatusTransition("corrected", "completed", false, "update", assigned),
+      /solo puede establecerlo un administrador/
+    );
+    assert.throws(
+      () => validateStatusTransition("reported", "under_review", false, "update"),
+      /responsable asignado/
+    );
+    assert.throws(
+      () => validateStatusTransition(
+        "corrected",
+        "publishing",
+        false,
+        "update",
+        {
+          isAssigned: true,
+          publicationSettings: { enabled: true, collaboratorCanEdit: false },
+        }
+      ),
+      /no está habilitada/
     );
     assert.doesNotThrow(() => validateStatusTransition("completed", "under_review", true, "reopen"));
-    assert.throws(
-      () => validateStatusTransition("completed", "under_review", false, "reopen"),
-      /No se puede cambiar/
+    assert.doesNotThrow(
+      () => validateStatusTransition("corrected", "in_correction", true, "update")
     );
+  });
+
+  it("impide modificar al colaborador no asignado y acciones administrativas", () => {
+    const actor = { uid: "material", isAdmin: false };
+    const assignedReport = { assignedTo: { uid: "material" } };
+    assert.throws(
+      () => assertActorCanModifyReport(actor, { assignedTo: { uid: "other" } }),
+      /responsable asignado/
+    );
+    assert.doesNotThrow(() => assertActorCanModifyReport(actor, assignedReport));
+    assert.throws(
+      () => assertActorCanModifyReport(actor, assignedReport, {}, "archive"),
+      /reservada/
+    );
+    assert.throws(
+      () => assertActorCanModifyReport(actor, assignedReport, {}, "delete"),
+      /reservada/
+    );
+    assert.throws(
+      () => assertActorCanModifyReport(actor, assignedReport, {
+        publicationSettings: { enabled: false },
+      }),
+      /administradores/
+    );
+  });
+
+  it("valida aprobación administrativa y publicación requerida", () => {
+    const base = {
+      currentStatus: "corrected",
+      isAdmin: true,
+      appliedSolution: "Texto corregido",
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    };
+    assert.doesNotThrow(() => validateCompletionRequirements({
+      ...base,
+      publicationSettings: { enabled: false },
+    }));
+    assert.throws(
+      () => validateCompletionRequirements({
+        ...base,
+        publicationSettings: { enabled: true },
+      }),
+      /destinos de publicación/
+    );
+    assert.doesNotThrow(() => validateCompletionRequirements({
+      ...base,
+      publicationSettings: { enabled: true },
+      distribution: {
+        sourceFile: { required: true, status: "completed" },
+      },
+    }));
+    assert.throws(
+      () => validateCompletionRequirements({
+        ...base,
+        isAdmin: false,
+        publicationSettings: { enabled: false },
+      }),
+      /Solo administradores/
+    );
+  });
+
+  it("bloquea distribución cuando colaborador no tiene autorización", () => {
+    const collaborator = { uid: "material", isAdmin: false };
+    assert.throws(
+      () => assertActorCanEditDistribution(collaborator, {
+        enabled: true,
+        collaboratorCanEdit: false,
+      }),
+      /administradores/
+    );
+    assert.doesNotThrow(() => assertActorCanEditDistribution(collaborator, {
+      enabled: true,
+      collaboratorCanEdit: true,
+    }));
+    assert.throws(
+      () => sanitizeDistribution(
+        {
+          sourceFile: { required: false, status: "not_applicable" },
+        },
+        {
+          sourceFile: { required: true, status: "pending", link: "", comment: "" },
+        },
+        collaborator,
+        { canEditRequirements: false }
+      ),
+      /Solo administradores/
+    );
+  });
+
+  it("infiere configuración segura para reportes históricos", () => {
+    assert.deepEqual(inferPublicationSettings({
+      distribution: {
+        sourceFile: { required: true, status: "pending" },
+      },
+    }), {
+      enabled: true,
+      collaboratorCanEdit: false,
+    });
+    assert.deepEqual(inferPublicationSettings({}), {
+      enabled: false,
+      collaboratorCanEdit: false,
+    });
   });
 
   it("calcula similitud básica para posibles duplicados", () => {

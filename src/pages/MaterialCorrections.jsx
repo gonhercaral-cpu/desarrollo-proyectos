@@ -55,7 +55,7 @@ function updateReportQuery(reportId) {
 }
 
 export default function MaterialCorrections() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, uid } = useAuth();
   const [reports, setReports] = useState([]);
   const [assignees, setAssignees] = useState([]);
   const [levels, setLevels] = useState([]);
@@ -123,7 +123,7 @@ export default function MaterialCorrections() {
   async function handleDrop(targetId) {
     const draggedId = draggedIdRef.current;
     draggedIdRef.current = "";
-    if (!draggedId || draggedId === targetId || sortMode !== "manual") return;
+    if (!isAdmin || !draggedId || draggedId === targetId || sortMode !== "manual") return;
     const visibleIds = ordered.map((report) => report.id);
     const from = visibleIds.indexOf(draggedId);
     const to = visibleIds.indexOf(targetId);
@@ -145,7 +145,7 @@ export default function MaterialCorrections() {
     setReorderBusy(true);
     setError("");
     try {
-      await reorderMaterialCorrectionReports(mergedIds);
+      await reorderMaterialCorrectionReports(mergedIds, { isAdmin });
     } catch (reorderError) {
       setError(reorderError.message);
     } finally {
@@ -160,6 +160,7 @@ export default function MaterialCorrections() {
         assignees={assignees}
         levels={levels}
         isAdmin={isAdmin}
+        currentUserId={uid}
         onBack={closeReport}
         onDeleted={closeReport}
       />
@@ -257,7 +258,13 @@ export default function MaterialCorrections() {
 
       <div className="material-list-meta">
         <span>{ordered.length} reporte{ordered.length === 1 ? "" : "s"}</span>
-        {sortMode === "manual" && <span>{reorderBusy ? "Guardando orden…" : "Arrastra filas para ordenar"}</span>}
+        {sortMode === "manual" && (
+          <span>
+            {isAdmin
+              ? (reorderBusy ? "Guardando orden…" : "Arrastra filas para ordenar")
+              : "Orden manual administrado por Dirección"}
+          </span>
+        )}
       </div>
 
       {loading ? (
@@ -278,7 +285,7 @@ export default function MaterialCorrections() {
                     key={report.id}
                     report={report}
                     onOpen={openReport}
-                    draggable={sortMode === "manual" && !reorderBusy}
+                    draggable={isAdmin && sortMode === "manual" && !reorderBusy}
                     onDragStart={() => {
                       draggedIdRef.current = report.id;
                     }}

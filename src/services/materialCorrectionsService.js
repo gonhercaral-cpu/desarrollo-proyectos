@@ -10,6 +10,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import { buildActiveMaterialCorrectionLevels } from "../utils/materialCorrectionCatalogs";
+import { validateMaterialCorrectionClientUpdate } from "../material-corrections/detailState";
 
 const callable = (name, timeout = 70000) => httpsCallable(functions, name, { timeout });
 
@@ -93,7 +94,11 @@ export async function uploadMaterialCorrectionEvidence({
   category = "",
   signal,
   onProgress,
+  permissionContext,
 }) {
+  if (reportId && !permissionContext?.canEditOperational) {
+    throw new Error("Solo el responsable asignado puede agregar archivos corregidos.");
+  }
   const authorization = await run(authorizeEvidenceCallable, {
     folio,
     token,
@@ -149,7 +154,10 @@ export function getMaterialCorrectionEvidenceDownloadUrl({
   }, "No se pudo abrir la evidencia.");
 }
 
-export function deleteMaterialCorrectionEvidence(reportId, evidenceId) {
+export function deleteMaterialCorrectionEvidence(reportId, evidenceId, permissionContext) {
+  if (!permissionContext?.canEditAdministration) {
+    throw new Error("Solo administradores pueden eliminar evidencias.");
+  }
   return run(
     deleteEvidenceCallable,
     { reportId, evidenceId },
@@ -206,7 +214,17 @@ export function subscribeToMaterialCorrectionDetail(reportId, handlers = {}) {
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 }
 
-export function updateMaterialCorrectionReport(reportId, changes, action = "update") {
+export function updateMaterialCorrectionReport(
+  reportId,
+  changes,
+  action = "update",
+  permissionContext
+) {
+  validateMaterialCorrectionClientUpdate({
+    changes,
+    action,
+    permissions: permissionContext,
+  });
   return run(
     updateReportCallable,
     { reportId, changes, action },
@@ -214,7 +232,10 @@ export function updateMaterialCorrectionReport(reportId, changes, action = "upda
   );
 }
 
-export function addMaterialCorrectionComment(reportId, comment) {
+export function addMaterialCorrectionComment(reportId, comment, permissionContext) {
+  if (!permissionContext?.canComment) {
+    throw new Error("Solo el responsable asignado puede agregar comentarios.");
+  }
   return run(
     addCommentCallable,
     { reportId, ...comment },
@@ -222,7 +243,10 @@ export function addMaterialCorrectionComment(reportId, comment) {
   );
 }
 
-export function reorderMaterialCorrectionReports(orderedIds) {
+export function reorderMaterialCorrectionReports(orderedIds, { isAdmin = false } = {}) {
+  if (!isAdmin) {
+    throw new Error("Solo administradores pueden cambiar el orden manual.");
+  }
   return run(
     reorderReportsCallable,
     { orderedIds },

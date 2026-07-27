@@ -65,6 +65,7 @@ const STATUSES = new Set([
 
 const PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
 const CLOSED_STATUSES = new Set(["completed", "dismissed", "duplicate"]);
+const ADMIN_ONLY_STATUSES = new Set(["completed", "dismissed", "duplicate"]);
 const DISTRIBUTION_KEYS = [
   "sourceFile",
   "inPersonDrive",
@@ -72,7 +73,7 @@ const DISTRIBUTION_KEYS = [
   "platform",
   "futurePrint",
 ];
-const DISTRIBUTION_STATUSES = new Set(["pending", "not_applicable", "completed"]);
+const DISTRIBUTION_STATUSES = new Set(["pending", "in_progress", "not_applicable", "completed"]);
 const COMMENT_VISIBILITIES = new Set(["internal", "public"]);
 const COMMENT_TYPES = new Set(["comment", "information_request", "reporter_information"]);
 
@@ -116,13 +117,13 @@ const INTERNAL_FILE_POLICIES = {
 };
 
 const STATUS_TRANSITIONS = {
-  reported: new Set(["under_review", "needs_information", "confirmed", "dismissed", "duplicate"]),
-  under_review: new Set(["needs_information", "confirmed", "dismissed", "duplicate"]),
-  needs_information: new Set(["under_review", "confirmed", "dismissed", "duplicate"]),
-  confirmed: new Set(["in_correction", "needs_information", "dismissed", "duplicate"]),
-  in_correction: new Set(["needs_information", "corrected", "dismissed", "duplicate"]),
-  corrected: new Set(["in_correction", "publishing", "needs_information"]),
-  publishing: new Set(["in_correction", "corrected", "completed", "needs_information"]),
+  reported: new Set(["under_review", "needs_information"]),
+  under_review: new Set(["needs_information", "in_correction"]),
+  needs_information: new Set(["under_review"]),
+  confirmed: new Set(["in_correction"]),
+  in_correction: new Set(["needs_information", "corrected"]),
+  corrected: new Set(["publishing"]),
+  publishing: new Set(["needs_information", "in_correction", "corrected"]),
   completed: new Set([]),
   dismissed: new Set([]),
   duplicate: new Set([]),
@@ -134,7 +135,7 @@ const PUBLIC_STATUS_LABELS = {
   needs_information: "Se requiere información",
   confirmed: "Corrección programada",
   in_correction: "En proceso",
-  corrected: "Corregido, pendiente de publicación",
+  corrected: "Corregido, pendiente de validación o publicación",
   publishing: "Actualizando materiales",
   completed: "Completado",
   dismissed: "No se requiere corrección",
@@ -240,11 +241,13 @@ function canProfileAccessMaterialCorrections(profile = {}) {
 }
 
 function getActor(profile, uid) {
+  const role = normalizeRole(profile.role);
   return {
     uid,
     name: sanitizeText(profile.name || profile.displayName || profile.email, 160) || "Usuario",
     email: sanitizeText(profile.email, 254),
-    isAdmin: normalizeRole(profile.role) === "admin",
+    role,
+    isAdmin: role === "admin",
   };
 }
 
@@ -470,24 +473,80 @@ function defaultDistribution() {
   };
 }
 
-function sanitizeDistribution(source = {}, previous = defaultDistribution(), actor = null) {
+function inferPublicationSettings(report = {}) {
+  if (report.publicationSettings && typeof report.publicationSettings === "object") {
+    const enabled = report.publicationSettings.enabled === true;
+    return {
+      enabled,
+      collaboratorCanEdit: enabled
+        && report.publicationSettings.collaboratorCanEdit === true,
+    };
+  }
+  const enabled = Boolean(report.distribution) && DISTRIBUTION_KEYS.some((key) => {
+    const destination = report.distribution?.[key];
+    return destination?.required === true
+      || ["pending", "in_progress", "completed"].includes(destination?.status);
+  });
+  return { enabled, collaboratorCanEdit: false };
+}
+
+function sanitizePublicationSettings(source = {}, previous = {}) {
+  const enabled = Object.hasOwn(source, "enabled")
+    ? source.enabled === true
+    : previous.enabled === true;
+  const collaboratorCanEdit = enabled && (
+    Object.hasOwn(source, "collaboratorCanEdit")
+      ? source.collaboratorCanEdit === true
+      : previous.collaboratorCanEdit === true
+  );
+  return { enabled, collaboratorCanEdit };
+}
+
+function distributionDestinationChanged(incoming, current) {
+  return ["required", "status", "link", "comment"].some((field) => (
+    JSON.stringify(incoming?.[field] ?? "") !== JSON.stringify(current?.[field] ?? "")
+  ));
+}
+
+function sanitizeDistribution(
+  source = {},
+  previous = defaultDistribution(),
+  actor = null,
+  { canEditRequirements = true } = {}
+) {
   const result = {};
   for (const key of DISTRIBUTION_KEYS) {
     const current = previous?.[key] || defaultDistribution()[key];
     const incoming = source?.[key] || current;
+    if (!canEditRequirements && incoming.required !== current.required) {
+      throw new HttpsError(
+        "permission-denied",
+        "Solo administradores pueden cambiar destinos requeridos."
+      );
+    }
+    if (!canEditRequirements && current.required !== true && distributionDestinationChanged(incoming, current)) {
+      throw new HttpsError(
+        "permission-denied",
+        "El colaborador solo puede actualizar destinos requeridos."
+      );
+    }
     const required = incoming.required === true;
     let status = sanitizeText(incoming.status, 40) || (required ? "pending" : "not_applicable");
     if (!DISTRIBUTION_STATUSES.has(status)) {
       throw new HttpsError("invalid-argument", `Estado de distribución no válido: ${key}.`);
     }
     if (required && status === "not_applicable") status = "pending";
-    if (!required && status === "pending") status = "not_applicable";
+    if (!required) status = "not_applicable";
     const completedNow = status === "completed" && current.status !== "completed";
     result[key] = {
       required,
       status,
-      date: status === "completed" ? (completedNow ? new Date() : current.date || new Date()) : null,
-      user: status === "completed" ? (completedNow ? actor : current.user || actor) : null,
+      date: status === "completed"
+        ? (completedNow ? new Date() : current.date || new Date())
+        : current.date || null,
+      user: status === "completed"
+        ? (completedNow ? actor : current.user || actor)
+        : current.user || null,
       link: sanitizeUrl(incoming.link),
       comment: sanitizeMultiline(incoming.comment, 1200),
     };
@@ -760,13 +819,120 @@ async function createNotifications(db, {
   await batch.commit();
 }
 
-function validateStatusTransition(current, next, isAdmin, action) {
+function isAssignedMaterialCollaborator(actor, report) {
+  return !actor.isAdmin && report.assignedTo?.uid === actor.uid;
+}
+
+function assertActorCanModifyReport(actor, report, changes = {}, action = "update") {
+  if (actor.isAdmin) return;
+  if (!isAssignedMaterialCollaborator(actor, report)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Solo el colaborador responsable asignado puede modificar este reporte."
+    );
+  }
+  const adminOnlyFields = [
+    "assignedTo",
+    "confirmedClassification",
+    "duplicateFolio",
+    "manualOrder",
+    "publicationSettings",
+    "approvalComment",
+  ];
+  if (adminOnlyFields.some((field) => Object.hasOwn(changes, field)) || action !== "update") {
+    throw new HttpsError(
+      "permission-denied",
+      "Esta acción está reservada para administradores."
+    );
+  }
+}
+
+function assertActorCanEditDistribution(actor, publicationSettings) {
+  if (actor.isAdmin) return;
+  if (
+    publicationSettings.enabled !== true
+    || publicationSettings.collaboratorCanEdit !== true
+  ) {
+    throw new HttpsError(
+      "permission-denied",
+      "Publicación y distribución solo pueden gestionarlas administradores."
+    );
+  }
+}
+
+function validateStatusTransition(
+  current,
+  next,
+  isAdmin,
+  action,
+  { isAssigned = false, publicationSettings = {} } = {}
+) {
   if (current === next) return;
-  if (isAdmin && action === "reopen" && CLOSED_STATUSES.has(current) && next === "under_review") {
+  if (isAdmin) {
+    if (action === "reopen" && (!CLOSED_STATUSES.has(current) || next !== "under_review")) {
+      throw new HttpsError("failed-precondition", "El reporte no puede reabrirse desde este estado.");
+    }
     return;
+  }
+  if (!isAssigned) {
+    throw new HttpsError(
+      "permission-denied",
+      "Solo el colaborador responsable asignado puede cambiar el estado."
+    );
+  }
+  if (ADMIN_ONLY_STATUSES.has(next) || ["reported", "confirmed"].includes(next)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Este estado solo puede establecerlo un administrador."
+    );
+  }
+  if (
+    next === "publishing"
+    && (
+      publicationSettings.enabled !== true
+      || publicationSettings.collaboratorCanEdit !== true
+    )
+  ) {
+    throw new HttpsError(
+      "permission-denied",
+      "Publicación no está habilitada para el colaborador."
+    );
   }
   if (!STATUS_TRANSITIONS[current]?.has(next)) {
     throw new HttpsError("failed-precondition", `No se puede cambiar de ${current} a ${next}.`);
+  }
+}
+
+function validateCompletionRequirements({
+  currentStatus,
+  isAdmin,
+  appliedSolution,
+  publicationSettings,
+  distribution,
+}) {
+  if (!isAdmin) {
+    throw new HttpsError("permission-denied", "Solo administradores pueden aprobar el cierre.");
+  }
+  if (!["corrected", "publishing"].includes(currentStatus)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "La corrección debe estar marcada como corregida antes de completar."
+    );
+  }
+  if (!sanitizeMultiline(appliedSolution, 6000)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Registra la solución aplicada antes de completar."
+    );
+  }
+  if (
+    publicationSettings.enabled === true
+    && !allRequiredDestinationsCompleted(distribution)
+  ) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Completa todos los destinos de publicación requeridos antes de cerrar."
+    );
   }
 }
 
@@ -891,6 +1057,11 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       correctedFileLink: "",
       duplicateReportId: "",
       duplicateFolio: "",
+      approvalComment: "",
+      publicationSettings: {
+        enabled: true,
+        collaboratorCanEdit: false,
+      },
       distribution: defaultDistribution(),
       manualOrder: Date.now(),
       externalEvidenceUrl,
@@ -905,6 +1076,7 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       updatedAt: FieldValue.serverTimestamp(),
       correctedAt: null,
       completedAt: null,
+      completedBy: null,
     };
     report.searchText = buildSearchText(report);
     const batch = db.batch();
@@ -1027,6 +1199,7 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
         throw new HttpsError("not-found", "Reporte no encontrado.");
       }
       report = { id: snapshot.id, ref: snapshot.ref, ...snapshot.data() };
+      assertActorCanModifyReport(actor, report);
     } else {
       report = await assertPublicReportAccess(db, data);
       actor = { uid: "public", name: report.reportedBy?.name || "Reportante", email: "" };
@@ -1099,13 +1272,15 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
   }, async (request) => {
     const data = request.data || {};
     let report;
+    let actor;
     if (request.auth?.uid) {
-      await assertInternalActor(request, db);
+      actor = await assertInternalActor(request, db);
       const snapshot = await db.collection(REPORTS_COLLECTION).doc(sanitizeText(data.reportId, 160)).get();
       if (!snapshot.exists || snapshot.data().deleted) {
         throw new HttpsError("not-found", "Reporte no encontrado.");
       }
       report = { id: snapshot.id, ref: snapshot.ref, ...snapshot.data() };
+      assertActorCanModifyReport(actor, report);
     } else {
       report = await assertPublicReportAccess(db, data);
     }
@@ -1300,6 +1475,8 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       return { ok: true };
     }
 
+    assertActorCanModifyReport(actor, initial, changes, action);
+    const initialPublicationSettings = inferPublicationSettings(initial);
     const patch = {};
     if (Object.hasOwn(changes, "priority")) {
       const priority = sanitizeText(changes.priority, 40);
@@ -1317,6 +1494,9 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
     }
     if (Object.hasOwn(changes, "correctedFileLink")) {
       patch.correctedFileLink = sanitizeUrl(changes.correctedFileLink);
+    }
+    if (Object.hasOwn(changes, "approvalComment")) {
+      patch.approvalComment = sanitizeMultiline(changes.approvalComment, 4000);
     }
     if (Object.hasOwn(changes, "duplicateFolio")) {
       const duplicateFolio = sanitizeText(changes.duplicateFolio, 40).toUpperCase();
@@ -1352,30 +1532,49 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       patch.confirmedClassification = classification;
       Object.assign(patch, classification);
     }
+    if (Object.hasOwn(changes, "publicationSettings")) {
+      patch.publicationSettings = sanitizePublicationSettings(
+        changes.publicationSettings,
+        initialPublicationSettings
+      );
+    }
+    const effectivePublicationSettings = patch.publicationSettings || initialPublicationSettings;
     if (Object.hasOwn(changes, "distribution")) {
-      patch.distribution = sanitizeDistribution(changes.distribution, initial.distribution, actor);
+      assertActorCanEditDistribution(actor, effectivePublicationSettings);
+      patch.distribution = sanitizeDistribution(
+        changes.distribution,
+        initial.distribution,
+        actor,
+        { canEditRequirements: actor.isAdmin }
+      );
     }
     if (Object.hasOwn(changes, "status")) {
       const status = sanitizeText(changes.status, 60);
       if (!STATUSES.has(status)) throw new HttpsError("invalid-argument", "Estado no válido.");
-      validateStatusTransition(initial.status, status, actor.isAdmin, action);
+      validateStatusTransition(initial.status, status, actor.isAdmin, action, {
+        isAssigned: initial.assignedTo?.uid === actor.uid,
+        publicationSettings: effectivePublicationSettings,
+      });
       patch.status = status;
       if (["corrected", "publishing", "completed"].includes(status) && !initial.correctedAt) {
         patch.correctedAt = FieldValue.serverTimestamp();
       }
-      if (status === "completed") {
+      if (status === "completed" && initial.status !== "completed") {
         const distribution = patch.distribution || initial.distribution;
-        if (!allRequiredDestinationsCompleted(distribution)) {
-          throw new HttpsError(
-            "failed-precondition",
-            "Completa todos los destinos de publicación requeridos antes de cerrar."
-          );
-        }
+        validateCompletionRequirements({
+          currentStatus: initial.status,
+          isAdmin: actor.isAdmin,
+          appliedSolution: patch.appliedSolution ?? initial.appliedSolution,
+          publicationSettings: effectivePublicationSettings,
+          distribution,
+        });
         patch.completedAt = FieldValue.serverTimestamp();
+        patch.completedBy = actor;
       }
       if (action === "reopen") {
         if (!actor.isAdmin) throw new HttpsError("permission-denied", "Solo administradores pueden reabrir.");
         patch.completedAt = null;
+        patch.completedBy = null;
         patch.archived = false;
       }
     }
@@ -1408,6 +1607,7 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
         previousValue: initial[field] ?? null,
         newValue: patch[field] ?? null,
         actor,
+        comment: field === "status" ? (patch.approvalComment || "") : "",
         createdAt: FieldValue.serverTimestamp(),
       });
     }
@@ -1461,6 +1661,8 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
     if (!snapshot.exists || snapshot.data().deleted) {
       throw new HttpsError("not-found", "Reporte no encontrado.");
     }
+    const report = snapshot.data();
+    assertActorCanModifyReport(actor, report);
     const visibility = sanitizeText(data.visibility, 30) || "internal";
     const type = sanitizeText(data.type, 60) || "comment";
     if (!COMMENT_VISIBILITIES.has(visibility) || !COMMENT_TYPES.has(type) || type === "reporter_information") {
@@ -1470,7 +1672,10 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       throw new HttpsError("invalid-argument", "La solicitud de información debe ser pública.");
     }
     if (type === "information_request") {
-      validateStatusTransition(snapshot.data().status, "needs_information", actor.isAdmin, "update");
+      validateStatusTransition(report.status, "needs_information", actor.isAdmin, "update", {
+        isAssigned: report.assignedTo?.uid === actor.uid,
+        publicationSettings: inferPublicationSettings(report),
+      });
     }
     const message = sanitizeMultiline(data.message, 4000, {
       required: true,
@@ -1492,6 +1697,17 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
       actor,
       createdAt: FieldValue.serverTimestamp(),
     });
+    if (type === "information_request" && report.status !== "needs_information") {
+      batch.set(reference.collection("history").doc(), {
+        action: "information_requested",
+        field: "status",
+        previousValue: report.status,
+        newValue: "needs_information",
+        actor,
+        comment: message,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
     const reportPatch = { updatedAt: FieldValue.serverTimestamp() };
     if (type === "information_request") reportPatch.status = "needs_information";
     batch.update(reference, reportPatch);
@@ -1510,6 +1726,9 @@ function createMaterialCorrectionHandlers({ db, bucket, FieldValue }) {
 
   const reorderMaterialCorrectionReports = onCall(callableOptions, async (request) => {
     const actor = await assertInternalActor(request, db);
+    if (!actor.isAdmin) {
+      throw new HttpsError("permission-denied", "Solo administradores pueden cambiar el orden manual.");
+    }
     const orderedIds = Array.isArray(request.data?.orderedIds)
       ? request.data.orderedIds.map((id) => sanitizeText(id, 160)).filter(Boolean)
       : [];
@@ -1559,16 +1778,21 @@ module.exports = {
   PRIORITIES,
   STATUSES,
   allRequiredDestinationsCompleted,
+  assertActorCanEditDistribution,
+  assertActorCanModifyReport,
   buildSearchText,
   canProfileAccessMaterialCorrections,
   createMaterialCorrectionHandlers,
   descriptionSimilarity,
   getTijuanaYear,
   hasValidFileSignature,
+  inferPublicationSettings,
   safeHashEquals,
   sanitizeClassification,
   sanitizeDistribution,
+  sanitizePublicationSettings,
   tokenHash,
+  validateCompletionRequirements,
   validateEvidenceDeclaration,
   validateStatusTransition,
 };
