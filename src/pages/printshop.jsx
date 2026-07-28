@@ -78,6 +78,17 @@ import {
   getRequestTeacherName,
 } from "../utils/printRequestMetadata";
 import {
+  compareSupplies,
+  getSupplyDateMs,
+  getSupplySearchText,
+  getSupplyStockPercentage,
+  getSupplyStockStatus,
+  matchesSupplyAttentionFilter,
+  normalizeSupplyNumber,
+  normalizeSupplySearchText,
+  SUPPLY_STOCK_SORT_OPTIONS,
+} from "../utils/supplyStock";
+import {
   getCertificateReportSchedule,
   getCertificateReportTeacher,
   isCertificateReportRequest,
@@ -2595,27 +2606,31 @@ function normalizeSupplyItem(item) {
   return {
     id: item?.id || "",
     name: String(item?.name || ""),
+    description: String(item?.description || ""),
     category: String(item?.category || "Otro"),
     stockUnit: String(item?.stockUnit || item?.unit || "Pieza"),
-    currentStock: Number(item?.currentStock || 0),
-    minStock: Number(item?.minStock || 0),
-    idealStock: Number(item?.idealStock || 0),
-    contentQuantity: Number(item?.contentQuantity || 0),
+    currentStock: normalizeSupplyNumber(item?.currentStock),
+    minStock: normalizeSupplyNumber(item?.minStock),
+    idealStock: normalizeSupplyNumber(item?.idealStock),
+    contentQuantity: normalizeSupplyNumber(item?.contentQuantity),
     contentUnit: String(item?.contentUnit || ""),
     color: String(item?.color || ""),
     size: String(item?.size || ""),
     weight: String(item?.weight || ""),
     supplier: String(item?.supplier || ""),
-    approximateCost: Number(item?.approximateCost || 0),
+    approximateCost: normalizeSupplyNumber(item?.approximateCost),
     barcode: String(item?.barcode || ""),
+    code: String(item?.code || ""),
+    sku: String(item?.sku || ""),
     barcodePresentations: normalizeBarcodePresentations(
       item?.barcodePresentations,
       item?.barcode,
       item?.stockUnit || item?.unit || "Pieza"
     ),
-    expectedYield: Number(item?.expectedYield || 0),
+    expectedYield: normalizeSupplyNumber(item?.expectedYield),
     expectedYieldUnit: String(item?.expectedYieldUnit || ""),
     active: item?.active === false ? false : true,
+    deleted: item?.deleted === true,
     notes: String(item?.notes || ""),
     lastMovementAt: item?.lastMovementAt || "",
     lastMovementType: String(item?.lastMovementType || ""),
@@ -2651,26 +2666,6 @@ function normalizeSupplyMovement(movement) {
     createdByName: String(movement?.createdByName || ""),
     createdByEmail: String(movement?.createdByEmail || ""),
   };
-}
-
-function getSupplyStatus(item) {
-  const currentStock = Number(item?.currentStock || 0);
-  const minStock = Number(item?.minStock || 0);
-  const idealStock = Number(item?.idealStock || 0);
-
-  if (currentStock <= 0) {
-    return { label: "Crítico", tone: "red" };
-  }
-
-  if (minStock > 0 && currentStock < minStock) {
-    return { label: "Bajo", tone: "orange" };
-  }
-
-  if (idealStock > 0 && currentStock >= idealStock) {
-    return { label: "Óptimo", tone: "green" };
-  }
-
-  return { label: "Normal", tone: "blue" };
 }
 
 function buildRecipeItemId() {
@@ -4081,7 +4076,11 @@ export default function PrintShop() {
   const [supplyMessage, setSupplyMessage] = useState("");
   const [supplySearch, setSupplySearch] = useState("");
   const [supplyCategoryFilter, setSupplyCategoryFilter] = useState("Todas");
-  const [supplyStatusFilter, setSupplyStatusFilter] = useState("Activos");
+  const [supplyStatusFilter, setSupplyStatusFilter] = useState("Todos");
+  const [supplyAttentionFilter, setSupplyAttentionFilter] = useState("all");
+  const [supplyUnitFilter, setSupplyUnitFilter] = useState("Todas");
+  const [supplyActiveFilter, setSupplyActiveFilter] = useState("Activos");
+  const [supplySort, setSupplySort] = useState(SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT);
   const [supplyMovementForm, setSupplyMovementForm] = useState(supplyMovementFormInitialState);
   const [savingSupplyMovement, setSavingSupplyMovement] = useState(false);
   const [supplyMovementMessage, setSupplyMovementMessage] = useState("");
@@ -4798,14 +4797,16 @@ export default function PrintShop() {
 
   const supplyStats = useMemo(() => {
     const activeSupplies = supplyItems.filter(isVisibleSupplyItem);
-    const lowStock = activeSupplies.filter((item) => {
-      const currentStock = Number(item.currentStock || 0);
-      const minStock = Number(item.minStock || 0);
-      return minStock > 0 && currentStock < minStock && currentStock > 0;
-    });
-    const critical = activeSupplies.filter((item) => Number(item.currentStock || 0) <= 0);
+    const lowStock = activeSupplies.filter(
+      (item) => getSupplyStockStatus(item).key === "low"
+    );
+    const critical = activeSupplies.filter(
+      (item) => getSupplyStockStatus(item).key === "critical"
+    );
     const totalValue = activeSupplies.reduce(
-      (sum, item) => sum + Number(item.currentStock || 0) * Number(item.approximateCost || 0),
+      (sum, item) => sum
+        + normalizeSupplyNumber(item.currentStock)
+        * normalizeSupplyNumber(item.approximateCost),
       0
     );
 
@@ -4821,33 +4822,84 @@ export default function PrintShop() {
     };
   }, [supplyItems, supplyMovements]);
 
-  const filteredSupplyItems = useMemo(() => {
-    const normalizedSearch = supplySearch.trim().toLowerCase();
+  const supplyStatusCounts = useMemo(() => {
+    const counts = {
+      total: supplyItems.length,
+      critical: 0,
+      low: 0,
+      normal: 0,
+      optimal: 0,
+      outOfStock: 0,
+      attention: 0,
+      unconfigured: 0,
+    };
 
-    return supplyItems.filter(isVisibleSupplyItem).filter((item) => {
-      const status = getSupplyStatus(item);
+    supplyItems.forEach((item) => {
+      const status = getSupplyStockStatus(item);
+      counts[status.key] += 1;
+      if (status.outOfStock) counts.outOfStock += 1;
+      if (status.requiresAttention) counts.attention += 1;
+      if (!status.hasThresholds) counts.unconfigured += 1;
+    });
+
+    return counts;
+  }, [supplyItems]);
+
+  const supplyUnitOptions = useMemo(
+    () => [...new Set(supplyItems.map((item) => item.stockUnit).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })),
+    [supplyItems]
+  );
+
+  const hasSupplyUpdateDates = useMemo(
+    () => supplyItems.some((item) => getSupplyDateMs(item.updatedAt || item.createdAt) > 0),
+    [supplyItems]
+  );
+
+  const filteredSupplyItems = useMemo(() => {
+    const normalizedSearch = normalizeSupplySearchText(supplySearch);
+
+    return supplyItems.filter((item) => {
+      const status = getSupplyStockStatus(item);
       const matchesSearch =
         !normalizedSearch ||
-        `${item.name} ${item.category} ${item.barcode} ${getSupplyBarcodeValues(item).join(" ")} ${item.color} ${item.size} ${item.supplier}`
-          .toLowerCase()
-          .includes(normalizedSearch);
+        getSupplySearchText(item).includes(normalizedSearch);
 
       const matchesCategory =
         supplyCategoryFilter === "Todas" || item.category === supplyCategoryFilter;
 
       const matchesStatus =
         supplyStatusFilter === "Todos" ||
-        (supplyStatusFilter === "Activos" && item.active !== false) ||
-        (supplyStatusFilter === "Inactivos" && item.active === false) ||
-        (supplyStatusFilter === "Bajo" && status.label === "Bajo") ||
-        (supplyStatusFilter === "Crítico" && status.label === "Crítico");
+        status.label === supplyStatusFilter;
 
-      return matchesSearch && matchesCategory && matchesStatus;
-    });
-  }, [supplyItems, supplySearch, supplyCategoryFilter, supplyStatusFilter]);
+      const matchesAttention = matchesSupplyAttentionFilter(item, supplyAttentionFilter);
+      const matchesUnit =
+        supplyUnitFilter === "Todas" || item.stockUnit === supplyUnitFilter;
+      const matchesActive =
+        supplyActiveFilter === "Todos" ||
+        (supplyActiveFilter === "Activos" && item.active !== false) ||
+        (supplyActiveFilter === "Inactivos" && item.active === false);
+
+      return matchesSearch
+        && matchesCategory
+        && matchesStatus
+        && matchesAttention
+        && matchesUnit
+        && matchesActive;
+    }).sort((a, b) => compareSupplies(a, b, supplySort));
+  }, [
+    supplyItems,
+    supplySearch,
+    supplyCategoryFilter,
+    supplyStatusFilter,
+    supplyAttentionFilter,
+    supplyUnitFilter,
+    supplyActiveFilter,
+    supplySort,
+  ]);
 
   const selectedSupply = useMemo(
-    () => supplyItems.find((item) => item.id === selectedSupplyId && isVisibleSupplyItem(item)) || null,
+    () => supplyItems.find((item) => item.id === selectedSupplyId && item.deleted !== true) || null,
     [supplyItems, selectedSupplyId]
   );
 
@@ -11046,6 +11098,9 @@ export default function PrintShop() {
           loadingSupplies={loadingSupplies}
           suppliesError={suppliesError}
           supplyStats={supplyStats}
+          supplyStatusCounts={supplyStatusCounts}
+          supplyUnitOptions={supplyUnitOptions}
+          hasSupplyUpdateDates={hasSupplyUpdateDates}
           supplyForm={supplyForm}
           selectedSupply={selectedSupply}
           selectedSupplyId={selectedSupplyId}
@@ -11054,6 +11109,10 @@ export default function PrintShop() {
           supplySearch={supplySearch}
           supplyCategoryFilter={supplyCategoryFilter}
           supplyStatusFilter={supplyStatusFilter}
+          supplyAttentionFilter={supplyAttentionFilter}
+          supplyUnitFilter={supplyUnitFilter}
+          supplyActiveFilter={supplyActiveFilter}
+          supplySort={supplySort}
           supplyMovementForm={supplyMovementForm}
           savingSupplyMovement={savingSupplyMovement}
           supplyMovementMessage={supplyMovementMessage}
@@ -11062,6 +11121,10 @@ export default function PrintShop() {
           onSearchChange={setSupplySearch}
           onCategoryFilterChange={setSupplyCategoryFilter}
           onStatusFilterChange={setSupplyStatusFilter}
+          onAttentionFilterChange={setSupplyAttentionFilter}
+          onUnitFilterChange={setSupplyUnitFilter}
+          onActiveFilterChange={setSupplyActiveFilter}
+          onSortChange={setSupplySort}
           onSupplyInputChange={handleSupplyInputChange}
           onSupplyNumberInputChange={handleSupplyNumberInputChange}
           onSaveSupply={saveSupplyItem}
@@ -13752,19 +13815,6 @@ function FinishedInventoryView({
 
 
 
-function getSupplyBarcodeValues(item) {
-  const presentations = normalizeBarcodePresentations(
-    item?.barcodePresentations,
-    item?.barcode,
-    item?.stockUnit || "Pieza"
-  );
-
-  return presentations
-    .filter((presentation) => presentation.active !== false)
-    .map((presentation) => presentation.barcode)
-    .filter(Boolean);
-}
-
 function findSupplyByBarcode(supplyItems, barcode) {
   const normalizedCode = String(barcode || "").trim();
 
@@ -13815,6 +13865,9 @@ function SupplyInventoryView({
   loadingSupplies,
   suppliesError,
   supplyStats,
+  supplyStatusCounts,
+  supplyUnitOptions,
+  hasSupplyUpdateDates,
   supplyForm,
   selectedSupply,
   selectedSupplyId,
@@ -13823,6 +13876,10 @@ function SupplyInventoryView({
   supplySearch,
   supplyCategoryFilter,
   supplyStatusFilter,
+  supplyAttentionFilter,
+  supplyUnitFilter,
+  supplyActiveFilter,
+  supplySort,
   supplyMovementForm,
   savingSupplyMovement,
   supplyMovementMessage,
@@ -13831,6 +13888,10 @@ function SupplyInventoryView({
   onSearchChange,
   onCategoryFilterChange,
   onStatusFilterChange,
+  onAttentionFilterChange,
+  onUnitFilterChange,
+  onActiveFilterChange,
+  onSortChange,
   onSupplyInputChange,
   onSupplyNumberInputChange,
   onSaveSupply,
@@ -13867,6 +13928,48 @@ function SupplyInventoryView({
 
   const [supplyFormFocus, setSupplyFormFocus] = useState(false);
   const [supplyMovementFocus, setSupplyMovementFocus] = useState(false);
+  const hasSupplyFilters =
+    supplySearch.trim() !== "" ||
+    supplyCategoryFilter !== "Todas" ||
+    supplyStatusFilter !== "Todos" ||
+    supplyAttentionFilter !== "all" ||
+    supplyUnitFilter !== "Todas" ||
+    supplyActiveFilter !== "Activos" ||
+    supplySort !== SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT;
+
+  function clearSupplyFilters() {
+    onSearchChange("");
+    onCategoryFilterChange("Todas");
+    onStatusFilterChange("Todos");
+    onAttentionFilterChange("all");
+    onUnitFilterChange("Todas");
+    onActiveFilterChange("Activos");
+    onSortChange(SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT);
+  }
+
+  function applySupplySummaryFilter(filter) {
+    onAttentionFilterChange(filter === "out-of-stock" ? "out-of-stock" : "all");
+    onStatusFilterChange(
+      filter === "critical"
+        ? "Crítico"
+        : filter === "low"
+          ? "Bajo"
+          : filter === "optimal"
+            ? "Óptimo"
+            : "Todos"
+    );
+    onActiveFilterChange("Todos");
+  }
+
+  function isSupplySummaryActive(filter) {
+    if (filter === "out-of-stock") return supplyAttentionFilter === "out-of-stock";
+    if (supplyAttentionFilter !== "all") return false;
+    if (filter === "critical") return supplyStatusFilter === "Crítico";
+    if (filter === "low") return supplyStatusFilter === "Bajo";
+    if (filter === "optimal") return supplyStatusFilter === "Óptimo";
+
+    return supplyStatusFilter === "Todos" && supplyActiveFilter === "Todos";
+  }
 
   function openSupplyFormFocus(item = null) {
     if (item) {
@@ -14173,12 +14276,8 @@ function SupplyInventoryView({
   }
 
   const supplyAlertItems = activeSupplyItems
-    .filter((item) => {
-      const currentStock = Number(item.currentStock || 0);
-      const minStock = Number(item.minStock || 0);
-      return minStock > 0 && currentStock < minStock;
-    })
-    .sort((a, b) => Number(a.currentStock || 0) - Number(b.currentStock || 0))
+    .filter((item) => getSupplyStockStatus(item).requiresAttention)
+    .sort((a, b) => compareSupplies(a, b, SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT))
     .slice(0, 4);
   const totalSupplyUnits = activeSupplyItems.reduce(
     (sum, item) => sum + Number(item.currentStock || 0),
@@ -14507,6 +14606,54 @@ function SupplyInventoryView({
           </div>
 
           <Panel title="Inventario de insumos" icon="▦" actionLabel={`${filteredSupplyItems.length} registros`}>
+            <div className="supply-stock-summary" aria-label="Resumen de niveles de inventario">
+              <button
+                type="button"
+                className={`supply-stock-summary-card total ${isSupplySummaryActive("total") ? "active" : ""}`}
+                aria-pressed={isSupplySummaryActive("total")}
+                onClick={() => applySupplySummaryFilter("total")}
+              >
+                <span>Total</span>
+                <strong>{supplyStatusCounts.total}</strong>
+              </button>
+              <button
+                type="button"
+                className={`supply-stock-summary-card critical ${isSupplySummaryActive("critical") ? "active" : ""}`}
+                aria-pressed={isSupplySummaryActive("critical")}
+                onClick={() => applySupplySummaryFilter("critical")}
+              >
+                <span>Críticos</span>
+                <strong>{supplyStatusCounts.critical}</strong>
+              </button>
+              <button
+                type="button"
+                className={`supply-stock-summary-card low ${isSupplySummaryActive("low") ? "active" : ""}`}
+                aria-pressed={isSupplySummaryActive("low")}
+                onClick={() => applySupplySummaryFilter("low")}
+              >
+                <span>Bajos</span>
+                <strong>{supplyStatusCounts.low}</strong>
+              </button>
+              <button
+                type="button"
+                className={`supply-stock-summary-card optimal ${isSupplySummaryActive("optimal") ? "active" : ""}`}
+                aria-pressed={isSupplySummaryActive("optimal")}
+                onClick={() => applySupplySummaryFilter("optimal")}
+              >
+                <span>Óptimos</span>
+                <strong>{supplyStatusCounts.optimal}</strong>
+              </button>
+              <button
+                type="button"
+                className={`supply-stock-summary-card out ${isSupplySummaryActive("out-of-stock") ? "active" : ""}`}
+                aria-pressed={isSupplySummaryActive("out-of-stock")}
+                onClick={() => applySupplySummaryFilter("out-of-stock")}
+              >
+                <span>Sin existencias</span>
+                <strong>{supplyStatusCounts.outOfStock}</strong>
+              </button>
+            </div>
+
             <div className="printshop-supplies-toolbar supplies-toolbar-redesign">
               <label className="catalog-filter-search">
                 <span>Buscar</span>
@@ -14514,7 +14661,7 @@ function SupplyInventoryView({
                   type="search"
                   value={supplySearch}
                   onChange={(event) => onSearchChange(event.target.value)}
-                  placeholder="Buscar insumo..."
+                  placeholder="Nombre, código, categoría..."
                 />
               </label>
 
@@ -14529,15 +14676,79 @@ function SupplyInventoryView({
               </label>
 
               <label>
-                <span>Estado</span>
+                <span>Estado de stock</span>
                 <select value={supplyStatusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
+                  <option>Todos</option>
+                  <option>Crítico</option>
+                  <option>Bajo</option>
+                  <option>Normal</option>
+                  <option>Óptimo</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Atención</span>
+                <select value={supplyAttentionFilter} onChange={(event) => onAttentionFilterChange(event.target.value)}>
+                  <option value="all">Todos</option>
+                  <option value="attention">Requiere atención</option>
+                  <option value="out-of-stock">Sin existencias</option>
+                  <option value="below-minimum">Debajo del mínimo</option>
+                  <option value="below-ideal">Debajo del ideal</option>
+                  <option value="unconfigured">Sin mínimos configurados</option>
+                </select>
+              </label>
+
+              {supplyUnitOptions.length > 1 && (
+                <label>
+                  <span>Unidad</span>
+                  <select value={supplyUnitFilter} onChange={(event) => onUnitFilterChange(event.target.value)}>
+                    <option>Todas</option>
+                    {supplyUnitOptions.map((unit) => (
+                      <option key={unit}>{unit}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label>
+                <span>Disponibilidad</span>
+                <select value={supplyActiveFilter} onChange={(event) => onActiveFilterChange(event.target.value)}>
                   <option>Todos</option>
                   <option>Activos</option>
                   <option>Inactivos</option>
-                  <option>Bajo</option>
-                  <option>Crítico</option>
                 </select>
               </label>
+
+              <label>
+                <span>Ordenar por</span>
+                <select value={supplySort} onChange={(event) => onSortChange(event.target.value)}>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT}>Estado: crítico a ideal</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.STATUS_IDEAL}>Estado: ideal a crítico</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.NAME_ASC}>Nombre: A–Z</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.NAME_DESC}>Nombre: Z–A</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.STOCK_ASC}>Stock: menor a mayor</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.STOCK_DESC}>Stock: mayor a menor</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.MIN_ASC}>Stock mínimo: menor a mayor</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.MIN_DESC}>Stock mínimo: mayor a menor</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.IDEAL_ASC}>Stock ideal: menor a mayor</option>
+                  <option value={SUPPLY_STOCK_SORT_OPTIONS.IDEAL_DESC}>Stock ideal: mayor a menor</option>
+                  {hasSupplyUpdateDates && (
+                    <>
+                      <option value={SUPPLY_STOCK_SORT_OPTIONS.UPDATED_DESC}>Actualización más reciente</option>
+                      <option value={SUPPLY_STOCK_SORT_OPTIONS.UPDATED_ASC}>Actualización más antigua</option>
+                    </>
+                  )}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className="supply-clear-filters"
+                onClick={clearSupplyFilters}
+                disabled={!hasSupplyFilters}
+              >
+                Limpiar filtros
+              </button>
             </div>
 
             {loadingSupplies ? (
@@ -14546,89 +14757,164 @@ function SupplyInventoryView({
                 <h3>Cargando insumos...</h3>
                 <p>Estamos consultando el inventario de materiales.</p>
               </div>
+            ) : supplyStatusCounts.total === 0 ? (
+              <div className="printshop-empty-catalog">
+                <div><PrintshopIcon name="supplies" /></div>
+                <h3>Inventario sin insumos</h3>
+                <p>Agrega el primer insumo desde el formulario lateral.</p>
+              </div>
             ) : filteredSupplyItems.length === 0 ? (
               <div className="printshop-empty-catalog">
                 <div><PrintshopIcon name="supplies" /></div>
-                <h3>No hay insumos con esos filtros</h3>
-                <p>Agrega insumos como papel, vinil, laminado o pegamento desde el formulario lateral.</p>
+                <h3>No hay coincidencias</h3>
+                <p>Ajusta la búsqueda o limpia los filtros para consultar el inventario.</p>
+                <button type="button" className="visual-outline-button" onClick={clearSupplyFilters}>
+                  Limpiar filtros
+                </button>
               </div>
             ) : (
-              <div className="printshop-table-wrap">
+              <div className="printshop-table-wrap supply-inventory-table-wrap">
                 <table className="printshop-table printshop-supplies-table supplies-table-redesign">
                   <thead>
                     <tr>
                       <th>Insumo</th>
-                      <th>Stock</th>
-                      <th>Mínimo / ideal</th>
+                      <th>Nivel de stock</th>
                       <th>Estado</th>
-                      <th>Rendimiento</th>
-                      <th>Código</th>
+                      <th>Datos operativos</th>
                       <th>Actualización</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredSupplyItems.map((item) => {
-                      const status = getSupplyStatus(item);
+                      const status = getSupplyStockStatus(item);
+                      const percentage = getSupplyStockPercentage(item);
+                      const itemDetails = [item.color, item.size, item.weight]
+                        .filter(Boolean)
+                        .join(" · ");
 
                       return (
-                        <tr key={item.id}>
-                          <td>
-                            <strong>{item.name}</strong>
-                            <small>{item.category}</small>
-                            <small>
-                              {[item.color, item.size, item.weight].filter(Boolean).join(" - ") || "Sin características"}
+                        <tr
+                          key={item.id}
+                          className={`supply-stock-row ${status.key} ${item.active === false ? "inactive" : ""}`}
+                        >
+                          <td data-label="Insumo" className="supply-name-cell">
+                            <strong title={item.name || "Insumo sin nombre"}>
+                              {item.name || "Insumo sin nombre"}
+                            </strong>
+                            <span className="supply-category-label" title={item.category}>
+                              {item.category || "Sin categoría"}
+                            </span>
+                            <small title={itemDetails || "Sin características"}>
+                              {itemDetails || "Sin características"}
                             </small>
                           </td>
-                          <td>
-                            <strong>{item.currentStock}</strong>
-                            <small>{item.stockUnit}</small>
+
+                          <td data-label="Nivel de stock" className="supply-level-cell">
+                            <div className="supply-current-stock">
+                              <span>Stock actual</span>
+                              <strong>
+                                {status.currentStock}
+                                <small>{item.stockUnit}</small>
+                              </strong>
+                            </div>
+                            <div className="supply-stock-references">
+                              <span>
+                                Mínimo
+                                <strong>{status.hasMinimum ? status.minStock : "No configurado"}</strong>
+                              </span>
+                              <span>
+                                Ideal
+                                <strong>{status.hasIdeal ? status.idealStock : "No configurado"}</strong>
+                              </span>
+                            </div>
+                            {percentage !== null && (
+                              <div
+                                className="supply-stock-progress"
+                                role="progressbar"
+                                aria-label={`Stock de ${item.name || "insumo"} respecto al ideal`}
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow={Math.round(percentage)}
+                                title={`${Math.round(percentage)}% del stock ideal`}
+                              >
+                                <span style={{ width: `${percentage}%` }} />
+                              </div>
+                            )}
                             {Number(item.contentQuantity || 0) > 0 && (
                               <small>
                                 {item.contentQuantity} {item.contentUnit} por {item.stockUnit.toLowerCase()}
                               </small>
                             )}
                           </td>
-                          <td>
-                            {item.minStock} / {item.idealStock}
-                            <small>{item.stockUnit}</small>
-                          </td>
-                          <td>
-                            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+
+                          <td data-label="Estado" className="supply-status-cell">
+                            <StatusBadge tone={status.tone}>
+                              <span aria-hidden="true">{status.icon}</span>
+                              {status.label}
+                            </StatusBadge>
+                            {status.outOfStock && <small>Sin existencias</small>}
+                            {!status.outOfStock && status.belowIdeal && status.key === "normal" && (
+                              <small>Debajo del ideal</small>
+                            )}
+                            {!status.hasThresholds && <small>Sin mínimos configurados</small>}
                             {item.active === false && <small>Inactivo</small>}
                           </td>
-                          <td>
+
+                          <td data-label="Datos operativos" className="supply-operational-cell">
                             {Number(item.expectedYield || 0) > 0 ? (
-                              <>
-                                {item.expectedYield} {item.expectedYieldUnit}
-                                <small>por {item.stockUnit.toLowerCase()}</small>
-                              </>
+                              <span title={`${item.expectedYield} ${item.expectedYieldUnit} por ${item.stockUnit}`}>
+                                <b>Rendimiento:</b> {item.expectedYield} {item.expectedYieldUnit}
+                              </span>
                             ) : (
-                              <span className="printshop-muted-text">Sin rendimiento</span>
+                              <span className="printshop-muted-text">Sin rendimiento configurado</span>
                             )}
-                          </td>
-                          <td>
-                            <code>{item.barcode || "Sin código"}</code>
-                            <small>{item.supplier || "Sin proveedor"}</small>
+                            <code title={item.barcode || item.code || item.sku || "Sin código"}>
+                              {item.barcode || item.code || item.sku || "Sin código"}
+                            </code>
+                            <small title={item.supplier || "Sin proveedor"}>
+                              {item.supplier || "Sin proveedor"}
+                            </small>
                             {item.barcodePresentations?.length > 0 && (
                               <small>
                                 {item.barcodePresentations.length} presentación{item.barcodePresentations.length === 1 ? "" : "es"}
                               </small>
                             )}
                           </td>
-                          <td>
+
+                          <td data-label="Actualización" className="supply-update-cell">
                             {formatDate(item.updatedAt || item.createdAt)}
-                            {item.lastMovementType && <small>{item.lastMovementType} - {item.lastMovementReason}</small>}
+                            {item.lastMovementType && (
+                              <small title={`${item.lastMovementType} · ${item.lastMovementReason || "Sin motivo"}`}>
+                                {item.lastMovementType} · {item.lastMovementReason || "Sin motivo"}
+                              </small>
+                            )}
                           </td>
-                          <td>
+
+                          <td data-label="Acciones" className="supply-actions-cell">
                             <div className="table-actions supply-actions supplies-actions-redesign">
-                              <button type="button" onClick={() => openSupplyMovementFocus(item, "Entrada")}>
+                              <button
+                                type="button"
+                                onClick={() => openSupplyMovementFocus(item, "Entrada")}
+                                disabled={item.active === false}
+                                title={item.active === false ? "Activa el insumo para registrar movimientos" : "Registrar entrada"}
+                              >
                                 Entrada
                               </button>
-                              <button type="button" onClick={() => openSupplyMovementFocus(item, "Salida")}>
+                              <button
+                                type="button"
+                                onClick={() => openSupplyMovementFocus(item, "Salida")}
+                                disabled={item.active === false}
+                                title={item.active === false ? "Activa el insumo para registrar movimientos" : "Registrar salida"}
+                              >
                                 Salida
                               </button>
-                              <button type="button" onClick={() => openSupplyMovementFocus(item, "Merma")}>
+                              <button
+                                type="button"
+                                onClick={() => openSupplyMovementFocus(item, "Merma")}
+                                disabled={item.active === false}
+                                title={item.active === false ? "Activa el insumo para registrar movimientos" : "Registrar merma"}
+                              >
                                 Merma
                               </button>
                               {canManageSupplyItems && (
