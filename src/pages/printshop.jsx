@@ -74,6 +74,10 @@ import {
 } from "../utils/certificateSignerCampus";
 import { formatPrintRequestCreatedAt } from "../utils/printRequestDateTime";
 import {
+  getRequestClassSchedule,
+  getRequestTeacherName,
+} from "../utils/printRequestMetadata";
+import {
   getCertificateReportSchedule,
   getCertificateReportTeacher,
   isCertificateReportRequest,
@@ -5016,7 +5020,7 @@ export default function PrintShop() {
     return printRequests.filter((request) => {
       const matchesSearch =
         !normalizedSearch ||
-        `${request.folio || ""} ${request.productName || ""} ${request.requestType || ""} ${request.requesterName || ""} ${request.requesterArea || ""}`
+        `${request.folio || ""} ${request.productName || ""} ${request.requestType || ""} ${getRequestTeacherName(request, "")} ${getRequestClassSchedule(request, "")} ${request.requesterName || ""} ${request.requesterArea || ""}`
           .toLowerCase()
           .includes(normalizedSearch);
 
@@ -7257,8 +7261,8 @@ export default function PrintShop() {
       notes: request.notes || "",
       level: requestLevel || matchingTemplate?.level || "No aplica",
       group: requestGroup,
-      teacherName: request.teacherName || request.teacherSignerName || "",
-      schedule: request.schedule || "",
+      teacherName: getRequestTeacherName(request, ""),
+      schedule: getRequestClassSchedule(request, ""),
       printedQuantity: resolvedPrintedQuantity,
       digitalQuantity: resolvedDigitalQuantity,
       principalSignerId: matchingPrincipalSigner?.id || request.principalSignerId || "",
@@ -15411,7 +15415,7 @@ function PrintRequestsView({
                 <span>⌕</span>
                 <input
                   type="search"
-                  placeholder="Buscar folio, producto, solicitante o área"
+                  placeholder="Buscar folio, producto, maestro, horario o solicitante"
                   value={requestSearch}
                   onChange={(event) => onRequestSearchChange(event.target.value)}
                 />
@@ -15528,7 +15532,7 @@ function PrintRequestsView({
                     <thead>
                       <tr>
                         <th>Folio</th>
-                        <th>Producto / Servicio</th>
+                        <th>Producto / Datos de clase</th>
                         <th>Solicitante</th>
                         <th>Área / Plantel</th>
                         <th>Estado</th>
@@ -15550,31 +15554,63 @@ function PrintRequestsView({
                             className={`${isActiveRow ? "selected-user-row request-selected-row" : ""} ${getPriorityClassName(request.priority)}`}
                             onClick={() => handlePreviewRequest(request)}
                           >
-                            <td>
-                              <strong>{request.folio || "Sin folio"}</strong>
-                              <small>{request.requestType || "Solicitud"}</small>
+                            <td className="request-table-folio-cell">
+                              <strong title={request.folio || "Sin folio"}>
+                                {request.folio || "Sin folio"}
+                              </strong>
+                              <small title={request.requestType || "Solicitud"}>
+                                {request.requestType || "Solicitud"}
+                              </small>
                             </td>
-                            <td>
-                              <strong>{getRequestProductLabel(request)}</strong>
-                              <small>{request.deliveryType || "Sin tipo de entrega"}</small>
+                            <td className="request-table-product-cell">
+                              <strong title={getRequestProductLabel(request)}>
+                                {getRequestProductLabel(request)}
+                              </strong>
+                              <small title={`Maestro: ${getRequestTeacherName(request)}`}>
+                                <b>Maestro:</b> {getRequestTeacherName(request)}
+                              </small>
+                              <small title={`Horario: ${getRequestClassSchedule(request)}`}>
+                                <b>Horario:</b> {getRequestClassSchedule(request)}
+                              </small>
                             </td>
-                            <td>
-                              <strong>{request.requesterName || "Sin solicitante"}</strong>
-                              <small>{request.requesterArea || "Sin área"}</small>
+                            <td className="request-table-requester-cell">
+                              <strong title={request.requesterName || "Sin solicitante"}>
+                                {request.requesterName || "Sin solicitante"}
+                              </strong>
+                              <small title={request.requesterArea || "Sin área"}>
+                                {request.requesterArea || "Sin área"}
+                              </small>
+                              <small
+                                className="request-table-compact-only"
+                                title={`${request.campus || "Sin plantel"}${request.responsibleName ? ` · Responsable: ${request.responsibleName}` : ""}`}
+                              >
+                                {request.campus || "Sin plantel"}
+                                {request.responsibleName ? ` · Resp. ${request.responsibleName}` : ""}
+                              </small>
                             </td>
-                            <td>
-                              <strong>{request.campus || "Sin plantel"}</strong>
-                              <small>{request.responsibleName ? `Resp. ${request.responsibleName}` : "Sin responsable"}</small>
+                            <td className="request-table-campus-cell">
+                              <strong title={request.campus || "Sin plantel"}>
+                                {request.campus || "Sin plantel"}
+                              </strong>
+                              <small title={request.responsibleName ? `Responsable: ${request.responsibleName}` : "Sin responsable"}>
+                                {request.responsibleName ? `Resp. ${request.responsibleName}` : "Sin responsable"}
+                              </small>
                             </td>
                             <td>
                               <StatusBadge tone={getRequestStatusTone(effectiveStatus)}>{effectiveStatus}</StatusBadge>
                               <small>{progress}% completado</small>
+                              <small className="request-table-compact-only">
+                                Prioridad: {request.priority || "Normal"}
+                              </small>
                             </td>
                             <td>
                               <StatusBadge tone={getPriorityTone(request.priority)}>{request.priority || "Normal"}</StatusBadge>
                             </td>
                             <td>
                               <strong>{formatPrintRequestCreatedAt(request)}</strong>
+                              <small className="request-table-compact-only" title={`Compromiso: ${getRequestDueLabel(request)}`}>
+                                Compromiso: {getRequestDueLabel(request)}
+                              </small>
                             </td>
                             <td>{getRequestDueLabel(request)}</td>
                             <td>
@@ -16148,6 +16184,18 @@ function RequestPreviewPanel({ request, onOpen }) {
         <h3>{getRequestProductLabel(request)}</h3>
 
         <div className="request-preview-info-list">
+          <div>
+            <span>Maestro</span>
+            <strong title={getRequestTeacherName(request)}>
+              {getRequestTeacherName(request)}
+            </strong>
+          </div>
+          <div>
+            <span>Horario del grupo</span>
+            <strong title={getRequestClassSchedule(request)}>
+              {getRequestClassSchedule(request)}
+            </strong>
+          </div>
           <div>
             <span>Solicitante</span>
             <strong>{request.requesterName || "Sin solicitante"}</strong>
@@ -18071,6 +18119,8 @@ function RequestDetailCard({
         {(!isCertificateLike || detailActiveTab === "summary") && (
           <>
             <div className="request-detail-grid">
+              <DetailItem label="Maestro" value={getRequestTeacherName(request)} />
+              <DetailItem label="Horario del grupo" value={getRequestClassSchedule(request)} />
               <DetailItem label="Solicitante" value={request.requesterName || "Sin solicitante"} helper={`${request.requesterArea || "Sin área"} - ${request.campus || "Sin plantel"}`} />
               <DetailItem label="Responsable" value={request.responsibleName || requestForm.responsibleName || "Sin asignar"} helper={request.responsibleEmail || requestForm.responsibleEmail || ""} />
               <DetailItem label="Prioridad" value={request.priority || automaticPriority || "Normal"} badgeTone={getPriorityTone(request.priority || automaticPriority)} />
@@ -18281,8 +18331,8 @@ function RequestDetailCard({
               <DetailItem label="Grupo" value={request.group || "No especificado"} />
               <DetailItem label="Principal" value={request.principalSignerName || "No especificado"} />
               <DetailItem label="Teacher" value={request.teacherSignerName || request.teacherName || "No especificado"} />
-              <DetailItem label="Maestro" value={request.teacherName || "No especificado"} />
-              <DetailItem label="Horario" value={request.schedule || "No especificado"} />
+              <DetailItem label="Maestro" value={getRequestTeacherName(request)} />
+              <DetailItem label="Horario" value={getRequestClassSchedule(request)} />
               <DetailItem
                 label="Fecha certificado"
                 value={request.certificateIssueDate ? formatCertificatePreviewDate(request.certificateIssueDate) : "No seleccionada"}
@@ -20291,7 +20341,7 @@ function DetailItem({ label, value, helper = "", badgeTone = "" }) {
       {badgeTone ? (
         <StatusBadge tone={badgeTone}>{value}</StatusBadge>
       ) : (
-        <strong>{value}</strong>
+        <strong title={typeof value === "string" ? value : undefined}>{value}</strong>
       )}
       {helper && <small>{helper}</small>}
     </div>

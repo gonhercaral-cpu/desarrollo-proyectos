@@ -4295,3 +4295,65 @@ html[data-theme="dark"] body #root .main-content :is(
   align-self: center !important;
 }
 
+html[data-theme="dark"] .main-content .project-activity-indicator {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(120, 53, 15, 0.38);
+  color: #fde68a;
+}
+
+html[data-theme="dark"] .main-content .project-activity-indicator strong {
+  background: #d97706;
+  color: #fff7ed !important;
+}
+
+html[data-theme="dark"] .main-content .my-project-card-v2.project-has-new-activity,
+html[data-theme="dark"] .main-content .all-projects-recent-card.project-has-new-activity {
+  border-color: rgba(251, 191, 36, 0.55) !important;
+  background: linear-gradient(
+    180deg,
+    rgba(120, 53, 15, 0.2),
+    rgba(69, 38, 17, 0.28)
+  ) !important;
+  box-shadow: inset 3px 0 0 #f59e0b !important;
+}
+
+html[data-theme="dark"] .main-content
+  .all-projects-modern-table
+  tr.project-has-new-activity
+  > td {
+  background: rgba(120, 53, 15, 0.18) !important;
+}
+
+html[data-theme="dark"] .main-content
+  .all-projects-modern-table
+  tr.project-has-new-activity
+  > td:first-child {
+  box-shadow: inset 3px 0 0 #f59e0b !important;
+}
+
+html[data-theme="dark"] .main-content :is(
+  .request-table-wrap-redesign,
+  .request-table-redesign,
+  .request-preview-panel
+) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .request-table-redesign :is(th, td) {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .main-content .request-table-redesign :is(strong, small b),
+html[data-theme="dark"] .main-content .request-preview-panel :is(h3, strong) {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .request-table-redesign small,
+html[data-theme="dark"] .main-content .request-preview-panel :is(span, small, p) {
+  color: var(--muted) !important;
+}
+

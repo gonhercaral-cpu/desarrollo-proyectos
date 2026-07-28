@@ -242,6 +242,38 @@ export function subscribeToUserNotifications(userId, onChange, onError) {
   );
 }
 
+export function subscribeToUnreadProjectNotifications(userId, onChange, onError) {
+  if (!userId) {
+    onChange([]);
+    return () => {};
+  }
+
+  const unreadNotificationsQuery = query(
+    collection(db, NOTIFICATIONS_COLLECTION),
+    where("recipientId", "==", userId),
+    where("read", "==", false)
+  );
+
+  return onSnapshot(
+    unreadNotificationsQuery,
+    (snapshot) => {
+      onChange(
+        snapshot.docs
+          .map((document) => ({
+            id: document.id,
+            ...document.data(),
+          }))
+          .filter((notification) => Boolean(notification.projectId))
+      );
+    },
+    (error) => {
+      console.error("No se pudo cargar la actividad pendiente de proyectos:", error);
+      onChange([]);
+      onError?.(error);
+    }
+  );
+}
+
 export async function markNotificationRead(notificationId) {
   if (!notificationId) return;
 
@@ -249,6 +281,34 @@ export async function markNotificationRead(notificationId) {
     read: true,
     readAt: serverTimestamp(),
   });
+}
+
+export async function markProjectNotificationsRead(userId, projectId) {
+  if (!userId || !projectId) return 0;
+
+  const unreadProjectQuery = query(
+    collection(db, NOTIFICATIONS_COLLECTION),
+    where("recipientId", "==", userId),
+    where("projectId", "==", projectId),
+    where("read", "==", false)
+  );
+  const snapshot = await getDocs(unreadProjectQuery);
+  if (snapshot.empty) return 0;
+
+  for (let offset = 0; offset < snapshot.docs.length; offset += 450) {
+    const batch = writeBatch(db);
+
+    snapshot.docs.slice(offset, offset + 450).forEach((document) => {
+      batch.update(document.ref, {
+        read: true,
+        readAt: serverTimestamp(),
+      });
+    });
+
+    await batch.commit();
+  }
+
+  return snapshot.size;
 }
 
 export async function markAllNotificationsRead(userId) {

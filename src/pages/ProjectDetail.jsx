@@ -22,6 +22,7 @@ import {
   unlinkEditorialDocument,
   PROJECT_LOG_TYPES,
 } from "../services/projectsService";
+import { markProjectNotificationsRead } from "../services/notificationsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
 import UserAvatar from "../components/UserAvatar";
 
@@ -143,6 +144,23 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
         await loadInternalNotes(projectId);
       } else {
         setInternalNotesHistory([]);
+      }
+
+      const currentUserId =
+        firebaseUser?.uid ||
+        profile?.uid ||
+        profile?.id ||
+        "";
+
+      if (currentUserId) {
+        try {
+          await markProjectNotificationsRead(currentUserId, projectId);
+        } catch (notificationError) {
+          console.warn(
+            "El proyecto cargó, pero no se pudo marcar su actividad como revisada:",
+            notificationError
+          );
+        }
       }
     } catch (error) {
       console.error(error);

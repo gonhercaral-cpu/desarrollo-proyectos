@@ -4,16 +4,20 @@ import {
   getActiveProjects,
   softDeleteProject,
 } from "../services/projectsService";
+import { subscribeToUnreadProjectNotifications } from "../services/notificationsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
+import { buildUnreadActivityByProject } from "../utils/projectNotificationActivity";
 import UserAvatar from "../components/UserAvatar";
+import ProjectActivityIndicator from "../components/ProjectActivityIndicator";
 
 export default function AllProjects({ onOpenProject, onEditProject }) {
-  const { profile, isAdmin } = useAuth();
+  const { profile, currentUser, firebaseUser, isAdmin } = useAuth();
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [deletingProjectId, setDeletingProjectId] = useState("");
+  const [unreadProjectNotifications, setUnreadProjectNotifications] = useState([]);
 
   const [searchText, setSearchText] = useState("");
   const [activeQuickFilter, setActiveQuickFilter] = useState("Todos");
@@ -45,6 +49,25 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
   useEffect(() => {
     loadProjects();
   }, []);
+
+  const currentUserId =
+    currentUser?.uid ||
+    firebaseUser?.uid ||
+    profile?.uid ||
+    profile?.id ||
+    "";
+
+  useEffect(() => {
+    return subscribeToUnreadProjectNotifications(
+      currentUserId,
+      setUnreadProjectNotifications
+    );
+  }, [currentUserId]);
+
+  const unreadActivityByProject = useMemo(
+    () => buildUnreadActivityByProject(unreadProjectNotifications),
+    [unreadProjectNotifications]
+  );
 
   async function handleDeleteProject(project) {
     if (!isAdmin) {
@@ -540,9 +563,13 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                 <tbody>
                   {filteredProjects.map((project) => {
                     const progress = calculateAutomaticProgress(project);
+                    const unreadActivity = unreadActivityByProject[project.id];
 
                     return (
-                      <tr key={project.id}>
+                      <tr
+                        key={project.id}
+                        className={unreadActivity ? "project-has-new-activity" : ""}
+                      >
                         <td>
                           <div className="project-name-cell all-project-name-cell">
                             <span className="project-table-icon all-project-table-icon">
@@ -552,6 +579,10 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                             <div>
                               <strong>{project.title}</strong>
                               <small>{project.id.slice(0, 8).toUpperCase()}</small>
+                              <ProjectActivityIndicator
+                                activity={unreadActivity}
+                                compact
+                              />
                             </div>
                           </div>
                         </td>
@@ -705,7 +736,11 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                 visibleRecentProjects.map((project) => (
                   <button
                     type="button"
-                    className="all-projects-recent-card"
+                    className={`all-projects-recent-card${
+                      unreadActivityByProject[project.id]
+                        ? " project-has-new-activity"
+                        : ""
+                    }`}
                     key={project.id}
                     onClick={() => onOpenProject(project.id)}
                   >
@@ -725,6 +760,10 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                           {formatDate(project.updatedAt || project.createdAt)}
                         </small>
                       </div>
+                      <ProjectActivityIndicator
+                        activity={unreadActivityByProject[project.id]}
+                        compact
+                      />
                     </div>
                   </button>
                 ))

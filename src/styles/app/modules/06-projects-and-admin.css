@@ -3819,6 +3819,80 @@ body {
   line-height: 1.25;
 }
 
+.project-activity-indicator {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  gap: 5px;
+  border: 1px solid #f8c975;
+  border-radius: 999px;
+  background: #fff8e8;
+  color: #8a4b08;
+  padding: 4px 7px;
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.project-activity-indicator i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+}
+
+.project-activity-indicator svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.project-activity-indicator strong {
+  min-width: 17px;
+  height: 17px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #b45309;
+  color: #ffffff !important;
+  padding: 0 4px;
+  font-size: 9.5px !important;
+  line-height: 1 !important;
+}
+
+.project-activity-indicator.compact {
+  margin-top: 5px;
+  padding: 3px 6px;
+}
+
+.my-project-card-v2.project-has-new-activity {
+  border-color: #f2bd5b;
+  background: linear-gradient(180deg, #fffdf8 0%, #fff9eb 100%);
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.all-projects-modern-table tr.project-has-new-activity > td {
+  background: #fffdf7 !important;
+}
+
+.all-projects-modern-table tr.project-has-new-activity > td:first-child {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.all-projects-recent-card.project-has-new-activity {
+  border-color: #f2bd5b;
+  background: #fffdf7;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
 .my-project-card-top p {
   margin: 0;
   color: #536176;

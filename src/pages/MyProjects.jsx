@@ -10,9 +10,12 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   getNotificationVisual,
+  subscribeToUnreadProjectNotifications,
 } from "../services/notificationsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
+import { buildUnreadActivityByProject } from "../utils/projectNotificationActivity";
 import UserAvatar from "../components/UserAvatar";
+import ProjectActivityIndicator from "../components/ProjectActivityIndicator";
 
 const PROJECTS_COLLECTION = "projects";
 
@@ -57,6 +60,7 @@ export default function MyProjects({ onOpenProject }) {
   const [showFullActivity, setShowFullActivity] = useState(false);
 
   const [notifications, setNotifications] = useState([]);
+  const [unreadProjectNotifications, setUnreadProjectNotifications] = useState([]);
   const [showFullNotifications, setShowFullNotifications] = useState(false);
   const [markingNotifications, setMarkingNotifications] = useState(false);
 
@@ -136,6 +140,20 @@ export default function MyProjects({ onOpenProject }) {
 
     return subscribeToUserNotifications(userId, setNotifications);
   }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id]);
+
+  useEffect(() => {
+    const userId = getUserId();
+
+    return subscribeToUnreadProjectNotifications(
+      userId,
+      setUnreadProjectNotifications
+    );
+  }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id]);
+
+  const unreadActivityByProject = useMemo(
+    () => buildUnreadActivityByProject(unreadProjectNotifications),
+    [unreadProjectNotifications]
+  );
 
   const unreadNotificationsCount = useMemo(
     () => notifications.filter((notification) => notification.read !== true).length,
@@ -468,6 +486,7 @@ export default function MyProjects({ onOpenProject }) {
               isAdmin={isAdmin}
               deletingProjectId={deletingProjectId}
               onDeleteProject={handleDeleteProject}
+              unreadActivityByProject={unreadActivityByProject}
             />
           </section>
         </main>
@@ -660,6 +679,7 @@ function ProjectList({
   isAdmin = false,
   deletingProjectId = "",
   onDeleteProject,
+  unreadActivityByProject = {},
 }) {
   return (
     <div className="my-project-card-list-v2">
@@ -668,9 +688,15 @@ function ProjectList({
       ) : (
         projects.map((project) => {
           const progress = calculateAutomaticProgress(project);
+          const unreadActivity = unreadActivityByProject[project.id];
 
           return (
-            <article className="my-project-card-v2" key={project.id}>
+            <article
+              className={`my-project-card-v2${
+                unreadActivity ? " project-has-new-activity" : ""
+              }`}
+              key={project.id}
+            >
               <div className="my-project-icon-v2">
                 {project.relationType === "Asignado" ? <MyProjectsMenuIcon /> : "▥"}
               </div>
@@ -686,6 +712,7 @@ function ProjectList({
                       >
                         {project.relationType}
                       </Badge>
+                      <ProjectActivityIndicator activity={unreadActivity} />
                     </div>
 
                     <p>{project.description || "Sin descripción registrada."}</p>
