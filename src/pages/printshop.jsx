@@ -79,7 +79,10 @@ import {
 } from "../utils/printRequestMetadata";
 import {
   compareSupplies,
+  formatSupplyUnit,
+  formatSupplyUpdatedAt,
   getSupplyDateMs,
+  getSupplyMinimumMarker,
   getSupplySearchText,
   getSupplyStockPercentage,
   getSupplyStockStatus,
@@ -88,6 +91,10 @@ import {
   normalizeSupplySearchText,
   SUPPLY_STOCK_SORT_OPTIONS,
 } from "../utils/supplyStock";
+import {
+  getSupplyImageStoragePath,
+  prepareSupplyImageFile,
+} from "../utils/supplyImage";
 import {
   getCertificateReportSchedule,
   getCertificateReportTeacher,
@@ -253,6 +260,9 @@ const supplyFormInitialState = {
   expectedYieldUnit: "Libros",
   active: true,
   notes: "",
+  imageUrl: "",
+  imagePath: "",
+  imageUpdatedAt: "",
 };
 
 const supplyMovementFormInitialState = {
@@ -2603,7 +2613,9 @@ function buildPresentationId() {
 }
 
 function normalizeSupplyItem(item) {
-  return {
+  const historicalImage = item?.image && typeof item.image === "object" ? item.image : {};
+
+  const normalizedSupply = {
     id: item?.id || "",
     name: String(item?.name || ""),
     description: String(item?.description || ""),
@@ -2632,11 +2644,31 @@ function normalizeSupplyItem(item) {
     active: item?.active === false ? false : true,
     deleted: item?.deleted === true,
     notes: String(item?.notes || ""),
+    imageUrl: String(
+      item?.imageUrl ||
+      item?.productImageUrl ||
+      item?.photoUrl ||
+      historicalImage.url ||
+      ""
+    ),
+    imagePath: String(
+      item?.imagePath ||
+      item?.productImagePath ||
+      item?.photoPath ||
+      historicalImage.path ||
+      ""
+    ),
+    imageUpdatedAt: item?.imageUpdatedAt || historicalImage.updatedAt || "",
     lastMovementAt: item?.lastMovementAt || "",
     lastMovementType: String(item?.lastMovementType || ""),
     lastMovementReason: String(item?.lastMovementReason || ""),
     createdAt: item?.createdAt || "",
     updatedAt: item?.updatedAt || "",
+  };
+
+  return {
+    ...normalizedSupply,
+    _stockStatus: getSupplyStockStatus(normalizedSupply),
   };
 }
 
@@ -4081,6 +4113,14 @@ export default function PrintShop() {
   const [supplyUnitFilter, setSupplyUnitFilter] = useState("Todas");
   const [supplyActiveFilter, setSupplyActiveFilter] = useState("Activos");
   const [supplySort, setSupplySort] = useState(SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT);
+  const [supplyPage, setSupplyPage] = useState(1);
+  const [supplyPageSize, setSupplyPageSize] = useState(10);
+  const [supplyImageBlob, setSupplyImageBlob] = useState(null);
+  const [supplyImagePreviewUrl, setSupplyImagePreviewUrl] = useState("");
+  const [supplyImageRemovalRequested, setSupplyImageRemovalRequested] = useState(false);
+  const [supplyImageProcessing, setSupplyImageProcessing] = useState(false);
+  const [supplyImageError, setSupplyImageError] = useState("");
+  const supplyImageRequestIdRef = useRef(0);
   const [supplyMovementForm, setSupplyMovementForm] = useState(supplyMovementFormInitialState);
   const [savingSupplyMovement, setSavingSupplyMovement] = useState(false);
   const [supplyMovementMessage, setSupplyMovementMessage] = useState("");
@@ -4823,23 +4863,22 @@ export default function PrintShop() {
   }, [supplyItems, supplyMovements]);
 
   const supplyStatusCounts = useMemo(() => {
+    const activeSupplies = supplyItems.filter(isVisibleSupplyItem);
     const counts = {
-      total: supplyItems.length,
+      total: activeSupplies.length,
       critical: 0,
       low: 0,
-      normal: 0,
       optimal: 0,
       outOfStock: 0,
       attention: 0,
       unconfigured: 0,
     };
 
-    supplyItems.forEach((item) => {
+    activeSupplies.forEach((item) => {
       const status = getSupplyStockStatus(item);
       counts[status.key] += 1;
       if (status.outOfStock) counts.outOfStock += 1;
       if (status.requiresAttention) counts.attention += 1;
-      if (!status.hasThresholds) counts.unconfigured += 1;
     });
 
     return counts;
@@ -4870,6 +4909,7 @@ export default function PrintShop() {
 
       const matchesStatus =
         supplyStatusFilter === "Todos" ||
+        (supplyStatusFilter === "Sin existencias" && status.outOfStock) ||
         status.label === supplyStatusFilter;
 
       const matchesAttention = matchesSupplyAttentionFilter(item, supplyAttentionFilter);
@@ -4897,6 +4937,21 @@ export default function PrintShop() {
     supplyActiveFilter,
     supplySort,
   ]);
+
+  const supplyTotalPages = Math.max(
+    1,
+    Math.ceil(filteredSupplyItems.length / supplyPageSize)
+  );
+  const effectiveSupplyPage = Math.min(supplyPage, supplyTotalPages);
+  const paginatedSupplyItems = useMemo(() => {
+    const start = (effectiveSupplyPage - 1) * supplyPageSize;
+    return filteredSupplyItems.slice(start, start + supplyPageSize);
+  }, [effectiveSupplyPage, filteredSupplyItems, supplyPageSize]);
+
+  function updateSupplyFilter(setter, value) {
+    setter(value);
+    setSupplyPage(1);
+  }
 
   const selectedSupply = useMemo(
     () => supplyItems.find((item) => item.id === selectedSupplyId && item.deleted !== true) || null,
@@ -10060,10 +10115,62 @@ export default function PrintShop() {
     }));
   }
 
+  useEffect(() => {
+    return () => {
+      if (supplyImagePreviewUrl) URL.revokeObjectURL(supplyImagePreviewUrl);
+    };
+  }, [supplyImagePreviewUrl]);
+
+  function clearSupplyImageDraft() {
+    supplyImageRequestIdRef.current += 1;
+    setSupplyImageBlob(null);
+    setSupplyImagePreviewUrl("");
+    setSupplyImageRemovalRequested(false);
+    setSupplyImageProcessing(false);
+    setSupplyImageError("");
+  }
+
+  async function handleSupplyImageChange(event) {
+    const file = event.target.files?.[0] || null;
+    event.target.value = "";
+    setSupplyImageError("");
+    if (!file) return;
+    const requestId = supplyImageRequestIdRef.current + 1;
+    supplyImageRequestIdRef.current = requestId;
+
+    try {
+      setSupplyImageProcessing(true);
+      const processedImage = await prepareSupplyImageFile(file);
+      if (supplyImageRequestIdRef.current !== requestId) return;
+      setSupplyImageBlob(processedImage);
+      setSupplyImagePreviewUrl(URL.createObjectURL(processedImage));
+      setSupplyImageRemovalRequested(false);
+    } catch (error) {
+      if (supplyImageRequestIdRef.current !== requestId) return;
+      setSupplyImageError(error?.message || "No se pudo procesar la fotografía.");
+    } finally {
+      if (supplyImageRequestIdRef.current === requestId) {
+        setSupplyImageProcessing(false);
+      }
+    }
+  }
+
+  function removeSupplyImageDraft() {
+    setSupplyImageBlob(null);
+    setSupplyImagePreviewUrl("");
+    setSupplyImageRemovalRequested(true);
+    setSupplyImageError("");
+  }
+
+  function cancelSupplyImageChange() {
+    clearSupplyImageDraft();
+  }
+
   function resetSupplyForm() {
     setSelectedSupplyId(null);
     setSupplyForm(supplyFormInitialState);
     setSupplyMessage("");
+    clearSupplyImageDraft();
   }
 
   function selectSupplyItem(item) {
@@ -10098,7 +10205,11 @@ export default function PrintShop() {
       expectedYieldUnit: item.expectedYieldUnit || "Libros",
       active: item.active !== false,
       notes: item.notes || "",
+      imageUrl: item.imageUrl || "",
+      imagePath: item.imagePath || "",
+      imageUpdatedAt: item.imageUpdatedAt || "",
     });
+    clearSupplyImageDraft();
   }
 
   async function saveSupplyItem(event) {
@@ -10161,9 +10272,48 @@ export default function PrintShop() {
 
     try {
       setSavingSupply(true);
+      const targetSupplyRef = selectedSupplyId
+        ? doc(db, "printSupplyItems", selectedSupplyId)
+        : doc(collection(db, "printSupplyItems"));
+      const targetSupplyId = targetSupplyRef.id;
+      const imagePath = getSupplyImageStoragePath(targetSupplyId);
+      let uploadedImagePath = "";
+      let previousImagePath = selectedSupply?.imagePath || supplyForm.imagePath || "";
+
+      if (supplyImageBlob) {
+        const imageReference = storageRef(storage, imagePath);
+        await uploadBytes(imageReference, supplyImageBlob, {
+          contentType: "image/webp",
+          cacheControl: "public,max-age=3600",
+        });
+        const downloadUrl = await getDownloadURL(imageReference);
+        payload.imageUrl = `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+        payload.imagePath = imagePath;
+        payload.imageUpdatedAt = serverTimestamp();
+        uploadedImagePath = imagePath;
+      } else if (supplyImageRemovalRequested) {
+        payload.imageUrl = "";
+        payload.imagePath = "";
+        payload.imageUpdatedAt = serverTimestamp();
+      }
 
       if (selectedSupplyId) {
-        await updateDoc(doc(db, "printSupplyItems", selectedSupplyId), payload);
+        await updateDoc(targetSupplyRef, payload);
+
+        if (
+          previousImagePath &&
+          previousImagePath.startsWith("printshop/supplies/") &&
+          (supplyImageRemovalRequested || previousImagePath !== uploadedImagePath)
+        ) {
+          try {
+            await deleteObject(storageRef(storage, previousImagePath));
+          } catch (imageDeleteError) {
+            if (imageDeleteError?.code !== "storage/object-not-found") {
+              console.warn("La referencia anterior de fotografía no pudo eliminarse:", imageDeleteError);
+            }
+          }
+        }
+
         await createPrintshopLog({
           type: "SUPPLY_UPDATED",
           module: "supplies",
@@ -10173,15 +10323,27 @@ export default function PrintShop() {
           referenceId: selectedSupplyId,
           productName: payload.name,
         });
+        clearSupplyImageDraft();
         setSupplyMessage("Insumo actualizado correctamente.");
       } else {
-        const supplyRef = await addDoc(collection(db, "printSupplyItems"), {
-          ...payload,
-          createdAt: serverTimestamp(),
-          createdByUid: auditUser.uid,
-          createdByName: auditUser.name,
-          createdByEmail: auditUser.email,
-        });
+        try {
+          await setDoc(targetSupplyRef, {
+            ...payload,
+            createdAt: serverTimestamp(),
+            createdByUid: auditUser.uid,
+            createdByName: auditUser.name,
+            createdByEmail: auditUser.email,
+          });
+        } catch (firestoreError) {
+          if (uploadedImagePath) {
+            try {
+              await deleteObject(storageRef(storage, uploadedImagePath));
+            } catch (cleanupError) {
+              console.warn("No se pudo limpiar una fotografía sin documento:", cleanupError);
+            }
+          }
+          throw firestoreError;
+        }
 
         await createPrintshopLog({
           type: "SUPPLY_CREATED",
@@ -10189,16 +10351,20 @@ export default function PrintShop() {
           title: "Insumo creado",
           description: `Se creó el insumo ${payload.name}.`,
           referenceType: "supply",
-          referenceId: supplyRef.id,
+          referenceId: targetSupplyId,
           productName: payload.name,
         });
 
         setSupplyForm(supplyFormInitialState);
+        clearSupplyImageDraft();
         setSupplyMessage("Insumo creado correctamente.");
       }
     } catch (error) {
       console.error("No se pudo guardar el insumo:", error);
-      setSupplyMessage("No se pudo guardar el insumo. Revisa las reglas de Firestore.");
+      setSupplyMessage(
+        error?.message ||
+        "No se pudo guardar el insumo. Revisa las reglas de Firebase."
+      );
     } finally {
       setSavingSupply(false);
     }
@@ -10956,6 +11122,7 @@ export default function PrintShop() {
                 setRequestSearch(event.target.value);
               } else if (activeSection === "supplies") {
                 setSupplySearch(event.target.value);
+                setSupplyPage(1);
               } else if (activeSection === "certificates") {
                 setRequestSearch(event.target.value);
               } else if (activeSection === "credentials") {
@@ -11093,6 +11260,7 @@ export default function PrintShop() {
         <SupplyInventoryView
           supplyItems={supplyItems}
           filteredSupplyItems={filteredSupplyItems}
+          paginatedSupplyItems={paginatedSupplyItems}
           supplyMovements={supplyMovements}
           productionBatches={productionBatches}
           loadingSupplies={loadingSupplies}
@@ -11102,7 +11270,6 @@ export default function PrintShop() {
           supplyUnitOptions={supplyUnitOptions}
           hasSupplyUpdateDates={hasSupplyUpdateDates}
           supplyForm={supplyForm}
-          selectedSupply={selectedSupply}
           selectedSupplyId={selectedSupplyId}
           savingSupply={savingSupply}
           supplyMessage={supplyMessage}
@@ -11113,18 +11280,33 @@ export default function PrintShop() {
           supplyUnitFilter={supplyUnitFilter}
           supplyActiveFilter={supplyActiveFilter}
           supplySort={supplySort}
+          supplyPage={effectiveSupplyPage}
+          supplyPageSize={supplyPageSize}
+          supplyTotalPages={supplyTotalPages}
+          supplyImagePreviewUrl={supplyImagePreviewUrl}
+          supplyImageRemovalRequested={supplyImageRemovalRequested}
+          supplyImageProcessing={supplyImageProcessing}
+          supplyImageError={supplyImageError}
           supplyMovementForm={supplyMovementForm}
           savingSupplyMovement={savingSupplyMovement}
           supplyMovementMessage={supplyMovementMessage}
           isAdmin={isAdmin}
           canManageSupplyItems={canManagePrintshopOperations}
-          onSearchChange={setSupplySearch}
-          onCategoryFilterChange={setSupplyCategoryFilter}
-          onStatusFilterChange={setSupplyStatusFilter}
-          onAttentionFilterChange={setSupplyAttentionFilter}
-          onUnitFilterChange={setSupplyUnitFilter}
-          onActiveFilterChange={setSupplyActiveFilter}
-          onSortChange={setSupplySort}
+          onSearchChange={(value) => updateSupplyFilter(setSupplySearch, value)}
+          onCategoryFilterChange={(value) => updateSupplyFilter(setSupplyCategoryFilter, value)}
+          onStatusFilterChange={(value) => updateSupplyFilter(setSupplyStatusFilter, value)}
+          onAttentionFilterChange={(value) => updateSupplyFilter(setSupplyAttentionFilter, value)}
+          onUnitFilterChange={(value) => updateSupplyFilter(setSupplyUnitFilter, value)}
+          onActiveFilterChange={(value) => updateSupplyFilter(setSupplyActiveFilter, value)}
+          onSortChange={(value) => updateSupplyFilter(setSupplySort, value)}
+          onPageChange={setSupplyPage}
+          onPageSizeChange={(value) => {
+            setSupplyPageSize(value);
+            setSupplyPage(1);
+          }}
+          onSupplyImageChange={handleSupplyImageChange}
+          onRemoveSupplyImage={removeSupplyImageDraft}
+          onCancelSupplyImageChange={cancelSupplyImageChange}
           onSupplyInputChange={handleSupplyInputChange}
           onSupplyNumberInputChange={handleSupplyNumberInputChange}
           onSaveSupply={saveSupplyItem}
@@ -13857,9 +14039,180 @@ function getBarcodeScannerErrorMessage(error) {
   return "No se pudo iniciar el escáner. Revisa permisos de cámara e intenta de nuevo.";
 }
 
+function SupplyImageThumbnail({ supply, size = "table" }) {
+  const [failedImageUrl, setFailedImageUrl] = useState("");
+  const imageUrl = supply?.imageUrl || "";
+  const imageFailed = imageUrl && failedImageUrl === imageUrl;
+
+  return (
+    <span className={`supply-image-thumbnail ${size}`} aria-label={`Fotografía de ${supply?.name || "insumo"}`}>
+      {imageUrl && !imageFailed ? (
+        <img src={imageUrl} alt="" loading="lazy" onError={() => setFailedImageUrl(imageUrl)} />
+      ) : (
+        <span className="supply-image-fallback" aria-hidden="true">
+          {String(supply?.category || "").toLowerCase().includes("papel") ? "▱" : "▦"}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function SupplyStockLevel({ supply, status }) {
+  const percentage = getSupplyStockPercentage(supply);
+  const minimumMarker = getSupplyMinimumMarker(supply);
+
+  return (
+    <>
+      <div className="supply-current-stock">
+        <span>Stock actual</span>
+        <strong>
+          {status.currentStock}
+          <small>{formatSupplyUnit(supply?.stockUnit, status.currentStock)}</small>
+        </strong>
+      </div>
+      {percentage !== null && (
+        <div
+          className="supply-stock-progress"
+          role="progressbar"
+          aria-label={`Stock de ${supply?.name || "insumo"} respecto al ideal`}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={Math.round(percentage)}
+          title={`${Math.round(percentage)}% del stock ideal`}
+        >
+          <span style={{ width: `${percentage}%` }} />
+          {minimumMarker !== null && (
+            <i
+              className="supply-minimum-marker"
+              style={{ left: `${minimumMarker}%` }}
+              title={`Mínimo: ${status.minStock}`}
+            />
+          )}
+        </div>
+      )}
+      <div className="supply-stock-references">
+        <span>
+          Mínimo
+          <strong>{status.hasMinimum ? status.minStock : "No configurado"}</strong>
+        </span>
+        <span>
+          Ideal
+          <strong>{status.hasIdeal ? status.idealStock : "No configurado"}</strong>
+        </span>
+      </div>
+      {Number(supply?.contentQuantity || 0) > 0 && (
+        <small>
+          {supply.contentQuantity} {formatSupplyUnit(supply.contentUnit, supply.contentQuantity)} por{" "}
+          {String(supply.stockUnit || "unidad").toLowerCase()}
+        </small>
+      )}
+    </>
+  );
+}
+
+function getSupplyPaginationItems(currentPage, totalPages) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+
+  const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+  const sortedPages = [...pages].filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+  const result = [];
+
+  sortedPages.forEach((page, index) => {
+    if (index > 0 && page - sortedPages[index - 1] > 1) result.push(`gap-${page}`);
+    result.push(page);
+  });
+  return result;
+}
+
+function SupplyInventoryPagination({
+  currentPage,
+  pageSize,
+  totalItems,
+  totalPages,
+  onPageChange,
+  onPageSizeChange,
+}) {
+  const start = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const end = Math.min(currentPage * pageSize, totalItems);
+
+  return (
+    <div className="supply-pagination">
+      <span>Mostrando {start} a {end} de {totalItems} insumos</span>
+      <div className="supply-pagination-controls">
+        <button type="button" aria-label="Página anterior" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>‹</button>
+        {getSupplyPaginationItems(currentPage, totalPages).map((page) => (
+          typeof page === "number" ? (
+            <button
+              type="button"
+              key={page}
+              className={page === currentPage ? "active" : ""}
+              aria-current={page === currentPage ? "page" : undefined}
+              onClick={() => onPageChange(page)}
+            >
+              {page}
+            </button>
+          ) : <span key={page} aria-hidden="true">…</span>
+        ))}
+        <button type="button" aria-label="Página siguiente" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>›</button>
+        <select aria-label="Insumos por página" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+          {[5, 10, 25, 50].map((size) => (
+            <option key={size} value={size}>{size} por página</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function SupplyImageUploader({
+  supplyForm,
+  previewUrl,
+  removalRequested,
+  processing,
+  error,
+  disabled,
+  onChange,
+  onRemove,
+  onCancel,
+}) {
+  const currentImageUrl = removalRequested ? "" : previewUrl || supplyForm.imageUrl || "";
+  const hasPendingChange = Boolean(previewUrl || removalRequested);
+
+  return (
+    <section className="supply-image-uploader full">
+      <div>
+        <span className="form-field-label">Fotografía del producto</span>
+        <p>JPEG, PNG o WebP · máximo 5 MB · se optimiza hasta 1200 × 1200 px.</p>
+      </div>
+      <div className="supply-image-uploader-content">
+        <SupplyImageThumbnail size="form" supply={{ ...supplyForm, imageUrl: currentImageUrl }} />
+        <div className="supply-image-uploader-actions">
+          <label className="visual-outline-button">
+            {processing ? "Procesando..." : currentImageUrl ? "Reemplazar imagen" : "Seleccionar imagen"}
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onChange} disabled={disabled || processing} />
+          </label>
+          {currentImageUrl && (
+            <button type="button" className="visual-outline-button danger-table-button" onClick={onRemove} disabled={disabled}>
+              Eliminar imagen
+            </button>
+          )}
+          {hasPendingChange && (
+            <button type="button" className="visual-outline-button" onClick={onCancel} disabled={disabled}>
+              Cancelar cambio
+            </button>
+          )}
+        </div>
+      </div>
+      {processing && <span className="supply-image-progress">Optimizando fotografía…</span>}
+      {error && <div className="message-box">{error}</div>}
+    </section>
+  );
+}
+
 function SupplyInventoryView({
   supplyItems,
   filteredSupplyItems,
+  paginatedSupplyItems,
   supplyMovements,
   productionBatches,
   loadingSupplies,
@@ -13869,7 +14222,6 @@ function SupplyInventoryView({
   supplyUnitOptions,
   hasSupplyUpdateDates,
   supplyForm,
-  selectedSupply,
   selectedSupplyId,
   savingSupply,
   supplyMessage,
@@ -13880,6 +14232,13 @@ function SupplyInventoryView({
   supplyUnitFilter,
   supplyActiveFilter,
   supplySort,
+  supplyPage,
+  supplyPageSize,
+  supplyTotalPages,
+  supplyImagePreviewUrl,
+  supplyImageRemovalRequested,
+  supplyImageProcessing,
+  supplyImageError,
   supplyMovementForm,
   savingSupplyMovement,
   supplyMovementMessage,
@@ -13892,6 +14251,11 @@ function SupplyInventoryView({
   onUnitFilterChange,
   onActiveFilterChange,
   onSortChange,
+  onPageChange,
+  onPageSizeChange,
+  onSupplyImageChange,
+  onRemoveSupplyImage,
+  onCancelSupplyImageChange,
   onSupplyInputChange,
   onSupplyNumberInputChange,
   onSaveSupply,
@@ -13948,27 +14312,29 @@ function SupplyInventoryView({
   }
 
   function applySupplySummaryFilter(filter) {
-    onAttentionFilterChange(filter === "out-of-stock" ? "out-of-stock" : "all");
+    onAttentionFilterChange("all");
     onStatusFilterChange(
       filter === "critical"
         ? "Crítico"
         : filter === "low"
           ? "Bajo"
           : filter === "optimal"
-            ? "Óptimo"
+            ? "Ideal"
+            : filter === "out-of-stock"
+              ? "Sin existencias"
             : "Todos"
     );
-    onActiveFilterChange("Todos");
+    onActiveFilterChange("Activos");
   }
 
   function isSupplySummaryActive(filter) {
-    if (filter === "out-of-stock") return supplyAttentionFilter === "out-of-stock";
     if (supplyAttentionFilter !== "all") return false;
+    if (filter === "out-of-stock") return supplyStatusFilter === "Sin existencias";
     if (filter === "critical") return supplyStatusFilter === "Crítico";
     if (filter === "low") return supplyStatusFilter === "Bajo";
-    if (filter === "optimal") return supplyStatusFilter === "Óptimo";
+    if (filter === "optimal") return supplyStatusFilter === "Ideal";
 
-    return supplyStatusFilter === "Todos" && supplyActiveFilter === "Todos";
+    return supplyStatusFilter === "Todos" && supplyActiveFilter === "Activos";
   }
 
   function openSupplyFormFocus(item = null) {
@@ -14613,8 +14979,12 @@ function SupplyInventoryView({
                 aria-pressed={isSupplySummaryActive("total")}
                 onClick={() => applySupplySummaryFilter("total")}
               >
-                <span>Total</span>
-                <strong>{supplyStatusCounts.total}</strong>
+                <span className="supply-summary-icon" aria-hidden="true">▦</span>
+                <span className="supply-summary-copy">
+                  <b>Total insumos</b>
+                  <strong>{supplyStatusCounts.total}</strong>
+                  <small>Todos los insumos</small>
+                </span>
               </button>
               <button
                 type="button"
@@ -14622,8 +14992,12 @@ function SupplyInventoryView({
                 aria-pressed={isSupplySummaryActive("critical")}
                 onClick={() => applySupplySummaryFilter("critical")}
               >
-                <span>Críticos</span>
-                <strong>{supplyStatusCounts.critical}</strong>
+                <span className="supply-summary-icon" aria-hidden="true">!</span>
+                <span className="supply-summary-copy">
+                  <b>Críticos</b>
+                  <strong>{supplyStatusCounts.critical}</strong>
+                  <small>Requieren atención</small>
+                </span>
               </button>
               <button
                 type="button"
@@ -14631,8 +15005,12 @@ function SupplyInventoryView({
                 aria-pressed={isSupplySummaryActive("low")}
                 onClick={() => applySupplySummaryFilter("low")}
               >
-                <span>Bajos</span>
-                <strong>{supplyStatusCounts.low}</strong>
+                <span className="supply-summary-icon" aria-hidden="true">↓</span>
+                <span className="supply-summary-copy">
+                  <b>Bajos</b>
+                  <strong>{supplyStatusCounts.low}</strong>
+                  <small>Por debajo del nivel ideal</small>
+                </span>
               </button>
               <button
                 type="button"
@@ -14640,8 +15018,12 @@ function SupplyInventoryView({
                 aria-pressed={isSupplySummaryActive("optimal")}
                 onClick={() => applySupplySummaryFilter("optimal")}
               >
-                <span>Óptimos</span>
-                <strong>{supplyStatusCounts.optimal}</strong>
+                <span className="supply-summary-icon" aria-hidden="true">✓</span>
+                <span className="supply-summary-copy">
+                  <b>Ideal</b>
+                  <strong>{supplyStatusCounts.optimal}</strong>
+                  <small>Stock saludable</small>
+                </span>
               </button>
               <button
                 type="button"
@@ -14649,8 +15031,12 @@ function SupplyInventoryView({
                 aria-pressed={isSupplySummaryActive("out-of-stock")}
                 onClick={() => applySupplySummaryFilter("out-of-stock")}
               >
-                <span>Sin existencias</span>
-                <strong>{supplyStatusCounts.outOfStock}</strong>
+                <span className="supply-summary-icon" aria-hidden="true">—</span>
+                <span className="supply-summary-copy">
+                  <b>Sin existencias</b>
+                  <strong>{supplyStatusCounts.outOfStock}</strong>
+                  <small>Sin stock disponible</small>
+                </span>
               </button>
             </div>
 
@@ -14661,7 +15047,7 @@ function SupplyInventoryView({
                   type="search"
                   value={supplySearch}
                   onChange={(event) => onSearchChange(event.target.value)}
-                  placeholder="Nombre, código, categoría..."
+                  placeholder="Buscar insumo..."
                 />
               </label>
 
@@ -14676,46 +15062,14 @@ function SupplyInventoryView({
               </label>
 
               <label>
-                <span>Estado de stock</span>
+                <span>Estado</span>
                 <select value={supplyStatusFilter} onChange={(event) => onStatusFilterChange(event.target.value)}>
                   <option>Todos</option>
+                  <option>Sin existencias</option>
                   <option>Crítico</option>
                   <option>Bajo</option>
-                  <option>Normal</option>
-                  <option>Óptimo</option>
-                </select>
-              </label>
-
-              <label>
-                <span>Atención</span>
-                <select value={supplyAttentionFilter} onChange={(event) => onAttentionFilterChange(event.target.value)}>
-                  <option value="all">Todos</option>
-                  <option value="attention">Requiere atención</option>
-                  <option value="out-of-stock">Sin existencias</option>
-                  <option value="below-minimum">Debajo del mínimo</option>
-                  <option value="below-ideal">Debajo del ideal</option>
-                  <option value="unconfigured">Sin mínimos configurados</option>
-                </select>
-              </label>
-
-              {supplyUnitOptions.length > 1 && (
-                <label>
-                  <span>Unidad</span>
-                  <select value={supplyUnitFilter} onChange={(event) => onUnitFilterChange(event.target.value)}>
-                    <option>Todas</option>
-                    {supplyUnitOptions.map((unit) => (
-                      <option key={unit}>{unit}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              <label>
-                <span>Disponibilidad</span>
-                <select value={supplyActiveFilter} onChange={(event) => onActiveFilterChange(event.target.value)}>
-                  <option>Todos</option>
-                  <option>Activos</option>
-                  <option>Inactivos</option>
+                  <option>Ideal</option>
+                  <option>Sin configuración</option>
                 </select>
               </label>
 
@@ -14740,6 +15094,39 @@ function SupplyInventoryView({
                   )}
                 </select>
               </label>
+
+              <label className="supply-attention-switch">
+                <input
+                  type="checkbox"
+                  checked={supplyAttentionFilter === "attention"}
+                  onChange={(event) => onAttentionFilterChange(event.target.checked ? "attention" : "all")}
+                />
+                <span aria-hidden="true" />
+                <b>Requiere atención<small>Solo críticos y bajos</small></b>
+              </label>
+
+              <details className="supply-secondary-filters">
+                <summary>Más filtros</summary>
+                <div>
+                  {supplyUnitOptions.length > 1 && (
+                    <label>
+                      <span>Unidad</span>
+                      <select value={supplyUnitFilter} onChange={(event) => onUnitFilterChange(event.target.value)}>
+                        <option>Todas</option>
+                        {supplyUnitOptions.map((unit) => <option key={unit}>{unit}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <label>
+                    <span>Disponibilidad</span>
+                    <select value={supplyActiveFilter} onChange={(event) => onActiveFilterChange(event.target.value)}>
+                      <option>Todos</option>
+                      <option>Activos</option>
+                      <option>Inactivos</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
 
               <button
                 type="button"
@@ -14786,12 +15173,12 @@ function SupplyInventoryView({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredSupplyItems.map((item) => {
+                    {paginatedSupplyItems.map((item) => {
                       const status = getSupplyStockStatus(item);
-                      const percentage = getSupplyStockPercentage(item);
                       const itemDetails = [item.color, item.size, item.weight]
                         .filter(Boolean)
                         .join(" · ");
+                      const updatedAt = formatSupplyUpdatedAt(item.updatedAt || item.createdAt);
 
                       return (
                         <tr
@@ -14799,53 +15186,26 @@ function SupplyInventoryView({
                           className={`supply-stock-row ${status.key} ${item.active === false ? "inactive" : ""}`}
                         >
                           <td data-label="Insumo" className="supply-name-cell">
-                            <strong title={item.name || "Insumo sin nombre"}>
-                              {item.name || "Insumo sin nombre"}
-                            </strong>
-                            <span className="supply-category-label" title={item.category}>
-                              {item.category || "Sin categoría"}
-                            </span>
-                            <small title={itemDetails || "Sin características"}>
-                              {itemDetails || "Sin características"}
-                            </small>
+                            <div className="supply-name-layout">
+                              <SupplyImageThumbnail supply={item} />
+                              <div>
+                                <strong title={item.name || "Insumo sin nombre"}>
+                                  {item.name || "Insumo sin nombre"}
+                                </strong>
+                                <span className="supply-category-label" title={item.category}>
+                                  {item.category || "Sin categoría"}
+                                </span>
+                                {(itemDetails || item.description) && (
+                                  <small title={itemDetails || item.description}>
+                                    {itemDetails || item.description}
+                                  </small>
+                                )}
+                              </div>
+                            </div>
                           </td>
 
                           <td data-label="Nivel de stock" className="supply-level-cell">
-                            <div className="supply-current-stock">
-                              <span>Stock actual</span>
-                              <strong>
-                                {status.currentStock}
-                                <small>{item.stockUnit}</small>
-                              </strong>
-                            </div>
-                            <div className="supply-stock-references">
-                              <span>
-                                Mínimo
-                                <strong>{status.hasMinimum ? status.minStock : "No configurado"}</strong>
-                              </span>
-                              <span>
-                                Ideal
-                                <strong>{status.hasIdeal ? status.idealStock : "No configurado"}</strong>
-                              </span>
-                            </div>
-                            {percentage !== null && (
-                              <div
-                                className="supply-stock-progress"
-                                role="progressbar"
-                                aria-label={`Stock de ${item.name || "insumo"} respecto al ideal`}
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                                aria-valuenow={Math.round(percentage)}
-                                title={`${Math.round(percentage)}% del stock ideal`}
-                              >
-                                <span style={{ width: `${percentage}%` }} />
-                              </div>
-                            )}
-                            {Number(item.contentQuantity || 0) > 0 && (
-                              <small>
-                                {item.contentQuantity} {item.contentUnit} por {item.stockUnit.toLowerCase()}
-                              </small>
-                            )}
+                            <SupplyStockLevel supply={item} status={status} />
                           </td>
 
                           <td data-label="Estado" className="supply-status-cell">
@@ -14853,11 +15213,7 @@ function SupplyInventoryView({
                               <span aria-hidden="true">{status.icon}</span>
                               {status.label}
                             </StatusBadge>
-                            {status.outOfStock && <small>Sin existencias</small>}
-                            {!status.outOfStock && status.belowIdeal && status.key === "normal" && (
-                              <small>Debajo del ideal</small>
-                            )}
-                            {!status.hasThresholds && <small>Sin mínimos configurados</small>}
+                            <small>{status.description}</small>
                             {item.active === false && <small>Inactivo</small>}
                           </td>
 
@@ -14866,24 +15222,29 @@ function SupplyInventoryView({
                               <span title={`${item.expectedYield} ${item.expectedYieldUnit} por ${item.stockUnit}`}>
                                 <b>Rendimiento:</b> {item.expectedYield} {item.expectedYieldUnit}
                               </span>
-                            ) : (
-                              <span className="printshop-muted-text">Sin rendimiento configurado</span>
+                            ) : null}
+                            {(item.sku || item.code || item.barcode) && (
+                              <code title={item.sku || item.code || item.barcode}>
+                                SKU: {item.sku || item.code || item.barcode}
+                              </code>
                             )}
-                            <code title={item.barcode || item.code || item.sku || "Sin código"}>
-                              {item.barcode || item.code || item.sku || "Sin código"}
-                            </code>
-                            <small title={item.supplier || "Sin proveedor"}>
-                              {item.supplier || "Sin proveedor"}
-                            </small>
+                            {item.supplier && (
+                              <small title={item.supplier}><b>Proveedor:</b> {item.supplier}</small>
+                            )}
                             {item.barcodePresentations?.length > 0 && (
-                              <small>
+                              <small><b>Presentación:</b>{" "}
                                 {item.barcodePresentations.length} presentación{item.barcodePresentations.length === 1 ? "" : "es"}
                               </small>
                             )}
                           </td>
 
                           <td data-label="Actualización" className="supply-update-cell">
-                            {formatDate(item.updatedAt || item.createdAt)}
+                            {updatedAt ? (
+                              <>
+                                <span><i aria-hidden="true">□</i>{updatedAt.date}</span>
+                                <span><i aria-hidden="true">◷</i>{updatedAt.time}</span>
+                              </>
+                            ) : <span className="printshop-muted-text">Sin fecha registrada</span>}
                             {item.lastMovementType && (
                               <small title={`${item.lastMovementType} · ${item.lastMovementReason || "Sin motivo"}`}>
                                 {item.lastMovementType} · {item.lastMovementReason || "Sin motivo"}
@@ -14899,7 +15260,7 @@ function SupplyInventoryView({
                                 disabled={item.active === false}
                                 title={item.active === false ? "Activa el insumo para registrar movimientos" : "Registrar entrada"}
                               >
-                                Entrada
+                                <span aria-hidden="true">↥</span> Entrada
                               </button>
                               <button
                                 type="button"
@@ -14907,7 +15268,7 @@ function SupplyInventoryView({
                                 disabled={item.active === false}
                                 title={item.active === false ? "Activa el insumo para registrar movimientos" : "Registrar salida"}
                               >
-                                Salida
+                                <span aria-hidden="true">↧</span> Salida
                               </button>
                               <button
                                 type="button"
@@ -14915,19 +15276,19 @@ function SupplyInventoryView({
                                 disabled={item.active === false}
                                 title={item.active === false ? "Activa el insumo para registrar movimientos" : "Registrar merma"}
                               >
-                                Merma
+                                <span aria-hidden="true">◇</span> Merma
                               </button>
                               {canManageSupplyItems && (
                                 <>
                                   <button type="button" onClick={() => openSupplyFormFocus(item)}>
-                                    Editar
+                                    <span aria-hidden="true">✎</span> Editar
                                   </button>
                                   <button
                                     type="button"
                                     className={item.active === false ? "" : "danger-table-button"}
                                     onClick={() => onToggleSupplyStatus(item)}
                                   >
-                                    {item.active === false ? "Activar" : "Desactivar"}
+                                    <span aria-hidden="true">⊘</span> {item.active === false ? "Activar" : "Desactivar"}
                                   </button>
                                   {isAdmin && (
                                     <button
@@ -14935,7 +15296,7 @@ function SupplyInventoryView({
                                       className="danger-table-button request-action-button request-action-delete"
                                       onClick={() => onSoftDeleteSupplyItem(item)}
                                     >
-                                      Eliminar
+                                      <span aria-hidden="true">♲</span> Eliminar
                                     </button>
                                   )}
                                 </>
@@ -14948,6 +15309,16 @@ function SupplyInventoryView({
                   </tbody>
                 </table>
               </div>
+            )}
+            {!loadingSupplies && filteredSupplyItems.length > 0 && (
+              <SupplyInventoryPagination
+                currentPage={supplyPage}
+                pageSize={supplyPageSize}
+                totalItems={filteredSupplyItems.length}
+                totalPages={supplyTotalPages}
+                onPageChange={onPageChange}
+                onPageSizeChange={onPageSizeChange}
+              />
             )}
           </Panel>
 
@@ -15032,6 +15403,18 @@ function SupplyInventoryView({
                   disabled={!canManageSupplyItems || savingSupply}
                 />
               </label>
+
+              <SupplyImageUploader
+                supplyForm={supplyForm}
+                previewUrl={supplyImagePreviewUrl}
+                removalRequested={supplyImageRemovalRequested}
+                processing={supplyImageProcessing}
+                error={supplyImageError}
+                disabled={!canManageSupplyItems || savingSupply}
+                onChange={onSupplyImageChange}
+                onRemove={onRemoveSupplyImage}
+                onCancel={onCancelSupplyImageChange}
+              />
 
               <label>
                 <span>Categoría</span>

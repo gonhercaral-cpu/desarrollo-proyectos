@@ -28,18 +28,18 @@ const STOCK_STATUS = {
     icon: "↓",
     priority: 1,
   },
-  normal: {
-    key: "normal",
-    label: "Normal",
-    tone: "blue",
-    icon: "•",
-    priority: 2,
-  },
   optimal: {
     key: "optimal",
-    label: "Óptimo",
+    label: "Ideal",
     tone: "green",
     icon: "✓",
+    priority: 2,
+  },
+  unconfigured: {
+    key: "unconfigured",
+    label: "Sin configuración",
+    tone: "gray",
+    icon: "i",
     priority: 3,
   },
 };
@@ -55,32 +55,53 @@ export function getSupplyStockStatus(supply) {
   const currentStock = normalizeSupplyNumber(supply?.currentStock);
   const minStock = normalizeSupplyNumber(supply?.minStock);
   const idealStock = normalizeSupplyNumber(supply?.idealStock);
-  let baseStatus = STOCK_STATUS.normal;
-
-  // Conserva exactamente la clasificación operativa previa del módulo.
-  if (currentStock <= 0) {
-    baseStatus = STOCK_STATUS.critical;
-  } else if (minStock > 0 && currentStock < minStock) {
-    baseStatus = STOCK_STATUS.low;
-  } else if (idealStock > 0 && currentStock >= idealStock) {
-    baseStatus = STOCK_STATUS.optimal;
+  const cachedStatus = supply?._stockStatus;
+  if (
+    cachedStatus &&
+    cachedStatus.currentStock === currentStock &&
+    cachedStatus.minStock === minStock &&
+    cachedStatus.idealStock === idealStock
+  ) {
+    return cachedStatus;
   }
 
-  const belowMinimum = minStock > 0 && currentStock < minStock;
-  const belowIdeal = idealStock > 0 && currentStock < idealStock;
+  const hasMinimum = minStock > 0;
+  const hasIdeal = idealStock > 0;
+  let baseStatus;
+  let description;
+
+  if (currentStock <= 0) {
+    baseStatus = STOCK_STATUS.critical;
+    description = "Sin existencias";
+  } else if (!hasMinimum || !hasIdeal) {
+    baseStatus = STOCK_STATUS.unconfigured;
+  } else if (currentStock <= minStock) {
+    baseStatus = STOCK_STATUS.critical;
+    description = "En el nivel mínimo";
+  } else if (currentStock < idealStock) {
+    baseStatus = STOCK_STATUS.low;
+    description = "Por debajo del nivel ideal";
+  } else {
+    baseStatus = STOCK_STATUS.optimal;
+    description = "Stock saludable";
+  }
+
+  const belowMinimum = hasMinimum && currentStock < minStock;
+  const belowIdeal = hasIdeal && currentStock < idealStock;
 
   return {
     ...baseStatus,
+    description,
     currentStock,
     minStock,
     idealStock,
     outOfStock: currentStock <= 0,
     belowMinimum,
     belowIdeal,
-    hasMinimum: minStock > 0,
-    hasIdeal: idealStock > 0,
-    hasThresholds: minStock > 0 || idealStock > 0,
-    requiresAttention: currentStock <= 0 || belowMinimum || belowIdeal,
+    hasMinimum,
+    hasIdeal,
+    hasThresholds: hasMinimum && hasIdeal,
+    requiresAttention: baseStatus.key === "critical" || baseStatus.key === "low",
   };
 }
 
@@ -89,6 +110,16 @@ export function getSupplyStockPercentage(supply) {
   if (!hasIdeal) return null;
 
   const percentage = (currentStock / idealStock) * 100;
+  if (!Number.isFinite(percentage)) return null;
+
+  return Math.min(Math.max(percentage, 0), 100);
+}
+
+export function getSupplyMinimumMarker(supply) {
+  const { minStock, idealStock, hasMinimum, hasIdeal } = getSupplyStockStatus(supply);
+  if (!hasMinimum || !hasIdeal) return null;
+
+  const percentage = (minStock / idealStock) * 100;
   if (!Number.isFinite(percentage)) return null;
 
   return Math.min(Math.max(percentage, 0), 100);
@@ -110,6 +141,8 @@ export function normalizeSupplySearchText(value) {
   return String(value ?? "")
     .trim()
     .replace(/\s+/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("es-MX");
 }
 
@@ -143,6 +176,44 @@ export function getSupplyDateMs(value) {
 
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function formatSupplyUpdatedAt(value, timeZone = "America/Tijuana") {
+  const milliseconds = getSupplyDateMs(value);
+  if (!milliseconds) return null;
+
+  const date = new Date(milliseconds);
+  return {
+    date: new Intl.DateTimeFormat("es-MX", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone,
+    }).format(date),
+    time: new Intl.DateTimeFormat("es-MX", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone,
+    }).format(date),
+  };
+}
+
+export function formatSupplyUnit(unit, quantity) {
+  const normalizedUnit = String(unit || "Pieza").trim() || "Pieza";
+  if (Math.abs(normalizeSupplyNumber(quantity)) === 1) return normalizedUnit;
+
+  const irregularPlurals = {
+    Resma: "Resmas",
+    Paquete: "Paquetes",
+    Pieza: "Piezas",
+    Caja: "Cajas",
+    Rollo: "Rollos",
+    Litro: "Litros",
+    Metro: "Metros",
+    Kilogramo: "Kilogramos",
+  };
+
+  return irregularPlurals[normalizedUnit] || normalizedUnit;
 }
 
 export function compareSupplies(a, b, sortBy = SUPPLY_STOCK_SORT_OPTIONS.STATUS_URGENT) {

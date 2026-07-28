@@ -18794,3 +18794,561 @@ html[data-theme="dark"] .project-screen-actions .visual-primary-button {
   height: 36px;
 }
 
+/* Inventario visual de insumos */
+.printshop-page .supply-stock-summary {
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.printshop-page .supply-stock-summary-card {
+  justify-content: flex-start;
+  min-height: 92px;
+  padding: 14px;
+  border-color: #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(15, 36, 66, 0.06);
+}
+
+.printshop-page .supply-summary-icon {
+  display: grid !important;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 50%;
+  background: #eaf2ff;
+  color: #1268e8;
+  font-size: 25px !important;
+  font-weight: 700 !important;
+}
+
+.printshop-page .supply-summary-copy {
+  display: grid !important;
+  min-width: 0;
+  gap: 2px;
+}
+
+.printshop-page .supply-summary-copy b {
+  overflow: hidden;
+  color: #41536d;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.printshop-page .supply-summary-copy strong {
+  font-size: 25px;
+}
+
+.printshop-page .supply-summary-copy small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.printshop-page .supply-stock-summary-card.critical .supply-summary-icon {
+  background: #fff0f1;
+  color: #dc2638;
+}
+
+.printshop-page .supply-stock-summary-card.low .supply-summary-icon {
+  background: #fff6df;
+  color: #dc8500;
+}
+
+.printshop-page .supply-stock-summary-card.optimal .supply-summary-icon {
+  background: #edf9ed;
+  color: #3d9835;
+}
+
+.printshop-page .supply-stock-summary-card.out .supply-summary-icon {
+  background: #f0f3f8;
+  color: #63728a;
+}
+
+.printshop-page .supplies-toolbar-redesign {
+  display: grid !important;
+  grid-template-columns: minmax(230px, 1.35fr) minmax(130px, 0.85fr) minmax(130px, 0.8fr) minmax(170px, 1fr) minmax(160px, 0.9fr) auto auto !important;
+  gap: 10px !important;
+  padding: 14px;
+  border: 1px solid #e4eaf2;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.printshop-page .supply-attention-switch {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 42px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.printshop-page .supply-attention-switch > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.printshop-page .supply-attention-switch > span {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  margin-right: 9px;
+  border-radius: 999px;
+  background: #d8e0eb;
+  transition: background 160ms ease;
+}
+
+.printshop-page .supply-attention-switch > span::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 36, 66, 0.22);
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.printshop-page .supply-attention-switch > input:checked + span {
+  background: #2563eb;
+}
+
+.printshop-page .supply-attention-switch > input:checked + span::after {
+  transform: translateX(18px);
+}
+
+.printshop-page .supply-attention-switch > input:focus-visible + span {
+  outline: 3px solid rgba(37, 99, 235, 0.25);
+  outline-offset: 2px;
+}
+
+.printshop-page .supply-attention-switch b {
+  display: grid;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.printshop-page .supply-attention-switch small {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.printshop-page .supply-secondary-filters {
+  position: relative;
+  align-self: end;
+}
+
+.printshop-page .supply-secondary-filters summary {
+  min-height: 42px;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.printshop-page .supply-secondary-filters > div {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  min-width: 220px;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dce5f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 36, 66, 0.18);
+}
+
+.printshop-page .supplies-table-redesign th:nth-child(1) { width: 20%; }
+.printshop-page .supplies-table-redesign th:nth-child(2) { width: 20%; }
+.printshop-page .supplies-table-redesign th:nth-child(3) { width: 11%; }
+.printshop-page .supplies-table-redesign th:nth-child(4) { width: 20%; }
+.printshop-page .supplies-table-redesign th:nth-child(5) { width: 11%; }
+.printshop-page .supplies-table-redesign th:nth-child(6) { width: 18%; }
+
+.printshop-page .supplies-table-redesign .supply-stock-row.unconfigured {
+  --supply-state-color: #64748b;
+  background: rgba(100, 116, 139, 0.045);
+}
+
+.printshop-page .supply-name-layout {
+  display: grid !important;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.printshop-page .supply-name-layout > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.printshop-page .supply-name-layout :is(strong, small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.printshop-page .supply-name-layout strong {
+  color: #132843;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.printshop-page .supply-name-layout small {
+  color: #526176;
+  font-size: 9px;
+}
+
+.printshop-page .supply-image-thumbnail {
+  display: grid !important;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #e4eaf2;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.printshop-page .supply-image-thumbnail.form {
+  width: 112px;
+  height: 112px;
+}
+
+.printshop-page .supply-image-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.printshop-page .supply-image-fallback {
+  display: grid !important;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  background: linear-gradient(145deg, #f8fafc, #e8eef6);
+  color: #7290b3;
+  font-size: 27px;
+}
+
+.printshop-page .supply-level-cell > * + * {
+  margin-top: 7px;
+}
+
+.printshop-page .supply-current-stock {
+  display: grid;
+  justify-content: start;
+  gap: 2px;
+}
+
+.printshop-page .supply-current-stock > strong {
+  font-size: 25px !important;
+}
+
+.printshop-page .supply-current-stock > strong small {
+  font-size: 11px;
+}
+
+.printshop-page .supply-stock-progress {
+  position: relative;
+  overflow: visible;
+  height: 7px;
+}
+
+.printshop-page .supply-stock-progress > span {
+  min-width: 0;
+}
+
+.printshop-page .supply-minimum-marker {
+  position: absolute;
+  z-index: 2;
+  top: -3px;
+  width: 2px;
+  height: 13px;
+  background: #526176;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+  transform: translateX(-1px);
+}
+
+.printshop-page .supply-stock-references {
+  gap: 8px;
+}
+
+.printshop-page .supply-stock-references > span {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  font-size: 9px;
+}
+
+.printshop-page .supply-stock-references strong {
+  font-size: 11px !important;
+}
+
+.printshop-page .supply-operational-cell > span,
+.printshop-page .supply-operational-cell > small {
+  color: #40536d;
+  font-size: 10px;
+}
+
+.printshop-page .supply-operational-cell code {
+  display: block;
+  padding: 4px 7px;
+  border: 1px solid #d4e2f7;
+  border-radius: 6px;
+  background: #edf5ff;
+  color: #244d82;
+  font-size: 9px;
+}
+
+.printshop-page .supply-update-cell > span {
+  display: flex !important;
+  align-items: center;
+  gap: 7px;
+}
+
+.printshop-page .supply-update-cell i {
+  width: 15px;
+  color: #405d82;
+  font-style: normal;
+  text-align: center;
+}
+
+.printshop-page .supplies-actions-redesign {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: 6px !important;
+}
+
+.printshop-page .supplies-actions-redesign button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px 5px !important;
+  border-color: #b9d4fa !important;
+  background: rgba(255, 255, 255, 0.74) !important;
+  color: #1268e8 !important;
+  white-space: nowrap;
+}
+
+.printshop-page .supplies-actions-redesign .danger-table-button {
+  border-color: #fecaca !important;
+  background: rgba(255, 247, 247, 0.78) !important;
+  color: #dc2638 !important;
+}
+
+.printshop-page .supply-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px 0;
+  border-top: 1px solid #e5eaf1;
+  color: #526176;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.printshop-page .supply-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.printshop-page .supply-pagination-controls button {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid #dce5f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #41536d;
+  cursor: pointer;
+}
+
+.printshop-page .supply-pagination-controls button.active {
+  border-color: #1268e8;
+  background: #1268e8;
+  color: #fff;
+}
+
+.printshop-page .supply-pagination-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.printshop-page .supply-pagination-controls select {
+  min-height: 34px;
+  margin-left: 8px;
+  padding: 0 30px 0 10px;
+  border: 1px solid #dce5f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #41536d;
+  font-size: 10px;
+}
+
+.printshop-page .supply-image-uploader {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed #b8c9dd;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.printshop-page .supply-image-uploader .form-field-label {
+  color: #263d5c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.printshop-page .supply-image-uploader p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.printshop-page .supply-image-uploader-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.printshop-page .supply-image-uploader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.printshop-page .supply-image-uploader-actions label {
+  display: inline-flex;
+  width: auto;
+  cursor: pointer;
+}
+
+.printshop-page .supply-image-uploader-actions input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.printshop-page .supply-image-progress {
+  color: #1268e8;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+@media (max-width: 1320px) {
+  .printshop-page .supplies-toolbar-redesign {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .printshop-page .supplies-actions-redesign {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1050px) {
+  .printshop-page .supply-inventory-table-wrap {
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .printshop-page .supplies-table-redesign,
+  .printshop-page .supplies-table-redesign tbody,
+  .printshop-page .supplies-table-redesign tr,
+  .printshop-page .supplies-table-redesign td {
+    display: block;
+    width: 100%;
+  }
+
+  .printshop-page .supplies-table-redesign thead {
+    display: none;
+  }
+
+  .printshop-page .supplies-table-redesign tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .printshop-page .supplies-table-redesign .supply-stock-row {
+    padding: 14px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+  }
+
+  .printshop-page .supplies-table-redesign td {
+    padding: 10px 0 !important;
+    border-bottom: 1px solid #edf1f6 !important;
+  }
+
+  .printshop-page .supplies-table-redesign td:last-child {
+    border-bottom: 0 !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .printshop-page .supplies-toolbar-redesign {
+    grid-template-columns: 1fr !important;
+  }
+
+  .printshop-page .supply-stock-summary-card {
+    min-height: 76px;
+    padding: 10px;
+  }
+
+  .printshop-page .supply-summary-icon {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+    font-size: 21px !important;
+  }
+
+  .printshop-page .supply-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .printshop-page .supply-pagination-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .printshop-page .supply-pagination-controls select {
+    margin-left: auto;
+  }
+
+  .printshop-page .supply-image-uploader-content {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+

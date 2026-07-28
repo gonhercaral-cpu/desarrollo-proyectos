@@ -4477,3 +4477,89 @@ html[data-theme="dark"] body #root .main-content .printshop-page .supply-operati
   border: 1px solid rgba(96, 165, 250, 0.24) !important;
 }
 
+html[data-theme="dark"] .main-content .printshop-page :is(
+  .supplies-toolbar-redesign,
+  .supply-secondary-filters > div,
+  .supply-pagination-controls button,
+  .supply-pagination-controls select,
+  .supply-image-thumbnail
+) {
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supply-image-uploader {
+  border-color: #43546b !important;
+  background: rgba(15, 23, 42, 0.38) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supply-image-uploader .form-field-label,
+html[data-theme="dark"] .main-content .printshop-page .supply-attention-switch b,
+html[data-theme="dark"] .main-content .printshop-page .supply-name-layout strong {
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supply-image-fallback {
+  background: linear-gradient(145deg, #1e293b, #111827) !important;
+  color: #93b4dc !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supplies-table-redesign .supply-stock-row.unconfigured {
+  background: rgba(100, 116, 139, 0.15) !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supplies-actions-redesign button {
+  border-color: rgba(96, 165, 250, 0.36) !important;
+  background: rgba(15, 23, 42, 0.38) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supplies-actions-redesign .danger-table-button {
+  border-color: rgba(248, 113, 113, 0.38) !important;
+  background: rgba(127, 29, 29, 0.18) !important;
+  color: #fca5a5 !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supply-minimum-marker {
+  background: #e2e8f0 !important;
+  box-shadow: 0 0 0 1px #0f172a !important;
+}
+
+html[data-theme="dark"] .main-content .printshop-page .supply-pagination {
+  border-color: var(--border) !important;
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .supply-attention-switch > span {
+  background: #475569 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .supply-attention-switch > input:checked + span {
+  background: #3b82f6 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .supply-status-cell .printshop-status-badge.red {
+  border-color: rgba(248, 113, 113, 0.36) !important;
+  background: rgba(127, 29, 29, 0.34) !important;
+  color: #fecaca !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .supply-status-cell .printshop-status-badge.orange {
+  border-color: rgba(251, 191, 36, 0.34) !important;
+  background: rgba(120, 53, 15, 0.34) !important;
+  color: #fde68a !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .supply-status-cell .printshop-status-badge.green {
+  border-color: rgba(74, 222, 128, 0.32) !important;
+  background: rgba(20, 83, 45, 0.34) !important;
+  color: #bbf7d0 !important;
+}
+
+html[data-theme="dark"] body #root .main-content .printshop-page .supply-status-cell .printshop-status-badge.gray {
+  border-color: rgba(148, 163, 184, 0.3) !important;
+  background: rgba(71, 85, 105, 0.32) !important;
+  color: #e2e8f0 !important;
+}
+

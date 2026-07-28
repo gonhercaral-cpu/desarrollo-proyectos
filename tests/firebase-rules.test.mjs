@@ -2083,6 +2083,37 @@ describe("storage", () => {
     );
   });
 
+  it("permite administrar fotografía WebP de insumo con permisos de Imprenta", async () => {
+    const fileRef = storageAuth("printer").ref(
+      "printshop/supplies/supply-1/product-image.webp"
+    );
+
+    await assertSucceeds(
+      fileRef.putString("webp", "raw", { contentType: "image/webp" })
+    );
+    await assertSucceeds(fileRef.getDownloadURL());
+    await assertSucceeds(fileRef.delete());
+  });
+
+  it("bloquea fotografías de insumos con formato, ruta o permisos inválidos", async () => {
+    await assertFails(
+      storageAuth("printer").ref("printshop/supplies/supply-1/product-image.webp")
+        .putString("png", "raw", { contentType: "image/png" })
+    );
+    await assertFails(
+      storageAuth("printer").ref("printshop/supplies/supply-1/otra-imagen.webp")
+        .putString("webp", "raw", { contentType: "image/webp" })
+    );
+    await assertFails(
+      storageAuth("tech").ref("printshop/supplies/supply-1/product-image.webp")
+        .putString("webp", "raw", { contentType: "image/webp" })
+    );
+    await assertFails(
+      storageAuth("outsider").ref("printshop/supplies/supply-1/product-image.webp")
+        .putString("webp", "raw", { contentType: "image/webp" })
+    );
+  });
+
   it("impide subir evidencia a proyecto ajeno", async () => {
     const storage = storageAuth("requester");
     const fileRef = storage.ref("evidence/other-project/requester/proof.txt");

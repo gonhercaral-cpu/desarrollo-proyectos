@@ -204,6 +204,10 @@ service firebase.storage {
         || isTechnicalSupportUser();
     }
 
+    function canManagePrintshopInventory() {
+      return isAdmin() || isPrintshopUser();
+    }
+
     function canAccessTechnicalSupport() {
       return isAdmin() || isTechnicalSupportUser();
     }
@@ -403,6 +407,11 @@ service firebase.storage {
     function validCertificateTemplateImage() {
       return request.resource.size < 12 * 1024 * 1024
         && request.resource.contentType.matches('image/(png|jpeg|webp)');
+    }
+
+    function validSupplyProductImage() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == "image/webp";
     }
 
     function validGeneratedCertificatePdf() {
@@ -709,6 +718,21 @@ service firebase.storage {
         && validCertificateTemplateImage();
 
       allow delete: if isAdmin();
+    }
+
+    /*
+      Fotografías optimizadas del inventario de insumos:
+      printshop/supplies/{supplyId}/product-image.webp
+    */
+    match /printshop/supplies/{supplyId}/{fileName} {
+      allow read: if canAccessPrintshop();
+
+      allow create, update: if canManagePrintshopInventory()
+        && fileName == "product-image.webp"
+        && validSupplyProductImage();
+
+      allow delete: if canManagePrintshopInventory()
+        && fileName == "product-image.webp";
     }
 
     /*
