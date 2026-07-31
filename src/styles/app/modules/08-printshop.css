@@ -11502,7 +11502,7 @@
 /* ===== Alumnos: lista amplia + vista previa ===== */
 .request-students-preview-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   gap: 24px;
   align-items: start;
   width: 100%;
@@ -11518,8 +11518,8 @@
   position: sticky;
   top: 24px;
   width: 100%;
-  max-width: 300px;
-  justify-self: end;
+  max-width: none;
+  justify-self: stretch;
 }
 
 .request-students-table-wrap {
@@ -11657,9 +11657,9 @@
 .request-students-preview-layout .certificate-preview-viewport {
   position: relative;
   width: 100%;
-  max-width: 300px;
+  max-width: 100%;
   aspect-ratio: 8.5 / 11;
-  margin: 0 0 0 auto;
+  margin: 0 auto;
   overflow: hidden;
   background: #eef3f8;
   border-radius: 16px;
@@ -11693,8 +11693,8 @@
   }
 
   .request-students-preview-layout .certificate-preview-viewport {
-    width: min(100%, 300px);
-    margin: 0 0 0 auto;
+    width: 100%;
+    margin: 0 auto;
   }
 }
 
@@ -11768,7 +11768,7 @@
   }
 
   .request-students-preview-layout .certificate-preview-viewport {
-    width: min(100%, 300px);
+    width: 100%;
   }
 }
 

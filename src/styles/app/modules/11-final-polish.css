@@ -5141,7 +5141,7 @@ html[data-theme="dark"] .purchase-detail-grid strong {
 
 .request-detail-redesign-card.detail-view-students > .request-detail-certificate > .request-students-preview-layout {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 300px) !important;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) !important;
   gap: 24px !important;
   align-items: start !important;
   width: 100% !important;
@@ -5158,14 +5158,15 @@ html[data-theme="dark"] .purchase-detail-grid strong {
   grid-column: 2 !important;
   grid-row: 1 !important;
   width: 100% !important;
-  max-width: 300px !important;
-  justify-self: end !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  justify-self: stretch !important;
 }
 
 .request-detail-redesign-card.detail-view-students .request-students-preview-layout .certificate-preview-viewport {
   width: 100% !important;
-  max-width: 300px !important;
-  margin: 0 0 0 auto !important;
+  max-width: 100% !important;
+  margin: 0 auto !important;
 }
 
 .request-detail-redesign-card.detail-view-students .request-students-table th:nth-child(1),
@@ -5233,6 +5234,51 @@ html[data-theme="dark"] .purchase-detail-grid strong {
 
 .request-detail-redesign-card.detail-view-students .request-add-person-header-button {
   order: -2;
+}
+
+@media (min-width: 1300px) and (max-width: 1499px) {
+  .request-detail-redesign-card.detail-view-students > .request-detail-certificate > .request-students-preview-layout {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-students-table th:nth-child(1),
+  .request-detail-redesign-card.detail-view-students .request-students-table td:nth-child(1) {
+    width: 23% !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-students-table th:nth-child(2),
+  .request-detail-redesign-card.detail-view-students .request-students-table td:nth-child(2) {
+    width: 19% !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-students-table th:nth-child(3),
+  .request-detail-redesign-card.detail-view-students .request-students-table td:nth-child(3) {
+    width: 14% !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-students-table th:nth-child(4),
+  .request-detail-redesign-card.detail-view-students .request-students-table td:nth-child(4) {
+    width: 18% !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-students-table th:nth-child(5),
+  .request-detail-redesign-card.detail-view-students .request-students-table td:nth-child(5) {
+    width: 26% !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-student-actions {
+    gap: 3px !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-student-actions > button {
+    padding-right: 3px !important;
+    padding-left: 3px !important;
+  }
+
+  .request-detail-redesign-card.detail-view-students .request-student-more-actions > summary {
+    width: 30px;
+    min-width: 30px;
+  }
 }
 
 @media (max-width: 1299px) {
