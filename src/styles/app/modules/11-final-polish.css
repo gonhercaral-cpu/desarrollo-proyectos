@@ -3198,6 +3198,7 @@ html[data-theme="dark"] .purchase-detail-grid strong {
   grid-template-columns: minmax(0, 1fr) !important;
 }
 
+
 .credential-history-card-main {
   display: grid !important;
 }
@@ -5128,6 +5129,28 @@ html[data-theme="dark"] .purchase-detail-grid strong {
 
   .certificate-public-page .tracking-hero-art {
     display: none !important;
+  }
+}
+
+/* La vista actual usa un wrapper propio para separar alumnos y preview. */
+.request-students-preview-layout > .request-students-card,
+.request-students-preview-layout > .request-certificate-preview-block {
+  grid-row: 1 !important;
+}
+
+.request-students-preview-layout > .request-students-card {
+  grid-column: 1 !important;
+}
+
+.request-students-preview-layout > .request-certificate-preview-block {
+  grid-column: 2 !important;
+}
+
+@media (max-width: 1100px) {
+  .request-students-preview-layout > .request-students-card,
+  .request-students-preview-layout > .request-certificate-preview-block {
+    grid-column: 1 !important;
+    grid-row: auto !important;
   }
 }
 

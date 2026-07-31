@@ -62,25 +62,13 @@ function isAdmin(profile = {}) {
   return profile.active === true && normalizeName(profile.role) === "admin";
 }
 
-function getAssignedIds(request = {}) {
+function getPrimaryAssignedIds(request = {}) {
   const ids = [
     request.assignedUserId,
     request.responsibleUid,
     request.assignedToUid,
     request.productionAssigneeUid,
-    request.assignedCollaboratorUid,
     request.responsibleId,
-    request.supportUserId,
-    request.collaboratorUid,
-    request.collaboratorId,
-    request.supportCollaboratorUid,
-    request.productionSupportUid,
-    request.supportUid,
-    ...(Array.isArray(request.supportUserIds) ? request.supportUserIds : []),
-    ...(Array.isArray(request.supportCollaboratorIds) ? request.supportCollaboratorIds : []),
-    ...(Array.isArray(request.supportCollaborators) ? request.supportCollaborators : []),
-    ...(Array.isArray(request.collaboratorUids) ? request.collaboratorUids : []),
-    ...(Array.isArray(request.collaboratorIds) ? request.collaboratorIds : []),
   ];
   return new Set(ids.map(normalizeId).filter(Boolean));
 }
@@ -90,7 +78,12 @@ async function assertActor(db, requestId, requestData, auth, { destructive = fal
   const profileSnapshot = await db.collection("users").doc(auth.uid).get();
   const profile = profileSnapshot.exists ? profileSnapshot.data() : null;
   const admin = isAdmin(profile || {});
-  const assigned = getAssignedIds(requestData).has(auth.uid);
+  const primaryAssignedIds = getPrimaryAssignedIds(requestData);
+  const actorEmail = cleanText(profile?.email).toLowerCase();
+  const responsibleEmail = cleanText(requestData.responsibleEmail || requestData.assignedUserEmail).toLowerCase();
+  const assignedByStableId = primaryAssignedIds.has(auth.uid);
+  const assignedByHistoricalEmail = primaryAssignedIds.size === 0 && Boolean(responsibleEmail) && actorEmail === responsibleEmail;
+  const assigned = assignedByStableId || assignedByHistoricalEmail;
 
   if (!profile || !isPrintshopProfile(profile) || (!admin && !assigned)) {
     throw new HttpsError("permission-denied", "No tienes permiso para administrar esta solicitud.");
@@ -324,7 +317,6 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
         folio = buildFolio(requestId, requestData, sequence);
         reservationRef = db.collection("certificateFolioReservations").doc(folio.replace(/[^a-zA-Z0-9_-]/g, "-"));
         // Transaction reads all candidate reservations before any write.
-        // eslint-disable-next-line no-await-in-loop
         reservationSnapshot = await transaction.get(reservationRef);
       }
       const validationCode = buildValidationCode(folio);

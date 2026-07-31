@@ -4109,6 +4109,26 @@ function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
   return resolvePrintRequestMemberRole(actor?.uid, request, isAdminUser);
 }
 
+function canManageRequestStudents(request, actor = {}, isAdminUser = false) {
+  if (isAdminUser) return true;
+  const assignedUserId = String(
+    request?.responsibleUid ||
+    request?.assignedUserId ||
+    request?.assignedToUid ||
+    request?.productionAssigneeUid ||
+    request?.responsibleId ||
+    ""
+  ).trim();
+  if (assignedUserId && assignedUserId === String(actor?.uid || "").trim()) {
+    return true;
+  }
+  const assignedEmail = request?.responsibleEmail || request?.assignedUserEmail || "";
+  if (!assignedUserId && assignedEmail && actor?.email) {
+    return String(assignedEmail).trim().toLowerCase() === String(actor.email).trim().toLowerCase();
+  }
+  return false;
+}
+
 export default function PrintShop() {
   const { user, profile, isAdmin } = useAuth();
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin)
@@ -11482,6 +11502,7 @@ export default function PrintShop() {
           canGenerateReport={canGeneratePrintshopReport}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
+          currentUserEmail={getAuditUser().email}
           onRequestInputChange={handleRequestInputChange}
           onRequestNumberInputChange={handleRequestNumberInputChange}
           onSavePrintRequest={savePrintRequest}
@@ -11564,6 +11585,7 @@ export default function PrintShop() {
           activeUsers={activeUsers}
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
+          currentUserEmail={getAuditUser().email}
           studentName={studentName}
           studentDeliveryType={studentDeliveryType}
           bulkStudentsText={bulkStudentsText}
@@ -12014,6 +12036,7 @@ function GeneratedCertificatesView({
   updatingCertificateId,
   isAdmin,
   currentUserUid,
+  currentUserEmail,
   onSearchChange,
   onStatusFilterChange,
   onYearFilterChange,
@@ -15989,6 +16012,7 @@ function PrintRequestsView({
   canGenerateReport,
   isAdmin,
   currentUserUid,
+  currentUserEmail,
   onRequestInputChange,
   onRequestNumberInputChange,
   onSavePrintRequest,
@@ -16522,7 +16546,7 @@ function PrintRequestsView({
               onRequestInputChange={onRequestInputChange}
               onRequestNumberInputChange={onRequestNumberInputChange}
               onSavePrintRequest={onSavePrintRequest}
-              canManageStudents={canEditOperationalFields}
+              canManageStudents={canManageRequestStudents(selectedRequest, { uid: currentUserUid, email: currentUserEmail }, isAdmin)}
               canGenerateFolios={canGenerateFolios}
               studentName={studentName}
               studentDeliveryType={studentDeliveryType}
@@ -17058,6 +17082,7 @@ function CertificatesWorkspaceView({
   activeUsers,
   isAdmin,
   currentUserUid,
+  currentUserEmail,
   studentName,
   studentDeliveryType,
   bulkStudentsText,
@@ -17113,8 +17138,11 @@ function CertificatesWorkspaceView({
     { uid: currentUserUid },
     isAdmin
   );
-  const canManageStudents =
-    isAdmin || selectedRole === "responsible" || selectedRole === "collaborator";
+  const canManageStudents = canManageRequestStudents(
+    activeRequest,
+    { uid: currentUserUid, email: currentUserEmail },
+    isAdmin
+  );
   const canGenerateFolios = canManageStudents;
   const generatedCount = generatedCertificates.filter((certificate) =>
     certificateRequests.some((request) => request.id === certificate.requestId)
@@ -18367,8 +18395,7 @@ function RequestDetailCard({
     canEditAdministrativeFields || canEditOperationalFields;
   const canAddPeopleAfterClosure =
     typeof onAddStudentsAfterClosure === "function" &&
-    canEditOperationalFields &&
-    normalizePrintRequestStatus(request.status) !== "Entregada";
+    canManageStudents;
   const canEditRequestDetails = Boolean(
     selectedRequestId &&
     typeof onSavePrintRequest === "function" &&
@@ -19247,8 +19274,9 @@ function RequestDetailCard({
               <DetailItem label="Digitales" value={digitalQuantity} />
             </div>
 
+            <div className="request-students-preview-layout">
             <div className="request-students-card">
-              <div className="request-students-header">
+                <div className="request-students-header">
                 <div>
                   <strong>Alumnos para certificado / diploma</strong>
                   <p>
@@ -19283,6 +19311,15 @@ function RequestDetailCard({
                       onClick={() => onResetCertificateFolios(request)}
                     >
                       Reiniciar folios
+                    </button>
+                  )}
+                  {canAddPeopleAfterClosure && !addPeoplePanelOpen && (
+                    <button
+                      type="button"
+                      className="visual-primary-button request-add-person-header-button"
+                      onClick={openAddPeoplePanel}
+                    >
+                      Agregar persona
                     </button>
                   )}
                 </div>
@@ -19602,7 +19639,7 @@ Mariana Torres`}
                 </div>
               )}
 
-              {canAddPeopleAfterClosure && (
+              {canAddPeopleAfterClosure && addPeoplePanelOpen && (
                 <div className="request-detail-note important request-add-people-section">
                   <strong>Agregar personas faltantes</strong>
                   <p>
@@ -19611,16 +19648,7 @@ Mariana Torres`}
                     existentes no se modifican.
                   </p>
 
-                  {!addPeoplePanelOpen ? (
-                    <button
-                      type="button"
-                      className="visual-outline-button request-add-people-button"
-                      onClick={openAddPeoplePanel}
-                    >
-                      Agregar personas
-                    </button>
-                  ) : (
-                    <div className="request-add-people-panel">
+                  <div className="request-add-people-panel">
                       {addPeopleMessage && (
                         <div className="message-box request-bulk-certificate-message">{addPeopleMessage}</div>
                       )}
@@ -19741,8 +19769,7 @@ Mariana Torres`}
                           </div>
                         </>
                       )}
-                    </div>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -19777,6 +19804,7 @@ Mariana Torres`}
                 </p>
               </div>
             )}
+            </div>
 
             <HiddenBulkCertificateStages
               request={request}
