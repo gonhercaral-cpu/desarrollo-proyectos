@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   buildCanonicalPrintRequestAssignment,
   canManagePrintRequest,
+  canManageRequestStudents,
   getPrintRequestMemberRole,
   normalizePrintRequestAssignments,
 } from "../src/utils/printRequestPermissions.js";
@@ -200,6 +201,29 @@ describe("permisos de solicitudes de Imprenta", () => {
     assert.equal(canManagePrintRequest("otro-uid", request, true), true);
     assert.equal(getPrintRequestMemberRole("tony-uid", request), "responsible");
     assert.equal(getPrintRequestMemberRole("ernesto-uid", request), "collaborator");
+  });
+
+  it("limita correcciones de certificados a admin o responsable sin bloquear Entregada", () => {
+    const request = {
+      status: "Entregada",
+      assignedUserId: "tony-uid",
+      supportUserId: "ernesto-uid",
+      responsibleEmail: "tony@test.local",
+    };
+
+    assert.equal(canManageRequestStudents(request, { uid: "admin-uid" }, true), true);
+    assert.equal(canManageRequestStudents(request, { uid: "tony-uid" }), true);
+    assert.equal(canManageRequestStudents(request, { uid: "ernesto-uid" }), false);
+    assert.equal(canManageRequestStudents(request, { uid: "otro-uid" }), false);
+  });
+
+  it("usa correo histórico solo cuando la solicitud no tiene UID responsable", () => {
+    const legacyRequest = { status: "Entregada", responsibleEmail: "legacy@test.local" };
+    assert.equal(canManageRequestStudents(legacyRequest, { uid: "legacy", email: "legacy@test.local" }), true);
+    assert.equal(canManageRequestStudents(
+      { ...legacyRequest, assignedUserId: "otro-uid" },
+      { uid: "legacy", email: "legacy@test.local" }
+    ), false);
   });
 
   it("normaliza UIDs y snapshots históricos sin autorizar por nombre", () => {

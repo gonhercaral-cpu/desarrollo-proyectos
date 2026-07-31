@@ -71,6 +71,7 @@ import {
 import {
   buildCanonicalPrintRequestAssignment,
   canManagePrintRequest,
+  canManageRequestStudents,
   getPrintRequestMemberRole as resolvePrintRequestMemberRole,
   normalizePrintRequestAssignments,
 } from "../utils/printRequestPermissions";
@@ -4107,26 +4108,6 @@ function canProfileGeneratePrintshopReport(profile, isAdmin) {
 
 function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
   return resolvePrintRequestMemberRole(actor?.uid, request, isAdminUser);
-}
-
-function canManageRequestStudents(request, actor = {}, isAdminUser = false) {
-  if (isAdminUser) return true;
-  const assignedUserId = String(
-    request?.responsibleUid ||
-    request?.assignedUserId ||
-    request?.assignedToUid ||
-    request?.productionAssigneeUid ||
-    request?.responsibleId ||
-    ""
-  ).trim();
-  if (assignedUserId && assignedUserId === String(actor?.uid || "").trim()) {
-    return true;
-  }
-  const assignedEmail = request?.responsibleEmail || request?.assignedUserEmail || "";
-  if (!assignedUserId && assignedEmail && actor?.email) {
-    return String(assignedEmail).trim().toLowerCase() === String(actor.email).trim().toLowerCase();
-  }
-  return false;
 }
 
 export default function PrintShop() {
@@ -18393,7 +18374,7 @@ function RequestDetailCard({
     selectedRole === "collaborator";
   const canEditCertificateProductionFields =
     canEditAdministrativeFields || canEditOperationalFields;
-  const canAddPeopleAfterClosure =
+  const canAddCertificatePerson =
     typeof onAddStudentsAfterClosure === "function" &&
     canManageStudents;
   const canEditRequestDetails = Boolean(
@@ -19285,6 +19266,9 @@ function RequestDetailCard({
                   </p>
                 </div>
                 <div className="request-students-header-actions">
+                  <span className="request-student-count">
+                    {students.length} {students.length === 1 ? "alumno" : "alumnos"}
+                  </span>
                   <StatusBadge tone={studentListComplete ? "green" : "orange"}>
                     {studentListComplete ? "Lista completa" : "Pendiente"}
                   </StatusBadge>
@@ -19313,13 +19297,14 @@ function RequestDetailCard({
                       Reiniciar folios
                     </button>
                   )}
-                  {canAddPeopleAfterClosure && !addPeoplePanelOpen && (
+                  {canAddCertificatePerson && (
                     <button
                       type="button"
                       className="visual-primary-button request-add-person-header-button"
-                      onClick={openAddPeoplePanel}
+                      aria-expanded={addPeoplePanelOpen}
+                      onClick={addPeoplePanelOpen ? closeAddPeoplePanel : openAddPeoplePanel}
                     >
-                      Agregar persona
+                      + Agregar persona
                     </button>
                   )}
                 </div>
@@ -19474,7 +19459,7 @@ Mariana Torres`}
               ) : (
                 <div className="request-detail-note important">
                   <strong>Lista en solo lectura</strong>
-                  <p>Solo el administrador, el responsable asignado o el colaborador de apoyo pueden modificar los alumnos.</p>
+                  <p>Solo el administrador o el responsable de producción asignado pueden modificar los alumnos.</p>
                 </div>
               )}
 
@@ -19489,9 +19474,9 @@ Mariana Torres`}
                     <thead>
                       <tr>
                         <th>Alumno</th>
+                        <th>Folio / QR</th>
                         <th>Tipo de entrega</th>
                         <th>Estado</th>
-                        <th>Folio / QR</th>
                         <th>Acciones</th>
                       </tr>
                     </thead>
@@ -19526,6 +19511,24 @@ Mariana Torres`}
                               </div>
                             )}
                           </td>
+                          <td data-label="Folio / QR">
+                            {student.certificateFolio ? (
+                              <div className="request-student-validation-card">
+                                <div className="request-student-folio-copy">
+                                  <strong title={student.certificateFolio}>{student.certificateFolio}</strong>
+                                  <small title={student.validationCode}>{student.validationCode}</small>
+                                </div>
+                                {student.qrDataUrl && (
+                                  <img
+                                    src={student.qrDataUrl}
+                                    alt={`QR de validación de ${student.name}`}
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <span className="request-student-no-folio">Sin folio</span>
+                            )}
+                          </td>
                           <td data-label="Tipo de entrega">
                             <select
                               aria-label={`Tipo de entrega de ${student.name}`}
@@ -19547,32 +19550,13 @@ Mariana Torres`}
                                   : student.status || "Pendiente"}
                             </StatusBadge>
                           </td>
-                          <td data-label="Folio / QR">
-                            {student.certificateFolio ? (
-                              <div className="request-student-validation-card">
-                                <div className="request-student-folio-copy">
-                                  <strong title={student.certificateFolio}>{student.certificateFolio}</strong>
-                                  <small title={student.validationCode}>{student.validationCode}</small>
-                                </div>
-                                {student.qrDataUrl && (
-                                  <img
-                                    src={student.qrDataUrl}
-                                    alt={`QR de validación de ${student.name}`}
-                                  />
-                                )}
-                              </div>
-                            ) : (
-                              <span className="request-student-no-folio">Sin folio</span>
-                            )}
-                          </td>
                           <td data-label="Acciones">
                             <div className="table-actions request-student-actions">
-                              {!student.certificateFolio && (
+                              {!student.certificateFolio && canGenerateFolios && (
                                 <button
                                   type="button"
                                   className="visual-outline-button"
                                   disabled={
-                                    !canGenerateFolios ||
                                     savingStudents ||
                                     Boolean(generatingStudentId) ||
                                     !studentListComplete
@@ -19595,35 +19579,43 @@ Mariana Torres`}
                               )}
 
                               {canManageStudents && (
-                                <button
-                                  type="button"
-                                  className="visual-outline-button"
-                                  disabled={studentActionId === student.id || savingStudents || Boolean(generatingStudentId)}
-                                  onClick={() => startStudentNameEdit(student)}
-                                >
-                                  Editar nombre
-                                </button>
+                                <details className="request-student-more-actions">
+                                  <summary
+                                    aria-label={`Más acciones para ${student.name}`}
+                                    title="Más acciones"
+                                  >
+                                    •••
+                                  </summary>
+                                  <div className="request-student-more-menu">
+                                    <button
+                                      type="button"
+                                      className="visual-outline-button"
+                                      disabled={studentActionId === student.id || savingStudents || Boolean(generatingStudentId)}
+                                      onClick={() => startStudentNameEdit(student)}
+                                    >
+                                      Editar nombre
+                                    </button>
+                                    {student.certificateFolio && canGenerateFolios && (
+                                      <button
+                                        type="button"
+                                        className="visual-outline-button"
+                                        disabled={studentActionId === student.id || savingStudents || Boolean(generatingStudentId)}
+                                        onClick={() => regenerateStudent(student)}
+                                      >
+                                        {studentActionId === student.id ? "Procesando..." : "Regenerar certificado"}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="danger-table-button"
+                                      disabled={savingStudents || Boolean(generatingStudentId)}
+                                      onClick={() => deleteStudent(student)}
+                                    >
+                                      Eliminar
+                                    </button>
+                                  </div>
+                                </details>
                               )}
-
-                              {student.certificateFolio && canGenerateFolios && (
-                                <button
-                                  type="button"
-                                  className="visual-outline-button"
-                                  disabled={studentActionId === student.id || savingStudents || Boolean(generatingStudentId)}
-                                  onClick={() => regenerateStudent(student)}
-                                >
-                                  {studentActionId === student.id ? "Procesando..." : "Regenerar"}
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                className="danger-table-button"
-                                disabled={!canManageStudents || savingStudents || Boolean(generatingStudentId)}
-                                onClick={() => deleteStudent(student)}
-                              >
-                                Eliminar
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -19639,7 +19631,7 @@ Mariana Torres`}
                 </div>
               )}
 
-              {canAddPeopleAfterClosure && addPeoplePanelOpen && (
+              {canAddCertificatePerson && addPeoplePanelOpen && (
                 <div className="request-detail-note important request-add-people-section">
                   <strong>Agregar personas faltantes</strong>
                   <p>
@@ -19814,13 +19806,6 @@ Mariana Torres`}
               certificateTemplate={selectedCertificateTemplate}
               refsMap={bulkCertificateRefs}
             />
-
-            <div className="request-detail-note important">
-              <strong>Siguiente paso</strong>
-              <p>
-                Al descargar el PDF, el certificado quedará registrado en el historial de Imprenta.
-              </p>
-            </div>
           </div>
         )}
 

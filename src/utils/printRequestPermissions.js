@@ -82,6 +82,17 @@ export function canManagePrintRequest(userId, request, isAdmin = false) {
     assignments.supportUserIds.includes(normalizedUserId);
 }
 
+export function canManageRequestStudents(request, actor = {}, isAdmin = false) {
+  if (isAdmin) return true;
+  const assignments = normalizePrintRequestAssignments(request);
+  const actorUid = normalizeUserId(actor?.uid);
+  if (actorUid && assignments.assignedUserId === actorUid) return true;
+  if (assignments.assignedUserId) return false;
+  const actorEmail = String(actor?.email || "").trim().toLowerCase();
+  const assignedEmail = String(request?.responsibleEmail || request?.assignedUserEmail || "").trim().toLowerCase();
+  return Boolean(actorEmail && assignedEmail && actorEmail === assignedEmail);
+}
+
 export function getPrintRequestMemberRole(userId, request, isAdmin = false) {
   if (isAdmin) return "admin";
 

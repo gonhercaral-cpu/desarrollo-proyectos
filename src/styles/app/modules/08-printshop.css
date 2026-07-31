@@ -11502,8 +11502,8 @@
 /* ===== Alumnos: lista amplia + vista previa ===== */
 .request-students-preview-layout {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+  gap: 24px;
   align-items: start;
   width: 100%;
 }
@@ -11512,14 +11512,14 @@
 .request-students-preview-layout > .request-certificate-preview-block {
   min-width: 0;
   margin-top: 0;
-  grid-column: auto !important;
-  grid-row: auto !important;
 }
 
 .request-students-preview-layout > .request-certificate-preview-block {
   position: sticky;
   top: 24px;
-  justify-self: stretch;
+  width: 100%;
+  max-width: 300px;
+  justify-self: end;
 }
 
 .request-students-table-wrap {
@@ -11544,7 +11544,7 @@
 
 .request-students-table th:nth-child(2),
 .request-students-table td:nth-child(2) {
-  width: 16%;
+  width: 21%;
 }
 
 .request-students-table th:nth-child(3),
@@ -11554,12 +11554,12 @@
 
 .request-students-table th:nth-child(4),
 .request-students-table td:nth-child(4) {
-  width: 20%;
+  width: 13%;
 }
 
 .request-students-table th:nth-child(5),
 .request-students-table td:nth-child(5) {
-  width: 24%;
+  width: 26%;
 }
 
 .request-students-table td:first-child strong {
@@ -11571,7 +11571,8 @@
 }
 
 .request-students-table td:nth-child(2),
-.request-students-table td:nth-child(3) {
+.request-students-table td:nth-child(3),
+.request-students-table td:nth-child(4) {
   padding-left: 14px;
   padding-right: 14px;
 }
@@ -11582,17 +11583,81 @@
 }
 
 .request-student-actions {
-  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.request-student-actions > button {
+  width: auto;
+  white-space: nowrap;
+}
+
+.request-student-count {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .request-add-person-header-button {
   white-space: nowrap;
 }
 
+.request-student-more-actions {
+  position: relative;
+}
+
+.request-student-more-actions > summary {
+  display: grid;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 900;
+  list-style: none;
+  line-height: 1;
+}
+
+.request-student-more-actions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.request-student-more-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 210px;
+  padding: 8px;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16);
+}
+
+.request-student-more-menu button {
+  width: 100% !important;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: nowrap;
+}
+
 .request-students-preview-layout .certificate-preview-viewport {
   position: relative;
-  width: min(100%, 56vh, 640px);
-  max-width: 100%;
+  width: 100%;
+  max-width: 300px;
   aspect-ratio: 8.5 / 11;
   margin: 0 0 0 auto;
   overflow: hidden;
@@ -11618,7 +11683,7 @@
   margin: 0 !important;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1299px) {
   .request-students-preview-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -11628,8 +11693,8 @@
   }
 
   .request-students-preview-layout .certificate-preview-viewport {
-    width: min(100%, 640px);
-    margin: 0 auto;
+    width: min(100%, 300px);
+    margin: 0 0 0 auto;
   }
 }
 
@@ -11689,7 +11754,7 @@
   }
 
   .request-students-table td:first-child,
-  .request-students-table td:nth-child(4),
+  .request-students-table td:nth-child(2),
   .request-students-table td:last-child {
     grid-column: 1 / -1;
   }
@@ -11703,7 +11768,7 @@
   }
 
   .request-students-preview-layout .certificate-preview-viewport {
-    width: min(100%, 520px);
+    width: min(100%, 300px);
   }
 }
 

@@ -73,19 +73,23 @@ function getPrimaryAssignedIds(request = {}) {
   return new Set(ids.map(normalizeId).filter(Boolean));
 }
 
+function canManageCertificateStudents(requestData = {}, profile = {}, auth = {}) {
+  if (!auth?.uid || !isPrintshopProfile(profile)) return false;
+  if (isAdmin(profile)) return true;
+  const primaryAssignedIds = getPrimaryAssignedIds(requestData);
+  if (primaryAssignedIds.has(auth.uid)) return true;
+  const actorEmail = cleanText(profile.email).toLowerCase();
+  const responsibleEmail = cleanText(requestData.responsibleEmail || requestData.assignedUserEmail).toLowerCase();
+  return primaryAssignedIds.size === 0 && Boolean(responsibleEmail) && actorEmail === responsibleEmail;
+}
+
 async function assertActor(db, requestId, requestData, auth, { destructive = false } = {}) {
   if (!auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión para administrar certificados.");
   const profileSnapshot = await db.collection("users").doc(auth.uid).get();
   const profile = profileSnapshot.exists ? profileSnapshot.data() : null;
   const admin = isAdmin(profile || {});
-  const primaryAssignedIds = getPrimaryAssignedIds(requestData);
-  const actorEmail = cleanText(profile?.email).toLowerCase();
-  const responsibleEmail = cleanText(requestData.responsibleEmail || requestData.assignedUserEmail).toLowerCase();
-  const assignedByStableId = primaryAssignedIds.has(auth.uid);
-  const assignedByHistoricalEmail = primaryAssignedIds.size === 0 && Boolean(responsibleEmail) && actorEmail === responsibleEmail;
-  const assigned = assignedByStableId || assignedByHistoricalEmail;
 
-  if (!profile || !isPrintshopProfile(profile) || (!admin && !assigned)) {
+  if (!profile || !canManageCertificateStudents(requestData, profile, auth)) {
     throw new HttpsError("permission-denied", "No tienes permiso para administrar esta solicitud.");
   }
 
@@ -575,4 +579,9 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
   return { addCertificatePerson, updateCertificatePersonName, deleteCertificatePerson, updateCertificatePersonQr, markCertificatePersonGenerationFailed };
 }
 
-module.exports = { createCertificatePersonHandlers, normalizeName, buildFolio };
+module.exports = {
+  createCertificatePersonHandlers,
+  normalizeName,
+  buildFolio,
+  canManageCertificateStudents,
+};
