@@ -3,8 +3,9 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
+const logger = require("firebase-functions/logger");
 const { createMaterialCorrectionHandlers } = require("./materialCorrections");
 const {
   createPrintRequestWithAssignment: createAssignedPrintRequest,
@@ -25,7 +26,7 @@ const {
   isActiveCertificateSigner,
   normalizeCertificateSignerType,
 } = require("./certificatePeople");
-const { createCertificatePersonHandlers } = require("./certificatePersonOperations");
+const { createCertificatePersonHandlers, serializeCallableResult } = require("./certificatePersonOperations");
 const {
   backfillAutomaticProductionBatches,
   canActiveProfileAccessPrintshop,
@@ -59,17 +60,58 @@ const storageBucket = getStorage().bucket(
 const certificatePersonHandlers = createCertificatePersonHandlers({
   db,
   FieldValue,
+  Timestamp,
   bucket: storageBucket,
+  logger,
 });
+
+const CERTIFICATE_PERSON_ERROR_MESSAGES = {
+  addCertificatePerson: "No fue posible agregar la persona al certificado.",
+  updateCertificatePersonName: "No fue posible actualizar el nombre del certificado.",
+  updateCertificatePersonQr: "No fue posible guardar el codigo QR del certificado.",
+  markCertificatePersonGenerationFailed: "No fue posible registrar el fallo de generacion.",
+};
+
+async function runCertificatePersonCallable(operation, handler, request) {
+  const payload = request.data || {};
+  const context = {
+    operation,
+    requestId: String(payload.requestId || ""),
+    studentId: String(payload.studentId || payload.id || ""),
+    certificateId: String(payload.certificateId || payload.certificateRecordId || ""),
+    folio: String(payload.folio || payload.certificateFolio || ""),
+    uid: request.auth?.uid || "",
+  };
+  logger.info("certificate-person-operation", { ...context, step: "started" });
+  try {
+    const result = await handler(request);
+    logger.info("certificate-person-operation", { ...context, step: "completed" });
+    return serializeCallableResult(result);
+  } catch (error) {
+    logger.error(`${operation} failed`, {
+      ...context,
+      step: "handler",
+      errorCode: error?.code || "internal",
+      errorMessage: error?.message || "Unknown error",
+      errorStack: error?.stack || "",
+    });
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError(
+      "internal",
+      CERTIFICATE_PERSON_ERROR_MESSAGES[operation] || "No fue posible completar la operacion.",
+      { operation }
+    );
+  }
+}
 
 exports.addCertificatePerson = onCall(
   { region: "us-central1", cors: true, timeoutSeconds: 60 },
-  async (request) => certificatePersonHandlers.addCertificatePerson(request)
+  async (request) => runCertificatePersonCallable("addCertificatePerson", certificatePersonHandlers.addCertificatePerson, request)
 );
 
 exports.updateCertificatePersonName = onCall(
   { region: "us-central1", cors: true, timeoutSeconds: 60 },
-  async (request) => certificatePersonHandlers.updateCertificatePersonName(request)
+  async (request) => runCertificatePersonCallable("updateCertificatePersonName", certificatePersonHandlers.updateCertificatePersonName, request)
 );
 
 exports.deleteCertificatePerson = onCall(
@@ -79,12 +121,12 @@ exports.deleteCertificatePerson = onCall(
 
 exports.updateCertificatePersonQr = onCall(
   { region: "us-central1", cors: true, timeoutSeconds: 60 },
-  async (request) => certificatePersonHandlers.updateCertificatePersonQr(request)
+  async (request) => runCertificatePersonCallable("updateCertificatePersonQr", certificatePersonHandlers.updateCertificatePersonQr, request)
 );
 
 exports.markCertificatePersonGenerationFailed = onCall(
   { region: "us-central1", cors: true, timeoutSeconds: 60 },
-  async (request) => certificatePersonHandlers.markCertificatePersonGenerationFailed(request)
+  async (request) => runCertificatePersonCallable("markCertificatePersonGenerationFailed", certificatePersonHandlers.markCertificatePersonGenerationFailed, request)
 );
 
 const ALLOWED_ROLES = ["admin", "collaborator", "requester"];

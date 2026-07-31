@@ -7,6 +7,44 @@ function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function removeUndefinedValues(value) {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object") return value;
+  if (value instanceof Date || typeof value.toDate === "function") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => removeUndefinedValues(item))
+      .filter((item) => item !== undefined);
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [key, removeUndefinedValues(item)])
+      .filter(([, item]) => item !== undefined)
+  );
+}
+
+function serializeCallableResult(value) {
+  if (value === undefined) return undefined;
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value?.toDate === "function") return value.toDate().toISOString();
+  if (Buffer.isBuffer(value)) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => serializeCallableResult(item))
+      .filter((item) => item !== undefined);
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype) return undefined;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [key, serializeCallableResult(item)])
+      .filter(([, item]) => item !== undefined)
+  );
+}
+
 function normalizeName(value) {
   return cleanText(value)
     .normalize("NFD")
@@ -227,7 +265,7 @@ function buildGeneratedCertificate(requestId, requestData, student, actor, { pen
     generatedYear: certificateYear(requestData),
     principalName: cleanText(requestData.principalSignerName),
     teacherName: cleanText(requestData.teacherSignerName || requestData.teacherName),
-    status: "Generado",
+    status: pending ? "Pendiente" : "Generado",
     pdfFileName: "",
     pdfStoragePath: buildPdfPath(requestId, requestData, student.validationCode),
     generatedAt: new Date(),
@@ -282,10 +320,87 @@ async function updatePublicDocumentsByIdentity(db, requestId, identities, patch)
   if (changed > 0) await batch.commit();
 }
 
-function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
+async function findCertificateRecord(transaction, db, requestId, student, payload = {}) {
+  const requestedCertificateId = cleanText(
+    payload.certificateId || payload.certificateRecordId || student.certificateId || student.certificateRecordId
+  );
+  const studentFolio = cleanText(student.certificateFolio || student.folio);
+  const requestedFolio = cleanText(payload.folio || payload.certificateFolio);
+  const studentValidationCode = cleanText(student.validationCode);
+  const requestedValidationCode = cleanText(payload.validationCode);
+  if (studentFolio && requestedFolio && studentFolio !== requestedFolio) {
+    throw new HttpsError("failed-precondition", "El folio no corresponde a la persona seleccionada.");
+  }
+  if (studentValidationCode && requestedValidationCode && studentValidationCode !== requestedValidationCode) {
+    throw new HttpsError("failed-precondition", "El codigo de validacion no corresponde a la persona seleccionada.");
+  }
+  const folio = studentFolio || requestedFolio;
+  const validationCode = studentValidationCode || requestedValidationCode;
+  const stableStudentId = normalizeId(student.studentId || student.id || payload.studentId);
+
+  if (requestedCertificateId) {
+    const directRef = db.collection("generatedCertificates").doc(requestedCertificateId);
+    const directSnapshot = await transaction.get(directRef);
+    if (directSnapshot.exists) {
+      const data = directSnapshot.data();
+      if (data.requestId !== requestId) {
+        throw new HttpsError("failed-precondition", "El certificado no pertenece a esta solicitud.");
+      }
+      if (folio && cleanText(data.folio) && cleanText(data.folio) !== folio) {
+        throw new HttpsError("failed-precondition", "El folio no corresponde al certificado seleccionado.");
+      }
+      if (stableStudentId && cleanText(data.studentId) && cleanText(data.studentId) !== stableStudentId) {
+        throw new HttpsError("failed-precondition", "El certificado no corresponde a la persona seleccionada.");
+      }
+      const identityMatches = folio && cleanText(data.folio) === folio
+        || validationCode && cleanText(data.validationCode) === validationCode
+        || stableStudentId && cleanText(data.studentId) === stableStudentId;
+      if (!identityMatches) {
+        throw new HttpsError("failed-precondition", "No fue posible comprobar la relacion entre la persona y el certificado.");
+      }
+      return { ref: directRef, snapshot: directSnapshot };
+    }
+  }
+
+  if (!folio && !validationCode) return null;
+  const requestCertificates = await transaction.get(
+    db.collection("generatedCertificates").where("requestId", "==", requestId)
+  );
+  const matches = requestCertificates.docs.filter((snapshot) => {
+    const data = snapshot.data();
+    return folio && cleanText(data.folio) === folio
+      || validationCode && cleanText(data.validationCode) === validationCode;
+  });
+  if (matches.length > 1) {
+    throw new HttpsError("failed-precondition", "Existe mas de un certificado para la identidad indicada.");
+  }
+  return matches.length === 1 ? { ref: matches[0].ref, snapshot: matches[0] } : null;
+}
+
+function createCertificatePersonHandlers({ db, FieldValue, Timestamp, bucket, logger = console }) {
   const serverTimestamp = () => FieldValue.serverTimestamp();
+  const embeddedTimestamp = () => Timestamp?.now ? Timestamp.now() : new Date();
+  const firestoreData = (value) => removeUndefinedValues(value);
+  const assertAuthenticated = (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Debes iniciar sesion para administrar certificados.");
+    }
+  };
+  const logStage = (operation, step, requestId, request, payload = {}, extra = {}) => {
+    logger.info("certificate-person-operation", {
+      operation,
+      step,
+      requestId,
+      uid: request.auth?.uid || "",
+      studentId: cleanText(payload.studentId || payload.id),
+      certificateId: cleanText(payload.certificateId || payload.certificateRecordId),
+      folio: cleanText(payload.folio || payload.certificateFolio),
+      ...extra,
+    });
+  };
 
   async function addCertificatePerson(request) {
+    assertAuthenticated(request);
     const payload = request.data || {};
     const requestId = cleanText(payload.requestId);
     const name = cleanText(payload.name).replace(/\s+/g, " ");
@@ -296,15 +411,22 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
     const operationId = cleanText(payload.operationId);
     const operationRef = operationId ? db.collection("certificatePersonOperations").doc(operationId) : null;
     const result = await db.runTransaction(async (transaction) => {
-      if (operationRef) {
-        const operationSnapshot = await transaction.get(operationRef);
-        if (operationSnapshot.exists) return operationSnapshot.data().result;
-      }
       const requestSnapshot = await transaction.get(requestRef);
       if (!requestSnapshot.exists) throw new HttpsError("not-found", "No se encontró la solicitud.");
       const requestData = requestSnapshot.data();
       assertCertificateRequest(requestId, requestData);
       const actor = await assertActor(db, requestId, requestData, request.auth);
+      logStage("addCertificatePerson", "authorized", requestId, request, payload);
+      if (operationRef) {
+        const operationSnapshot = await transaction.get(operationRef);
+        if (operationSnapshot.exists) {
+          const operationData = operationSnapshot.data();
+          if (operationData.requestId !== requestId || operationData.type !== "add") {
+            throw new HttpsError("failed-precondition", "El identificador de operacion pertenece a otra alta.");
+          }
+          return operationData.result;
+        }
+      }
       const students = Array.isArray(requestData.students) ? requestData.students : [];
       const duplicate = students.some((student) => normalizeName(student?.name || student?.nombre) === normalizeName(name));
       if (duplicate && payload.allowDuplicate !== true) {
@@ -336,23 +458,24 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
         folio,
         validationCode,
         validationUrl: cleanText(payload.validationUrl) || buildValidationUrl(validationCode),
-        qrGenerated: true,
+        qrGenerated: false,
         generationStatus: "pending",
         addedAfterCreation: true,
-        addedAfterCreationAt: new Date(),
+        addedAfterCreationAt: embeddedTimestamp(),
         addedAfterCreationByUid: actor.uid,
         addedAfterCreationByName: actor.name,
         addedAfterCreationByEmail: actor.email,
       };
       const nextStudents = [...students, student];
       const certificateRef = db.collection("generatedCertificates").doc(certificateId);
+      const publicValidationRef = db.collection("publicCertificateValidations").doc(validationCode);
       const batchRef = db.collection("certificateHistoryBatches").doc(requestId);
       const batchSnapshot = await transaction.get(batchRef);
       const previousBatch = batchSnapshot.exists ? batchSnapshot.data() : {};
       const certificateIds = [...new Set([...(Array.isArray(previousBatch.certificateIds) ? previousBatch.certificateIds : []), certificateId])];
       const printedQuantity = nextStudents.filter((item) => ["Impreso", "Ambos"].includes(item.deliveryType)).length;
       const digitalQuantity = nextStudents.filter((item) => ["Digital", "Ambos"].includes(item.deliveryType)).length;
-      transaction.update(requestRef, {
+      transaction.update(requestRef, firestoreData({
         students: nextStudents,
         requestedQuantity: nextStudents.length,
         printedQuantity,
@@ -363,16 +486,40 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
         updatedByUid: actor.uid,
         updatedByName: actor.name,
         updatedByEmail: actor.email,
-      });
-      transaction.set(certificateRef, buildGeneratedCertificate(requestId, requestData, student, actor), { merge: true });
-      transaction.set(reservationRef, {
+      }));
+      const generatedCertificate = buildGeneratedCertificate(requestId, requestData, student, actor);
+      transaction.set(certificateRef, firestoreData(generatedCertificate), { merge: true });
+      transaction.set(publicValidationRef, firestoreData({
+        validationCode,
+        folio,
+        validationUrl: student.validationUrl,
+        studentName: name,
+        level: generatedCertificate.level,
+        programName: generatedCertificate.programName,
+        requestType: generatedCertificate.requestType,
+        productName: generatedCertificate.productName,
+        templateName: generatedCertificate.templateName,
+        issueDate: generatedCertificate.issueDate,
+        issueYear: generatedCertificate.issueYear,
+        campus: generatedCertificate.campus,
+        teacherName: generatedCertificate.teacherName,
+        status: "Pendiente",
+        generationStatus: "pending",
+        active: true,
+        deleted: false,
+        institution: "Active English School",
+        requestId,
+        generationMode: "request",
+        updatedAt: serverTimestamp(),
+      }), { merge: true });
+      transaction.set(reservationRef, firestoreData({
         folio,
         requestId,
         studentId,
         certificateId,
         createdAt: serverTimestamp(),
-      }, { merge: false });
-      transaction.set(batchRef, {
+      }), { merge: false });
+      transaction.set(batchRef, firestoreData({
         requestId,
         loteId: requestId,
         requestFolio: cleanText(requestData.folio),
@@ -383,15 +530,20 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
         updatedByUid: actor.uid,
         updatedByName: actor.name,
         updatedByEmail: actor.email,
-      }, { merge: true });
+      }), { merge: true });
       const response = { requestId, student, certificateId, folio, validationCode };
-      if (operationRef) transaction.set(operationRef, { type: "add", requestId, result: response, createdAt: serverTimestamp() });
+      if (operationRef) transaction.set(operationRef, firestoreData({ type: "add", requestId, result: response, createdAt: serverTimestamp() }));
       return response;
+    });
+    logStage("addCertificatePerson", "committed", requestId, request, result.student || payload, {
+      certificateId: result.certificateId,
+      folio: result.folio,
     });
     return result;
   }
 
   async function updateCertificatePersonName(request) {
+    assertAuthenticated(request);
     const payload = request.data || {};
     const requestId = cleanText(payload.requestId);
     const newName = cleanText(payload.newName).replace(/\s+/g, " ");
@@ -408,14 +560,27 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
       const duplicate = students.some((student, index) => index !== match.index && normalizeName(student?.name) === normalizeName(newName));
       if (duplicate && payload.allowDuplicate !== true) throw new HttpsError("already-exists", "Ya existe una persona con ese nombre. Confirma para conservar el duplicado.", { duplicateName: true });
       const current = match.student;
-      const nextStudent = { ...current, id: current.studentId || current.id, studentId: current.studentId || current.id, name: newName, nameUpdatedAt: serverTimestamp(), nameUpdatedByUid: actor.uid, nameUpdatedByName: actor.name };
-      const nextStudents = students.map((student, index) => index === match.index ? nextStudent : student);
-      const certificateId = cleanText(payload.certificateId || current.certificateId || current.certificateRecordId);
-      let certificateSnapshot = null;
-      if (certificateId) {
-        const certificateRef = db.collection("generatedCertificates").doc(certificateId);
-        certificateSnapshot = await transaction.get(certificateRef);
+      const stableStudentId = current.studentId || current.id || normalizeId(payload.studentId);
+      const certificateRecord = await findCertificateRecord(transaction, db, requestId, current, payload);
+      if (!certificateRecord) {
+        throw new HttpsError("not-found", "No se encontro el certificado asociado a esta persona.");
       }
+      const certificateId = certificateRecord.ref.id;
+      const nextStudent = {
+        ...current,
+        id: stableStudentId,
+        studentId: stableStudentId,
+        certificateId,
+        certificateRecordId: certificateId,
+        name: newName,
+        generationStatus: "generating",
+        generationError: "",
+        generationFailedAt: null,
+        nameUpdatedAt: embeddedTimestamp(),
+        nameUpdatedByUid: actor.uid,
+        nameUpdatedByName: actor.name,
+      };
+      const nextStudents = students.map((student, index) => index === match.index ? nextStudent : student);
       const validationIds = [...new Set([cleanText(current.validationCode), cleanText(current.certificateFolio), cleanText(payload.validationCode)].filter(Boolean))];
       const validationSnapshots = [];
       for (const validationId of validationIds) {
@@ -423,14 +588,12 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
         const validationSnapshot = await transaction.get(validationRef);
         validationSnapshots.push({ ref: validationRef, snapshot: validationSnapshot });
       }
-      transaction.update(requestRef, { students: nextStudents, updatedAt: serverTimestamp(), updatedByUid: actor.uid, updatedByName: actor.name, updatedByEmail: actor.email });
-      if (certificateSnapshot?.exists && certificateSnapshot.data().requestId === requestId && certificateSnapshot.data().studentId === (current.studentId || current.id)) {
-        transaction.update(db.collection("generatedCertificates").doc(certificateId), { studentName: newName, previousStudentName: current.name, lastNameCorrectionAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByUid: actor.uid, updatedByName: actor.name, updatedByEmail: actor.email });
-      }
+      transaction.update(requestRef, firestoreData({ students: nextStudents, updatedAt: serverTimestamp(), updatedByUid: actor.uid, updatedByName: actor.name, updatedByEmail: actor.email }));
+      transaction.update(certificateRecord.ref, firestoreData({ studentId: stableStudentId, studentName: newName, previousStudentName: current.name, generationStatus: "generating", generationError: "", generationFailedAt: null, lastNameCorrectionAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByUid: actor.uid, updatedByName: actor.name, updatedByEmail: actor.email }));
       validationSnapshots.forEach(({ ref, snapshot }) => {
-        if (snapshot.exists && snapshot.data().requestId === requestId) transaction.update(ref, { studentName: newName, updatedAt: serverTimestamp() });
+        if (snapshot.exists && snapshot.data().requestId === requestId) transaction.update(ref, firestoreData({ studentName: newName, updatedAt: serverTimestamp() }));
       });
-      const response = { requestId, studentId: current.studentId || current.id, certificateId, folio: current.certificateFolio, validationCode: current.validationCode, previousName: current.name, newName };
+      const response = { success: true, requestId, studentId: stableStudentId, certificateId, folio: current.certificateFolio, validationCode: current.validationCode, previousName: current.name, newName, normalizedName: newName };
       return { response, audit: { actor, requestData, certificateId, studentId: response.studentId, folio: response.folio, studentName: newName, previousStudentName: current.name } };
     });
     await buildAudit(db, requestId, result.audit.requestData, result.audit.actor, "CERTIFICATE_NAME_CORRECTED", { ...result.audit, title: "Nombre de certificado corregido", description: `Se corrigió nombre de ${result.audit.previousStudentName} a ${result.audit.studentName}.` });
@@ -438,8 +601,12 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
       db,
       requestId,
       [result.response.folio, result.response.validationCode],
-      { studentName: result.response.newName, updatedAt: serverTimestamp() }
+      firestoreData({ studentName: result.response.newName, generationStatus: "generating", updatedAt: serverTimestamp() })
     );
+    logStage("updateCertificatePersonName", "committed", requestId, request, payload, {
+      certificateId: result.response.certificateId,
+      folio: result.response.folio,
+    });
     return result.response;
   }
 
@@ -509,71 +676,105 @@ function createCertificatePersonHandlers({ db, FieldValue, bucket }) {
   }
 
   async function updateCertificatePersonQr(request) {
+    assertAuthenticated(request);
     const payload = request.data || {};
     const requestId = cleanText(payload.requestId);
     const qrDataUrl = cleanText(payload.qrDataUrl);
     if (!requestId || !qrDataUrl) throw new HttpsError("invalid-argument", "Faltan datos del QR.");
     const requestRef = db.collection("printRequests").doc(requestId);
-    return db.runTransaction(async (transaction) => {
+    const result = await db.runTransaction(async (transaction) => {
       const requestSnapshot = await transaction.get(requestRef);
       if (!requestSnapshot.exists) throw new HttpsError("not-found", "No se encontró la solicitud.");
       const requestData = requestSnapshot.data();
       assertCertificateRequest(requestId, requestData);
       const actor = await assertActor(db, requestId, requestData, request.auth);
+      logStage("updateCertificatePersonQr", "authorized", requestId, request, payload);
       const students = Array.isArray(requestData.students) ? requestData.students : [];
       const match = findStudent(students, payload);
+      const certificateRecord = await findCertificateRecord(transaction, db, requestId, match.student, payload);
+      if (!certificateRecord) {
+        throw new HttpsError("not-found", "No se encontro el certificado asociado a esta persona.");
+      }
       const nextStudents = students.map((student, index) => index === match.index
-        ? { ...student, validationUrl: cleanText(payload.validationUrl || student.validationUrl), qrDataUrl, qrGenerated: true, updatedAt: serverTimestamp() }
+        ? { ...student, certificateId: certificateRecord.ref.id, certificateRecordId: certificateRecord.ref.id, validationUrl: cleanText(payload.validationUrl || student.validationUrl), qrDataUrl, qrGenerated: true, updatedAt: embeddedTimestamp() }
         : student);
-      transaction.update(requestRef, { students: nextStudents, updatedAt: serverTimestamp(), updatedByUid: actor.uid, updatedByName: actor.name, updatedByEmail: actor.email });
-      return { requestId, studentId: match.student.studentId || match.student.id, qrGenerated: true };
+      transaction.update(requestRef, firestoreData({ students: nextStudents, updatedAt: serverTimestamp(), updatedByUid: actor.uid, updatedByName: actor.name, updatedByEmail: actor.email }));
+      transaction.update(certificateRecord.ref, firestoreData({
+        validationUrl: cleanText(payload.validationUrl || match.student.validationUrl),
+        qrGenerated: true,
+        updatedAt: serverTimestamp(),
+        updatedByUid: actor.uid,
+        updatedByName: actor.name,
+        updatedByEmail: actor.email,
+      }));
+      return { success: true, requestId, studentId: match.student.studentId || match.student.id, certificateId: certificateRecord.ref.id, qrGenerated: true };
     });
+    logStage("updateCertificatePersonQr", "committed", requestId, request, payload, {
+      certificateId: result.certificateId,
+    });
+    return result;
   }
 
   async function markCertificatePersonGenerationFailed(request) {
+    assertAuthenticated(request);
     const payload = request.data || {};
     const requestId = cleanText(payload.requestId);
-    const errorMessage = cleanText(payload.errorMessage).slice(0, 500) || "Falló la generación del PDF.";
+    const errorMessage = cleanText(payload.failureMessage || payload.errorMessage).slice(0, 500) || "Falló la generación del PDF.";
+    const errorCode = cleanText(payload.failureCode || payload.errorCode).slice(0, 80) || "generation-failed";
     if (!requestId) throw new HttpsError("invalid-argument", "Falta la solicitud.");
     const requestRef = db.collection("printRequests").doc(requestId);
-    return db.runTransaction(async (transaction) => {
+    const result = await db.runTransaction(async (transaction) => {
       const requestSnapshot = await transaction.get(requestRef);
       if (!requestSnapshot.exists) throw new HttpsError("not-found", "No se encontró la solicitud.");
       const requestData = requestSnapshot.data();
       assertCertificateRequest(requestId, requestData);
       const actor = await assertActor(db, requestId, requestData, request.auth);
+      logStage("markCertificatePersonGenerationFailed", "authorized", requestId, request, payload);
       const students = Array.isArray(requestData.students) ? requestData.students : [];
       const match = findStudent(students, payload);
       const current = match.student;
-      const certificateId = cleanText(payload.certificateId || current.certificateId || current.certificateRecordId);
-      const certificateRef = certificateId ? db.collection("generatedCertificates").doc(certificateId) : null;
-      const certificateSnapshot = certificateRef ? await transaction.get(certificateRef) : null;
-      if (certificateSnapshot?.exists) {
-        const certificateData = certificateSnapshot.data();
-        if (certificateData.requestId !== requestId || certificateData.studentId !== (current.studentId || current.id)) {
-          throw new HttpsError("failed-precondition", "El certificado no corresponde a esta persona y solicitud.");
-        }
-        transaction.update(certificateRef, {
+      const stableStudentId = current.studentId || current.id || normalizeId(payload.studentId);
+      const certificateRecord = await findCertificateRecord(transaction, db, requestId, current, payload);
+      const certificateId = certificateRecord?.ref.id || cleanText(payload.certificateId || current.certificateId || current.certificateRecordId);
+      if (certificateRecord) {
+        transaction.update(certificateRecord.ref, firestoreData({
+          studentId: stableStudentId,
           generationStatus: "generationFailed",
           generationError: errorMessage,
+          generationErrorCode: errorCode,
           generationFailedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           updatedByUid: actor.uid,
           updatedByName: actor.name,
-        });
+        }));
       }
       const nextStudents = students.map((student, index) => index === match.index
-        ? { ...student, generationStatus: "generationFailed", generationError: errorMessage, generationFailedAt: serverTimestamp() }
+        ? { ...student, id: stableStudentId, studentId: stableStudentId, ...(certificateId ? { certificateId, certificateRecordId: certificateId } : {}), generationStatus: "generationFailed", generationError: errorMessage, generationErrorCode: errorCode, generationFailedAt: embeddedTimestamp() }
         : student);
-      transaction.update(requestRef, {
+      transaction.update(requestRef, firestoreData({
         students: nextStudents,
         updatedAt: serverTimestamp(),
         updatedByUid: actor.uid,
         updatedByName: actor.name,
         updatedByEmail: actor.email,
-      });
-      return { requestId, studentId: current.studentId || current.id, certificateId, generationStatus: "generationFailed" };
+      }));
+      return {
+        response: { success: true, requestId, studentId: stableStudentId, certificateId, generationStatus: "generationFailed", certificateFound: Boolean(certificateRecord) },
+        folio: cleanText(current.certificateFolio || payload.folio),
+        validationCode: cleanText(current.validationCode || payload.validationCode),
+      };
     });
+    await updatePublicDocumentsByIdentity(
+      db,
+      requestId,
+      [result.folio, result.validationCode],
+      firestoreData({ generationStatus: "generationFailed", generationErrorCode: errorCode, updatedAt: serverTimestamp() })
+    );
+    logStage("markCertificatePersonGenerationFailed", "committed", requestId, request, payload, {
+      certificateId: result.response.certificateId,
+      folio: result.folio,
+    });
+    return result.response;
   }
 
   return { addCertificatePerson, updateCertificatePersonName, deleteCertificatePerson, updateCertificatePersonQr, markCertificatePersonGenerationFailed };
@@ -584,4 +785,6 @@ module.exports = {
   normalizeName,
   buildFolio,
   canManageCertificateStudents,
+  removeUndefinedValues,
+  serializeCallableResult,
 };

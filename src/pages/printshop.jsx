@@ -7926,8 +7926,11 @@ export default function PrintShop() {
       request &&
       selectedRequestId &&
       isRequestCertificateLike(request.requestType) &&
-      normalizePrintRequestStatus(request.status) !== "Entregada" &&
-      canCurrentUserEditRequest(request)
+      canManageRequestStudents(
+        request,
+        { uid: getAuditUser().uid, email: getAuditUser().email },
+        isAdmin
+      )
     );
   }
 
@@ -9292,7 +9295,7 @@ export default function PrintShop() {
       return { success: true, addedCount: newStudentsWithFolios.length, students: newStudentsWithFolios };
     } catch (error) {
       console.error("No se pudieron agregar las personas después del cierre:", error);
-      setRequestMessage("No se pudieron agregar las personas. Revisa la conexión o las reglas de Firestore.");
+      setRequestMessage(error?.message || "No se pudieron agregar las personas. Revisa la conexión o las reglas de Firestore.");
       return { success: false };
     } finally {
       setAddingStudentsAfterClosure(false);
@@ -18563,24 +18566,28 @@ function RequestDetailCard({
     );
     if (!confirmed) return;
 
+    let nameWasUpdated = false;
     try {
       setStudentActionId(student.id);
       await onUpdateStudentName(student, nextName, duplicate);
+      nameWasUpdated = true;
       await buildAndStoreStudentCertificatePdf({ ...student, name: nextName }, { isRegeneration: true });
       setAddPeopleMessage("Nombre actualizado y certificado regenerado.");
       cancelStudentNameEdit();
     } catch (error) {
       console.error("No se pudo corregir el nombre del certificado:", error);
-      try {
-        await markCertificatePersonGenerationFailed({
-          requestId: request.id,
-          studentId: student.studentId || student.id,
-          certificateId: student.certificateId || student.certificateRecordId,
-          folio: student.certificateFolio,
-          errorMessage: error?.message,
-        });
-      } catch (statusError) {
-        console.error("No se pudo marcar el fallo de generación:", statusError);
+      if (nameWasUpdated) {
+        try {
+          await markCertificatePersonGenerationFailed({
+            requestId: request.id,
+            studentId: student.studentId || student.id,
+            certificateId: student.certificateId || student.certificateRecordId,
+            folio: student.certificateFolio,
+            errorMessage: error?.message,
+          });
+        } catch (statusError) {
+          console.error("No se pudo marcar el fallo de generación:", statusError);
+        }
       }
       setAddPeopleMessage(error?.message || "No se pudo corregir el nombre. No se completó la regeneración del PDF.");
     } finally {
