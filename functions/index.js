@@ -1,5 +1,5 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
@@ -25,6 +25,7 @@ const {
   isActiveCertificateSigner,
   normalizeCertificateSignerType,
 } = require("./certificatePeople");
+const { createCertificatePersonHandlers } = require("./certificatePersonOperations");
 const {
   backfillAutomaticProductionBatches,
   canActiveProfileAccessPrintshop,
@@ -53,6 +54,37 @@ const storageBucket = getStorage().bucket(
   process.env.MATERIAL_CORRECTIONS_STORAGE_BUCKET
     || firebaseRuntimeConfig.storageBucket
     || "sistema-desarrollo-proyectos.firebasestorage.app"
+);
+
+const certificatePersonHandlers = createCertificatePersonHandlers({
+  db,
+  FieldValue,
+  bucket: storageBucket,
+});
+
+exports.addCertificatePerson = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => certificatePersonHandlers.addCertificatePerson(request)
+);
+
+exports.updateCertificatePersonName = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => certificatePersonHandlers.updateCertificatePersonName(request)
+);
+
+exports.deleteCertificatePerson = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => certificatePersonHandlers.deleteCertificatePerson(request)
+);
+
+exports.updateCertificatePersonQr = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => certificatePersonHandlers.updateCertificatePersonQr(request)
+);
+
+exports.markCertificatePersonGenerationFailed = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => certificatePersonHandlers.markCertificatePersonGenerationFailed(request)
 );
 
 const ALLOWED_ROLES = ["admin", "collaborator", "requester"];

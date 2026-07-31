@@ -3587,6 +3587,24 @@
   font-weight: 800;
 }
 
+.request-student-name-editor {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+
+.request-student-name-editor .table-actions,
+.request-student-actions {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.request-student-actions button {
+  min-height: 32px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+
 .request-student-actions {
   min-width: 190px;
   flex-wrap: wrap;

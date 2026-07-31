@@ -57,6 +57,13 @@ import {
   repairMissingPrintRequestAssignments,
 } from "../services/printRequestAssignmentsService";
 import {
+  addCertificatePerson,
+  markCertificatePersonGenerationFailed,
+  updateCertificatePersonName,
+  deleteCertificatePerson,
+  updateCertificatePersonQr,
+} from "../services/certificatePersonService";
+import {
   dedupeCertificatePeople,
   isActiveCertificatePerson,
   normalizeCertificateSignerType,
@@ -2046,21 +2053,58 @@ function isRequestCertificateLike(requestType) {
 }
 
 function createStudentId() {
+  if (globalThis.crypto?.randomUUID) return `student-${globalThis.crypto.randomUUID()}`;
   return `student-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function buildHistoricalStudentId(student) {
+  const source = [
+    student?.studentId,
+    student?.id,
+    student?.certificateRecordId,
+    student?.certificateId,
+    student?.validationCode,
+    student?.certificateFolio,
+    student?.name,
+  ].map((value) => String(value || "").trim()).filter(Boolean).join("|");
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `legacy-student-${(hash >>> 0).toString(36)}`;
 }
 
 function normalizeRequestStudents(students) {
   if (!Array.isArray(students)) return [];
 
   return students
-    .map((student) => ({
-      id: student?.id || createStudentId(),
-      name: String(student?.name || "").trim(),
+    .map((student) => {
+      const studentId = String(
+        student?.studentId ||
+        student?.id ||
+        student?.certificateRecordId ||
+        student?.certificateId ||
+        buildHistoricalStudentId(student)
+      ).trim();
+      const certificateId = String(
+        student?.certificateId || student?.certificateRecordId || student?.certificateDocumentId || ""
+      ).trim();
+      const name = String(student?.name || student?.fullName || student?.nombre || "")
+        .trim()
+        .replace(/\s+/g, " ");
+      return {
+      id: studentId,
+      studentId,
+      name,
       deliveryType: studentDeliveryTypes.includes(student?.deliveryType)
         ? student.deliveryType
         : "Impreso",
       status: studentStatuses.includes(student?.status) ? student.status : "Pendiente",
-      certificateFolio: String(student?.certificateFolio || ""),
+      certificateId,
+      certificateRecordId: certificateId,
+      certificateFolio: String(student?.certificateFolio || student?.folio || ""),
+      folio: String(student?.folio || student?.certificateFolio || ""),
       validationCode: String(student?.validationCode || ""),
       validationUrl: String(student?.validationUrl || ""),
       qrDataUrl: String(student?.qrDataUrl || ""),
@@ -2069,7 +2113,10 @@ function normalizeRequestStudents(students) {
       generatedByUid: String(student?.generatedByUid || ""),
       generatedByName: String(student?.generatedByName || ""),
       generatedByEmail: String(student?.generatedByEmail || ""),
-      certificateRecordId: String(student?.certificateRecordId || ""),
+      generationStatus: String(student?.generationStatus || ""),
+      pdfFileName: String(student?.pdfFileName || ""),
+      pdfUrl: String(student?.pdfUrl || student?.certificatePdfUrl || ""),
+      pdfStoragePath: String(student?.pdfStoragePath || student?.certificateStoragePath || ""),
       certificateGeneratedAt: String(student?.certificateGeneratedAt || ""),
       certificateGeneratedByUid: String(student?.certificateGeneratedByUid || ""),
       certificateGeneratedByName: String(student?.certificateGeneratedByName || ""),
@@ -2087,7 +2134,8 @@ function normalizeRequestStudents(students) {
       addedAfterCreationByUid: String(student?.addedAfterCreationByUid || ""),
       addedAfterCreationByName: String(student?.addedAfterCreationByName || ""),
       addedAfterCreationByEmail: String(student?.addedAfterCreationByEmail || ""),
-    }))
+      };
+    })
     .filter((student) => student.name);
 }
 
@@ -7929,6 +7977,8 @@ export default function PrintShop() {
   }
 
   function getCertificateRecordId(request, student, certificates = generatedCertificates) {
+    const stableCertificateId = student?.certificateId || student?.certificateRecordId;
+    if (stableCertificateId) return stableCertificateId;
     const existing = certificates.find((certificate) =>
       certificate.requestId === request.id &&
       (certificate.studentId === student.id || certificate.validationCode === student.validationCode)
@@ -8269,6 +8319,7 @@ export default function PrintShop() {
     fileName,
     pdfUrl = "",
     pdfStoragePath = "",
+    isRegeneration = false,
   }) {
     if (!request?.id || !student?.id) {
       throw new Error("No se encontró la solicitud o el alumno para registrar el certificado.");
@@ -8297,6 +8348,12 @@ export default function PrintShop() {
             ...currentStudent,
             status: nextStatus,
             certificateRecordId: certificateId,
+            certificateId,
+            folio: currentStudent.certificateFolio,
+            pdfFileName: fileName || currentStudent.pdfFileName || "",
+            pdfUrl: pdfUrl || currentStudent.pdfUrl || "",
+            pdfStoragePath: pdfStoragePath || currentStudent.pdfStoragePath || "",
+            generationStatus: "ready",
             certificateGeneratedAt: currentStudent.certificateGeneratedAt || currentStudent.generatedAt || existingCertificate?.generatedAt || nowIso,
             certificateGeneratedByUid: auditUser.uid,
             certificateGeneratedByName: auditUser.name,
@@ -8344,6 +8401,9 @@ export default function PrintShop() {
       principalName: principalName || request.principalSignerName || "",
       teacherName: teacherName || request.teacherSignerName || request.teacherName || "",
       status: nextStatus,
+      active: true,
+      deleted: false,
+      generationStatus: "ready",
       pdfFileName: fileName || "",
       pdfUrl: pdfUrl || existingCertificate?.pdfUrl || "",
       pdfStoragePath: pdfStoragePath || existingCertificate?.pdfStoragePath || "",
@@ -8358,6 +8418,10 @@ export default function PrintShop() {
       generatedByUid: existingCertificate?.generatedByUid || auditUser.uid,
       generatedByName: existingCertificate?.generatedByName || auditUser.name,
       generatedByEmail: existingCertificate?.generatedByEmail || auditUser.email,
+      ...(isRegeneration && existingCertificate ? {
+        lastRegeneratedAt: serverTimestamp(),
+        regenerationCount: Number(existingCertificate.regenerationCount || 0) + 1,
+      } : {}),
       updatedAt: serverTimestamp(),
       updatedByUid: auditUser.uid,
       updatedByName: auditUser.name,
@@ -8366,6 +8430,8 @@ export default function PrintShop() {
 
     const publicCertificatePayload = buildPublicCertificateValidationPayload(certificatePayload, {
       publishedAt: serverTimestamp(),
+      active: true,
+      deleted: false,
     });
 
     const batch = writeBatch(db);
@@ -8399,7 +8465,9 @@ export default function PrintShop() {
       campus: request.campus || "",
       level: request.level || "",
     });
-    setRequestMessage(`Certificado ${student.certificateFolio} registrado en el historial.`);
+    setRequestMessage(isRegeneration
+      ? `Certificado ${student.certificateFolio} regenerado correctamente.`
+      : `Certificado ${student.certificateFolio} registrado en el historial.`);
   }
 
   async function registerStandaloneGeneratedCertificate({
@@ -9064,11 +9132,54 @@ export default function PrintShop() {
     await updateSelectedRequestStudents(nextStudents, "Alumno actualizado correctamente.");
   }
 
-  async function deleteRequestStudent(studentId) {
-    const currentStudents = normalizeRequestStudents(selectedRequest?.students || []);
-    const nextStudents = currentStudents.filter((student) => student.id !== studentId);
+  async function updateRequestStudentName(student, newName, allowDuplicate = false) {
+    const currentRequest = selectedRequest;
+    const normalizedName = String(newName || "").trim().replace(/\s+/g, " ");
+    if (!currentRequest?.id || !student?.id || !normalizedName) {
+      throw new Error("El nombre no puede quedar vacío.");
+    }
+    const duplicate = normalizeRequestStudents(currentRequest.students || []).some((candidate) =>
+      candidate.id !== student.id &&
+      candidate.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ") ===
+        normalizedName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ")
+    );
+    if (duplicate && !allowDuplicate) {
+      const duplicateError = new Error("Ya existe una persona con ese nombre. Confirma para conservar el duplicado.");
+      duplicateError.code = "already-exists";
+      duplicateError.duplicateName = true;
+      throw duplicateError;
+    }
+    await updateCertificatePersonName({
+      requestId: currentRequest.id,
+      studentId: student.studentId || student.id,
+      certificateId: student.certificateId || student.certificateRecordId,
+      folio: student.certificateFolio,
+      validationCode: student.validationCode,
+      newName: normalizedName,
+      allowDuplicate,
+    });
+    setRequestMessage("Nombre actualizado. Regenera el PDF para publicar la versión corregida.");
+    return { previousName: student.name, newName: normalizedName };
+  }
 
-    await updateSelectedRequestStudents(nextStudents, "Alumno eliminado correctamente.");
+  async function deleteRequestStudent(studentId) {
+    const currentRequest = selectedRequest;
+    const student = normalizeRequestStudents(currentRequest?.students || []).find((item) => item.id === studentId);
+    if (!currentRequest?.id || !student) throw new Error("No se encontró la persona seleccionada.");
+    const certificate = generatedCertificates.find((item) =>
+      item.requestId === currentRequest.id &&
+      (item.id === student.certificateId || item.studentId === student.studentId || item.folio === student.certificateFolio)
+    );
+    const result = await deleteCertificatePerson({
+      requestId: currentRequest.id,
+      studentId: student.studentId || student.id,
+      certificateId: student.certificateId || student.certificateRecordId || certificate?.id,
+      folio: student.certificateFolio || certificate?.folio,
+      validationCode: student.validationCode || certificate?.validationCode,
+      pdfStoragePath: certificate?.pdfStoragePath || student.pdfStoragePath,
+    });
+    setRequestMessage(`Persona y certificado ${result.folio || student.certificateFolio || ""} eliminados correctamente.`);
+    return result;
   }
 
   async function addStudentsAfterClosure(newPeopleDrafts) {
@@ -9108,48 +9219,54 @@ export default function PrintShop() {
     }
 
     const auditUser = getAuditUser();
-    const currentStudents = normalizeRequestStudents(currentRequest.students || []);
-    const addedAtIso = new Date().toISOString();
-
     try {
       setAddingStudentsAfterClosure(true);
       setRequestMessage("");
 
-      const newStudentsBase = cleanDrafts.map((draft) => ({
-        id: createStudentId(),
-        name: draft.name,
-        deliveryType: draft.deliveryType,
-        status: "Pendiente",
-        addedAfterCreation: true,
-        addedAfterCreationAt: addedAtIso,
-        addedAfterCreationByUid: auditUser.uid,
-        addedAfterCreationByName: auditUser.name,
-        addedAfterCreationByEmail: auditUser.email,
-      }));
-
-      const combinedStudents = [...currentStudents, ...newStudentsBase];
       const newStudentsWithFolios = [];
 
-      for (let offset = 0; offset < newStudentsBase.length; offset += 1) {
-        const studentIndex = currentStudents.length + offset;
+      for (const draft of cleanDrafts) {
+        const operationId = `add-${currentRequest.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        let result;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          result = await addCertificatePerson({
+            requestId: currentRequest.id,
+            name: draft.name,
+            deliveryType: draft.deliveryType,
+            operationId,
+          });
+        } catch (error) {
+          if (error?.code !== "already-exists") throw error;
+          const proceed = window.confirm(`${error.message}\n\n¿Agregar de todos modos?`);
+          if (!proceed) throw new Error("Operación cancelada por duplicado de nombre.");
+          // eslint-disable-next-line no-await-in-loop
+          result = await addCertificatePerson({
+            requestId: currentRequest.id,
+            name: draft.name,
+            deliveryType: draft.deliveryType,
+            operationId,
+            allowDuplicate: true,
+          });
+        }
+        const qrDataUrl = await QRCode.toDataURL(result.student.validationUrl, {
+          margin: 2,
+          width: 180,
+          errorCorrectionLevel: "M",
+        });
+        // QR se persiste separado para que reintentos de PDF no creen otra persona ni folio.
         // eslint-disable-next-line no-await-in-loop
-        const studentWithFolio = await buildStudentWithFolio(
-          currentRequest,
-          combinedStudents[studentIndex],
-          studentIndex,
-          auditUser
-        );
-        newStudentsWithFolios.push(studentWithFolio);
-      }
-
-      const nextStudents = [...currentStudents, ...newStudentsWithFolios];
-      const persisted = await updateSelectedRequestStudents(
-        nextStudents,
-        `${newStudentsWithFolios.length} persona(s) agregada(s) y folio(s) generado(s) correctamente.`
-      );
-
-      if (!persisted) {
-        return { success: false };
+        await updateCertificatePersonQr({
+          requestId: currentRequest.id,
+          studentId: result.student.studentId || result.student.id,
+          certificateId: result.certificateId,
+          folio: result.folio,
+          validationCode: result.validationCode,
+          validationUrl: result.student.validationUrl,
+          qrDataUrl,
+        });
+        result.student.qrDataUrl = qrDataUrl;
+        newStudentsWithFolios.push(result.student);
       }
 
       const addedNames = newStudentsWithFolios.map((student) => student.name).join(", ");
@@ -9171,7 +9288,7 @@ export default function PrintShop() {
         level: currentRequest.level || "",
       });
 
-      return { success: true, addedCount: newStudentsWithFolios.length };
+      return { success: true, addedCount: newStudentsWithFolios.length, students: newStudentsWithFolios };
     } catch (error) {
       console.error("No se pudieron agregar las personas después del cierre:", error);
       setRequestMessage("No se pudieron agregar las personas. Revisa la conexión o las reglas de Firestore.");
@@ -11395,6 +11512,7 @@ export default function PrintShop() {
           onAddSingleStudent={addSingleRequestStudent}
           onAddBulkStudents={addBulkRequestStudents}
           onUpdateStudent={updateRequestStudent}
+          onUpdateStudentName={updateRequestStudentName}
           onDeleteStudent={deleteRequestStudent}
           onAddStudentsAfterClosure={addStudentsAfterClosure}
           onGenerateStudentFolio={generateStudentFolio}
@@ -11468,6 +11586,7 @@ export default function PrintShop() {
           onAddSingleStudent={addSingleRequestStudent}
           onAddBulkStudents={addBulkRequestStudents}
           onUpdateStudent={updateRequestStudent}
+          onUpdateStudentName={updateRequestStudentName}
           onDeleteStudent={deleteRequestStudent}
           onAddStudentsAfterClosure={addStudentsAfterClosure}
           onGenerateStudentFolio={generateStudentFolio}
@@ -15900,6 +16019,7 @@ function PrintRequestsView({
   onAddSingleStudent,
   onAddBulkStudents,
   onUpdateStudent,
+  onUpdateStudentName,
   onDeleteStudent,
   onAddStudentsAfterClosure,
   onGenerateStudentFolio,
@@ -16419,6 +16539,7 @@ function PrintRequestsView({
               onAddSingleStudent={onAddSingleStudent}
               onAddBulkStudents={onAddBulkStudents}
               onUpdateStudent={onUpdateStudent}
+              onUpdateStudentName={onUpdateStudentName}
               onDeleteStudent={onDeleteStudent}
               onAddStudentsAfterClosure={onAddStudentsAfterClosure}
               onGenerateStudentFolio={onGenerateStudentFolio}
@@ -16959,6 +17080,7 @@ function CertificatesWorkspaceView({
   onAddSingleStudent,
   onAddBulkStudents,
   onUpdateStudent,
+  onUpdateStudentName,
   onDeleteStudent,
   onAddStudentsAfterClosure,
   onGenerateStudentFolio,
@@ -18078,6 +18200,7 @@ function CertificatesWorkspaceView({
               onAddSingleStudent={onAddSingleStudent}
               onAddBulkStudents={onAddBulkStudents}
               onUpdateStudent={onUpdateStudent}
+              onUpdateStudentName={onUpdateStudentName}
               onDeleteStudent={onDeleteStudent}
               onAddStudentsAfterClosure={onAddStudentsAfterClosure}
               onGenerateStudentFolio={onGenerateStudentFolio}
@@ -18155,6 +18278,7 @@ function RequestDetailCard({
   onAddSingleStudent,
   onAddBulkStudents,
   onUpdateStudent,
+  onUpdateStudentName,
   onDeleteStudent,
   onAddStudentsAfterClosure,
   onGenerateStudentFolio,
@@ -18175,6 +18299,9 @@ function RequestDetailCard({
   const [addPeopleDrafts, setAddPeopleDrafts] = useState([{ localId: "draft-0", name: "", deliveryType: "Impreso" }]);
   const [addPeopleMessage, setAddPeopleMessage] = useState("");
   const addPeopleSubmittingRef = useRef(false);
+  const [editingStudentId, setEditingStudentId] = useState("");
+  const [editingStudentName, setEditingStudentName] = useState("");
+  const [studentActionId, setStudentActionId] = useState("");
 
   useEffect(() => {
     setDetailActiveTab(reprintCertificateStudentId ? "students" : "summary");
@@ -18344,7 +18471,7 @@ function RequestDetailCard({
     }
   );
 
-  async function buildAndStoreStudentCertificatePdf(student) {
+  async function buildAndStoreStudentCertificatePdf(student, { isRegeneration = false } = {}) {
     if (!canGenerateFolios) {
       throw new Error("No tienes permisos para generar o guardar certificados en esta solicitud.");
     }
@@ -18386,6 +18513,7 @@ function RequestDetailCard({
       fileName,
       pdfUrl,
       pdfStoragePath,
+      isRegeneration,
     });
 
     return {
@@ -18394,6 +18522,115 @@ function RequestDetailCard({
       pdfUrl,
       pdfStoragePath,
     };
+  }
+
+  function startStudentNameEdit(student) {
+    setEditingStudentId(student.id);
+    setEditingStudentName(student.name);
+  }
+
+  function cancelStudentNameEdit() {
+    setEditingStudentId("");
+    setEditingStudentName("");
+  }
+
+  async function submitStudentNameEdit(student) {
+    const nextName = editingStudentName.trim().replace(/\s+/g, " ");
+    if (!nextName) {
+      setAddPeopleMessage("El nombre no puede quedar vacío.");
+      return;
+    }
+    if (nextName === student.name) {
+      cancelStudentNameEdit();
+      return;
+    }
+
+    const duplicate = students.some((candidate) =>
+      candidate.id !== student.id &&
+      candidate.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ") ===
+        nextName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ")
+    );
+    const confirmed = window.confirm(
+      `${duplicate ? "Ya existe una persona con nombre equivalente. " : ""}¿Confirmas corregir el nombre de ${student.name} a ${nextName}?`
+    );
+    if (!confirmed) return;
+
+    try {
+      setStudentActionId(student.id);
+      await onUpdateStudentName(student, nextName, duplicate);
+      await buildAndStoreStudentCertificatePdf({ ...student, name: nextName }, { isRegeneration: true });
+      setAddPeopleMessage("Nombre actualizado y certificado regenerado.");
+      cancelStudentNameEdit();
+    } catch (error) {
+      console.error("No se pudo corregir el nombre del certificado:", error);
+      try {
+        await markCertificatePersonGenerationFailed({
+          requestId: request.id,
+          studentId: student.studentId || student.id,
+          certificateId: student.certificateId || student.certificateRecordId,
+          folio: student.certificateFolio,
+          errorMessage: error?.message,
+        });
+      } catch (statusError) {
+        console.error("No se pudo marcar el fallo de generación:", statusError);
+      }
+      setAddPeopleMessage(error?.message || "No se pudo corregir el nombre. No se completó la regeneración del PDF.");
+    } finally {
+      setStudentActionId("");
+    }
+  }
+
+  async function regenerateStudent(student) {
+    const warning = normalizeCertificateStatus(student.status) === "Entregado"
+      ? "Este certificado ya fue entregado. Se reemplazará su PDF conservando folio e historial. ¿Continuar?"
+      : `¿Regenerar certificado de ${student.name} conservando el folio ${student.certificateFolio}?`;
+    if (!window.confirm(warning)) return;
+    try {
+      setStudentActionId(student.id);
+      await buildAndStoreStudentCertificatePdf(student, { isRegeneration: true });
+      setAddPeopleMessage("Certificado regenerado correctamente.");
+    } catch (error) {
+      console.error("No se pudo regenerar el certificado:", error);
+      try {
+        await markCertificatePersonGenerationFailed({
+          requestId: request.id,
+          studentId: student.studentId || student.id,
+          certificateId: student.certificateId || student.certificateRecordId,
+          folio: student.certificateFolio,
+          errorMessage: error?.message,
+        });
+      } catch (statusError) {
+        console.error("No se pudo marcar el fallo de generación:", statusError);
+      }
+      setAddPeopleMessage(error?.message || "No se pudo regenerar el certificado. El PDF anterior se conserva.");
+    } finally {
+      setStudentActionId("");
+    }
+  }
+
+  async function deleteStudent(student) {
+    const certificate = getGeneratedCertificateRecordForStudent(student);
+    const delivered = normalizeCertificateStatus(student.status) === "Entregado" || certificate?.status === "Entregado";
+    if (delivered && selectedRole !== "admin") {
+      setAddPeopleMessage("Solo un administrador puede eliminar un certificado entregado.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Esta acción eliminará a ${student.name} de la solicitud, eliminará su certificado del historial e invalidará su folio. El certificado dejará de ser válido mediante su código QR.\n\nNombre: ${student.name}\nFolio: ${student.certificateFolio || "Sin folio"}\nEstado: ${student.status || "Pendiente"}${delivered ? "\n\nADVERTENCIA: el certificado ya fue entregado." : ""}\n\n¿Continuar?`
+    );
+    if (!confirmed) return;
+    if (delivered && !window.confirm("Confirmación final: esta baja invalidará inmediatamente el QR y no reutilizará el folio. ¿Eliminar?")) return;
+
+    try {
+      setStudentActionId(student.id);
+      await onDeleteStudent(student.id);
+      setAddPeopleMessage("Persona y certificado eliminados.");
+    } catch (error) {
+      console.error("No se pudo eliminar la persona:", error);
+      setAddPeopleMessage(error?.message || "No se pudo eliminar la persona. No se realizaron cambios parciales.");
+    } finally {
+      setStudentActionId("");
+    }
   }
 
   async function saveMissingCertificatePdfs() {
@@ -19228,18 +19465,21 @@ Mariana Torres`}
                           className={previewStudent?.id === student.id ? "certificate-student-selected" : ""}
                         >
                           <td data-label="Alumno">
-                            <input
-                              defaultValue={student.name}
-                              title={student.name}
-                              aria-label={`Nombre de ${student.name}`}
-                              disabled={!canManageStudents || savingStudents}
-                              onBlur={(event) => {
-                                const nextName = event.target.value.trim();
-                                if (nextName && nextName !== student.name) {
-                                  onUpdateStudent(student.id, { name: nextName });
-                                }
-                              }}
-                            />
+                            <strong title={student.name}>{student.name}</strong>
+                            {editingStudentId === student.id && (
+                              <div className="request-student-name-editor">
+                                <input
+                                  value={editingStudentName}
+                                  aria-label={`Corregir nombre de ${student.name}`}
+                                  onChange={(event) => setEditingStudentName(event.target.value)}
+                                  disabled={studentActionId === student.id}
+                                />
+                                <div className="table-actions">
+                                  <button type="button" className="visual-primary-button" onClick={() => submitStudentNameEdit(student)} disabled={studentActionId === student.id}>Guardar</button>
+                                  <button type="button" className="visual-outline-button" onClick={cancelStudentNameEdit} disabled={studentActionId === student.id}>Cancelar</button>
+                                </div>
+                              </div>
+                            )}
                             {student.addedAfterCreation && (
                               <div
                                 className="request-student-added-after-badge"
@@ -19263,7 +19503,11 @@ Mariana Torres`}
                           </td>
                           <td data-label="Estado">
                             <StatusBadge tone={student.status === "Pendiente" ? "purple" : "green"}>
-                              {student.status || "Pendiente"}
+                              {student.generationStatus === "pending"
+                                ? "PDF pendiente"
+                                : student.generationStatus === "generationFailed"
+                                  ? "Error de generación"
+                                  : student.status || "Pendiente"}
                             </StatusBadge>
                           </td>
                           <td data-label="Folio / QR">
@@ -19313,11 +19557,33 @@ Mariana Torres`}
                                 </button>
                               )}
 
+                              {canManageStudents && (
+                                <button
+                                  type="button"
+                                  className="visual-outline-button"
+                                  disabled={studentActionId === student.id || savingStudents || Boolean(generatingStudentId)}
+                                  onClick={() => startStudentNameEdit(student)}
+                                >
+                                  Editar nombre
+                                </button>
+                              )}
+
+                              {student.certificateFolio && canGenerateFolios && (
+                                <button
+                                  type="button"
+                                  className="visual-outline-button"
+                                  disabled={studentActionId === student.id || savingStudents || Boolean(generatingStudentId)}
+                                  onClick={() => regenerateStudent(student)}
+                                >
+                                  {studentActionId === student.id ? "Procesando..." : "Regenerar"}
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 className="danger-table-button"
                                 disabled={!canManageStudents || savingStudents || Boolean(generatingStudentId)}
-                                onClick={() => onDeleteStudent(student.id)}
+                                onClick={() => deleteStudent(student)}
                               >
                                 Eliminar
                               </button>
@@ -20055,6 +20321,7 @@ function normalizeGeneratedCertificate(certificate) {
     requestId: getCertificateRequestId(certificate),
     requestFolio: String(certificate?.requestFolio || ""),
     generationMode: certificate?.generationMode === "individual" ? "individual" : "request",
+    generationStatus: String(certificate?.generationStatus || "ready"),
     requestType: String(certificate?.requestType || "Certificado"),
     productId: String(certificate?.productId || ""),
     productName: String(certificate?.productName || ""),
@@ -20082,6 +20349,8 @@ function normalizeGeneratedCertificate(certificate) {
     pdfPageOrientation: String(certificate?.pdfPageOrientation || ""),
     pdfSavedAt: certificate?.pdfSavedAt || "",
     generatedAt: certificate?.generatedAt || "",
+    lastRegeneratedAt: certificate?.lastRegeneratedAt || "",
+    regenerationCount: Number(certificate?.regenerationCount || 0),
     generatedByUid: String(certificate?.generatedByUid || ""),
     generatedByName: String(certificate?.generatedByName || ""),
     generatedByEmail: String(certificate?.generatedByEmail || ""),
@@ -20151,6 +20420,8 @@ function buildPublicCertificateValidationPayload(certificate, overrides = {}) {
     campus: String(source.campus || "Sin plantel"),
     teacherName: String(source.teacherName || ""),
     status: generatedCertificateStatuses.includes(source.status) ? source.status : "Generado",
+    active: source.active !== false,
+    deleted: source.deleted === true,
     institution: "Active English School",
     requestId: String(source.requestId || ""),
     generationMode: source.generationMode === "individual" ? "individual" : "request",
