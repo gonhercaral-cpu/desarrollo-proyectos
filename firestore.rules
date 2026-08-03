@@ -996,8 +996,44 @@ service cloud.firestore {
         && request.resource.data.requiresSignature is bool
         && request.resource.data.requiresValidationQr is bool
         && (!("productionRecipe" in request.resource.data) || request.resource.data.productionRecipe is list)
+        && (!("description" in request.resource.data) || request.resource.data.description is string)
+        && (!("imageUrl" in request.resource.data) || request.resource.data.imageUrl is string)
+        && (!("imagePath" in request.resource.data) || request.resource.data.imagePath is string)
         && request.resource.data.active is bool
         && request.resource.data.notes is string;
+    }
+
+    function validOperationalPrintProductUpdate() {
+      return canCreatePrintProduct()
+        && validPrintProductData()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "description",
+          "category",
+          "productionType",
+          "level",
+          "unit",
+          "minStock",
+          "idealStock",
+          "requiresPrinting",
+          "requiresBinding",
+          "requiresCutting",
+          "requiresQualityCheck",
+          "requiresSignature",
+          "requiresValidationQr",
+          "productionRecipe",
+          "notes",
+          "imageUrl",
+          "imagePath",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail"
+        ])
+        && request.resource.data.active == resource.data.active
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.updatedByEmail is string;
     }
 
     function validPrintProductStatusUpdate() {
@@ -3225,6 +3261,7 @@ service cloud.firestore {
           isAdmin()
           && validPrintProductData()
         )
+        || validOperationalPrintProductUpdate()
         || validPrintProductStatusUpdate()
         || validPrintshopSoftDeleteUpdate();
 
@@ -3291,14 +3328,17 @@ service cloud.firestore {
 
       allow create: if adminProductionBatchCreate();
 
-      allow update: if (
-          adminProductionBatchUpdate()
-        )
-        || responsibleProductionBatchUpdate()
-        || auditorQualityBatchUpdate();
+      // Toda actualización operativa usa Cloud Functions para preservar historial,
+      // separación producción/calidad y fechas de etapa.
+      allow update: if false;
 
       // Las bajas pasan por Cloud Functions para preservar contabilidad y supresión.
       allow delete: if false;
+
+      match /history/{historyId} {
+        allow read: if canAccessPrintshop();
+        allow create, update, delete: if false;
+      }
     }
 
     match /materialCorrectionReports/{reportId} {

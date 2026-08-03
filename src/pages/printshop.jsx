@@ -116,7 +116,9 @@ import {
   repairAutomaticProductionBatches,
   saveProductionBatchAdminChanges,
   saveProductionBatchQualityReview,
+  transferProductionBatchAssignment,
   updateProductionBatchProgress,
+  verifyFinishedInventoryOutput,
 } from "../services/productionBatchesService";
 import {
   BATCH_STATUS,
@@ -245,6 +247,7 @@ const recipeUnits = [
 
 const supplyFormInitialState = {
   name: "",
+  description: "",
   category: "Papel para libros",
   stockUnit: "Resma",
   currentStock: 0,
@@ -287,6 +290,9 @@ const supplyMovementFormInitialState = {
 
 const productFormInitialState = {
   name: "",
+  description: "",
+  imageUrl: "",
+  imagePath: "",
   category: "Libro",
   productionType: "Producto terminado",
   level: "No aplica",
@@ -334,6 +340,16 @@ const movementReasons = [
   "Daño o merma",
   "Otro",
 ];
+
+const externalInventoryStatuses = Object.freeze({
+  pending: { label: "Pendiente", tone: "orange" },
+  not_uploaded: { label: "Aún no registrado", tone: "red" },
+  uploaded: { label: "Registrado en Active", tone: "green" },
+});
+
+function normalizeExternalInventoryStatus(status) {
+  return externalInventoryStatuses[status] ? status : "pending";
+}
 
 const printRequestTypes = [
   "Certificado",
@@ -3931,6 +3947,50 @@ function getBatchStatusTone(status) {
   return "teal";
 }
 
+const operationalBatchStages = [
+  BATCH_STATUS.PLANNED,
+  BATCH_STATUS.PRINTING,
+  BATCH_STATUS.BINDING,
+  BATCH_STATUS.QUALITY_REVIEW,
+  BATCH_STATUS.APPROVED,
+  BATCH_STATUS.INVENTORIED,
+];
+
+function getNextBatchStage(status) {
+  const normalized = normalizeProductionBatchStatus(status);
+  if ([BATCH_STATUS.PLANNED, BATCH_STATUS.PENDING_ASSIGNMENT].includes(normalized)) {
+    return BATCH_STATUS.PRINTING;
+  }
+  if (normalized === BATCH_STATUS.PRINTING) return BATCH_STATUS.BINDING;
+  if (normalized === BATCH_STATUS.BINDING) return BATCH_STATUS.QUALITY_REVIEW;
+  return "";
+}
+
+function getBatchStageActionLabel(status) {
+  const normalized = normalizeProductionBatchStatus(status);
+  if ([BATCH_STATUS.PLANNED, BATCH_STATUS.PENDING_ASSIGNMENT].includes(normalized)) {
+    return "Iniciar impresión";
+  }
+  if (normalized === BATCH_STATUS.PRINTING) {
+    return "Finalizar impresión y pasar a encuadernación";
+  }
+  if (normalized === BATCH_STATUS.BINDING) {
+    return "Finalizar encuadernación y enviar a calidad";
+  }
+  return "";
+}
+
+function formatBatchHistoryType(type) {
+  return {
+    stage_changed: "Cambio de etapa",
+    responsible_transferred: "Cambio de responsable",
+    auditor_transferred: "Cambio de auditor",
+    quality_review: "Revisión de calidad",
+    inventory_entered: "Ingreso a inventario",
+    batch_updated: "Datos del lote actualizados",
+  }[type] || "Actividad del lote";
+}
+
 function getQualityStatusTone(status) {
   if (status === "Aprobado" || status === "Aprobado con observaciones") return "green";
   if (status === "Rechazado") return "red";
@@ -4115,6 +4175,7 @@ export default function PrintShop() {
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin)
     && profile?.active !== false;
   const canCreatePrintProduct = canProfileCreatePrintProduct(profile, isAdmin);
+  const canEditPrintProduct = canProfileCreatePrintProduct(profile, isAdmin);
   const canGeneratePrintshopReport =
     canProfileGeneratePrintshopReport(profile, isAdmin) && profile?.active !== false;
   const canViewCertificateStatistics =
@@ -4182,6 +4243,7 @@ export default function PrintShop() {
   const [selectedBatchId, setSelectedBatchId] = useState(null);
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchMessage, setBatchMessage] = useState("");
+  const [batchHistory, setBatchHistory] = useState([]);
   const [closingBatchId, setClosingBatchId] = useState(null);
   const [deletingBatchId, setDeletingBatchId] = useState(null);
   const [replenishmentControls, setReplenishmentControls] = useState([]);
@@ -4350,6 +4412,22 @@ export default function PrintShop() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!selectedBatchId) {
+      return undefined;
+    }
+    const historyQuery = query(
+      collection(db, "printProductionBatches", selectedBatchId, "history"),
+      orderBy("performedAt", "desc")
+    );
+    return onSnapshot(historyQuery, (snapshot) => {
+      setBatchHistory(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
+    }, (error) => {
+      console.error("No se pudo cargar el historial del lote:", error);
+      setBatchMessage("No se pudo cargar el historial operativo del lote.");
+    });
+  }, [selectedBatchId]);
 
   useEffect(() => {
     setLoadingProducts(true);
@@ -5774,7 +5852,7 @@ export default function PrintShop() {
 
   function canCurrentUserSendBatchToInventory(batch, auditUser = getAuditUser()) {
     if (!batch) return false;
-    return (isAdmin || isBatchResponsible(batch, auditUser)) && canBatchEnterInventory(batch);
+    return canManagePrintshopOperations && canBatchEnterInventory(batch);
   }
 
   function getBatchUserRole(batch = selectedBatch) {
@@ -5790,6 +5868,12 @@ export default function PrintShop() {
     }
     if (responsible) return "responsible";
     if (auditor) return "auditor";
+
+    if (canManagePrintshopOperations) {
+      return normalizeProductionBatchStatus(batch?.status) === BATCH_STATUS.QUALITY_REVIEW
+        ? "auditor"
+        : "responsible";
+    }
 
     return "viewer";
   }
@@ -7934,6 +8018,92 @@ export default function PrintShop() {
     );
   }
 
+  async function takeProductionBatchRole(batch, role, reason = "") {
+    if (!batch?.id || !canManagePrintshopOperations) return;
+    try {
+      setSavingBatch(true);
+      setBatchMessage("");
+      const result = await transferProductionBatchAssignment(batch.id, role, reason);
+      setProductionBatches((current) => current.map((item) =>
+        item.id === batch.id ? { ...item, ...result } : item
+      ));
+      if (selectedBatchId === batch.id) {
+        selectBatch({ ...batch, ...result });
+      }
+      setBatchMessage(role === "auditor"
+        ? "Auditoría transferida correctamente."
+        : "Responsabilidad del lote transferida correctamente.");
+    } catch (error) {
+      setBatchMessage(error?.message || "No se pudo transferir la responsabilidad.");
+      throw error;
+    } finally {
+      setSavingBatch(false);
+    }
+  }
+
+  async function advanceProductionBatch(batch, targetStatus, producedQuantity = batch?.producedQuantity) {
+    if (!batch?.id || !canManagePrintshopOperations) return;
+    const expectedTarget = getNextBatchStage(batch.status);
+    if (!expectedTarget || targetStatus !== expectedTarget) {
+      setBatchMessage("La etapa solicitada no corresponde al flujo actual.");
+      return;
+    }
+    if (targetStatus === BATCH_STATUS.QUALITY_REVIEW
+        && !window.confirm("¿Enviar este lote a revisión de calidad?")) return;
+    try {
+      setSavingBatch(true);
+      setBatchMessage("");
+      const result = await updateProductionBatchProgress(batch.id, {
+        status: targetStatus,
+        producedQuantity: Number(producedQuantity || 0),
+      });
+      setProductionBatches((current) => current.map((item) =>
+        item.id === batch.id ? { ...item, ...result } : item
+      ));
+      if (selectedBatchId === batch.id) {
+        setBatchForm((current) => ({ ...current, status: targetStatus }));
+      }
+      setBatchMessage(`Lote actualizado a ${targetStatus}.`);
+    } catch (error) {
+      setBatchMessage(error?.message || "No se pudo avanzar el lote.");
+    } finally {
+      setSavingBatch(false);
+    }
+  }
+
+  async function reviewSelectedProductionBatch(qualityStatus) {
+    if (!selectedBatch?.id || !canManagePrintshopOperations) return;
+    const action = qualityStatus === QUALITY_STATUS.REJECTED ? "rechazar" : "aprobar";
+    if (!window.confirm(`¿Confirmar que deseas ${action} este lote?`)) return;
+    const review = {
+      approvedQuantity: Number(batchForm.approvedQuantity || 0),
+      rejectedQuantity: Number(batchForm.rejectedQuantity || 0),
+      qualityChecklist: normalizeBatchQualityChecklist(batchForm.qualityChecklist),
+      qualityStatus,
+      qualityNotes: batchForm.qualityNotes || "",
+    };
+    try {
+      setSavingBatch(true);
+      setBatchMessage("");
+      const result = await saveProductionBatchQualityReview(selectedBatch.id, review);
+      setProductionBatches((current) => current.map((item) =>
+        item.id === selectedBatch.id ? { ...item, ...result } : item
+      ));
+      setBatchForm((current) => ({
+        ...current,
+        status: result.status || current.status,
+        qualityStatus: result.qualityStatus || qualityStatus,
+      }));
+      setBatchMessage(qualityStatus === QUALITY_STATUS.REJECTED
+        ? "Incidencia registrada; lote enviado a corrección."
+        : "Lote aprobado por calidad.");
+    } catch (error) {
+      setBatchMessage(error?.message || "No se pudo guardar la revisión de calidad.");
+    } finally {
+      setSavingBatch(false);
+    }
+  }
+
   // ID canónico del documento en publicCertificateValidations.
   // Todos los flujos (generar folio, descargar PDF, entregar, cancelar) deben
   // usar esta clave para no crear documentos públicos duplicados del mismo
@@ -9740,6 +9910,9 @@ export default function PrintShop() {
     setFormMessage("");
     setProductForm({
       name: product.name || "",
+      description: product.description || "",
+      imageUrl: product.imageUrl || "",
+      imagePath: product.imagePath || "",
       category: product.category || "Libro",
       productionType: product.productionType || "Producto terminado",
       level: product.level || "No aplica",
@@ -9768,7 +9941,7 @@ export default function PrintShop() {
 
     const trimmedName = productForm.name.trim();
 
-    if ((selectedProductId && !isAdmin) || (!selectedProductId && !canCreatePrintProduct)) {
+    if ((selectedProductId && !canEditPrintProduct) || (!selectedProductId && !canCreatePrintProduct)) {
       setFormMessage("No tienes permisos para guardar este producto.");
       return;
     }
@@ -9792,6 +9965,9 @@ export default function PrintShop() {
     const payload = {
       ...productPayloadFields,
       name: trimmedName,
+      active: selectedProductId && !isAdmin
+        ? selectedProduct?.active !== false
+        : productForm.active !== false,
       minStock: Number(productForm.minStock || 0),
       idealStock: Number(productForm.idealStock || 0),
       productionRecipe: normalizeProductRecipe(productForm.productionRecipe),
@@ -10152,6 +10328,12 @@ export default function PrintShop() {
             createdAt: new Date(),
             createdByUid: auditUser.uid,
             createdByName: auditUser.name,
+            externalInventoryStatus: "pending",
+            externalInventoryVerifiedAt: null,
+            externalInventoryVerifiedByUid: "",
+            externalInventoryVerifiedByName: "",
+            externalInventoryUploadedAt: null,
+            externalInventoryNotes: "",
           }, ...current.filter((item) => item.id !== outputResult.movementId)]);
         }
       } else await runTransaction(db, async (transaction) => {
@@ -10212,6 +10394,39 @@ export default function PrintShop() {
     } finally {
       setSavingMovement(false);
     }
+  }
+
+  async function verifyInventoryMovementInActive(input) {
+    if (!canManagePrintshopOperations) {
+      throw new Error("No tienes permiso para verificar salidas en Active.");
+    }
+    const result = await verifyFinishedInventoryOutput(input);
+    const auditUser = getAuditUser();
+    setInventoryMovements((current) => current.map((movement) =>
+      movement.id === input.movementId
+        ? {
+          ...movement,
+          externalInventoryStatus: result.status,
+          externalInventoryVerifiedAt: new Date(),
+          externalInventoryVerifiedByUid: result.verifiedByUid || auditUser.uid,
+          externalInventoryVerifiedByName: result.verifiedByName || auditUser.name,
+          externalInventoryUploadedAt: result.uploadedAt || null,
+          externalInventoryNotes: result.notes || "",
+          updatedAt: new Date(),
+        }
+        : movement
+    ));
+    await createPrintshopLog({
+      type: "INVENTORY_ACTIVE_VERIFIED",
+      module: "inventory",
+      title: "Salida verificada en Active",
+      description: result.status === "uploaded"
+        ? "La salida fue marcada como registrada en Active."
+        : "La salida fue marcada como aún no registrada en Active.",
+      referenceType: "inventoryMovement",
+      referenceId: input.movementId,
+    });
+    return result;
   }
 
 
@@ -10755,12 +10970,14 @@ export default function PrintShop() {
 
   function resetBatchForm() {
     setSelectedBatchId(null);
+    setBatchHistory([]);
     setBatchForm(batchFormInitialState);
     setBatchMessage("");
   }
 
   function selectBatch(batch) {
     setSelectedBatchId(batch.id);
+    setBatchHistory([]);
     setBatchMessage("");
     setBatchForm({
       productId: batch.productId || "",
@@ -11325,7 +11542,7 @@ export default function PrintShop() {
           statusFilter={statusFilter}
           isAdmin={isAdmin}
           canCreateCatalog={canCreatePrintProduct}
-          canManageCatalog={isAdmin}
+          canManageCatalog={canEditPrintProduct}
           onSearchChange={setProductSearch}
           onCategoryFilterChange={setCategoryFilter}
           onTypeFilterChange={setTypeFilter}
@@ -11369,6 +11586,7 @@ export default function PrintShop() {
           onMovementNumberInputChange={handleMovementNumberInputChange}
           onCreateInventoryItem={createInventoryItem}
           onRegisterMovement={registerInventoryMovement}
+          onVerifyMovementInActive={verifyInventoryMovementInActive}
           onPrepareMovement={prepareMovement}
           onResetInventoryForm={resetInventoryForm}
           onSoftDeleteInventoryItem={(item) => softDeletePrintshopRecord("printFinishedInventory", item, {
@@ -11831,6 +12049,7 @@ export default function PrintShop() {
           productionSettings={productionSettings}
           savingProductionSettings={savingProductionSettings}
           isAdmin={isAdmin}
+          canManageOperations={canManagePrintshopOperations}
           currentUserUid={getAuditUser().uid}
           currentUserName={getAuditUser().name}
           currentUserEmail={getAuditUser().email}
@@ -11846,6 +12065,9 @@ export default function PrintShop() {
           onBatchNumberInputChange={handleBatchNumberInputChange}
           onQualityChecklistToggle={handleQualityChecklistToggle}
           onSaveProductionBatch={saveProductionBatch}
+          onAdvanceProductionBatch={advanceProductionBatch}
+          onReviewProductionBatch={reviewSelectedProductionBatch}
+          onTakeBatchRole={takeProductionBatchRole}
           onSelectBatch={selectBatch}
           onResetBatchForm={resetBatchForm}
           onSendBatchToInventory={sendBatchToInventory}
@@ -11855,6 +12077,7 @@ export default function PrintShop() {
           onReactivateReplenishment={reactivateAutomaticReplenishment}
           onUpdateProductionSetting={updateProductionSetting}
           onSaveProductionSettings={saveProductionSettings}
+          batchHistory={batchHistory}
         />
       )}
     </div>
@@ -12824,6 +13047,7 @@ function ProductionBatchesView({
   productionSettings,
   savingProductionSettings,
   isAdmin,
+  canManageOperations,
   currentUserUid,
   currentUserName,
   currentUserEmail,
@@ -12839,6 +13063,9 @@ function ProductionBatchesView({
   onBatchNumberInputChange,
   onQualityChecklistToggle,
   onSaveProductionBatch,
+  onAdvanceProductionBatch,
+  onReviewProductionBatch,
+  onTakeBatchRole,
   onSelectBatch,
   onResetBatchForm,
   onSendBatchToInventory,
@@ -12848,6 +13075,7 @@ function ProductionBatchesView({
   onReactivateReplenishment,
   onUpdateProductionSetting,
   onSaveProductionSettings,
+  batchHistory,
 }) {
   function matchesCurrentUser(assignedUid, assignedEmail, assignedName) {
     if (assignedUid) return isSameUid(currentUserUid, assignedUid);
@@ -12875,18 +13103,25 @@ function ProductionBatchesView({
         ? "responsible"
         : selectedIsAuditor
           ? "auditor"
-          : "viewer";
+          : canManageOperations
+            ? normalizeProductionBatchStatus(selectedBatch?.status) === BATCH_STATUS.QUALITY_REVIEW
+              ? "quality-operator"
+              : "production-operator"
+            : "viewer";
   const canCreateBatch = isAdmin;
   const canEditAdministrativeFields = isAdmin;
-  const canEditProductionFields = isAdmin || selectedRole === "responsible";
-  const canEditQualityFields = isAdmin || selectedRole === "auditor";
+  const canEditProductionFields = isAdmin
+    || (canManageOperations && !selectedIsAuditor);
+  const canEditQualityFields = isAdmin
+    || (canManageOperations && !selectedIsResponsible);
   const selectedInventoryLocked = selectedBatch?.inventoryApplied === true
     || normalizeProductionBatchStatus(selectedBatch?.status) === BATCH_STATUS.INVENTORIED;
   const [batchFocusMode, setBatchFocusMode] = useState("edit");
   const isBatchDetailMode = batchFocusMode === "detail";
   const canSaveBatch =
     (!selectedBatchId && canCreateBatch) ||
-    (selectedBatchId && ["admin", "responsible", "auditor"].includes(selectedRole));
+    (selectedBatchId && canManageOperations
+      && (canEditProductionFields || canEditQualityFields));
   const availableStatusOptions = isAdmin
     ? selectedInventoryLocked
       ? [normalizeProductionBatchStatus(batchForm.status)]
@@ -12901,13 +13136,35 @@ function ProductionBatchesView({
   const selectedBatchConsumption = selectedBatch
     ? getBatchSupplyConsumptionSummary(selectedBatch, supplyMovements, supplyItems, inventoryProducts)
     : null;
+  const normalizedSelectedStatus = normalizeProductionBatchStatus(selectedBatch?.status);
+  const currentStageIndex = normalizedSelectedStatus === BATCH_STATUS.PENDING_ASSIGNMENT
+    ? 0
+    : normalizedSelectedStatus === BATCH_STATUS.APPROVED_WITH_NOTES
+      ? operationalBatchStages.indexOf(BATCH_STATUS.APPROVED)
+      : Math.max(0, operationalBatchStages.indexOf(normalizedSelectedStatus));
+  const selectedNextStage = getNextBatchStage(normalizedSelectedStatus);
   const productionCategories = [...new Set(inventoryProducts
     .map((product) => product.category)
     .filter(Boolean))].sort((first, second) => first.localeCompare(second, "es"));
 
   const [batchFocusOpen, setBatchFocusOpen] = useState(false);
+  const [takeoverRole, setTakeoverRole] = useState("");
+  const [takeoverReason, setTakeoverReason] = useState("");
+  const [takeoverError, setTakeoverError] = useState("");
   const [batchSearchTerm, setBatchSearchTerm] = useState("");
   const [batchStatusFilter, setBatchStatusFilter] = useState("Todos");
+
+  async function confirmTakeover(event) {
+    event.preventDefault();
+    try {
+      setTakeoverError("");
+      await onTakeBatchRole(selectedBatch, takeoverRole, takeoverReason);
+      setTakeoverRole("");
+      setTakeoverReason("");
+    } catch (error) {
+      setTakeoverError(error?.message || "No se pudo tomar el lote.");
+    }
+  }
   const visibleProductionBatches = useMemo(() => {
     const normalizedSearchTerm = normalizeComparable(batchSearchTerm);
 
@@ -13211,13 +13468,20 @@ function ProductionBatchesView({
                         batch.inventoryApplied === true
                         || normalizeProductionBatchStatus(batch.status) === BATCH_STATUS.INVENTORIED;
                       const canSendToInventory =
-                        (isAdmin
-                          || matchesCurrentUser(
-                            batch.responsibleUid,
-                            batch.responsibleEmail,
-                            batch.responsibleName || batch.responsible
-                          )) &&
-                        canBatchEnterInventory(batch);
+                        canManageOperations && canBatchEnterInventory(batch);
+                      const nextStage = getNextBatchStage(batch.status);
+                      const currentUserIsAuditor = matchesCurrentUser(
+                        batch.auditorUid,
+                        batch.auditorEmail,
+                        batch.auditorName
+                      );
+                      const canQuickAdvance = Boolean(
+                        nextStage
+                        && canManageOperations
+                        && (isAdmin || !currentUserIsAuditor)
+                        && !(nextStage === BATCH_STATUS.BINDING
+                          && Number(batch.producedQuantity || 0) <= 0)
+                      );
 
                       return (
                         <tr
@@ -13251,6 +13515,21 @@ function ProductionBatchesView({
                               <button type="button" onClick={() => openBatchDetails(batch)}>
                                 Detalles
                               </button>
+                              {nextStage && (
+                                <button
+                                  type="button"
+                                  className="batch-quick-advance"
+                                  onClick={() => onAdvanceProductionBatch(
+                                    batch,
+                                    nextStage,
+                                    batch.producedQuantity
+                                  )}
+                                  disabled={!canQuickAdvance || savingBatch}
+                                  title={getBatchStageActionLabel(batch.status)}
+                                >
+                                  Avanzar
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => onPrepareBatchSupplyMovement(batch)}
@@ -13462,6 +13741,95 @@ function ProductionBatchesView({
             icon={selectedBatch ? "✎" : "＋"}
             actionLabel={selectedBatch ? "Editando" : "Alta"}
           >
+            {selectedBatch && (
+              <>
+                <ol className="batch-stage-stepper" aria-label="Etapas del lote">
+                  {operationalBatchStages.map((stage, index) => (
+                    <li
+                      key={stage}
+                      className={index === currentStageIndex
+                        ? "current"
+                        : index < currentStageIndex
+                          ? "completed"
+                          : ""}
+                    >
+                      <span>{index + 1}</span>
+                      <small>{stage === BATCH_STATUS.INVENTORIED ? "Terminado" : stage}</small>
+                    </li>
+                  ))}
+                </ol>
+                <div className="batch-context-actions">
+                  {selectedNextStage && canEditProductionFields && (
+                    <button
+                      type="button"
+                      className="visual-primary-button"
+                      disabled={savingBatch
+                        || (selectedNextStage === BATCH_STATUS.BINDING
+                          && Number(batchForm.producedQuantity || 0) <= 0)}
+                      onClick={() => onAdvanceProductionBatch(
+                        selectedBatch,
+                        selectedNextStage,
+                        batchForm.producedQuantity
+                      )}
+                    >
+                      {getBatchStageActionLabel(selectedBatch.status)}
+                    </button>
+                  )}
+                  {normalizedSelectedStatus === BATCH_STATUS.QUALITY_REVIEW && canEditQualityFields && (
+                    <>
+                      <button
+                        type="button"
+                        className="visual-primary-button"
+                        disabled={savingBatch}
+                        onClick={() => onReviewProductionBatch(QUALITY_STATUS.APPROVED)}
+                      >
+                        Aprobar lote
+                      </button>
+                      <button
+                        type="button"
+                        className="danger-table-button"
+                        disabled={savingBatch}
+                        onClick={() => onReviewProductionBatch(QUALITY_STATUS.REJECTED)}
+                      >
+                        Registrar incidencia / Rechazar
+                      </button>
+                    </>
+                  )}
+                  {canManageOperations
+                    && !selectedInventoryLocked
+                    && !selectedIsAuditor
+                    && !selectedIsResponsible && (
+                    <button
+                      type="button"
+                      className="visual-outline-button"
+                      onClick={() => {
+                        setTakeoverRole("responsible");
+                        setTakeoverReason("");
+                        setTakeoverError("");
+                      }}
+                    >
+                      Tomar lote
+                    </button>
+                  )}
+                  {canManageOperations
+                    && normalizedSelectedStatus === BATCH_STATUS.QUALITY_REVIEW
+                    && !selectedIsResponsible
+                    && !selectedIsAuditor && (
+                    <button
+                      type="button"
+                      className="visual-outline-button"
+                      onClick={() => {
+                        setTakeoverRole("auditor");
+                        setTakeoverReason("");
+                        setTakeoverError("");
+                      }}
+                    >
+                      Tomar auditoría
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
             <form className="printshop-product-form" onSubmit={onSaveProductionBatch}>
               <label className="full">
                 <span>Producto</span>
@@ -13534,8 +13902,7 @@ function ProductionBatchesView({
                   name="status"
                   value={batchForm.status}
                   onChange={onBatchInputChange}
-                  disabled={selectedInventoryLocked
-                    || (!canEditAdministrativeFields && selectedRole !== "responsible")}
+                  disabled={selectedInventoryLocked || !canEditAdministrativeFields}
                 >
                   {availableStatusOptions.map((status) => (
                     <option key={status}>{status}</option>
@@ -13601,7 +13968,11 @@ function ProductionBatchesView({
                         ? "Responsable de producción"
                         : selectedRole === "auditor"
                           ? "Auditor de calidad"
-                          : "Solo lectura"}
+                          : selectedRole === "production-operator"
+                            ? "Colaborador operativo · puede continuar"
+                            : selectedRole === "quality-operator"
+                              ? "Auditor autorizado · puede continuar"
+                              : "Solo lectura"}
                   </strong>
                 </div>
               )}
@@ -13718,9 +14089,70 @@ function ProductionBatchesView({
                 </p>
               )}
             </form>
+            {selectedBatch && (
+              <div className="batch-history-panel">
+                <h4>Historial del lote</h4>
+                {batchHistory.length === 0 ? (
+                  <p>Sin eventos nuevos. Lote anterior compatible con historial vacío.</p>
+                ) : (
+                  <ol>
+                    {batchHistory.map((event) => (
+                      <li key={event.id}>
+                        <strong>{formatBatchHistoryType(event.type)}</strong>
+                        <span>{event.previousStage && event.nextStage
+                          ? `${event.previousStage} → ${event.nextStage}`
+                          : event.previousName && event.newName
+                            ? `${event.previousName} → ${event.newName}`
+                            : event.qualityStatus || event.stage}</span>
+                        <small>
+                          {event.performedByName || "Sistema"} · {formatDate(event.performedAt)}
+                        </small>
+                        {event.reason && <small>Motivo: {event.reason}</small>}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            )}
           </Panel>
         </aside>
       </div>
+      {takeoverRole && selectedBatch && (
+        <div className="printshop-modal-backdrop" role="presentation">
+          <form className="printshop-compact-modal" role="dialog" aria-modal="true" onSubmit={confirmTakeover}>
+            <div className="printshop-modal-header">
+              <div>
+                <p className="section-kicker">Transferencia operativa</p>
+                <h3>{takeoverRole === "auditor" ? "Tomar auditoría" : "Tomar lote"}</h3>
+              </div>
+              <button type="button" onClick={() => setTakeoverRole("")} aria-label="Cerrar">×</button>
+            </div>
+            <p>
+              Responsable actual: {takeoverRole === "auditor"
+                ? selectedBatch.auditorName || "Sin auditor"
+                : selectedBatch.responsibleName || selectedBatch.responsible || "Sin responsable"}.
+            </p>
+            <label>
+              <span>Motivo opcional</span>
+              <textarea
+                value={takeoverReason}
+                maxLength={500}
+                onChange={(event) => setTakeoverReason(event.target.value)}
+                placeholder="Ej. Cambio de turno."
+              />
+            </label>
+            {takeoverError && <div className="form-error">{takeoverError}</div>}
+            <div className="printshop-form-actions">
+              <button type="button" className="visual-outline-button" onClick={() => setTakeoverRole("")}>
+                Cancelar
+              </button>
+              <button type="submit" className="visual-primary-button" disabled={savingBatch}>
+                {savingBatch ? "Guardando..." : "Confirmar transferencia"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
@@ -13748,12 +14180,22 @@ function FinishedInventoryView({
   onMovementNumberInputChange,
   onCreateInventoryItem,
   onRegisterMovement,
+  onVerifyMovementInActive,
   onPrepareMovement,
   onResetInventoryForm,
   onSoftDeleteInventoryItem,
 }) {
   const [inventoryCreateFocus, setInventoryCreateFocus] = useState(false);
   const [inventoryMovementFocus, setInventoryMovementFocus] = useState(false);
+  const [activeStatusFilter, setActiveStatusFilter] = useState("all");
+  const [verificationMovement, setVerificationMovement] = useState(null);
+  const [verificationForm, setVerificationForm] = useState({
+    status: "not_uploaded",
+    uploadedAt: "",
+    notes: "",
+  });
+  const [savingVerification, setSavingVerification] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
 
   function openInventoryCreateFocus() {
     onResetInventoryForm();
@@ -13773,7 +14215,54 @@ function FinishedInventoryView({
     setInventoryMovementFocus(false);
   }
 
-  const latestMovements = inventoryMovements.slice(0, 8);
+  const outputMovements = inventoryMovements.filter((movement) => movement.type === "Salida");
+  const activeStatusCounts = outputMovements.reduce((counts, movement) => {
+    const status = normalizeExternalInventoryStatus(movement.externalInventoryStatus);
+    counts[status] += 1;
+    return counts;
+  }, { pending: 0, not_uploaded: 0, uploaded: 0 });
+  const filteredMovements = inventoryMovements.filter((movement) =>
+    activeStatusFilter === "all"
+      || (movement.type === "Salida"
+        && normalizeExternalInventoryStatus(movement.externalInventoryStatus) === activeStatusFilter)
+  );
+  const latestMovements = filteredMovements.slice(0, 50);
+
+  function openActiveVerification(movement) {
+    const currentStatus = normalizeExternalInventoryStatus(movement.externalInventoryStatus);
+    setVerificationMovement(movement);
+    setVerificationForm({
+      status: currentStatus === "uploaded" ? "uploaded" : "not_uploaded",
+      uploadedAt: toDateInputValue(movement.externalInventoryUploadedAt)
+        || new Date().toISOString().slice(0, 10),
+      notes: movement.externalInventoryNotes || "",
+    });
+    setVerificationError("");
+  }
+
+  async function saveActiveVerification(event) {
+    event.preventDefault();
+    if (!verificationMovement) return;
+    if (verificationForm.status === "uploaded" && !verificationForm.uploadedAt) {
+      setVerificationError("Indica la fecha de registro en Active.");
+      return;
+    }
+    try {
+      setSavingVerification(true);
+      setVerificationError("");
+      await onVerifyMovementInActive({
+        movementId: verificationMovement.id,
+        status: verificationForm.status,
+        uploadedAt: verificationForm.status === "uploaded" ? verificationForm.uploadedAt : "",
+        notes: verificationForm.notes,
+      });
+      setVerificationMovement(null);
+    } catch (error) {
+      setVerificationError(error?.message || "No se pudo guardar la verificación.");
+    } finally {
+      setSavingVerification(false);
+    }
+  }
 
   return (
     <section className="printshop-inventory-page printshop-tab-redesign inventory-redesign-page">
@@ -13805,6 +14294,7 @@ function FinishedInventoryView({
         <CatalogMetric tone="red" icon="×" label="Críticos" value={inventoryStats.critical} />
         <CatalogMetric tone="green" icon="✓" label="Unidades" value={inventoryStats.totalStock} />
         <CatalogMetric tone="purple" icon="↕" label="Movimientos" value={inventoryMovements.length} />
+        <CatalogMetric tone="orange" icon="!" label="Pendientes en Active" value={activeStatusCounts.pending + activeStatusCounts.not_uploaded} />
       </div>
 
       {inventoryError && <div className="form-error">{inventoryError}</div>}
@@ -13894,6 +14384,19 @@ function FinishedInventoryView({
           </Panel>
 
           <Panel title="Historial de movimientos" icon="↕" actionLabel="Últimos registros">
+            <div className="active-verification-toolbar">
+              <strong>Registro en Active</strong>
+              <select
+                value={activeStatusFilter}
+                onChange={(event) => setActiveStatusFilter(event.target.value)}
+                aria-label="Filtrar registro en Active"
+              >
+                <option value="all">Todos los movimientos</option>
+                <option value="pending">Pendientes de verificar ({activeStatusCounts.pending})</option>
+                <option value="not_uploaded">Aún no registrados ({activeStatusCounts.not_uploaded})</option>
+                <option value="uploaded">Registrados ({activeStatusCounts.uploaded})</option>
+              </select>
+            </div>
             {latestMovements.length === 0 ? (
               <div className="printshop-small-empty">
                 <strong>Sin movimientos registrados</strong>
@@ -13901,7 +14404,10 @@ function FinishedInventoryView({
               </div>
             ) : (
               <div className="inventory-movement-list">
-                {latestMovements.map((movement) => (
+                {latestMovements.map((movement) => {
+                  const externalStatus = normalizeExternalInventoryStatus(movement.externalInventoryStatus);
+                  const externalStatusConfig = externalInventoryStatuses[externalStatus];
+                  return (
                   <article className="inventory-movement-item" key={movement.id}>
                     <div className={`inventory-movement-icon ${movement.type === "Entrada" ? "green" : "orange"}`}>
                       {movement.type === "Entrada" ? "+" : "−"}
@@ -13915,9 +14421,33 @@ function FinishedInventoryView({
                         Stock {Number(movement.previousStock || 0)} → {Number(movement.newStock || 0)}
                       </span>
                     </div>
-                    <small>{formatDate(movement.createdAt)}</small>
+                    <div className="inventory-movement-meta">
+                      <small>{formatDate(movement.createdAt)}</small>
+                      {movement.type === "Salida" && (
+                        <>
+                          <StatusBadge tone={externalStatusConfig.tone}>
+                            {externalStatusConfig.label}
+                          </StatusBadge>
+                          {movement.externalInventoryVerifiedAt && (
+                            <small>
+                              Verificó {movement.externalInventoryVerifiedByName || "Usuario"} · {formatDate(movement.externalInventoryVerifiedAt)}
+                            </small>
+                          )}
+                          {canRegisterInventoryOutput && (
+                            <button
+                              type="button"
+                              className="visual-outline-button active-verification-button"
+                              onClick={() => openActiveVerification(movement)}
+                            >
+                              Verificar en Active
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Panel>
@@ -14117,6 +14647,73 @@ function FinishedInventoryView({
           )}
         </aside>
       </div>
+
+      {verificationMovement && (
+        <div className="printshop-modal-backdrop" role="presentation">
+          <div className="printshop-compact-modal" role="dialog" aria-modal="true" aria-labelledby="active-verification-title">
+            <div className="printshop-modal-header">
+              <div>
+                <p className="section-kicker">Registro en Active</p>
+                <h3 id="active-verification-title">{verificationMovement.productName}</h3>
+              </div>
+              <button type="button" onClick={() => setVerificationMovement(null)} aria-label="Cerrar">×</button>
+            </div>
+            <form onSubmit={saveActiveVerification} className="active-verification-form">
+              <p>¿Ya fue registrado en el sistema principal de Active?</p>
+              <label className="active-verification-option">
+                <input
+                  type="radio"
+                  name="externalInventoryStatus"
+                  value="uploaded"
+                  checked={verificationForm.status === "uploaded"}
+                  onChange={(event) => setVerificationForm((current) => ({ ...current, status: event.target.value }))}
+                />
+                <span>Sí, ya fue registrado</span>
+              </label>
+              <label className="active-verification-option">
+                <input
+                  type="radio"
+                  name="externalInventoryStatus"
+                  value="not_uploaded"
+                  checked={verificationForm.status === "not_uploaded"}
+                  onChange={(event) => setVerificationForm((current) => ({ ...current, status: event.target.value }))}
+                />
+                <span>No, aún no</span>
+              </label>
+              {verificationForm.status === "uploaded" && (
+                <label>
+                  <span>Fecha de registro en Active</span>
+                  <input
+                    type="date"
+                    value={verificationForm.uploadedAt}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(event) => setVerificationForm((current) => ({ ...current, uploadedAt: event.target.value }))}
+                    required
+                  />
+                </label>
+              )}
+              <label>
+                <span>Nota opcional</span>
+                <textarea
+                  value={verificationForm.notes}
+                  maxLength={1000}
+                  onChange={(event) => setVerificationForm((current) => ({ ...current, notes: event.target.value }))}
+                  placeholder="Referencia, folio o aclaración."
+                />
+              </label>
+              {verificationError && <div className="form-error">{verificationError}</div>}
+              <div className="printshop-form-actions">
+                <button type="button" className="visual-outline-button" onClick={() => setVerificationMovement(null)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="visual-primary-button" disabled={savingVerification}>
+                  {savingVerification ? "Guardando..." : "Guardar verificación"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -23940,16 +24537,15 @@ function ProductCatalogView({
                         <td>
                           <div className="printshop-product-actions">
                             {canManageCatalog && (
+                              <button type="button" onClick={() => openProductFocus(product)}>
+                                Editar
+                              </button>
+                            )}
+                            {isAdmin && (
                               <>
-                                <button type="button" onClick={() => openProductFocus(product)}>
-                                  Editar
-                                </button>
                                 <button type="button" onClick={() => onToggleStatus(product)}>
                                   {product.active === false ? "Activar" : "Desactivar"}
                                 </button>
-                              </>
-                            )}
-                            {isAdmin && (
                               <button
                                 type="button"
                                 className="danger-table-button"
@@ -23957,6 +24553,7 @@ function ProductCatalogView({
                               >
                                 Eliminar
                               </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -23992,6 +24589,27 @@ function ProductCatalogView({
                   value={productForm.name}
                   onChange={onInputChange}
                   placeholder="Ej. Journey A1"
+                />
+              </label>
+
+              <label className="full">
+                <span>Descripción</span>
+                <textarea
+                  name="description"
+                  value={productForm.description}
+                  onChange={onInputChange}
+                  placeholder="Uso, presentación y características del producto."
+                />
+              </label>
+
+              <label className="full">
+                <span>Imagen del producto (URL)</span>
+                <input
+                  type="url"
+                  name="imageUrl"
+                  value={productForm.imageUrl}
+                  onChange={onInputChange}
+                  placeholder="https://..."
                 />
               </label>
 
@@ -24104,6 +24722,7 @@ function ProductCatalogView({
                   label="Producto activo"
                   checked={productForm.active}
                   onChange={onInputChange}
+                  disabled={!isAdmin}
                 />
               </div>
 
@@ -24658,10 +25277,16 @@ function PrintshopIcon({ name }) {
   );
 }
 
-function ProductCheckbox({ name, label, checked, onChange }) {
+function ProductCheckbox({ name, label, checked, onChange, disabled = false }) {
   return (
     <label className="product-check-item">
-      <input type="checkbox" name={name} checked={checked} onChange={onChange} />
+      <input
+        type="checkbox"
+        name={name}
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+      />
       <span>{label}</span>
     </label>
   );

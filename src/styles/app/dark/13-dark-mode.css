@@ -4295,6 +4295,36 @@ html[data-theme="dark"] body #root .main-content :is(
   align-self: center !important;
 }
 
+html[data-theme="dark"] .printshop-compact-modal {
+  border-color: #334155;
+  background: #111827;
+  color: #e5edf7;
+}
+
+html[data-theme="dark"] .active-verification-option,
+html[data-theme="dark"] .batch-history-panel {
+  border-color: #334155;
+}
+
+html[data-theme="dark"] .batch-history-panel li {
+  background: #182235;
+}
+
+html[data-theme="dark"] .batch-stage-stepper li > span {
+  border-color: #475569;
+  background: #172033;
+}
+
+html[data-theme="dark"] .batch-stage-stepper li.current > span {
+  border-color: #60a5fa;
+  background: #2563eb;
+}
+
+html[data-theme="dark"] .batch-stage-stepper li.completed > span {
+  border-color: #22c55e;
+  background: #15803d;
+}
+
 html[data-theme="dark"] .main-content .project-activity-indicator {
   border-color: rgba(251, 191, 36, 0.5);
   background: rgba(120, 53, 15, 0.38);

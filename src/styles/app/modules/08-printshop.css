@@ -11499,6 +11499,191 @@
   }
 }
 
+.active-verification-toolbar,
+.batch-context-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.active-verification-toolbar select {
+  min-width: min(100%, 280px);
+}
+
+.inventory-movement-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.45rem;
+  min-width: 180px;
+}
+
+.active-verification-button {
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.printshop-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.printshop-compact-modal {
+  width: min(100%, 480px);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 1.25rem;
+  border: 1px solid #dbe5f1;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.printshop-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.printshop-modal-header h3,
+.printshop-modal-header p {
+  margin: 0;
+}
+
+.printshop-modal-header > button {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+
+.active-verification-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.active-verification-form > label:not(.active-verification-option),
+.printshop-compact-modal > label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.active-verification-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+}
+
+.batch-stage-stepper {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(76px, 1fr));
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0 0 1rem;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.batch-stage-stepper li {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  min-width: 76px;
+  color: #64748b;
+  text-align: center;
+}
+
+.batch-stage-stepper li > span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid #cbd5e1;
+  border-radius: 50%;
+  background: #fff;
+  font-weight: 800;
+}
+
+.batch-stage-stepper li.completed > span {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: #fff;
+}
+
+.batch-stage-stepper li.current > span {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+.batch-stage-stepper li.current small {
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.batch-history-panel {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dbe5f1;
+}
+
+.batch-history-panel h4 {
+  margin: 0 0 0.75rem;
+}
+
+.batch-history-panel ol {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.batch-history-panel li {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem;
+  border-left: 3px solid #2563eb;
+  border-radius: 0 10px 10px 0;
+  background: #f8fafc;
+}
+
+@media (max-width: 720px) {
+  .inventory-movement-meta {
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .active-verification-toolbar {
+    align-items: stretch;
+  }
+
+  .active-verification-toolbar select,
+  .batch-context-actions > button {
+    width: 100%;
+  }
+
+  .printshop-compact-modal {
+    padding: 1rem;
+    border-radius: 14px;
+  }
+}
+
 /* ===== Alumnos: lista amplia + vista previa ===== */
 .request-students-preview-layout {
   display: grid;

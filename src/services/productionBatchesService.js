@@ -4,11 +4,13 @@ import { functions } from "./firebase";
 const reviewQualityCallable = httpsCallable(functions, "reviewProductionBatchQuality");
 const enterInventoryCallable = httpsCallable(functions, "enterProductionBatchInventory");
 const updateProgressCallable = httpsCallable(functions, "updateProductionBatchProgress");
+const transferAssignmentCallable = httpsCallable(functions, "transferProductionBatchAssignment");
 const deleteBatchCallable = httpsCallable(functions, "deleteProductionBatch");
 const outputInventoryCallable = httpsCallable(functions, "registerFinishedInventoryOutput");
 const reactivateReplenishmentCallable = httpsCallable(functions, "reactivateProductReplenishment");
 const repairAutomaticBatchesCallable = httpsCallable(functions, "repairAutomaticProductionBatches");
 const saveAdminChangesCallable = httpsCallable(functions, "saveProductionBatchAdminChanges");
+const verifyOutputCallable = httpsCallable(functions, "verifyFinishedInventoryOutput");
 
 function callableError(error, fallback) {
   const result = new Error(error?.message || fallback);
@@ -43,6 +45,15 @@ export async function updateProductionBatchProgress(batchId, update) {
   }
 }
 
+export async function transferProductionBatchAssignment(batchId, role, reason = "") {
+  try {
+    const response = await transferAssignmentCallable({ batchId, role, reason });
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudo transferir la responsabilidad del lote.");
+  }
+}
+
 export async function deleteProductionBatch(batchId) {
   try {
     const response = await deleteBatchCallable({ batchId });
@@ -58,6 +69,15 @@ export async function registerFinishedInventoryOutput(input) {
     return response.data;
   } catch (error) {
     throw callableError(error, "No se pudo registrar la salida de inventario.");
+  }
+}
+
+export async function verifyFinishedInventoryOutput(input) {
+  try {
+    const response = await verifyOutputCallable(input);
+    return response.data;
+  } catch (error) {
+    throw callableError(error, "No se pudo guardar la verificación en Active.");
   }
 }
 

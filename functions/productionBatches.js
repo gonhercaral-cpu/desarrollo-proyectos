@@ -21,6 +21,12 @@ const QUALITY_STATUS = Object.freeze({
   REJECTED: "Rechazado",
 });
 
+const EXTERNAL_INVENTORY_STATUS = Object.freeze({
+  PENDING: "pending",
+  NOT_UPLOADED: "not_uploaded",
+  UPLOADED: "uploaded",
+});
+
 const STATUS_ALIASES = Object.freeze({
   "En encuadernación": BATCH_STATUS.BINDING,
   "En encuadernacion": BATCH_STATUS.BINDING,
@@ -96,6 +102,24 @@ function isAssignedActor(batch, role, actor) {
   if (uid) return uid === actor.uid;
   if (email) return email === cleanText(actor.email).toLowerCase();
   return Boolean(name && name === normalizeText(actor.name));
+}
+
+function getBatchHistoryRef(db, batchId) {
+  return db.collection("printProductionBatches").doc(batchId).collection("history").doc();
+}
+
+function buildBatchHistoryEntry(type, batch, actor, timestamp, details = {}) {
+  return {
+    type,
+    batchId: cleanText(batch?.id),
+    batchFolio: cleanText(batch?.folio),
+    stage: normalizeBatchStatus(batch?.status),
+    performedAt: timestamp,
+    performedByUid: actor.uid,
+    performedByName: actor.name,
+    performedByEmail: actor.email,
+    ...details,
+  };
 }
 
 function isBatchAssignedToProfile(batch, role, profile, uid) {
@@ -216,6 +240,7 @@ function buildQualityReviewPatch(review, actor, timestamp) {
       qualityReviewedByEmail: actor.email,
     });
   }
+  if (successful) patch.qualityApprovedAt = timestamp;
 
   return patch;
 }
@@ -1014,8 +1039,11 @@ async function reviewProductionBatchQuality(db, batchId, review, actor, fieldVal
     const snapshot = await transaction.get(batchRef);
     if (!snapshot.exists) throw new Error("No se encontró el lote de producción.");
     const batch = snapshot.data();
-    if (!actor.isAdmin && !isAssignedActor(batch, "auditor", actor)) {
-      throw new Error("Solo el auditor asignado o un administrador puede guardar esta revisión.");
+    if (!actor.isAdmin && actor.canAccessPrintshop !== true) {
+      throw new Error("Tu perfil no tiene acceso a Imprenta.");
+    }
+    if (!actor.isAdmin && isAssignedActor(batch, "responsible", actor)) {
+      throw new Error("La persona responsable de producir el lote no puede auditarlo.");
     }
     if (batch.inventoryApplied === true || normalizeBatchStatus(batch.status) === BATCH_STATUS.CANCELLED) {
       throw new Error("Este lote ya no admite revisión de calidad.");
@@ -1029,8 +1057,23 @@ async function reviewProductionBatchQuality(db, batchId, review, actor, fieldVal
     if (approvedQuantity + rejectedQuantity > producedQuantity) {
       throw new Error("Aprobados y rechazados no pueden superar la cantidad producida.");
     }
-    const patch = buildQualityReviewPatch(review, actor, fieldValue.serverTimestamp());
+    const timestamp = fieldValue.serverTimestamp();
+    const patch = buildQualityReviewPatch(review, actor, timestamp);
     transaction.update(batchRef, patch);
+    transaction.set(getBatchHistoryRef(db, batchId), buildBatchHistoryEntry(
+      "quality_review",
+      { ...batch, id: batchId },
+      actor,
+      timestamp,
+      {
+        previousQualityStatus: cleanText(batch.qualityStatus || batch.qualityResult),
+        qualityStatus: patch.qualityStatus,
+        approvedQuantity: patch.approvedQuantity,
+        rejectedQuantity: patch.rejectedQuantity,
+        qualityNotes: patch.qualityNotes,
+        nextStage: patch.status,
+      }
+    ));
     return {
       batchId,
       status: patch.status,
@@ -1052,8 +1095,13 @@ async function updateProductionBatchProgress(db, batchId, update, actor, fieldVa
     const snapshot = await transaction.get(batchRef);
     if (!snapshot.exists) throw new Error("No se encontró el lote de producción.");
     const batch = snapshot.data();
-    if (!actor.isAdmin && !isAssignedActor(batch, "responsible", actor)) {
-      throw new Error("Solo el responsable asignado o un administrador puede actualizar producción.");
+    if (!actor.isAdmin && actor.canAccessPrintshop !== true) {
+      throw new Error("Tu perfil no tiene acceso a Imprenta.");
+    }
+    if (!actor.isAdmin
+        && isAssignedActor(batch, "auditor", actor)
+        && !isAssignedActor(batch, "responsible", actor)) {
+      throw new Error("El auditor asignado no puede registrar la producción del mismo lote.");
     }
     if (batch.inventoryApplied === true || normalizeBatchStatus(batch.status) === BATCH_STATUS.CANCELLED) {
       throw new Error("Este lote ya no admite cambios de producción.");
@@ -1063,6 +1111,11 @@ async function updateProductionBatchProgress(db, batchId, update, actor, fieldVa
     if (!Number.isFinite(producedQuantity) || producedQuantity < 0) {
       throw new Error("La cantidad producida no es válida.");
     }
+    if (normalizeBatchStatus(batch.status) === BATCH_STATUS.PRINTING
+        && status === BATCH_STATUS.BINDING
+        && producedQuantity <= 0) {
+      throw new Error("Registra la cantidad producida antes de finalizar impresión.");
+    }
     if (!actor.isAdmin && !isResponsibleTransitionAllowed(
       batch.status,
       status,
@@ -1070,16 +1123,118 @@ async function updateProductionBatchProgress(db, batchId, update, actor, fieldVa
     )) {
       throw new Error("La transición de producción no está permitida.");
     }
+    const previousStatus = normalizeBatchStatus(batch.status);
+    const timestamp = fieldValue.serverTimestamp();
     const patch = {
       status,
       producedQuantity,
-      updatedAt: fieldValue.serverTimestamp(),
+      updatedAt: timestamp,
       updatedByUid: actor.uid,
       updatedByName: actor.name,
       updatedByEmail: actor.email,
     };
+    if ([BATCH_STATUS.PLANNED, BATCH_STATUS.PENDING_ASSIGNMENT].includes(previousStatus)
+        && status === BATCH_STATUS.PRINTING) {
+      patch.startedPrintingAt = timestamp;
+    }
+    if (previousStatus === BATCH_STATUS.PRINTING && status === BATCH_STATUS.BINDING) {
+      patch.completedPrintingAt = timestamp;
+      patch.bindingStartedAt = timestamp;
+    }
+    if (previousStatus === BATCH_STATUS.BINDING && status === BATCH_STATUS.QUALITY_REVIEW) {
+      patch.qualityReviewStartedAt = timestamp;
+    }
     transaction.update(batchRef, patch);
+    transaction.set(getBatchHistoryRef(db, batchId), buildBatchHistoryEntry(
+      "stage_changed",
+      { ...batch, id: batchId },
+      actor,
+      timestamp,
+      {
+        previousStage: previousStatus,
+        nextStage: status,
+        previousProducedQuantity: Number(batch.producedQuantity || 0),
+        producedQuantity,
+      }
+    ));
     return { batchId, status, producedQuantity };
+  });
+}
+
+async function transferProductionBatchAssignment(db, batchId, role, reason, actor, fieldValue) {
+  if (!actor?.isAdmin && actor?.canAccessPrintshop !== true) {
+    throw new Error("Tu perfil no tiene acceso a Imprenta.");
+  }
+  if (!["responsible", "auditor"].includes(role)) {
+    throw new Error("El tipo de responsabilidad no es válido.");
+  }
+  const batchRef = db.collection("printProductionBatches").doc(batchId);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(batchRef);
+    if (!snapshot.exists) throw new Error("No se encontró el lote de producción.");
+    const batch = snapshot.data();
+    if (batch.inventoryApplied === true
+        || [BATCH_STATUS.CANCELLED, BATCH_STATUS.CLOSED].includes(normalizeBatchStatus(batch.status))) {
+      throw new Error("Este lote ya no admite cambios de responsabilidad.");
+    }
+    const counterpart = role === "responsible" ? "auditor" : "responsible";
+    if (isAssignedActor(batch, counterpart, actor)) {
+      throw new Error(role === "responsible"
+        ? "El auditor del lote no puede tomar su producción."
+        : "La persona responsable de producir el lote no puede tomar su auditoría.");
+    }
+    const previousUid = cleanText(batch[`${role}Uid`]);
+    const previousName = cleanText(
+      batch[`${role}Name`] || (role === "responsible" ? batch.responsible : "")
+    );
+    const timestamp = fieldValue.serverTimestamp();
+    const patch = {
+      [`${role}Uid`]: actor.uid,
+      [`${role}Name`]: actor.name,
+      [`${role}Email`]: actor.email,
+      assignmentSource: "manual-takeover",
+      assignmentLocked: true,
+      assignmentPending: false,
+      assignmentVersion: nextAssignmentVersion(batch),
+      transferredAt: timestamp,
+      transferredByUid: actor.uid,
+      transferredByName: actor.name,
+      updatedAt: timestamp,
+      updatedByUid: actor.uid,
+      updatedByName: actor.name,
+      updatedByEmail: actor.email,
+    };
+    if (role === "responsible") patch.responsible = actor.name;
+    transaction.update(batchRef, patch);
+    transaction.set(getBatchHistoryRef(db, batchId), buildBatchHistoryEntry(
+      role === "responsible" ? "responsible_transferred" : "auditor_transferred",
+      { ...batch, id: batchId },
+      actor,
+      timestamp,
+      {
+        role,
+        previousUid,
+        previousName,
+        newUid: actor.uid,
+        newName: actor.name,
+        reason: cleanText(reason),
+      }
+    ));
+    return {
+      batchId,
+      role,
+      previousUid,
+      previousName,
+      responsible: role === "responsible" ? actor.name : cleanText(batch.responsible),
+      responsibleUid: role === "responsible" ? actor.uid : cleanText(batch.responsibleUid),
+      responsibleName: role === "responsible" ? actor.name : cleanText(batch.responsibleName),
+      responsibleEmail: role === "responsible" ? actor.email : cleanText(batch.responsibleEmail),
+      auditorUid: role === "auditor" ? actor.uid : cleanText(batch.auditorUid),
+      auditorName: role === "auditor" ? actor.name : cleanText(batch.auditorName),
+      auditorEmail: role === "auditor" ? actor.email : cleanText(batch.auditorEmail),
+      assignmentVersion: patch.assignmentVersion,
+      assignmentSource: patch.assignmentSource,
+    };
   });
 }
 
@@ -1093,8 +1248,8 @@ async function enterProductionBatchInventory(db, batchId, actor, fieldValue) {
     ]);
     if (!batchSnapshot.exists) throw new Error("No se encontró el lote de producción.");
     const batch = batchSnapshot.data();
-    if (!actor.isAdmin && !isAssignedActor(batch, "responsible", actor)) {
-      throw new Error("Solo el responsable asignado o un administrador puede ingresar este lote.");
+    if (!actor.isAdmin && actor.canAccessPrintshop !== true) {
+      throw new Error("Tu perfil no tiene acceso a Imprenta.");
     }
     const evaluation = evaluateInventoryEntry(batch);
     if (evaluation.reason === "already-applied" || existingMovement.exists) {
@@ -1179,8 +1334,22 @@ async function enterProductionBatchInventory(db, batchId, actor, fieldValue) {
       inventoryAppliedByEmail: actor.email,
       finalizedAt: timestamp,
       finalizedByUid: actor.uid,
+      completedAt: timestamp,
       ...audit,
     });
+    transaction.set(getBatchHistoryRef(db, batchId), buildBatchHistoryEntry(
+      "inventory_entered",
+      { ...batch, id: batchId },
+      actor,
+      timestamp,
+      {
+        previousStage: normalizeBatchStatus(batch.status),
+        nextStage: BATCH_STATUS.INVENTORIED,
+        quantity: evaluation.quantity,
+        inventoryId: inventoryRef.id,
+        inventoryMovementId: movementRef.id,
+      }
+    ));
     return {
       batchId,
       alreadyApplied: false,
@@ -1288,8 +1457,70 @@ async function registerFinishedInventoryOutput(db, input, actor, fieldValue) {
       createdByUid: actor.uid,
       createdByName: actor.name,
       createdByEmail: actor.email,
+      externalInventoryStatus: EXTERNAL_INVENTORY_STATUS.PENDING,
+      externalInventoryVerifiedAt: null,
+      externalInventoryVerifiedByUid: "",
+      externalInventoryVerifiedByName: "",
+      externalInventoryVerifiedByEmail: "",
+      externalInventoryUploadedAt: null,
+      externalInventoryNotes: "",
+      updatedAt: timestamp,
     });
     return { alreadyApplied: false, movementId, inventoryId, previousStock, newStock, quantity: output.quantity };
+  });
+}
+
+function normalizeExternalInventoryStatus(status) {
+  return Object.values(EXTERNAL_INVENTORY_STATUS).includes(status)
+    ? status
+    : EXTERNAL_INVENTORY_STATUS.PENDING;
+}
+
+async function verifyFinishedInventoryOutput(db, input, actor, fieldValue) {
+  if (!actor?.isAdmin && actor?.canAccessPrintshop !== true) {
+    throw new Error("Tu perfil no tiene acceso a Imprenta.");
+  }
+  const movementId = cleanText(input?.movementId);
+  const status = normalizeExternalInventoryStatus(input?.status);
+  if (!movementId) throw new Error("Falta el movimiento de salida.");
+  if (![EXTERNAL_INVENTORY_STATUS.NOT_UPLOADED, EXTERNAL_INVENTORY_STATUS.UPLOADED].includes(status)) {
+    throw new Error("Selecciona si la salida ya fue registrada en Active.");
+  }
+  const uploadedAt = cleanText(input?.uploadedAt);
+  if (status === EXTERNAL_INVENTORY_STATUS.UPLOADED
+      && !/^\d{4}-\d{2}-\d{2}$/.test(uploadedAt)) {
+    throw new Error("Indica una fecha válida de registro en Active.");
+  }
+  const notes = cleanText(input?.notes);
+  if (notes.length > 1000) throw new Error("La nota no puede superar 1000 caracteres.");
+  const movementRef = db.collection("printInventoryMovements").doc(movementId);
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(movementRef);
+    if (!snapshot.exists || cleanText(snapshot.data().type) !== "Salida") {
+      throw new Error("No se encontró el movimiento de salida.");
+    }
+    const timestamp = fieldValue.serverTimestamp();
+    const patch = {
+      externalInventoryStatus: status,
+      externalInventoryVerifiedAt: timestamp,
+      externalInventoryVerifiedByUid: actor.uid,
+      externalInventoryVerifiedByName: actor.name,
+      externalInventoryVerifiedByEmail: actor.email,
+      externalInventoryUploadedAt: status === EXTERNAL_INVENTORY_STATUS.UPLOADED
+        ? new Date(`${uploadedAt}T12:00:00-07:00`)
+        : null,
+      externalInventoryNotes: notes,
+      updatedAt: timestamp,
+    };
+    transaction.update(movementRef, patch);
+    return {
+      movementId,
+      status,
+      uploadedAt,
+      notes,
+      verifiedByUid: actor.uid,
+      verifiedByName: actor.name,
+    };
   });
 }
 
@@ -1473,6 +1704,20 @@ async function saveProductionBatchAdminChanges(db, batchId, changes, actor, fiel
       updatedByEmail: actor.email,
     });
 
+    const previousStage = normalizeBatchStatus(current.status);
+    const nextStage = normalizeBatchStatus(patch.status || current.status);
+    if ([BATCH_STATUS.PLANNED, BATCH_STATUS.PENDING_ASSIGNMENT].includes(previousStage)
+        && nextStage === BATCH_STATUS.PRINTING) {
+      patch.startedPrintingAt = timestamp;
+    }
+    if (previousStage === BATCH_STATUS.PRINTING && nextStage === BATCH_STATUS.BINDING) {
+      patch.completedPrintingAt = timestamp;
+      patch.bindingStartedAt = timestamp;
+    }
+    if (previousStage === BATCH_STATUS.BINDING && nextStage === BATCH_STATUS.QUALITY_REVIEW) {
+      patch.qualityReviewStartedAt = timestamp;
+    }
+
     if (patch.qualityCompleted === true) {
       Object.assign(patch, {
         qualityReviewedAt: timestamp,
@@ -1481,9 +1726,61 @@ async function saveProductionBatchAdminChanges(db, batchId, changes, actor, fiel
         qualityReviewedByName: actor.name,
         qualityReviewedByEmail: actor.email,
       });
+      if (isSuccessfulQualityResult(patch.qualityStatus || current.qualityStatus)) {
+        patch.qualityApprovedAt = timestamp;
+      }
     }
 
     transaction.update(batchRef, patch);
+    const responsibleChanged = cleanText(patch.responsibleUid)
+      && cleanText(patch.responsibleUid) !== cleanText(current.responsibleUid);
+    const auditorChanged = cleanText(patch.auditorUid)
+      && cleanText(patch.auditorUid) !== cleanText(current.auditorUid);
+    const stageChanged = cleanText(patch.status)
+      && normalizeBatchStatus(patch.status) !== normalizeBatchStatus(current.status);
+    transaction.set(getBatchHistoryRef(db, cleanBatchId), buildBatchHistoryEntry(
+      responsibleChanged
+        ? "responsible_transferred"
+        : auditorChanged
+          ? "auditor_transferred"
+          : stageChanged
+            ? "stage_changed"
+            : "batch_updated",
+      { ...current, id: cleanBatchId },
+      actor,
+      timestamp,
+      {
+        previousStage: normalizeBatchStatus(current.status),
+        nextStage: normalizeBatchStatus(patch.status || current.status),
+        previousUid: responsibleChanged
+          ? cleanText(current.responsibleUid)
+          : auditorChanged
+            ? cleanText(current.auditorUid)
+            : "",
+        previousName: responsibleChanged
+          ? cleanText(current.responsibleName || current.responsible)
+          : auditorChanged
+            ? cleanText(current.auditorName)
+            : "",
+        newUid: responsibleChanged
+          ? cleanText(patch.responsibleUid)
+          : auditorChanged
+            ? cleanText(patch.auditorUid)
+            : "",
+        newName: responsibleChanged
+          ? cleanText(patch.responsibleName || patch.responsible)
+          : auditorChanged
+            ? cleanText(patch.auditorName)
+            : "",
+        previousProducedQuantity: Number(current.producedQuantity || 0),
+        producedQuantity: Number(patch.producedQuantity ?? current.producedQuantity ?? 0),
+        previousApprovedQuantity: Number(current.approvedQuantity || 0),
+        approvedQuantity: Number(patch.approvedQuantity ?? current.approvedQuantity ?? 0),
+        previousRejectedQuantity: Number(current.rejectedQuantity || 0),
+        rejectedQuantity: Number(patch.rejectedQuantity ?? current.rejectedQuantity ?? 0),
+        qualityStatus: cleanText(patch.qualityStatus || current.qualityStatus || current.qualityResult),
+      }
+    ));
     return {
       batchId: cleanBatchId,
       ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== timestamp)),
@@ -1584,6 +1881,7 @@ async function backfillAutomaticProductionBatches(db, options = {}) {
 
 module.exports = {
   BATCH_STATUS,
+  EXTERNAL_INVENTORY_STATUS,
   QUALITY_STATUS,
   buildAvailabilityBlocks,
   buildAutomaticAssignmentPatch,
@@ -1607,6 +1905,7 @@ module.exports = {
   isManualAssignment,
   isResponsibleTransitionAllowed,
   matchesReplenishmentSuppression,
+  normalizeExternalInventoryStatus,
   reactivateProductReplenishment,
   reconcileAllProducts,
   reconcileProductReplenishment,
@@ -1618,6 +1917,8 @@ module.exports = {
   selectHourlyAssignmentPair,
   selectAssignmentPair,
   saveProductionBatchAdminChanges,
+  transferProductionBatchAssignment,
   updateProductionBatchProgress,
   validateFinishedInventoryOutput,
+  verifyFinishedInventoryOutput,
 };

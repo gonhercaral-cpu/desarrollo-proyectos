@@ -17,13 +17,17 @@ const {
   hasValidAssignmentPair,
   isResponsibleTransitionAllowed,
   matchesReplenishmentSuppression,
+  normalizeExternalInventoryStatus,
   registerFinishedInventoryOutput,
   resolveUnitsPerWorkday,
   selectCapacityAssignmentPair,
   selectCurrentShiftFallbackAssignment,
   selectAssignmentPair,
   saveProductionBatchAdminChanges,
+  transferProductionBatchAssignment,
+  updateProductionBatchProgress,
   validateFinishedInventoryOutput,
+  verifyFinishedInventoryOutput,
 } = require("../functions/productionBatches");
 
 const checklist = [
@@ -85,6 +89,94 @@ describe("permisos de producción", () => {
       BATCH_STATUS.PRINTING,
       QUALITY_STATUS.REJECTED
     ), true);
+  });
+
+  it("permite continuar a colaborador autorizado no asignado y guarda etapa", async () => {
+    const documents = new Map([["printProductionBatches/batch-1", {
+      folio: "LOT-1",
+      status: BATCH_STATUS.PLANNED,
+      producedQuantity: 0,
+      inventoryApplied: false,
+      responsibleUid: "old-responsible",
+      auditorUid: "auditor",
+    }]]);
+    let historyEntry = null;
+    const db = {
+      collection(name) {
+        return {
+          doc(id = "generated") {
+            const ref = { id, path: `${name}/${id}` };
+            ref.collection = (child) => ({
+              doc: () => ({ id: "history-1", path: `${ref.path}/${child}/history-1` }),
+            });
+            return ref;
+          },
+        };
+      },
+      runTransaction: async (callback) => callback({
+        get: async (ref) => {
+          const data = documents.get(ref.path);
+          return { exists: Boolean(data), data: () => data };
+        },
+        update: (ref, patch) => documents.set(ref.path, { ...documents.get(ref.path), ...patch }),
+        set: (_ref, data) => { historyEntry = data; },
+      }),
+    };
+    await updateProductionBatchProgress(
+      db,
+      "batch-1",
+      { status: BATCH_STATUS.PRINTING, producedQuantity: 0 },
+      { uid: "next-shift", name: "Siguiente turno", email: "", canAccessPrintshop: true },
+      { serverTimestamp: () => "timestamp" }
+    );
+    assert.equal(documents.get("printProductionBatches/batch-1").status, BATCH_STATUS.PRINTING);
+    assert.equal(documents.get("printProductionBatches/batch-1").startedPrintingAt, "timestamp");
+    assert.equal(historyEntry.type, "stage_changed");
+    assert.equal(historyEntry.previousStage, BATCH_STATUS.PLANNED);
+  });
+
+  it("transfiere responsable sin permitir que auditor tome producción", async () => {
+    const state = {
+      folio: "LOT-2",
+      status: BATCH_STATUS.PRINTING,
+      responsibleUid: "old",
+      responsibleName: "Anterior",
+      auditorUid: "auditor",
+      auditorName: "Auditor",
+      inventoryApplied: false,
+    };
+    const ref = {
+      id: "batch-2",
+      path: "printProductionBatches/batch-2",
+      collection: () => ({ doc: () => ({ path: "history" }) }),
+    };
+    let historyEntry;
+    const db = {
+      collection: () => ({ doc: () => ref }),
+      runTransaction: async (callback) => callback({
+        get: async () => ({ exists: true, data: () => ({ ...state }) }),
+        update: (_ref, patch) => Object.assign(state, patch),
+        set: (_ref, data) => { historyEntry = data; },
+      }),
+    };
+    await transferProductionBatchAssignment(
+      db,
+      "batch-2",
+      "responsible",
+      "Cambio de turno",
+      { uid: "new", name: "Nuevo", email: "new@test.local", canAccessPrintshop: true },
+      { serverTimestamp: () => "timestamp" }
+    );
+    assert.equal(state.responsibleUid, "new");
+    assert.equal(historyEntry.previousName, "Anterior");
+    await assert.rejects(() => transferProductionBatchAssignment(
+      db,
+      "batch-2",
+      "responsible",
+      "",
+      { uid: "auditor", name: "Auditor", email: "", canAccessPrintshop: true },
+      { serverTimestamp: () => "timestamp" }
+    ), /auditor del lote/);
   });
 });
 
@@ -342,7 +434,11 @@ describe("bajas y supresión de reposición", () => {
       assignmentPending: true,
       assignmentVersion: 0,
     };
-    const ref = { id: "batch-1", path: "printProductionBatches/batch-1" };
+    const ref = {
+      id: "batch-1",
+      path: "printProductionBatches/batch-1",
+      collection: () => ({ doc: () => ({ path: "history" }) }),
+    };
     let queue = Promise.resolve();
     const db = {
       collection: () => ({ doc: () => ref }),
@@ -350,6 +446,7 @@ describe("bajas y supresión de reposición", () => {
         const run = queue.then(() => callback({
           get: async () => ({ exists: true, data: () => ({ ...state }) }),
           update: (_ref, patch) => Object.assign(state, patch),
+          set: () => undefined,
         }));
         queue = run.catch(() => undefined);
         return run;
@@ -448,6 +545,8 @@ describe("salidas de inventario terminado", () => {
     );
     assert.deepEqual(calculateFinishedInventoryOutputStock(5, 5), { previousStock: 5, newStock: 0 });
     assert.throws(() => calculateFinishedInventoryOutputStock(4, 5), /Stock insuficiente/);
+    assert.equal(normalizeExternalInventoryStatus(undefined), "pending");
+    assert.equal(normalizeExternalInventoryStatus("uploaded"), "uploaded");
   });
 
   it("descuenta una sola vez ante concurrencia y rechaza stock insuficiente", async () => {
@@ -508,6 +607,47 @@ describe("salidas de inventario terminado", () => {
       db,
       { ...input, requestId: "unauthorized" },
       { uid: "sales", name: "Ventas" },
+      fieldValue
+    ), /acceso a Imprenta/);
+  });
+
+  it("verifica negativo y luego positivo conservando auditoría", async () => {
+    const state = { type: "Salida", productName: "Libro", externalInventoryStatus: "pending" };
+    const ref = { path: "printInventoryMovements/output-1" };
+    const db = {
+      collection: () => ({ doc: () => ref }),
+      runTransaction: async (callback) => callback({
+        get: async () => ({ exists: true, data: () => ({ ...state }) }),
+        update: (_ref, patch) => Object.assign(state, patch),
+      }),
+    };
+    const actor = {
+      uid: "printer",
+      name: "Printer",
+      email: "printer@test.local",
+      canAccessPrintshop: true,
+    };
+    const fieldValue = { serverTimestamp: () => "timestamp" };
+    await verifyFinishedInventoryOutput(
+      db,
+      { movementId: "output-1", status: "not_uploaded", notes: "Pendiente" },
+      actor,
+      fieldValue
+    );
+    assert.equal(state.externalInventoryStatus, "not_uploaded");
+    assert.equal(state.externalInventoryVerifiedByUid, "printer");
+    await verifyFinishedInventoryOutput(
+      db,
+      { movementId: "output-1", status: "uploaded", uploadedAt: "2026-08-03" },
+      actor,
+      fieldValue
+    );
+    assert.equal(state.externalInventoryStatus, "uploaded");
+    assert.equal(state.externalInventoryUploadedAt instanceof Date, true);
+    await assert.rejects(() => verifyFinishedInventoryOutput(
+      db,
+      { movementId: "output-1", status: "uploaded", uploadedAt: "2026-08-03" },
+      { uid: "sales" },
       fieldValue
     ), /acceso a Imprenta/);
   });

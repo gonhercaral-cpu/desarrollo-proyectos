@@ -739,14 +739,40 @@ describe("catálogo de productos de Imprenta", () => {
     ));
   });
 
-  it("reserva edición y administración del catálogo al administrador", async () => {
-    await assertFails(updateDoc(doc(auth("printer"), "printProducts", "book-1"), {
-      name: "Cambio no autorizado",
+  it("permite edición operativa a Imprenta y reserva estado/eliminación al administrador", async () => {
+    await assertSucceeds(updateDoc(doc(auth("printer"), "printProducts", "book-1"), {
+      name: "Journey A1 operativo",
+      description: "Descripción actualizada por Imprenta.",
+      imageUrl: "https://example.test/journey-a1.jpg",
+      productionRecipe: [{
+        id: "recipe-1",
+        supplyId: "paper-1",
+        supplyName: "Papel",
+        quantityPerUnit: 40,
+        unit: "Hoja",
+        notes: "",
+        active: true,
+      }],
       updatedAt: Timestamp.now(),
       updatedByUid: "printer",
       updatedByName: "Printer",
       updatedByEmail: "printer@test.local",
     }));
+    await assertFails(updateDoc(doc(auth("printer"), "printProducts", "book-1"), {
+      active: false,
+      updatedAt: Timestamp.now(),
+      updatedByUid: "printer",
+      updatedByName: "Printer",
+      updatedByEmail: "printer@test.local",
+    }));
+    await assertFails(updateDoc(doc(auth("collab"), "printProducts", "book-1"), {
+      name: "Cambio sin acceso",
+      updatedAt: Timestamp.now(),
+      updatedByUid: "collab",
+      updatedByName: "Collaborator",
+      updatedByEmail: "collab@test.local",
+    }));
+    await assertFails(deleteDoc(doc(auth("printer"), "printProducts", "book-1")));
     await assertSucceeds(updateDoc(doc(auth("admin"), "printProducts", "book-1"), {
       name: "Journey A1 actualizado",
       updatedAt: Timestamp.now(),
@@ -782,13 +808,13 @@ describe("lotes de producción", () => {
     ));
   });
 
-  it("permite al administrador crear y editar datos manuales", async () => {
+  it("permite al administrador crear y exige Function para editar", async () => {
     const db = auth("admin");
     await assertSucceeds(setDoc(
       doc(db, "printProductionBatches", "batch-manual"),
       validProductionBatch({ folio: "LOT-2026-002", plannedQuantity: 12 })
     ));
-    await assertSucceeds(updateDoc(doc(db, "printProductionBatches", "batch-manual"), {
+    await assertFails(updateDoc(doc(db, "printProductionBatches", "batch-manual"), {
       plannedQuantity: 15,
       dueDate: "2026-07-28",
       updatedAt: Timestamp.now(),
@@ -798,9 +824,9 @@ describe("lotes de producción", () => {
     }));
   });
 
-  it("limita responsable a cantidad producida y transición ordenada", async () => {
+  it("reserva avance e historial a Cloud Functions", async () => {
     const batchRef = doc(auth("printer"), "printProductionBatches", "batch-1");
-    await assertSucceeds(updateDoc(batchRef, {
+    await assertFails(updateDoc(batchRef, {
       status: "En impresión",
       producedQuantity: 5,
       updatedAt: Timestamp.now(),
@@ -824,7 +850,7 @@ describe("lotes de producción", () => {
     }));
   });
 
-  it("limita auditor a revisión en curso y reserva cierre al servidor", async () => {
+  it("reserva revisión y cierre al servidor", async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       await updateDoc(doc(context.firestore(), "printProductionBatches", "batch-1"), {
         status: "En revisión de calidad",
@@ -833,7 +859,7 @@ describe("lotes de producción", () => {
       });
     });
     const batchRef = doc(auth("auditor"), "printProductionBatches", "batch-1");
-    await assertSucceeds(updateDoc(batchRef, {
+    await assertFails(updateDoc(batchRef, {
       qualityStatus: "En revisión",
       updatedAt: Timestamp.now(),
       updatedByUid: "auditor",
@@ -919,6 +945,34 @@ describe("lotes de producción", () => {
     });
     await assertSucceeds(getDoc(doc(auth("admin"), "printProductionReplenishment", "book-1")));
     await assertFails(getDoc(doc(auth("printer"), "printProductionReplenishment", "book-1")));
+  });
+
+  it("expone historial de lote solo a usuarios de Imprenta", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(
+        context.firestore(),
+        "printProductionBatches",
+        "batch-1",
+        "history",
+        "event-1"
+      ), {
+        type: "stage_changed",
+        performedAt: Timestamp.now(),
+        performedByUid: "printer",
+      });
+    });
+    await assertSucceeds(getDocs(collection(
+      auth("printer"),
+      "printProductionBatches",
+      "batch-1",
+      "history"
+    )));
+    await assertFails(getDocs(collection(
+      auth("collab"),
+      "printProductionBatches",
+      "batch-1",
+      "history"
+    )));
   });
 
   it("permite consultar inventario a Imprenta pero bloquea salidas directas", async () => {

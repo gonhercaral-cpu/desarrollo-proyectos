@@ -38,7 +38,9 @@ const {
   reconcileProductReplenishment,
   reviewProductionBatchQuality,
   saveProductionBatchAdminChanges,
+  transferProductionBatchAssignment,
   updateProductionBatchProgress,
+  verifyFinishedInventoryOutput,
 } = require("./productionBatches");
 
 initializeApp();
@@ -538,6 +540,36 @@ exports.updateProductionBatchProgress = onCall(
   }
 );
 
+exports.transferProductionBatchAssignment = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const actor = await getActiveBatchActor(request);
+      const batchId = cleanString(request.data?.batchId);
+      const role = cleanString(request.data?.role);
+      const reason = cleanString(request.data?.reason);
+      if (!batchId || !role) {
+        throw new HttpsError("invalid-argument", "Faltan lote o tipo de responsabilidad.");
+      }
+      return await transferProductionBatchAssignment(
+        db,
+        batchId,
+        role,
+        reason,
+        actor,
+        FieldValue
+      );
+    } catch (error) {
+      console.error("[production-batches] No se pudo transferir responsabilidad", error);
+      throwBatchHttpsError(error, "No se pudo transferir la responsabilidad del lote.");
+    }
+  }
+);
+
 exports.saveProductionBatchAdminChanges = onCall(
   {
     region: "us-central1",
@@ -597,6 +629,23 @@ exports.registerFinishedInventoryOutput = onCall(
     } catch (error) {
       console.error("[print-inventory] No se pudo registrar salida", error);
       throwBatchHttpsError(error, "No se pudo registrar la salida de inventario.");
+    }
+  }
+);
+
+exports.verifyFinishedInventoryOutput = onCall(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 60,
+  },
+  async (request) => {
+    try {
+      const actor = await getActiveBatchActor(request);
+      return await verifyFinishedInventoryOutput(db, request.data || {}, actor, FieldValue);
+    } catch (error) {
+      console.error("[print-inventory] No se pudo verificar salida en Active", error);
+      throwBatchHttpsError(error, "No se pudo guardar la verificación en Active.");
     }
   }
 );
