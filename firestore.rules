@@ -846,9 +846,16 @@ service cloud.firestore {
     function validNotificationReadUpdate() {
       return hasProfile()
         && resource.data.recipientId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read", "readAt"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "read",
+          "readAt",
+          "acknowledged",
+          "acknowledgedAt",
+          "updatedAt"
+        ])
         && request.resource.data.read == true
-        && request.resource.data.readAt is timestamp;
+        && request.resource.data.readAt is timestamp
+        && request.resource.data.get("acknowledged", true) == true;
     }
 
     function validInternalNoteCreate() {
@@ -3087,7 +3094,8 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow get, list: if hasProfile() && resource.data.recipientId == request.auth.uid;
 
-      allow create: if validNotificationCreate();
+      // Las notificaciones operativas solo se crean desde Cloud Functions.
+      allow create: if false;
 
       allow update: if validNotificationReadUpdate();
 
@@ -3727,6 +3735,33 @@ service cloud.firestore {
       allow create, update: if canManageTechnicalSupport();
 
       allow delete: if isAdmin();
+    }
+
+    match /supportTools/{toolId} {
+      allow read: if canAccessTechnicalSupport();
+
+      // Altas y cambios pasan por Functions: folios, historial y transacciones
+      // no pueden ser omitidos mediante escrituras directas del cliente.
+      allow create, update, delete: if false;
+
+      match /movements/{movementId} {
+        allow read: if canAccessTechnicalSupport();
+        allow write: if false;
+      }
+
+      match /maintenance/{maintenanceId} {
+        allow read: if canAccessTechnicalSupport();
+        allow write: if false;
+      }
+
+      match /history/{historyId} {
+        allow read: if canAccessTechnicalSupport();
+        allow write: if false;
+      }
+    }
+
+    match /supportCounters/{counterId} {
+      allow read, write: if false;
     }
 
     match /technicalAssetLogs/{logId} {

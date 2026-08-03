@@ -1,4 +1,8 @@
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const {
+  onDocumentCreatedWithAuthContext,
+  onDocumentWritten,
+  onDocumentWrittenWithAuthContext,
+} = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
@@ -42,6 +46,24 @@ const {
   updateProductionBatchProgress,
   verifyFinishedInventoryOutput,
 } = require("./productionBatches");
+const {
+  createEditorialNotificationsFromCallable,
+  handlePrintRequestNotificationWrite,
+  handleProductionBatchNotificationWrite,
+  handleProjectCommentCreated,
+  handleProjectNotificationWrite,
+} = require("./operationalNotifications");
+const {
+  completeSupportToolMaintenance,
+  createSupportTool,
+  getSupportToolActor,
+  loanSupportTool,
+  recordSupportToolLabelPrint,
+  retireSupportTool,
+  returnSupportTool,
+  startSupportToolMaintenance,
+  updateSupportTool,
+} = require("./supportTools");
 
 initializeApp();
 
@@ -66,6 +88,119 @@ const certificatePersonHandlers = createCertificatePersonHandlers({
   bucket: storageBucket,
   logger,
 });
+
+exports.notifyProjectOperationalChanges = onDocumentWrittenWithAuthContext(
+  { document: "projects/{projectId}", region: "us-central1", retry: false },
+  async (event) => handleProjectNotificationWrite(db, FieldValue, event)
+);
+
+exports.notifyProjectComment = onDocumentCreatedWithAuthContext(
+  { document: "projectComments/{commentId}", region: "us-central1", retry: false },
+  async (event) => handleProjectCommentCreated(db, FieldValue, event)
+);
+
+exports.notifyPrintRequestOperationalChanges = onDocumentWrittenWithAuthContext(
+  { document: "printRequests/{requestId}", region: "us-central1", retry: false },
+  async (event) => handlePrintRequestNotificationWrite(db, FieldValue, event)
+);
+
+exports.notifyProductionBatchOperationalChanges = onDocumentWrittenWithAuthContext(
+  { document: "printProductionBatches/{batchId}", region: "us-central1", retry: false },
+  async (event) => handleProductionBatchNotificationWrite(db, FieldValue, event)
+);
+
+exports.createEditorialNotifications = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Inicia sesión para continuar.");
+    try {
+      return await createEditorialNotificationsFromCallable(
+        db,
+        FieldValue,
+        request.data || {},
+        request.auth.uid
+      );
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("permission-denied", error?.message || "No se pudo crear la notificación editorial.");
+    }
+  }
+);
+
+async function runSupportToolOperation(request, operation) {
+  const actor = await getSupportToolActor(db, request.auth?.uid);
+  return operation(request.data || {}, actor);
+}
+
+function getRequiredSupportToolId(data = {}) {
+  const toolId = String(data.toolId || "").trim();
+  if (!toolId) throw new HttpsError("invalid-argument", "Falta identificador de herramienta.");
+  return toolId;
+}
+
+exports.createSupportTool = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => createSupportTool(db, data, actor, FieldValue)
+  )
+);
+
+exports.updateSupportTool = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => updateSupportTool(db, getRequiredSupportToolId(data), data, actor, FieldValue)
+  )
+);
+
+exports.loanSupportTool = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => loanSupportTool(db, getRequiredSupportToolId(data), data, actor, FieldValue)
+  )
+);
+
+exports.returnSupportTool = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => returnSupportTool(db, getRequiredSupportToolId(data), data, actor, FieldValue)
+  )
+);
+
+exports.startSupportToolMaintenance = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => startSupportToolMaintenance(db, getRequiredSupportToolId(data), data, actor, FieldValue)
+  )
+);
+
+exports.completeSupportToolMaintenance = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => completeSupportToolMaintenance(db, getRequiredSupportToolId(data), data, actor, FieldValue)
+  )
+);
+
+exports.retireSupportTool = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => retireSupportTool(db, getRequiredSupportToolId(data), data.reason, actor, FieldValue)
+  )
+);
+
+exports.recordSupportToolLabelPrint = onCall(
+  { region: "us-central1", cors: true, timeoutSeconds: 60 },
+  async (request) => runSupportToolOperation(
+    request,
+    (data, actor) => recordSupportToolLabelPrint(db, getRequiredSupportToolId(data), actor, FieldValue)
+  )
+);
 
 const CERTIFICATE_PERSON_ERROR_MESSAGES = {
   addCertificatePerson: "No fue posible agregar la persona al certificado.",

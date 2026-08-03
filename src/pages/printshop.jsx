@@ -25,6 +25,7 @@ import {
 } from "firebase/firestore";
 import { deleteObject, getBytes, getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, storage } from "../services/firebase";
+import { markEntityNotificationsRead } from "../services/notificationsService";
 import { useAuth } from "../context/AuthContext";
 import { buildCertificateStatistics, CERTIFICATE_QUICK_RANGES } from "../services/certificateStats";
 import {
@@ -4170,7 +4171,7 @@ function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
   return resolvePrintRequestMemberRole(actor?.uid, request, isAdminUser);
 }
 
-export default function PrintShop() {
+export default function PrintShop({ operationalNotifications = [] }) {
   const { user, profile, isAdmin } = useAuth();
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin)
     && profile?.active !== false;
@@ -4180,10 +4181,26 @@ export default function PrintShop() {
     canProfileGeneratePrintshopReport(profile, isAdmin) && profile?.active !== false;
   const canViewCertificateStatistics =
     isAdmin || getProfileDepartmentNames(profile).includes("imprenta");
+  const printingNotifications = (Array.isArray(operationalNotifications) ? operationalNotifications : [])
+    .filter((notification) => notification.module === "printing");
+  const unreadPrintingNotifications = printingNotifications.filter((notification) => notification.read !== true);
+  const requestNotificationIds = new Set(unreadPrintingNotifications
+    .filter((notification) => notification.entityType === "printRequest")
+    .map((notification) => notification.entityId));
+  const batchNotificationIds = new Set(unreadPrintingNotifications
+    .filter((notification) => ["productionBatch", "qualityAudit"].includes(notification.entityType))
+    .map((notification) => notification.entityId));
+  const qualityAuditNotificationIds = new Set(unreadPrintingNotifications
+    .filter((notification) => notification.entityType === "qualityAudit")
+    .map((notification) => notification.entityId));
   const assignmentRepairStartedRef = useRef(false);
   const automaticBatchRepairStartedRef = useRef(false);
 
-  const [activeSection, setActiveSection] = useState("dashboard");
+  const [activeSection, setActiveSection] = useState(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const requestedTab = new URLSearchParams(window.location.search).get("printTab");
+    return ["requests", "batches"].includes(requestedTab) ? requestedTab : "dashboard";
+  });
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState("");
@@ -4342,6 +4359,21 @@ export default function PrintShop() {
   const [printshopLogSearch, setPrintshopLogSearch] = useState("");
   const [printshopLogModuleFilter, setPrintshopLogModuleFilter] = useState("Todos");
   const [printshopLogTypeFilter, setPrintshopLogTypeFilter] = useState("Todos");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const requestId = params.get("requestId");
+    const batchId = params.get("batchId");
+    if (requestId && !selectedRequestId) {
+      const request = printRequests.find((item) => item.id === requestId);
+      if (request) selectRequest(request);
+    }
+    if (batchId && !selectedBatchId) {
+      const batch = productionBatches.find((item) => item.id === batchId);
+      if (batch) selectBatch(batch);
+    }
+  }, [printRequests, productionBatches, selectedRequestId, selectedBatchId]);
 
   useEffect(() => {
     setStudentName("");
@@ -7409,6 +7441,7 @@ export default function PrintShop() {
   }
 
   function selectRequest(request) {
+    markEntityNotificationsRead(getAuditUser().uid, "printRequest", request.id).catch(() => undefined);
     const normalizedAssignments = normalizePrintRequestAssignments(request);
     const assignedUser = activeUsers.find((person) => getUserUid(person) === normalizedAssignments.assignedUserId);
     const supportUser = activeUsers.find((person) => getUserUid(person) === normalizedAssignments.supportUserId);
@@ -10976,6 +11009,10 @@ export default function PrintShop() {
   }
 
   function selectBatch(batch) {
+    Promise.all([
+      markEntityNotificationsRead(getAuditUser().uid, "productionBatch", batch.id),
+      markEntityNotificationsRead(getAuditUser().uid, "qualityAudit", batch.id),
+    ]).catch(() => undefined);
     setSelectedBatchId(batch.id);
     setBatchHistory([]);
     setBatchMessage("");
@@ -11502,6 +11539,16 @@ export default function PrintShop() {
               <PrintshopIcon name={tab.icon} />
             </span>
             {tab.label}
+            {tab.key === "requests" && requestNotificationIds.size > 0 && (
+              <b className="printshop-tab-notification-badge" aria-label={`${requestNotificationIds.size} solicitudes con novedades`}>
+                {requestNotificationIds.size}
+              </b>
+            )}
+            {tab.key === "batches" && batchNotificationIds.size > 0 && (
+              <b className="printshop-tab-notification-badge" aria-label={`${batchNotificationIds.size} lotes con novedades`}>
+                {batchNotificationIds.size}
+              </b>
+            )}
           </button>
         ))}
       </section>
@@ -11705,6 +11752,7 @@ export default function PrintShop() {
           isAdmin={isAdmin}
           currentUserUid={getAuditUser().uid}
           currentUserEmail={getAuditUser().email}
+          notificationEntityIds={requestNotificationIds}
           onRequestInputChange={handleRequestInputChange}
           onRequestNumberInputChange={handleRequestNumberInputChange}
           onSavePrintRequest={savePrintRequest}
@@ -12053,6 +12101,8 @@ export default function PrintShop() {
           currentUserUid={getAuditUser().uid}
           currentUserName={getAuditUser().name}
           currentUserEmail={getAuditUser().email}
+          notificationEntityIds={batchNotificationIds}
+          qualityAuditNotificationIds={qualityAuditNotificationIds}
           activeUsers={activeUsers}
           loadingUsers={loadingUsers}
           usersError={usersError}
@@ -13051,6 +13101,8 @@ function ProductionBatchesView({
   currentUserUid,
   currentUserName,
   currentUserEmail,
+  notificationEntityIds = new Set(),
+  qualityAuditNotificationIds = new Set(),
   activeUsers,
   loadingUsers,
   usersError,
@@ -13153,6 +13205,8 @@ function ProductionBatchesView({
   const [takeoverError, setTakeoverError] = useState("");
   const [batchSearchTerm, setBatchSearchTerm] = useState("");
   const [batchStatusFilter, setBatchStatusFilter] = useState("Todos");
+  const [onlyMyBatches, setOnlyMyBatches] = useState(false);
+  const [onlyBatchNews, setOnlyBatchNews] = useState(false);
 
   async function confirmTakeover(event) {
     event.preventDefault();
@@ -13194,10 +13248,16 @@ function ProductionBatchesView({
         (batchStatusFilter === "Cancelados" && normalizedStatus === BATCH_STATUS.CANCELLED) ||
         normalizedStatus === batchStatusFilter;
       const matchesPeriod = isBatchInsideRange(batch, batchSummaryFrom, batchSummaryTo);
+      const matchesAssignment = !onlyMyBatches || matchesCurrentUser(
+        batch.responsibleUid,
+        batch.responsibleEmail,
+        batch.responsibleName || batch.responsible
+      ) || matchesCurrentUser(batch.auditorUid, batch.auditorEmail, batch.auditorName);
+      const matchesNews = !onlyBatchNews || notificationEntityIds.has(batch.id);
 
-      return matchesSearch && matchesStatus && matchesPeriod;
+      return matchesSearch && matchesStatus && matchesPeriod && matchesAssignment && matchesNews;
     });
-  }, [productionBatches, batchSearchTerm, batchStatusFilter, batchSummaryFrom, batchSummaryTo]);
+  }, [productionBatches, batchSearchTerm, batchStatusFilter, batchSummaryFrom, batchSummaryTo, onlyMyBatches, onlyBatchNews, notificationEntityIds]);
 
   function openBatchFocus(batch = null) {
     // La creación de lotes (sin lote seleccionado) es exclusiva de administradores.
@@ -13237,6 +13297,8 @@ function ProductionBatchesView({
   function resetBatchFilters() {
     setBatchSearchTerm("");
     setBatchStatusFilter("Todos");
+    setOnlyMyBatches(false);
+    setOnlyBatchNews(false);
     onBatchSummaryFromChange("");
     onBatchSummaryToChange("");
   }
@@ -13426,6 +13488,14 @@ function ProductionBatchesView({
                 Limpiar filtros
               </button>
             </div>
+            <div className="printshop-notification-filters" aria-label="Filtros operativos de lotes">
+              <button type="button" className={onlyMyBatches ? "active" : ""} onClick={() => setOnlyMyBatches((current) => !current)}>
+                Asignados a mí
+              </button>
+              <button type="button" className={onlyBatchNews ? "active" : ""} onClick={() => setOnlyBatchNews((current) => !current)}>
+                Con novedades {notificationEntityIds.size > 0 ? `(${notificationEntityIds.size})` : ""}
+              </button>
+            </div>
 
             {loadingBatches ? (
               <div className="printshop-empty-catalog">
@@ -13486,10 +13556,15 @@ function ProductionBatchesView({
                       return (
                         <tr
                           key={batch.id}
-                          className={selectedBatchId === batch.id ? "selected-product-row" : ""}
+                          className={`${selectedBatchId === batch.id ? "selected-product-row" : ""} ${notificationEntityIds.has(batch.id) ? "printshop-row-has-notification" : ""}`.trim()}
                         >
                           <td className="batch-folio-cell">
                             <strong>{batch.folio}</strong>
+                            {notificationEntityIds.has(batch.id) && (
+                              <span className="printshop-new-indicator">
+                                {qualityAuditNotificationIds.has(batch.id) ? "Novedad de auditoría" : "Novedad de producción"}
+                              </span>
+                            )}
                           </td>
                           <td className="batch-product-cell">
                             <strong>{batch.productName}</strong>
@@ -16594,6 +16669,7 @@ function PrintRequestsView({
   isAdmin,
   currentUserUid,
   currentUserEmail,
+  notificationEntityIds = new Set(),
   onRequestInputChange,
   onRequestNumberInputChange,
   onSavePrintRequest,
@@ -16661,15 +16737,23 @@ function PrintRequestsView({
   const [requestEditOpen, setRequestEditOpen] = useState(false);
   const [requestPageSize, setRequestPageSize] = useState(5);
   const [requestPage, setRequestPage] = useState(1);
+  const [onlyAssignedToMe, setOnlyAssignedToMe] = useState(false);
+  const [onlyWithNews, setOnlyWithNews] = useState(false);
 
-  const requestTotalPages = Math.max(1, Math.ceil(filteredRequests.length / requestPageSize));
+  const operationalFilteredRequests = filteredRequests.filter((request) => {
+    const assigned = getPrintRequestMemberRole(request, { uid: currentUserUid }, isAdmin) !== "viewer";
+    if (onlyAssignedToMe && !assigned) return false;
+    if (onlyWithNews && !notificationEntityIds.has(request.id)) return false;
+    return true;
+  });
+  const requestTotalPages = Math.max(1, Math.ceil(operationalFilteredRequests.length / requestPageSize));
   const normalizedRequestPage = Math.min(requestPage, requestTotalPages);
-  const requestPageStartIndex = filteredRequests.length === 0 ? 0 : (normalizedRequestPage - 1) * requestPageSize;
-  const visibleRequests = filteredRequests.slice(requestPageStartIndex, requestPageStartIndex + requestPageSize);
+  const requestPageStartIndex = operationalFilteredRequests.length === 0 ? 0 : (normalizedRequestPage - 1) * requestPageSize;
+  const visibleRequests = operationalFilteredRequests.slice(requestPageStartIndex, requestPageStartIndex + requestPageSize);
   const requestPageEndIndex = requestPageStartIndex + visibleRequests.length;
   const requestPageOptions = [5, 10, 20];
 
-  const previewRequest = selectedRequest || visibleRequests[0] || filteredRequests[0] || null;
+  const previewRequest = selectedRequest || visibleRequests[0] || operationalFilteredRequests[0] || null;
   const previewRequestId = selectedRequestId || previewRequest?.id || "";
 
   useEffect(() => {
@@ -16787,7 +16871,7 @@ function PrintRequestsView({
                 <h2>Solicitudes registradas</h2>
               </div>
               <div className="request-list-count-control">
-                <span>{filteredRequests.length} visibles</span>
+                <span>{operationalFilteredRequests.length} visibles</span>
                 <label>
                   <span>Ver</span>
                   <select
@@ -16908,13 +16992,22 @@ function PrintRequestsView({
               )}
             </div>
 
+            <div className="printshop-notification-filters" aria-label="Filtros operativos de solicitudes">
+              <button type="button" className={onlyAssignedToMe ? "active" : ""} onClick={() => setOnlyAssignedToMe((current) => !current)}>
+                Asignadas a mí
+              </button>
+              <button type="button" className={onlyWithNews ? "active" : ""} onClick={() => setOnlyWithNews((current) => !current)}>
+                Con novedades {notificationEntityIds.size > 0 ? `(${notificationEntityIds.size})` : ""}
+              </button>
+            </div>
+
             {requestsError && <div className="form-error">{requestsError}</div>}
 
             {loadingRequests ? (
               <div className="empty-state small">
                 <p>Cargando solicitudes de imprenta...</p>
               </div>
-            ) : filteredRequests.length === 0 ? (
+            ) : operationalFilteredRequests.length === 0 ? (
               <div className="empty-state small">
                 <div><PrintshopIcon name="requests" /></div>
                 <p>No hay solicitudes con los filtros seleccionados.</p>
@@ -16945,7 +17038,7 @@ function PrintRequestsView({
                         return (
                           <tr
                             key={request.id}
-                            className={`${isActiveRow ? "selected-user-row request-selected-row" : ""} ${getPriorityClassName(request.priority)}`}
+                            className={`${isActiveRow ? "selected-user-row request-selected-row" : ""} ${getPriorityClassName(request.priority)} ${notificationEntityIds.has(request.id) ? "printshop-row-has-notification" : ""}`}
                             onClick={() => handlePreviewRequest(request)}
                           >
                             <td className="request-table-folio-cell">
@@ -16955,6 +17048,7 @@ function PrintRequestsView({
                               <small title={request.requestType || "Solicitud"}>
                                 {request.requestType || "Solicitud"}
                               </small>
+                              {notificationEntityIds.has(request.id) && <span className="printshop-new-indicator">Nueva asignación</span>}
                             </td>
                             <td className="request-table-product-cell">
                               <strong title={getRequestProductLabel(request)}>
@@ -17046,7 +17140,7 @@ function PrintRequestsView({
 
                 <div className="request-table-footer-redesign">
                   <span>
-                    Mostrando {filteredRequests.length === 0 ? "0" : `${requestPageStartIndex + 1} a ${requestPageEndIndex}`} de {filteredRequests.length} solicitudes
+                    Mostrando {operationalFilteredRequests.length === 0 ? "0" : `${requestPageStartIndex + 1} a ${requestPageEndIndex}`} de {operationalFilteredRequests.length} solicitudes
                   </span>
                   <div>
                     <button

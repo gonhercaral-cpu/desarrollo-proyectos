@@ -3085,6 +3085,18 @@ html[data-theme="dark"] .main-content .request-detail-redesign-card .certificate
   border-color: transparent !important;
 }
 
+html[data-theme="dark"] :is(.support-tools-workspace,.printshop-page) :is(.tool-kpi,.support-tools-filters,.support-tool-card,.support-tool-form-grid input,.support-tool-form-grid select,.support-tool-form-grid textarea,.printshop-notification-filters button) { color: #dce8f7; border-color: #31465f; background: #17283c; }
+html[data-theme="dark"] :is(.support-tool-card-copy h3,.tool-kpi strong) { color: #edf6ff; }
+html[data-theme="dark"] :is(.support-tool-card-copy p,.support-tool-card-copy small,.tool-kpi span) { color: #9eb0c6; }
+html[data-theme="dark"] .support-tool-image { background: #20344b; }
+html[data-theme="dark"] :is(.support-tool-timeline li,.support-tool-record) { background: #20344b; }
+html[data-theme="dark"] .printshop-row-has-notification { background: #1b3048 !important; }
+html[data-theme="dark"] .operational-notification-toast { color: #eaf3ff; border-color: #31465f; background: #17283c; }
+html[data-theme="dark"] .operational-notification-toast p { color: #b5c4d7; }
+html[data-theme="dark"] .technical-modal { color: #e8f1fc; border-color: #31465f; background: #17283c; }
+html[data-theme="dark"] .technical-modal > :is(header,footer) { border-color: #31465f; background: #17283c; }
+html[data-theme="dark"] .technical-modal > header button { color: #d8e5f4; background: #263a51; }
+
 html[data-theme="dark"] .main-content .certificate-generator-preview-panel .certificate-preview-viewport {
   background: #17243a;
   box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);

@@ -7,6 +7,14 @@
   gap: 18px;
 }
 
+.operational-notification-toasts { position: fixed; z-index: 1200; top: 82px; right: 18px; display: grid; gap: 10px; width: min(390px, calc(100vw - 28px)); pointer-events: none; }
+.operational-notification-toast { position: relative; display: grid; grid-template-columns: 38px 1fr; gap: 10px; padding: 14px 42px 14px 14px; border: 1px solid #d6e4f3; border-left: 4px solid #2587df; border-radius: 14px; background: #fff; box-shadow: 0 16px 40px rgb(22 57 96 / 20%); animation: operational-toast-in .22s ease-out; pointer-events: auto; }
+.operational-notification-toast.priority-high,.operational-notification-toast.priority-urgent { border-left-color: #e53245; }.operational-notification-toast strong,.operational-notification-toast p,.operational-notification-toast small { display: block; margin: 0; }.operational-notification-toast p { margin: 3px 0; color: #4e6076; font-size: .82rem; }.operational-notification-toast small { color: #7b8797; }.operational-notification-toast .toast-close-button { position: absolute; top: 7px; right: 8px; border: 0; color: #6b7a8e; background: transparent; font-size: 1.15rem; cursor: pointer; }
+.notification-sound-toggle { display: inline-flex; align-items: center; gap: 7px; margin-left: 8px; color: #5b6c81; font-size: .78rem; }.notification-sound-toggle input { accent-color: #0f67c9; }
+.notification-day-group { display: grid; gap: 2px; }.notification-day-group > h4 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 8px 12px 5px; color: #6c7d91; background: inherit; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }.notification-actor-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+@keyframes operational-toast-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+@media (max-width: 700px) { .operational-notification-toasts { top: auto; right: 12px; bottom: 12px; width: calc(100vw - 24px); } }
+
 .purchase-page-header {
   margin-bottom: 2px;
 }

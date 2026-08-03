@@ -3587,6 +3587,13 @@
   font-weight: 800;
 }
 
+.printshop-tab-notification-badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 6px; padding: 0 5px; border-radius: 999px; color: #fff; background: #e53245; font-size: .68rem; line-height: 1; }
+.printshop-notification-filters { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }
+.printshop-notification-filters button { min-height: 34px; padding: 6px 11px; border: 1px solid #cbd8e8; border-radius: 999px; color: #47617d; background: #fff; font-size: .76rem; font-weight: 750; cursor: pointer; }
+.printshop-notification-filters button.active { color: #fff; border-color: #0f67c9; background: #0f67c9; }
+.printshop-row-has-notification { box-shadow: inset 4px 0 #2587df; background: #f3f8ff !important; }
+.printshop-new-indicator { display: inline-block; margin: 4px 0 0 6px; padding: 3px 7px; border-radius: 999px; color: #075a9e; background: #dceeff; font-size: .65rem; font-weight: 800; }
+
 .request-student-name-editor {
   display: grid;
   gap: 0.45rem;

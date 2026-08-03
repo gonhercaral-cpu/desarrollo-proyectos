@@ -13,10 +13,7 @@ function getNotificationMillis(value) {
 
 export function buildUnreadActivityByProject(notifications = []) {
   return notifications.reduce((activityByProject, notification) => {
-    const projectId =
-      typeof notification?.projectId === "string"
-        ? notification.projectId.trim()
-        : "";
+    const projectId = String(notification?.entityId || notification?.projectId || "").trim();
 
     if (!projectId || notification.read === true) return activityByProject;
 
@@ -32,7 +29,7 @@ export function buildUnreadActivityByProject(notifications = []) {
       count: current.count + 1,
       hasNewComments:
         current.hasNewComments ||
-        String(notification.tipo || "").includes("COMMENT"),
+        String(notification.type || notification.tipo || "").toLowerCase().includes("comment"),
       latestActivityAt:
         notificationMillis >= currentMillis
           ? notification.createdAt || current.latestActivityAt

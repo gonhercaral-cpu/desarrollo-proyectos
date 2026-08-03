@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useAuth } from "../context/AuthContext";
+import SupportToolsPanel from "../components/support/SupportToolsPanel";
 import {
   createTechnicalAsset,
   createTechnicalAssetMovement,
@@ -511,6 +512,7 @@ const TECHNICAL_TABS = [
   { id: "resumen", label: "Resumen", icon: "dashboard" },
   { id: "mantenimientos", label: "Mantenimientos", icon: "maintenance" },
   { id: "equipos", label: "Equipos", icon: "devices" },
+  { id: "herramientas", label: "Herramientas", icon: "tools" },
   { id: "recambios", label: "Recambios", icon: "spares" },
   { id: "instalaciones", label: "Instalaciones", icon: "installations" },
   { id: "ubicaciones-tecnicas", label: "Ubicaciones técnicas", icon: "locations" },
@@ -901,6 +903,8 @@ export default function TechnicalSupport() {
     if (typeof window === "undefined") {
       return "resumen";
     }
+
+    if (getToolIdFromCurrentUrl()) return "herramientas";
 
     const storedTab = localStorage.getItem("technicalSupportActiveTab");
     const canRestoreTab = TECHNICAL_TABS.some(
@@ -12098,6 +12102,13 @@ function closeCompletionForm(options = {}) {
 
       {!focusedSupportViewActive && activeTab === "recambios" && renderSparePartsPanel()}
 
+      {!focusedSupportViewActive && activeTab === "herramientas" && (
+        <SupportToolsPanel
+          isAdmin={String(profile?.role || "").trim().toLowerCase() === "admin"}
+          requestedToolId={getToolIdFromCurrentUrl()}
+        />
+      )}
+
       {!focusedSupportViewActive && activeTab === "instalaciones" && renderInstallationsPanel()}
 
       {!focusedSupportViewActive && activeTab === "equipos" && (
@@ -12575,6 +12586,13 @@ function TechnicalTabIcon({ name }) {
         <path d="M19 15h3" />
       </>
     ),
+    tools: (
+      <>
+        <path d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5" />
+        <path d="M15 5l4 4" />
+        <path d="M17 3l4 4" />
+      </>
+    ),
     installations: (
       <>
         <rect x="4" y="5" width="16" height="14" rx="2" />
@@ -12998,6 +13016,17 @@ function getAssetIdFromCurrentUrl() {
     hashParams.get("technicalAssetId") ||
     ""
   );
+}
+
+function getToolIdFromCurrentUrl() {
+  if (typeof window === "undefined") return "";
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashQuery = String(window.location.hash || "").includes("?")
+    ? String(window.location.hash).split("?").slice(1).join("?")
+    : "";
+  const hashParams = new URLSearchParams(hashQuery);
+
+  return searchParams.get("toolId") || hashParams.get("toolId") || "";
 }
 
 function hasStatusChange(log) {

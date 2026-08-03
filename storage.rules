@@ -409,6 +409,16 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(png|jpeg|webp)');
     }
 
+    function validSupportToolFile() {
+      return (
+          request.resource.contentType.matches('image/(jpeg|png|webp)')
+          && request.resource.size < 8 * 1024 * 1024
+        ) || (
+          request.resource.contentType == 'application/pdf'
+          && request.resource.size < 10 * 1024 * 1024
+        );
+    }
+
     function validSupplyProductImage() {
       return request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType == "image/webp";
@@ -718,6 +728,16 @@ service firebase.storage {
         && validCertificateTemplateImage();
 
       allow delete: if isAdmin();
+    }
+
+    /* Fotografías y comprobantes del inventario de herramientas. */
+    match /support/tools/{toolId}/{category}/{fileName} {
+      allow read: if canAccessTechnicalSupport();
+
+      allow create, update: if canAccessTechnicalSupport()
+        && validSupportToolFile();
+
+      allow delete: if canAccessTechnicalSupport();
     }
 
     /*

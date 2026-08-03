@@ -43,7 +43,7 @@ function MyProjectsTrashIcon({ className = "" }) {
   );
 }
 
-export default function MyProjects({ onOpenProject }) {
+export default function MyProjects({ onOpenProject, operationalNotifications = null }) {
   const { profile, currentUser, firebaseUser, isAdmin } = useAuth();
 
   const [assignedProjects, setAssignedProjects] = useState([]);
@@ -131,6 +131,7 @@ export default function MyProjects({ onOpenProject }) {
   ]);
 
   useEffect(() => {
+    if (Array.isArray(operationalNotifications)) return undefined;
     const userId = getUserId();
 
     if (!userId) {
@@ -139,30 +140,38 @@ export default function MyProjects({ onOpenProject }) {
     }
 
     return subscribeToUserNotifications(userId, setNotifications);
-  }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id]);
+  }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id, operationalNotifications]);
 
   useEffect(() => {
+    if (Array.isArray(operationalNotifications)) return undefined;
     const userId = getUserId();
 
     return subscribeToUnreadProjectNotifications(
       userId,
       setUnreadProjectNotifications
     );
-  }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id]);
+  }, [currentUser?.uid, firebaseUser?.uid, profile?.uid, profile?.id, operationalNotifications]);
+
+  const effectiveNotifications = Array.isArray(operationalNotifications)
+    ? operationalNotifications.filter((notification) => notification.module === "projects")
+    : notifications;
+  const effectiveUnreadProjectNotifications = Array.isArray(operationalNotifications)
+    ? effectiveNotifications.filter((notification) => notification.read !== true)
+    : unreadProjectNotifications;
 
   const unreadActivityByProject = useMemo(
-    () => buildUnreadActivityByProject(unreadProjectNotifications),
-    [unreadProjectNotifications]
+    () => buildUnreadActivityByProject(effectiveUnreadProjectNotifications),
+    [effectiveUnreadProjectNotifications]
   );
 
   const unreadNotificationsCount = useMemo(
-    () => notifications.filter((notification) => notification.read !== true).length,
-    [notifications]
+    () => effectiveNotifications.filter((notification) => notification.read !== true).length,
+    [effectiveNotifications]
   );
 
   const visibleNotifications = showFullNotifications
-    ? notifications
-    : notifications.slice(0, 4);
+    ? effectiveNotifications
+    : effectiveNotifications.slice(0, 4);
 
   async function handleOpenNotification(notification) {
     try {
@@ -171,7 +180,7 @@ export default function MyProjects({ onOpenProject }) {
       console.error("No se pudo marcar la notificación como leída:", error);
     }
 
-    onOpenProject(notification.projectId);
+    onOpenProject(notification.entityId || notification.projectId);
   }
 
   async function handleMarkAllNotificationsRead() {

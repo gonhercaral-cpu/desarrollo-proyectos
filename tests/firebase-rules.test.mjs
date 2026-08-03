@@ -171,6 +171,32 @@ async function seedBaseData() {
         name: "Router",
         status: "Activo",
       }),
+      setDoc(doc(db, "supportTools", "tool-1"), {
+        folio: "HER-000001",
+        name: "Taladro",
+        status: "Disponible",
+        active: true,
+        createdAt: Timestamp.now(),
+      }),
+      setDoc(doc(db, "supportTools", "tool-1", "history", "history-1"), {
+        type: "created",
+        description: "Herramienta registrada",
+        actorUid: "tech",
+        createdAt: Timestamp.now(),
+      }),
+      setDoc(doc(db, "notifications", "notification-tech"), {
+        recipientId: "tech",
+        type: "production_batch_assigned",
+        module: "printing",
+        title: "Lote asignado",
+        message: "Revisar lote IMP-001",
+        entityType: "productionBatch",
+        entityId: "batch-1",
+        read: false,
+        acknowledged: false,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      }),
       setDoc(doc(db, "printRequests", "cert-request-1"), {
         folio: "IMP-2026-0001",
         requestType: "Certificado",
@@ -1047,6 +1073,47 @@ describe("acceso vertical", () => {
   it("impide leer soporte técnico si usuario no pertenece a soporte", async () => {
     await assertFails(getDoc(doc(auth("requester"), "technicalAssets", "asset-1")));
     await assertSucceeds(getDoc(doc(auth("tech"), "technicalAssets", "asset-1")));
+  });
+});
+
+describe("herramientas de soporte", () => {
+  it("limita catalogo e historial al personal autorizado", async () => {
+    await assertSucceeds(getDoc(doc(auth("tech"), "supportTools", "tool-1")));
+    await assertSucceeds(getDoc(doc(auth("admin"), "supportTools", "tool-1")));
+    await assertFails(getDoc(doc(auth("requester"), "supportTools", "tool-1")));
+    await assertSucceeds(getDoc(doc(auth("tech"), "supportTools", "tool-1", "history", "history-1")));
+    await assertFails(getDoc(doc(auth("requester"), "supportTools", "tool-1", "history", "history-1")));
+  });
+
+  it("bloquea escrituras directas y exige Functions transaccionales", async () => {
+    await assertFails(updateDoc(doc(auth("tech"), "supportTools", "tool-1"), { status: "Prestada" }));
+    await assertFails(updateDoc(doc(auth("admin"), "supportTools", "tool-1"), { status: "Baja" }));
+    await assertFails(setDoc(doc(auth("tech"), "supportTools", "tool-direct"), { name: "Directa" }));
+  });
+});
+
+describe("notificaciones operativas", () => {
+  it("permite al destinatario leer y confirmar su notificacion", async () => {
+    const notificationRef = doc(auth("tech"), "notifications", "notification-tech");
+    await assertSucceeds(getDoc(notificationRef));
+    await assertSucceeds(updateDoc(notificationRef, {
+      read: true,
+      readAt: Timestamp.now(),
+      acknowledged: true,
+      acknowledgedAt: Timestamp.now(),
+    }));
+  });
+
+  it("impide leer ajenas, crear desde cliente o alterar contenido", async () => {
+    await assertFails(getDoc(doc(auth("requester"), "notifications", "notification-tech")));
+    await assertFails(setDoc(doc(auth("tech"), "notifications", "client-created"), {
+      recipientId: "tech",
+      read: false,
+      createdAt: Timestamp.now(),
+    }));
+    await assertFails(updateDoc(doc(auth("tech"), "notifications", "notification-tech"), {
+      title: "Contenido alterado",
+    }));
   });
 });
 
@@ -2208,5 +2275,20 @@ describe("storage", () => {
     const fileRef = storage.ref("printshop/generated-certificates/cert-request-1/2026/certificado-ajeno.pdf");
 
     await assertFails(fileRef.putString("%PDF-1.4", "raw", { contentType: "application/pdf" }));
+  });
+
+  it("protege las imagenes de herramientas por area, tipo y ruta", async () => {
+    const toolImage = storageAuth("tech").ref("support/tools/tool-1/main-image/tool.webp");
+    await assertSucceeds(toolImage.putString("webp", "raw", { contentType: "image/webp" }));
+    await assertSucceeds(toolImage.getDownloadURL());
+    await assertFails(
+      storageAuth("requester").ref("support/tools/tool-1/main-image/other.webp")
+        .putString("webp", "raw", { contentType: "image/webp" })
+    );
+    await assertFails(
+      storageAuth("tech").ref("support/tools/tool-1/main-image/tool.exe")
+        .putString("binary", "raw", { contentType: "application/octet-stream" })
+    );
+    await assertSucceeds(toolImage.delete());
   });
 });

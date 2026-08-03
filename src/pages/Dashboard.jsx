@@ -59,6 +59,7 @@ import {
   markAllNotificationsRead,
   getNotificationVisual,
 } from "../services/notificationsService";
+import useOperationalNotifications from "../hooks/useOperationalNotifications";
 
 // Módulo en desarrollo: reactivar cambiando este valor a true.
 const ENABLE_UNIFI_CAMERAS_MODULE = false;
@@ -466,6 +467,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   const unreadDepartmentMessagesCount = useUnreadDepartmentMessagesCount(profile, isAdmin);
   const unreadMessagesCount = unreadDirectMessagesCount + unreadDepartmentMessagesCount;
   const unreadAnnouncementsCount = useUnreadAnnouncementsCount(profile);
+  const operationalNotificationState = useOperationalNotifications(getCurrentUserId(profile));
 
   const [pendingChatKeyToOpen, setPendingChatKeyToOpen] = useState("");
   const activeChatKeyRef = useRef("");
@@ -702,6 +704,9 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
           unreadAnnouncementsCount={unreadAnnouncementsCount}
           onOpenModule={goToPage}
           onOpenProject={openProject}
+          operationalNotifications={operationalNotificationState.notifications}
+          soundEnabled={operationalNotificationState.soundEnabled}
+          onSoundEnabledChange={operationalNotificationState.setSoundEnabled}
         />
       );
     }
@@ -727,7 +732,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     }
 
     if (page === "print-shop" && canUsePrintShop) {
-      return <PrintShop />;
+      return <PrintShop operationalNotifications={operationalNotificationState.notifications} />;
     }
 
     if (page === "purchase-requests") {
@@ -826,7 +831,12 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       );
     }
 
-    return <MyProjects onOpenProject={openProject} />;
+    return (
+      <MyProjects
+        onOpenProject={openProject}
+        operationalNotifications={operationalNotificationState.notifications}
+      />
+    );
   }
 
   function isNavActive(navPage) {
@@ -938,6 +948,24 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (item.page === "internal-messages") {
       return { ...item, badgeCount: unreadMessagesCount };
+    }
+
+    if (item.page === "my-projects") {
+      return {
+        ...item,
+        badgeCount: new Set(operationalNotificationState.unreadNotifications
+          .filter((notification) => notification.module === "projects" && notification.entityId)
+          .map((notification) => notification.entityId)).size,
+      };
+    }
+
+    if (item.page === "print-shop") {
+      return {
+        ...item,
+        badgeCount: new Set(operationalNotificationState.unreadNotifications
+          .filter((notification) => notification.module === "printing" && notification.entityId)
+          .map((notification) => `${notification.entityType}:${notification.entityId}`)).size,
+      };
     }
 
     return item;
@@ -1085,6 +1113,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
           onLogout={handleLogout}
           onOpenModule={goToPage}
           onOpenProject={openProject}
+          operationalNotifications={operationalNotificationState.notifications}
         />
 
         {renderPage()}
@@ -1109,6 +1138,19 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
         onOpenNotes={() => {
           goToPage("workspace-dashboard");
           window.setTimeout(() => scrollToWorkspaceSection("workspace-notes-section"), 120);
+        }}
+      />
+
+      <OperationalNotificationToasts
+        toasts={operationalNotificationState.toasts}
+        onDismiss={operationalNotificationState.dismissToast}
+        onView={(notification) => {
+          markNotificationRead(notification.id).catch(() => undefined);
+          if (notification.entityType === "project" && notification.entityId) {
+            openProject(notification.entityId);
+          } else if (notification.route) {
+            window.location.assign(notification.route);
+          }
         }}
       />
     </div>
@@ -6526,6 +6568,29 @@ function NotificationsSummaryIcon({ name }) {
   );
 }
 
+function OperationalNotificationToasts({ toasts, onDismiss, onView }) {
+  if (!toasts?.length) return null;
+  return (
+    <aside className="operational-notification-toasts" aria-live="polite" aria-label="Notificaciones nuevas">
+      {toasts.map((notification) => {
+        const visual = getNotificationVisual(notification.type || notification.tipo);
+        return (
+          <article key={notification.toastId} className={`operational-notification-toast priority-${notification.priority || "normal"}`}>
+            <span className={`notification-icon notification-${visual.tone}`}>{visual.icon}</span>
+            <div>
+              <small>{notification.module === "printing" ? "Imprenta" : "Proyectos"}</small>
+              <strong>{notification.title || notification.titulo}</strong>
+              <p>{notification.message || notification.mensaje}</p>
+              <button type="button" onClick={() => onView(notification)}>Ver</button>
+            </div>
+            <button type="button" className="toast-close-button" onClick={() => onDismiss(notification.toastId)} aria-label="Cerrar">×</button>
+          </article>
+        );
+      })}
+    </aside>
+  );
+}
+
 function NotificationsCenter({
   profile,
   isAdmin,
@@ -6533,10 +6598,14 @@ function NotificationsCenter({
   unreadAnnouncementsCount = 0,
   onOpenModule,
   onOpenProject,
+  operationalNotifications = null,
+  soundEnabled = true,
+  onSoundEnabledChange,
 }) {
   const [marking, setMarking] = useState(false);
   const [status, setStatus] = useState("");
-  const { notifications } = useDashboardNotifications(profile, isAdmin);
+  const { notifications } = useDashboardNotifications(profile, isAdmin, operationalNotifications);
+  const notificationGroups = groupDashboardNotifications(notifications);
   const totalUnread = notifications.length;
   const realUnreadMessagesCount = notifications.filter((notification) => notification.group === "message").length;
   const realUnreadAnnouncementsCount = notifications.filter((notification) => notification.group === "announcement").length;
@@ -6570,6 +6639,11 @@ function NotificationsCenter({
 
     if (notification.type === "material-correction") {
       window.location.assign(notification.materialLink || `/?page=material-corrections&reportId=${notification.materialReportId || ""}`);
+      return;
+    }
+
+    if (notification.type === "printing" && notification.route) {
+      window.location.assign(notification.route);
       return;
     }
 
@@ -6618,6 +6692,14 @@ function NotificationsCenter({
         >
           {marking ? "Marcando..." : "Marcar todas como leídas"}
         </button>
+        <label className="notification-sound-toggle">
+          <input
+            type="checkbox"
+            checked={soundEnabled}
+            onChange={(event) => onSoundEnabledChange?.(event.target.checked)}
+          />
+          <span>Sonido de notificaciones</span>
+        </label>
       </section>
 
       {status && <div className="message-box">{status}</div>}
@@ -6661,22 +6743,31 @@ function NotificationsCenter({
               <p>Cuando recibas mensajes o haya anuncios por confirmar, aparecerán aquí.</p>
             </div>
           ) : (
-            notifications.map((notification) => (
-              <button
-                type="button"
-                key={notification.key}
-                className="notifications-center-item"
-                onClick={() => handleOpenNotification(notification)}
-              >
-                <span className={`notification-icon notification-${notification.tone}`}>
-                  {notification.icon}
-                </span>
-                <span>
-                  <strong>{notification.title}</strong>
-                  <small>{notification.detail}</small>
-                </span>
-                <em>{notification.time}</em>
-              </button>
+            notificationGroups.map((group) => (
+              <section className="notification-day-group" key={group.label}>
+                <h4>{group.label}</h4>
+                {group.items.map((notification) => (
+                  <button
+                    type="button"
+                    key={notification.key}
+                    className="notifications-center-item"
+                    onClick={() => handleOpenNotification(notification)}
+                  >
+                    {notification.actorPhotoURL ? (
+                      <img className="notification-actor-avatar" src={notification.actorPhotoURL} alt="" />
+                    ) : (
+                      <span className={`notification-icon notification-${notification.tone}`}>
+                        {notification.icon}
+                      </span>
+                    )}
+                    <span>
+                      <strong>{notification.title}</strong>
+                      <small>{notification.detail}</small>
+                    </span>
+                    <em>{notification.time}</em>
+                  </button>
+                ))}
+              </section>
             ))
           )}
         </div>
@@ -6701,9 +6792,11 @@ function TopProfileBar({
   onLogout,
   onOpenModule,
   onOpenProject,
+  operationalNotifications = null,
 }) {
-  const { notifications } = useDashboardNotifications(profile, isAdmin);
+  const { notifications } = useDashboardNotifications(profile, isAdmin, operationalNotifications);
   const safeNotificationCount = notifications.length;
+  const notificationGroups = groupDashboardNotifications(notifications);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -6801,6 +6894,8 @@ function TopProfileBar({
       window.location.assign(notification.materialLink || `/?page=material-corrections&reportId=${notification.materialReportId || ""}`);
     } else if (notification.type === "project" && notification.projectId) {
       onOpenProject?.(notification.projectId);
+    } else if (notification.type === "printing" && notification.route) {
+      window.location.assign(notification.route);
     } else if (notification.route) {
       onOpenModule?.(notification.route);
     }
@@ -6921,23 +7016,32 @@ function TopProfileBar({
                     <p>Los mensajes nuevos y anuncios por confirmar aparecerán aquí.</p>
                   </div>
                 ) : (
-                  notifications.map((notification) => (
-                    <button
-                      type="button"
-                      key={notification.key}
-                      className="notification-item"
-                      onClick={() => handleOpenNotification(notification)}
-                    >
-                      <span className={`notification-icon notification-${notification.tone}`}>
-                        {notification.icon}
-                      </span>
-                      <span className="notification-copy">
-                        <strong>{notification.title}</strong>
-                        <small>{notification.detail}</small>
-                      </span>
-                      <span className="notification-time">{notification.time}</span>
-                      <i className={`notification-dot notification-dot-${notification.tone}`} />
-                    </button>
+                  notificationGroups.map((group) => (
+                    <section className="notification-day-group" key={group.label}>
+                      <h4>{group.label}</h4>
+                      {group.items.map((notification) => (
+                        <button
+                          type="button"
+                          key={notification.key}
+                          className="notification-item"
+                          onClick={() => handleOpenNotification(notification)}
+                        >
+                          {notification.actorPhotoURL ? (
+                            <img className="notification-actor-avatar" src={notification.actorPhotoURL} alt="" />
+                          ) : (
+                            <span className={`notification-icon notification-${notification.tone}`}>
+                              {notification.icon}
+                            </span>
+                          )}
+                          <span className="notification-copy">
+                            <strong>{notification.title}</strong>
+                            <small>{notification.detail}</small>
+                          </span>
+                          <span className="notification-time">{notification.time}</span>
+                          <i className={`notification-dot notification-dot-${notification.tone}`} />
+                        </button>
+                      ))}
+                    </section>
                   ))
                 )}
               </div>
@@ -7210,7 +7314,7 @@ async function markAllDashboardNotificationsRead({ profile, isAdmin }) {
   );
 }
 
-function useDashboardNotifications(profile, isAdmin = false) {
+function useDashboardNotifications(profile, isAdmin = false, operationalNotifications = null) {
   const currentUserId = getCurrentUserId(profile);
   const [directMessages, setDirectMessages] = useState([]);
   const [departmentMessages, setDepartmentMessages] = useState([]);
@@ -7219,13 +7323,14 @@ function useDashboardNotifications(profile, isAdmin = false) {
   const [projectNotifications, setProjectNotifications] = useState([]);
 
   useEffect(() => {
+    if (Array.isArray(operationalNotifications)) return undefined;
     if (!currentUserId) {
       setProjectNotifications([]);
       return undefined;
     }
 
     return subscribeToUserNotifications(currentUserId, setProjectNotifications);
-  }, [currentUserId]);
+  }, [currentUserId, operationalNotifications]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -7357,7 +7462,9 @@ function useDashboardNotifications(profile, isAdmin = false) {
     directMessages,
     departmentMessages,
     announcements: announcements.filter((announcement) => announcementReadState[announcement.id] !== true),
-    projectNotifications: projectNotifications.filter((notification) => notification.read !== true),
+    projectNotifications: (Array.isArray(operationalNotifications)
+      ? operationalNotifications
+      : projectNotifications).filter((notification) => notification.read !== true),
   });
 }
 
@@ -7410,7 +7517,7 @@ function buildRealDashboardNotifications({
   }));
 
   const projectEventNotifications = projectNotifications.map((notification) => {
-    const visual = getNotificationVisual(notification.tipo);
+    const visual = getNotificationVisual(notification.type || notification.tipo);
     // Fase 7 — Las notificaciones editoriales viven en la misma colección; se
     // enrutan al Editor Editorial (no al detalle de proyecto operativo).
     const isEditorial = Boolean(notification.editorialProjectId);
@@ -7419,7 +7526,9 @@ function buildRealDashboardNotifications({
       ? "editorial"
       : isMaterialCorrection
         ? "material-correction"
-        : "project";
+        : notification.module === "printing"
+          ? "printing"
+          : "project";
 
     return {
       key: `${notificationType}-${notification.id}`,
@@ -7427,19 +7536,25 @@ function buildRealDashboardNotifications({
       group: "project",
       id: notification.id,
       projectId: notification.projectId,
+      entityType: notification.entityType || (notification.projectId ? "project" : ""),
+      entityId: notification.entityId || notification.projectId || "",
+      module: notification.module || "projects",
+      schemaType: notification.type || notification.tipo,
+      priority: notification.priority || "normal",
+      actorPhotoURL: notification.actorPhotoURL || "",
       editorialProjectId: notification.editorialProjectId || "",
       editorialLink: notification.link || "",
       materialReportId: notification.materialCorrectionReportId || "",
       materialLink: isMaterialCorrection ? notification.link || "" : "",
-      route: isMaterialCorrection ? "material-corrections" : "",
+      route: notification.route || (isMaterialCorrection ? "material-corrections" : ""),
       tone: visual.tone,
       icon: visual.icon,
-      title: notification.titulo || (isEditorial
+      title: notification.title || notification.titulo || (isEditorial
         ? "Actualización editorial"
         : isMaterialCorrection
           ? "Corrección de material"
           : "Actualización de proyecto"),
-      detail: `${notification.actorName || "Un colaborador"}: ${truncateNotificationText(notification.mensaje || "", 90)}`,
+      detail: `${notification.actorName || "Un colaborador"}: ${truncateNotificationText(notification.message || notification.mensaje || "", 90)}`,
       time: formatNotificationTime(notification.createdAt),
       dateValue: notification.createdAt,
     };
@@ -7499,11 +7614,33 @@ function formatNotificationTime(value) {
   return formatDateTime(value);
 }
 
+function groupDashboardNotifications(notifications = []) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterday = today - 86400000;
+  const groups = new Map();
+
+  notifications.forEach((notification) => {
+    const millis = getMillisFromFirestoreDate(notification.dateValue);
+    const day = millis ? new Date(millis) : now;
+    const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+    const label = dayStart >= today
+      ? "Hoy"
+      : dayStart >= yesterday
+        ? "Ayer"
+        : "Anteriores";
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(notification);
+  });
+
+  return [...groups.entries()].map(([label, items]) => ({ label, items }));
+}
+
 async function markDashboardNotificationRead(notification, { profile }) {
   const currentUserId = getCurrentUserId(profile);
   if (!currentUserId || !notification?.id) return;
 
-  if (notification.type === "project") {
+  if (["project", "printing", "editorial", "material-correction"].includes(notification.type)) {
     await markNotificationRead(notification.id);
     return;
   }
