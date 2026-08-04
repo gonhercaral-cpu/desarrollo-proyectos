@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npm run lint 2>&1)",
+      "PowerShell(npm run build 2>&1)",
+      "Bash(git check-ignore *)",
+      "Bash(node --test tests/certificate-history.test.mjs tests/certificate-people.test.mjs tests/certificate-signer-campus.test.mjs tests/department-membership.test.mjs tests/editorial-academic.test.mjs tests/editorial-design.test.mjs tests/editorial-production.test.mjs tests/editorial-structure.test.mjs tests/message-utils.test.mjs tests/print-request-date-time.test.mjs tests/print-request-permissions.test.mjs tests/public-certificate-selection.test.mjs)",
+      "Bash(npx eslint *)",
+      "Bash(npm run *)",
+      "Bash(node --test tests/certificate-history.test.mjs tests/print-request-permissions.test.mjs tests/print-request-date-time.test.mjs tests/public-certificate-selection.test.mjs tests/certificate-people.test.mjs)",
+      "Bash(echo \"lint-near-edit-exit:$?\")",
+      "Bash(node --test tests/certificate-history.test.mjs tests/print-request-permissions.test.mjs tests/public-certificate-selection.test.mjs tests/certificate-people.test.mjs tests/print-request-date-time.test.mjs)",
+      "Bash(node --test tests/certificate-history.test.mjs tests/print-request-permissions.test.mjs tests/public-certificate-selection.test.mjs tests/certificate-people.test.mjs)",
+      "Bash(node --test tests/print-request-permissions.test.mjs tests/certificate-history.test.mjs)"
+    ]
+  }
+}
