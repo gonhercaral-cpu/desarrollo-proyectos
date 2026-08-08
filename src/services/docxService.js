@@ -6,45 +6,172 @@ import { createEditorialProject, EDITORIAL_COLLECTIONS } from "../editorial/serv
 import { createEditorialPage } from "../editorial/services/editorialPagesService";
 import { saveEditorialPageElements } from "../editorial/services/editorialElementsService";
 
+function getAttributeValue(node) {
+  return node?.getAttribute("w:val") ?? node?.getAttribute("val") ?? "";
+}
+
+function firstDescendant(node, name) {
+  return node?.getElementsByTagNameNS("*", name)?.[0] || null;
+}
+
+function readToggle(node, name) {
+  const toggle = firstDescendant(node, name);
+  if (!toggle) return false;
+  return !["0", "false", "off"].includes(String(getAttributeValue(toggle)).toLowerCase());
+}
+
+function parseRun(run) {
+  const properties = firstDescendant(run, "rPr");
+  const text = Array.from(run.children || []).map((child) => {
+    if (["t", "instrText"].includes(child.localName)) return child.textContent || "";
+    if (child.localName === "tab") return "\t";
+    if (["br", "cr"].includes(child.localName)) return "\n";
+    return "";
+  }).join("");
+  return {
+    text,
+    bold: readToggle(properties, "b"),
+    italic: readToggle(properties, "i"),
+    underline: Boolean(firstDescendant(properties, "u")),
+  };
+}
+
 function getWordText(node) {
-  return Array.from(node.getElementsByTagNameNS("*", "t"))
-    .map((textNode) => textNode.textContent || "")
+  return Array.from(node.getElementsByTagNameNS("*", "r"))
+    .map((run) => parseRun(run).text)
     .join("")
     .trim();
 }
 
-function getParagraphKind(paragraph) {
-  const styleNode = paragraph.getElementsByTagNameNS("*", "pStyle")[0];
-  const style = styleNode?.getAttribute("w:val") || styleNode?.getAttribute("val") || "";
-  const match = String(style).match(/heading\s*([1-6])|t[ií]tulo\s*([1-6])/i);
+function parseStyles(parsed) {
+  const styles = new Map();
+  Array.from(parsed?.getElementsByTagNameNS("*", "style") || []).forEach((style) => {
+    const id = style.getAttribute("w:styleId") || style.getAttribute("styleId") || "";
+    const name = getAttributeValue(firstDescendant(style, "name"));
+    const outlineLevel = Number(getAttributeValue(firstDescendant(style, "outlineLvl")));
+    if (id) styles.set(id, { name, outlineLevel: Number.isFinite(outlineLevel) ? outlineLevel : null });
+  });
+  return styles;
+}
+
+function parseNumbering(parsed) {
+  const abstractFormats = new Map();
+  Array.from(parsed?.getElementsByTagNameNS("*", "abstractNum") || []).forEach((abstractNumber) => {
+    const abstractId = abstractNumber.getAttribute("w:abstractNumId") || abstractNumber.getAttribute("abstractNumId") || "";
+    const levels = new Map();
+    Array.from(abstractNumber.getElementsByTagNameNS("*", "lvl")).forEach((level) => {
+      const levelId = level.getAttribute("w:ilvl") || level.getAttribute("ilvl") || "0";
+      levels.set(levelId, getAttributeValue(firstDescendant(level, "numFmt")) || "bullet");
+    });
+    abstractFormats.set(abstractId, levels);
+  });
+
+  const numbering = new Map();
+  Array.from(parsed?.getElementsByTagNameNS("*", "num") || []).forEach((number) => {
+    const numberId = number.getAttribute("w:numId") || number.getAttribute("numId") || "";
+    const abstractId = getAttributeValue(firstDescendant(number, "abstractNumId"));
+    if (numberId) numbering.set(numberId, abstractFormats.get(abstractId) || new Map());
+  });
+  return numbering;
+}
+
+function getParagraphKind(paragraph, styles) {
+  const styleId = getAttributeValue(firstDescendant(paragraph, "pStyle"));
+  const style = styles.get(styleId) || {};
+  const match = `${styleId} ${style.name || ""}`.match(/heading\s*([1-6])|t[ií]tulo\s*([1-6])/i);
+  if (!match && Number.isInteger(style.outlineLevel) && style.outlineLevel >= 0 && style.outlineLevel <= 5) {
+    return `heading${style.outlineLevel + 1}`;
+  }
   return match ? `heading${match[1] || match[2] || "1"}` : "paragraph";
 }
 
+function getParagraphAlignment(paragraph) {
+  const value = getAttributeValue(firstDescendant(firstDescendant(paragraph, "pPr"), "jc"));
+  if (["center", "right", "both", "justify"].includes(value)) return value === "both" ? "justify" : value;
+  return "left";
+}
+
+function getParagraphList(paragraph, numbering) {
+  const numberProperties = firstDescendant(firstDescendant(paragraph, "pPr"), "numPr");
+  if (!numberProperties) return null;
+  const id = getAttributeValue(firstDescendant(numberProperties, "numId"));
+  const level = getAttributeValue(firstDescendant(numberProperties, "ilvl")) || "0";
+  const format = numbering.get(id)?.get(level) || "bullet";
+  return { id, level: Number(level) || 0, ordered: format !== "bullet", format };
+}
+
+async function readOptionalXml(zip, path) {
+  const file = zip.file(path);
+  if (!file) return null;
+  const xml = await file.async("string");
+  const parsed = new DOMParser().parseFromString(xml, "application/xml");
+  return parsed.getElementsByTagName("parsererror").length ? null : parsed;
+}
+
 export async function parseDocxBlob(blob) {
-  const zip = await JSZip.loadAsync(blob);
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(blob);
+  } catch (error) {
+    const invalidError = new Error("El archivo no contiene un DOCX válido.", { cause: error });
+    invalidError.code = "invalid-docx";
+    throw invalidError;
+  }
   const documentFile = zip.file("word/document.xml");
   if (!documentFile) throw new Error("El DOCX no contiene un documento válido.");
 
-  const xml = await documentFile.async("string");
+  const [xml, stylesXml, numberingXml] = await Promise.all([
+    documentFile.async("string"),
+    readOptionalXml(zip, "word/styles.xml"),
+    readOptionalXml(zip, "word/numbering.xml"),
+  ]);
   const parsed = new DOMParser().parseFromString(xml, "application/xml");
   if (parsed.getElementsByTagName("parsererror").length) {
     throw new Error("No se pudo interpretar el contenido del DOCX.");
   }
 
+  const styles = parseStyles(stylesXml);
+  const numbering = parseNumbering(numberingXml);
+  const listCounters = new Map();
   const body = parsed.getElementsByTagNameNS("*", "body")[0];
   const blocks = [];
   Array.from(body?.children || []).forEach((node) => {
     if (node.localName === "p") {
-      const text = getWordText(node);
-      if (text) blocks.push({ type: getParagraphKind(node), text });
+      const runs = Array.from(node.getElementsByTagNameNS("*", "r"))
+        .map(parseRun)
+        .filter((run) => run.text.length > 0);
+      const text = runs.map((run) => run.text).join("").trimEnd();
+      if (!text.trim()) return;
+      const list = getParagraphList(node, numbering);
+      let marker = "";
+      if (list) {
+        const counterKey = `${list.id}:${list.level}`;
+        const counter = (listCounters.get(counterKey) || 0) + 1;
+        listCounters.set(counterKey, counter);
+        marker = list.ordered ? `${counter}.` : "•";
+      }
+      blocks.push({
+        type: getParagraphKind(node, styles),
+        text,
+        runs,
+        alignment: getParagraphAlignment(node),
+        list,
+        marker,
+      });
       return;
     }
     if (node.localName === "tbl") {
       Array.from(node.getElementsByTagNameNS("*", "tr")).forEach((row) => {
-        const cells = Array.from(row.getElementsByTagNameNS("*", "tc"))
-          .map(getWordText)
-          .filter(Boolean);
-        if (cells.length) blocks.push({ type: "tableRow", text: cells.join("  |  ") });
+        const cells = Array.from(row.getElementsByTagNameNS("*", "tc")).map(getWordText);
+        if (cells.some(Boolean)) blocks.push({
+          type: "tableRow",
+          text: cells.join("  |  "),
+          cells,
+          runs: [],
+          alignment: "left",
+          list: null,
+          marker: "",
+        });
       });
     }
   });
@@ -52,7 +179,7 @@ export async function parseDocxBlob(blob) {
   return {
     blocks,
     text: blocks.map((block) => block.text).join("\n\n"),
-    warnings: ["Vista basada en texto. Diseño avanzado, fuentes, encabezados, imágenes y saltos complejos pueden variar."],
+    warnings: ["Vista estructurada. Tipografía exacta, imágenes, encabezados de página y diseño flotante pueden variar."],
   };
 }
 
@@ -73,12 +200,16 @@ function blocksToElements(blocks) {
     const headingLevel = Number(block.type.replace("heading", "")) || 0;
     const element = createTextElement(index);
     const fontSize = headingLevel ? Math.max(22, 34 - headingLevel * 2) : 17;
-    const lineCount = Math.max(1, Math.ceil(block.text.length / (headingLevel ? 42 : 72)));
+    const content = block.marker ? `${"  ".repeat(block.list?.level || 0)}${block.marker} ${block.text}` : block.text;
+    const lineCount = Math.max(1, Math.ceil(content.length / (headingLevel ? 42 : 72)));
     const height = Math.max(36, lineCount * fontSize * 1.35);
+    const meaningfulRuns = (block.runs || []).filter((run) => run.text.trim());
+    const allBold = meaningfulRuns.length > 0 && meaningfulRuns.every((run) => run.bold);
+    const allItalic = meaningfulRuns.length > 0 && meaningfulRuns.every((run) => run.italic);
     const next = {
       ...element,
-      name: headingLevel ? `Título ${headingLevel}` : block.type === "tableRow" ? "Fila de tabla" : "Párrafo",
-      content: block.text,
+      name: headingLevel ? `Título ${headingLevel}` : block.type === "tableRow" ? "Fila de tabla" : block.list ? "Elemento de lista" : "Párrafo",
+      content,
       x: 48,
       y,
       width: 720,
@@ -86,8 +217,16 @@ function blocksToElements(blocks) {
       style: {
         ...element.style,
         fontSize,
-        fontWeight: headingLevel ? "bold" : "normal",
+        fontWeight: headingLevel || allBold ? "bold" : "normal",
+        fontStyle: allItalic ? "italic" : "normal",
+        align: block.alignment || "left",
         boxMode: "fixed_box",
+      },
+      metadata: {
+        importedFrom: "docx",
+        sourceRuns: block.runs || [],
+        sourceList: block.list || null,
+        sourceTableCells: block.cells || [],
       },
     };
     y += height + (headingLevel ? 20 : 12);
@@ -115,10 +254,16 @@ function paginateBlocks(blocks) {
 }
 
 export async function importDocxToEditorial({ blob, sourceFile, user }) {
-  const parsed = await parseDocxBlob(blob);
   const sourceFileId = String(sourceFile?.id || "").trim();
   const existingProjectId = await findEditorialProjectBySourceFile(sourceFileId, user);
-  if (existingProjectId) return { projectId: existingProjectId, existing: true, parsed };
+  if (existingProjectId) return { projectId: existingProjectId, existing: true, parsed: null };
+
+  const parsed = await parseDocxBlob(blob);
+  if (!parsed.blocks.length) {
+    const emptyError = new Error("El DOCX no contiene párrafos, listas ni tablas importables.");
+    emptyError.code = "empty-docx";
+    throw emptyError;
+  }
 
   const projectId = await createEditorialProject({
     name: String(sourceFile?.name || "Documento DOCX").replace(/\.docx$/i, ""),
@@ -128,6 +273,9 @@ export async function importDocxToEditorial({ blob, sourceFile, user }) {
     sourceFileId,
     sourceFileName: sourceFile?.name || "",
     sourceMimeType: sourceFile?.mimeType || "",
+    sourceDeliveredName: sourceFile?.deliveredName || sourceFile?.name || "",
+    sourceDeliveredMimeType: sourceFile?.deliveredMimeType || sourceFile?.mimeType || "",
+    sourceExported: sourceFile?.exported === true,
     sourceProvider: "nube_aes",
   }, user);
 

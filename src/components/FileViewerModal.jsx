@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { detectFileKind, FILE_KINDS, isEditorialImportable, isInternallyPreviewable } from "../utils/fileTypes";
 import { parseDocxBlob } from "../services/docxService";
+import { getCloudFileErrorMessage } from "../services/driveService";
 
 function formatBytes(bytes) {
   const value = Number(bytes || 0);
@@ -10,49 +11,134 @@ function formatBytes(bytes) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function normalizeContent(result, file) {
+  if (result instanceof Blob) {
+    const kind = detectFileKind(file);
+    return {
+      blob: result,
+      originalName: file?.name || "archivo",
+      deliveredName: file?.name || "archivo",
+      originalMimeType: file?.mimeType || result.type,
+      deliveredMimeType: result.type || file?.mimeType || "application/octet-stream",
+      kind,
+      size: result.size,
+      exported: false,
+      previewable: isInternallyPreviewable(file),
+      editable: isEditorialImportable(file),
+    };
+  }
+  return result;
+}
+
+function DocxRuns({ runs, fallback }) {
+  if (!runs?.length) return fallback;
+  return runs.map((run, index) => {
+    let content = run.text;
+    if (run.underline) content = <u>{content}</u>;
+    if (run.italic) content = <em>{content}</em>;
+    if (run.bold) content = <strong>{content}</strong>;
+    return <span key={`${index}-${run.text.slice(0, 12)}`}>{content}</span>;
+  });
+}
+
+function DocxBlock({ block }) {
+  if (block.type === "tableRow") {
+    return (
+      <div className="docx-table-row" role="row">
+        {(block.cells || [block.text]).map((cell, cellIndex) => (
+          <span role="cell" key={`${cellIndex}-${cell.slice(0, 16)}`}>{cell}</span>
+        ))}
+      </div>
+    );
+  }
+  const level = Number(block.type.replace("heading", ""));
+  const Tag = level >= 1 && level <= 6 ? `h${level}` : "p";
+  return (
+    <Tag
+      className={block.list ? "docx-list-item" : ""}
+      style={{ textAlign: block.alignment || "left", paddingLeft: block.list ? `${block.list.level * 24}px` : undefined }}
+    >
+      {block.marker ? <span className="docx-list-marker">{block.marker}</span> : null}
+      <DocxRuns runs={block.runs} fallback={block.text} />
+    </Tag>
+  );
+}
+
 export default function FileViewerModal({ file, loadFile, onClose, onOpenEditorial, canOpenEditorial = false }) {
-  const kind = detectFileKind(file);
-  const previewable = isInternallyPreviewable(file);
-  const [blob, setBlob] = useState(null);
+  const requestedKind = detectFileKind(file);
+  const requestedPreviewable = isInternallyPreviewable(file);
+  const [content, setContent] = useState(null);
+  const [resolvedKind, setResolvedKind] = useState(requestedKind);
   const [objectUrl, setObjectUrl] = useState("");
   const [text, setText] = useState("");
   const [docx, setDocx] = useState(null);
-  const [loading, setLoading] = useState(previewable);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(requestedPreviewable);
+  const [error, setError] = useState(null);
   const [editorialLoading, setEditorialLoading] = useState(false);
+  const contentPromiseRef = useRef(null);
 
+  const previewable = content ? content.previewable : requestedPreviewable;
+  const editorialImportable = content ? content.editable : isEditorialImportable(file);
   const info = useMemo(() => [
-    file?.mimeType || "Tipo desconocido",
-    formatBytes(file?.size),
+    content?.deliveredMimeType || file?.mimeType || "Tipo desconocido",
+    formatBytes(content?.size || file?.size),
+    content?.exported ? `Exportado desde ${content.originalMimeType}` : null,
     file?.modifiedTime ? new Date(file.modifiedTime).toLocaleString("es-MX") : "Sin fecha",
-  ].join(" · "), [file]);
+  ].filter(Boolean).join(" · "), [content, file]);
+
+  const requestContent = useCallback(() => {
+    if (!contentPromiseRef.current) {
+      contentPromiseRef.current = loadFile(file)
+        .then((result) => normalizeContent(result, file))
+        .catch((loadError) => {
+          contentPromiseRef.current = null;
+          throw loadError;
+        });
+    }
+    return contentPromiseRef.current;
+  }, [file, loadFile]);
 
   useEffect(() => {
     let active = true;
     let nextUrl = "";
-    if (!previewable) {
-      return () => {};
-    }
+    if (!requestedPreviewable) return () => {};
 
-    loadFile(file)
-      .then(async (nextBlob) => {
+    requestContent()
+      .then(async (nextContent) => {
+        if (!nextContent?.blob) {
+          const invalidError = new Error("Nube AES no devolvió contenido binario válido.");
+          invalidError.code = "invalid-response";
+          throw invalidError;
+        }
+        const nextKind = nextContent.kind || detectFileKind({
+          name: nextContent.deliveredName,
+          mimeType: nextContent.deliveredMimeType,
+        });
         if (!active) return;
-        setBlob(nextBlob);
-        if (kind === FILE_KINDS.TEXT) setText(await nextBlob.text());
-        if (kind === FILE_KINDS.DOCX) setDocx(await parseDocxBlob(nextBlob));
-        if (![FILE_KINDS.TEXT, FILE_KINDS.DOCX].includes(kind)) {
-          nextUrl = URL.createObjectURL(nextBlob);
+        setContent(nextContent);
+        setResolvedKind(nextKind);
+        if (nextContent.previewable === false) return;
+        if (nextKind === FILE_KINDS.TEXT) setText(await nextContent.blob.text());
+        if (nextKind === FILE_KINDS.DOCX) setDocx(await parseDocxBlob(nextContent.blob));
+        if (![FILE_KINDS.TEXT, FILE_KINDS.DOCX].includes(nextKind)) {
+          nextUrl = URL.createObjectURL(nextContent.blob);
           setObjectUrl(nextUrl);
         }
       })
-      .catch((loadError) => active && setError(loadError.message || "No se pudo abrir el archivo."))
+      .catch((loadError) => {
+        console.error("Nube AES: error de vista previa", loadError);
+        if (active) setError({
+          title: "No se pudo mostrar el archivo",
+          message: getCloudFileErrorMessage(loadError, "mostrar"),
+        });
+      })
       .finally(() => active && setLoading(false));
 
     return () => {
       active = false;
       if (nextUrl) URL.revokeObjectURL(nextUrl);
     };
-  }, [file, kind, loadFile, previewable]);
+  }, [file, requestContent, requestedPreviewable]);
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -62,27 +148,41 @@ export default function FileViewerModal({ file, loadFile, onClose, onOpenEditori
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
 
+  async function ensureContent() {
+    return content || requestContent();
+  }
+
   async function handleDownload() {
     try {
-      const downloadBlob = blob || await loadFile(file);
-      const url = URL.createObjectURL(downloadBlob);
+      const downloadContent = await ensureContent();
+      const url = URL.createObjectURL(downloadContent.blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = file?.name || "archivo";
+      anchor.download = downloadContent.deliveredName || file?.name || "archivo";
+      document.body.appendChild(anchor);
       anchor.click();
+      anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (downloadError) {
-      setError(downloadError.message || "No se pudo descargar el archivo.");
+      console.error("Nube AES: error de descarga", downloadError);
+      setError({
+        title: "No se pudo descargar el archivo",
+        message: getCloudFileErrorMessage(downloadError, "descargar"),
+      });
     }
   }
 
   async function handleOpenEditorial() {
     setEditorialLoading(true);
-    setError("");
+    setError(null);
     try {
-      await onOpenEditorial(file, blob || await loadFile(file));
+      await onOpenEditorial(file, await ensureContent());
     } catch (editorialError) {
-      setError(editorialError.message || "No se pudo abrir el archivo en Editor Editorial.");
+      console.error("Nube AES: error de importación editorial", editorialError);
+      setError({
+        title: "No se pudo importar al Editor Editorial",
+        message: getCloudFileErrorMessage(editorialError, "importar"),
+      });
       setEditorialLoading(false);
     }
   }
@@ -93,7 +193,7 @@ export default function FileViewerModal({ file, loadFile, onClose, onOpenEditori
         <header className="drive-preview-header">
           <div><span>{info}</span><strong>{file?.name || "Archivo sin nombre"}</strong></div>
           <div className="drive-preview-actions">
-            {canOpenEditorial && isEditorialImportable(file) ? (
+            {canOpenEditorial && editorialImportable ? (
               <button className="visual-primary-button" type="button" onClick={handleOpenEditorial} disabled={editorialLoading}>
                 {editorialLoading ? "Importando..." : "Abrir en Editor Editorial"}
               </button>
@@ -105,20 +205,18 @@ export default function FileViewerModal({ file, loadFile, onClose, onOpenEditori
         </header>
         <div className="drive-preview-body drive-internal-viewer-body">
           {loading ? <div className="drive-preview-state"><strong>Cargando archivo...</strong><progress /></div> : null}
-          {error ? <div className="drive-preview-state error"><strong>No se pudo mostrar el archivo</strong><p>{error}</p><button type="button" onClick={handleDownload}>Descargar</button></div> : null}
-          {!loading && !error && kind === FILE_KINDS.PDF ? <iframe title={file?.name || "PDF"} src={objectUrl} /> : null}
-          {!loading && !error && kind === FILE_KINDS.IMAGE ? <img className="drive-viewer-image" src={objectUrl} alt={file?.name || "Imagen"} /> : null}
-          {!loading && !error && kind === FILE_KINDS.TEXT ? <pre className="drive-viewer-text">{text}</pre> : null}
-          {!loading && !error && kind === FILE_KINDS.VIDEO ? <video className="drive-viewer-media" src={objectUrl} controls autoPlay={false} /> : null}
-          {!loading && !error && kind === FILE_KINDS.AUDIO ? <div className="drive-viewer-audio"><strong>{file?.name}</strong><audio src={objectUrl} controls /></div> : null}
-          {!loading && !error && kind === FILE_KINDS.DOCX ? (
+          {error ? <div className="drive-preview-state error"><strong>{error.title}</strong><p>{error.message}</p><button type="button" onClick={handleDownload}>Descargar</button></div> : null}
+          {!loading && !error && resolvedKind === FILE_KINDS.PDF ? <iframe title={file?.name || "PDF"} src={objectUrl} /> : null}
+          {!loading && !error && resolvedKind === FILE_KINDS.IMAGE ? <img className="drive-viewer-image" src={objectUrl} alt={file?.name || "Imagen"} /> : null}
+          {!loading && !error && resolvedKind === FILE_KINDS.TEXT ? <pre className="drive-viewer-text">{text}</pre> : null}
+          {!loading && !error && resolvedKind === FILE_KINDS.VIDEO ? <video className="drive-viewer-media" src={objectUrl} controls autoPlay={false} /> : null}
+          {!loading && !error && resolvedKind === FILE_KINDS.AUDIO ? <div className="drive-viewer-audio"><strong>{file?.name}</strong><audio src={objectUrl} controls /></div> : null}
+          {!loading && !error && resolvedKind === FILE_KINDS.DOCX ? (
             <article className="drive-viewer-docx">
-              <p className="drive-viewer-warning">{docx?.warnings?.[0]}</p>
-              {docx?.blocks?.length ? docx.blocks.map((block, index) => {
-                const level = Number(block.type.replace("heading", ""));
-                const Tag = level >= 1 && level <= 6 ? `h${level}` : "p";
-                return <Tag key={`${index}-${block.text.slice(0, 20)}`} className={block.type === "tableRow" ? "docx-table-row" : ""}>{block.text}</Tag>;
-              }) : <p>Documento sin texto compatible para vista previa.</p>}
+              {docx?.warnings?.[0] ? <p className="drive-viewer-warning">{docx.warnings[0]}</p> : null}
+              {docx?.blocks?.length
+                ? docx.blocks.map((block, index) => <DocxBlock block={block} key={`${index}-${block.text.slice(0, 20)}`} />)
+                : <p>DOCX válido, pero sin párrafos, listas ni tablas visibles.</p>}
             </article>
           ) : null}
           {!loading && !error && !previewable ? (

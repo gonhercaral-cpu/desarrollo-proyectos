@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import app, { auth, db, functions } from "./firebase";
+import { detectFileKind, resolveFileMimeType } from "../utils/fileTypes";
 
 const DRIVE_SETTINGS_REF = doc(db, "systemSettings", "drive");
 const DRIVE_DEPARTMENT_FOLDERS_COLLECTION = "driveDepartmentFolders";
@@ -70,28 +71,147 @@ export async function uploadDriveFile({ folderId, name, mimeType, base64 }) {
   return response.data;
 }
 
-export async function downloadDriveFile(file) {
-  const fileId = String(file?.id || file || "").trim();
-  if (!fileId) throw new Error("No se encontró el archivo de Nube AES.");
-  const currentUser = auth.currentUser;
-  if (!currentUser) throw new Error("Debes iniciar sesión para abrir el archivo.");
-  const token = await currentUser.getIdToken();
-  const projectId = app.options.projectId;
-  const response = await fetch(
-    `https://us-central1-${projectId}.cloudfunctions.net/driveFileContent?fileId=${encodeURIComponent(fileId)}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!response.ok) {
-    let message = "No se pudo descargar el archivo.";
-    try {
-      const payload = await response.json();
-      message = payload?.error || message;
-    } catch {
-      // Respuesta sin JSON.
-    }
-    throw new Error(message);
+export class CloudFileError extends Error {
+  constructor(code, message, options = {}) {
+    super(message, options);
+    this.name = "CloudFileError";
+    this.code = code;
+    this.status = Number(options.status || 0);
   }
-  return response.blob();
+}
+
+function decodeHeader(value, fallback = "") {
+  if (!value) return fallback;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parseContentDispositionName(value = "") {
+  const encoded = String(value).match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) return decodeHeader(encoded);
+  return String(value).match(/filename="([^"]+)"/i)?.[1] || "";
+}
+
+function booleanHeader(headers, name, fallback) {
+  const value = headers.get(name);
+  if (value === null) return fallback;
+  return value === "true";
+}
+
+async function readCloudFileError(response) {
+  let code = response.status === 401
+    ? "unauthenticated"
+    : response.status === 403
+      ? "permission-denied"
+      : response.status === 404
+        ? "not-found"
+        : response.status === 415
+          ? "unsupported-format"
+          : "drive-error";
+  let message = "No se pudo obtener el archivo.";
+  try {
+    const payload = await response.json();
+    if (typeof payload?.error === "string") message = payload.error;
+    if (payload?.error && typeof payload.error === "object") {
+      code = payload.error.code || code;
+      message = payload.error.message || message;
+    }
+  } catch {
+    // Respuesta no JSON: conserva clasificación HTTP.
+  }
+  return new CloudFileError(code, message, { status: response.status });
+}
+
+export function getCloudFileErrorMessage(error, action = "abrir") {
+  const messages = {
+    unauthenticated: "Tu sesión caducó. Inicia sesión nuevamente.",
+    "permission-denied": "No tienes permiso para acceder a este archivo.",
+    "not-found": "El archivo no existe o ya no está disponible.",
+    "unsupported-format": "Este formato no es compatible con la acción solicitada.",
+    "unsupported-export": "Este archivo nativo de Google no admite una exportación compatible.",
+    "export-failed": "No se pudo exportar el documento nativo de Google.",
+    "import-failed": "No se pudo importar el documento al Editor Editorial.",
+    connection: "No se pudo conectar con Nube AES. Revisa tu conexión e intenta nuevamente.",
+    "invalid-response": "Nube AES devolvió contenido inválido.",
+    "invalid-request": "La solicitud del archivo no es válida.",
+    "drive-error": "No se pudo obtener el archivo desde Drive.",
+  };
+  return messages[error?.code]
+    || error?.message
+    || `No se pudo ${action} el archivo.`;
+}
+
+export async function getCloudFileContent(file) {
+  const fileId = String(file?.id || file || "").trim();
+  if (!fileId) throw new CloudFileError("not-found", "No se encontró el archivo de Nube AES.");
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new CloudFileError("unauthenticated", "Debes iniciar sesión para abrir el archivo.");
+  let token;
+  try {
+    token = await currentUser.getIdToken();
+  } catch (error) {
+    const code = String(error?.code || "").startsWith("auth/") ? "unauthenticated" : "connection";
+    throw new CloudFileError(code, "No se pudo validar tu sesión.", { cause: error });
+  }
+  const projectId = app.options.projectId;
+  let response;
+  try {
+    response = await fetch(
+      `https://us-central1-${projectId}.cloudfunctions.net/driveFileContent?fileId=${encodeURIComponent(fileId)}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/octet-stream",
+        },
+      }
+    );
+  } catch (error) {
+    throw new CloudFileError("connection", "No se pudo conectar con Nube AES.", { cause: error });
+  }
+  if (!response.ok) {
+    throw await readCloudFileError(response);
+  }
+
+  const responseMimeType = String(response.headers.get("Content-Type") || "").split(";")[0].trim();
+  const originalName = decodeHeader(response.headers.get("X-Nube-Original-Name"), file?.name || "archivo");
+  const deliveredName = decodeHeader(
+    response.headers.get("X-Nube-File-Name"),
+    parseContentDispositionName(response.headers.get("Content-Disposition")) || originalName
+  );
+  const originalMimeType = decodeHeader(
+    response.headers.get("X-Nube-Original-Mime-Type"),
+    resolveFileMimeType(file?.mimeType, originalName)
+  );
+  const deliveredMimeType = decodeHeader(
+    response.headers.get("X-Nube-Delivered-Mime-Type"),
+    responseMimeType || originalMimeType
+  );
+  const responseBlob = await response.blob();
+  const blob = responseBlob.type === deliveredMimeType
+    ? responseBlob
+    : responseBlob.slice(0, responseBlob.size, deliveredMimeType);
+  if (!blob.size && Number(file?.size || 0) > 0) {
+    throw new CloudFileError("invalid-response", "Nube AES devolvió un archivo vacío.");
+  }
+  const detectedKind = detectFileKind({ name: deliveredName, mimeType: deliveredMimeType });
+
+  return {
+    fileId,
+    originalName,
+    deliveredName,
+    originalMimeType,
+    deliveredMimeType,
+    kind: response.headers.get("X-Nube-File-Type") || detectedKind,
+    size: blob.size,
+    exported: booleanHeader(response.headers, "X-Nube-Exported", originalMimeType.startsWith("application/vnd.google-apps.")),
+    previewable: booleanHeader(response.headers, "X-Nube-Previewable", detectedKind !== "unsupported"),
+    editable: booleanHeader(response.headers, "X-Nube-Editable", detectedKind === "docx"),
+    blob,
+  };
 }
 
 export async function createDriveResumableUpload({ folderId, name, mimeType, size }) {

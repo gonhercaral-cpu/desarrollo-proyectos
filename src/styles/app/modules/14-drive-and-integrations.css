@@ -1677,7 +1677,24 @@
 .drive-viewer-docx .docx-table-row {
   border-bottom: 1px solid #d7deea;
   padding: 6px 0;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(120px, 1fr);
+}
+
+.drive-viewer-docx .docx-table-row span {
+  padding: 6px 10px;
+  border-right: 1px solid #d7deea;
+}
+
+.drive-viewer-docx .docx-list-item {
+  display: flex;
+  gap: 8px;
+}
+
+.drive-viewer-docx .docx-list-marker {
+  min-width: 1.4em;
+  font-weight: 600;
 }
 
 .drive-shortcut-picker-modal {

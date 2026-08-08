@@ -15,6 +15,7 @@ describe("detección central de archivos", () => {
     assert.equal(detectFileKind({ name: "audio.mp3" }), "audio");
     assert.equal(detectFileKind({ name: "video.mp4" }), "video");
     assert.equal(detectFileKind({ name: "original.docx" }), "docx");
+    assert.equal(detectFileKind({ name: "Documento", mimeType: "application/vnd.google-apps.document" }), "docx");
     assert.equal(detectFileKind({ name: "modelo.bin" }), "unsupported");
   });
 });

@@ -8,6 +8,12 @@ const { randomUUID } = require("crypto");
 const { google } = require("googleapis");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
+const {
+  DRIVE_CONTENT_EXPOSE_HEADERS,
+  getDriveContentDescriptor,
+  getDriveContentHeaders,
+  mapDriveContentError,
+} = require("./fileContent");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10, region: "us-central1" });
@@ -22,12 +28,13 @@ const DRIVE_USERS_FOLDER_NAME = "Usuarios";
 const DRIVE_SHARE_ROLES = new Set(["viewer", "editor"]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DRIVE_SEARCH_TYPES = new Set(["todos", "carpetas", "documentos", "imagenes", "videos", "pdf"]);
-const DRIVE_UPLOAD_ALLOWED_ORIGINS = new Set([
+const DRIVE_ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "https://sistema-desarrollo-proyectos.web.app",
   "https://sistema-desarrollo-proyectos.firebaseapp.com",
-]);
+];
+const DRIVE_UPLOAD_ALLOWED_ORIGINS = new Set(DRIVE_ALLOWED_ORIGINS);
 const SIGNAGE_ASSET_STORAGE_ROOT = "digital-signage/assets";
 
 let driveClientPromise;
@@ -56,17 +63,6 @@ function getDriveClient() {
   }
 
   return driveClientPromise;
-}
-
-function setDriveContentCors(request, response) {
-  const origin = normalizeString(request.headers.origin);
-  if (origin && DRIVE_UPLOAD_ALLOWED_ORIGINS.has(origin)) {
-    response.set("Access-Control-Allow-Origin", origin);
-  }
-  response.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
-  response.set("Access-Control-Allow-Methods", "GET, OPTIONS");
-  response.set("Access-Control-Expose-Headers", "Content-Disposition, Content-Length, Content-Type");
-  response.set("Vary", "Origin");
 }
 
 async function getRequestProfile(request) {
@@ -484,6 +480,11 @@ function normalizeDriveFile(file) {
     size: file.size || "",
     parents: Array.isArray(file.parents) ? file.parents : [],
     trashed: Boolean(file.trashed),
+    capabilities: {
+      canDownload: file.capabilities?.canDownload !== false,
+      canEdit: file.capabilities?.canEdit === true,
+      canCopy: file.capabilities?.canCopy === true,
+    },
   };
 }
 
@@ -913,7 +914,7 @@ async function createDriveFolder(drive, parentId, name) {
 async function getDriveItem(drive, fileId) {
   const response = await drive.files.get({
     fileId,
-    fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents,trashed",
+    fields: "id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,parents,trashed,capabilities(canDownload,canEdit,canCopy)",
     supportsAllDrives: true,
   });
 
@@ -1156,11 +1157,10 @@ async function assertCanRestoreTrashedItem({ drive, fileId, profile }) {
 }
 
 exports.driveFileContent = onRequest(
-  { timeoutSeconds: 540, memory: "1GiB", cors: false },
+  { timeoutSeconds: 540, memory: "1GiB", cors: [...getAllowedDriveUploadOrigins()] },
   async (request, response) => {
-    setDriveContentCors(request, response);
     if (request.method === "OPTIONS") {
-      response.status(204).send("");
+      response.status(204).end();
       return;
     }
     if (request.method !== "GET") {
@@ -1170,6 +1170,9 @@ exports.driveFileContent = onRequest(
 
     try {
       const profile = await getRequestProfile(request);
+      if (profile.active === false || (!isAdmin(profile) && !isCollaborator(profile))) {
+        throw new HttpsError("permission-denied", "Tu perfil no tiene acceso a Nube AES.");
+      }
       const drive = await getDriveClient();
       const fileId = await assertCanAccessDriveItem({
         profile,
@@ -1179,36 +1182,55 @@ exports.driveFileContent = onRequest(
       });
       const item = await getDriveItem(drive, fileId);
       if (item.trashed) {
-        response.status(404).json({ error: "Archivo no encontrado." });
-        return;
-      }
-      if (item.mimeType === DRIVE_FOLDER_MIME_TYPE || item.mimeType.startsWith("application/vnd.google-apps.")) {
-        response.status(415).json({ error: "Este elemento no tiene contenido descargable para el visor interno." });
+        response.status(404).json({ error: { code: "not-found", message: "Archivo no encontrado." } });
         return;
       }
 
-      const mediaResponse = await drive.files.get(
-        { fileId, alt: "media", supportsAllDrives: true },
-        { responseType: "stream" }
-      );
-      response.set("Content-Type", item.mimeType || "application/octet-stream");
-      if (item.size) response.set("Content-Length", String(item.size));
-      response.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(item.name || "archivo")}`);
-      response.set("Cache-Control", "private, no-store, max-age=0");
+      if (item.capabilities?.canDownload === false) {
+        response.status(403).json({ error: { code: "permission-denied", message: "Drive no permite descargar este archivo." } });
+        return;
+      }
+
+      const descriptor = getDriveContentDescriptor(item);
+      let mediaResponse;
+      try {
+        mediaResponse = descriptor.exported
+          ? await drive.files.export(
+            { fileId, mimeType: descriptor.deliveredMimeType },
+            { responseType: "stream" }
+          )
+          : await drive.files.get(
+            { fileId, alt: "media", supportsAllDrives: true },
+            { responseType: "stream" }
+          );
+      } catch (driveError) {
+        driveError.contentOperation = descriptor.exported ? "export" : "download";
+        throw driveError;
+      }
+
+      const upstreamLength = mediaResponse.headers?.get?.("content-length")
+        || mediaResponse.headers?.["content-length"]
+        || null;
+      response.set(getDriveContentHeaders(descriptor, upstreamLength));
+      response.set("Access-Control-Expose-Headers", DRIVE_CONTENT_EXPOSE_HEADERS);
       await pipeline(mediaResponse.data, response);
     } catch (error) {
       if (response.headersSent) {
+        console.error("driveFileContent: stream interrumpido", {
+          fileId: normalizeString(request.query.fileId),
+          message: error?.message || "Error desconocido",
+        });
         response.end();
         return;
       }
-      const status = error?.code === "unauthenticated"
-        ? 401
-        : error?.code === "permission-denied"
-          ? 403
-          : error?.code === "not-found"
-            ? 404
-            : 500;
-      response.status(status).json({ error: error?.message || "No se pudo abrir el archivo." });
+      const { status, code, message } = mapDriveContentError(error);
+      console.error("driveFileContent: solicitud fallida", {
+        code,
+        status,
+        fileId: normalizeString(request.query.fileId),
+        message: error?.message || "Error desconocido",
+      });
+      response.status(status).json({ error: { code, message } });
     }
   }
 );

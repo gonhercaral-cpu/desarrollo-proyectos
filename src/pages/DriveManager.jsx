@@ -6,7 +6,7 @@ import {
   createPrivateFolder,
   DRIVE_FOLDER_MIME_TYPE,
   deleteDriveItem,
-  downloadDriveFile,
+  getCloudFileContent,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
   getDriveStorageQuota,
@@ -511,10 +511,19 @@ export default function DriveManager() {
   const storageDisplay = useMemo(() => getStorageQuotaDisplay(storageQuota), [storageQuota]);
   const canUseEditorial = canAccessEditorial(profile, isAdmin);
 
-  const loadPreviewFile = useCallback((file) => downloadDriveFile(file), []);
+  const loadPreviewFile = useCallback((file) => getCloudFileContent(file), []);
 
-  async function handleOpenInEditorial(file, blob) {
-    const result = await importDocxToEditorial({ blob, sourceFile: file, user: profile });
+  async function handleOpenInEditorial(file, content) {
+    const result = await importDocxToEditorial({
+      blob: content.blob,
+      sourceFile: {
+        ...file,
+        deliveredName: content.deliveredName,
+        deliveredMimeType: content.deliveredMimeType,
+        exported: content.exported,
+      },
+      user: profile,
+    });
     navigate(`/editorial/${result.projectId}`);
   }
 

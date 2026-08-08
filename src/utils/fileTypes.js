@@ -13,6 +13,7 @@ export const FILE_KINDS = {
 
 export const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+export const GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document";
 
 const MIME_BY_EXTENSION = {
   pdf: "application/pdf",
@@ -70,7 +71,7 @@ export function detectFileKind(file = {}) {
   if (mimeType.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif"].includes(extension)) return FILE_KINDS.IMAGE;
   if (mimeType.startsWith("video/") || ["mp4", "webm", "mov"].includes(extension)) return FILE_KINDS.VIDEO;
   if (mimeType.startsWith("audio/") || ["mp3", "wav", "ogg", "m4a"].includes(extension)) return FILE_KINDS.AUDIO;
-  if (mimeType === DOCX_MIME_TYPE || extension === "docx") return FILE_KINDS.DOCX;
+  if (mimeType === DOCX_MIME_TYPE || mimeType === GOOGLE_DOC_MIME_TYPE || extension === "docx") return FILE_KINDS.DOCX;
   if (mimeType.startsWith("text/") || ["application/json", "application/xml"].includes(mimeType) || TEXT_EXTENSIONS.has(extension)) return FILE_KINDS.TEXT;
   if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) return FILE_KINDS.SHEET;
   if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) return FILE_KINDS.PRESENTATION;
