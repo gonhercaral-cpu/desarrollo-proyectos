@@ -1590,6 +1590,96 @@
   stroke-width: 1.8;
 }
 
+.drive-internal-viewer {
+  width: min(1240px, 100%);
+  height: min(860px, calc(100vh - 32px));
+}
+
+.drive-internal-viewer-body {
+  display: grid;
+  place-items: stretch;
+  overflow: auto;
+}
+
+.drive-preview-state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  min-height: 100%;
+  padding: 32px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.drive-preview-state progress {
+  width: min(320px, 70vw);
+}
+
+.drive-preview-state.error {
+  color: var(--danger, #b42318);
+}
+
+.drive-viewer-image,
+.drive-viewer-media {
+  align-self: center;
+  justify-self: center;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.drive-viewer-text {
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 24px;
+  overflow: auto;
+  background: var(--surface);
+  color: var(--text);
+  font: 14px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.drive-viewer-audio {
+  display: grid;
+  place-content: center;
+  gap: 18px;
+  min-height: 100%;
+  padding: 32px;
+  text-align: center;
+}
+
+.drive-viewer-audio audio {
+  width: min(640px, 80vw);
+}
+
+.drive-viewer-docx {
+  width: min(816px, calc(100% - 32px));
+  min-height: calc(100% - 32px);
+  margin: 16px auto;
+  padding: clamp(28px, 6vw, 72px);
+  background: #fff;
+  color: #172033;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.12);
+  line-height: 1.6;
+}
+
+.drive-viewer-docx .drive-viewer-warning {
+  border-left: 3px solid #d97706;
+  padding: 10px 12px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.drive-viewer-docx .docx-table-row {
+  border-bottom: 1px solid #d7deea;
+  padding: 6px 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .drive-shortcut-picker-modal {
   width: min(420px, 100%);
   height: auto;
@@ -1973,6 +2063,32 @@ html[data-theme="dark"] .drive-upload-progress-card[data-status="error"] {
 }
 
 @media (max-width: 640px) {
+  .drive-preview-backdrop {
+    padding: 0;
+  }
+
+  .drive-internal-viewer {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .drive-preview-header,
+  .drive-preview-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .drive-preview-header strong {
+    max-width: 92vw;
+  }
+
+  .drive-preview-actions .visual-primary-button,
+  .drive-preview-actions .visual-outline-button {
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+
   .drive-manager-page {
     padding-inline: 14px;
     padding-bottom: 24px;

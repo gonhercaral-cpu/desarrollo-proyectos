@@ -60,6 +60,7 @@ import {
   getNotificationVisual,
 } from "../services/notificationsService";
 import useOperationalNotifications from "../hooks/useOperationalNotifications";
+import { resolveFileMimeType } from "../utils/fileTypes";
 
 // Módulo en desarrollo: reactivar cambiando este valor a true.
 const ENABLE_UNIFI_CAMERAS_MODULE = false;
@@ -2910,32 +2911,56 @@ async function uploadBoardAttachments(items, { folder, ownerUid }) {
 
   const drafts = items.filter((item) => item.status === "draft" && item.file);
 
-  const uploaded = await Promise.all(
-    drafts.map(async (item, index) => {
+  const uploaded = [];
+  try {
+    for (let index = 0; index < drafts.length; index += 1) {
+      const item = drafts[index];
       const safeName = sanitizeStorageFileName(item.name || `archivo-${index + 1}`);
       const storagePath = `${folder}/${Date.now()}-${index + 1}-${safeName}`;
       const storageRef = ref(storage, storagePath);
+      const contentType = resolveFileMimeType(item.contentType, item.name);
       await uploadBytes(storageRef, item.file, {
-        contentType: item.contentType || undefined,
+        contentType,
         customMetadata: {
           uploadedBy: ownerUid || "",
           originalName: item.name || safeName,
+          source: "dashboard_attachment",
         },
       });
-      const url = await getDownloadURL(storageRef);
-      return {
+      const uploadedAttachment = {
         name: item.name || safeName,
-        url,
+        url: "",
         path: storagePath,
-        contentType: item.contentType || "",
+        contentType,
         size: Number(item.size) || 0,
         type: item.type || getAttachmentType(item.contentType, item.name),
         source: item.source || "",
       };
-    })
-  );
+      uploaded.push(uploadedAttachment);
+      const url = await getDownloadURL(storageRef);
+      uploadedAttachment.url = url;
+    }
+  } catch (error) {
+    await Promise.all(uploaded.map((attachment) =>
+      deleteObject(ref(storage, attachment.path)).catch(() => undefined)
+    ));
+    throw error;
+  }
 
   return [...retained, ...uploaded];
+}
+
+function getAttachmentErrorMessage(error, fallback) {
+  if (error?.code === "storage/unauthorized") {
+    return "No tienes permiso para adjuntar archivos en esta conversación.";
+  }
+  if (error?.code === "storage/quota-exceeded") {
+    return "No hay espacio disponible para subir el archivo.";
+  }
+  if (error?.code === "storage/retry-limit-exceeded") {
+    return "La subida tardó demasiado. Revisa tu conexión e inténtalo de nuevo.";
+  }
+  return fallback;
 }
 
 function getRemovedAttachments(originalItems, currentItems) {
@@ -4426,7 +4451,7 @@ function InternalMessages({
       scrollActiveThreadToBottom("smooth");
     } catch (error) {
       console.error("No se pudo enviar el audio:", error);
-      setMessageError("No se pudo enviar el audio.");
+      setMessageError(getAttachmentErrorMessage(error, "No se pudo enviar el audio."));
     } finally {
       setMessageSaving(false);
     }
@@ -4631,10 +4656,11 @@ function InternalMessages({
     }
 
     setMessageSaving(true);
+    let uploadedAttachments = [];
 
     try {
       const messageId = doc(collection(db, "departmentMessages")).id;
-      const attachments = await uploadBoardAttachments(departmentAttachments, {
+      uploadedAttachments = await uploadBoardAttachments(departmentAttachments, {
         folder: `dashboard/departmentMessages/${departmentId}/${currentUserId}/${messageId}`,
         ownerUid: currentUserId,
       });
@@ -4646,7 +4672,7 @@ function InternalMessages({
         fromUserName: profile?.name || "Usuario",
         fromUserEmail: profile?.email || "",
         message: cleanMessage || "Archivo adjunto",
-        attachments,
+        attachments: uploadedAttachments,
         replyToMessageId: replyTarget?.type === "department" ? replyTarget.messageId : "",
         replyToFromUserId: replyTarget?.type === "department" ? replyTarget.fromUserId : "",
         replyToFromUserName: replyTarget?.type === "department" ? replyTarget.fromUserName : "",
@@ -4665,7 +4691,8 @@ function InternalMessages({
       scrollActiveThreadToBottom("smooth");
     } catch (error) {
       console.error("No se pudo enviar el mensaje por departamento:", error);
-      setMessageError("No se pudo enviar el mensaje al departamento.");
+      await deleteStoredAttachments(uploadedAttachments);
+      setMessageError(getAttachmentErrorMessage(error, "No se pudo enviar el mensaje al departamento."));
     } finally {
       setMessageSaving(false);
     }

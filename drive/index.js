@@ -1,7 +1,7 @@
 /* global require, exports */
 
 const { setGlobalOptions } = require("firebase-functions/v2");
-const { HttpsError, onCall } = require("firebase-functions/v2/https");
+const { HttpsError, onCall, onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { Buffer } = require("buffer");
 const { randomUUID } = require("crypto");
@@ -56,6 +56,26 @@ function getDriveClient() {
   }
 
   return driveClientPromise;
+}
+
+function setDriveContentCors(request, response) {
+  const origin = normalizeString(request.headers.origin);
+  if (origin && DRIVE_UPLOAD_ALLOWED_ORIGINS.has(origin)) {
+    response.set("Access-Control-Allow-Origin", origin);
+  }
+  response.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  response.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  response.set("Access-Control-Expose-Headers", "Content-Disposition, Content-Length, Content-Type");
+  response.set("Vary", "Origin");
+}
+
+async function getRequestProfile(request) {
+  const authorization = normalizeString(request.headers.authorization);
+  if (!authorization.startsWith("Bearer ")) {
+    throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+  }
+  const decoded = await admin.auth().verifyIdToken(authorization.slice(7));
+  return getUserProfile(decoded.uid);
 }
 
 async function assertAdmin(context) {
@@ -1134,6 +1154,64 @@ async function assertCanRestoreTrashedItem({ drive, fileId, profile }) {
 
   throw new HttpsError("permission-denied", "No tienes permiso para restaurar este elemento.");
 }
+
+exports.driveFileContent = onRequest(
+  { timeoutSeconds: 540, memory: "1GiB", cors: false },
+  async (request, response) => {
+    setDriveContentCors(request, response);
+    if (request.method === "OPTIONS") {
+      response.status(204).send("");
+      return;
+    }
+    if (request.method !== "GET") {
+      response.status(405).json({ error: "Método no permitido." });
+      return;
+    }
+
+    try {
+      const profile = await getRequestProfile(request);
+      const drive = await getDriveClient();
+      const fileId = await assertCanAccessDriveItem({
+        profile,
+        drive,
+        fileId: request.query.fileId,
+        requireWrite: false,
+      });
+      const item = await getDriveItem(drive, fileId);
+      if (item.trashed) {
+        response.status(404).json({ error: "Archivo no encontrado." });
+        return;
+      }
+      if (item.mimeType === DRIVE_FOLDER_MIME_TYPE || item.mimeType.startsWith("application/vnd.google-apps.")) {
+        response.status(415).json({ error: "Este elemento no tiene contenido descargable para el visor interno." });
+        return;
+      }
+
+      const mediaResponse = await drive.files.get(
+        { fileId, alt: "media", supportsAllDrives: true },
+        { responseType: "stream" }
+      );
+      response.set("Content-Type", item.mimeType || "application/octet-stream");
+      if (item.size) response.set("Content-Length", String(item.size));
+      response.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(item.name || "archivo")}`);
+      response.set("Cache-Control", "private, no-store, max-age=0");
+      await pipeline(mediaResponse.data, response);
+    } catch (error) {
+      if (response.headersSent) {
+        response.end();
+        return;
+      }
+      const status = error?.code === "unauthenticated"
+        ? 401
+        : error?.code === "permission-denied"
+          ? 403
+          : error?.code === "not-found"
+            ? 404
+            : 500;
+      response.status(status).json({ error: error?.message || "No se pudo abrir el archivo." });
+    }
+  }
+);
 
 exports.driveListFolder = onCall(async (request) => {
   const uid = request.auth?.uid;

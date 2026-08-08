@@ -9,7 +9,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
-import { db, functions } from "./firebase";
+import app, { auth, db, functions } from "./firebase";
 
 const DRIVE_SETTINGS_REF = doc(db, "systemSettings", "drive");
 const DRIVE_DEPARTMENT_FOLDERS_COLLECTION = "driveDepartmentFolders";
@@ -68,6 +68,30 @@ export async function uploadDriveFile({ folderId, name, mimeType, base64 }) {
     base64,
   });
   return response.data;
+}
+
+export async function downloadDriveFile(file) {
+  const fileId = String(file?.id || file || "").trim();
+  if (!fileId) throw new Error("No se encontró el archivo de Nube AES.");
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("Debes iniciar sesión para abrir el archivo.");
+  const token = await currentUser.getIdToken();
+  const projectId = app.options.projectId;
+  const response = await fetch(
+    `https://us-central1-${projectId}.cloudfunctions.net/driveFileContent?fileId=${encodeURIComponent(fileId)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!response.ok) {
+    let message = "No se pudo descargar el archivo.";
+    try {
+      const payload = await response.json();
+      message = payload?.error || message;
+    } catch {
+      // Respuesta sin JSON.
+    }
+    throw new Error(message);
+  }
+  return response.blob();
 }
 
 export async function createDriveResumableUpload({ folderId, name, mimeType, size }) {

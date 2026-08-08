@@ -135,6 +135,13 @@ export async function createEditorialProject(config, user) {
     collaboratorUids: [],
     status: "active",
     archived: false,
+    ...(config.sourceFileId ? {
+      sourceFileId: String(config.sourceFileId),
+      sourceFileName: String(config.sourceFileName || ""),
+      sourceMimeType: String(config.sourceMimeType || ""),
+      sourceProvider: String(config.sourceProvider || "nube_aes"),
+      sourcePreserved: true,
+    } : {}),
     ...(Object.keys(academicMetadata).length ? { ...academicMetadata, academicMetadata } : {}),
     createdBy: audit,
     updatedBy: audit,

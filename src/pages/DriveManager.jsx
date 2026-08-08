@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   createDriveResumableUpload,
   createDriveFolder,
   createPrivateFolder,
   DRIVE_FOLDER_MIME_TYPE,
   deleteDriveItem,
+  downloadDriveFile,
   ensureDriveDepartmentFolders,
   getDriveRootSettings,
   getDriveStorageQuota,
@@ -26,6 +28,10 @@ import {
   unshareDriveItem,
 } from "../services/driveService";
 import { useAuth } from "../context/AuthContext";
+import FileViewerModal from "../components/FileViewerModal";
+import { importDocxToEditorial } from "../services/docxService";
+import { canAccessEditorial } from "../utils/departmentMembership";
+import { detectFileKind } from "../utils/fileTypes";
 
 const DRIVE_VIEW_STORAGE_KEY = "nubeAesViewMode";
 const DRIVE_VIEW_OPTIONS = [
@@ -394,7 +400,8 @@ function DriveUploadProgress({ upload }) {
 }
 
 export default function DriveManager() {
-  const { isAdmin, uid: currentUid } = useAuth();
+  const { isAdmin, uid: currentUid, profile } = useAuth();
+  const navigate = useNavigate();
   const [rootFolderId, setRootFolderId] = useState("");
   const [rootFolderDraft, setRootFolderDraft] = useState("");
   const [currentFolderId, setCurrentFolderId] = useState("");
@@ -502,6 +509,14 @@ export default function DriveManager() {
   const quickAccessItems = useMemo(() => folderItems.slice(0, 5), [folderItems]);
   const detailFile = selectedDetailFile || fileItems[0] || folderItems[0] || null;
   const storageDisplay = useMemo(() => getStorageQuotaDisplay(storageQuota), [storageQuota]);
+  const canUseEditorial = canAccessEditorial(profile, isAdmin);
+
+  const loadPreviewFile = useCallback((file) => downloadDriveFile(file), []);
+
+  async function handleOpenInEditorial(file, blob) {
+    const result = await importDocxToEditorial({ blob, sourceFile: file, user: profile });
+    navigate(`/editorial/${result.projectId}`);
+  }
 
   const shortcutCandidates = useMemo(() => {
     const seen = new Set();
@@ -2245,6 +2260,7 @@ export default function DriveManager() {
                       className={selectedDetailFile?.id === file.id ? "active" : ""}
                       key={file.id}
                       draggable={!mutatingItemId}
+                      onDoubleClick={() => setPreviewFile(file)}
                       onDragStart={(event) => handleDragStart(event, file)}
                       onDragEnd={handleDragEnd}
                     >
@@ -2264,7 +2280,7 @@ export default function DriveManager() {
                       )}
                       {canManageItems && openActionsItemId === file.id ? (
                         <div className="drive-table-menu">
-                          <button type="button" onClick={() => file.webViewLink ? window.open(file.webViewLink, "_blank", "noopener,noreferrer") : setPreviewFile(file)}>Abrir</button>
+                          <button type="button" onClick={() => setPreviewFile(file)}>Abrir</button>
                           <button type="button" onClick={() => setSelectedDetailFile(file)}>Detalles</button>
                           <button type="button" onClick={() => setPreviewFile(file)}>Vista previa</button>
                           {myDriveActive ? (
@@ -2384,11 +2400,11 @@ export default function DriveManager() {
               )}
             </section>
           ) : null}
-          {detailFile?.webViewLink ? (
-            <a className="drive-share-button" href={detailFile.webViewLink} target="_blank" rel="noreferrer">
+          {detailFile && !isDriveFolder(detailFile) ? (
+            <button className="drive-share-button" type="button" onClick={() => setPreviewFile(detailFile)}>
               <ActionIcon name="share" />
-              <span>Abrir en Drive</span>
-            </a>
+              <span>Abrir archivo</span>
+            </button>
           ) : (
             <button className="drive-share-button" type="button" disabled>
               <ActionIcon name="share" />
@@ -2399,7 +2415,14 @@ export default function DriveManager() {
       </section>
 
       {previewFile ? (
-        <DrivePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+        <FileViewerModal
+          key={previewFile.id}
+          file={previewFile}
+          loadFile={loadPreviewFile}
+          canOpenEditorial={canUseEditorial}
+          onOpenEditorial={handleOpenInEditorial}
+          onClose={() => setPreviewFile(null)}
+        />
       ) : null}
 
       {shortcutPickerOpen ? (
@@ -2495,63 +2518,6 @@ function DriveRootForm({
     </form>
   );
 }
-function DrivePreviewModal({ file, onClose }) {
-  const previewUrl = buildDrivePreviewUrl(file);
-  const fileType = formatMimeType(file?.mimeType);
-
-  return (
-    <div className="drive-preview-backdrop" role="dialog" aria-modal="true" aria-label="Vista previa de archivo">
-      <div className="drive-preview-modal">
-        <header className="drive-preview-header">
-          <div>
-            <span>{fileType}</span>
-            <strong>{file?.name || "Archivo sin nombre"}</strong>
-          </div>
-
-          <div className="drive-preview-actions">
-            {file?.webViewLink ? (
-              <a
-                className="visual-outline-button drive-icon-button"
-                href={file.webViewLink}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <ActionIcon name="open" />
-                <span>Abrir en Drive</span>
-              </a>
-            ) : null}
-
-            <button
-              className="drive-preview-close"
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar vista previa"
-            >
-              <ActionIcon name="close" />
-            </button>
-          </div>
-        </header>
-
-        <div className="drive-preview-body">
-          {previewUrl ? (
-            <iframe title={file?.name || "Vista previa"} src={previewUrl} loading="lazy" />
-          ) : (
-            <div className="drive-preview-empty">
-              <DriveIcon type={getDriveItemType(file)} />
-              <p>Vista previa no disponible para este archivo.</p>
-              {file?.webViewLink ? (
-                <a className="visual-primary-button" href={file.webViewLink} target="_blank" rel="noreferrer">
-                  Abrir en Drive
-                </a>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ShortcutPickerModal({ candidates, existingItems, warning, onPick, onClose }) {
   const existingIds = useMemo(
     () => new Set(existingItems.map((item) => item.folderId || item.id)),
@@ -2840,16 +2806,10 @@ function getTimestampMs() {
 }
 
 function getDriveItemType(file) {
-  const mimeType = String(file?.mimeType || "");
-
-  if (isDriveFolder(file)) return "folder";
-  if (mimeType === "application/pdf") return "pdf";
-  if (mimeType.startsWith("image/")) return "image";
-  if (mimeType.startsWith("video/")) return "video";
-  if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) return "sheet";
-  if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) return "presentation";
-  if (mimeType.includes("document") || mimeType.includes("word") || mimeType === "text/plain") return "document";
-  return "file";
+  const kind = detectFileKind(file);
+  if (kind === "docx" || kind === "text") return "document";
+  if (kind === "unsupported") return "file";
+  return kind;
 }
 
 function isKnownDescendantOf(item, ancestorId, knownItems) {
@@ -2878,31 +2838,6 @@ function isKnownDescendantOf(item, ancestorId, knownItems) {
   }
 
   return false;
-}
-
-function buildDrivePreviewUrl(file) {
-  const id = String(file?.id || "").trim();
-  const type = getDriveItemType(file);
-
-  if (!id || type === "folder") {
-    return "";
-  }
-
-  const encodedId = encodeURIComponent(id);
-
-  if (type === "document") {
-    return `https://docs.google.com/document/d/${encodedId}/preview`;
-  }
-
-  if (type === "sheet") {
-    return `https://docs.google.com/spreadsheets/d/${encodedId}/preview`;
-  }
-
-  if (type === "presentation") {
-    return `https://docs.google.com/presentation/d/${encodedId}/preview`;
-  }
-
-  return `https://drive.google.com/file/d/${encodedId}/preview`;
 }
 
 function getFileMeta(file) {

@@ -36,6 +36,39 @@ service firebase.storage {
         && userDoc().data.role.lower() == "admin";
     }
 
+    function userHasDepartmentName(departmentName) {
+      return hasProfile()
+        && departmentName is string
+        && (
+          (userDoc().data.get("area", "") is string && userDoc().data.get("area", "").lower() == departmentName.lower())
+          || (userDoc().data.get("department", "") is string && userDoc().data.get("department", "").lower() == departmentName.lower())
+          || (userDoc().data.get("departmentName", "") is string && userDoc().data.get("departmentName", "").lower() == departmentName.lower())
+          || (userDoc().data.get("team", "") is string && userDoc().data.get("team", "").lower() == departmentName.lower())
+          || (userDoc().data.get("departmentNames", []) is list && departmentName in userDoc().data.get("departmentNames", []))
+          || (userDoc().data.get("departments", []) is list && departmentName in userDoc().data.get("departments", []))
+        );
+    }
+
+    function departmentPath(departmentId) {
+      return /databases/(default)/documents/departments/$(departmentId);
+    }
+
+    function userMatchesDepartmentId(departmentId) {
+      return hasProfile()
+        && departmentId is string
+        && (
+          isAdmin()
+          || userDoc().data.get("departmentId", "") == departmentId
+          || userDoc().data.get("primaryDepartmentId", "") == departmentId
+          || userDoc().data.get("areaId", "") == departmentId
+          || (userDoc().data.get("departmentIds", []) is list && departmentId in userDoc().data.get("departmentIds", []))
+          || (
+            firestore.exists(departmentPath(departmentId))
+            && userHasDepartmentName(firestore.get(departmentPath(departmentId)).data.name)
+          )
+        );
+    }
+
     function isMaterialDevelopmentDepartment() {
       return (
           userDoc().data.get("area", "") is string
@@ -509,12 +542,16 @@ service firebase.storage {
       return firestore.exists(departmentMessagePath(messageId));
     }
 
-    function canReadDepartmentMessageAttachment(messageId) {
+    function canReadDepartmentMessageAttachment(departmentId, messageId) {
       return hasProfile()
         && departmentMessageExists(messageId)
+        && firestore.get(departmentMessagePath(messageId)).data.departmentId == departmentId
         && (
           isAdmin()
-          || request.auth.uid in firestore.get(departmentMessagePath(messageId)).data.memberIds
+          || (
+            request.auth.uid in firestore.get(departmentMessagePath(messageId)).data.memberIds
+            && userMatchesDepartmentId(departmentId)
+          )
         );
     }
 
@@ -591,11 +628,20 @@ service firebase.storage {
     */
     match /dashboard/departmentMessages/{departmentId}/{fromUid}/{messageId}/{fileName} {
       allow read: if signedIn()
-        && canReadDepartmentMessageAttachment(messageId);
+        && (
+          (
+            hasProfile()
+            && request.auth.uid == fromUid
+            && userMatchesDepartmentId(departmentId)
+          )
+          || canReadDepartmentMessageAttachment(departmentId, messageId)
+        );
 
       allow create, update: if signedIn()
         && hasProfile()
         && request.auth.uid == fromUid
+        && userMatchesDepartmentId(departmentId)
+        && request.resource.metadata.uploadedBy == request.auth.uid
         && validDashboardAttachmentFile();
 
       allow delete: if signedIn()

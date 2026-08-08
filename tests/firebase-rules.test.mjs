@@ -1721,7 +1721,18 @@ describe("configuracion de Nube AES", () => {
 describe("mensajeria departamental", () => {
   it("permite a un miembro del departamento enviar mensaje", async () => {
     await assertSucceeds(
-      setDoc(doc(auth("deptmember"), "departmentMessages", "msg-member"), validDepartmentMessage())
+      setDoc(doc(auth("deptmember"), "departmentMessages", "msg-member"), validDepartmentMessage({
+        message: "Archivo adjunto",
+        attachments: [{
+          name: "manual.pdf",
+          url: "https://firebasestorage.googleapis.com/manual.pdf",
+          path: "dashboard/departmentMessages/dept-ops/deptmember/msg-member/manual.pdf",
+          contentType: "application/pdf",
+          size: 1024,
+          type: "document",
+          source: "",
+        }],
+      }))
     );
   });
 
@@ -2102,6 +2113,70 @@ describe("correcciones de material", () => {
 });
 
 describe("storage", () => {
+  it("permite adjunto departamental con MIME genérico solo al miembro autenticado", async () => {
+    const memberFile = storageAuth("deptmember").ref(
+      "dashboard/departmentMessages/dept-ops/deptmember/message-generic/source.bin"
+    );
+    await assertSucceeds(memberFile.putString("contenido", "raw", {
+      contentType: "application/octet-stream",
+      customMetadata: { uploadedBy: "deptmember", originalName: "source.bin" },
+    }));
+    await assertSucceeds(memberFile.getDownloadURL());
+    await assertFails(
+      storageAuth("outsider").ref(
+        "dashboard/departmentMessages/dept-ops/outsider/message-outsider/source.bin"
+      ).putString("contenido", "raw", {
+        contentType: "application/octet-stream",
+        customMetadata: { uploadedBy: "outsider", originalName: "source.bin" },
+      })
+    );
+    await assertFails(
+      storageAuth("deptmember").ref(
+        "dashboard/departmentMessages/dept-other/deptmember/message-other/source.bin"
+      ).putString("contenido", "raw", {
+        contentType: "application/octet-stream",
+        customMetadata: { uploadedBy: "deptmember", originalName: "source.bin" },
+      })
+    );
+  });
+
+  it("bloquea UID de metadata distinto al usuario autenticado", async () => {
+    await assertFails(
+      storageAuth("deptmember").ref(
+        "dashboard/departmentMessages/dept-ops/deptmember/message-spoof/source.bin"
+      ).putString("contenido", "raw", {
+        contentType: "application/octet-stream",
+        customMetadata: { uploadedBy: "outsider", originalName: "source.bin" },
+      })
+    );
+  });
+
+  it("protege lectura del adjunto y revoca acceso al salir del departamento", async () => {
+    const path = "dashboard/departmentMessages/dept-ops/deptmember/message-protected/manual.pdf";
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "departmentMessages", "message-protected"),
+        validDepartmentMessage({ memberIds: ["deptmember", "outsider"] })
+      );
+      await context.storage().ref(path).putString("%PDF-1.4", "raw", {
+        contentType: "application/pdf",
+        customMetadata: { uploadedBy: "deptmember", originalName: "manual.pdf" },
+      });
+    });
+
+    await assertSucceeds(storageAuth("deptmember").ref(path).getDownloadURL());
+    await assertFails(storageAuth("outsider").ref(path).getDownloadURL());
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "users", "deptmember"), {
+        area: "Otra área",
+        departmentIds: ["dept-other"],
+        primaryDepartmentId: "dept-other",
+      });
+    });
+    await assertFails(storageAuth("deptmember").ref(path).getDownloadURL());
+  });
+
   it("protege evidencias de correcciones y bloquea toda escritura directa", async () => {
     const path = "public-material-corrections/material-report-1/evidences/evidence-1.pdf";
     await testEnv.withSecurityRulesDisabled(async (context) => {
