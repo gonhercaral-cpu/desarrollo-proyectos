@@ -12,6 +12,7 @@ export {
   uploadSignageAsset,
   createWebAsset,
   importSignageAssetFromDrive,
+  importSignageAssetsFromDrive,
   createTemplateAsset,
   createVisualAdAsset,
   updateVisualAdAsset,

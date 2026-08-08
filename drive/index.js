@@ -16,6 +16,7 @@ const {
 } = require("./fileContent");
 const {
   evaluateResolvedAccess,
+  hasDepartmentLocationGrant,
   hasNonShareLocationGrant,
   isPrivateRootMetadata,
   resolveFolderAccess: resolveFolderAccessFromLocation,
@@ -288,10 +289,18 @@ async function getAuthorizedFolderAccess(profile) {
   ]);
 
   if (isAdmin(profile)) {
-    const nonShareRootIds = [await getRootFolderId(), privateRootId].filter(Boolean);
+    const [rootFolderId, departmentFolders] = await Promise.all([
+      getRootFolderId(),
+      getAllowedDepartmentFolders(profile),
+    ]);
+    const departmentRootIds = departmentFolders
+      .map((folder) => normalizeString(folder.folderId))
+      .filter(Boolean);
+    const nonShareRootIds = [rootFolderId, privateRootId, ...departmentRootIds].filter(Boolean);
     return {
       rootIds: [...nonShareRootIds, ...sharedRootIds],
       nonShareRootIds,
+      departmentRootIds,
     };
   }
 
@@ -316,6 +325,7 @@ async function getAuthorizedFolderAccess(profile) {
   return {
     rootIds,
     nonShareRootIds,
+    departmentRootIds: folders.map((folder) => normalizeString(folder.folderId)).filter(Boolean),
   };
 }
 
@@ -368,12 +378,15 @@ async function assertResolvedDriveAccess({
   requireWrite,
   outsideMessage,
   nonShareRootIds = [],
+  departmentRootIds = [],
+  resourceId = "",
 }) {
   const hasLocationGrant = hasNonShareLocationGrant(access, nonShareRootIds);
+  const hasDepartmentGrant = hasDepartmentLocationGrant(access, departmentRootIds);
   const belongsToAnotherPrivateRoot = Boolean(
     access?.privacyRootId && access.ownerUid !== profile.uid
   );
-  const shareRole = belongsToAnotherPrivateRoot || !hasLocationGrant
+  const shareRole = (belongsToAnotherPrivateRoot && !hasDepartmentGrant) || !hasLocationGrant
     ? await getResolvedShareRole({ access, uid: profile.uid })
     : null;
   const decision = evaluateResolvedAccess({
@@ -381,9 +394,21 @@ async function assertResolvedDriveAccess({
     uid: profile.uid,
     shareRole,
     requireWrite,
+    hasDepartmentLocationGrant: hasDepartmentGrant,
   });
 
-  if (decision.allowed) return;
+  if (decision.allowed) return { hasDepartmentLocationGrant: hasDepartmentGrant };
+
+  console.warn("Nube AES: acceso denegado por ubicacion efectiva", {
+    uid: profile.uid,
+    resourceId,
+    reason: decision.reason,
+    privacyRootId: access?.privacyRootId || "",
+    matchedRootIds: access?.matchedRootIds || [],
+    hasDepartmentLocationGrant: hasDepartmentGrant,
+    hasLocationGrant,
+    shareRole: shareRole || "",
+  });
 
   if (decision.reason === "outside-allowed-root") {
     throw new HttpsError("permission-denied", outsideMessage);
@@ -407,15 +432,20 @@ async function assertCanAccessDriveFolder({
   const authorized = await getAuthorizedFolderAccess(profile);
   const access = await resolveFolderAccess(drive, cleanFolderId, authorized.rootIds);
 
-  await assertResolvedDriveAccess({
+  const resolvedGrant = await assertResolvedDriveAccess({
     access,
     profile,
     requireWrite,
     outsideMessage: "No tienes permiso para acceder a esta carpeta de Nube AES.",
     nonShareRootIds: authorized.nonShareRootIds,
+    departmentRootIds: authorized.departmentRootIds,
+    resourceId: cleanFolderId,
   });
 
-  return includeAccess ? { folderId: cleanFolderId, access } : cleanFolderId;
+  const effectiveAccess = resolvedGrant.hasDepartmentLocationGrant
+    ? { ...access, privacyRootId: null, ownerUid: null, ownerName: null }
+    : access;
+  return includeAccess ? { folderId: cleanFolderId, access: effectiveAccess } : cleanFolderId;
 }
 
 function requireString(value, fieldName) {
@@ -970,6 +1000,8 @@ async function assertCanAccessDriveItem({ profile, drive, fileId, requireWrite =
     requireWrite,
     outsideMessage: "No tienes permiso para modificar este elemento de Nube AES.",
     nonShareRootIds: authorized.nonShareRootIds,
+    departmentRootIds: authorized.departmentRootIds,
+    resourceId: cleanFileId,
   });
 
   return cleanFileId;
@@ -1073,12 +1105,13 @@ async function reconcileMovedItemMetadata({ drive, item, profile }) {
   if (!snapshot.exists) return false;
 
   const metadata = snapshot.data() || {};
-  const rootFolderId = await getRootFolderId();
-  const location = await resolveFolderAccess(drive, fileId, [rootFolderId]);
+  const authorized = await getAuthorizedFolderAccess(profile);
+  const location = await resolveFolderAccess(drive, fileId, authorized.rootIds);
+  const hasDepartmentGrant = hasDepartmentLocationGrant(location, authorized.departmentRootIds);
   const now = admin.firestore.FieldValue.serverTimestamp();
   const parentId = item.parents?.[0] || "";
 
-  if (location.privacyRootId) {
+  if (location.privacyRootId && !hasDepartmentGrant) {
     await itemRef.set(
       {
         parentId,
@@ -1520,6 +1553,9 @@ exports.importDriveFileToSignageStorage = onCall(
   { timeoutSeconds: 540, memory: "1GiB" },
   async (request) => {
     const uid = request.auth?.uid;
+    const requestedFileId = normalizeString(request.data?.driveFileId);
+    const startedAt = Date.now();
+    let phase = "authorization";
 
     try {
       const profile = await assertAdmin(request);
@@ -1531,6 +1567,7 @@ exports.importDriveFileToSignageStorage = onCall(
         requireWrite: false,
       });
       const assetId = sanitizeStorageSegment(request.data?.assetId, "assetId");
+      phase = "metadata";
       const driveFile = await getDriveItem(drive, driveFileId);
       const mimeType = normalizeMimeType(driveFile.mimeType);
       const type = getSignageAssetType(mimeType);
@@ -1552,6 +1589,7 @@ exports.importDriveFileToSignageStorage = onCall(
       const downloadToken = randomUUID();
       const bucket = admin.storage().bucket();
       const storageFile = bucket.file(storagePath);
+      phase = "download";
       const mediaResponse = await drive.files.get(
         {
           fileId: driveFileId,
@@ -1561,6 +1599,7 @@ exports.importDriveFileToSignageStorage = onCall(
         { responseType: "stream" }
       );
 
+      phase = "storage-upload";
       await pipeline(
         mediaResponse.data,
         storageFile.createWriteStream({
@@ -1576,7 +1615,20 @@ exports.importDriveFileToSignageStorage = onCall(
           },
         })
       );
+      phase = "verification";
+      const [storedMetadata] = await storageFile.getMetadata();
+      const expectedSize = Number(driveFile.size || 0);
+      const storedSize = Number(storedMetadata.size || 0);
 
+      if (expectedSize > 0 && storedSize !== expectedSize) {
+        await storageFile.delete({ ignoreNotFound: true }).catch(() => {});
+        throw new HttpsError("data-loss", "El archivo copiado no coincide con el tamaño original.", {
+          expectedSize,
+          storedSize,
+        });
+      }
+
+      phase = "activity-log";
       await logDriveActivity({
         uid,
         profile,
@@ -1590,6 +1642,23 @@ exports.importDriveFileToSignageStorage = onCall(
           mimeType,
           size: driveFile.size || "",
         },
+      }).catch((activityError) => {
+        console.error("importDriveFileToSignageStorage: copia completa, fallo registro de actividad", {
+          uid,
+          driveFileId,
+          assetId,
+          message: activityError?.message || "Error desconocido",
+        });
+      });
+
+      console.info("importDriveFileToSignageStorage: copia completada", {
+        uid,
+        driveFileId,
+        assetId,
+        storagePath,
+        mimeType,
+        size: storedSize || expectedSize,
+        elapsedMs: Date.now() - startedAt,
       });
 
       return {
@@ -1597,10 +1666,18 @@ exports.importDriveFileToSignageStorage = onCall(
         storagePath,
         fileName,
         mimeType,
-        size: driveFile.size || "",
+        size: storedSize || expectedSize || 0,
         type,
       };
     } catch (error) {
+      console.error("importDriveFileToSignageStorage: fallo", {
+        uid: uid || "",
+        driveFileId: requestedFileId,
+        phase,
+        code: error?.code || error?.response?.status || "internal",
+        message: error?.message || "Error desconocido",
+        elapsedMs: Date.now() - startedAt,
+      });
       throw getSignageImportError(error);
     }
   }

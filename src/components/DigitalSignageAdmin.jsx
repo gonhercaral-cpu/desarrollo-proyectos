@@ -22,7 +22,7 @@ import {
   getPlaybackLogs,
   getSignageAuditLogs,
   getVisualTemplates,
-  importSignageAssetFromDrive,
+  importSignageAssetsFromDrive,
   logSignageAudit,
   sendWebAssetCommand,
   updateSignageCampaign,
@@ -76,7 +76,6 @@ const DEFAULT_ASSET_FORM = {
 const DEFAULT_DRIVE_IMPORT_FORM = {
   title: "",
   plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
-  durationSeconds: 10,
   category: "institucional",
   tags: "",
   publishStatus: "draft",
@@ -228,9 +227,10 @@ export default function DigitalSignageAdmin() {
   const [driveImportFolders, setDriveImportFolders] = useState([]);
   const [driveImportFolderId, setDriveImportFolderId] = useState("");
   const [driveImportBreadcrumbs, setDriveImportBreadcrumbs] = useState([]);
-  const [selectedDriveImportFile, setSelectedDriveImportFile] = useState(null);
+  const [selectedDriveImportFiles, setSelectedDriveImportFiles] = useState([]);
   const [driveImportForm, setDriveImportForm] = useState(DEFAULT_DRIVE_IMPORT_FORM);
   const [driveImportError, setDriveImportError] = useState("");
+  const [driveImportProgress, setDriveImportProgress] = useState(null);
   const [playlistForm, setPlaylistForm] = useState(DEFAULT_PLAYLIST_FORM);
   const [campaignForm, setCampaignForm] = useState(DEFAULT_CAMPAIGN_FORM);
   const [editingCampaignId, setEditingCampaignId] = useState("");
@@ -766,7 +766,8 @@ export default function DigitalSignageAdmin() {
     setDriveImportFolders([]);
     setDriveImportFolderId("");
     setDriveImportBreadcrumbs([]);
-    setSelectedDriveImportFile(null);
+    setSelectedDriveImportFiles([]);
+    setDriveImportProgress(null);
     setDriveImportForm(DEFAULT_DRIVE_IMPORT_FORM);
     await loadDriveImportRootFolder();
   }
@@ -775,7 +776,8 @@ export default function DigitalSignageAdmin() {
     if (saving) return;
     setDriveImportOpen(false);
     setDriveImportError("");
-    setSelectedDriveImportFile(null);
+    setSelectedDriveImportFiles([]);
+    setDriveImportProgress(null);
   }
 
   async function loadDriveImportRootFolder() {
@@ -792,6 +794,11 @@ export default function DigitalSignageAdmin() {
 
       await loadDriveImportFolder(rootFolderId, [{ id: rootFolderId, name: "Raíz" }]);
     } catch (error) {
+      console.error("Digital Signage: no se pudo cargar raiz de Nube AES", {
+        code: error?.code || "",
+        message: error?.message || "Error desconocido",
+        error,
+      });
       setDriveImportFiles([]);
       setDriveImportFolders([]);
       setDriveImportFolderId("");
@@ -808,7 +815,7 @@ export default function DigitalSignageAdmin() {
 
     setDriveImportLoading(true);
     setDriveImportError("");
-    setSelectedDriveImportFile(null);
+    setSelectedDriveImportFiles([]);
 
     try {
       const result = await listDriveFolder(cleanFolderId);
@@ -819,6 +826,12 @@ export default function DigitalSignageAdmin() {
       setDriveImportFolders(items.filter(isDriveFolder));
       setDriveImportFiles(items.filter((item) => !isDriveFolder(item)));
     } catch (error) {
+      console.error("Digital Signage: no se pudo abrir carpeta de Nube AES", {
+        folderId: cleanFolderId,
+        code: error?.code || "",
+        message: error?.message || "Error desconocido",
+        error,
+      });
       setDriveImportError(error.message || "No se pudo cargar la carpeta de Nube AES.");
       setDriveImportFolders([]);
       setDriveImportFiles([]);
@@ -846,12 +859,16 @@ export default function DigitalSignageAdmin() {
   }
 
   function selectDriveImportFile(file) {
-    setSelectedDriveImportFile(file);
+    if (!file?.id || isDriveFileAlreadyImported(file, assets)) return;
     setDriveImportError("");
-    setDriveImportForm((current) => ({
-      ...current,
-      title: current.title || getTitleFromFileName(file?.name),
-      durationSeconds: String(file?.mimeType || "").startsWith("video/") ? 30 : current.durationSeconds,
+    const alreadySelected = selectedDriveImportFiles.some((item) => item.id === file.id);
+    const next = alreadySelected
+      ? selectedDriveImportFiles.filter((item) => item.id !== file.id)
+      : [...selectedDriveImportFiles, file];
+    setSelectedDriveImportFiles(next);
+    setDriveImportForm((form) => ({
+      ...form,
+      title: next.length === 1 ? getTitleFromFileName(next[0]?.name) : "",
     }));
   }
 
@@ -865,30 +882,54 @@ export default function DigitalSignageAdmin() {
   async function handleImportDriveAsset(event) {
     event.preventDefault();
 
-    if (!selectedDriveImportFile) {
-      setDriveImportError("Selecciona un archivo de Nube AES.");
+    if (selectedDriveImportFiles.length === 0) {
+      setDriveImportError("Selecciona uno o varios archivos de Nube AES.");
       return;
     }
 
-    if (isDriveFileAlreadyImported(selectedDriveImportFile, assets)) {
-      setDriveImportError("Este archivo de Nube AES ya fue importado a Digital Signage.");
-      return;
-    }
+    setSaving(true);
+    setDriveImportError("");
+    setMessage("");
 
-    await runAction(async () => {
-      await importSignageAssetFromDrive(
-        selectedDriveImportFile,
+    try {
+      const result = await importSignageAssetsFromDrive(
+        selectedDriveImportFiles,
         {
           ...driveImportForm,
           sourceFolderId: driveImportFolderId,
           sourceFolderName: driveImportBreadcrumbs.at(-1)?.name || "",
         },
-        profile
+        profile,
+        { onProgress: setDriveImportProgress }
       );
+      await loadAll();
+
+      if (result.failed.length > 0) {
+        setDriveImportError(formatDriveImportFailures(result.failed));
+        setSelectedDriveImportFiles(result.failed.map((item) => item.file));
+        setMessage(
+          result.imported.length > 0
+            ? `${result.imported.length} contenido(s) importado(s); ${result.failed.length} fallaron.`
+            : "No se pudo importar contenido desde Nube AES."
+        );
+        return;
+      }
+
       setDriveImportOpen(false);
-      setSelectedDriveImportFile(null);
+      setSelectedDriveImportFiles([]);
       setDriveImportForm(DEFAULT_DRIVE_IMPORT_FORM);
-    }, "Contenido importado desde Nube AES.");
+      setMessage(
+        result.imported.length === 1
+          ? "Contenido importado desde Nube AES."
+          : `${result.imported.length} contenidos importados desde Nube AES.`
+      );
+    } catch (error) {
+      console.error("Digital Signage: fallo inesperado al importar desde Nube AES", error);
+      setDriveImportError(error?.message || "No se pudo importar contenido desde Nube AES.");
+    } finally {
+      setDriveImportProgress(null);
+      setSaving(false);
+    }
   }
 
   async function handleCreateWebAsset(event) {
@@ -2408,7 +2449,8 @@ export default function DigitalSignageAdmin() {
         type={driveImportType}
         loading={driveImportLoading}
         saving={saving}
-        selectedFile={selectedDriveImportFile}
+        selectedFiles={selectedDriveImportFiles}
+        progress={driveImportProgress}
         form={driveImportForm}
         error={driveImportError}
         assets={assets}
@@ -3910,6 +3952,15 @@ function getTitleFromFileName(fileName = "") {
   const cleanName = String(fileName || "").trim();
   if (!cleanName) return "";
   return cleanName.replace(/\.[^/.]+$/, "");
+}
+
+function formatDriveImportFailures(failures = []) {
+  const details = failures.map(({ file, code, message }) => {
+    const name = file?.name || file?.id || "Archivo sin nombre";
+    const codeLabel = code ? ` [${code}]` : "";
+    return `${name}${codeLabel}: ${message || "No se pudo importar."}`;
+  });
+  return `Fallaron ${failures.length} archivo(s). ${details.join(" | ")}`;
 }
 
 function normalizeWebSettingsForForm(settings = {}) {

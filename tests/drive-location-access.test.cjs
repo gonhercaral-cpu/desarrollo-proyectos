@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
   evaluateResolvedAccess,
+  hasDepartmentLocationGrant,
   hasNonShareLocationGrant,
   isPrivateRootMetadata,
   resolveFolderAccess,
@@ -44,6 +45,32 @@ test("solo la raiz real de Mi unidad define privacidad", () => {
   );
 });
 
+test("carpeta creada directamente en Produccion Audiovisual permite listar e importar", async () => {
+  const access = await resolve({
+    parents: {
+      video: ["carpeta-produccion"],
+      "carpeta-produccion": ["produccion-audiovisual"],
+      "produccion-audiovisual": ["nube-aes"],
+      "nube-aes": [],
+    },
+    metadata: {},
+    itemId: "video",
+    allowedRoots: ["produccion-audiovisual"],
+  });
+  const departmentGrant = hasDepartmentLocationGrant(access, ["produccion-audiovisual"]);
+
+  assert.equal(departmentGrant, true);
+  assert.deepEqual(
+    evaluateResolvedAccess({
+      access,
+      uid: "usuario-produccion",
+      requireWrite: false,
+      hasDepartmentLocationGrant: departmentGrant,
+    }),
+    { allowed: true, reason: "allowed" }
+  );
+});
+
 test("Videos Digital Signage movida a Produccion Audiovisual hereda acceso departamental", async () => {
   const parents = {
     "video-1": ["subcarpeta"],
@@ -81,6 +108,42 @@ test("Videos Digital Signage movida a Produccion Audiovisual hereda acceso depar
     );
     assert.equal(access.privacyRootId, null, `${itemId} no debe conservar privacidad historica`);
   }
+});
+
+test("rama departamental actual prevalece sobre padre privado historico aun presente", async () => {
+  const access = await resolve({
+    parents: {
+      video: ["videos-digital-signage"],
+      "videos-digital-signage": ["produccion-audiovisual", "mi-unidad-manuel"],
+      "produccion-audiovisual": ["nube-aes"],
+      "mi-unidad-manuel": ["usuarios"],
+      usuarios: ["nube-aes"],
+      "nube-aes": [],
+    },
+    metadata: {
+      "videos-digital-signage": { ownerUid: "emanuel", visibility: "private" },
+      "mi-unidad-manuel": {
+        ownerUid: "emanuel",
+        visibility: "private",
+        isRoot: true,
+      },
+    },
+    itemId: "video",
+    allowedRoots: ["produccion-audiovisual", "nube-aes"],
+  });
+  const departmentGrant = hasDepartmentLocationGrant(access, ["produccion-audiovisual"]);
+
+  assert.equal(access.privacyRootId, "mi-unidad-manuel");
+  assert.equal(departmentGrant, true);
+  assert.deepEqual(
+    evaluateResolvedAccess({
+      access,
+      uid: "administrador",
+      requireWrite: false,
+      hasDepartmentLocationGrant: departmentGrant,
+    }),
+    { allowed: true, reason: "allowed" }
+  );
 });
 
 test("usuario sin acceso a Produccion Audiovisual sigue bloqueado", async () => {

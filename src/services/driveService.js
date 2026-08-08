@@ -11,6 +11,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import app, { auth, db, functions } from "./firebase";
 import { detectFileKind, resolveFileMimeType } from "../utils/fileTypes";
+import { DRIVE_IMPORT_CALLABLE_TIMEOUT_MS } from "../utils/digitalSignage/driveImport";
 
 const DRIVE_SETTINGS_REF = doc(db, "systemSettings", "drive");
 const DRIVE_DEPARTMENT_FOLDERS_COLLECTION = "driveDepartmentFolders";
@@ -48,7 +49,8 @@ const driveListItemSharesCallable = httpsCallable(functions, "driveListItemShare
 const driveListShareableUsersCallable = httpsCallable(functions, "driveListShareableUsers");
 const importDriveFileToSignageStorageCallable = httpsCallable(
   functions,
-  "importDriveFileToSignageStorage"
+  "importDriveFileToSignageStorage",
+  { timeout: DRIVE_IMPORT_CALLABLE_TIMEOUT_MS }
 );
 
 export async function listDriveFolder(folderId) {
@@ -225,12 +227,21 @@ export async function createDriveResumableUpload({ folderId, name, mimeType, siz
 }
 
 export async function importDriveFileToSignageStorage({ driveFileId, assetId, filename = "" }) {
-  const response = await importDriveFileToSignageStorageCallable({
-    driveFileId,
-    assetId,
-    filename,
-  });
-  return response.data;
+  try {
+    const response = await importDriveFileToSignageStorageCallable({
+      driveFileId,
+      assetId,
+      filename,
+    });
+    return response.data;
+  } catch (error) {
+    const code = String(error?.code || "drive-error").replace(/^functions\//, "");
+    const detailsMessage = typeof error?.details?.message === "string"
+      ? error.details.message.trim()
+      : "";
+    const message = detailsMessage || error?.message || "No se pudo importar el archivo desde Nube AES.";
+    throw new CloudFileError(code, message, { cause: error });
+  }
 }
 
 export async function renameDriveItem(fileId, name) {

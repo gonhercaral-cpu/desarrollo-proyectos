@@ -74,7 +74,13 @@ async function resolveFolderAccess({
   };
 }
 
-function evaluateResolvedAccess({ access, uid, shareRole = null, requireWrite = true }) {
+function evaluateResolvedAccess({
+  access,
+  uid,
+  shareRole = null,
+  requireWrite = true,
+  hasDepartmentLocationGrant = false,
+}) {
   if (!access?.insideAllowedRoot) {
     return { allowed: false, reason: "outside-allowed-root" };
   }
@@ -83,11 +89,11 @@ function evaluateResolvedAccess({ access, uid, shareRole = null, requireWrite = 
     access.privacyRootId && access.ownerUid !== uid
   );
 
-  if (belongsToAnotherPrivateRoot && !shareRole) {
+  if (belongsToAnotherPrivateRoot && !hasDepartmentLocationGrant && !shareRole) {
     return { allowed: false, reason: "private" };
   }
 
-  if (shareRole && requireWrite && shareRole !== "editor") {
+  if (!hasDepartmentLocationGrant && shareRole && requireWrite && shareRole !== "editor") {
     return { allowed: false, reason: "read-only-share" };
   }
 
@@ -99,8 +105,14 @@ function hasNonShareLocationGrant(access, nonShareRootIds = []) {
   return (access?.matchedRootIds || []).some((rootId) => nonShareRoots.has(rootId));
 }
 
+function hasDepartmentLocationGrant(access, departmentRootIds = []) {
+  const departmentRoots = new Set(departmentRootIds);
+  return (access?.matchedRootIds || []).some((rootId) => departmentRoots.has(rootId));
+}
+
 module.exports = {
   evaluateResolvedAccess,
+  hasDepartmentLocationGrant,
   hasNonShareLocationGrant,
   isPrivateRootMetadata,
   resolveFolderAccess,

@@ -13,7 +13,8 @@ export default function DriveImportModal({
   type,
   loading,
   saving,
-  selectedFile,
+  selectedFiles,
+  progress,
   form,
   error,
   assets,
@@ -32,9 +33,8 @@ export default function DriveImportModal({
 }) {
   if (!open) return null;
 
-  const duplicateAsset = selectedFile
-    ? getImportedDriveAsset(selectedFile.id, assets)
-    : null;
+  const selected = Array.isArray(selectedFiles) ? selectedFiles : [];
+  const selectedIds = new Set(selected.map((file) => file.id));
 
   return (
     <div className="signage-drive-import-backdrop" role="dialog" aria-modal="true" aria-label="Importar desde Nube AES">
@@ -43,7 +43,7 @@ export default function DriveImportModal({
           <div>
             <span>Nube AES</span>
             <h3>Importar desde Nube AES</h3>
-            <p>Selecciona una carpeta y luego una imagen o video. Digital Signage copiara el archivo a Storage antes de publicarlo.</p>
+            <p>Selecciona uno o varios archivos. Digital Signage los copiará a Storage antes de registrarlos.</p>
           </div>
           <button type="button" className="drive-preview-close" onClick={onClose} disabled={saving} aria-label="Cerrar">
             <SignageIcon name="close" />
@@ -129,14 +129,16 @@ export default function DriveImportModal({
               )}
               {!loading && folderId && files.map((file) => {
                 const duplicate = getImportedDriveAsset(file.id, assets);
-                const selected = selectedFile?.id === file.id;
+                const isSelected = selectedIds.has(file.id);
 
                 return (
                   <button
                     type="button"
                     key={file.id}
-                    className={`signage-drive-import-file ${selected ? "selected" : ""}`}
+                    className={`signage-drive-import-file ${isSelected ? "selected" : ""}`}
                     onClick={() => onSelectFile(file)}
+                    disabled={saving || Boolean(duplicate)}
+                    aria-pressed={isSelected}
                   >
                     <span className="signage-drive-import-file-icon">
                       <SignageIcon name={String(file.mimeType || "").startsWith("video/") ? "video" : "file"} />
@@ -162,47 +164,39 @@ export default function DriveImportModal({
               </div>
             </div>
 
-            {selectedFile ? (
+            {selected.length > 0 ? (
               <div className="signage-drive-selected-file">
-                <strong>{selectedFile.name || "Archivo seleccionado"}</strong>
-                <span>{getDriveImportTypeLabel(selectedFile)} · {formatFileSize(selectedFile.size)}</span>
+                <strong>{selected.length === 1 ? selected[0].name || "Archivo seleccionado" : `${selected.length} archivos seleccionados`}</strong>
+                <span>
+                  {selected.length === 1
+                    ? `${getDriveImportTypeLabel(selected[0])} · ${formatFileSize(selected[0].size)}`
+                    : selected.map((file) => file.name || file.id).join(", ")}
+                </span>
               </div>
             ) : (
-              <p className="digital-empty">Selecciona un archivo para continuar.</p>
-            )}
-
-            {duplicateAsset && (
-              <div className="signage-drive-import-warning">
-                Este archivo ya existe como: <strong>{duplicateAsset.title || "Contenido sin título"}</strong>
-              </div>
+              <p className="digital-empty">Selecciona uno o varios archivos para continuar.</p>
             )}
 
             {error && <div className="signage-drive-import-error">{error}</div>}
+            {progress && (
+              <div className="signage-drive-import-warning" role="status">
+                Importando {Math.min(progress.completed + 1, progress.total)} de {progress.total}: {progress.file?.name || "archivo"}
+              </div>
+            )}
 
             <div className="digital-form-grid">
-              <label>
+              {selected.length <= 1 && <label>
                 Título
                 <input
                   value={form.title}
                   onChange={(event) => onFormChange({ title: event.target.value })}
                   placeholder="Ej. Video institucional"
-                  required
+                  required={selected.length === 1}
                 />
-              </label>
+              </label>}
               <label>
                 Plantel
                 <PlantelSelect value={form.plantel} onChange={(value) => onFormChange({ plantel: value })} />
-              </label>
-              <label>
-                Duración seg.
-                <input
-                  type="number"
-                  min="1"
-                  max="3600"
-                  value={form.durationSeconds}
-                  onChange={(event) => onFormChange({ durationSeconds: event.target.value })}
-                  required
-                />
               </label>
               <label>
                 Categoría
@@ -242,8 +236,8 @@ export default function DriveImportModal({
               <button type="button" className="visual-outline-button" onClick={onClose} disabled={saving}>
                 Cancelar
               </button>
-              <button type="submit" className="visual-primary-button" disabled={saving || !selectedFile || Boolean(duplicateAsset)}>
-                {saving ? "Importando..." : "Importar contenido"}
+              <button type="submit" className="visual-primary-button" disabled={saving || selected.length === 0}>
+                {saving ? "Importando..." : `Importar contenido${selected.length > 1 ? ` (${selected.length})` : ""}`}
               </button>
             </div>
           </form>

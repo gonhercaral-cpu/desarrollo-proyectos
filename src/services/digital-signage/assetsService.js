@@ -44,6 +44,7 @@ import {
   getOrderedCollection
 } from "./shared";
 import { logSignageAudit } from "./auditService";
+import { runDriveImportBatch } from "../../utils/digitalSignage/driveImport";
 
 export async function uploadSignageAsset(file, data, user) {
   assertAdminUser(user);
@@ -173,7 +174,7 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     throw new Error("Este archivo de Nube AES ya fue importado a Digital Signage.");
   }
 
-  const assetRef = doc(collection(db, ASSETS_COLLECTION));
+  const assetRef = createDriveImportAssetRef(driveFileId);
   const importedFile = await importDriveFileToSignageStorage({
     driveFileId,
     assetId: assetRef.id,
@@ -186,7 +187,6 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     url: importedFile.url,
     storagePath: importedFile.storagePath,
     plantel,
-    durationSeconds: cleanDuration(data?.durationSeconds),
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
     archived: false,
@@ -196,7 +196,8 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     sourceFileId: driveFileId,
     sourceFileName: cleanText(driveFile?.name || importedFile.fileName),
     sourceFileMimeType: cleanText(driveFile?.mimeType || importedFile.mimeType),
-    sourceFileSize: cleanText(driveFile?.size || importedFile.size),
+    sourceFileSize: normalizeSourceFileSize(driveFile?.size || importedFile.size),
+    sourceFileModifiedTime: cleanText(driveFile?.modifiedTime),
     sourceFolderId: cleanText(data?.sourceFolderId),
     sourceFolderName: cleanText(data?.sourceFolderName),
     importedAt: serverTimestamp(),
@@ -208,7 +209,21 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     updatedAt: serverTimestamp(),
   };
 
-  await setDoc(assetRef, payload);
+  try {
+    await setDoc(assetRef, payload);
+  } catch (error) {
+    if (importedFile.storagePath) {
+      await deleteObject(ref(storage, importedFile.storagePath)).catch((cleanupError) => {
+        console.error("Digital Signage: no se pudo limpiar archivo importado sin registro", {
+          driveFileId,
+          storagePath: importedFile.storagePath,
+          error: cleanupError,
+        });
+      });
+    }
+    throw error;
+  }
+
   await logSignageAudit("importar desde Nube AES", "nube_aes_import", assetRef.id, title, {
     sourceFileId: driveFileId,
     sourceFileName: payload.sourceFileName,
@@ -217,12 +232,56 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     sourceFolderName: payload.sourceFolderName,
     type: payload.type,
     plantel,
-  }, user);
+  }, user).catch((error) => {
+    console.error("Digital Signage: asset importado, pero fallo registro de auditoria", {
+      assetId: assetRef.id,
+      driveFileId,
+      error,
+    });
+  });
 
   return {
     id: assetRef.id,
     ...payload,
   };
+}
+
+export async function importSignageAssetsFromDrive(
+  driveFiles,
+  data,
+  user,
+  { onProgress } = {}
+) {
+  assertAdminUser(user);
+  const result = await runDriveImportBatch({
+    files: driveFiles,
+    data,
+    onProgress,
+    importFile: (file, fileData) => importSignageAssetFromDrive(file, fileData, user),
+  });
+
+  result.failed.forEach(({ file, code, message, error }) => {
+    console.error("Digital Signage: fallo importacion desde Nube AES", {
+      driveFileId: file.id,
+      fileName: file.name || "",
+      code,
+      message,
+      error,
+    });
+  });
+
+  return result;
+}
+
+function normalizeSourceFileSize(value) {
+  const size = Number(value);
+  return Number.isFinite(size) && size >= 0 ? size : 0;
+}
+
+function createDriveImportAssetRef(driveFileId) {
+  return /^[A-Za-z0-9_-]{6,128}$/.test(driveFileId)
+    ? doc(db, ASSETS_COLLECTION, driveFileId)
+    : doc(collection(db, ASSETS_COLLECTION));
 }
 
 export async function createTemplateAsset(data, user) {

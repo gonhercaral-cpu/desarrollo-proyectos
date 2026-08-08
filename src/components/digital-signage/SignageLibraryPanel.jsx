@@ -266,11 +266,11 @@ export default function SignageLibraryPanel({
               </div>
               <div className="signage-list-main">
                 <strong>{asset.title || "Sin título"}</strong>
-                <span>{getAssetTypeLabel(asset.type)} - {asset.plantel || "Sin plantel"} - {asset.durationSeconds || 10}s - {getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
+                <span>{getAssetTypeLabel(asset.type)} - {asset.plantel || "Sin plantel"} - {getLibraryDurationLabel(asset)} - {getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
                 <div className="signage-list-meta">
                   <TypeBadge type={asset.type} />
                   <span className="signage-chip">{asset.plantel || "Sin plantel"}</span>
-                  <span className="signage-chip">{asset.durationSeconds || 10}s</span>
+                  <span className="signage-chip">{getLibraryDurationLabel(asset)}</span>
                   <span className="signage-chip">{getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
                   <StatusBadge status={asset.active === false ? "inactive" : "active"} />
                   <PublishStatusBadge status={asset.publishStatus} />
@@ -492,4 +492,11 @@ export default function SignageLibraryPanel({
       </aside>
     </div>
   );
+}
+
+function getLibraryDurationLabel(asset) {
+  const durationSeconds = Number(asset?.durationSeconds);
+  return Number.isFinite(durationSeconds) && durationSeconds > 0
+    ? `${Math.round(durationSeconds)}s`
+    : "Duración al asignar";
 }
