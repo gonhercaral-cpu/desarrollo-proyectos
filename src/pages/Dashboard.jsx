@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -61,6 +61,8 @@ import {
 } from "../services/notificationsService";
 import useOperationalNotifications from "../hooks/useOperationalNotifications";
 import { resolveFileMimeType } from "../utils/fileTypes";
+
+const ActiveClassroomModule = lazy(() => import("../active-classroom/ActiveClassroomModule"));
 
 // Módulo en desarrollo: reactivar cambiando este valor a true.
 const ENABLE_UNIFI_CAMERAS_MODULE = false;
@@ -270,6 +272,16 @@ function renderDashboardNavIconPath(name) {
           <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5A2.5 2.5 0 0 1 20 21z" />
         </>
       );
+    case "classroom":
+      return (
+        <>
+          <rect x="3" y="4" width="18" height="13" rx="2" />
+          <path d="M8 21h8" />
+          <path d="M12 17v4" />
+          <path d="M7 8h10" />
+          <path d="M7 12h6" />
+        </>
+      );
     case "more":
       return (
         <>
@@ -331,6 +343,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "departments-admin", label: "Departamentos", mobileLabel: "Áreas", icon: "departments", section: "Administración" });
     items.push({ page: "drive-manager", label: "Nube AES", mobileLabel: "Nube", icon: "drive", section: "Administración" });
     items.push({ page: "subscription-manager", label: "Gestor de suscripciones", mobileLabel: "Suscripciones", icon: "subscriptions", section: "Administración" });
+    items.push({ page: "active-classroom", label: "Active Classroom", mobileLabel: "Classroom", icon: "classroom", section: "Administración" });
     items.push({ page: "digital-signage", label: "Digital Signage", mobileLabel: "Signage", icon: "signage", section: "Administración" });
     if (ENABLE_UNIFI_CAMERAS_MODULE) {
       items.push({ page: "protect-cameras", label: "UniFi Protect", mobileLabel: "Cámaras", icon: "protect", section: "Administración" });
@@ -381,6 +394,7 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "create-project",
     "collaborators-admin",
     "departments-admin",
+    "active-classroom",
     "digital-signage",
     "subscription-manager",
     "protect-cameras",
@@ -744,6 +758,14 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       return <SubscriptionManager />;
     }
 
+    if (page === "active-classroom" && isAdmin) {
+      return (
+        <Suspense fallback={<div className="loading-screen"><h2>Cargando Active Classroom...</h2></div>}>
+          <ActiveClassroomModule profile={profile} />
+        </Suspense>
+      );
+    }
+
     if (page === "digital-signage" && isAdmin) {
       return <DigitalSignageAdmin />;
     }
@@ -903,6 +925,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
     if (navPage === "subscription-manager") {
       return page === "subscription-manager";
+    }
+
+    if (navPage === "active-classroom") {
+      return page === "active-classroom";
     }
 
     if (navPage === "digital-signage") {
@@ -1097,7 +1123,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
         onLogout={handleLogout}
       />
 
-      <main className="main-content">
+      <main className={`main-content ${page === "active-classroom" ? "active-classroom-shell" : ""}`}>
         <TopProfileBar
           profile={profile}
           isAdmin={isAdmin}

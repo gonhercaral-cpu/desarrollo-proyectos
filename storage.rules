@@ -69,6 +69,32 @@ service firebase.storage {
         );
     }
 
+    function activeClassroomResourcePath(resourceId) {
+      return /databases/(default)/documents/activeClassroomResources/$(resourceId);
+    }
+
+    function canReadActiveClassroomResource(resourceId) {
+      return isAdmin()
+        || (
+          hasProfile()
+          && firestore.exists(activeClassroomResourcePath(resourceId))
+          && firestore.get(activeClassroomResourcePath(resourceId)).data.published == true
+        );
+    }
+
+    function validActiveClassroomFile(fileName) {
+      return request.resource.size < 250 * 1024 * 1024
+        && fileName.matches(
+          ".*\\.(pdf|ppt|pptx|doc|docx|xls|xlsx|png|jpg|jpeg|gif|svg|webp|avif|mp3|wav|m4a|aac|flac|ogg|mp4|m4v|mov|webm|mpeg|avi)$"
+        )
+        && (
+          request.resource.contentType.matches("image/.*")
+          || request.resource.contentType.matches("audio/.*")
+          || request.resource.contentType.matches("video/.*")
+          || request.resource.contentType.matches("application/.*")
+        );
+    }
+
     function isMaterialDevelopmentDepartment() {
       return (
           userDoc().data.get("area", "") is string
@@ -927,6 +953,17 @@ service firebase.storage {
       allow update: if false;
 
       allow delete: if signedIn() && isAdmin();
+    }
+
+    match /active-classroom/resources/{resourceId}/{fileName} {
+      allow read: if canReadActiveClassroomResource(resourceId);
+
+      allow create: if isAdmin()
+        && validActiveClassroomFile(fileName);
+
+      allow update: if false;
+
+      allow delete: if isAdmin();
     }
 
     match /{allPaths=**} {

@@ -109,15 +109,15 @@ service cloud.firestore {
 
     function isEditorialProjectCollaborator(data) {
       return hasProfile()
-        && data.collaboratorUids is list
-        && request.auth.uid in data.collaboratorUids;
+        && data.get("collaboratorUids", []) is list
+        && request.auth.uid in data.get("collaboratorUids", []);
     }
 
     function canAccessEditorialProjectData(data) {
       return hasProfile()
         && (
           isAdmin()
-          || data.ownerUid == request.auth.uid
+          || data.get("ownerUid", "") == request.auth.uid
           || isEditorialProjectCollaborator(data)
         );
     }
@@ -2988,6 +2988,151 @@ service cloud.firestore {
         && request.resource.data.updatedAt is timestamp;
     }
 
+    function validActiveClassroomFolderCreate() {
+      return isAdmin()
+        && request.resource.data.keys().hasOnly([
+          "name",
+          "parentId",
+          "kind",
+          "position",
+          "active",
+          "createdAt",
+          "createdByUid",
+          "updatedAt",
+          "updatedByUid"
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 56
+        && request.resource.data.kind in ["level", "unit"]
+        && (
+          (request.resource.data.kind == "level" && request.resource.data.parentId == null)
+          || (
+            request.resource.data.kind == "unit"
+            && request.resource.data.parentId is string
+            && request.resource.data.parentId.size() > 0
+            && existsAfter(
+              /databases/$(database)/documents/activeClassroomFolders/$(request.resource.data.parentId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/activeClassroomFolders/$(request.resource.data.parentId)
+            ).data.kind == "level"
+          )
+        )
+        && request.resource.data.position is number
+        && request.resource.data.position >= 0
+        && request.resource.data.active is bool
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function validActiveClassroomFolderUpdate() {
+      return isAdmin()
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.parentId == resource.data.parentId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "position",
+          "active",
+          "updatedAt",
+          "updatedByUid"
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 56
+        && request.resource.data.position is number
+        && request.resource.data.active is bool
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function validActiveClassroomResourceCreate(resourceId) {
+      return isAdmin()
+        && request.resource.data.keys().hasOnly([
+          "folderId",
+          "name",
+          "kind",
+          "mimeType",
+          "sizeBytes",
+          "storagePath",
+          "published",
+          "archived",
+          "createdAt",
+          "createdByUid",
+          "createdByName",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName"
+        ])
+        && request.resource.data.folderId is string
+        && request.resource.data.folderId.size() > 0
+        && exists(
+          /databases/$(database)/documents/activeClassroomFolders/$(request.resource.data.folderId)
+        )
+        && get(
+          /databases/$(database)/documents/activeClassroomFolders/$(request.resource.data.folderId)
+        ).data.kind == "unit"
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 160
+        && request.resource.data.kind in [
+          "presentation",
+          "audio",
+          "video",
+          "document",
+          "image"
+        ]
+        && request.resource.data.mimeType is string
+        && request.resource.data.mimeType.size() <= 160
+        && request.resource.data.sizeBytes is number
+        && request.resource.data.sizeBytes >= 0
+        && request.resource.data.sizeBytes < 250 * 1024 * 1024
+        && request.resource.data.storagePath is string
+        && request.resource.data.storagePath.matches(
+          "^active-classroom/resources/" + resourceId + "/[^/]+$"
+        )
+        && request.resource.data.published is bool
+        && request.resource.data.archived is bool
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByName is string
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string;
+    }
+
+    function validActiveClassroomResourceUpdate() {
+      return isAdmin()
+        && request.resource.data.folderId == resource.data.folderId
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.mimeType == resource.data.mimeType
+        && request.resource.data.sizeBytes == resource.data.sizeBytes
+        && request.resource.data.storagePath == resource.data.storagePath
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.createdByName == resource.data.createdByName
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "published",
+          "archived",
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName"
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 160
+        && request.resource.data.published is bool
+        && request.resource.data.archived is bool
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string;
+    }
+
     match /announcements/{announcementId} {
       allow read: if hasProfile();
 
@@ -3029,6 +3174,28 @@ service cloud.firestore {
       allow get, list: if isAdminRole();
 
       allow create, update, delete: if isAdminRole();
+    }
+
+    match /activeClassroomFolders/{folderId} {
+      allow get, list: if hasProfile();
+
+      allow create: if validActiveClassroomFolderCreate();
+
+      allow update: if validActiveClassroomFolderUpdate();
+
+      allow delete: if isAdmin()
+        && resource.data.kind == "unit";
+    }
+
+    match /activeClassroomResources/{resourceId} {
+      allow get, list: if isAdmin()
+        || (hasProfile() && resource.data.published == true);
+
+      allow create: if validActiveClassroomResourceCreate(resourceId);
+
+      allow update: if validActiveClassroomResourceUpdate();
+
+      allow delete: if isAdmin();
     }
 
     match /driveDepartmentFolders/{folderId} {
@@ -4081,7 +4248,11 @@ service cloud.firestore {
 
     match /editorialProjects/{projectId} {
       allow get: if canAccessEditorialProjectData(resource.data);
-      allow list: if canAccessEditorialProjectData(resource.data);
+      allow list: if isAdmin();
+      allow list: if hasProfile()
+        && resource.data.ownerUid == request.auth.uid;
+      allow list: if hasProfile()
+        && request.auth.uid in resource.data.collaboratorUids;
       allow create: if validEditorialProjectCreate();
       allow update: if request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.createdAt == resource.data.createdAt
