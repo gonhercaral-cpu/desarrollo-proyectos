@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Active Classroom",
+  "version": "0.1.0",
+  "identifier": "com.activeclassroom.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "teacher",
+        "title": "Active Classroom · Panel del profesor",
+        "width": 1240,
+        "height": 820,
+        "minWidth": 920,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true
+      },
+      {
+        "label": "audience",
+        "title": "Active Classroom · Alumnado",
+        "width": 1280,
+        "height": 720,
+        "decorations": false,
+        "resizable": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**"]
+      },
+      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1430; img-src 'self' asset: http://asset.localhost http://127.0.0.1:1430 blob: data:; media-src 'self' asset: http://asset.localhost http://127.0.0.1:1430 blob:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"],
+    "category": "Education",
+    "shortDescription": "Panel de aula con vista docente y proyección para el alumnado"
+  }
+}

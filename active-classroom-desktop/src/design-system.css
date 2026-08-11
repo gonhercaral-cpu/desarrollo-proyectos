@@ -1,0 +1,27 @@
+:root {
+  --ac-space-1: clamp(0.3rem, 0.25rem + 0.2vw, 0.45rem);
+  --ac-space-2: clamp(0.55rem, 0.48rem + 0.3vw, 0.8rem);
+  --ac-space-3: clamp(0.85rem, 0.72rem + 0.5vw, 1.2rem);
+  --ac-space-4: clamp(1.1rem, 0.9rem + 0.7vw, 1.65rem);
+  --ac-radius-sm: 0.5rem;
+  --ac-radius-md: 0.8rem;
+  --ac-radius-lg: 1rem;
+  --ac-touch: 2.75rem;
+  --ac-text-xs: clamp(0.68rem, 0.65rem + 0.08vw, 0.76rem);
+  --ac-text-sm: clamp(0.78rem, 0.73rem + 0.12vw, 0.9rem);
+  --ac-text-md: clamp(0.95rem, 0.86rem + 0.25vw, 1.12rem);
+  --ac-text-lg: clamp(1.18rem, 1rem + 0.55vw, 1.55rem);
+  --ac-border: #e0e5ec;
+  --ac-surface: #fff;
+  --ac-surface-muted: #f4f6f9;
+  --ac-shadow: 0 0.5rem 1.7rem rgb(23 35 57 / 5%);
+}
+
+/* Primitivas obligatorias para nuevas pantallas y componentes. */
+.ui-card { min-width: 0; overflow: hidden; border: 1px solid var(--ac-border); border-radius: var(--ac-radius-md); background: var(--ac-surface); box-shadow: var(--ac-shadow); }
+.ui-stack { min-width: 0; display: flex; flex-direction: column; gap: var(--ac-space-2); }
+.ui-cluster { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--ac-space-2); }
+.ui-grid { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: var(--ac-space-3); }
+.ui-touch { min-width: var(--ac-touch); min-height: var(--ac-touch); }
+.ui-media-frame { width: 100%; min-width: 0; overflow: hidden; aspect-ratio: var(--media-ratio, 16 / 9); }
+

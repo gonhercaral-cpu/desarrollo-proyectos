@@ -1,0 +1,633 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-01T06:35:28.004Z",
+  "folders": [
+    {
+      "id": "level-1",
+      "name": "Nivel 1",
+      "parentId": null,
+      "kind": "level",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-01",
+      "name": "Unit 01",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-02",
+      "name": "Unit 02",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-03",
+      "name": "Unit 03",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-04",
+      "name": "Unit 04",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-05",
+      "name": "Unit 05",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-06",
+      "name": "Unit 06",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-07",
+      "name": "Unit 07",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-08",
+      "name": "Unit 08",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-09",
+      "name": "Unit 09",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-10",
+      "name": "Unit 10",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-11",
+      "name": "Unit 11",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-12",
+      "name": "Unit 12",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-13",
+      "name": "Unit 13",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-14",
+      "name": "Unit 14",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-15",
+      "name": "Unit 15",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-1-unit-16",
+      "name": "Unit 16",
+      "parentId": "level-1",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2",
+      "name": "Nivel 2",
+      "parentId": null,
+      "kind": "level",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-01",
+      "name": "Unit 01",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-02",
+      "name": "Unit 02",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-03",
+      "name": "Unit 03",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-04",
+      "name": "Unit 04",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-05",
+      "name": "Unit 05",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-06",
+      "name": "Unit 06",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-07",
+      "name": "Unit 07",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-08",
+      "name": "Unit 08",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-09",
+      "name": "Unit 09",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-10",
+      "name": "Unit 10",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-11",
+      "name": "Unit 11",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-12",
+      "name": "Unit 12",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-13",
+      "name": "Unit 13",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-14",
+      "name": "Unit 14",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-15",
+      "name": "Unit 15",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-2-unit-16",
+      "name": "Unit 16",
+      "parentId": "level-2",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3",
+      "name": "Nivel 3",
+      "parentId": null,
+      "kind": "level",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-01",
+      "name": "Unit 01",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-02",
+      "name": "Unit 02",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-03",
+      "name": "Unit 03",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-04",
+      "name": "Unit 04",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-05",
+      "name": "Unit 05",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-06",
+      "name": "Unit 06",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-07",
+      "name": "Unit 07",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-08",
+      "name": "Unit 08",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-09",
+      "name": "Unit 09",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-10",
+      "name": "Unit 10",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-11",
+      "name": "Unit 11",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-12",
+      "name": "Unit 12",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-13",
+      "name": "Unit 13",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-14",
+      "name": "Unit 14",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-15",
+      "name": "Unit 15",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-3-unit-16",
+      "name": "Unit 16",
+      "parentId": "level-3",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4",
+      "name": "Nivel 4",
+      "parentId": null,
+      "kind": "level",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-01",
+      "name": "Unit 01",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-02",
+      "name": "Unit 02",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-03",
+      "name": "Unit 03",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-04",
+      "name": "Unit 04",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-05",
+      "name": "Unit 05",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-06",
+      "name": "Unit 06",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-07",
+      "name": "Unit 07",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-08",
+      "name": "Unit 08",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-09",
+      "name": "Unit 09",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-10",
+      "name": "Unit 10",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-11",
+      "name": "Unit 11",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-12",
+      "name": "Unit 12",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-13",
+      "name": "Unit 13",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-14",
+      "name": "Unit 14",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-15",
+      "name": "Unit 15",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-4-unit-16",
+      "name": "Unit 16",
+      "parentId": "level-4",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5",
+      "name": "Nivel 5",
+      "parentId": null,
+      "kind": "level",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-01",
+      "name": "Unit 01",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-02",
+      "name": "Unit 02",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-03",
+      "name": "Unit 03",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-04",
+      "name": "Unit 04",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-05",
+      "name": "Unit 05",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-06",
+      "name": "Unit 06",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-07",
+      "name": "Unit 07",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-08",
+      "name": "Unit 08",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-09",
+      "name": "Unit 09",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-10",
+      "name": "Unit 10",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-11",
+      "name": "Unit 11",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-12",
+      "name": "Unit 12",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-13",
+      "name": "Unit 13",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-14",
+      "name": "Unit 14",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-15",
+      "name": "Unit 15",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    },
+    {
+      "id": "level-5-unit-16",
+      "name": "Unit 16",
+      "parentId": "level-5",
+      "kind": "unit",
+      "updated": "Base local"
+    }
+  ],
+  "files": [
+    {
+      "id": "file-3876bba9-0ab9-4c1a-968a-c7a84a055287",
+      "folderId": "level-1-unit-01",
+      "name": "demo-landscape.svg",
+      "kind": "image",
+      "size": "2 KB",
+      "updated": "Ahora",
+      "published": false,
+      "mimeType": "image/svg+xml",
+      "persisted": true,
+      "dimensions": "267 × 150",
+      "storedName": "file-3876bba9-0ab9-4c1a-968a-c7a84a055287.svg",
+      "localPath": "/Users/emmanuel/Active Classroom/local-library/files/file-3876bba9-0ab9-4c1a-968a-c7a84a055287.svg",
+      "url": "/__active_classroom/files/file-3876bba9-0ab9-4c1a-968a-c7a84a055287"
+    },
+    {
+      "id": "qa-shared-landscape",
+      "folderId": "level-1-unit-01",
+      "name": "Vista compartida.svg",
+      "kind": "image",
+      "size": "1 KB",
+      "byteSize": 1772,
+      "updated": "QA local",
+      "published": true,
+      "mimeType": "image/svg+xml",
+      "dimensions": "1920 × 1080",
+      "storedName": "qa-shared-landscape.svg",
+      "localPath": "/Users/emmanuel/Active Classroom/local-library/files/qa-shared-landscape.svg",
+      "url": "/__active_classroom/files/qa-shared-landscape"
+    }
+  ]
+}
