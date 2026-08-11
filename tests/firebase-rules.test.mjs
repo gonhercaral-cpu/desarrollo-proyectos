@@ -705,6 +705,41 @@ function validInternalMessage(overrides = {}) {
   };
 }
 
+function validActiveClassroomFolder(overrides = {}) {
+  return {
+    name: "Nivel 1",
+    parentId: null,
+    kind: "level",
+    position: 1,
+    active: true,
+    createdAt: Timestamp.now(),
+    createdByUid: "admin",
+    updatedAt: Timestamp.now(),
+    updatedByUid: "admin",
+    ...overrides,
+  };
+}
+
+function validActiveClassroomResource(resourceId, overrides = {}) {
+  return {
+    folderId: "level-1-unit-01",
+    name: "guia.pdf",
+    kind: "document",
+    mimeType: "application/pdf",
+    sizeBytes: 1024,
+    storagePath: `active-classroom/resources/${resourceId}/guia.pdf`,
+    published: false,
+    archived: false,
+    createdAt: Timestamp.now(),
+    createdByUid: "admin",
+    createdByName: "Admin",
+    updatedAt: Timestamp.now(),
+    updatedByUid: "admin",
+    updatedByName: "Admin",
+    ...overrides,
+  };
+}
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
@@ -735,6 +770,118 @@ describe("roles y perfiles", () => {
   it("bloquea usuario inactivo aunque tenga role admin", async () => {
     const db = auth("inactive");
     await assertFails(getDocs(collection(db, "projects")));
+  });
+});
+
+describe("Active Classroom", () => {
+  it("permite administrar carpetas solo a admin y leerlas a perfiles activos", async () => {
+    await assertSucceeds(setDoc(
+      doc(auth("admin"), "activeClassroomFolders", "level-1"),
+      validActiveClassroomFolder()
+    ));
+    await assertSucceeds(getDoc(doc(auth("collab"), "activeClassroomFolders", "level-1")));
+    await assertFails(setDoc(
+      doc(auth("collab"), "activeClassroomFolders", "level-2"),
+      validActiveClassroomFolder({
+        name: "Nivel 2",
+        position: 2,
+        createdByUid: "collab",
+        updatedByUid: "collab",
+      })
+    ));
+  });
+
+  it("admite inicialización segmentada de 16 Units por Nivel", async () => {
+    const db = auth("admin");
+    await assertSucceeds(setDoc(
+      doc(db, "activeClassroomFolders", "level-1"),
+      validActiveClassroomFolder()
+    ));
+
+    const batch = writeBatch(db);
+    for (let unitNumber = 1; unitNumber <= 16; unitNumber += 1) {
+      const unitSuffix = String(unitNumber).padStart(2, "0");
+      batch.set(
+        doc(db, "activeClassroomFolders", `level-1-unit-${unitSuffix}`),
+        validActiveClassroomFolder({
+          name: `Unit ${unitSuffix}`,
+          parentId: "level-1",
+          kind: "unit",
+          position: unitNumber,
+        })
+      );
+    }
+
+    await assertSucceeds(batch.commit());
+  });
+
+  it("expone a perfiles activos solo recursos publicados", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await Promise.all([
+        setDoc(
+          doc(db, "activeClassroomResources", "published-resource"),
+          validActiveClassroomResource("published-resource", { published: true })
+        ),
+        setDoc(
+          doc(db, "activeClassroomResources", "draft-resource"),
+          validActiveClassroomResource("draft-resource")
+        ),
+      ]);
+    });
+
+    await assertSucceeds(getDoc(
+      doc(auth("collab"), "activeClassroomResources", "published-resource")
+    ));
+    await assertFails(getDoc(
+      doc(auth("collab"), "activeClassroomResources", "draft-resource")
+    ));
+    await assertSucceeds(getDoc(
+      doc(auth("admin"), "activeClassroomResources", "draft-resource")
+    ));
+    await assertSucceeds(getDocs(query(
+      collection(auth("collab"), "activeClassroomResources"),
+      where("published", "==", true)
+    )));
+    await assertFails(getDocs(collection(
+      auth("collab"),
+      "activeClassroomResources"
+    )));
+  });
+
+  it("permite crear y publicar recursos solo a admin", async () => {
+    await assertSucceeds(setDoc(
+      doc(auth("admin"), "activeClassroomFolders", "level-1"),
+      validActiveClassroomFolder()
+    ));
+    await assertSucceeds(setDoc(
+      doc(auth("admin"), "activeClassroomFolders", "level-1-unit-01"),
+      validActiveClassroomFolder({
+        name: "Unit 01",
+        parentId: "level-1",
+        kind: "unit",
+      })
+    ));
+    const resourceRef = doc(auth("admin"), "activeClassroomResources", "admin-resource");
+    await assertSucceeds(setDoc(
+      resourceRef,
+      validActiveClassroomResource("admin-resource")
+    ));
+    await assertSucceeds(updateDoc(resourceRef, {
+      published: true,
+      updatedAt: Timestamp.now(),
+      updatedByUid: "admin",
+      updatedByName: "Admin",
+    }));
+    await assertFails(setDoc(
+      doc(auth("collab"), "activeClassroomResources", "collab-resource"),
+      validActiveClassroomResource("collab-resource", {
+        createdByUid: "collab",
+        updatedByUid: "collab",
+        createdByName: "Collaborator",
+        updatedByName: "Collaborator",
+      })
+    ));
   });
 });
 
@@ -2175,6 +2322,38 @@ describe("storage", () => {
       });
     });
     await assertFails(storageAuth("deptmember").ref(path).getDownloadURL());
+  });
+
+  it("protege archivos Active Classroom por rol y publicación", async () => {
+    const resourceId = "storage-resource";
+    const path = `active-classroom/resources/${resourceId}/guia.pdf`;
+    const adminFile = storageAuth("admin").ref(path);
+
+    await assertSucceeds(
+      adminFile.putString("%PDF-1.4", "raw", { contentType: "application/pdf" })
+    );
+    await assertFails(
+      storageAuth("collab").ref(`active-classroom/resources/forged/recurso.pdf`)
+        .putString("%PDF-1.4", "raw", { contentType: "application/pdf" })
+    );
+    await assertFails(storageAuth("collab").ref(path).getDownloadURL());
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "activeClassroomResources", resourceId),
+        validActiveClassroomResource(resourceId, { published: true })
+      );
+    });
+
+    await assertSucceeds(storageAuth("collab").ref(path).getDownloadURL());
+    await assertFails(storageAuth("inactive").ref(path).getDownloadURL());
+  });
+
+  it("bloquea extensiones no permitidas en Active Classroom", async () => {
+    await assertFails(
+      storageAuth("admin").ref("active-classroom/resources/code/script.exe")
+        .putString("binary", "raw", { contentType: "application/octet-stream" })
+    );
   });
 
   it("protege evidencias de correcciones y bloquea toda escritura directa", async () => {
