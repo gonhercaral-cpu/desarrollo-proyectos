@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-label="Paisaje de montaña junto a un lago">
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#63b9ec"/><stop offset="1" stop-color="#d9eff8"/></linearGradient>
+    <linearGradient id="water" x2="0" y2="1"><stop stop-color="#3b8699"/><stop offset="1" stop-color="#173c50"/></linearGradient>
+    <linearGradient id="mountain" x2="0" y2="1"><stop stop-color="#eef1e9"/><stop offset=".38" stop-color="#8d9b9b"/><stop offset="1" stop-color="#44555b"/></linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#sky)"/>
+  <g fill="#fff" opacity=".8"><ellipse cx="150" cy="95" rx="90" ry="25"/><ellipse cx="235" cy="82" rx="65" ry="20"/><ellipse cx="715" cy="105" rx="95" ry="23"/></g>
+  <path d="M0 300 155 160 255 260 405 105 540 265 675 135 820 275 960 178 960 365 0 365Z" fill="url(#mountain)"/>
+  <g fill="#f5f6f2"><path d="m110 205 45-45 28 50-30-13-19 24Z"/><path d="m342 170 63-65 54 105-46-42-33 36Z"/><path d="m629 183 46-48 45 84-40-34-22 27Z"/></g>
+  <path d="M0 308 Q180 266 345 318T690 294T960 320V390H0Z" fill="#1f4a3b"/>
+  <g fill="#14382d"><path d="m80 210-33 145h66Z"/><path d="m175 230-28 132h58Z"/><path d="m780 215-35 155h74Z"/><path d="m865 225-31 145h64Z"/></g>
+  <rect y="360" width="960" height="180" fill="url(#water)"/>
+  <path d="M0 382 Q190 350 360 382T710 370T960 390" fill="none" stroke="#a8d6d7" stroke-width="4" opacity=".55"/>
+  <path d="M0 420 Q210 395 390 425T760 410T960 430" fill="none" stroke="#d6eef0" stroke-width="3" opacity=".32"/>
+  <g opacity=".25" transform="translate(0 720) scale(1 -1)"><path d="M0 300 155 160 255 260 405 105 540 265 675 135 820 275 960 178 960 365 0 365Z" fill="#dbe5e1"/></g>
+</svg>

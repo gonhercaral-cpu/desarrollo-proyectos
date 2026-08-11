@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Permisos mínimos para las ventanas de Active Classroom","local":true,"windows":["teacher","audience"],"permissions":["core:default","dialog:allow-open"]}}

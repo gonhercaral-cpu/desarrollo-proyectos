@@ -1,0 +1,27 @@
+{
+  "name": "active-classroom",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "admin:dev": "vite --config admin-web/vite.config.js",
+    "admin:build": "tsc -p admin-web/tsconfig.json && vite build --config admin-web/vite.config.js",
+    "admin:test": "node admin-web/tests/smoke.mjs",
+    "local:integration:test": "node tests/local-integration.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}

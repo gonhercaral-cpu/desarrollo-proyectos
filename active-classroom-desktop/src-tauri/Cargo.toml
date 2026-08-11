@@ -1,0 +1,21 @@
+[package]
+name = "active-classroom"
+version = "0.1.0"
+description = "Panel docente y vista de alumnado para un salón de clases activo"
+authors = ["Active Classroom"]
+edition = "2021"
+
+[lib]
+name = "active_classroom_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+regex = "1"
+zip = "2.4"

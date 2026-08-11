@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Active Classroom: ejecutar app",
+      "type": "npm",
+      "script": "tauri:dev",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Active Classroom: revisar interfaz web",
+      "type": "npm",
+      "script": "dev",
+      "problemMatcher": []
+    }
+  ]
+}
+
