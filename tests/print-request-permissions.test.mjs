@@ -203,7 +203,7 @@ describe("permisos de solicitudes de Imprenta", () => {
     assert.equal(getPrintRequestMemberRole("ernesto-uid", request), "collaborator");
   });
 
-  it("limita correcciones de certificados a admin o responsable sin bloquear Entregada", () => {
+  it("permite correcciones de certificados a admin, responsable y apoyo aunque esté Entregada", () => {
     const request = {
       status: "Entregada",
       assignedUserId: "tony-uid",
@@ -213,7 +213,7 @@ describe("permisos de solicitudes de Imprenta", () => {
 
     assert.equal(canManageRequestStudents(request, { uid: "admin-uid" }, true), true);
     assert.equal(canManageRequestStudents(request, { uid: "tony-uid" }), true);
-    assert.equal(canManageRequestStudents(request, { uid: "ernesto-uid" }), false);
+    assert.equal(canManageRequestStudents(request, { uid: "ernesto-uid" }), true);
     assert.equal(canManageRequestStudents(request, { uid: "otro-uid" }), false);
   });
 

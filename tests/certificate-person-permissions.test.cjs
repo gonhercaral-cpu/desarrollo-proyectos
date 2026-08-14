@@ -6,6 +6,7 @@ const { canManageCertificateStudents } = require("../functions/certificatePerson
 const deliveredRequest = {
   status: "Entregada",
   responsibleUid: "production-user",
+  supportUserId: "support-user",
   responsibleEmail: "responsable@example.com",
 };
 
@@ -23,6 +24,12 @@ test("responsable de producción administra únicamente su solicitud entregada",
   assert.equal(canManageCertificateStudents(deliveredRequest, profile, { uid: "another-user" }), false);
 });
 
+test("colaborador de apoyo administra su solicitud entregada", () => {
+  const profile = { active: true, role: "collaborator", department: "Imprenta", email: "apoyo@example.com" };
+  assert.equal(canManageCertificateStudents(deliveredRequest, profile, { uid: "support-user" }), true);
+  assert.equal(canManageCertificateStudents(deliveredRequest, profile, { uid: "another-user" }), false);
+});
+
 test("colaborador de imprenta no asignado no administra alumnos", () => {
   const profile = { active: true, role: "collaborator", department: "Imprenta", email: "other@example.com" };
   assert.equal(canManageCertificateStudents(deliveredRequest, profile, { uid: "other-user" }), false);
@@ -33,6 +40,11 @@ test("fallback histórico por correo solo aplica cuando no existe responsable es
   const profile = { active: true, role: "collaborator", department: "Imprenta", email: "legacy@example.com" };
   assert.equal(canManageCertificateStudents(historicalRequest, profile, { uid: "legacy-user" }), true);
   assert.equal(canManageCertificateStudents(deliveredRequest, profile, { uid: "legacy-user" }), false);
+  assert.equal(canManageCertificateStudents(
+    { status: "Entregada", supportUserId: "support-user", responsibleEmail: "legacy@example.com" },
+    profile,
+    { uid: "legacy-user" }
+  ), false);
 });
 
 test("usuario fuera de Imprenta no recibe permiso por coincidencia de UID", () => {

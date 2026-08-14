@@ -4,6 +4,7 @@ const { Firestore, FieldValue, Timestamp } = require("../functions/node_modules/
 const {
   normalizeName,
   buildFolio,
+  buildValidationUrl,
   removeUndefinedValues,
   serializeCallableResult,
 } = require("../functions/certificatePersonOperations");
@@ -22,6 +23,13 @@ test("conserva formato de folio actual y acepta secuencia server-side", () => {
   }, 7);
 
   assert.match(folio, /^CERT-2026-A1-2026-00123-007$/);
+});
+
+test("genera URL pública única para validación de certificados", () => {
+  assert.equal(
+    buildValidationUrl("CERT-2026-A1 001"),
+    "https://sistema-desarrollo-proyectos.web.app/validar-certificado/CERT-2026-A1%20001"
+  );
 });
 
 test("usa Timestamp real dentro del arreglo students y rechaza transforms anidados", () => {

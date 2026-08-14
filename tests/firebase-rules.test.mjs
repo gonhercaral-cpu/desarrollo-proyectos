@@ -434,10 +434,13 @@ function validBugReport(overrides = {}) {
 function validIdea(overrides = {}) {
   return {
     title: "Mejor flujo",
-    category: "Proceso",
+    area: "Operación",
     currentProblem: "Muchos pasos manuales.",
     proposedIdea: "Automatizar revisión.",
+    implementationSuggestion: "Probar con un equipo pequeño.",
     expectedBenefit: "Menos errores.",
+    priority: "media",
+    impact: "medio",
     evidenceFiles: [],
     evidenceCount: 0,
     status: "nueva",
@@ -446,6 +449,14 @@ function validIdea(overrides = {}) {
     createdByEmail: "requester@test.local",
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
+    updatedByUid: "requester",
+    updatedByName: "Requester",
+    updatedByEmail: "requester@test.local",
+    reviewedAt: null,
+    reviewedByUid: "",
+    reviewedByName: "",
+    reviewedByEmail: "",
+    convertedProjectId: null,
     ...overrides,
   };
 }
@@ -599,7 +610,7 @@ function validGeneratedCertificate(overrides = {}) {
   return {
     folio: "CERT-2026-A1-0001-001",
     validationCode: "CERT-2026-A1-0001-001-ABC123",
-    validationUrl: "https://active-english-school.web.app/validar-certificado/CERT-2026-A1-0001-001-ABC123",
+    validationUrl: "https://sistema-desarrollo-proyectos.web.app/validar-certificado/CERT-2026-A1-0001-001-ABC123",
     studentId: "student-1",
     studentName: "Alumno Prueba",
     studentDeliveryType: "Digital",
@@ -642,7 +653,7 @@ function validPublicCertificateValidation(overrides = {}) {
   return {
     validationCode: "CERT-2026-A1-0001-001-ABC123",
     folio: "CERT-2026-A1-0001-001",
-    validationUrl: "https://active-english-school.web.app/validar-certificado/CERT-2026-A1-0001-001-ABC123",
+    validationUrl: "https://sistema-desarrollo-proyectos.web.app/validar-certificado/CERT-2026-A1-0001-001-ABC123",
     studentName: "Alumno Prueba",
     level: "A1",
     programName: "Journey",
@@ -1320,6 +1331,37 @@ describe("mass assignment", () => {
   });
 });
 
+describe("incubadora de ideas", () => {
+  it("permite al colaborador crear una idea con el esquema actual", async () => {
+    await assertSucceeds(
+      addDoc(collection(auth("collab"), "ideas"), validIdea({
+        createdByUid: "collab",
+        createdByName: "Collaborator",
+        createdByEmail: "collab@test.local",
+        updatedByUid: "collab",
+        updatedByName: "Collaborator",
+        updatedByEmail: "collab@test.local",
+      }))
+    );
+  });
+
+  it("bloquea al colaborador que suplanta autor o revisor", async () => {
+    await assertFails(
+      addDoc(collection(auth("collab"), "ideas"), validIdea({
+        createdByUid: "requester",
+        updatedByUid: "requester",
+      }))
+    );
+    await assertFails(
+      addDoc(collection(auth("collab"), "ideas"), validIdea({
+        createdByUid: "collab",
+        updatedByUid: "collab",
+        reviewedByUid: "admin",
+      }))
+    );
+  });
+});
+
 describe("certificados individuales", () => {
   it("permite registrar historial y validacion publica sin solicitud", async () => {
     const db = auth("printer");
@@ -1740,7 +1782,7 @@ describe("certificados de imprenta", () => {
         validGeneratedCertificate({
           folio: "CERT-2026-A1-IND-001",
           validationCode: certificateId,
-          validationUrl: `https://active-english-school.web.app/validar-certificado/${certificateId}`,
+          validationUrl: `https://sistema-desarrollo-proyectos.web.app/validar-certificado/${certificateId}`,
           studentId: "individual-student-1",
           requestId: "",
           requestFolio: "Individual",
@@ -1756,7 +1798,7 @@ describe("certificados de imprenta", () => {
         validPublicCertificateValidation({
           folio: "CERT-2026-A1-IND-001",
           validationCode: certificateId,
-          validationUrl: `https://active-english-school.web.app/validar-certificado/${certificateId}`,
+          validationUrl: `https://sistema-desarrollo-proyectos.web.app/validar-certificado/${certificateId}`,
           requestId: "",
           generationMode: "individual",
           productName: "Certificado individual",

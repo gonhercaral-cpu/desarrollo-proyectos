@@ -86,8 +86,11 @@ export function canManageRequestStudents(request, actor = {}, isAdmin = false) {
   if (isAdmin) return true;
   const assignments = normalizePrintRequestAssignments(request);
   const actorUid = normalizeUserId(actor?.uid);
-  if (actorUid && assignments.assignedUserId === actorUid) return true;
-  if (assignments.assignedUserId) return false;
+  if (
+    actorUid &&
+    (assignments.assignedUserId === actorUid || assignments.supportUserIds.includes(actorUid))
+  ) return true;
+  if (assignments.assignedUserId || assignments.supportUserIds.length > 0) return false;
   const actorEmail = String(actor?.email || "").trim().toLowerCase();
   const assignedEmail = String(request?.responsibleEmail || request?.assignedUserEmail || "").trim().toLowerCase();
   return Boolean(actorEmail && assignedEmail && actorEmail === assignedEmail);

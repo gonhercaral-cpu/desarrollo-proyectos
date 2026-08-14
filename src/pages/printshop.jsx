@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import QRCode from "qrcode";
+import certificateValidationConfig from "../../functions/certificateValidation.json";
 import JSZip from "jszip";
 import { BrowserCodeReader, BrowserMultiFormatReader } from "@zxing/browser";
 import html2canvas from "html2canvas";
@@ -2367,11 +2368,7 @@ function buildValidationCode(folio) {
 }
 
 function buildValidationUrl(validationCode) {
-  const origin = typeof window !== "undefined" && window.location?.origin
-    ? window.location.origin
-    : "https://active-english-school.web.app";
-
-  return `${origin}/validar-certificado/${encodeURIComponent(validationCode)}`;
+  return `${certificateValidationConfig.baseUrl}/validar-certificado/${encodeURIComponent(validationCode)}`;
 }
 
 function buildCredentialValidationUrl(validationCode) {
@@ -8553,6 +8550,7 @@ export default function PrintShop({ operationalNotifications = [] }) {
       currentStudent.id === student.id
         ? {
             ...currentStudent,
+            name: student.name,
             status: nextStatus,
             certificateRecordId: certificateId,
             certificateId,
@@ -19005,6 +19003,7 @@ function RequestDetailCard({
   const [editingStudentId, setEditingStudentId] = useState("");
   const [editingStudentName, setEditingStudentName] = useState("");
   const [studentActionId, setStudentActionId] = useState("");
+  const [certificateNameOverrides, setCertificateNameOverrides] = useState({});
 
   useEffect(() => {
     setDetailActiveTab(reprintCertificateStudentId ? "students" : "summary");
@@ -19083,6 +19082,11 @@ function RequestDetailCard({
   });
   const certificateStudentsWithFolios = students.filter(
     (student) => Boolean(student.certificateFolio) && Boolean(student.validationCode)
+  );
+  const certificateStudentsForRender = certificateStudentsWithFolios.map((student) =>
+    certificateNameOverrides[student.id]
+      ? { ...student, name: certificateNameOverrides[student.id] }
+      : student
   );
   const hasGeneratedStudentFolios = students.some(hasStudentGeneratedCertificateData);
   const canResetCertificateFolios =
@@ -19262,6 +19266,9 @@ function RequestDetailCard({
       setStudentActionId(student.id);
       await onUpdateStudentName(student, nextName, duplicate);
       nameWasUpdated = true;
+      flushSync(() => {
+        setCertificateNameOverrides((current) => ({ ...current, [student.id]: nextName }));
+      });
       await buildAndStoreStudentCertificatePdf({ ...student, name: nextName }, { isRegeneration: true });
       setAddPeopleMessage("Nombre actualizado y certificado regenerado.");
       cancelStudentNameEdit();
@@ -19282,6 +19289,11 @@ function RequestDetailCard({
       }
       setAddPeopleMessage(error?.message || "No se pudo corregir el nombre. No se completó la regeneración del PDF.");
     } finally {
+      setCertificateNameOverrides((current) => {
+        const next = { ...current };
+        delete next[student.id];
+        return next;
+      });
       setStudentActionId("");
     }
   }
@@ -20498,7 +20510,7 @@ Mariana Torres`}
 
             <HiddenBulkCertificateStages
               request={request}
-              students={certificateStudentsWithFolios}
+              students={certificateStudentsForRender}
               principalSigner={selectedPrincipalSigner}
               teacherSigner={selectedTeacherSigner}
               certificateTemplate={selectedCertificateTemplate}

@@ -4052,9 +4052,13 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           "title",
           "category",
+          "area",
           "currentProblem",
           "proposedIdea",
+          "implementationSuggestion",
           "expectedBenefit",
+          "priority",
+          "impact",
           "evidenceFiles",
           "evidenceCount",
           "status",
@@ -4062,17 +4066,39 @@ service cloud.firestore {
           "createdByName",
           "createdByEmail",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "updatedByUid",
+          "updatedByName",
+          "updatedByEmail",
+          "reviewedAt",
+          "reviewedByUid",
+          "reviewedByName",
+          "reviewedByEmail",
+          "convertedProjectId"
         ])
         && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.title.size() > 0
+        && request.resource.data.area is string
+        && request.resource.data.area.size() > 0
         && request.resource.data.currentProblem is string
         && request.resource.data.currentProblem.size() > 0
         && request.resource.data.proposedIdea is string
         && request.resource.data.proposedIdea.size() > 0
+        && request.resource.data.implementationSuggestion is string
         && request.resource.data.expectedBenefit is string
         && request.resource.data.expectedBenefit.size() > 0
+        && request.resource.data.priority in ["baja", "media", "alta", "urgente"]
+        && request.resource.data.impact in ["bajo", "medio", "alto", "muy_alto"]
+        && request.resource.data.evidenceFiles is list
+        && request.resource.data.evidenceFiles.size() == 0
+        && request.resource.data.evidenceCount == 0
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedByUid == ""
+        && request.resource.data.reviewedByName == ""
+        && request.resource.data.reviewedByEmail == ""
+        && request.resource.data.convertedProjectId == null
         && request.resource.data.status == "nueva";
     }
 

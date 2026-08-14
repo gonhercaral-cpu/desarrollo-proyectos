@@ -1,7 +1,8 @@
 const { HttpsError } = require("firebase-functions/v2/https");
+const certificateValidationConfig = require("./certificateValidation.json");
+const { canManagePrintRequest, normalizePrintRequestAssignments } = require("./printRequestAssignments");
 
 const PRINTSHOP_DEPARTMENTS = ["imprenta", "impresion", "soporte tecnico"];
-const DESTRUCTIVE_STATUSES = ["Impreso", "Entregado", "Publicado", "Distribuido", "Cancelado"];
 
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -100,28 +101,19 @@ function isAdmin(profile = {}) {
   return profile.active === true && normalizeName(profile.role) === "admin";
 }
 
-function getPrimaryAssignedIds(request = {}) {
-  const ids = [
-    request.assignedUserId,
-    request.responsibleUid,
-    request.assignedToUid,
-    request.productionAssigneeUid,
-    request.responsibleId,
-  ];
-  return new Set(ids.map(normalizeId).filter(Boolean));
-}
-
 function canManageCertificateStudents(requestData = {}, profile = {}, auth = {}) {
   if (!auth?.uid || !isPrintshopProfile(profile)) return false;
-  if (isAdmin(profile)) return true;
-  const primaryAssignedIds = getPrimaryAssignedIds(requestData);
-  if (primaryAssignedIds.has(auth.uid)) return true;
+  if (canManagePrintRequest(auth.uid, requestData, isAdmin(profile))) return true;
+  const assignments = normalizePrintRequestAssignments(requestData);
   const actorEmail = cleanText(profile.email).toLowerCase();
   const responsibleEmail = cleanText(requestData.responsibleEmail || requestData.assignedUserEmail).toLowerCase();
-  return primaryAssignedIds.size === 0 && Boolean(responsibleEmail) && actorEmail === responsibleEmail;
+  return !assignments.assignedUserId
+    && assignments.supportUserIds.length === 0
+    && Boolean(responsibleEmail)
+    && actorEmail === responsibleEmail;
 }
 
-async function assertActor(db, requestId, requestData, auth, { destructive = false } = {}) {
+async function assertActor(db, requestId, requestData, auth) {
   if (!auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión para administrar certificados.");
   const profileSnapshot = await db.collection("users").doc(auth.uid).get();
   const profile = profileSnapshot.exists ? profileSnapshot.data() : null;
@@ -129,13 +121,6 @@ async function assertActor(db, requestId, requestData, auth, { destructive = fal
 
   if (!profile || !canManageCertificateStudents(requestData, profile, auth)) {
     throw new HttpsError("permission-denied", "No tienes permiso para administrar esta solicitud.");
-  }
-
-  if (destructive && DESTRUCTIVE_STATUSES.includes(cleanText(requestData.status)) && !admin) {
-    throw new HttpsError(
-      "permission-denied",
-      "Solo un administrador puede eliminar certificados impresos, entregados, publicados, distribuidos o cancelados."
-    );
   }
 
   return {
@@ -227,7 +212,7 @@ function buildValidationCode(folio) {
 }
 
 function buildValidationUrl(validationCode) {
-  return `https://active-english-school.web.app/validar-certificado/${encodeURIComponent(validationCode)}`;
+  return `${certificateValidationConfig.baseUrl}/validar-certificado/${encodeURIComponent(validationCode)}`;
 }
 
 function buildPdfPath(requestId, requestData, validationCode) {
@@ -620,7 +605,7 @@ function createCertificatePersonHandlers({ db, FieldValue, Timestamp, bucket, lo
       if (!requestSnapshot.exists) throw new HttpsError("not-found", "No se encontró la solicitud.");
       const requestData = requestSnapshot.data();
       assertCertificateRequest(requestId, requestData);
-      const actor = await assertActor(db, requestId, requestData, request.auth, { destructive: true });
+      const actor = await assertActor(db, requestId, requestData, request.auth);
       const students = Array.isArray(requestData.students) ? requestData.students : [];
       const match = findStudent(students, payload);
       const current = match.student;
@@ -784,6 +769,7 @@ module.exports = {
   createCertificatePersonHandlers,
   normalizeName,
   buildFolio,
+  buildValidationUrl,
   canManageCertificateStudents,
   removeUndefinedValues,
   serializeCallableResult,
