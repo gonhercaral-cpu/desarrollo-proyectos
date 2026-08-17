@@ -2301,6 +2301,42 @@ describe("correcciones de material", () => {
   });
 });
 
+describe("preferencias del dashboard ejecutivo", () => {
+  const layout = [{ id: "kpi-overview", type: "kpi", w: 12, settings: {} }];
+
+  it("permite guardar y leer únicamente el diseño propio", async () => {
+    const ownRef = doc(auth("admin"), "userDashboardPreferences", "admin");
+    await assertSucceeds(setDoc(ownRef, {
+      ownerUid: "admin",
+      version: 1,
+      layout,
+      updatedAt: Timestamp.now(),
+    }));
+    await assertSucceeds(getDoc(ownRef));
+    await assertFails(getDoc(doc(auth("collab"), "userDashboardPreferences", "admin")));
+  });
+
+  it("bloquea escribir preferencias ajenas o cambiar propietario", async () => {
+    await assertFails(setDoc(doc(auth("collab"), "userDashboardPreferences", "admin"), {
+      ownerUid: "admin",
+      version: 1,
+      layout,
+      updatedAt: Timestamp.now(),
+    }));
+    const ownRef = doc(auth("admin"), "userDashboardPreferences", "admin");
+    await assertSucceeds(setDoc(ownRef, {
+      ownerUid: "admin",
+      version: 1,
+      layout,
+      updatedAt: Timestamp.now(),
+    }));
+    await assertFails(updateDoc(ownRef, {
+      ownerUid: "collab",
+      updatedAt: Timestamp.now(),
+    }));
+  });
+});
+
 describe("storage", () => {
   it("permite adjunto departamental con MIME genérico solo al miembro autenticado", async () => {
     const memberFile = storageAuth("deptmember").ref(
