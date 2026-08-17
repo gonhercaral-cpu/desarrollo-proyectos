@@ -22,6 +22,8 @@ const PATHS = {
   sparkline: <path d="m3 16 4-5 4 3 4-8 6 5"/>,
   refresh: <><path d="M20 7v5h-5"/><path d="M4 17a8 8 0 0 0 13.7 1M20 7A8 8 0 0 0 6.3 6"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+  eye: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
+  reset: <><path d="M4 4v6h6"/><path d="M5.5 16.5A8 8 0 1 0 6 6l-2 4"/></>,
   drag: <><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></>,
   close: <path d="m6 6 12 12M18 6 6 18"/>,
   plus: <path d="M12 5v14M5 12h14"/>,
@@ -58,7 +60,7 @@ export function BarChart({ items = [], series = [], maxItems = 7 }) {
   const visible = items.slice(0, maxItems);
   const max = Math.max(1, ...visible.flatMap((item) => series.map((entry) => Number(item[entry.key] || 0))));
   return (
-    <div className="ed-bar-chart" role="img" aria-label="Gráfica comparativa de barras">
+    <div className={`ed-bar-chart ${visible.length > 10 ? "is-dense" : ""}`} role="img" aria-label="Gráfica comparativa de barras">
       <div className="ed-chart-grid" />
       {visible.map((item) => (
         <div className="ed-bar-group" key={item.id || item.label}>
@@ -109,10 +111,10 @@ export function LineChart({ series = [], labels = [], area = false }) {
         {series.map((entry) => {
           const points = (entry.values || []).map((value, index) => `${x(index)},${y(value)}`).join(" ");
           const areaPoints = `${x(0)},${height - 18} ${points} ${x(Math.max(0, (entry.values || []).length - 1))},${height - 18}`;
-          return <g key={entry.label}>{area && <polygon points={areaPoints} fill={entry.color} opacity=".13" />}<polyline points={points} fill="none" stroke={entry.color} strokeWidth="3" vectorEffect="non-scaling-stroke" /></g>;
+          return <g key={entry.label}>{area && <polygon points={areaPoints} fill={entry.color} opacity=".13" />}<polyline points={points} fill="none" stroke={entry.color} strokeWidth="3" vectorEffect="non-scaling-stroke" />{(entry.values || []).map((value, index) => <circle key={`${entry.label}-${labels[index]}`} cx={x(index)} cy={y(value)} r="4" fill={entry.color}><title>{entry.label} · {labels[index]}: {Number(value || 0)}</title></circle>)}</g>;
         })}
       </svg>
-      <div className="ed-line-labels">{labels.map((label) => <small key={label}>{label}</small>)}</div>
+      <div className={`ed-line-labels ${labels.length > 10 ? "is-dense" : ""}`}>{labels.map((label, index) => <small key={`${label}-${index}`}>{label}</small>)}</div>
     </div>
   );
 }
@@ -126,7 +128,7 @@ export function DonutChart({ items = [], centerValue = 0, centerLabel = "Total" 
   }, { current: 0, values: [] }).values;
   return (
     <div className="ed-donut-wrap">
-      <div className="ed-donut" style={{ background: `conic-gradient(${segments.join(",")})` }}>
+      <div className="ed-donut" style={{ background: `conic-gradient(${segments.join(",")})` }} title={items.map((item) => `${item.label}: ${item.value}`).join(" · ")}>
         <span><strong>{centerValue}</strong><small>{centerLabel}</small></span>
       </div>
       <div className="ed-donut-legend">{items.map((item) => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{item.value}</b></div>)}</div>
@@ -143,7 +145,7 @@ export function PieChart({ items = [] }) {
   }, { current: 0, values: [] }).values;
   return (
     <div className="ed-donut-wrap ed-pie-wrap">
-      <div className="ed-donut ed-pie" style={{ background: `conic-gradient(${segments.join(",")})` }} />
+      <div className="ed-donut ed-pie" style={{ background: `conic-gradient(${segments.join(",")})` }} title={items.map((item) => `${item.label}: ${item.value}`).join(" · ")} />
       <div className="ed-donut-legend">{items.map((item) => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{item.value}</b></div>)}</div>
     </div>
   );

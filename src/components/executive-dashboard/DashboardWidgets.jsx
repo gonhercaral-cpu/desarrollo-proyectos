@@ -23,7 +23,7 @@ export function DashboardWidget({ widget, data, onOpenModule, onUpdateWidget }) 
 
 function KpiWidget({ widget, data, onOpenModule }) {
   const selected = widget.metrics?.length ? new Set(widget.metrics) : null;
-  const items = selected ? data.kpis.filter((item) => selected.has(item.label)) : data.kpis;
+  const items = orderSeries(selected ? data.kpis.filter((item) => selected.has(item.label)) : data.kpis, widget.series, (item) => item.label);
   return (
     <section className="ed-kpi-grid">
       {items.map((item) => (
@@ -91,7 +91,7 @@ function InventoryWidget({ widget, data, onOpenModule, onUpdateWidget }) {
   const items = filtered.slice(0, Number(widget.settings?.limit || 7));
   const allSeries = [{ key: "minimum", label: "Mínimo", color: "#ff9418" }, { key: "ideal", label: "Ideal", color: "#13a976" }, { key: "current", label: "Stock actual", color: "#1769ff" }];
   const selected = new Set(widget.metrics?.length ? widget.metrics : allSeries.map((item) => item.key));
-  const series = allSeries.filter((item) => selected.has(item.key));
+  const series = orderSeries(allSeries.filter((item) => selected.has(item.key)), widget.series, (item) => item.key);
   return (
     <Panel title={widget.title || "Inventario actual"} subtitle="Comparativo: mínimo vs ideal vs stock actual" action="Ver inventario" onAction={() => onOpenModule?.("print-shop")}>
       <select className="ed-chart-filter" aria-label="Filtrar categoría de inventario" value={category} onChange={(event) => onUpdateWidget?.(widget.id, { filters: { category: event.target.value } })}>
@@ -106,11 +106,26 @@ function InventoryWidget({ widget, data, onOpenModule, onUpdateWidget }) {
 }
 
 function CertificatesWidget({ widget, data, onOpenModule }) {
-  const chartItems = data.certificates.trend.map((item, index) => ({ id: index, label: item.label, delivered: item.value }));
+  const period = widget.period || "7d";
+  const available = data.certificates.periods?.[period] || data.certificates.series || [];
+  const selected = new Set(widget.metrics?.length ? widget.metrics : available.map((item) => item.key));
+  const activeSeries = orderSeries(available.filter((item) => selected.has(item.key)), widget.series, (item) => item.key);
+  const chartItems = (activeSeries[0]?.trend || data.certificates.trend).map((item, index) => ({
+    id: index,
+    label: item.label,
+    ...Object.fromEntries(activeSeries.map((entry) => [entry.key, entry.trend[index]?.value || 0])),
+  }));
+  const chartSeries = activeSeries.map(({ key, label, color }) => ({ key, label, color }));
+  const circularItems = activeSeries.map(({ label, color, total }) => ({ label, color, value: total }));
+  const circularTotal = circularItems.reduce((sum, item) => sum + item.value, 0);
+  const circular = widget.chartType === "pie" || widget.chartType === "donut";
   return (
-    <Panel title={widget.title || "Certificados entregados"} subtitle="Últimos 7 días" action="Ver reporte" onAction={() => onOpenModule?.("print-shop")}>
+    <Panel title={widget.title || "Certificados entregados"} subtitle={formatPeriod(period)} action="Ver reporte" onAction={() => onOpenModule?.("print-shop")}>
       <div className="ed-certificate-summary"><strong>{formatNumber(data.certificates.total)}</strong><span className={data.certificates.variation < 0 ? "is-down" : "is-up"}>{data.certificates.variation >= 0 ? "↑" : "↓"} {Math.abs(data.certificates.variation)}% <small>vs periodo anterior</small></span></div>
-      <AdaptiveChart type={widget.chartType || "bar"} items={chartItems} series={[{ key: "delivered", label: "Entregados", color: "#5d8ff5" }]} maxItems={7} />
+      <Legend items={chartSeries} />
+      {circular
+        ? widget.chartType === "pie" ? <PieChart items={circularItems} /> : <DonutChart items={circularItems} centerValue={circularTotal} centerLabel="Total" />
+        : <AdaptiveChart type={widget.chartType || "bar"} items={chartItems} series={chartSeries} maxItems={chartItems.length} />}
     </Panel>
   );
 }
@@ -118,7 +133,7 @@ function CertificatesWidget({ widget, data, onOpenModule }) {
 function BooksWidget({ widget, data, onOpenModule }) {
   const colors = ["#1769ff", "#13a976", "#ff9418"];
   const selected = new Set(widget.metrics?.length ? widget.metrics : data.production.periods.map((item) => item.key));
-  const periods = data.production.periods.filter((item) => selected.has(item.key) && (widget.period === "all" || !widget.period || item.key === widget.period));
+  const periods = orderSeries(data.production.periods.filter((item) => selected.has(item.key) && (widget.period === "all" || !widget.period || item.key === widget.period)), widget.series, (item) => item.key);
   const chartItems = data.production.labels.map((label, index) => ({ label, ...Object.fromEntries(periods.map((period) => [period.key, period.values[index]])) }));
   const series = periods.map((period) => ({ key: period.key, label: period.label, color: colors[data.production.periods.findIndex((item) => item.key === period.key)] }));
   return (
@@ -137,7 +152,7 @@ function BooksWidget({ widget, data, onOpenModule }) {
 
 function ModulesWidget({ widget, data, onOpenModule }) {
   const selected = widget.metrics?.length ? new Set(widget.metrics) : null;
-  const items = selected ? data.moduleCards.filter((item) => selected.has(item.label)) : data.moduleCards;
+  const items = orderSeries(selected ? data.moduleCards.filter((item) => selected.has(item.label)) : data.moduleCards, widget.series, (item) => item.label);
   return (
     <Panel title={widget.title || "Módulos clave"}>
       <div className="ed-modules-grid">
@@ -168,8 +183,13 @@ function ActivityWidget({ widget, data, onOpenModule }) {
 }
 
 function ProjectsDonutWidget({ widget, data, onOpenModule }) {
-  const total = data.projectDistribution.reduce((sum, item) => sum + item.value, 0);
-  return <Panel title={widget.title || "Proyectos por estado"} action="Ver proyectos" onAction={() => onOpenModule?.("all-projects")}>{widget.chartType === "pie" ? <PieChart items={data.projectDistribution} /> : <DonutChart items={data.projectDistribution} centerValue={total} centerLabel="Proyectos" />}</Panel>;
+  const source = widget.filters?.source || "projects";
+  const available = source === "support" ? data.supportChartMetrics : data.projectChartMetrics;
+  const selected = new Set(widget.metrics?.length ? widget.metrics : available.map((item) => item.key));
+  const items = orderSeries(available.filter((item) => selected.has(item.key)), widget.series, (item) => item.key).map((item) => ({ label: item.label, value: item.value, color: item.color }));
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  const route = source === "support" ? "technical-support" : "all-projects";
+  return <Panel title={widget.title || (source === "support" ? "Soporte técnico" : "Proyectos por estado")} action="Ver detalle" onAction={() => onOpenModule?.(route)}>{widget.chartType === "pie" ? <PieChart items={items} /> : <DonutChart items={items} centerValue={total} centerLabel={source === "support" ? "Alertas" : "Proyectos"} />}</Panel>;
 }
 
 function SingleSparklineWidget({ widget, data, onOpenModule }) {
@@ -213,4 +233,14 @@ function formatNumber(value) {
 
 function formatTime(date) {
   return new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function formatPeriod(period) {
+  return period?.endsWith("d") ? `Últimos ${period.slice(0, -1)} días` : "Periodo seleccionado";
+}
+
+function orderSeries(items, order = [], keyGetter = (item) => item.key) {
+  if (!Array.isArray(order) || order.length === 0) return items;
+  const rank = new Map(order.map((key, index) => [key, index]));
+  return [...items].sort((left, right) => (rank.get(keyGetter(left)) ?? 999) - (rank.get(keyGetter(right)) ?? 999));
 }

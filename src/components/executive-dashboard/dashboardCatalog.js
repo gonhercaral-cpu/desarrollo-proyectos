@@ -1,6 +1,6 @@
 import { findOpenGridPosition, packDashboardLayout } from "./dashboardGridEngine.js";
 
-export const DASHBOARD_PREFERENCE_VERSION = 2;
+export const DASHBOARD_PREFERENCE_VERSION = 3;
 
 export const CHART_TYPES = [
   { value: "bar", label: "Barras" },
@@ -12,15 +12,15 @@ export const CHART_TYPES = [
 ];
 
 export const WIDGET_CATALOG = [
-  widget("kpi", "Indicadores KPI", "Indicadores principales con tendencia.", "dashboard", 12, 7, 6, 6),
-  widget("alertas", "Prioridades del día", "Pendientes críticos y estados operativos.", "alert", 8, 7, 5, 5),
-  widget("atencion", "Atención inmediata", "Alertas operativas ordenadas por prioridad.", "bell", 4, 7, 3, 5),
+  widget("kpi", "Indicadores KPI", "Indicadores principales con tendencia.", "dashboard", 12, 7, 6, 4),
+  widget("alertas", "Prioridades del día", "Pendientes críticos y estados operativos.", "alert", 8, 7, 5, 4),
+  widget("atencion", "Atención inmediata", "Alertas operativas ordenadas por prioridad.", "bell", 4, 7, 3, 4),
   widget("mensajes", "Mensajes", "Mensajes sin revisar.", "messages", 3, 5, 3, 4),
   widget("agenda", "Agenda", "Actividad del equipo para hoy.", "calendar", 3, 5, 3, 4),
   widget("proyectos", "Proyectos", "Proyectos activos y en revisión.", "projects", 3, 5, 3, 4),
   widget("ideas", "Ideas", "Ideas nuevas o pendientes.", "ideas", 3, 5, 3, 4),
   widget("compras", "Compras", "Solicitudes por aprobar.", "purchase", 3, 5, 3, 4),
-  widget("imprenta", "Imprenta rápida", "Existencias clave de insumos.", "print", 8, 7, 6, 5),
+  widget("imprenta", "Imprenta rápida", "Existencias clave de insumos.", "print", 8, 7, 6, 4),
   widget("inventario", "Inventario actual", "Mínimo, ideal y stock por material.", "inventory", 6, 8, 5, 6, ["bar", "horizontalBar", "line", "area"]),
   widget("stock", "Stock mínimo / ideal / actual", "Comparativa agrupada de stock.", "inventory", 6, 8, 5, 6, ["bar", "horizontalBar", "line", "area"]),
   widget("soporte", "Soporte técnico", "Equipos y mantenimientos.", "support", 3, 5, 3, 4),
@@ -28,8 +28,8 @@ export const WIDGET_CATALOG = [
   widget("equipos", "Equipos inoperativos", "Equipos que requieren servicio.", "equipment", 3, 5, 3, 4),
   widget("certificados", "Certificados entregados", "Entregas de últimos siete días.", "certificate", 6, 8, 4, 6, ["bar", "horizontalBar", "line", "area", "pie", "donut"]),
   widget("libros", "Libros producidos", "Producción por periodos.", "books", 8, 8, 6, 6, ["line", "area", "bar"]),
-  widget("modulos", "Módulos clave", "Resumen compacto de módulos.", "modules", 4, 7, 4, 5),
-  widget("actividad", "Actividad reciente", "Feed combinado de operación.", "activity", 4, 9, 4, 5),
+  widget("modulos", "Módulos clave", "Resumen compacto de módulos.", "modules", 4, 7, 4, 4),
+  widget("actividad", "Actividad reciente", "Feed combinado de operación.", "activity", 4, 9, 4, 4),
   widget("barras", "Gráfica de barras", "Gráfica configurable por fuente.", "chartBar", 6, 8, 4, 6, ["bar", "horizontalBar", "line", "area"]),
   widget("lineas", "Gráfica de líneas", "Tendencia configurable.", "chartLine", 6, 8, 4, 6, ["line", "area", "bar"]),
   widget("donut", "Gráfica donut", "Distribución por estado.", "donut", 4, 7, 3, 5, ["donut", "pie"]),
@@ -42,10 +42,10 @@ export const DEFAULT_DASHBOARD_LAYOUT = [
   positioned("immediate-attention", "atencion", 8, 7, 4, 7, "Atención inmediata"),
   positioned("quick-printshop", "imprenta", 0, 14, 8, 7, "Imprenta rápida", { limit: 6 }),
   positioned("key-modules", "modulos", 8, 14, 4, 7, "Módulos clave"),
-  positioned("inventory-current", "inventario", 0, 21, 6, 8, "Inventario actual", { limit: 7 }, { category: "all" }, "bar", ["minimum", "ideal", "current"]),
-  positioned("certificates-delivered", "certificados", 6, 21, 6, 8, "Certificados entregados", {}, {}, "bar", ["delivered"], "7d"),
-  positioned("books-produced", "libros", 0, 29, 8, 8, "Libros producidos", {}, {}, "line", ["week", "month", "twoMonths"], "all"),
-  positioned("recent-activity", "actividad", 8, 29, 4, 9, "Actividad reciente", { limit: 6 }, {}, "", [], "all"),
+  positioned("inventory-current", "inventario", 0, 21, 6, 8, "Inventario actual", { limit: 7 }, { category: "all" }, "bar", ["minimum", "ideal", "current"], ["minimum", "ideal", "current"]),
+  positioned("certificates-delivered", "certificados", 6, 21, 6, 8, "Certificados entregados", {}, {}, "bar", ["delivered"], ["delivered"], "7d"),
+  positioned("books-produced", "libros", 0, 29, 8, 8, "Libros producidos", {}, {}, "line", ["week", "month", "twoMonths"], ["week", "month", "twoMonths"], "all"),
+  positioned("recent-activity", "actividad", 8, 29, 4, 9, "Actividad reciente", { limit: 6 }, {}, "", [], [], "all"),
 ];
 
 export const WIDGET_WIDTH_OPTIONS = [3, 4, 6, 8, 12];
@@ -73,6 +73,7 @@ export function createWidgetFromCatalog(type, index = Date.now(), currentLayout 
     filters: {},
     period: "all",
     metrics: defaultMetrics(type),
+    series: defaultMetrics(type),
     settings: {},
   });
 }
@@ -125,6 +126,7 @@ function normalizeWidget(item) {
     },
     period: typeof item.period === "string" ? item.period : "all",
     metrics: Array.isArray(item.metrics) ? item.metrics.map(String) : defaultMetrics(item.type),
+    series: Array.isArray(item.series) ? item.series.map(String) : Array.isArray(item.metrics) ? item.metrics.map(String) : defaultMetrics(item.type),
     settings: item.settings && typeof item.settings === "object" ? { ...item.settings } : {},
     title: typeof item.title === "string" ? item.title.slice(0, 80) : catalog.label,
   };
@@ -134,8 +136,8 @@ function widget(type, label, description, icon, defaultW, defaultH, minW, minH, 
   return { type, label, description, icon, defaultW, defaultH, minW, minH, chartTypes };
 }
 
-function positioned(id, type, x, y, width, height, title, settings = {}, filters = {}, chartType = "", metrics = [], period = "all") {
-  return normalizeWidget({ id, type, x, y, width, height, title, visible: true, chartType, filters, period, metrics, settings });
+function positioned(id, type, x, y, width, height, title, settings = {}, filters = {}, chartType = "", metrics = [], series = metrics, period = "all") {
+  return normalizeWidget({ id, type, x, y, width, height, title, visible: true, chartType, filters, period, metrics, series, settings });
 }
 
 function defaultMetrics(type) {
@@ -150,6 +152,7 @@ function cloneWidget(item) {
     ...item,
     filters: { ...(item.filters || {}) },
     metrics: [...(item.metrics || [])],
+    series: [...(item.series || [])],
     settings: { ...(item.settings || {}) },
   };
 }

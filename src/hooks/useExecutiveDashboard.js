@@ -99,6 +99,7 @@ export function useExecutiveDashboard() {
       hidden: typeof patch.visible === "boolean" ? !patch.visible : widget.hidden,
       filters: patch.filters ? { ...widget.filters, ...patch.filters } : widget.filters,
       metrics: Array.isArray(patch.metrics) ? [...patch.metrics] : widget.metrics,
+      series: Array.isArray(patch.series) ? [...patch.series] : widget.series,
       settings: patch.settings ? { ...widget.settings, ...patch.settings } : widget.settings,
     } : widget)));
   }

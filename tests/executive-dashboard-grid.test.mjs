@@ -16,7 +16,16 @@ test("migra layout legado conservando distribución y campos nuevos", () => {
   ]);
   assert.equal(layout[2].visible, false);
   assert.ok(Array.isArray(layout[0].metrics));
+  assert.ok(Array.isArray(layout[0].series));
   assert.equal(typeof layout[0].filters, "object");
+});
+
+test("migra orden de series desde métricas guardadas", () => {
+  const [inventory] = normalizeDashboardLayout([
+    { id: "inventory", type: "inventario", x: 0, y: 0, width: 6, height: 8, metrics: ["current", "minimum"] },
+  ]);
+  assert.deepEqual(inventory.series, ["current", "minimum"]);
+  assert.deepEqual(inventory.metrics, ["current", "minimum"]);
 });
 
 test("mover widget reacomoda colisiones sin superposición", () => {

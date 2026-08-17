@@ -365,3 +365,75 @@ html[data-theme="dark"] .ed-horizontal-group span b { color:var(--text); }
   .ed-settings-fields { grid-template-columns:1fr; }
   .ed-settings-fields > fieldset,.ed-settings-fields legend { grid-column:1; }
 }
+
+/* Ajuste fino por contenedor y controles compactos. */
+.ed-widget-slot[data-auto-height="true"] .ed-widget-content,
+.ed-widget-slot[data-auto-height="true"] .ed-widget-content > :is(.ed-panel,.ed-kpi-grid) { height:auto; overflow:visible; }
+.ed-widget-slot[data-auto-height="true"] .ed-widget-content > .ed-panel { min-height:0; }
+.ed-widget-slot[data-auto-height="true"] .ed-panel { overflow:hidden; }
+.ed-widget-slot[data-auto-height="true"] .ed-priority-grid { grid-template-columns:repeat(auto-fit,minmax(min(125px,100%),1fr)); }
+.ed-widget-slot[data-auto-height="true"] .ed-priority-card { height:auto; min-height:96px; }
+.ed-widget-slot[data-auto-height="true"] .ed-supply-grid { grid-template-columns:repeat(auto-fit,minmax(min(165px,100%),1fr)); }
+.ed-widget-slot[data-auto-height="true"] .ed-modules-grid { grid-template-columns:repeat(auto-fit,minmax(min(96px,100%),1fr)); }
+.ed-widget-slot[data-auto-height="true"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); }
+.ed-widget-slot[data-auto-height="true"] .ed-kpi-card { min-height:118px; }
+.ed-widget-slot[data-size="normal"][data-auto-height="true"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"][data-auto-height="true"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(135px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"][data-auto-height="true"] .ed-supply-grid { grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"] .ed-module-card { min-height:72px; padding:9px; grid-template-rows:auto auto; }
+.ed-widget-slot[data-size="compact"] .ed-module-card :is(em,.ed-sparkline) { display:none; }
+.ed-widget-slot[data-size="compact"][data-auto-height="true"] .ed-period-grid { grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"] .ed-widget-editbar { grid-template-columns:26px minmax(58px,1fr) repeat(4,26px); gap:2px; padding:3px; }
+.ed-widget-slot[data-size="compact"] .ed-widget-editbar button { width:26px; height:26px; padding:0; }
+.ed-widget-slot[data-size="compact"] .ed-size-controls { gap:1px; height:26px; padding:1px 2px; }
+.ed-widget-slot[data-size="compact"] .ed-size-controls label { gap:1px; font-size:8px; }
+.ed-widget-slot[data-size="compact"] .ed-size-controls input { width:24px; height:20px; font-size:9px; }
+
+.ed-widget-editbar {
+  display:grid;
+  grid-template-columns:minmax(30px,1fr) auto repeat(4,30px);
+  gap:4px;
+  overflow:visible;
+  justify-content:stretch;
+}
+.executive-dashboard.is-editing .ed-page-header { align-items:flex-start; flex-direction:column; }
+.executive-dashboard.is-editing .ed-header-actions { width:100%; flex-wrap:wrap; }
+.ed-widget-editbar .ed-drag-handle { min-width:0; overflow:hidden; }
+.ed-widget-editbar .ed-drag-handle span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ed-widget-editbar > button:not(.ed-drag-handle) { justify-content:center; width:30px; padding:0; }
+.ed-size-controls { display:flex; align-items:center; gap:3px; height:30px; padding:2px 4px; border:1px solid #c5d7f4; border-radius:7px; background:white; }
+.ed-size-controls label { display:flex; align-items:center; gap:2px; color:#46658f; font-size:9px; font-weight:800; }
+.ed-size-controls input { width:32px; height:22px; padding:0 2px; border:0; border-radius:4px; background:#f3f7fd; color:#24416e; font-size:10px; font-weight:750; text-align:center; }
+.ed-size-controls input:focus { outline:2px solid #8bb6f7; outline-offset:0; }
+.ed-resize-handle.is-east,.ed-resize-handle.is-corner { right:0; }
+.ed-resize-handle.is-south,.ed-resize-handle.is-corner { bottom:0; }
+
+.ed-metrics-fieldset { display:grid !important; grid-template-columns:1fr !important; gap:7px !important; }
+.ed-metric-option { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; min-height:40px; padding:7px 9px; border:1px solid var(--ed-border); border-radius:8px; background:var(--surface); }
+.ed-metric-option.is-active { border-color:#b4ccf2; background:#f5f9ff; }
+.ed-metric-option > label { display:flex; align-items:center; gap:8px; min-width:0; margin:0; }
+.ed-metric-option > label > span { display:grid; min-width:0; }
+.ed-metric-option b { color:#213653; font-size:11px; }
+.ed-metric-option small { overflow:hidden; color:#7a879a; font-size:9px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
+.ed-series-order { display:flex; gap:3px; }
+.ed-series-order button { display:grid; place-items:center; width:25px; height:25px; border:1px solid #c5d7f4 !important; border-radius:6px; background:white; color:#315a92; font-size:12px; }
+.ed-series-order button:disabled { opacity:.35; }
+
+.ed-widget-slot[data-size="compact"] .ed-chart-legend span:nth-child(n+3) { display:none; }
+.ed-widget-slot[data-size="compact"] .ed-bar-chart.is-dense .ed-bar-group > small,
+.ed-widget-slot[data-size="compact"] .ed-line-labels.is-dense small { visibility:hidden; }
+.ed-widget-slot[data-size="compact"] .ed-bar-chart.is-dense .ed-bar-group:nth-child(5n+2) > small,
+.ed-widget-slot[data-size="compact"] .ed-line-labels.is-dense small:nth-child(5n+1) { visibility:visible; }
+.ed-widget-slot[data-size="normal"] .ed-bar-chart.is-dense .ed-bar-group:nth-child(even) > small,
+.ed-widget-slot[data-size="normal"] .ed-line-labels.is-dense small:nth-child(even) { visibility:hidden; }
+.ed-donut-legend { max-height:none; overflow:visible; }
+
+html[data-theme="dark"] .ed-size-controls,
+html[data-theme="dark"] .ed-size-controls input,
+html[data-theme="dark"] .ed-series-order button { background:#172944; color:var(--text); border-color:#355073 !important; }
+html[data-theme="dark"] .ed-metric-option.is-active { background:#122742; border-color:#365c91; }
+html[data-theme="dark"] .ed-metric-option b { color:var(--text); }
+
+@media (max-width:800px) {
+  .ed-widget-editbar { grid-template-columns:minmax(30px,1fr) auto repeat(4,30px); }
+}

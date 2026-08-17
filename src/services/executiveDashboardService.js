@@ -133,8 +133,20 @@ function buildExecutiveDashboardModel({ projects, modules, directMessages, depar
   const unreadDirect = directMessages.filter((item) => item.fromUserId !== uid && item.read !== true);
   const unreadDepartment = departmentMessages.filter((item) => item.fromUserId !== uid && Array.isArray(item.memberIds) && item.memberIds.includes(uid) && !item.readBy?.[uid]);
   const unreadMessages = [...unreadDirect, ...unreadDepartment];
-  const deliveredCertificates = visible(modules.certificates).filter(isDeliveredCertificate);
-  const certificateTrend = buildDailySeries(deliveredCertificates, 7, (item) => getCertificateDate(item));
+  const certificateRecords = visible(modules.certificates).filter((item) => !isCancelledCertificate(item));
+  const deliveredCertificates = certificateRecords.filter(isDeliveredCertificate);
+  const pendingCertificates = certificateRecords.filter((item) => !isDeliveredCertificate(item));
+  const certificatePeriods = Object.fromEntries([7, 14, 30].map((days) => {
+    const deliveredTrend = buildDailySeries(deliveredCertificates, days, getCertificateDate);
+    const generatedTrend = buildDailySeries(certificateRecords, days, getGeneratedCertificateDate);
+    const pendingTrend = buildDailySeries(pendingCertificates, days, getGeneratedCertificateDate);
+    return [`${days}d`, [
+      chartMetric("delivered", "Entregados", "#5d8ff5", deliveredTrend),
+      chartMetric("generated", "Generados", "#13a976", generatedTrend),
+      chartMetric("pending", "Pendientes", "#ff9418", pendingTrend),
+    ]];
+  }));
+  const certificateTrend = certificatePeriods["7d"][0].trend;
   const certificatePrevious = deliveredCertificates.filter((item) => inPreviousDays(getCertificateDate(item), 7, now)).length;
   const certificateCurrent = certificateTrend.reduce((sum, item) => sum + item.value, 0);
   const production = buildProductionModel(visible(modules.productionBatches), now);
@@ -177,6 +189,19 @@ function buildExecutiveDashboardModel({ projects, modules, directMessages, depar
   ];
 
   const recentActivity = buildRecentActivity({ projects, modules, ideas, purchases, unreadMessages, maintenances });
+  const projectChartMetrics = [
+    chartValue("active", "Activos", Number(projectMetrics.active || 0), "#1769ff"),
+    chartValue("review", "En revisión", Number(projectMetrics.review || 0), "#ff9418"),
+    chartValue("overdue", "Atrasados", Number(projectMetrics.overdue || 0), "#ff3547"),
+    chartValue("finished", "Completados", Number(projectMetrics.finished || 0), "#13a976"),
+    chartValue("cancelled", "Cancelados", Number(projectMetrics.cancelled || 0), "#8b43f6"),
+  ];
+  const supportChartMetrics = [
+    chartValue("inoperative", "Equipos inoperativos", inoperativeAssets.length, "#ff3547"),
+    chartValue("overdueMaintenance", "Mantenimientos vencidos", overdueMaintenances.length, "#ff9418"),
+    chartValue("pendingMaintenance", "Mantenimientos pendientes", maintenances.filter((item) => !matches(item.status, ["realizado", "completed", "cancelado", "cancelled"])).length, "#1769ff"),
+    chartValue("operational", "Equipos operativos", Math.max(0, assets.length - inoperativeAssets.length), "#13a976"),
+  ];
 
   return {
     generatedAt: now,
@@ -194,10 +219,14 @@ function buildExecutiveDashboardModel({ projects, modules, directMessages, depar
       previous: certificatePrevious,
       variation: percentChange(certificateCurrent, certificatePrevious),
       trend: certificateTrend,
+      series: certificatePeriods["7d"],
+      periods: certificatePeriods,
     },
     production,
     recentActivity,
     projectDistribution: buildProjectDistribution(activeProjects),
+    projectChartMetrics,
+    supportChartMetrics,
   };
 }
 
@@ -306,8 +335,16 @@ function isDeliveredCertificate(item) {
   return matches(item.status, ["entregado", "entregada", "delivered"]);
 }
 
+function isCancelledCertificate(item) {
+  return matches(item.status, ["cancelado", "cancelada", "cancelled"]);
+}
+
 function getCertificateDate(item) {
   return toDate(item.deliveredAt || item.deliveryDate || item.generatedAt || item.pdfSavedAt || item.issueDate);
+}
+
+function getGeneratedCertificateDate(item) {
+  return toDate(item.generatedAt || item.pdfSavedAt || item.issueDate || item.createdAt || item.updatedAt);
 }
 
 function getRecordDate(item, fallback) {
@@ -336,6 +373,8 @@ function priority(label, value, badge, tone, icon, route) { return { label, valu
 function attentionItem(label, value, detail, tone, icon, route) { return { label, value, detail, tone, icon, route }; }
 function moduleCard(label, value, detail, icon, color, route, trend) { return { label, value, detail, icon, color, route, trend }; }
 function activity(id, title, detail, date, category, icon, route, tone) { return { id: `${category}-${id}`, title, detail, date, category, icon, route, tone }; }
+function chartMetric(key, label, color, trend) { return { key, label, color, trend, total: trend.reduce((sum, item) => sum + item.value, 0) }; }
+function chartValue(key, label, value, color) { return { key, label, value, color }; }
 
 function compareRecent(values = []) {
   const current = number(values[values.length - 1]);
