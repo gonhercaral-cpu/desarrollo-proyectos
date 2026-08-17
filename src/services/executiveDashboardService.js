@@ -11,7 +11,7 @@ import {
 } from "firebase/firestore";
 import { getExecutiveDashboardData } from "./projectsService";
 import { getSupplyStockPercentage, getSupplyStockStatus } from "../utils/supplyStock";
-import { getDefaultDashboardLayout, normalizeDashboardLayout } from "../components/executive-dashboard/dashboardCatalog";
+import { DASHBOARD_PREFERENCE_VERSION, getDefaultDashboardLayout, normalizeDashboardLayout } from "../components/executive-dashboard/dashboardCatalog";
 
 const db = getFirestore();
 const PREFERENCE_COLLECTION = "userDashboardPreferences";
@@ -55,7 +55,7 @@ export async function saveDashboardPreference(uid, layout) {
   if (!uid) return;
   await setDoc(doc(db, PREFERENCE_COLLECTION, uid), {
     ownerUid: uid,
-    version: 1,
+    version: DASHBOARD_PREFERENCE_VERSION,
     layout: normalizeDashboardLayout(layout),
     updatedAt: serverTimestamp(),
   }, { merge: true });

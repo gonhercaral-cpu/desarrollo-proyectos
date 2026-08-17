@@ -79,7 +79,22 @@ export function BarChart({ items = [], series = [], maxItems = 7 }) {
   );
 }
 
-export function LineChart({ series = [], labels = [] }) {
+export function HorizontalBarChart({ items = [], series = [], maxItems = 7 }) {
+  const visible = items.slice(0, maxItems);
+  const max = Math.max(1, ...visible.flatMap((item) => series.map((entry) => Number(item[entry.key] || 0))));
+  return (
+    <div className="ed-horizontal-chart" role="img" aria-label="Gráfica comparativa de barras horizontales">
+      {visible.map((item) => (
+        <div className="ed-horizontal-group" key={item.id || item.label}>
+          <small title={item.label}>{item.label}</small>
+          <div>{series.map((entry) => { const value = Number(item[entry.key] || 0); return <span key={entry.key} title={`${entry.label}: ${value}`}><i style={{ width: `${Math.max(value > 0 ? 3 : 0, value / max * 100)}%`, background: entry.color }} /><b>{value}</b></span>; })}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function LineChart({ series = [], labels = [], area = false }) {
   const values = series.flatMap((entry) => entry.values || []).map(Number);
   const max = Math.max(1, ...values);
   const width = 600;
@@ -93,7 +108,8 @@ export function LineChart({ series = [], labels = [] }) {
         {[0.25, 0.5, 0.75, 1].map((ratio) => <line key={ratio} x1="0" x2={width} y1={height - ratio * (height - 20)} y2={height - ratio * (height - 20)} className="ed-chart-guide" />)}
         {series.map((entry) => {
           const points = (entry.values || []).map((value, index) => `${x(index)},${y(value)}`).join(" ");
-          return <polyline key={entry.label} points={points} fill="none" stroke={entry.color} strokeWidth="3" vectorEffect="non-scaling-stroke" />;
+          const areaPoints = `${x(0)},${height - 18} ${points} ${x(Math.max(0, (entry.values || []).length - 1))},${height - 18}`;
+          return <g key={entry.label}>{area && <polygon points={areaPoints} fill={entry.color} opacity=".13" />}<polyline points={points} fill="none" stroke={entry.color} strokeWidth="3" vectorEffect="non-scaling-stroke" /></g>;
         })}
       </svg>
       <div className="ed-line-labels">{labels.map((label) => <small key={label}>{label}</small>)}</div>
@@ -116,4 +132,37 @@ export function DonutChart({ items = [], centerValue = 0, centerLabel = "Total" 
       <div className="ed-donut-legend">{items.map((item) => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{item.value}</b></div>)}</div>
     </div>
   );
+}
+
+export function PieChart({ items = [] }) {
+  const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0) || 1;
+  const segments = items.reduce((result, item) => {
+    const start = result.current;
+    const end = start + Number(item.value || 0) / total * 100;
+    return { current: end, values: [...result.values, `${item.color} ${start}% ${end}%`] };
+  }, { current: 0, values: [] }).values;
+  return (
+    <div className="ed-donut-wrap ed-pie-wrap">
+      <div className="ed-donut ed-pie" style={{ background: `conic-gradient(${segments.join(",")})` }} />
+      <div className="ed-donut-legend">{items.map((item) => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{item.value}</b></div>)}</div>
+    </div>
+  );
+}
+
+export function AdaptiveChart({ type = "bar", items = [], series = [], maxItems = 7 }) {
+  const visible = items.slice(0, maxItems);
+  if (type === "horizontalBar") return <HorizontalBarChart items={visible} series={series} maxItems={maxItems} />;
+  if (type === "line" || type === "area") {
+    return <LineChart labels={visible.map((item) => item.label)} series={series.map((entry) => ({ ...entry, values: visible.map((item) => Number(item[entry.key] || 0)) }))} area={type === "area"} />;
+  }
+  if (type === "pie" || type === "donut") {
+    const pieItems = visible.map((item, index) => ({ label: item.label, value: Number(item[series[0]?.key] || 0), color: chartColor(index) }));
+    const total = pieItems.reduce((sum, item) => sum + item.value, 0);
+    return type === "pie" ? <PieChart items={pieItems} /> : <DonutChart items={pieItems} centerValue={total} centerLabel="Total" />;
+  }
+  return <BarChart items={visible} series={series} maxItems={maxItems} />;
+}
+
+function chartColor(index) {
+  return ["#1769ff", "#13a976", "#ff9418", "#8b43f6", "#ef4054", "#26a8c7", "#f2b705"][index % 7];
 }

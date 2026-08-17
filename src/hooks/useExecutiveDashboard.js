@@ -7,6 +7,7 @@ import {
 } from "../services/executiveDashboardService";
 import {
   createWidgetFromCatalog,
+  getDefaultWidget,
   getDefaultDashboardLayout,
   normalizeDashboardLayout,
 } from "../components/executive-dashboard/dashboardCatalog";
@@ -91,32 +92,38 @@ export function useExecutiveDashboard() {
   }, [layout, uid]);
 
   function updateWidget(id, patch) {
-    setLayout((current) => current.map((widget) => widget.id === id ? {
+    setLayout((current) => normalizeDashboardLayout(current.map((widget) => widget.id === id ? {
       ...widget,
       ...patch,
+      visible: typeof patch.visible === "boolean" ? patch.visible : widget.visible,
+      hidden: typeof patch.visible === "boolean" ? !patch.visible : widget.hidden,
+      filters: patch.filters ? { ...widget.filters, ...patch.filters } : widget.filters,
+      metrics: Array.isArray(patch.metrics) ? [...patch.metrics] : widget.metrics,
       settings: patch.settings ? { ...widget.settings, ...patch.settings } : widget.settings,
-    } : widget));
+    } : widget)));
   }
 
   function addWidget(type) {
-    setLayout((current) => [...current, createWidgetFromCatalog(type, `${Date.now()}-${current.length}`)]);
+    setLayout((current) => normalizeDashboardLayout([
+      ...current,
+      createWidgetFromCatalog(type, `${Date.now()}-${current.length}`, current),
+    ]));
   }
 
   function removeWidget(id) {
     setLayout((current) => current.filter((widget) => widget.id !== id));
   }
 
-  function moveWidget(sourceId, targetId) {
-    if (!sourceId || !targetId || sourceId === targetId) return;
-    setLayout((current) => {
-      const from = current.findIndex((widget) => widget.id === sourceId);
-      const to = current.findIndex((widget) => widget.id === targetId);
-      if (from < 0 || to < 0) return current;
-      const next = [...current];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
+  function commitLayout(nextLayout) {
+    setLayout(normalizeDashboardLayout(nextLayout));
+  }
+
+  function restoreWidget(id) {
+    setLayout((current) => normalizeDashboardLayout(current.map((widget) => {
+      if (widget.id !== id) return widget;
+      const restored = getDefaultWidget(widget);
+      return { ...restored, x: widget.x, y: widget.y, id: widget.id };
+    })));
   }
 
   function restoreDefault() {
@@ -134,7 +141,8 @@ export function useExecutiveDashboard() {
     updateWidget,
     addWidget,
     removeWidget,
-    moveWidget,
+    commitLayout,
+    restoreWidget,
     restoreDefault,
   };
 }

@@ -1,4 +1,4 @@
-import { BarChart, DashboardIcon, DonutChart, LineChart, Sparkline } from "./DashboardVisuals";
+import { AdaptiveChart, DashboardIcon, DonutChart, PieChart, Sparkline } from "./DashboardVisuals";
 
 export function DashboardWidget({ widget, data, onOpenModule, onUpdateWidget }) {
   const props = { widget, data, onOpenModule, onUpdateWidget };
@@ -21,10 +21,12 @@ export function DashboardWidget({ widget, data, onOpenModule, onUpdateWidget }) 
   }
 }
 
-function KpiWidget({ data, onOpenModule }) {
+function KpiWidget({ widget, data, onOpenModule }) {
+  const selected = widget.metrics?.length ? new Set(widget.metrics) : null;
+  const items = selected ? data.kpis.filter((item) => selected.has(item.label)) : data.kpis;
   return (
     <section className="ed-kpi-grid">
-      {data.kpis.map((item) => (
+      {items.map((item) => (
         <button type="button" className="ed-kpi-card" key={item.label} onClick={() => onOpenModule?.(item.route)}>
           <span className="ed-kpi-icon" style={{ "--accent": item.color }}><DashboardIcon name={item.icon} size={25} /></span>
           <span className="ed-kpi-main"><small>{item.label}</small><strong>{formatNumber(item.value)}</strong><em className={item.variation < 0 ? "is-down" : "is-up"}>{item.variation > 0 ? "↑" : item.variation < 0 ? "↓" : "="} {Math.abs(item.variation)}% <i>vs ayer</i></em></span>
@@ -84,17 +86,20 @@ function QuickPrintshopWidget({ widget, data, onOpenModule }) {
 }
 
 function InventoryWidget({ widget, data, onOpenModule, onUpdateWidget }) {
-  const category = widget.settings?.category || "all";
+  const category = widget.filters?.category || widget.settings?.category || "all";
   const filtered = category === "all" ? data.stockItems : data.stockItems.filter((item) => (item.category || "Sin categoría") === category);
   const items = filtered.slice(0, Number(widget.settings?.limit || 7));
+  const allSeries = [{ key: "minimum", label: "Mínimo", color: "#ff9418" }, { key: "ideal", label: "Ideal", color: "#13a976" }, { key: "current", label: "Stock actual", color: "#1769ff" }];
+  const selected = new Set(widget.metrics?.length ? widget.metrics : allSeries.map((item) => item.key));
+  const series = allSeries.filter((item) => selected.has(item.key));
   return (
     <Panel title={widget.title || "Inventario actual"} subtitle="Comparativo: mínimo vs ideal vs stock actual" action="Ver inventario" onAction={() => onOpenModule?.("print-shop")}>
-      <select className="ed-chart-filter" aria-label="Filtrar categoría de inventario" value={category} onChange={(event) => onUpdateWidget?.(widget.id, { settings: { category: event.target.value } })}>
+      <select className="ed-chart-filter" aria-label="Filtrar categoría de inventario" value={category} onChange={(event) => onUpdateWidget?.(widget.id, { filters: { category: event.target.value } })}>
         {data.inventoryCategories.map((item) => <option key={item} value={item}>{item === "all" ? "Todas las categorías" : item}</option>)}
       </select>
       {items.length ? <>
-        <Legend items={[{ label: "Mínimo", color: "#ff9418" }, { label: "Ideal", color: "#13a976" }, { label: "Stock actual", color: "#1769ff" }]} />
-        <BarChart items={items} series={[{ key: "minimum", label: "Mínimo", color: "#ff9418" }, { key: "ideal", label: "Ideal", color: "#13a976" }, { key: "current", label: "Stock actual", color: "#1769ff" }]} />
+        <Legend items={series} />
+        <AdaptiveChart type={widget.chartType || "bar"} items={items} series={series} />
       </> : <EmptyState text="No hay inventario en esta categoría." />}
     </Panel>
   );
@@ -105,32 +110,38 @@ function CertificatesWidget({ widget, data, onOpenModule }) {
   return (
     <Panel title={widget.title || "Certificados entregados"} subtitle="Últimos 7 días" action="Ver reporte" onAction={() => onOpenModule?.("print-shop")}>
       <div className="ed-certificate-summary"><strong>{formatNumber(data.certificates.total)}</strong><span className={data.certificates.variation < 0 ? "is-down" : "is-up"}>{data.certificates.variation >= 0 ? "↑" : "↓"} {Math.abs(data.certificates.variation)}% <small>vs periodo anterior</small></span></div>
-      <BarChart items={chartItems} series={[{ key: "delivered", label: "Entregados", color: "#5d8ff5" }]} maxItems={7} />
+      <AdaptiveChart type={widget.chartType || "bar"} items={chartItems} series={[{ key: "delivered", label: "Entregados", color: "#5d8ff5" }]} maxItems={7} />
     </Panel>
   );
 }
 
 function BooksWidget({ widget, data, onOpenModule }) {
   const colors = ["#1769ff", "#13a976", "#ff9418"];
+  const selected = new Set(widget.metrics?.length ? widget.metrics : data.production.periods.map((item) => item.key));
+  const periods = data.production.periods.filter((item) => selected.has(item.key) && (widget.period === "all" || !widget.period || item.key === widget.period));
+  const chartItems = data.production.labels.map((label, index) => ({ label, ...Object.fromEntries(periods.map((period) => [period.key, period.values[index]])) }));
+  const series = periods.map((period) => ({ key: period.key, label: period.label, color: colors[data.production.periods.findIndex((item) => item.key === period.key)] }));
   return (
     <Panel title={widget.title || "Libros producidos"} action="Ver producción" onAction={() => onOpenModule?.("print-shop")}>
       <div className="ed-production-layout">
         <div className="ed-period-grid">
-          {data.production.periods.map((period, index) => (
-            <div className="ed-period-card" key={period.key}><small>{period.label}</small><strong>{formatNumber(period.total)}</strong><em className={period.variation < 0 ? "is-down" : "is-up"}>{period.variation >= 0 ? "↑" : "↓"} {Math.abs(period.variation)}%</em><Sparkline values={period.values} color={colors[index]} /></div>
+          {periods.map((period) => (
+            <div className="ed-period-card" key={period.key}><small>{period.label}</small><strong>{formatNumber(period.total)}</strong><em className={period.variation < 0 ? "is-down" : "is-up"}>{period.variation >= 0 ? "↑" : "↓"} {Math.abs(period.variation)}%</em><Sparkline values={period.values} color={colors[data.production.periods.findIndex((item) => item.key === period.key)]} /></div>
           ))}
         </div>
-        <div className="ed-production-chart"><h4>Evolución de producción</h4><Legend items={data.production.periods.map((period, index) => ({ label: period.label, color: colors[index] }))} /><LineChart labels={data.production.labels} series={data.production.periods.map((period, index) => ({ label: period.label, color: colors[index], values: period.values }))} /></div>
+        <div className="ed-production-chart"><h4>Evolución de producción</h4><Legend items={series} /><AdaptiveChart type={widget.chartType || "line"} items={chartItems} series={series} /></div>
       </div>
     </Panel>
   );
 }
 
 function ModulesWidget({ widget, data, onOpenModule }) {
+  const selected = widget.metrics?.length ? new Set(widget.metrics) : null;
+  const items = selected ? data.moduleCards.filter((item) => selected.has(item.label)) : data.moduleCards;
   return (
     <Panel title={widget.title || "Módulos clave"}>
       <div className="ed-modules-grid">
-        {data.moduleCards.map((item) => (
+        {items.map((item) => (
           <button type="button" key={item.label} className="ed-module-card" onClick={() => onOpenModule?.(item.route)}>
             <span style={{ "--accent": item.color }}><DashboardIcon name={item.icon} size={17} /></span><small>{item.label}</small><strong>{formatNumber(item.value)}</strong><em>{item.detail}</em><Sparkline values={item.trend} color={item.color} height={19} />
           </button>
@@ -142,9 +153,12 @@ function ModulesWidget({ widget, data, onOpenModule }) {
 
 function ActivityWidget({ widget, data, onOpenModule }) {
   const limit = Number(widget.settings?.limit || 6);
+  const days = widget.period === "7d" ? 7 : widget.period === "30d" ? 30 : 0;
+  const threshold = days ? new Date(data.generatedAt).getTime() - days * 86400000 : 0;
+  const items = days ? data.recentActivity.filter((item) => new Date(item.date).getTime() >= threshold) : data.recentActivity;
   return (
     <Panel title={widget.title || "Actividad reciente"} action="Ver toda la actividad" onAction={() => onOpenModule?.("notifications-center")}>
-      {data.recentActivity.length ? <div className="ed-activity-list">{data.recentActivity.slice(0, limit).map((item) => (
+      {items.length ? <div className="ed-activity-list">{items.slice(0, limit).map((item) => (
         <button type="button" key={item.id} className={`ed-activity-item tone-${item.tone}`} onClick={() => onOpenModule?.(item.route)}>
           <time>{formatTime(item.date)}</time><span><DashboardIcon name={item.icon} size={16} /></span><p><b>{item.title}</b><small>{item.detail}</small></p><em>{item.category}</em>
         </button>
@@ -155,7 +169,7 @@ function ActivityWidget({ widget, data, onOpenModule }) {
 
 function ProjectsDonutWidget({ widget, data, onOpenModule }) {
   const total = data.projectDistribution.reduce((sum, item) => sum + item.value, 0);
-  return <Panel title={widget.title || "Proyectos por estado"} action="Ver proyectos" onAction={() => onOpenModule?.("all-projects")}><DonutChart items={data.projectDistribution} centerValue={total} centerLabel="Proyectos" /></Panel>;
+  return <Panel title={widget.title || "Proyectos por estado"} action="Ver proyectos" onAction={() => onOpenModule?.("all-projects")}>{widget.chartType === "pie" ? <PieChart items={data.projectDistribution} /> : <DonutChart items={data.projectDistribution} centerValue={total} centerLabel="Proyectos" />}</Panel>;
 }
 
 function SingleSparklineWidget({ widget, data, onOpenModule }) {

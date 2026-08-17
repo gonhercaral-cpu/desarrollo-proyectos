@@ -1,40 +1,51 @@
-export const DASHBOARD_PREFERENCE_VERSION = 1;
+import { findOpenGridPosition, packDashboardLayout } from "./dashboardGridEngine.js";
+
+export const DASHBOARD_PREFERENCE_VERSION = 2;
+
+export const CHART_TYPES = [
+  { value: "bar", label: "Barras" },
+  { value: "horizontalBar", label: "Barras horizontales" },
+  { value: "line", label: "Líneas" },
+  { value: "area", label: "Área" },
+  { value: "pie", label: "Pastel" },
+  { value: "donut", label: "Dona" },
+];
 
 export const WIDGET_CATALOG = [
-  { type: "kpi", label: "Indicadores KPI", description: "Indicadores principales con tendencia.", icon: "dashboard", defaultW: 12, minW: 6 },
-  { type: "alertas", label: "Prioridades del día", description: "Pendientes críticos y estados operativos.", icon: "alert", defaultW: 8, minW: 5 },
-  { type: "atencion", label: "Atención inmediata", description: "Alertas operativas ordenadas por prioridad.", icon: "bell", defaultW: 4, minW: 3 },
-  { type: "mensajes", label: "Mensajes", description: "Mensajes sin revisar.", icon: "messages", defaultW: 3, minW: 3 },
-  { type: "agenda", label: "Agenda", description: "Actividad del equipo para hoy.", icon: "calendar", defaultW: 3, minW: 3 },
-  { type: "proyectos", label: "Proyectos", description: "Proyectos activos y en revisión.", icon: "projects", defaultW: 3, minW: 3 },
-  { type: "ideas", label: "Ideas", description: "Ideas nuevas o pendientes.", icon: "ideas", defaultW: 3, minW: 3 },
-  { type: "compras", label: "Compras", description: "Solicitudes por aprobar.", icon: "purchase", defaultW: 3, minW: 3 },
-  { type: "imprenta", label: "Imprenta rápida", description: "Existencias clave de insumos.", icon: "print", defaultW: 8, minW: 6 },
-  { type: "inventario", label: "Inventario actual", description: "Mínimo, ideal y stock por material.", icon: "inventory", defaultW: 6, minW: 5 },
-  { type: "stock", label: "Stock mínimo / ideal / actual", description: "Comparativa agrupada de stock.", icon: "inventory", defaultW: 6, minW: 5 },
-  { type: "soporte", label: "Soporte técnico", description: "Equipos y mantenimientos.", icon: "support", defaultW: 3, minW: 3 },
-  { type: "mantenimientos", label: "Mantenimientos", description: "Vencidos y próximos.", icon: "maintenance", defaultW: 3, minW: 3 },
-  { type: "equipos", label: "Equipos inoperativos", description: "Equipos que requieren servicio.", icon: "equipment", defaultW: 3, minW: 3 },
-  { type: "certificados", label: "Certificados entregados", description: "Entregas de últimos siete días.", icon: "certificate", defaultW: 6, minW: 4 },
-  { type: "libros", label: "Libros producidos", description: "Producción por periodos.", icon: "books", defaultW: 8, minW: 6 },
-  { type: "modulos", label: "Módulos clave", description: "Resumen compacto de módulos.", icon: "modules", defaultW: 4, minW: 4 },
-  { type: "actividad", label: "Actividad reciente", description: "Feed combinado de operación.", icon: "activity", defaultW: 4, minW: 4 },
-  { type: "barras", label: "Gráfica de barras", description: "Gráfica configurable por fuente.", icon: "chartBar", defaultW: 6, minW: 4 },
-  { type: "lineas", label: "Gráfica de líneas", description: "Tendencia configurable.", icon: "chartLine", defaultW: 6, minW: 4 },
-  { type: "donut", label: "Gráfica donut", description: "Distribución por estado.", icon: "donut", defaultW: 4, minW: 3 },
-  { type: "sparkline", label: "Sparkline", description: "Mini tendencia de un indicador.", icon: "sparkline", defaultW: 3, minW: 3 },
+  widget("kpi", "Indicadores KPI", "Indicadores principales con tendencia.", "dashboard", 12, 7, 6, 6),
+  widget("alertas", "Prioridades del día", "Pendientes críticos y estados operativos.", "alert", 8, 7, 5, 5),
+  widget("atencion", "Atención inmediata", "Alertas operativas ordenadas por prioridad.", "bell", 4, 7, 3, 5),
+  widget("mensajes", "Mensajes", "Mensajes sin revisar.", "messages", 3, 5, 3, 4),
+  widget("agenda", "Agenda", "Actividad del equipo para hoy.", "calendar", 3, 5, 3, 4),
+  widget("proyectos", "Proyectos", "Proyectos activos y en revisión.", "projects", 3, 5, 3, 4),
+  widget("ideas", "Ideas", "Ideas nuevas o pendientes.", "ideas", 3, 5, 3, 4),
+  widget("compras", "Compras", "Solicitudes por aprobar.", "purchase", 3, 5, 3, 4),
+  widget("imprenta", "Imprenta rápida", "Existencias clave de insumos.", "print", 8, 7, 6, 5),
+  widget("inventario", "Inventario actual", "Mínimo, ideal y stock por material.", "inventory", 6, 8, 5, 6, ["bar", "horizontalBar", "line", "area"]),
+  widget("stock", "Stock mínimo / ideal / actual", "Comparativa agrupada de stock.", "inventory", 6, 8, 5, 6, ["bar", "horizontalBar", "line", "area"]),
+  widget("soporte", "Soporte técnico", "Equipos y mantenimientos.", "support", 3, 5, 3, 4),
+  widget("mantenimientos", "Mantenimientos", "Vencidos y próximos.", "maintenance", 3, 5, 3, 4),
+  widget("equipos", "Equipos inoperativos", "Equipos que requieren servicio.", "equipment", 3, 5, 3, 4),
+  widget("certificados", "Certificados entregados", "Entregas de últimos siete días.", "certificate", 6, 8, 4, 6, ["bar", "horizontalBar", "line", "area", "pie", "donut"]),
+  widget("libros", "Libros producidos", "Producción por periodos.", "books", 8, 8, 6, 6, ["line", "area", "bar"]),
+  widget("modulos", "Módulos clave", "Resumen compacto de módulos.", "modules", 4, 7, 4, 5),
+  widget("actividad", "Actividad reciente", "Feed combinado de operación.", "activity", 4, 9, 4, 5),
+  widget("barras", "Gráfica de barras", "Gráfica configurable por fuente.", "chartBar", 6, 8, 4, 6, ["bar", "horizontalBar", "line", "area"]),
+  widget("lineas", "Gráfica de líneas", "Tendencia configurable.", "chartLine", 6, 8, 4, 6, ["line", "area", "bar"]),
+  widget("donut", "Gráfica donut", "Distribución por estado.", "donut", 4, 7, 3, 5, ["donut", "pie"]),
+  widget("sparkline", "Sparkline", "Mini tendencia de un indicador.", "sparkline", 3, 5, 3, 4),
 ];
 
 export const DEFAULT_DASHBOARD_LAYOUT = [
-  { id: "kpi-overview", type: "kpi", w: 12, title: "" },
-  { id: "daily-priorities", type: "alertas", w: 8, title: "Prioridades del día" },
-  { id: "immediate-attention", type: "atencion", w: 4, title: "Atención inmediata" },
-  { id: "quick-printshop", type: "imprenta", w: 8, title: "Imprenta rápida", settings: { limit: 6 } },
-  { id: "key-modules", type: "modulos", w: 4, title: "Módulos clave" },
-  { id: "inventory-current", type: "inventario", w: 6, title: "Inventario actual", settings: { category: "all", limit: 7 } },
-  { id: "certificates-delivered", type: "certificados", w: 6, title: "Certificados entregados" },
-  { id: "books-produced", type: "libros", w: 8, title: "Libros producidos" },
-  { id: "recent-activity", type: "actividad", w: 4, title: "Actividad reciente", settings: { limit: 6 } },
+  positioned("kpi-overview", "kpi", 0, 0, 12, 7, ""),
+  positioned("daily-priorities", "alertas", 0, 7, 8, 7, "Prioridades del día"),
+  positioned("immediate-attention", "atencion", 8, 7, 4, 7, "Atención inmediata"),
+  positioned("quick-printshop", "imprenta", 0, 14, 8, 7, "Imprenta rápida", { limit: 6 }),
+  positioned("key-modules", "modulos", 8, 14, 4, 7, "Módulos clave"),
+  positioned("inventory-current", "inventario", 0, 21, 6, 8, "Inventario actual", { limit: 7 }, { category: "all" }, "bar", ["minimum", "ideal", "current"]),
+  positioned("certificates-delivered", "certificados", 6, 21, 6, 8, "Certificados entregados", {}, {}, "bar", ["delivered"], "7d"),
+  positioned("books-produced", "libros", 0, 29, 8, 8, "Libros producidos", {}, {}, "line", ["week", "month", "twoMonths"], "all"),
+  positioned("recent-activity", "actividad", 8, 29, 4, 9, "Actividad reciente", { limit: 6 }, {}, "", [], "all"),
 ];
 
 export const WIDGET_WIDTH_OPTIONS = [3, 4, 6, 8, 12];
@@ -43,45 +54,108 @@ export function getCatalogItem(type) {
   return WIDGET_CATALOG.find((item) => item.type === type) || WIDGET_CATALOG[0];
 }
 
-export function createWidgetFromCatalog(type, index = Date.now()) {
+export function getCompatibleChartTypes(type) {
+  return getCatalogItem(type).chartTypes || [];
+}
+
+export function createWidgetFromCatalog(type, index = Date.now(), currentLayout = []) {
   const item = getCatalogItem(type);
-  return {
+  const position = findOpenGridPosition(currentLayout, item.defaultW, item.defaultH);
+  return normalizeWidget({
     id: `${type}-${index}`,
     type,
-    w: item.defaultW,
+    ...position,
+    width: item.defaultW,
+    height: item.defaultH,
     title: item.label,
+    visible: true,
+    chartType: item.chartTypes?.[0] || "",
+    filters: {},
+    period: "all",
+    metrics: defaultMetrics(type),
     settings: {},
-  };
+  });
 }
 
 export function normalizeDashboardLayout(layout) {
-  if (!Array.isArray(layout) || layout.length === 0) {
-    return DEFAULT_DASHBOARD_LAYOUT.map(cloneWidget);
-  }
-
+  if (!Array.isArray(layout) || layout.length === 0) return getDefaultDashboardLayout();
   const validTypes = new Set(WIDGET_CATALOG.map((item) => item.type));
-  return layout
-    .filter((widget) => widget?.id && validTypes.has(widget.type))
-    .map((widget) => {
-      const catalog = getCatalogItem(widget.type);
-      const width = WIDGET_WIDTH_OPTIONS.includes(Number(widget.w))
-        ? Number(widget.w)
-        : catalog.defaultW;
-      return {
-        id: String(widget.id),
-        type: widget.type,
-        w: Math.max(catalog.minW, width),
-        title: typeof widget.title === "string" ? widget.title.slice(0, 80) : catalog.label,
-        hidden: widget.hidden === true,
-        settings: widget.settings && typeof widget.settings === "object" ? { ...widget.settings } : {},
-      };
-    });
+  const normalized = [];
+  layout.filter((item) => item?.id && validTypes.has(item.type)).forEach((item) => {
+    const hasPosition = Number.isFinite(Number(item.x)) && Number.isFinite(Number(item.y));
+    const next = normalizeWidget({ ...item, x: hasPosition ? item.x : 0, y: hasPosition ? item.y : 0 });
+    normalized.push(hasPosition ? next : { ...next, ...findOpenGridPosition(normalized, next.width, next.height) });
+  });
+  return packDashboardLayout(normalized);
 }
 
 export function getDefaultDashboardLayout() {
   return DEFAULT_DASHBOARD_LAYOUT.map(cloneWidget);
 }
 
-function cloneWidget(widget) {
-  return { ...widget, settings: { ...(widget.settings || {}) } };
+export function getDefaultWidget(item) {
+  const exact = DEFAULT_DASHBOARD_LAYOUT.find((widget) => widget.id === item.id);
+  if (exact) return cloneWidget(exact);
+  const fresh = createWidgetFromCatalog(item.type, item.id.replace(`${item.type}-`, "") || Date.now());
+  return { ...fresh, id: item.id, x: item.x, y: item.y };
+}
+
+function normalizeWidget(item) {
+  const catalog = getCatalogItem(item.type);
+  const width = clampDimension(item.width ?? item.w, catalog.defaultW, catalog.minW, 12);
+  const height = clampDimension(item.height ?? item.h, catalog.defaultH, catalog.minH, 40);
+  const chartTypes = catalog.chartTypes || [];
+  const legacyCategory = item.settings?.category;
+  const visible = typeof item.visible === "boolean" ? item.visible : item.hidden !== true;
+  return {
+    id: String(item.id),
+    type: item.type,
+    x: clampDimension(item.x, 0, 0, 12 - width),
+    y: clampDimension(item.y, 0, 0, 10000),
+    width,
+    height,
+    w: width,
+    h: height,
+    visible,
+    hidden: !visible,
+    chartType: chartTypes.includes(item.chartType) ? item.chartType : chartTypes[0] || "",
+    filters: {
+      ...(item.filters && typeof item.filters === "object" ? item.filters : {}),
+      ...(legacyCategory && !item.filters?.category ? { category: legacyCategory } : {}),
+    },
+    period: typeof item.period === "string" ? item.period : "all",
+    metrics: Array.isArray(item.metrics) ? item.metrics.map(String) : defaultMetrics(item.type),
+    settings: item.settings && typeof item.settings === "object" ? { ...item.settings } : {},
+    title: typeof item.title === "string" ? item.title.slice(0, 80) : catalog.label,
+  };
+}
+
+function widget(type, label, description, icon, defaultW, defaultH, minW, minH, chartTypes = []) {
+  return { type, label, description, icon, defaultW, defaultH, minW, minH, chartTypes };
+}
+
+function positioned(id, type, x, y, width, height, title, settings = {}, filters = {}, chartType = "", metrics = [], period = "all") {
+  return normalizeWidget({ id, type, x, y, width, height, title, visible: true, chartType, filters, period, metrics, settings });
+}
+
+function defaultMetrics(type) {
+  if (["inventario", "stock", "barras"].includes(type)) return ["minimum", "ideal", "current"];
+  if (type === "certificados") return ["delivered"];
+  if (["libros", "lineas"].includes(type)) return ["week", "month", "twoMonths"];
+  return [];
+}
+
+function cloneWidget(item) {
+  return {
+    ...item,
+    filters: { ...(item.filters || {}) },
+    metrics: [...(item.metrics || [])],
+    settings: { ...(item.settings || {}) },
+  };
+}
+
+function clampDimension(value, fallback, minimum, maximum) {
+  const parsed = Number(value);
+  const safe = Number.isFinite(parsed) ? Math.round(parsed) : fallback;
+  return Math.min(maximum, Math.max(minimum, safe));
 }
