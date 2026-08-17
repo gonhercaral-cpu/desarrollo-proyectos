@@ -28,7 +28,7 @@ export default function ExecutiveDashboard({ onOpenModule }) {
 
   if (dashboard.loading) {
     return (
-      <main className="executive-dashboard ed-loading-page">
+      <main className="executive-dashboard workspace-dashboard-page ed-loading-page">
         <div className="ed-heading-skeleton" />
         <div className="ed-kpi-skeleton">{Array.from({ length: 6 }).map((_, index) => <i key={index} />)}</div>
         <div className="ed-panel-skeleton" />
@@ -38,14 +38,14 @@ export default function ExecutiveDashboard({ onOpenModule }) {
 
   if (!dashboard.data) {
     return (
-      <main className="executive-dashboard">
+      <main className="executive-dashboard workspace-dashboard-page">
         <div className="ed-page-error"><DashboardIcon name="alert" size={30} /><h2>Dashboard no disponible</h2><p>{dashboard.error || "No fue posible cargar información."}</p><button type="button" onClick={() => dashboard.refresh()}>Reintentar</button></div>
       </main>
     );
   }
 
   return (
-    <main className={`executive-dashboard ${editing ? "is-editing" : ""}`}>
+    <main className={`executive-dashboard workspace-dashboard-page ${editing ? "is-editing" : ""}`}>
       <header className="ed-page-header">
         <div className="ed-page-title"><span><DashboardIcon name="dashboard" size={27} /></span><div><h1>Dashboard ejecutivo</h1><p>Visión general de la operación del día</p></div></div>
         <div className="ed-header-actions">
