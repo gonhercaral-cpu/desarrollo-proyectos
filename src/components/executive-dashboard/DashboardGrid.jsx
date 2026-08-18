@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardWidget } from "./DashboardWidgets";
 import { WidgetEditBar } from "./DashboardCustomizer";
 import { DashboardIcon } from "./DashboardVisuals";
@@ -8,41 +8,28 @@ import {
   DASHBOARD_GRID_GAP,
   DASHBOARD_GRID_ROW_HEIGHT,
   getDashboardGridRows,
+  getWidgetSizeMode,
   packDashboardLayout,
   sameGridLayout,
   updateGridItem,
 } from "./dashboardGridEngine.js";
 
-const AUTO_HEIGHT_WIDGETS = new Set(["kpi", "alertas", "atencion", "imprenta", "inventario", "stock", "certificados", "libros", "modulos", "actividad", "barras", "lineas", "donut", "mensajes", "agenda", "proyectos", "ideas", "compras", "soporte", "mantenimientos", "equipos", "sparkline"]);
-const EDIT_TOOLBAR_HEIGHT = 42;
+const EDITING_ROW_OVERHEAD = 1;
 
 export function DashboardGrid({ layout, editing, dashboard, data, onOpenModule, onSettings }) {
   const canvasRef = useRef(null);
   const interactionRef = useRef(null);
   const previewRef = useRef(null);
-  const contentHeightsRef = useRef({});
   const [interaction, setInteraction] = useState(null);
   const [previewLayout, setPreviewLayout] = useState(null);
-  const [contentHeights, setContentHeights] = useState({});
   const renderedLayout = useMemo(() => {
     const source = editing ? layout : layout.filter((item) => item.visible !== false);
-    return packDashboardLayout(source.map((item) => {
-      const required = getRequiredRows(item, contentHeights[item.id], editing);
-      if (!required) return item;
-      const height = isAutoHeightWidget(item) ? required : Math.max(item.height, required);
-      return { ...item, height, h: height };
-    }));
-  }, [contentHeights, editing, layout]);
+    return packDashboardLayout(source.map((item) => editing
+      ? { ...item, layoutHeight: item.height, height: item.height + EDITING_ROW_OVERHEAD, h: item.height + EDITING_ROW_OVERHEAD }
+      : item));
+  }, [editing, layout]);
   const activeLayout = previewLayout || renderedLayout;
   const orderedLayout = useMemo(() => [...activeLayout].sort((left, right) => left.y - right.y || left.x - right.x), [activeLayout]);
-  const reportContentHeight = useCallback((id, height) => {
-    setContentHeights((current) => {
-      if (current[id] === height) return current;
-      const next = { ...current, [id]: height };
-      contentHeightsRef.current = next;
-      return next;
-    });
-  }, []);
 
   function startInteraction(event, widget, mode) {
     if (!editing || !canvasRef.current || window.innerWidth <= 800) return;
@@ -59,7 +46,7 @@ export function DashboardGrid({ layout, editing, dashboard, data, onOpenModule, 
       rowStep: DASHBOARD_GRID_ROW_HEIGHT + DASHBOARD_GRID_GAP,
       widget,
       baseLayout: activeLayout,
-      constraints: { ...getCatalogItem(widget.type), minH: getRequiredRows(widget, contentHeightsRef.current[widget.id], true) },
+      constraints: getCatalogItem(widget.type),
     };
     previewRef.current = activeLayout;
     setPreviewLayout(activeLayout);
@@ -83,7 +70,7 @@ export function DashboardGrid({ layout, editing, dashboard, data, onOpenModule, 
           };
       let next = updateGridItem(current.baseLayout, current.id, patch, {
         minWidth: current.constraints.minW,
-        minHeight: current.constraints.minH,
+        minHeight: current.constraints.minH + EDITING_ROW_OVERHEAD,
       });
       if (current.mode.includes("s")) {
         next = next.map((item) => item.id === current.id ? { ...item, settings: { ...item.settings, autoHeight: false } } : item);
@@ -96,7 +83,7 @@ export function DashboardGrid({ layout, editing, dashboard, data, onOpenModule, 
     function finishInteraction() {
       const next = previewRef.current;
       const original = interactionRef.current?.baseLayout || [];
-      if (next && !sameGridLayout(next, original)) dashboard.commitLayout(toPersistedLayout(next, contentHeightsRef.current));
+      if (next && !sameGridLayout(next, original)) dashboard.commitLayout(toPersistedLayout(next));
       interactionRef.current = null;
       previewRef.current = null;
       setPreviewLayout(null);
@@ -133,7 +120,6 @@ export function DashboardGrid({ layout, editing, dashboard, data, onOpenModule, 
           onOpenModule={onOpenModule}
           onSettings={onSettings}
           onStartInteraction={startInteraction}
-          onContentHeight={reportContentHeight}
         />
       ))}
       {interaction && <div className="ed-grid-status" role="status">Ajustando a cuadrícula · {activeWidget?.width} × {activeWidget?.height}</div>}
@@ -141,29 +127,33 @@ export function DashboardGrid({ layout, editing, dashboard, data, onOpenModule, 
   );
 }
 
-function GridWidget({ widget, editing, interacting, dashboard, data, onOpenModule, onSettings, onStartInteraction, onContentHeight }) {
+function GridWidget({ widget, editing, interacting, dashboard, data, onOpenModule, onSettings, onStartInteraction }) {
   const slotRef = useRef(null);
-  const contentRef = useRef(null);
+  const sizeModeRef = useRef("normal");
   const [sizeMode, setSizeMode] = useState("normal");
 
   useEffect(() => {
     const element = slotRef.current;
-    const content = contentRef.current;
-    if (!element || !content || typeof ResizeObserver === "undefined") return undefined;
-    const measure = () => {
-      const { width, height } = element.getBoundingClientRect();
-      const next = width < 520 || height < 240 ? "compact" : width > 820 ? "expanded" : "normal";
-      setSizeMode((current) => current === next ? current : next);
-      const naturalHeight = content.firstElementChild?.scrollHeight || content.scrollHeight;
-      onContentHeight(widget.id, Math.ceil(naturalHeight));
+    if (!element || typeof ResizeObserver === "undefined") return undefined;
+    let frame = 0;
+    const measure = (width) => {
+      if (!Number.isFinite(width) || width < 1) return;
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const next = getWidgetSizeMode(width, sizeModeRef.current);
+        if (next === sizeModeRef.current) return;
+        sizeModeRef.current = next;
+        setSizeMode(next);
+      });
     };
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(([entry]) => measure(entry.contentRect.width));
     observer.observe(element);
-    observer.observe(content);
-    if (content.firstElementChild) observer.observe(content.firstElementChild);
-    measure();
-    return () => observer.disconnect();
-  }, [onContentHeight, widget.id, widget.settings?.autoHeight, widget.type, widget.visible]);
+    measure(element.getBoundingClientRect().width);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
 
   return (
     <article
@@ -172,11 +162,10 @@ function GridWidget({ widget, editing, interacting, dashboard, data, onOpenModul
       style={gridStyle(widget)}
       data-size={sizeMode}
       data-widget-type={widget.type}
-      data-auto-height={isAutoHeightWidget(widget) ? "true" : "false"}
     >
       {editing && (
         <WidgetEditBar
-          widget={widget}
+          widget={widget.layoutHeight == null ? widget : { ...widget, height: widget.layoutHeight, h: widget.layoutHeight }}
           onUpdate={dashboard.updateWidget}
           onRemove={dashboard.removeWidget}
           onConfigure={onSettings}
@@ -184,7 +173,7 @@ function GridWidget({ widget, editing, interacting, dashboard, data, onOpenModul
           onMoveStart={(event) => onStartInteraction(event, widget, "move")}
         />
       )}
-      <div ref={contentRef} className="ed-widget-content">
+      <div className="ed-widget-content">
         {widget.visible === false ? (
           <button type="button" className="ed-hidden-widget" onClick={() => dashboard.updateWidget(widget.id, { visible: true })}>
             <DashboardIcon name="plus" />Mostrar {widget.title || widget.type}
@@ -209,21 +198,11 @@ function gridStyle(widget) {
   };
 }
 
-function isAutoHeightWidget(widget) {
-  return widget.visible !== false && AUTO_HEIGHT_WIDGETS.has(widget.type) && widget.settings?.autoHeight !== false;
-}
-
-function getRequiredRows(item, contentHeight, editing = false) {
-  const catalog = getCatalogItem(item.type);
-  if (!contentHeight) return catalog.minH;
-  const chrome = editing ? EDIT_TOOLBAR_HEIGHT : 0;
-  return Math.max(catalog.minH, Math.ceil((contentHeight + chrome + DASHBOARD_GRID_GAP) / (DASHBOARD_GRID_ROW_HEIGHT + DASHBOARD_GRID_GAP)));
-}
-
-function toPersistedLayout(layout, contentHeights) {
+function toPersistedLayout(layout) {
   return packDashboardLayout(layout.map((item) => {
-    const required = getRequiredRows(item, contentHeights[item.id]);
-    const height = isAutoHeightWidget(item) ? required : Math.max(item.height, required);
-    return { ...item, height, h: height };
+    const height = Math.max(getCatalogItem(item.type).minH, item.height - EDITING_ROW_OVERHEAD);
+    const clean = { ...item, height, h: height };
+    delete clean.layoutHeight;
+    return clean;
   }));
 }

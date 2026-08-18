@@ -248,13 +248,13 @@ html[data-theme="dark"] .ed-page-title > span,html[data-theme="dark"] .ed-widget
   display:flex;
   min-width:0;
   min-height:0;
-  transition:grid-column .16s ease,grid-row .16s ease,opacity .16s ease,transform .16s ease,box-shadow .16s ease;
+  transition:opacity .16s ease,transform .16s ease,box-shadow .16s ease;
 }
 .ed-widget-slot.is-interacting { z-index:4; opacity:.72; transform:scale(.99); filter:saturate(1.08); }
 .executive-dashboard.is-editing .ed-widget-slot { padding-top:42px; }
 .ed-widget-content { width:100%; height:100%; min-width:0; min-height:0; overflow:hidden; }
 .ed-widget-content > :is(.ed-panel,.ed-kpi-grid) { width:100%; height:100%; min-height:0; }
-.ed-widget-slot .ed-panel { display:flex; flex-direction:column; overflow:auto; scrollbar-width:thin; }
+.ed-widget-slot .ed-panel { display:flex; flex-direction:column; overflow:auto; scrollbar-gutter:stable; scrollbar-width:thin; }
 .ed-widget-slot .ed-panel-header { flex:none; }
 .ed-widget-slot .ed-kpi-grid { grid-auto-rows:minmax(0,1fr); }
 .ed-widget-slot .ed-kpi-card { min-height:0; }
@@ -367,22 +367,18 @@ html[data-theme="dark"] .ed-horizontal-group span b { color:var(--text); }
 }
 
 /* Ajuste fino por contenedor y controles compactos. */
-.ed-widget-slot[data-auto-height="true"] .ed-widget-content,
-.ed-widget-slot[data-auto-height="true"] .ed-widget-content > :is(.ed-panel,.ed-kpi-grid) { height:auto; overflow:visible; }
-.ed-widget-slot[data-auto-height="true"] .ed-widget-content > .ed-panel { min-height:0; }
-.ed-widget-slot[data-auto-height="true"] .ed-panel { overflow:hidden; }
-.ed-widget-slot[data-auto-height="true"] .ed-priority-grid { grid-template-columns:repeat(auto-fit,minmax(min(125px,100%),1fr)); }
-.ed-widget-slot[data-auto-height="true"] .ed-priority-card { height:auto; min-height:96px; }
-.ed-widget-slot[data-auto-height="true"] .ed-supply-grid { grid-template-columns:repeat(auto-fit,minmax(min(165px,100%),1fr)); }
-.ed-widget-slot[data-auto-height="true"] .ed-modules-grid { grid-template-columns:repeat(auto-fit,minmax(min(96px,100%),1fr)); }
-.ed-widget-slot[data-auto-height="true"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); }
-.ed-widget-slot[data-auto-height="true"] .ed-kpi-card { min-height:118px; }
-.ed-widget-slot[data-size="normal"][data-auto-height="true"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); }
-.ed-widget-slot[data-size="compact"][data-auto-height="true"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(135px,100%),1fr)); }
-.ed-widget-slot[data-size="compact"][data-auto-height="true"] .ed-supply-grid { grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr)); }
+.ed-widget-slot .ed-priority-grid { grid-template-columns:repeat(auto-fit,minmax(min(125px,100%),1fr)); }
+.ed-widget-slot .ed-priority-card { height:auto; min-height:96px; }
+.ed-widget-slot .ed-supply-grid { grid-template-columns:repeat(auto-fit,minmax(min(165px,100%),1fr)); }
+.ed-widget-slot .ed-modules-grid { grid-template-columns:repeat(auto-fit,minmax(min(96px,100%),1fr)); }
+.ed-widget-slot .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); }
+.ed-widget-slot .ed-kpi-card { min-height:118px; }
+.ed-widget-slot[data-size="normal"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"] .ed-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(min(135px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"] .ed-supply-grid { grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr)); }
 .ed-widget-slot[data-size="compact"] .ed-module-card { min-height:72px; padding:9px; grid-template-rows:auto auto; }
 .ed-widget-slot[data-size="compact"] .ed-module-card :is(em,.ed-sparkline) { display:none; }
-.ed-widget-slot[data-size="compact"][data-auto-height="true"] .ed-period-grid { grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr)); }
+.ed-widget-slot[data-size="compact"] .ed-period-grid { grid-template-columns:repeat(auto-fit,minmax(min(120px,100%),1fr)); }
 .ed-widget-slot[data-size="compact"] .ed-widget-editbar { grid-template-columns:26px minmax(58px,1fr) repeat(4,26px); gap:2px; padding:3px; }
 .ed-widget-slot[data-size="compact"] .ed-widget-editbar button { width:26px; height:26px; padding:0; }
 .ed-widget-slot[data-size="compact"] .ed-size-controls { gap:1px; height:26px; padding:1px 2px; }

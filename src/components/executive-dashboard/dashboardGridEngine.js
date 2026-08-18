@@ -2,6 +2,15 @@ export const DASHBOARD_GRID_COLUMNS = 12;
 export const DASHBOARD_GRID_ROW_HEIGHT = 36;
 export const DASHBOARD_GRID_GAP = 16;
 
+export function getWidgetSizeMode(width, current = "normal") {
+  const safeWidth = Number(width) || 0;
+  if (current === "compact" && safeWidth < 552) return "compact";
+  if (current === "expanded" && safeWidth > 780) return "expanded";
+  if (safeWidth < 520) return "compact";
+  if (safeWidth > 820) return "expanded";
+  return "normal";
+}
+
 export function normalizeGridItem(item, columns = DASHBOARD_GRID_COLUMNS) {
   const width = clamp(integer(item.width ?? item.w, columns), 1, columns);
   const height = Math.max(1, integer(item.height ?? item.h, 6));

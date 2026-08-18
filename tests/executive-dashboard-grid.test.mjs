@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getDefaultDashboardLayout, normalizeDashboardLayout } from "../src/components/executive-dashboard/dashboardCatalog.js";
-import { gridItemsCollide, updateGridItem } from "../src/components/executive-dashboard/dashboardGridEngine.js";
+import { getWidgetSizeMode, gridItemsCollide, updateGridItem } from "../src/components/executive-dashboard/dashboardGridEngine.js";
 
 test("migra layout legado conservando distribución y campos nuevos", () => {
   const layout = normalizeDashboardLayout([
@@ -45,4 +45,13 @@ test("resize respeta mínimos y límite de 12 columnas", () => {
   assert.equal(inventory.width, 12);
   assert.equal(inventory.height, 6);
   assert.equal(inventory.x, 0);
+});
+
+test("modo responsive usa histéresis y no oscila cerca del breakpoint", () => {
+  assert.equal(getWidgetSizeMode(519, "normal"), "compact");
+  assert.equal(getWidgetSizeMode(535, "compact"), "compact");
+  assert.equal(getWidgetSizeMode(553, "compact"), "normal");
+  assert.equal(getWidgetSizeMode(821, "normal"), "expanded");
+  assert.equal(getWidgetSizeMode(800, "expanded"), "expanded");
+  assert.equal(getWidgetSizeMode(779, "expanded"), "normal");
 });
