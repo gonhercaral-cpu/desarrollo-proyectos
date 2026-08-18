@@ -2588,6 +2588,32 @@ describe("storage", () => {
     await assertSucceeds(fileRef.putString("notas", "raw", { contentType: "application/octet-stream" }));
   });
 
+  it("permite subir audio y video a proyecto asignado", async () => {
+    const storage = storageAuth("collab");
+
+    await assertSucceeds(
+      storage.ref("evidence/owned-project/collab/avance.webm")
+        .putString("audio", "raw", { contentType: "audio/webm" })
+    );
+    await assertSucceeds(
+      storage.ref("evidence/owned-project/collab/avance.mp4")
+        .putString("video", "raw", { contentType: "video/mp4" })
+    );
+  });
+
+  it("bloquea multimedia con extension o MIME no permitido", async () => {
+    const storage = storageAuth("collab");
+
+    await assertFails(
+      storage.ref("evidence/owned-project/collab/avance.exe")
+        .putString("audio", "raw", { contentType: "audio/webm" })
+    );
+    await assertFails(
+      storage.ref("evidence/owned-project/collab/avance.mp4")
+        .putString("script", "raw", { contentType: "application/javascript" })
+    );
+  });
+
   it("bloquea extension no permitida como evidencia de proyecto", async () => {
     const storage = storageAuth("collab");
     const fileRef = storage.ref("evidence/owned-project/collab/proof.exe");

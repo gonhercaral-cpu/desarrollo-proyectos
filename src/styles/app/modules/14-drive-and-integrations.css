@@ -1590,6 +1590,29 @@
   stroke-width: 1.8;
 }
 
+.drive-upload-cancel-button {
+  justify-self: end;
+  margin-top: 10px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.drive-upload-cancel-button:hover {
+  border-color: #fda4af;
+  background: #ffe4e6;
+}
+
+.drive-upload-cancel-button:focus-visible {
+  outline: 3px solid rgba(225, 29, 72, .2);
+  outline-offset: 2px;
+}
+
 .drive-internal-viewer {
   width: min(1240px, 100%);
   height: min(860px, calc(100vh - 32px));

@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { createProject } from "../services/projectsService";
+import { createProject, updateProjectDescriptionContent } from "../services/projectsService";
+import { uploadEvidenceFile } from "../services/storageService";
 import { getActiveUsers } from "../services/usersService";
 import { getActiveDepartments } from "../services/departmentsService";
 import { useAuth } from "../context/AuthContext";
 import UserAvatar from "../components/UserAvatar";
+import RichTextEditor from "../components/RichTextEditor";
+import RichTextContent from "../components/RichTextContent";
+import ProjectMediaComposer from "../components/ProjectMediaComposer";
+import ProjectMediaList from "../components/ProjectMediaList";
+import { isRichTextEmpty, sanitizeRichText } from "../utils/richText";
 
 const PRIORITIES = ["Alta", "Media", "Baja"];
 
@@ -63,6 +69,7 @@ export default function CreateProject() {
 
   const [collaboratorIds, setCollaboratorIds] = useState([]);
   const [files, setFiles] = useState([]);
+  const [descriptionMedia, setDescriptionMedia] = useState([]);
 
   const [reviewChecklistEnabled, setReviewChecklistEnabled] = useState(false);
   const [reviewChecklistItems, setReviewChecklistItems] = useState([]);
@@ -199,7 +206,7 @@ export default function CreateProject() {
     setReviewChecklistItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
-  function resetForm() {
+  function resetForm({ clearMessage = true } = {}) {
     setForm({
       title: "",
       departmentId: "",
@@ -223,9 +230,10 @@ export default function CreateProject() {
 
     setCollaboratorIds([]);
     setFiles([]);
+    setDescriptionMedia([]);
     setReviewChecklistEnabled(false);
     setReviewChecklistItems([]);
-    setMessage("");
+    if (clearMessage) setMessage("");
   }
 
   const selectedCollaborators = useMemo(() => {
@@ -255,7 +263,7 @@ export default function CreateProject() {
     },
     {
       label: "Descripción del proyecto",
-      complete: Boolean(form.description.trim()),
+      complete: !isRichTextEmpty(form.description),
     },
     {
       label: "Responsable del proyecto",
@@ -290,6 +298,7 @@ export default function CreateProject() {
     }
 
     setSaving(true);
+    let createdProjectId = "";
 
     try {
       const collaboratorUsers = users.filter((user) =>
@@ -305,8 +314,12 @@ export default function CreateProject() {
         active: profile?.active !== false,
       };
 
+      const safeDescription = sanitizeRichText(form.description);
       const payload = {
         ...form,
+        description: safeDescription,
+        descriptionFormat: "html",
+        descriptionAttachments: [],
 
         progress: Number(form.progress || 0),
 
@@ -356,13 +369,34 @@ export default function CreateProject() {
           : { enabled: false },
       };
 
-      await createProject(payload, creatorUser);
+      const projectId = await createProject(payload, creatorUser);
+      createdProjectId = projectId;
+
+      if (descriptionMedia.length > 0) {
+        const descriptionAttachments = [];
+        for (const mediaItem of descriptionMedia) {
+          descriptionAttachments.push(
+            await uploadEvidenceFile(projectId, mediaItem.file, creatorUser, profile)
+          );
+        }
+        await updateProjectDescriptionContent({
+          projectId,
+          description: safeDescription,
+          descriptionAttachments,
+          currentUser: creatorUser,
+        });
+      }
 
       setMessage("Proyecto creado correctamente.");
-      resetForm();
+      resetForm({ clearMessage: false });
     } catch (error) {
       console.error(error);
-      setMessage(error.message || "No se pudo crear el proyecto.");
+      if (createdProjectId) {
+        setMessage(`Proyecto creado, pero no se pudo completar la carga multimedia: ${error.message || "error de carga"}. Puedes agregarla desde Editar proyecto.`);
+        resetForm({ clearMessage: false });
+      } else {
+        setMessage(error.message || "No se pudo crear el proyecto.");
+      }
     } finally {
       setSaving(false);
     }
@@ -509,20 +543,16 @@ export default function CreateProject() {
                 </Field>
 
                 <Field label="Descripción del proyecto" required full>
-                  <textarea
-                    id="create-project-description"
-                    name="description"
-                    maxLength={500}
+                  <RichTextEditor
                     value={form.description}
-                    onChange={(event) =>
-                      updateField("description", event.target.value)
-                    }
+                    onChange={(value) => updateField("description", value)}
                     placeholder="Describe el objetivo, alcance y principales entregables del proyecto..."
                   />
-
-                  <small className="field-counter">
-                    {form.description.length}/500
-                  </small>
+                  <ProjectMediaComposer
+                    items={descriptionMedia}
+                    onChange={setDescriptionMedia}
+                    disabled={saving}
+                  />
                 </Field>
               </div>
             </section>
@@ -811,10 +841,19 @@ export default function CreateProject() {
 
                 <h3>{form.title || "Título del proyecto"}</h3>
 
-                <p>
-                  {form.description ||
-                    "Descripción breve del proyecto aparecerá aquí..."}
-                </p>
+                {isRichTextEmpty(form.description) ? (
+                  <p>Descripción breve del proyecto aparecerá aquí...</p>
+                ) : (
+                  <RichTextContent value={form.description} />
+                )}
+                <ProjectMediaList
+                  items={descriptionMedia.map((item) => ({
+                    ...item,
+                    url: item.previewUrl,
+                    fileName: item.file?.name,
+                    fileType: item.file?.type,
+                  }))}
+                />
 
                 <div className="preview-badges">
                   <Badge color="blue">

@@ -11,6 +11,11 @@ import { getActiveUsers } from "../services/usersService";
 import { uploadEvidenceFile } from "../services/storageService";
 import { useAuth } from "../context/AuthContext";
 import UserAvatar from "../components/UserAvatar";
+import RichTextEditor from "../components/RichTextEditor";
+import RichTextContent from "../components/RichTextContent";
+import ProjectMediaComposer from "../components/ProjectMediaComposer";
+import ProjectMediaList from "../components/ProjectMediaList";
+import { isRichTextEmpty, sanitizeRichText } from "../utils/richText";
 
 const AREAS = [
   "Administración",
@@ -49,6 +54,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
 
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState([]);
+  const [descriptionMedia, setDescriptionMedia] = useState([]);
 
   const [form, setForm] = useState({
     title: "",
@@ -235,7 +241,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
     },
     {
       label: "Descripción del proyecto",
-      complete: Boolean(form.description.trim()),
+      complete: !isRichTextEmpty(form.description),
     },
     {
       label: "Responsable del proyecto",
@@ -290,6 +296,7 @@ export default function EditProject({ projectId, onBack, onSaved }) {
       );
 
       const uploadedItems = [];
+      const uploadedDescriptionMedia = [];
 
       for (const file of files) {
         const uploadedFile = await uploadEvidenceFile(
@@ -311,6 +318,17 @@ export default function EditProject({ projectId, onBack, onSaved }) {
             "Usuario",
           uploadedByEmail: firebaseUser?.email || currentUser?.email || "",
         });
+      }
+
+      for (const mediaItem of descriptionMedia) {
+        uploadedDescriptionMedia.push(
+          await uploadEvidenceFile(
+            projectId,
+            mediaItem.file,
+            firebaseUser || currentUser,
+            profile
+          )
+        );
       }
 
       const historyItem = {
@@ -335,7 +353,12 @@ export default function EditProject({ projectId, onBack, onSaved }) {
         requesterEmail: form.requesterEmail,
         priority: form.priority,
         deadline: form.deadline,
-        description: form.description.trim(),
+        description: sanitizeRichText(form.description),
+        descriptionFormat: "html",
+        descriptionAttachments: [
+          ...normalizeArray(project?.descriptionAttachments),
+          ...uploadedDescriptionMedia,
+        ],
 
         assignedToUid: assignedUid,
         assignedToId: assignedUid,
@@ -584,15 +607,17 @@ export default function EditProject({ projectId, onBack, onSaved }) {
                 </Field>
 
                 <Field label="Descripción del proyecto" required full>
-                  <textarea
-                    id="edit-project-description"
-                    name="description"
-                    maxLength={500}
+                  <RichTextEditor
                     value={form.description}
-                    onChange={(event) => updateField("description", event.target.value)}
+                    onChange={(value) => updateField("description", value)}
                     placeholder="Describe el objetivo, alcance y entregables principales del proyecto..."
                   />
-                  <small className="field-counter">{form.description.length}/500</small>
+                  <ProjectMediaList items={normalizeArray(project?.descriptionAttachments)} />
+                  <ProjectMediaComposer
+                    items={descriptionMedia}
+                    onChange={setDescriptionMedia}
+                    disabled={saving}
+                  />
                 </Field>
               </div>
             </section>
@@ -782,10 +807,22 @@ export default function EditProject({ projectId, onBack, onSaved }) {
               <div className="project-preview-card edit-preview-card">
                 <span className="preview-label">VISTA PREVIA</span>
                 <h3>{form.title || "Título del proyecto"}</h3>
-                <p>
-                  {form.description ||
-                    "Descripción breve del proyecto aparecerá aquí..."}
-                </p>
+                {isRichTextEmpty(form.description) ? (
+                  <p>Descripción breve del proyecto aparecerá aquí...</p>
+                ) : (
+                  <RichTextContent value={form.description} />
+                )}
+                <ProjectMediaList
+                  items={[
+                    ...normalizeArray(project?.descriptionAttachments),
+                    ...descriptionMedia.map((item) => ({
+                      ...item,
+                      url: item.previewUrl,
+                      fileName: item.file?.name,
+                      fileType: item.file?.type,
+                    })),
+                  ]}
+                />
 
                 <div className="preview-badges">
                   <Badge color="blue">{form.responsibleArea || "Área"}</Badge>

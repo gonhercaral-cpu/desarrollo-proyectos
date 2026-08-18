@@ -938,6 +938,23 @@ export async function createProject(projectData, currentUser) {
   return docRef.id;
 }
 
+export async function updateProjectDescriptionContent({
+  projectId,
+  description,
+  descriptionAttachments = [],
+  currentUser,
+}) {
+  requireAdmin(currentUser);
+  if (!projectId) throw new Error("Falta el ID del proyecto.");
+
+  await updateDoc(doc(db, PROJECTS_COLLECTION, projectId), {
+    description,
+    descriptionFormat: "html",
+    descriptionAttachments,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function getAllProjects() {
   const projectsRef = collection(db, PROJECTS_COLLECTION);
   const q = query(projectsRef, orderBy("createdAt", "desc"));

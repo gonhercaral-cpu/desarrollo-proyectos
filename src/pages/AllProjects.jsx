@@ -570,7 +570,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                         key={project.id}
                         className={unreadActivity ? "project-has-new-activity" : ""}
                       >
-                        <td>
+                        <td data-label="Proyecto">
                           <div className="project-name-cell all-project-name-cell">
                             <span className="project-table-icon all-project-table-icon">
                               <ProjectIcon name="project" />
@@ -587,9 +587,9 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                           </div>
                         </td>
 
-                        <td>{getProjectDepartmentName(project)}</td>
+                        <td data-label="Departamento">{getProjectDepartmentName(project)}</td>
 
-                        <td>
+                        <td data-label="Responsable">
                           <div className="collaborator-cell">
                             <span className="avatar-mini all-projects-responsible-avatar">
                               <UserAvatar
@@ -602,7 +602,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                           </div>
                         </td>
 
-                        <td>
+                        <td data-label="Estado">
                           <Badge color={isOverdue(project) ? "red" : "blue"}>
                             {isOverdue(project)
                               ? "Atrasado"
@@ -610,7 +610,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                           </Badge>
                         </td>
 
-                        <td>
+                        <td data-label="Prioridad">
                           <Badge
                             color={
                               project.priority === "Alta"
@@ -624,14 +624,14 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                           </Badge>
                         </td>
 
-                        <td>
+                        <td data-label="Fecha límite">
                           <strong>{formatPlainDate(project.deadline)}</strong>
                           <small className={isOverdue(project) ? "danger-text" : ""}>
                             {renderDeadlineLabel(project)}
                           </small>
                         </td>
 
-                        <td>
+                        <td data-label="Avance">
                           <div className="table-progress all-projects-progress-cell">
                             <strong>{progress}%</strong>
 
@@ -639,19 +639,26 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                               <div
                                 className="area-progress-fill"
                                 style={{ width: `${progress}%` }}
+                                role="progressbar"
+                                aria-label={`Avance de ${project.title}`}
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow={progress}
                               />
                             </div>
                           </div>
                         </td>
 
-                        <td>
+                        <td data-label="Acciones">
                           <div className="table-actions all-projects-table-actions">
-                            <button type="button" onClick={() => onOpenProject(project.id)}>
+                            <button className="project-action-view" type="button" onClick={() => onOpenProject(project.id)} aria-label={`Ver ${project.title}`}>
+                              <ProjectIcon name="view" />
                               Ver
                             </button>
 
                             {onEditProject && (
-                              <button type="button" onClick={() => onEditProject(project.id)}>
+                              <button className="project-action-edit" type="button" onClick={() => onEditProject(project.id)} aria-label={`Editar ${project.title}`}>
+                                <ProjectIcon name="edit" />
                                 Editar
                               </button>
                             )}
@@ -663,6 +670,7 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
                                 disabled={deletingProjectId === project.id}
                                 onClick={() => handleDeleteProject(project)}
                               >
+                                <ProjectIcon name="trash" />
                                 {deletingProjectId === project.id
                                   ? "Eliminando..."
                                   : "Eliminar"}
@@ -934,6 +942,23 @@ function ProjectIcon({ name }) {
     empty: (
       <svg {...commonProps}>
         <path d="M12 4 13.7 9.4 19 11l-5.3 1.6L12 18l-1.7-5.4L5 11l5.3-1.6L12 4Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      </svg>
+    ),
+    view: (
+      <svg {...commonProps}>
+        <path d="M3.5 12s3-5 8.5-5 8.5 5 8.5 5-3 5-8.5 5-8.5-5-8.5-5Z" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="12" cy="12" r="2.2" stroke="currentColor" strokeWidth="1.8" />
+      </svg>
+    ),
+    edit: (
+      <svg {...commonProps}>
+        <path d="m5 16-.7 3.7L8 19l9.8-9.8-3-3L5 16Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="m13.8 7.2 3 3" stroke="currentColor" strokeWidth="1.8" />
+      </svg>
+    ),
+    trash: (
+      <svg {...commonProps}>
+        <path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   };

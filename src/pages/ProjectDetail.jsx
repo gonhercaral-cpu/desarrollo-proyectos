@@ -25,6 +25,9 @@ import {
 import { markProjectNotificationsRead } from "../services/notificationsService";
 import { calculateAutomaticProgress } from "../utils/progressUtils";
 import UserAvatar from "../components/UserAvatar";
+import RichTextContent from "../components/RichTextContent";
+import ProjectMediaComposer from "../components/ProjectMediaComposer";
+import ProjectMediaList from "../components/ProjectMediaList";
 
 const PROJECT_STATUSES = [
   "Por iniciar",
@@ -83,6 +86,8 @@ const PROJECT_EVIDENCE_ACCEPT = [
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/plain",
+  "audio/*",
+  "video/*",
 ].join(",");
 
 export default function ProjectDetail({ projectId, onBack, onEditProject }) {
@@ -94,6 +99,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [addingComment, setAddingComment] = useState(false);
   const [newComment, setNewComment] = useState("");
+  const [commentMedia, setCommentMedia] = useState([]);
   const [editingInternalNotes, setEditingInternalNotes] = useState(false);
   const [internalNotesDraft, setInternalNotesDraft] = useState("");
   const [savingInternalNotes, setSavingInternalNotes] = useState(false);
@@ -105,9 +111,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
   const [newAdvance, setNewAdvance] = useState("");
   const [advanceFiles, setAdvanceFiles] = useState([]);
+  const [advanceMedia, setAdvanceMedia] = useState([]);
   const [publishingAdvance, setPublishingAdvance] = useState(false);
   const [activeCommentTarget, setActiveCommentTarget] = useState(null);
   const [advanceCommentDraft, setAdvanceCommentDraft] = useState("");
+  const [advanceCommentMedia, setAdvanceCommentMedia] = useState([]);
   const [addingAdvanceComment, setAddingAdvanceComment] = useState(false);
 
   async function loadProject() {
@@ -569,7 +577,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     const cleanComment = newComment.trim();
 
-    if (!cleanComment || !project) return;
+    if ((!cleanComment && commentMedia.length === 0) || !project) return;
 
     if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden agregar comentarios a un proyecto que está en historial.");
@@ -582,9 +590,22 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     try {
       const now = Timestamp.now();
       const projectRef = doc(db, "projects", project.id);
+      const attachments = [];
+
+      for (const mediaItem of commentMedia) {
+        attachments.push(
+          await uploadEvidenceFile(
+            project.id,
+            mediaItem.file,
+            getCurrentUserForLog(),
+            profile
+          )
+        );
+      }
 
       const commentItem = {
-        text: cleanComment,
+        text: cleanComment || "Contenido multimedia adjunto.",
+        attachments,
         authorUid: firebaseUser?.uid || "",
         authorName: profile?.name || firebaseUser?.email || "Usuario",
         authorEmail: firebaseUser?.email || "",
@@ -594,7 +615,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       const historyItem = {
         type: "Comentario",
         title: "Comentario agregado",
-        description: cleanComment,
+        description: cleanComment || "Contenido multimedia adjunto.",
         createdAt: now,
         createdByUid: firebaseUser?.uid || "",
         createdByName: profile?.name || firebaseUser?.email || "Usuario",
@@ -624,6 +645,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       });
 
       setNewComment("");
+      setCommentMedia([]);
       setMessage("Comentario publicado correctamente.");
     } catch (error) {
       console.error(error);
@@ -649,7 +671,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     const cleanAdvance = newAdvance.trim();
 
-    if (!project || (!cleanAdvance && advanceFiles.length === 0)) return;
+    if (!project || (!cleanAdvance && advanceFiles.length === 0 && advanceMedia.length === 0)) return;
 
     if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden publicar avances en un proyecto que está en historial.");
@@ -703,6 +725,24 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
           reviewedByName: uploadedFile.reviewedByName || "",
           reviewedByEmail: uploadedFile.reviewedByEmail || "",
           reviewComment: uploadedFile.reviewComment || "",
+        });
+      }
+
+      for (const mediaItem of advanceMedia) {
+        const uploadedFile = await uploadEvidenceFile(
+          project.id,
+          mediaItem.file,
+          currentUserForUpload,
+          profile
+        );
+        uploadedItems.push({
+          ...uploadedFile,
+          fileName: uploadedFile.fileName || mediaItem.file.name,
+          uploadedAt: now,
+          uploadedByUid: firebaseUser.uid,
+          uploadedByName: profile?.name || firebaseUser?.email || "Usuario",
+          uploadedByEmail: firebaseUser?.email || "",
+          reviewStatus: uploadedFile.reviewStatus || "pending",
         });
       }
 
@@ -769,6 +809,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
       setNewAdvance("");
       setAdvanceFiles([]);
+      setAdvanceMedia([]);
       setMessage("Avance publicado correctamente.");
     } catch (error) {
       console.error(error);
@@ -786,7 +827,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
     const cleanComment = advanceCommentDraft.trim();
 
-    if (!cleanComment || !project || !targetId) return;
+    if ((!cleanComment && advanceCommentMedia.length === 0) || !project || !targetId) return;
 
     if (!canAdministrativelyCorrectProject(project, isAdmin)) {
       setMessage("No se pueden agregar comentarios a un proyecto que está en historial.");
@@ -799,9 +840,22 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
     try {
       const now = Timestamp.now();
       const projectRef = doc(db, "projects", project.id);
+      const attachments = [];
+
+      for (const mediaItem of advanceCommentMedia) {
+        attachments.push(
+          await uploadEvidenceFile(
+            project.id,
+            mediaItem.file,
+            getCurrentUserForLog(),
+            profile
+          )
+        );
+      }
 
       const commentItem = {
-        text: cleanComment,
+        text: cleanComment || "Contenido multimedia adjunto.",
+        attachments,
         authorUid: firebaseUser?.uid || "",
         authorName: profile?.name || firebaseUser?.email || "Usuario",
         authorEmail: firebaseUser?.email || "",
@@ -813,7 +867,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       const historyItem = {
         type: "Comentario",
         title: "Comentario en avance",
-        description: cleanComment,
+        description: cleanComment || "Contenido multimedia adjunto.",
         createdAt: now,
         createdByUid: firebaseUser?.uid || "",
         createdByName: profile?.name || firebaseUser?.email || "Usuario",
@@ -844,6 +898,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
       });
 
       setAdvanceCommentDraft("");
+      setAdvanceCommentMedia([]);
       setActiveCommentTarget(null);
       setMessage("Comentario publicado correctamente.");
     } catch (error) {
@@ -1300,10 +1355,17 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                 color="blue"
               />
 
-              <p className="project-description-text prominent-description">
-                {project.description ||
-                  "Este proyecto no tiene descripción registrada."}
-              </p>
+              {project.description ? (
+                <RichTextContent
+                  value={project.description}
+                  className="project-description-text prominent-description"
+                />
+              ) : (
+                <p className="project-description-text prominent-description">
+                  Este proyecto no tiene descripción registrada.
+                </p>
+              )}
+              <ProjectMediaList items={normalizeArray(project.descriptionAttachments)} />
             </div>
           </section>
 
@@ -1382,31 +1444,35 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               <EmptyState text="Aún no hay documentos registrados en este proyecto." small />
             ) : (
               <div className="project-documents-grid">
-                {evidenceFiles.map((file, index) => (
-                  <a
-                    key={`${getFileName(file)}-${index}`}
-                    className="project-document-card"
-                    href={getFileUrl(file) || undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-disabled={!getFileUrl(file)}
-                  >
-                    <span className={`file-type-icon file-${getFileType(file)}`}>
-                      {getFileType(file).toUpperCase()}
-                    </span>
-
-                    <div>
-                      <strong>{getFileName(file)}</strong>
-                      <small>
-                        {getFileUrl(file) ? "Abrir archivo" : "Sin enlace disponible"}
-                      </small>
-                    </div>
-
-                    <Badge color={getEvidenceReviewBadgeColor(file.reviewStatus)}>
-                      {getEvidenceReviewLabel(file.reviewStatus)}
-                    </Badge>
-                  </a>
-                ))}
+                {evidenceFiles.map((file, index) =>
+                  isMediaFile(file) ? (
+                    <ProjectMediaList
+                      key={`${getFileName(file)}-${index}`}
+                      items={[file]}
+                      className="project-document-media"
+                    />
+                  ) : (
+                    <a
+                      key={`${getFileName(file)}-${index}`}
+                      className="project-document-card"
+                      href={getFileUrl(file) || undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-disabled={!getFileUrl(file)}
+                    >
+                      <span className={`file-type-icon file-${getFileType(file)}`}>
+                        {getFileType(file).toUpperCase()}
+                      </span>
+                      <div>
+                        <strong>{getFileName(file)}</strong>
+                        <small>{getFileUrl(file) ? "Abrir archivo" : "Sin enlace disponible"}</small>
+                      </div>
+                      <Badge color={getEvidenceReviewBadgeColor(file.reviewStatus)}>
+                        {getEvidenceReviewLabel(file.reviewStatus)}
+                      </Badge>
+                    </a>
+                  )
+                )}
               </div>
             )}
           </section>
@@ -1532,7 +1598,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                   </label>
 
                   <span className="advance-help-text">
-                    PDF, DOC, XLS, PPT, imágenes (máx. 20 MB)
+                    Documentos 25 MB · video 80 MB
                   </span>
 
                   <button
@@ -1541,7 +1607,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     disabled={
                       publishingAdvance ||
                       !canEditClosedProject ||
-                      (!newAdvance.trim() && advanceFiles.length === 0)
+                      (!newAdvance.trim() && advanceFiles.length === 0 && advanceMedia.length === 0)
                     }
                   >
                     {publishingAdvance ? "Publicando..." : "Publicar avance"}
@@ -1563,6 +1629,13 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     ))}
                   </div>
                 )}
+
+                <ProjectMediaComposer
+                  items={advanceMedia}
+                  onChange={setAdvanceMedia}
+                  disabled={publishingAdvance || !canEditClosedProject}
+                  compact
+                />
               </div>
             </form>
 
@@ -1612,6 +1685,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                                 activeCommentTarget === advance.id ? null : advance.id
                               );
                               setAdvanceCommentDraft("");
+                              setAdvanceCommentMedia([]);
                             }}
                           >
                             Comentar
@@ -1620,9 +1694,11 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
 
                         <p>{advance.text}</p>
 
-                        {advance.files.length > 0 && (
+                        <ProjectMediaList items={advance.files} />
+
+                        {advance.files.some((file) => !isMediaFile(file)) && (
                           <div className="advance-files-grid">
-                            {advance.files.map((file, fileIndex) => {
+                            {advance.files.filter((file) => !isMediaFile(file)).map((file, fileIndex) => {
                               const evidenceKey = getEvidenceKey(file);
                               const approveKey = `${evidenceKey}-approved`;
                               const rejectKey = `${evidenceKey}-rejected`;
@@ -1732,6 +1808,13 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                               placeholder="Escribe un comentario sobre este avance..."
                             />
 
+                            <ProjectMediaComposer
+                              items={advanceCommentMedia}
+                              onChange={setAdvanceCommentMedia}
+                              disabled={addingAdvanceComment || !canEditClosedProject}
+                              compact
+                            />
+
                             <div>
                               <button
                                 type="submit"
@@ -1739,7 +1822,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                                 disabled={
                                   addingAdvanceComment ||
                                   !canEditClosedProject ||
-                                  !advanceCommentDraft.trim()
+                                  (!advanceCommentDraft.trim() && advanceCommentMedia.length === 0)
                                 }
                               >
                                 {addingAdvanceComment ? "Publicando..." : "Publicar comentario"}
@@ -1763,6 +1846,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                                 <div>
                                   <strong>{comment.authorName || "Usuario"}</strong>
                                   <p>{comment.text || comment.comment}</p>
+                                  <ProjectMediaList items={normalizeArray(comment.attachments)} />
                                   <small>{formatDate(comment.createdAt)}</small>
                                 </div>
                               </div>
@@ -2061,6 +2145,29 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
               count={comments.length}
             />
 
+            <form className="project-comment-composer" onSubmit={handleAddComment}>
+              <textarea
+                rows={3}
+                value={newComment}
+                disabled={addingComment || !canEditClosedProject}
+                onChange={(event) => setNewComment(event.target.value)}
+                placeholder="Escribe un comentario..."
+              />
+              <ProjectMediaComposer
+                items={commentMedia}
+                onChange={setCommentMedia}
+                disabled={addingComment || !canEditClosedProject}
+                compact
+              />
+              <button
+                type="submit"
+                className="visual-primary-button"
+                disabled={addingComment || !canEditClosedProject || (!newComment.trim() && commentMedia.length === 0)}
+              >
+                {addingComment ? "Publicando..." : "Publicar comentario"}
+              </button>
+            </form>
+
             {comments.length === 0 ? (
               <EmptyState text="Aún no hay comentarios." small />
             ) : (
@@ -2078,6 +2185,7 @@ export default function ProjectDetail({ projectId, onBack, onEditProject }) {
                     <div>
                       <strong>{comment.authorName || "Usuario"}</strong>
                       <p>{comment.text || comment.comment}</p>
+                      <ProjectMediaList items={normalizeArray(comment.attachments)} />
                       <small>{formatDate(comment.createdAt)}</small>
                     </div>
                   </div>
@@ -2670,6 +2778,10 @@ function getNameFromUrl(url = "") {
 function getFileType(file) {
   const fileName = getFileName(file);
   const extension = fileName.split(".").pop()?.toLowerCase();
+  const mimeType = String(file?.fileType || file?.type || file?.mimeType || "").toLowerCase();
+
+  if (mimeType.startsWith("audio/") || ["mp3", "wav", "ogg", "m4a", "aac"].includes(extension)) return "audio";
+  if (mimeType.startsWith("video/") || ["mp4", "mov", "m4v", "webm"].includes(extension)) return "video";
 
   if (extension === "pdf") return "pdf";
   if (extension === "xlsx" || extension === "xls") return "xlsx";
@@ -2688,6 +2800,10 @@ function getFileType(file) {
   if (extension === "ppt" || extension === "pptx") return "ppt";
 
   return "file";
+}
+
+function isMediaFile(file) {
+  return ["audio", "video"].includes(getFileType(file));
 }
 
 function getFileBadgeColor(file) {

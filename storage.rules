@@ -386,7 +386,9 @@ service firebase.storage {
     }
 
     function validEvidenceSize() {
-      return request.resource.size < 25 * 1024 * 1024;
+      return request.resource.contentType.matches('video/.*')
+        ? request.resource.size < 80 * 1024 * 1024
+        : request.resource.size < 25 * 1024 * 1024;
     }
 
     function isGenericContentType() {
@@ -395,7 +397,7 @@ service firebase.storage {
     }
 
     function hasProjectEvidenceExtension(fileName) {
-      return fileName.matches('.*\\.(png|jpg|jpeg|webp|pdf|doc|docx|ppt|pptx|xls|xlsx|txt)$');
+      return fileName.matches('.*\\.(png|jpg|jpeg|webp|pdf|doc|docx|ppt|pptx|xls|xlsx|txt|mp3|wav|ogg|m4a|aac|mp4|mov|m4v|webm)$');
     }
 
     function isAllowedProjectEvidenceContentType() {
@@ -410,7 +412,20 @@ service firebase.storage {
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
           "application/vnd.ms-excel",
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "text/plain"
+          "text/plain",
+          "audio/mpeg",
+          "audio/wav",
+          "audio/x-wav",
+          "audio/ogg",
+          "audio/mp4",
+          "audio/x-m4a",
+          "audio/aac",
+          "audio/webm",
+          "video/mp4",
+          "video/quicktime",
+          "video/x-m4v",
+          "video/webm",
+          "video/ogg"
         ]
         || isGenericContentType();
     }

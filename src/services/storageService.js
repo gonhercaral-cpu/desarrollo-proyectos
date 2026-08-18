@@ -3,6 +3,8 @@ import { auth, storage } from "./firebase";
 
 const MAX_FILE_SIZE_MB = 25;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const MAX_VIDEO_SIZE_MB = 80;
+const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024;
 const GENERIC_FILE_TYPES = new Set(["", "application/octet-stream"]);
 
 const ALLOWED_FILE_TYPES_BY_EXTENSION = {
@@ -18,6 +20,15 @@ const ALLOWED_FILE_TYPES_BY_EXTENSION = {
   xls: ["application/vnd.ms-excel"],
   xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
   txt: ["text/plain"],
+  mp3: ["audio/mpeg"],
+  wav: ["audio/wav", "audio/x-wav"],
+  ogg: ["audio/ogg", "video/ogg"],
+  m4a: ["audio/mp4", "audio/x-m4a"],
+  aac: ["audio/aac"],
+  mp4: ["video/mp4"],
+  mov: ["video/quicktime"],
+  m4v: ["video/x-m4v", "video/mp4"],
+  webm: ["audio/webm", "video/webm"],
 };
 
 function getAuthenticatedUser() {
@@ -71,12 +82,16 @@ function validateEvidenceFile(file) {
     throw new Error("No se seleccionó ningún archivo.");
   }
 
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    throw new Error(`El archivo no puede pesar más de ${MAX_FILE_SIZE_MB} MB.`);
+  const isVideo = String(file.type || "").startsWith("video/");
+  const maxBytes = isVideo ? MAX_VIDEO_SIZE_BYTES : MAX_FILE_SIZE_BYTES;
+  const maxSizeMb = isVideo ? MAX_VIDEO_SIZE_MB : MAX_FILE_SIZE_MB;
+
+  if (file.size > maxBytes) {
+    throw new Error(`El archivo no puede pesar más de ${maxSizeMb} MB.`);
   }
 
   if (!hasAllowedFileType(file)) {
-    throw new Error("Tipo de archivo no permitido. Solo se permiten imagenes, PDF, Word, PowerPoint, Excel o TXT.");
+    throw new Error("Tipo de archivo no permitido. Se permiten documentos, imágenes, audio y video compatibles.");
     /*
       "Tipo de archivo no permitido. Solo se permiten imágenes, PDF, Word, PowerPoint o Excel."
     */
@@ -124,6 +139,11 @@ export async function uploadEvidenceFile(projectId, file, currentUser = {}) {
     fileName: file.name,
     filePath,
     fileType: file.type,
+    kind: String(file.type || "").startsWith("audio/")
+      ? "audio"
+      : String(file.type || "").startsWith("video/")
+      ? "video"
+      : "file",
     fileSize: file.size,
     downloadUrl,
 

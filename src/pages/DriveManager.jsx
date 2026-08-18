@@ -365,7 +365,7 @@ function ActionIcon({ name }) {
   );
 }
 
-function DriveUploadProgress({ upload }) {
+function DriveUploadProgress({ upload, onCancel }) {
   const progress = Math.max(0, Math.min(100, Math.round(Number(upload?.progress || 0))));
   const status = upload?.status || "uploading";
   const label = upload?.label || "Subiendo...";
@@ -395,11 +395,16 @@ function DriveUploadProgress({ upload }) {
       </div>
 
       {message ? <small>{message}</small> : null}
+      {["preparing", "uploading"].includes(status) && onCancel ? (
+        <button type="button" className="drive-upload-cancel-button" onClick={onCancel}>
+          Cancelar carga
+        </button>
+      ) : null}
     </article>
   );
 }
 
-export default function DriveManager() {
+export default function DriveManager({ onUploadStateChange }) {
   const { isAdmin, uid: currentUid, profile } = useAuth();
   const navigate = useNavigate();
   const [rootFolderId, setRootFolderId] = useState("");
@@ -481,6 +486,8 @@ export default function DriveManager() {
   const [uploadStatus, setUploadStatus] = useState(null);
   const fileInputRef = useRef(null);
   const uploadClearTimeoutRef = useRef(null);
+  const uploadRequestRef = useRef(null);
+  const uploadCancelledRef = useRef(false);
 
   const currentFolderName = breadcrumbs.at(-1)?.name || "Sin carpeta cargada";
   const folderCount = useMemo(() => files.filter(isDriveFolder).length, [files]);
@@ -702,12 +709,42 @@ export default function DriveManager() {
   }, [loadDepartmentFolders]);
 
   useEffect(() => {
+    onUploadStateChange?.(uploadingFile);
+    if (!uploadingFile) return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [uploadingFile, onUploadStateChange]);
+
+  useEffect(() => {
     return () => {
       if (uploadClearTimeoutRef.current) {
         window.clearTimeout(uploadClearTimeoutRef.current);
       }
+      uploadCancelledRef.current = true;
+      uploadRequestRef.current?.abort();
+      onUploadStateChange?.(false);
     };
-  }, []);
+  }, [onUploadStateChange]);
+
+  function handleCancelUpload() {
+    uploadCancelledRef.current = true;
+    uploadRequestRef.current?.abort();
+    uploadRequestRef.current = null;
+    setError("");
+    setUploadStatusNow({
+      name: uploadStatus?.name || "Archivo",
+      status: "cancelled",
+      label: "Carga cancelada",
+      message: "Transferencia detenida. No se registró una carga incompleta.",
+      progress: uploadStatus?.progress || 0,
+    });
+    clearUploadStatusSoon();
+  }
 
   function setUploadStatusNow(nextStatus) {
     if (uploadClearTimeoutRef.current) {
@@ -1232,6 +1269,7 @@ export default function DriveManager() {
     }
 
     setUploadingFile(true);
+    uploadCancelledRef.current = false;
     setError("");
     setUploadSuccess("");
     setUploadStatusNow({
@@ -1251,6 +1289,12 @@ export default function DriveManager() {
         mimeType,
         size: file.size,
       });
+
+      if (uploadCancelledRef.current) {
+        const cancelledError = new Error("La subida fue cancelada.");
+        cancelledError.code = "upload-cancelled";
+        throw cancelledError;
+      }
 
       setUploadStatusNow({
         name: file.name,
@@ -1277,7 +1321,17 @@ export default function DriveManager() {
             progress,
           });
         },
+        onRequest: (request) => {
+          uploadRequestRef.current = request;
+        },
       });
+      uploadRequestRef.current = null;
+
+      if (uploadCancelledRef.current) {
+        const cancelledError = new Error("La subida fue cancelada.");
+        cancelledError.code = "upload-cancelled";
+        throw cancelledError;
+      }
 
       setUploadStatusNow({
         name: file.name,
@@ -1310,6 +1364,19 @@ export default function DriveManager() {
       });
       clearUploadStatusSoon();
     } catch (uploadError) {
+      if (uploadError?.code === "upload-cancelled") {
+        setError("");
+        setUploadStatusNow({
+          name: file.name,
+          status: "cancelled",
+          label: "Carga cancelada",
+          message: "Transferencia detenida.",
+          progress: getUploadErrorProgress(uploadError),
+        });
+        clearUploadStatusSoon();
+        return;
+      }
+
       if (isLikelyCompletedUpload(uploadError)) {
         setError("");
         setUploadStatusNow({
@@ -1364,6 +1431,7 @@ export default function DriveManager() {
         progress: getUploadErrorProgress(uploadError),
       });
     } finally {
+      uploadRequestRef.current = null;
       setUploadingFile(false);
       event.target.value = "";
     }
@@ -1373,6 +1441,11 @@ export default function DriveManager() {
     const target = normalizeUploadTarget(fileTarget);
 
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (uploadCancelledRef.current) {
+        const cancelledError = new Error("La subida fue cancelada.");
+        cancelledError.code = "upload-cancelled";
+        throw cancelledError;
+      }
       if (attempt > 0) {
         await wait(900 * attempt);
       }
@@ -2083,7 +2156,7 @@ export default function DriveManager() {
 
           {browserError ? <div className="drive-error-box">{browserError}</div> : null}
           {uploadSuccess ? <div className="drive-success-box">{uploadSuccess}</div> : null}
-          {uploadStatus ? <DriveUploadProgress upload={uploadStatus} /> : null}
+          {uploadStatus ? <DriveUploadProgress upload={uploadStatus} onCancel={handleCancelUpload} /> : null}
 
           {isBrowserLoading ? (
             <div className={`drive-skeleton-grid view-${viewMode}`} aria-label="Cargando contenido">
@@ -3070,7 +3143,7 @@ function getUploadErrorProgress(error) {
   return error?.maybeCompleted ? 100 : 0;
 }
 
-function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
+function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress, onRequest }) {
   return new Promise((resolve, reject) => {
     const cleanUploadUrl = String(uploadUrl || "").trim();
 
@@ -3080,6 +3153,7 @@ function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
     }
 
     const request = new XMLHttpRequest();
+    onRequest?.(request);
     let lastProgress = 0;
 
     const createUploadError = (message) => {
@@ -3122,7 +3196,11 @@ function uploadFileToDriveSession({ file, uploadUrl, mimeType, onProgress }) {
 
     request.onerror = () =>
       reject(createUploadError("No se pudo confirmar la subida por CORS o red."));
-    request.onabort = () => reject(createUploadError("La subida fue cancelada."));
+    request.onabort = () => {
+      const error = createUploadError("La subida fue cancelada.");
+      error.code = "upload-cancelled";
+      reject(error);
+    };
     request.send(file);
   });
 }

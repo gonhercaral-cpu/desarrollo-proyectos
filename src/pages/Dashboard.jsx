@@ -473,6 +473,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   const [returnPage, setReturnPageState] = useState(() =>
     getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.returnPage, defaultReturnPage)
   );
+  const [driveUploadActive, setDriveUploadActive] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
@@ -504,8 +505,17 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   useDashboardPresence(profile, page);
 
   function setPage(nextPage) {
+    if (
+      page === "drive-manager" &&
+      nextPage !== "drive-manager" &&
+      driveUploadActive &&
+      !window.confirm("Hay una carga activa en Nube AES. Salir cancelará la carga en progreso. ¿Deseas continuar?")
+    ) {
+      return false;
+    }
     setPageState(nextPage);
     setStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, nextPage);
+    return true;
   }
 
   function setSelectedProjectId(projectId) {
@@ -574,6 +584,11 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
 
   function goToPage(nextPage) {
     if (nextPage === "editorial") {
+      if (
+        page === "drive-manager" &&
+        driveUploadActive &&
+        !window.confirm("Hay una carga activa en Nube AES. Salir cancelará la carga en progreso. ¿Deseas continuar?")
+      ) return;
       window.location.assign("/editorial");
       return;
     }
@@ -586,8 +601,8 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       canUseEditorial,
     });
 
+    if (!setPage(safePage)) return;
     setSelectedProjectId(null);
-    setPage(safePage);
     setReturnPage(safePage);
     setProfileMenuOpen(false);
     setNotificationPanelOpen(false);
@@ -655,12 +670,22 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   }
 
   function handleViewProfile() {
+    if (
+      page === "drive-manager" &&
+      driveUploadActive &&
+      !window.confirm("Hay una carga activa en Nube AES. Salir cancelará la carga en progreso. ¿Deseas continuar?")
+    ) return;
     setProfilePanelOpen(true);
     setProfileMenuOpen(false);
     setNotificationPanelOpen(false);
   }
 
   function handleLogout() {
+    if (
+      page === "drive-manager" &&
+      driveUploadActive &&
+      !window.confirm("Hay una carga activa en Nube AES. Cerrar sesión cancelará la carga. ¿Deseas continuar?")
+    ) return;
     setProfileMenuOpen(false);
     Object.values(DASHBOARD_STORAGE_KEYS).forEach((storageKey) =>
       setStoredDashboardValue(storageKey, "")
@@ -739,7 +764,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     }
 
     if (page === "drive-manager" && canUseDriveManager) {
-      return <DriveManager />;
+      return <DriveManager onUploadStateChange={setDriveUploadActive} />;
     }
 
     if (page === "technical-support" && canUseTechnicalSupport) {
