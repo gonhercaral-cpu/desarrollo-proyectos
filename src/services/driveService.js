@@ -11,7 +11,7 @@ import {
 import { httpsCallable } from "firebase/functions";
 import app, { auth, db, functions } from "./firebase";
 import { detectFileKind, resolveFileMimeType } from "../utils/fileTypes";
-import { DRIVE_IMPORT_CALLABLE_TIMEOUT_MS } from "../utils/digitalSignage/driveImport";
+import { DRIVE_IMPORT_CALLABLE_TIMEOUT_MS } from "../utils/driveImport";
 
 const DRIVE_SETTINGS_REF = doc(db, "systemSettings", "drive");
 const DRIVE_DEPARTMENT_FOLDERS_COLLECTION = "driveDepartmentFolders";

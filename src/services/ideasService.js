@@ -141,11 +141,20 @@ export function subscribeIdeas({ firebaseUser, profile, isAdmin, onChange, onErr
   const ideasQuery = isAdmin
     ? query(ideasRef)
     : query(ideasRef, where("createdByUid", "==", firebaseUser.uid));
+  let confirmedIdeas = new Map();
 
   return onSnapshot(
     ideasQuery,
+    { includeMetadataChanges: true },
     (snapshot) => {
-      const rows = snapshot.docs.map(normalizeIdea).sort(sortByCreatedAtDesc);
+      // A local write is not confirmation: rejected writes disappear from this snapshot.
+      const rows = snapshot.docs
+        .map((ideaDoc) => ideaDoc.metadata.hasPendingWrites
+          ? confirmedIdeas.get(ideaDoc.id)
+          : normalizeIdea(ideaDoc))
+        .filter(Boolean)
+        .sort(sortByCreatedAtDesc);
+      confirmedIdeas = new Map(rows.map((idea) => [idea.id, idea]));
       onChange(rows);
     },
     onError
@@ -170,9 +179,15 @@ export function subscribeIdeaComments(ideaId, onChange, onError) {
   );
 }
 
-export async function createIdea({ form, files = [], firebaseUser, profile }) {
+export async function createIdea({ form, files = [], firebaseUser, profile, submission = {} }) {
   if (!firebaseUser?.uid) {
     throw new Error("No se encontró el usuario autenticado.");
+  }
+  if (profile?.active !== true) {
+    throw new Error("Tu perfil no está activo. Solicita a administración que revise tu acceso.");
+  }
+  if (submission.uid && submission.uid !== firebaseUser.uid) {
+    throw new Error("La sesión cambió. Vuelve a ingresar con el usuario que inició esta idea.");
   }
 
   const userName = getProfileName(profile, firebaseUser);
@@ -187,41 +202,59 @@ export async function createIdea({ form, files = [], firebaseUser, profile }) {
     throw new Error("Completa título, problema actual, propuesta y beneficio esperado.");
   }
 
-  const ideaRef = await addDoc(collection(db, IDEAS_COLLECTION), {
-    title: cleanTitle,
-    area: form.area || profile?.area || "General",
-    currentProblem: cleanProblem,
-    proposedIdea: cleanProposal,
-    implementationSuggestion: form.implementationSuggestion?.trim() || "",
-    expectedBenefit: cleanBenefit,
-    priority: form.priority || "media",
-    impact: form.impact || "medio",
-    status: "nueva",
-    evidenceFiles: [],
-    evidenceCount: 0,
-    createdByUid: firebaseUser.uid,
-    createdByName: userName,
-    createdByEmail: userEmail,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    updatedByUid: firebaseUser.uid,
-    updatedByName: userName,
-    updatedByEmail: userEmail,
-    reviewedAt: null,
-    reviewedByUid: "",
-    reviewedByName: "",
-    reviewedByEmail: "",
-    convertedProjectId: null,
-  });
-
-  if (files.length > 0) {
-    await uploadIdeaEvidence({ ideaId: ideaRef.id, files, firebaseUser, profile });
+  if (!IDEA_PRIORITIES.some((item) => item.value === (form.priority || "media"))
+    || !IDEA_IMPACTS.some((item) => item.value === (form.impact || "medio"))) {
+    throw new Error("Selecciona una prioridad y un impacto válidos.");
+  }
+  const oversizedFile = files.find((file) => file.size >= 25 * 1024 * 1024);
+  if (oversizedFile) {
+    throw new Error(`El archivo “${oversizedFile.name}” debe pesar menos de 25 MB.`);
   }
 
-  return ideaRef.id;
+  // Keep the confirmed ID across evidence failures; retry must not create another idea.
+  if (!submission.ideaId) {
+    const ideaRef = await addDoc(collection(db, IDEAS_COLLECTION), {
+      title: cleanTitle,
+      area: form.area?.trim() || profile?.area?.trim() || "General",
+      currentProblem: cleanProblem,
+      proposedIdea: cleanProposal,
+      implementationSuggestion: form.implementationSuggestion?.trim() || "",
+      expectedBenefit: cleanBenefit,
+      priority: form.priority || "media",
+      impact: form.impact || "medio",
+      status: "nueva",
+      evidenceFiles: [],
+      evidenceCount: 0,
+      createdByUid: firebaseUser.uid,
+      createdByName: userName,
+      createdByEmail: userEmail,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedByUid: firebaseUser.uid,
+      updatedByName: userName,
+      updatedByEmail: userEmail,
+      reviewedAt: null,
+      reviewedByUid: "",
+      reviewedByName: "",
+      reviewedByEmail: "",
+      convertedProjectId: null,
+    });
+    submission.ideaId = ideaRef.id;
+    submission.uid = firebaseUser.uid;
+  }
+
+  if (files.length > 0) {
+    submission.uploadedFiles ??= new Map();
+    await uploadIdeaEvidence({
+      ideaId: submission.ideaId, files, firebaseUser, profile,
+      uploadedFiles: submission.uploadedFiles,
+    });
+  }
+
+  return submission.ideaId;
 }
 
-export async function uploadIdeaEvidence({ ideaId, files = [], firebaseUser, profile }) {
+export async function uploadIdeaEvidence({ ideaId, files = [], firebaseUser, profile, uploadedFiles = new Map() }) {
   if (!ideaId) {
     throw new Error("Falta el ID de la idea.");
   }
@@ -241,6 +274,10 @@ export async function uploadIdeaEvidence({ ideaId, files = [], firebaseUser, pro
   const uploadedItems = [];
 
   for (const file of validFiles) {
+    if (uploadedFiles.has(file)) {
+      uploadedItems.push(uploadedFiles.get(file));
+      continue;
+    }
     const safeName = cleanFileName(file.name);
     const filePath = `ideas/${firebaseUser.uid}/${ideaId}/evidence/${Date.now()}-${safeName}`;
     const fileRef = ref(storage, filePath);
@@ -255,7 +292,7 @@ export async function uploadIdeaEvidence({ ideaId, files = [], firebaseUser, pro
 
     const url = await getDownloadURL(fileRef);
 
-    uploadedItems.push({
+    const item = {
       name: file.name,
       url,
       path: filePath,
@@ -265,7 +302,9 @@ export async function uploadIdeaEvidence({ ideaId, files = [], firebaseUser, pro
       uploadedByName: userName,
       uploadedByEmail: userEmail,
       uploadedAt: new Date().toISOString(),
-    });
+    };
+    uploadedFiles.set(file, item);
+    uploadedItems.push(item);
   }
 
   await updateDoc(doc(db, IDEAS_COLLECTION, ideaId), {

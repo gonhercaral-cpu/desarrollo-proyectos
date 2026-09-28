@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
+import { deleteApp, initializeApp } from "firebase/app";
+import { connectStorageEmulator, getStorage } from "firebase/storage";
 import {
   assertFails,
   assertSucceeds,
@@ -9,12 +11,16 @@ import {
 import {
   addDoc,
   collection,
+  connectFirestoreEmulator,
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
+  getFirestore,
   query,
   setDoc,
+  serverTimestamp,
   Timestamp,
   updateDoc,
   writeBatch,
@@ -785,6 +791,36 @@ describe("roles y perfiles", () => {
 });
 
 describe("Active Classroom", () => {
+  it("referencias Drive: creación solo backend, metadata inmutable y publicación admin", async () => {
+    const payload = {
+      ...validActiveClassroomResource("drive-reference"),
+      source: "drive", schemaVersion: 2, driveFileId: "original-id", storagePath: "",
+      levelId: "level-1", version: 1, publishedVersion: null, publishedAt: null,
+      driveModifiedTime: "2026-09-14T00:00:00Z", sizeBytes: null,
+      association: { scope: "unit", presentationResourceId: null, slideId: null },
+    };
+    await assertFails(setDoc(doc(auth("admin"), "activeClassroomResources", "forged-drive"), payload));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "activeClassroomResources", "drive-reference"), payload);
+    });
+    const adminRef = doc(auth("admin"), "activeClassroomResources", "drive-reference");
+    const readerRef = doc(auth("collab"), "activeClassroomResources", "drive-reference");
+    const publish = { published: true, publishedVersion: 1, publishedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByUid: "admin", updatedByName: "Admin" };
+    await assertFails(getDoc(readerRef));
+    await assertFails(updateDoc(readerRef, { ...publish, updatedByUid: "collab" }));
+    await assertFails(updateDoc(adminRef, { ...publish, driveFileId: "replaced" }));
+    await assertFails(updateDoc(adminRef, { ...publish, publishedVersion: 2 }));
+    await assertFails(updateDoc(adminRef, { ...publish, association: { scope: "slide", slideId: "1" } }));
+    await assertFails(updateDoc(adminRef, { published: true }));
+    await assertSucceeds(updateDoc(adminRef, publish));
+    await assertSucceeds(getDoc(readerRef));
+    await assertFails(getDoc(doc(unauth(), "activeClassroomResources", "drive-reference")));
+    await assertFails(getDoc(doc(auth("inactive"), "activeClassroomResources", "drive-reference")));
+    await assertSucceeds(updateDoc(adminRef, { ...publish, published: false, publishedVersion: null, publishedAt: null }));
+    await assertFails(getDoc(readerRef));
+    await assertFails(deleteDoc(readerRef));
+    await assertSucceeds(deleteDoc(adminRef));
+  });
   it("permite administrar carpetas solo a admin y leerlas a perfiles activos", async () => {
     await assertSucceeds(setDoc(
       doc(auth("admin"), "activeClassroomFolders", "level-1"),
@@ -1332,6 +1368,51 @@ describe("mass assignment", () => {
 });
 
 describe("incubadora de ideas", () => {
+  for (const uid of ["collab", "admin", "printer", "tech"]) {
+    it(`${uid}: servicio real guarda, asocia autor y aparece tras recargar la suscripción`, { timeout: 20000 }, async () => {
+      const app = initializeApp({ projectId: PROJECT_ID, storageBucket: `${PROJECT_ID}.appspot.com` });
+      const [host, port] = process.env.FIRESTORE_EMULATOR_HOST.split(":");
+      connectFirestoreEmulator(getFirestore(app), host, Number(port), { mockUserToken: { sub: uid } });
+      const [storageHost, storagePort] = process.env.FIREBASE_STORAGE_EMULATOR_HOST.split(":");
+      connectStorageEmulator(getStorage(app), storageHost, Number(storagePort), { mockUserToken: { sub: uid } });
+      let unsubscribe;
+      try {
+        const { createIdea, subscribeIdeas } = await import(`../src/services/ideasService.js?actor=${uid}`);
+        const firebaseUser = { uid, email: `${uid}@test.local` };
+        const profile = { active: true, role: uid === "admin" ? "admin" : "collaborator", name: uid, uid: "legacy-profile-id" };
+        const ideaId = await createIdea({ form: validIdea(), firebaseUser, profile });
+        const persisted = await getDocFromServer(doc(auth(uid), "ideas", ideaId));
+        assert.equal(persisted.exists(), true);
+        assert.equal(persisted.data().createdByUid, uid);
+        assert.equal(persisted.data().updatedByUid, uid);
+        assert.ok(persisted.data().createdAt instanceof Timestamp);
+
+        const confirmedList = () => new Promise((resolve, reject) => {
+          unsubscribe = subscribeIdeas({ firebaseUser, profile, isAdmin: uid === "admin",
+            onChange: (rows) => { if (rows.some((row) => row.id === ideaId)) resolve(rows); },
+            onError: reject,
+          });
+        });
+        assert.equal((await confirmedList()).filter((row) => row.id === ideaId).length, 1);
+        unsubscribe();
+        // Recreate the listener, as the page does after a reload.
+        assert.equal((await confirmedList()).filter((row) => row.id === ideaId).length, 1);
+        await assertFails(getDocFromServer(doc(auth("outsider"), "ideas", ideaId)));
+      } finally {
+        unsubscribe?.();
+        await deleteApp(app);
+      }
+    });
+  }
+
+  it("rechaza creación sin perfil activo y lectura global de colaboradores", async () => {
+    for (const uid of ["inactive", "missing-profile"]) {
+      await assertFails(addDoc(collection(auth(uid), "ideas"), validIdea({ createdByUid: uid, updatedByUid: uid })));
+    }
+    await assertFails(addDoc(collection(unauth(), "ideas"), validIdea()));
+    await assertFails(getDocs(collection(auth("collab"), "ideas")));
+  });
+
   it("permite al colaborador crear una idea con el esquema actual", async () => {
     await assertSucceeds(
       addDoc(collection(auth("collab"), "ideas"), validIdea({

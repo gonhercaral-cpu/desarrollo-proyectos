@@ -52,6 +52,7 @@ export function getResourceIcon(kind, name = "") {
 }
 
 export function formatFileSize(bytes = 0) {
+  if (bytes === null) return "Sin tamaño";
   const safeBytes = Number(bytes) || 0;
 
   if (safeBytes < 1024) return `${safeBytes} B`;

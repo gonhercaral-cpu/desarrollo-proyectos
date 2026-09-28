@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { FuturePanel, SettingsPanel, TeamsPanel } from "./components/AccessPanel";
 import ActiveClassroomNavigation from "./components/ActiveClassroomNavigation";
 import FolderDialog from "./components/FolderDialog";
+import DriveResourceImportDialog from "./components/DriveResourceImportDialog";
+import UnitEditor from "./components/UnitEditor";
 import LibraryTable from "./components/LibraryTable";
 import LibraryToolbar from "./components/LibraryToolbar";
 import PublicationsPanel from "./components/PublicationsPanel";
@@ -32,6 +34,8 @@ export default function ActiveClassroomModule({ profile }) {
   const [dialogState, setDialogState] = useState({ open: false, folder: null });
   const [toast, setToast] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [driveImportUnit, setDriveImportUnit] = useState(null);
+  const [unitDirty, setUnitDirty] = useState(false);
   const activeNavigationItem = [...ACTIVE_CLASSROOM_SECTIONS, ...ACTIVE_CLASSROOM_FUTURE_SECTIONS]
     .find((section) => section.id === activeSection);
 
@@ -103,13 +107,15 @@ export default function ActiveClassroomModule({ profile }) {
 
   async function handleDeleteResource(resource) {
     const confirmed = window.confirm(
-      `Eliminar definitivamente "${resource.name}" de Active Classroom?`
+      resource.source === "drive"
+        ? `Quitar "${resource.name}" de esta Unit? El original permanece en Nube AES.`
+        : `Eliminar definitivamente "${resource.name}" de Active Classroom?`
     );
     if (!confirmed) return;
 
     try {
       await library.removeResource(resource);
-      showToast("Recurso eliminado de Firestore y Storage.");
+      showToast(resource.source === "drive" ? "Referencia eliminada de la Unit." : "Recurso eliminado de Firestore y Storage.");
     } catch (error) {
       showToast(error?.message || "No se pudo eliminar recurso.");
     }
@@ -200,6 +206,7 @@ export default function ActiveClassroomModule({ profile }) {
               onClearFilters={clearFilters}
               onCreateFolder={() => setDialogState({ open: true, folder: null })}
               onUploadFiles={handleUpload}
+              onImportDrive={() => setDriveImportUnit(library.selectedFolder)}
             />
 
             {dragActive && (
@@ -216,12 +223,13 @@ export default function ActiveClassroomModule({ profile }) {
               viewMode={viewMode}
               onOpenFolder={library.openFolder}
               onSelectResource={library.setSelectedResourceId}
-              onRenameFolder={(folder) => setDialogState({ open: true, folder })}
+              onRenameFolder={(folder) => library.openFolder(folder.id)}
               onDeleteFolder={handleDeleteFolder}
             />
           </section>
 
           <ResourceInspector
+            key={library.selectedResource?.id || "empty"}
             resource={library.selectedResource}
             saving={library.saving}
             onTogglePublished={handleTogglePublished}
@@ -236,6 +244,18 @@ export default function ActiveClassroomModule({ profile }) {
     if (library.loading) {
       return <div className="ac-module-state"><span className="ac-spinner" /><strong>Cargando Active Classroom...</strong></div>;
     }
+    if (activeSection === "library" && library.selectedFolder?.kind === "unit") return (
+      <UnitEditor
+        key={library.selectedFolder.id}
+        unit={library.selectedFolder}
+        folders={library.folders}
+        resources={library.resources}
+        onBack={() => library.openFolder(library.selectedFolder.parentId)}
+        onImport={library.importDriveFiles}
+        onUpload={library.uploadFiles}
+        onDirtyChange={setUnitDirty}
+      />
+    );
     if (activeSection === "library") return renderLibrary();
     if (activeSection === "publications") {
       return (
@@ -261,7 +281,9 @@ export default function ActiveClassroomModule({ profile }) {
         <ActiveClassroomIcon name="chevron" size={14} />
         <strong>{activeNavigationItem?.label || "Biblioteca"}</strong>
       </nav>
-      <ActiveClassroomNavigation activeSection={activeSection} onChange={setActiveSection} />
+      <ActiveClassroomNavigation activeSection={activeSection} onChange={(section) => {
+        if (!unitDirty || window.confirm("Salir sin guardar cambios del borrador?")) setActiveSection(section);
+      }} />
       <main className="ac-module-main">
         {library.error && (
           <div className="ac-error-banner" role="alert">
@@ -272,6 +294,14 @@ export default function ActiveClassroomModule({ profile }) {
         {renderSection()}
       </main>
 
+      {driveImportUnit && (
+        <DriveResourceImportDialog
+          unit={driveImportUnit}
+          resources={library.resources}
+          onImport={library.importDriveFiles}
+          onClose={() => setDriveImportUnit(null)}
+        />
+      )}
       {dialogState.open && (
         <FolderDialog
           key={dialogState.folder?.id || "new-unit"}

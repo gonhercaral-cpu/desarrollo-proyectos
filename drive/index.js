@@ -6,6 +6,8 @@ const admin = require("firebase-admin");
 const { Buffer } = require("buffer");
 const { randomUUID } = require("crypto");
 const { google } = require("googleapis");
+const { createImportDriveReference } = require("./activeClassroom");
+const { createUnitHandlers } = require("./activeClassroomUnit");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 const {
@@ -1327,6 +1329,36 @@ exports.driveFileContent = onRequest(
       response.status(status).json({ error: { code, message } });
     }
   }
+);
+
+async function resolveActiveClassroomDriveFile(profile, fileId) {
+  const drive = await getDriveClient();
+  await assertCanAccessDriveItem({ profile, drive, fileId, requireWrite: false });
+  const response = await drive.files.get({
+    fileId,
+    fields: "id,name,mimeType,modifiedTime,version,md5Checksum,size,parents,trashed,capabilities(canDownload)",
+    supportsAllDrives: true,
+  });
+  return response.data;
+}
+
+const classroomUnits = createUnitHandlers({
+  db: admin.firestore(), getProfile: getUserProfile,
+  resolveFile: resolveActiveClassroomDriveFile,
+  timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+});
+exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
+exports.publishActiveClassroomUnit = onCall(classroomUnits.publish);
+exports.checkActiveClassroomDriveChanges = onCall({ timeoutSeconds: 540 }, classroomUnits.checkDrive);
+exports.refreshActiveClassroomDriveResource = onCall(classroomUnits.refreshDrive);
+
+exports.importDriveFileToActiveClassroom = onCall(
+  createImportDriveReference({
+    db: admin.firestore(),
+    getProfile: getUserProfile,
+    timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+    resolveFile: resolveActiveClassroomDriveFile,
+  })
 );
 
 exports.driveListFolder = onCall(async (request) => {

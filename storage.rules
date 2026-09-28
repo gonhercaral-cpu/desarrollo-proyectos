@@ -978,7 +978,9 @@ service firebase.storage {
 
       allow update: if false;
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        && (!firestore.exists(activeClassroomResourcePath(resourceId))
+          || firestore.get(activeClassroomResourcePath(resourceId)).data.get("retainedByPublication", false) == false);
     }
 
     match /{allPaths=**} {

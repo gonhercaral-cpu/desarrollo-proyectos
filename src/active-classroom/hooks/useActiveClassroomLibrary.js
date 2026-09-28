@@ -9,6 +9,7 @@ import {
   subscribeActiveClassroomFolders,
   subscribeActiveClassroomResources,
   uploadActiveClassroomResources,
+  importActiveClassroomDriveResources,
 } from "../services/activeClassroomService";
 import { getFileExtension, sortFolders } from "../utils/resourceTypes";
 
@@ -136,7 +137,7 @@ export default function useActiveClassroomLibrary(profile) {
   }, [profile, runMutation, selectedFolder]);
 
   const togglePublished = useCallback((resource) => runMutation(
-    () => setActiveClassroomResourcePublished(resource.id, !resource.published, profile)
+    () => setActiveClassroomResourcePublished(resource, !resource.published, profile)
   ), [profile, runMutation]);
 
   const removeResource = useCallback((resource) => runMutation(
@@ -205,6 +206,9 @@ export default function useActiveClassroomLibrary(profile) {
     renameUnit,
     removeUnit,
     uploadFiles,
+    importDriveFiles: (files, folderId, onProgress) => runMutation(
+      () => importActiveClassroomDriveResources(files, folderId, profile, onProgress)
+    ),
     togglePublished,
     removeResource,
   };

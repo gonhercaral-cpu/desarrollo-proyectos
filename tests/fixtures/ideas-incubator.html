@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+  <head><meta charset="utf-8"><title>Prueba aislada de Incubadora</title></head>
+  <body>
+    <aside style="position:fixed;bottom:0;left:0;z-index:999999;background:white;padding:8px;border:2px solid black">
+      Backend simulado. Envíos: <strong id="calls">0</strong>
+      <button id="confirm">Confirmar backend</button>
+      <button id="deny">Rechazar permisos</button>
+      <button id="unavailable">Fallar conexión</button>
+      <button id="twice">Enviar dos veces</button>
+      <a href="?role=admin">Probar admin</a>
+    </aside>
+    <div id="root"></div>
+    <script type="module">
+      import { completeSave, failSave } from "./ideas-backend.js";
+      import React from "react";
+      import { createRoot } from "react-dom/client";
+      import IdeasIncubator from "../../src/pages/IdeasIncubator.jsx";
+      import "../../src/index.css";
+      import "../../src/styles/app.css";
+      document.getElementById("confirm").onclick = completeSave;
+      document.getElementById("deny").onclick = () => failSave("permission-denied");
+      document.getElementById("unavailable").onclick = () => failSave("unavailable");
+      document.getElementById("twice").onclick = () => {
+        const form = document.querySelector("form");
+        form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      };
+      createRoot(document.getElementById("root")).render(React.createElement(IdeasIncubator));
+    </script>
+  </body>
+</html>

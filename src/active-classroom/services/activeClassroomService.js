@@ -18,7 +18,10 @@ import {
   ref,
   uploadBytes,
 } from "firebase/storage";
-import { db, storage } from "../../services/firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, storage, functions } from "../../services/firebase";
+import { runDriveImportBatch } from "../../utils/driveImport";
+import { isDriveResource } from "../utils/driveResources";
 import { ACTIVE_CLASSROOM_MAX_FILE_BYTES } from "../constants";
 import { detectResourceKind } from "../utils/resourceTypes";
 
@@ -26,6 +29,19 @@ export const ACTIVE_CLASSROOM_FOLDERS_COLLECTION = "activeClassroomFolders";
 export const ACTIVE_CLASSROOM_RESOURCES_COLLECTION = "activeClassroomResources";
 export const ACTIVE_CLASSROOM_STORAGE_ROOT = "active-classroom/resources";
 const structureInitializationByUser = new Map();
+const importDriveReference = httpsCallable(functions, "importDriveFileToActiveClassroom");
+
+export function importActiveClassroomDriveResources(files, folderId, user, onProgress) {
+  assertAdmin(user);
+  return runDriveImportBatch({
+    files,
+    onProgress,
+    importFile: async (file) => {
+      const response = await importDriveReference({ driveFileId: file.id, folderId });
+      return response.data;
+    },
+  });
+}
 
 function assertAdmin(user) {
   const normalizedRole = String(user?.role || "").trim().toLowerCase();
@@ -269,10 +285,14 @@ export async function uploadActiveClassroomResources(files, folderId, user) {
   }));
 }
 
-export async function setActiveClassroomResourcePublished(resourceId, published, user) {
+export async function setActiveClassroomResourcePublished(resource, published, user) {
   assertAdmin(user);
-  await updateDoc(doc(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION, resourceId), {
+  await updateDoc(doc(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION, resource.id), {
     published: published === true,
+    ...(isDriveResource(resource) ? {
+      publishedVersion: published ? resource.version : null,
+      publishedAt: published ? serverTimestamp() : null,
+    } : {}),
     updatedAt: serverTimestamp(),
     updatedByUid: user.uid,
     updatedByName: getUserName(user),
@@ -281,8 +301,9 @@ export async function setActiveClassroomResourcePublished(resourceId, published,
 
 export async function deleteActiveClassroomResource(resource, user) {
   assertAdmin(user);
+  if (resource?.retainedByPublication) throw new Error("Este recurso se conserva porque pertenece a una publicación de Unit.");
 
-  if (resource?.storagePath) {
+  if (!isDriveResource(resource) && resource?.storagePath) {
     await deleteObject(ref(storage, resource.storagePath)).catch((error) => {
       if (error?.code !== "storage/object-not-found") throw error;
     });

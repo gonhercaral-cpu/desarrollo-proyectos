@@ -7,6 +7,7 @@ import {
 } from "../utils/resourceTypes";
 import useActiveClassroomResourceUrl from "../hooks/useActiveClassroomResourceUrl";
 import ActiveClassroomIcon from "./ActiveClassroomIcon";
+import { isDriveResource } from "../utils/driveResources";
 
 function Preview({ resource, downloadUrl, urlError }) {
   if (!resource) {
@@ -31,7 +32,7 @@ function Preview({ resource, downloadUrl, urlError }) {
     return <video src={downloadUrl} controls preload="metadata" />;
   }
   if (isPreviewablePdf(resource) && downloadUrl) {
-    return (
+    if (!isDriveResource(resource)) return (
       <object data={downloadUrl} type="application/pdf">
         <span className="ac-preview-fallback">
           <i>PDF</i>
@@ -39,6 +40,9 @@ function Preview({ resource, downloadUrl, urlError }) {
           <small>Navegador no pudo mostrar PDF. Usa Descargar.</small>
         </span>
       </object>
+    );
+    return (
+      <iframe src={downloadUrl} title={`Vista previa de ${resource.name}`} />
     );
   }
 
@@ -48,13 +52,14 @@ function Preview({ resource, downloadUrl, urlError }) {
       <strong>{resource.name}</strong>
       <small>{urlError || (downloadUrl
         ? "Vista previa no disponible para este formato. Descarga archivo para abrirlo."
-        : "Preparando archivo...")}</small>
+        : isDriveResource(resource) ? "Pulsa Abrir archivo para cargarlo desde Nube AES." : "Preparando archivo...")}</small>
     </span>
   );
 }
 
-export default function ResourceInspector({ resource, saving, onTogglePublished, onDelete }) {
-  const { url: downloadUrl, error: urlError } = useActiveClassroomResourceUrl(resource);
+export default function ResourceInspector({ resource, saving, onTogglePublished, onDelete, readOnly = false }) {
+  const { url: downloadUrl, error: urlError, loading, loadDriveContent, downloadName } = useActiveClassroomResourceUrl(resource);
+  const drive = isDriveResource(resource);
 
   return (
     <aside className="ac-inspector" aria-label="Inspector del archivo seleccionado">
@@ -93,7 +98,11 @@ export default function ResourceInspector({ resource, saving, onTogglePublished,
                 <div><dt>Tipo</dt><dd>{getResourceKindLabel(resource.kind, resource.name)}</dd></div>
                 <div><dt>Modificado</dt><dd>{formatResourceDate(resource.updatedAt)}</dd></div>
                 <div><dt>Responsable</dt><dd>{resource.updatedByName || resource.createdByName || "Administrador"}</dd></div>
-                <div><dt>Persistencia</dt><dd>Firebase Storage</dd></div>
+                <div><dt>Origen</dt><dd>{drive ? "Nube AES · referencia" : "Firebase Storage"}</dd></div>
+                {drive && <>
+                  <div><dt>Original modificado</dt><dd>{formatResourceDate(resource.driveModifiedTime)}</dd></div>
+                  <div><dt>Versión de referencia</dt><dd>{resource.version}</dd></div>
+                </>}
               </dl>
             </>
           ) : (
@@ -103,9 +112,10 @@ export default function ResourceInspector({ resource, saving, onTogglePublished,
 
         {resource && (
           <div className="ac-inspector-actions">
+            {drive && !downloadUrl && <button type="button" disabled={loading} onClick={loadDriveContent}>{loading ? "Cargando archivo..." : "Abrir archivo"}</button>}
             <a
               href={downloadUrl || undefined}
-              download={resource.name}
+              download={downloadName || resource.name}
               target="_blank"
               rel="noreferrer"
               className={!downloadUrl ? "is-disabled" : ""}
@@ -116,21 +126,22 @@ export default function ResourceInspector({ resource, saving, onTogglePublished,
             >
               Descargar
             </a>
-            <button
+            {!readOnly && <button
               type="button"
               disabled={saving}
               onClick={() => onTogglePublished(resource)}
             >
               {resource.published ? "Pasar a borrador" : "Publicar"}
-            </button>
-            <button
+            </button>}
+            {!readOnly && <button
               type="button"
               className="is-danger"
-              disabled={saving}
+              disabled={saving || resource.retainedByPublication}
+              title={resource.retainedByPublication ? "Recurso conservado por una publicación de Unit" : undefined}
               onClick={() => onDelete(resource)}
             >
-              Eliminar
-            </button>
+              {drive ? "Quitar de la Unit" : "Eliminar"}
+            </button>}
           </div>
         )}
       </div>

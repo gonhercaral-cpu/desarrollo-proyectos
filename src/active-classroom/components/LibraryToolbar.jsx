@@ -20,6 +20,7 @@ export default function LibraryToolbar({
   onClearFilters,
   onCreateFolder,
   onUploadFiles,
+  onImportDrive,
 }) {
   const fileInputRef = useRef(null);
   const canCreateUnit = selectedFolder?.kind === "level";
@@ -54,6 +55,9 @@ export default function LibraryToolbar({
         >
           <ActiveClassroomIcon name="upload" />
           Subir archivos
+        </button>
+        <button type="button" className="ac-outline-button" disabled={!canUpload || saving} onClick={onImportDrive}>
+          Importar desde Nube AES
         </button>
         <input
           ref={fileInputRef}

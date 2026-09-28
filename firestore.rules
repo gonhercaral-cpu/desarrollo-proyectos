@@ -2596,6 +2596,24 @@ service cloud.firestore {
         && validStringField(incomingData, "updatedByName");
     }
 
+    function validActiveClassroomDriveUpdate() {
+      let incoming = request.resource.data;
+      let stored = resource.data;
+      return isAdmin()
+        && stored.get("source", "") == "drive"
+        && changesOnly(incoming, stored, [
+          "published", "publishedVersion", "publishedAt",
+          "updatedAt", "updatedByUid", "updatedByName"
+        ])
+        && incoming.published is bool
+        && (incoming.published
+          ? incoming.publishedVersion == stored.version && incoming.publishedAt == request.time
+          : incoming.publishedVersion == null && incoming.publishedAt == null)
+        && incoming.updatedAt == request.time
+        && incoming.updatedByUid == request.auth.uid
+        && validBoundedStringField(incoming, "updatedByName", 160);
+    }
+
     match /{collectionName}/{documentId} {
       allow get: if collectionName in ["activeClassroomFolders", "announcements", "areas", "attendanceLocations", "departments", "printProducts", "scheduleAdjustments", "userPresence", "workSchedules"]
         && (hasProfile());
@@ -2605,7 +2623,7 @@ service cloud.firestore {
         && (isAdmin());
       allow update: if collectionName in ["announcements", "areas", "attendanceLocations", "departments", "digitalSignageAssets", "digitalSignageCampaigns", "digitalSignagePlaylists", "digitalSignageVisualTemplates", "scheduleAdjustments", "scheduleRequests", "subscriptions", "workSchedules"]
         && (isAdmin());
-      allow delete: if collectionName in ["activeClassroomResources", "announcements", "attendanceLocations", "bugReports", "certificateSigners", "departmentMessages", "digitalSignageAssets", "digitalSignageCampaigns", "digitalSignageDevices", "digitalSignagePairingSessions", "digitalSignagePlaylists", "digitalSignageVisualTemplates", "generatedCredentials", "ideas", "internalMessages", "printRequests", "purchaseRequests", "scheduleAdjustments", "scheduleRequests", "subscriptions", "technicalAssets", "technicalInstallationTemplates", "technicalInstallations", "technicalLocationReviews", "technicalLocations", "technicalMaintenances", "technicalSpareParts", "workSchedules", "workSessions"]
+      allow delete: if collectionName in ["announcements", "attendanceLocations", "bugReports", "certificateSigners", "departmentMessages", "digitalSignageAssets", "digitalSignageCampaigns", "digitalSignageDevices", "digitalSignagePairingSessions", "digitalSignagePlaylists", "digitalSignageVisualTemplates", "generatedCredentials", "ideas", "internalMessages", "printRequests", "purchaseRequests", "scheduleAdjustments", "scheduleRequests", "subscriptions", "technicalAssets", "technicalInstallationTemplates", "technicalInstallations", "technicalLocationReviews", "technicalLocations", "technicalMaintenances", "technicalSpareParts", "workSchedules", "workSessions"]
         && (isAdmin());
       allow get, list: if collectionName in ["driveActivityLogs", "driveDepartmentFolders", "protectLogs", "systemSettings"]
         && (isAdminRole());
@@ -2701,20 +2719,34 @@ service cloud.firestore {
 
       allow create: if validActiveClassroomFolderCreate();
 
-      allow update: if validActiveClassroomFolderUpdate();
+      allow update: if validActiveClassroomFolderUpdate()
+        && !exists(/databases/$(database)/documents/activeClassroomUnits/$(folderId));
 
       allow delete: if isAdmin()
-        && resource.data.kind == "unit";
+        && resource.data.kind == "unit"
+        && !exists(/databases/$(database)/documents/activeClassroomUnits/$(folderId));
     }
 
     match /activeClassroomResources/{resourceId} {
+      allow delete: if isAdmin() && resource.data.get("retainedByPublication", false) == false;
       allow get, list: if (hasProfile() && resource.data.published == true);
 
       allow create: if validActiveClassroomResourceCreate(resourceId);
 
-      allow update: if validActiveClassroomResourceUpdate();
+      allow update: if (resource.data.get("source", "storage") != "drive"
+          && validActiveClassroomResourceUpdate())
+        || validActiveClassroomDriveUpdate();
 
 
+    }
+
+    match /activeClassroomUnits/{unitId} {
+      allow read: if isAdmin();
+      allow write: if false;
+      match /publications/{versionId} {
+        allow read: if hasProfile();
+        allow write: if false;
+      }
     }
 
 

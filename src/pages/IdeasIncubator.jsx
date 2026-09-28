@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import UserAvatar from "../components/UserAvatar";
 import {
@@ -174,6 +174,10 @@ export default function IdeasIncubator() {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const submissionRef = useRef({});
+  const [creationError, setCreationError] = useState("");
+  const [ideaCreated, setIdeaCreated] = useState(false);
   const [form, setForm] = useState(() => ({
     ...INITIAL_FORM,
     area: getProfileArea(profile),
@@ -299,6 +303,9 @@ export default function IdeasIncubator() {
   }
 
   function resetForm() {
+    submissionRef.current = {};
+    setIdeaCreated(false);
+    setCreationError("");
     setForm({
       ...INITIAL_FORM,
       area: getProfileArea(profile),
@@ -316,8 +323,10 @@ export default function IdeasIncubator() {
 
   async function handleCreateIdea(event) {
     event.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
     setMessage("");
-    setError("");
+    setCreationError("");
 
     setSaving(true);
 
@@ -327,17 +336,36 @@ export default function IdeasIncubator() {
         files: formFiles,
         firebaseUser,
         profile,
+        submission: submissionRef.current,
       });
 
+      if (!ideaId) throw new Error("El servidor no confirmó el registro de la idea.");
       resetForm();
       setShowForm(false);
+      clearFilters();
       setSelectedIdeaId(ideaId);
       setMessage("Idea registrada correctamente en la incubadora.");
     } catch (createError) {
-      console.error("No se pudo registrar la idea:", createError);
-      const detail = createError?.code ? ` (${createError.code})` : "";
-      setError(createError?.message || `No se pudo registrar la idea${detail}.`);
+      const savedIdeaId = submissionRef.current.ideaId;
+      setIdeaCreated(Boolean(savedIdeaId));
+      console.error("No se pudo completar el registro de la idea:", {
+        operation: savedIdeaId ? "uploadIdeaEvidence" : "createIdea",
+        collection: "ideas",
+        ideaId: savedIdeaId || null,
+        uid: firebaseUser?.uid,
+        role: profile?.role,
+        code: createError?.code,
+        error: createError,
+      });
+      const code = createError?.code || "";
+      const detail = ["permission-denied", "storage/unauthorized"].includes(code)
+        ? "No tienes permiso para completar el registro. Solicita a administración revisar tu perfil y las reglas de acceso."
+        : ["unavailable", "deadline-exceeded", "storage/retry-limit-exceeded"].includes(code)
+          ? "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentar."
+          : createError?.message || "No se pudo registrar la idea. Vuelve a intentar.";
+      setCreationError(`${savedIdeaId ? "La idea ya se guardó, pero falta completar la evidencia. Reintenta para continuar con la misma idea. " : ""}${detail} Tus datos se conservaron.`);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -483,7 +511,7 @@ export default function IdeasIncubator() {
         </div>
       </section>
 
-      {message && <div className="message-box ideas-modern-message">{message}</div>}
+      {message && <div role="status" className="message-box ideas-modern-message">{message}</div>}
       {error && <div className="error-box ideas-modern-message">{error}</div>}
 
       <div className="ideas-modern-metrics-grid">
@@ -661,12 +689,14 @@ export default function IdeasIncubator() {
           files={formFiles}
           visibleAreas={visibleAreas}
           saving={saving}
+          error={creationError}
+          ideaCreated={ideaCreated}
           onChange={updateForm}
           onFileChange={handleFormFilesChange}
           onRemoveFile={removeFormFile}
           onSubmit={handleCreateIdea}
           onClose={() => {
-            resetForm();
+            if (savingRef.current) return;
             setShowForm(false);
           }}
         />
@@ -1045,12 +1075,19 @@ function FocusedIdeaForm({
   files,
   visibleAreas,
   saving,
+  error,
+  ideaCreated,
   onChange,
   onFileChange,
   onRemoveFile,
   onSubmit,
   onClose,
 }) {
+  const errorRef = useRef(null);
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
+
   return (
     <div className="ideas-focused-overlay" role="dialog" aria-modal="true">
       <div className="ideas-focused-panel">
@@ -1063,126 +1100,133 @@ function FocusedIdeaForm({
               y cómo crees que mejoraría el proceso.
             </p>
           </div>
-          <button type="button" onClick={onClose}>×</button>
+          <button type="button" onClick={onClose} disabled={saving} aria-label="Cerrar formulario">×</button>
         </div>
 
-        <form className="ideas-focused-form" onSubmit={onSubmit}>
-          <label className="full">
-            Título de la idea <b>*</b>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(event) => onChange("title", event.target.value)}
-              placeholder="Ej. Recordatorios automáticos para mantenimientos"
-              maxLength={140}
-            />
-          </label>
+        <form className="ideas-focused-form" onSubmit={onSubmit} aria-busy={saving}>
+          {error && <div ref={errorRef} role="alert" tabIndex={-1} className="error-box full">{error}</div>}
+          <fieldset className="ideas-focused-fields full" disabled={saving || ideaCreated}>
+            <label className="full">
+              Título de la idea <b>*</b>
+              <input
+                type="text"
+                value={form.title}
+                onChange={(event) => onChange("title", event.target.value)}
+                placeholder="Ej. Recordatorios automáticos para mantenimientos"
+                maxLength={140}
+                required
+              />
+            </label>
 
-          <label>
-            Área relacionada
-            <select value={form.area} onChange={(event) => onChange("area", event.target.value)}>
-              {visibleAreas.map((area) => (
-                <option key={area} value={area}>
-                  {area}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label>
+              Área relacionada
+              <select value={form.area} onChange={(event) => onChange("area", event.target.value)}>
+                {visibleAreas.map((area) => (
+                  <option key={area} value={area}>
+                    {area}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label>
-            Prioridad sugerida
-            <select
-              value={form.priority}
-              onChange={(event) => onChange("priority", event.target.value)}
-            >
-              {IDEA_PRIORITIES.map((priority) => (
-                <option key={priority.value} value={priority.value}>
-                  {priority.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label>
+              Prioridad sugerida
+              <select
+                value={form.priority}
+                onChange={(event) => onChange("priority", event.target.value)}
+              >
+                {IDEA_PRIORITIES.map((priority) => (
+                  <option key={priority.value} value={priority.value}>
+                    {priority.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label>
-            Impacto estimado
-            <select value={form.impact} onChange={(event) => onChange("impact", event.target.value)}>
-              {IDEA_IMPACTS.map((impact) => (
-                <option key={impact.value} value={impact.value}>
-                  {impact.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label>
+              Impacto estimado
+              <select value={form.impact} onChange={(event) => onChange("impact", event.target.value)}>
+                {IDEA_IMPACTS.map((impact) => (
+                  <option key={impact.value} value={impact.value}>
+                    {impact.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="full">
-            Problema actual <b>*</b>
-            <textarea
-              value={form.currentProblem}
-              onChange={(event) => onChange("currentProblem", event.target.value)}
-              placeholder="Describe qué no está funcionando bien, qué se pierde, qué se repite o qué genera errores."
-              maxLength={900}
-            />
-          </label>
+            <label className="full">
+              Problema actual <b>*</b>
+              <textarea
+                value={form.currentProblem}
+                onChange={(event) => onChange("currentProblem", event.target.value)}
+                placeholder="Describe qué no está funcionando bien, qué se pierde, qué se repite o qué genera errores."
+                maxLength={900}
+                required
+              />
+            </label>
 
-          <label className="full">
-            Idea o propuesta <b>*</b>
-            <textarea
-              value={form.proposedIdea}
-              onChange={(event) => onChange("proposedIdea", event.target.value)}
-              placeholder="Explica qué propones hacer para resolver o mejorar la situación."
-              maxLength={900}
-            />
-          </label>
+            <label className="full">
+              Idea o propuesta <b>*</b>
+              <textarea
+                value={form.proposedIdea}
+                onChange={(event) => onChange("proposedIdea", event.target.value)}
+                placeholder="Explica qué propones hacer para resolver o mejorar la situación."
+                maxLength={900}
+                required
+              />
+            </label>
 
-          <label className="full">
-            Cómo crees que podría implementarse
-            <textarea
-              value={form.implementationSuggestion}
-              onChange={(event) => onChange("implementationSuggestion", event.target.value)}
-              placeholder="Puede ser un paso, una pantalla, un botón, una regla o una forma de trabajo."
-              maxLength={900}
-            />
-          </label>
+            <label className="full">
+              Cómo crees que podría implementarse
+              <textarea
+                value={form.implementationSuggestion}
+                onChange={(event) => onChange("implementationSuggestion", event.target.value)}
+                placeholder="Puede ser un paso, una pantalla, un botón, una regla o una forma de trabajo."
+                maxLength={900}
+              />
+            </label>
 
-          <label className="full">
-            Beneficio esperado <b>*</b>
-            <textarea
-              value={form.expectedBenefit}
-              onChange={(event) => onChange("expectedBenefit", event.target.value)}
-              placeholder="Explica qué mejoraría: menos errores, ahorro de tiempo, mejor control, menos papel, mejor atención, etc."
-              maxLength={700}
-            />
-          </label>
+            <label className="full">
+              Beneficio esperado <b>*</b>
+              <textarea
+                value={form.expectedBenefit}
+                onChange={(event) => onChange("expectedBenefit", event.target.value)}
+                placeholder="Explica qué mejoraría: menos errores, ahorro de tiempo, mejor control, menos papel, mejor atención, etc."
+                maxLength={700}
+                required
+              />
+            </label>
 
-          <label className="ideas-focused-dropzone full">
-            <input type="file" multiple onChange={onFileChange} />
-            <span>↥</span>
-            <strong>Agregar evidencia o ejemplo</strong>
-            <p>Capturas, fotos, documentos o archivos que ayuden a entender la idea.</p>
-          </label>
+            <label className="ideas-focused-dropzone full">
+              <input type="file" multiple onChange={onFileChange} />
+              <span>↥</span>
+              <strong>Agregar evidencia o ejemplo</strong>
+              <p>Capturas, fotos, documentos o archivos que ayuden a entender la idea.</p>
+            </label>
 
-          {files.length > 0 && (
-            <div className="ideas-focused-files full">
-              {files.map((file, index) => (
-                <button
-                  type="button"
-                  key={`${file.name}-${index}`}
-                  onClick={() => onRemoveFile(index)}
-                >
-                  <span>{getFileTypeLabel(file.name)}</span>
-                  {file.name}
-                  <b>×</b>
-                </button>
-              ))}
-            </div>
-          )}
+            {files.length > 0 && (
+              <div className="ideas-focused-files full">
+                {files.map((file, index) => (
+                  <button
+                    type="button"
+                    key={`${file.name}-${index}`}
+                    onClick={() => onRemoveFile(index)}
+                  >
+                    <span>{getFileTypeLabel(file.name)}</span>
+                    {file.name}
+                    <b>×</b>
+                  </button>
+                ))}
+              </div>
+            )}
+          </fieldset>
 
           <div className="ideas-focused-actions full">
             <button type="button" className="ideas-modern-secondary" onClick={onClose} disabled={saving}>
               Cancelar
             </button>
             <button type="submit" className="ideas-modern-primary" disabled={saving}>
-              {saving ? "Guardando..." : "Registrar idea"}
+              {saving ? "Guardando..." : ideaCreated ? "Reintentar evidencia" : "Registrar idea"}
             </button>
           </div>
         </form>
