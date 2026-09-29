@@ -1,0 +1,23 @@
+.teacher-shell.offline-shell { min-height: 100vh; grid-template-columns: 16rem minmax(0, 1fr); }
+.offline-shell .brand div, .offline-shell .sidebar-footer div { display: flex; }
+.offline-shell .sidebar-footer { display: flex; margin-top: auto; }
+.offline-shell .button-primary, .offline-login .button-primary { color: #fff; background: linear-gradient(90deg, #ed1428, #c81829); }
+.offline-shell button:disabled, .offline-login button:disabled { opacity: .55; cursor: default; }
+.offline-content { padding: var(--ac-space-4); overflow-y: auto; }
+.offline-levels { padding: var(--ac-space-3); }
+.offline-levels [aria-pressed="true"] { background: #ffecee; color: #b62236; }
+.offline-feedback { padding: var(--ac-space-2); border-radius: var(--ac-radius-sm); background: #edf2fa; margin-bottom: var(--ac-space-3); }
+.unit-sync-card, .class-placeholder { padding: var(--ac-space-3); }
+.unit-sync-card { display: flex; flex-direction: column; gap: var(--ac-space-2); }
+.unit-sync-card h2, .unit-sync-card p { margin: 0; }
+.unit-sync-card progress { width: 100%; accent-color: #d52b42; }
+.unit-sync-card .ui-cluster { margin-top: auto; }
+.sync-label { color: #246a52; font-size: var(--ac-text-sm); }
+.sync-error { color: #ae2636; }
+.offline-login { min-height: 100vh; display: grid; place-items: center; padding: var(--ac-space-4); background: var(--ac-surface-muted); }
+.offline-login section { width: min(100%, 28rem); padding: var(--ac-space-4); }
+.offline-login label { display: grid; gap: var(--ac-space-1); }
+.offline-login input { min-height: var(--ac-touch); border: 1px solid var(--ac-border); border-radius: var(--ac-radius-sm); padding: var(--ac-space-2); font: inherit; }
+.offline-shell .sidebar-footer strong { overflow-wrap: anywhere; }
+.class-placeholder li { margin-block: var(--ac-space-2); }
+@media (max-width: 820px) { .teacher-shell.offline-shell { display: flex; flex-direction: column; } .offline-shell .sidebar { width: 100%; height: auto; position: static; } .offline-levels { flex-direction: row; flex-wrap: wrap; } }

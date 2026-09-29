@@ -1,0 +1,126 @@
+name: Active Classroom Desktop Linux
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "active-classroom-desktop/**"
+      - "docs/active-classroom-manifest.example.json"
+      - ".github/workflows/active-classroom-linux.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: active-classroom-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Tests, Cargo y paquete Debian
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: active-classroom-desktop
+    env:
+      CI: "true"
+      CARGO_TERM_COLOR: never
+      RUST_TOOLCHAIN: stable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Node 24 LTS
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: active-classroom-desktop/package-lock.json
+
+      - name: Dependencias nativas Tauri 2 / WebKitGTK 4.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential pkg-config curl wget file \
+            libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Rust estable mediante rustup
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+          rustup show active-toolchain
+          node --version
+          npm --version
+          pkg-config --modversion gtk+-3.0 webkit2gtk-4.1
+
+      - name: Instalar dependencias del lockfile
+        run: npm ci
+
+      - name: Tests offline
+        run: npm run test:offline
+
+      - name: Tests Player
+        run: npm run test:player
+
+      - name: Lint específico
+        run: npm run lint:player
+
+      - name: Build TypeScript/Vite y tests de empaquetado PDF.js
+        # npm run build incluye test:bundle: worker, fuentes, CMaps, ICC y WASM.
+        run: |
+          npm run build
+          test -s dist/index.html
+          test -s dist/active-classroom-icon.png
+
+      - name: Cuatro tests Rust de caché offline
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib offline_cache::tests:: -- --list \
+            | tee "$RUNNER_TEMP/active-classroom-rust-tests.txt"
+          test "$(grep -c '^offline_cache::tests::.*: test$' "$RUNNER_TEMP/active-classroom-rust-tests.txt")" -eq 4
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib offline_cache::tests:: -- --nocapture
+
+      - name: Cargo check y validación nativa de configuración/capabilities
+        # build.rs ejecuta tauri_build::build(); no se usa un mock de Tauri.
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: Build Tauri Linux .deb
+        run: npm run tauri:build -- --bundles deb -- --locked
+
+      - name: Comprobar paquete y lockfiles
+        run: |
+          git diff --exit-code -- package-lock.json src-tauri/Cargo.lock
+          mapfile -t packages < <(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb')
+          test "${#packages[@]}" -eq 1
+          test "$(dpkg-deb --field "${packages[0]}" Architecture)" = amd64
+          dpkg-deb --info "${packages[0]}"
+          file src-tauri/target/release/active-classroom
+          sha256sum "${packages[0]}" > "${packages[0]}.sha256"
+          {
+            printf '### Active Classroom Desktop Linux\n\n'
+            printf 'Paquete: `%s`\n\n' "${packages[0]}"
+            printf 'Commit: `%s`\n\n' "$GITHUB_SHA"
+            printf 'Runner: Ubuntu 22.04 x64\n\n'
+            printf 'Rust: `%s`\n\n' "$(rustc --version)"
+            printf 'Cargo: `%s`\n\n' "$(cargo --version)"
+            printf 'Node: `%s`; npm: `%s`\n\n' "$(node --version)" "$(npm --version)"
+            printf 'Build y tests nativos completos. Reproducción, codecs y Firebase requieren aceptación en el equipo Linux destino.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir instalador Debian y SHA-256
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: active-classroom-linux-amd64-${{ github.sha }}
+          path: |
+            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb
+            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

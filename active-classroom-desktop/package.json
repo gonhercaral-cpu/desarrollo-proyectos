@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && npm run test:bundle",
+    "test:bundle": "node --test tests/bundle.test.mjs",
+    "test:offline": "node --test tests/offline.test.mjs",
+    "lint:offline": "eslint src/offline src/app.ts",
     "admin:dev": "vite --config admin-web/vite.config.js",
     "admin:build": "tsc -p admin-web/tsconfig.json && vite build --config admin-web/vite.config.js",
     "admin:test": "node admin-web/tests/smoke.mjs",
@@ -13,15 +16,24 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test:player": "node --test tests/player.test.mjs",
+    "lint:player": "eslint src/player src/offline src/app.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
-    "@tauri-apps/plugin-dialog": "^2.4.0"
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "firebase": "^12.15.0",
+    "pdfjs-dist": "^6.3.289"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.8.4",
+    "eslint": "^10.11.0",
+    "jsdom": "^30.1.1",
     "typescript": "^5.9.2",
-    "vite": "^7.1.3"
+    "typescript-eslint": "^8.71.0",
+    "vite": "^7.1.3",
+    "vite-plugin-static-copy": "^4.1.1"
   }
 }

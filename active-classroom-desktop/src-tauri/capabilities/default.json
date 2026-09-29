@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permisos mínimos para las ventanas de Active Classroom",
-  "windows": ["teacher", "audience"],
+  "windows": ["teacher"],
   "permissions": ["core:default", "dialog:allow-open"]
 }

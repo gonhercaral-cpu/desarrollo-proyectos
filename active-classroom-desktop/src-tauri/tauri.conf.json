@@ -20,29 +20,24 @@
         "minHeight": 640,
         "center": true,
         "resizable": true
-      },
-      {
-        "label": "audience",
-        "title": "Active Classroom · Alumnado",
-        "width": 1280,
-        "height": 720,
-        "decorations": false,
-        "resizable": true,
-        "visible": false
       }
     ],
     "security": {
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**"]
+        "scope": [
+          "$APPDATA/**"
+        ]
       },
-      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:1430; img-src 'self' asset: http://asset.localhost http://127.0.0.1:1430 blob: data:; media-src 'self' asset: http://asset.localhost http://127.0.0.1:1430 blob:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' asset: http://asset.localhost https://asset.localhost ipc: http://ipc.localhost https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; font-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"],
+    "icon": [
+      "icons/icon.png"
+    ],
     "category": "Education",
     "shortDescription": "Panel de aula con vista docente y proyección para el alumnado"
   }

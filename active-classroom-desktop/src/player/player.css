@@ -1,0 +1,37 @@
+.classroom-player { height: 100dvh; width: 100%; background: #f4f5f7; color: #17202e; display: flex; flex-direction: column; overflow: auto; }
+.player-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.5rem; background: white; border-bottom: 1px solid #e2e6ec; }
+.player-header h1 { margin: .2rem 0; font-size: 1.4rem; }
+.player-header .section-kicker { margin: 0; }
+.player-header [data-local] { color: #247052; }
+.player-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 1rem; padding: 1rem; flex: 1; min-height: 0; }
+.player-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: .6rem; }
+.player-content-title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.player-content-title h2 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.player-content-title p { margin: .2rem 0; font-size: .85rem; color: #566274; }
+.player-stage { flex: 1; position: relative; min-height: 200px; overflow: hidden; border-radius: 12px; background: #111827; color: white; }
+.player-renderer, .player-renderer-content { height: 100%; width: 100%; min-height: 0; }
+.player-renderer-content { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.player-image, .player-video { display: block; width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+.player-status { position: absolute; bottom: .75rem; left: .75rem; right: .75rem; margin: 0; padding: .8rem; background: #fff; color: #732727; border-radius: 8px; z-index: 1; overflow-wrap: anywhere; }
+.player-audio-title { padding: 2rem; font-size: 1.3rem; text-align: center; overflow-wrap: anywhere; }
+.player-controls { display: grid; gap: .6rem; padding: .8rem; background: white; border: 1px solid #e2e6ec; border-radius: 12px; }
+.player-controls progress { flex: 1; min-width: 50px; width: auto; accent-color: #a32424; }
+.player-controls small { color: #687386; font-size: .7rem; }
+.player-media-controls { display: grid; gap: .5rem; }
+.classroom-player [hidden] { display: none !important; }
+.player-range { display: flex; align-items: center; gap: .7rem; flex: 1; font-size: .8rem; }
+.player-range input { flex: 1; min-width: 50px; padding: 0; accent-color: #a32424; }
+.player-resources { overflow-y: auto; display: flex; flex-direction: column; gap: .8rem; }
+.player-resources .ui-card { padding: 1rem; }
+.player-resources h2 { margin: 0 0 .7rem; font-size: .95rem; }
+.player-resources p { font-size: .8rem; color: #687386; }
+.player-list-button { width: 100%; text-align: left; justify-content: flex-start; margin: .2rem 0; white-space: normal; overflow-wrap: anywhere; }
+.player-list-button[aria-current="true"], .player-list-button[aria-pressed="true"] { background: #fcecec; color: #8b2020; border-color: #ba4545; }
+.player-pdf { gap: .4rem; padding: .4rem; box-sizing: border-box; }
+.player-pdf-area { display: flex; align-items: center; justify-content: center; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
+.player-pdf-area canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+.player-pdf-toolbar { display: flex; gap: .7rem; align-items: center; justify-content: center; width: 100%; font-size: .8rem; }
+.player-pdf-toolbar .button { color: white; border-color: #687386; background: #263142; }
+.classroom-player:fullscreen { height: 100vh; }
+@media (max-width: 950px) { .player-layout { grid-template-columns: minmax(0, 1fr) 230px; } .player-header { padding: .7rem 1rem; } .player-controls .button { padding: .5rem .65rem; font-size: .8rem; } }
+@media (max-height: 700px) { .player-header { padding: .5rem 1rem; } .player-header h1 { font-size: 1.15rem; } .player-controls { padding: .5rem; } .player-controls small { display: none; } }

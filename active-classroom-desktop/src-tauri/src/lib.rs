@@ -1,4 +1,5 @@
 mod audience_window;
+mod offline_cache;
 
 use audience_window::{audience_status, show_audience_window};
 use regex::Regex;
@@ -936,21 +937,9 @@ mod tests {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let audience = app
-                .get_webview_window("audience")
-                .ok_or_else(|| "No se encontró la ventana del alumnado".to_string())?;
-            if audience
-                .available_monitors()
-                .map_err(|error| error.to_string())?
-                .len()
-                > 1
-            {
-                show_audience_window(app.handle().clone())?;
-            }
-            Ok(())
-        })
+        .manage(offline_cache::CacheGate::default())
         .invoke_handler(tauri::generate_handler![
+            offline_cache::classroom_cache,
             show_audience_window,
             audience_status,
             import_presentation

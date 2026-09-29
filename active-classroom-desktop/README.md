@@ -1,5 +1,25 @@
 # Active Classroom
 
+## MVP vigente: Biblioteca, sincronización offline y Player local
+
+La entrada Desktop usa Firebase Auth, publicaciones versionadas y caché nativo. Continúa esta misma app Tauri; no requiere el servidor admin local. `Abrir clase` inicia el Player local para PDF, imágenes, audio y video. No convierte PPTX ni activa segunda pantalla.
+
+Consulta [arquitectura, caché, sincronización, pruebas y aceptación Linux](docs/OFFLINE_MVP.md).
+Consulta [Player, formatos, comandos y validación nativa pendiente](docs/LOCAL_PLAYER.md).
+Consulta [estado comprobado y comandos de validación nativa Linux](docs/LINUX_NATIVE_VALIDATION.md).
+Consulta [pipeline CI Linux y descarga del instalador](docs/LINUX_CI.md).
+
+```sh
+npm ci
+npm run test:offline
+npm run test:player
+npm run lint:player
+npm run build
+npm run tauri:dev
+```
+
+**Lo siguiente documenta el prototipo previo**, conservado como referencia; sus flujos de PPTX, segunda pantalla y catálogo demo no son la entrada actual.
+
 > Fuente de escritorio importada al repositorio Desarrollo de Proyectos. Se
 > mantiene ejecutable como paquete independiente mientras sus capacidades se
 > migran a `../src/active-classroom/`.
