@@ -10,7 +10,7 @@ Contrato remoto: `../../docs/active-classroom-desktop-api.md` y su ejemplo de ma
 
 ## Capas
 
-- `src/offline/auth.ts`: Firebase Auth, email/contraseña, persistencia del SDK y renovación de ID token. No guarda contraseñas en el caché.
+- `src/offline/auth.ts`: Firebase Auth en memoria y renovación de ID token. `device-session.ts` controla activación/offline/revocación; `device-auth.ts` intercambia prueba del llavero por custom token. Sin login interactivo. Ver [identidad del equipo](../../docs/active-classroom-device-auth.md).
 - `src/offline/remote.ts`: callables HTTP, paginación completa, descargas por streaming, Bearer, timeout y cancelación. Reintenta una sola vez el 401 con `getIdToken(true)`; 403 conserva caché y muestra permiso denegado.
 - `src/offline/manifest.ts`: contrato tipado, validación de IDs, límites, asociaciones, orden y SHA-256 del manifest canónico. Rechaza versiones antiguas sin snapshot.
 - `src/offline/sync.ts`: coordinación independiente de Firebase y Tauri mediante `RemoteStore`/`CacheStore`. Una descarga activa; doble clic comparte la promesa y archivos repetidos comparten SHA-256.
@@ -20,9 +20,9 @@ Contrato remoto: `../../docs/active-classroom-desktop-api.md` y su ejemplo de ma
 
 ## Sesión y datos locales
 
-Firebase Auth usa `browserLocalPersistence` en el almacenamiento persistente del WebView Tauri. El SDK restaura la sesión y renueva tokens cuando es necesario. El usuario debe iniciar sesión online una vez; después conserva acceso local al reiniciar offline mientras no cierre la sesión ni borre datos de la aplicación. No se solicita token para listar/abrir el caché.
+Firebase Auth usa `inMemoryPersistence`; la credencial y autorización del equipo viven en Secret Service Linux. Un administrador autoriza el código inicial. Desktop restablece sesión automáticamente online y muestra caché inmediatamente si ya fue activado, incluso offline. No se solicita token para listar/abrir el caché.
 
-Cada caché se identifica por SHA-256 del UID. Cambiar de usuario no muestra datos del usuario anterior. Cerrar sesión cancela sincronización y conserva archivos en disco, aislados por usuario. No hay cifrado local ni revocación de copias offline: acceso físico a la cuenta del sistema operativo queda fuera del control de Firebase.
+Cada caché se identifica por SHA-256 del UID estable `ac-device-<deviceId>`. La primera apertura activada adopta publicaciones verificadas anteriores sin borrar originales. No hay selector de usuarios ni logout. Recursos no están cifrados: acceso físico a la cuenta Linux queda fuera del control de Firebase. Revocación conocida bloquea UI y se conserva en llavero; una revocación nueva no puede detectarse sin conexión.
 
 Raíz Linux, respetando `XDG_DATA_HOME`:
 
@@ -63,7 +63,7 @@ Player recibe una sesión local fijada a esa versión y no importa servicios Fir
 ## Errores
 
 - Red interrumpida/timeout: temporal descartado, caché anterior disponible, reintento manual.
-- 401: renovar token una vez; si persiste, indicar reinicio de sesión. 403: mostrar falta de permisos, sin borrar contenido local.
+- 401: renovar token automáticamente; si falla conservar acceso local. 403: comprobar autorización del dispositivo; si fue revocado cancelar operaciones y volver a activación, sin borrar contenido local.
 - Tamaño/SHA-256 incorrectos: archivo no se incorpora; manifest no se activa.
 - Disco lleno: error de escritura reconocido y mostrado; versión anterior conservada.
 - Cancelación: abortar Fetch, rechazar writes posteriores y descartar temporal. No revierte un commit completo.
@@ -100,7 +100,7 @@ Para Linux se requieren Rust estable y dependencias de compilación Tauri 2/WebK
 
 ### Aceptación pendiente en Linux
 
-1. Compilar/instalar, iniciar sesión con perfil activo y permisos para los originales Drive.
+1. Compilar/instalar, configurar llavero Linux y activar equipo mediante administrador. El equipo obtiene únicamente snapshots publicados, sin permisos para originales Drive.
 2. Consultar publicaciones, descargar Unit y abrirla (archivos SHA-256 verificados).
 3. Cerrar completamente la app, desconectar red, reiniciar y abrir esa Unit.
 4. Reconectar y publicar v2 desde web. Comprobar “Actualización disponible”.

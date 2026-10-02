@@ -67,7 +67,7 @@ fn secret_tool(operation: &str, value: Option<&str>) -> Result<Option<String>, S
         }
         return Ok(Some(text.trim().to_string()));
     }
-    if operation == "lookup" && output.status.code() == Some(1) && output.stderr.is_empty() { return Ok(None); }
+    if ["lookup", "clear"].contains(&operation) && output.status.code() == Some(1) && output.stderr.is_empty() { return Ok(None); }
     Err("device: Llavero bloqueado o no disponible. Solicita asistencia técnica.".into())
 }
 fn load() -> Result<Identity, String> {

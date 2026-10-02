@@ -2,7 +2,7 @@
 
 ## MVP vigente: Biblioteca, sincronización offline y Player local
 
-La entrada Desktop usa Firebase Auth, publicaciones versionadas y caché nativo. Continúa esta misma app Tauri; no requiere el servidor admin local. `Abrir clase` inicia el Player local para PDF, imágenes, audio y video. No convierte PPTX ni activa segunda pantalla.
+La entrada Desktop usa identidad de dispositivo, Firebase Auth automático, publicaciones versionadas y caché nativo. No pide correo/contraseña. Primera activación requiere aprobación administrativa y llavero Linux configurado; consulta [activación, seguridad y despliegue](../docs/active-classroom-device-auth.md). Continúa esta misma app Tauri; no requiere el servidor admin local. `Abrir clase` inicia el Player local para PDF, imágenes, audio y video. No convierte PPTX ni activa segunda pantalla.
 
 Consulta [arquitectura, caché, sincronización, pruebas y aceptación Linux](docs/OFFLINE_MVP.md).
 Consulta [Player, formatos, comandos y validación nativa pendiente](docs/LOCAL_PLAYER.md).
@@ -12,6 +12,7 @@ Consulta [pipeline CI Linux y descarga del instalador](docs/LINUX_CI.md).
 ```sh
 npm ci
 npm run test:offline
+npm run test:device
 npm run test:player
 npm run lint:player
 npm run build
