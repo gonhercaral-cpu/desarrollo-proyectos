@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { DeviceSession } from "../src/offline/device-session.ts";
 import { normalizeDisplayName, readDeviceLabel, saveDeviceLabel, visibleDeviceName } from "../src/offline/device-label.ts";
 import { PublicationApi } from "../src/offline/remote.ts";
+import { SyncError } from "../src/offline/manifest.ts";
 
 function setup(activated = false) {
   const stored = { deviceId: "a".repeat(32), name: "Salón 1", activated, revoked: false };
@@ -61,6 +62,28 @@ test("reintentos concurrentes comparten intercambio", async () => {
 test("llavero no disponible falla cerrado sin generar secreto alternativo", async () => {
   const f = setup(); f.dependencies.load = async () => { throw new Error("keyring locked"); }; await f.session.start(true);
   assert.equal(f.session.state.phase, "error"); assert.equal(f.exchanges(), 0);
+});
+
+test("equipo activado no anuncia conexión si Firebase rechaza Custom Token", async () => {
+  const f = setup(true); f.authorize();
+  f.dependencies.signIn = async () => { throw Object.assign(new Error("sensitive SDK response"), { code: "auth/custom-token-mismatch" }); };
+  await f.session.start(true);
+  assert.equal(f.session.state.phase, "ready"); assert.equal(f.session.state.online, false); assert.equal(f.session.state.issue, "auth");
+  assert.equal(f.stored.activated, true); assert.doesNotMatch(f.session.state.message, /offline|sensitive/);
+  await assert.rejects(f.session.token(), { code: "auth" });
+});
+
+test("primera activación exige ID token válido antes de guardar autorización local", async () => {
+  const f = setup(); f.authorize();
+  f.dependencies.token = async () => { throw new SyncError("auth", "Invalid device claims"); };
+  await f.session.start(true);
+  assert.equal(f.stored.activated, false); assert.equal(f.session.state.phase, "activation"); assert.equal(f.session.state.issue, "auth");
+});
+
+test("credencial local ausente se distingue de fallo del servidor", async () => {
+  const f = setup(true); f.authorize(); f.dependencies.proof = async () => { throw new Error("missing secure credential"); };
+  await f.session.start(true);
+  assert.equal(f.session.state.issue, "credential"); assert.equal(f.exchanges(), 0); assert.equal(f.stored.activated, true);
 });
 
 test("activación recibe alias, conserva hostname y reinicio offline conserva último nombre", async () => {

@@ -2,6 +2,7 @@ import { escapeHtml as escape } from "../utils/dom";
 import { createDeviceSession } from "./device-auth";
 import type { DeviceState } from "./device-session";
 import { visibleDeviceName } from "./device-label";
+import { connectionLabel, diagnose } from "./connection";
 import { NativeCache } from "./native-cache";
 import { PublicationApi } from "./remote";
 import { localState, type Manifest, type Publication } from "./manifest";
@@ -15,6 +16,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   let owner = "";
   let retryPublication: Publication | undefined;
   let cache: NativeCache | undefined;
+  let cacheReady = false;
   let api: PublicationApi | undefined;
   let engine: SyncEngine | undefined;
   let locals: Manifest[] = [];
@@ -31,7 +33,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   let renderTimer: ReturnType<typeof setTimeout> | undefined;
   const errors = new Map<string, string>();
   const levelName = (id: string) => /^level-\d+$/.test(id) ? `Nivel ${id.slice(6)}` : id;
-  const feedback = () => message ? `<p class="offline-feedback" role="status">${escape(message)}</p>` : "";
+  const feedback = () => message || device.message ? `<p class="offline-feedback" role="status">${escape(message || device.message)}</p>` : "";
   function render(): void {
     if (player) return;
     if (device.phase !== "ready") {
@@ -49,7 +51,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const percent = progress?.unitId === unitId ? (progress.total ? Math.min(100, Math.floor(100 * progress.bytes / progress.total)) : 0) : 0;
       return `<article class="ui-card unit-sync-card"><p class="section-kicker">${escape(levelName(remote?.levelId || local!.unit.levelId))}</p><h2>${escape(remote?.name || local!.unit.name)}</h2><p>Publicada: ${remote ? `v${remote.version}` : "Sin consultar"} · Local: ${local ? `v${local.version}` : "—"}</p><strong class="sync-label ${state === "Error" ? "sync-error" : ""}">${state}</strong>${busy ? `<progress max="100" value="${percent}" aria-label="Progreso de descarga"></progress><small>${percent}% · ${escape(progress?.phase === "activate" ? "Activando versión verificada…" : progress?.phase === "verify" ? "Verificando integridad…" : progress?.fileName || "Obteniendo manifest…")}</small>` : ""}${errors.has(unitId) ? `<p role="alert" class="sync-error">${escape(errors.get(unitId)!)}</p>` : ""}<div class="ui-cluster"><button class="button button-outline" data-sync="${unitId}" ${downloading || !remote || (!errors.has(unitId) && local && local.version >= remote.version) ? "disabled" : ""}>${errors.has(unitId) ? "Reintentar" : local ? "Actualizar" : "Descargar"}</button><button class="button button-primary" data-open="${unitId}" ${!local || opening ? "disabled" : ""}>Abrir clase</button>${busy ? `<button class="button button-quiet" data-cancel ${progress?.phase === "activate" ? "disabled" : ""}>Cancelar</button>` : ""}</div></article>`;
     }).join("");
-    root.innerHTML = `<div class="teacher-shell offline-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark"><img src="/active-classroom-icon.png" alt=""/></span><div><strong>Active Classroom</strong><span>Biblioteca de clases</span></div></div><nav class="ui-stack offline-levels" aria-label="Niveles"><button class="button button-quiet" data-level="" aria-pressed="${!selectedLevel}">Todos los niveles</button>${levels.map((level) => `<button class="button button-quiet" data-level="${level}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><div class="sidebar-footer"><div><strong>${escape(visibleDeviceName(device.identity))}</strong><small>${device.online ? downloading || refreshing ? "Sincronizando" : "Actualizado" : "Modo offline"}</small></div></div></aside><section class="workspace"><header class="workspace-header"><div><p class="breadcrumb">Nivel / Unit</p><h1>Biblioteca</h1></div><button class="button button-outline" data-refresh ${refreshing ? "disabled" : ""}>${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header><main class="offline-content">${feedback()}<div class="ui-grid">${unitCards}</div>${combined.size === 0 ? "<p>No hay clases locales. Conecta Internet y actualiza la biblioteca para consultar publicaciones.</p>" : ""}</main></section></div>`;
+    root.innerHTML = `<div class="teacher-shell offline-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark"><img src="/active-classroom-icon.png" alt=""/></span><div><strong>Active Classroom</strong><span>Biblioteca de clases</span></div></div><nav class="ui-stack offline-levels" aria-label="Niveles"><button class="button button-quiet" data-level="" aria-pressed="${!selectedLevel}">Todos los niveles</button>${levels.map((level) => `<button class="button button-quiet" data-level="${level}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><div class="sidebar-footer"><div><strong>${escape(visibleDeviceName(device.identity))}</strong><small>${device.online ? downloading || refreshing ? "Sincronizando" : "Actualizado" : escape(connectionLabel(device.issue))}</small></div></div></aside><section class="workspace"><header class="workspace-header"><div><p class="breadcrumb">Nivel / Unit</p><h1>Biblioteca</h1></div><button class="button button-outline" data-refresh ${refreshing ? "disabled" : ""}>${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header><main class="offline-content">${feedback()}<div class="ui-grid">${unitCards}</div>${combined.size === 0 ? "<p>No hay clases locales. Conecta Internet y actualiza la biblioteca para consultar publicaciones.</p>" : ""}</main></section></div>`;
     root.querySelectorAll<HTMLButtonElement>("[data-level]").forEach((button) => { button.onclick = () => { selectedLevel = button.dataset.level!; render(); }; });
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.onclick = () => { void refresh(); };
     root.querySelector<HTMLButtonElement>("[data-cancel]")?.addEventListener("click", () => engine?.cancel());
@@ -64,8 +66,11 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     try {
       const available = await api.list(refreshController.signal);
       if (current !== epoch) return;
-      publications = available; message = "Publicaciones consultadas. Las clases locales se conservan hasta completar cada actualización.";
-    } catch (error) { if (current === epoch) { message = error instanceof Error ? error.message : String(error); device.online = false; } }
+      publications = available;
+      session.connected();
+      diagnose("publications", available.length ? "listed" : "empty");
+      message = available.length ? "Publicaciones consultadas. Las clases locales se conservan hasta completar cada actualización." : "No existen publicaciones disponibles. Tus clases locales se conservan.";
+    } catch (error) { if (current === epoch) { session.reportFailure(error, "publications"); message = device.message; } }
     finally { if (current === epoch) { refreshing = false; render(); } }
   }
   async function synchronize(publication: Publication): Promise<void> {
@@ -86,7 +91,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         // Reporting is best effort after activation; it cannot invalidate a verified offline class.
         if (!player && !opening) void currentApi.call("reportActiveClassroomDeviceSync", { unitId: publication.unitId, version: publication.version }).catch(() => {});
       }
-    } catch (error) { if (current === epoch) { errors.set(publication.unitId, error instanceof Error ? error.message : String(error)); if (error && typeof error === "object" && "code" in error && ["network", "timeout", "auth", "401"].includes(String(error.code))) { retryPublication = publication; device.online = false; } } }
+    } catch (error) { if (current === epoch) { errors.set(publication.unitId, error instanceof Error ? error.message : String(error)); if (error && typeof error === "object" && "code" in error && ["network", "offline", "backend", "server", "timeout", "auth", "expired", "401", "403"].includes(String(error.code))) { retryPublication = publication; session.reportFailure(error, "publications"); } } }
     finally { if (current === epoch) { downloading = ""; progress = undefined; render(); } }
   }
   async function open(unitId: string): Promise<void> {
@@ -128,13 +133,18 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   }
   root.innerHTML = `<main class="desktop-loading"><strong>Active Classroom</strong><span>Restaurando sesión y biblioteca local…</span></main>`;
   const session = createDeviceSession((state) => {
+    const becameOnline = !device.online && state.online;
     device = state;
     void (async () => {
-      if (state.phase === "ready" && owner === session.owner && cache) { render(); return; }
+      if (state.phase === "ready" && owner === session.owner && cache) {
+        render();
+        if (becameOnline && cacheReady) void refresh();
+        return;
+      }
       epoch++; const current = epoch;
       refreshController?.abort(); engine?.cancel();
       locals = []; publications = []; errors.clear(); player?.destroy(); player = undefined; downloading = ""; progress = undefined; refreshing = false; opening = false; message = ""; retryPublication = undefined;
-      cache = undefined; api = undefined; engine = undefined;
+      cache = undefined; cacheReady = false; api = undefined; engine = undefined;
       if (state.phase !== "ready") { owner = ""; render(); return; }
       owner = session.owner;
       cache = new NativeCache(owner);
@@ -148,6 +158,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       }
       catch (error) { if (current === epoch) message = error instanceof Error ? error.message : String(error); }
       if (current !== epoch) return;
+      cacheReady = true;
       render();
       if (device.online) void refresh();
     })();

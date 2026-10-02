@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { signInWithCustomToken } from "firebase/auth";
-import { auth, logout, sessionToken } from "./auth";
+import { auth, logout } from "./auth";
+import { signInDevice, deviceIdToken } from "./firebase-session";
+import { connectionError } from "./connection";
+import { SyncError } from "./manifest";
 import { API_BASE } from "./remote";
 import { DeviceSession, type DeviceIdentity, type DeviceProof, type DeviceResponse, type DeviceState } from "./device-session";
 import { readDeviceLabel, saveDeviceLabel } from "./device-label";
@@ -23,16 +25,13 @@ export function createDeviceSession(notify: (state: DeviceState) => void): Devic
       const response = await fetch(`${API_BASE}/activeClassroomDeviceSession`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: { ...proof, appVersion } }), signal: AbortSignal.timeout(15000),
       });
-      if (!response.ok) throw new Error("No se pudo conectar el equipo.");
+      if (!response.ok) throw connectionError(new SyncError(String(response.status), ""), "activation");
       const data = (await response.json()).result as DeviceResponse;
-      if (!data || !["authorized", "pending", "revoked"].includes(data.status)) throw new Error("Respuesta de activación inválida.");
+      if (!data || !["authorized", "pending", "revoked"].includes(data.status) || (data.status === "authorized" && typeof data.customToken !== "string")) throw new SyncError("server", "Respuesta de activación inválida.");
       return data;
     },
-    signIn: async (customToken, owner) => {
-      const session = await signInWithCustomToken(auth, customToken);
-      if (session.user.uid !== owner) { await logout(); throw new Error("Identidad de sesión inválida."); }
-    },
-    token: sessionToken,
+    signIn: (customToken, owner) => signInDevice(auth, customToken, owner),
+    token: (owner, force) => deviceIdToken(auth, owner, force),
     signOut: logout,
   }, notify);
 }

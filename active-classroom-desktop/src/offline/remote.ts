@@ -1,5 +1,6 @@
 import { SyncError, validHash, validId, type Publication, type Manifest, type PublishedResource } from "./manifest.ts";
 import type { DeviceLabel } from "./device-label.ts";
+import { connectionError, diagnose } from "./connection.ts";
 
 export const API_BASE = "https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net";
 type TokenProvider = (force: boolean) => Promise<string>;
@@ -30,7 +31,7 @@ export class PublicationApi {
           const token = await this.token(attempt === 1);
           controller.signal.throwIfAborted();
           const response = await this.fetcher(`${API_BASE}/${endpoint}`, { ...init, signal: controller.signal, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-          if (response.status === 401 && attempt === 0) { await response.body?.cancel(); continue; }
+          if (response.status === 401 && attempt === 0) { diagnose("publications", "refresh-id-token", "401"); await response.body?.cancel(); continue; }
           if (!response.ok) {
             await response.body?.cancel();
             if (response.status === 403) await this.onDenied?.();
@@ -41,10 +42,11 @@ export class PublicationApi {
         throw new SyncError("401", "Sesión expirada.");
       })()]);
     } catch (error) {
-      if (error instanceof SyncError) throw error;
+      if (error instanceof SyncError) { diagnose("publications", "failed", error.code); throw error; }
       if (controller.signal.aborted) throw new SyncError(timedOut ? "timeout" : "cancelled", timedOut ? "Tiempo agotado. Reintenta." : "Descarga cancelada.");
-      if (error instanceof Error && "code" in error && String(error.code).startsWith("auth/")) throw new SyncError("auth", "No se pudo renovar la conexión del equipo. Las clases locales se conservan.");
-      throw new SyncError("network", "Sin conexión o conexión interrumpida. Tu clase local se conserva.");
+      const failure = connectionError(error, "publications");
+      diagnose("publications", "failed", failure.code);
+      throw failure;
     } finally {
       clearTimeout(timer); signal?.removeEventListener("abort", cancel); controller.signal.removeEventListener("abort", rejectAbort); controller.abort();
     }
