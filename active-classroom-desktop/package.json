@@ -1,7 +1,7 @@
 {
   "name": "active-classroom",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "test:bundle": "node --test tests/bundle.test.mjs",
     "test:offline": "node --test tests/offline.test.mjs",
     "test:device": "node --test tests/device.test.mjs tests/library-auth.test.mjs",
+    "test:webkit": "node tests/webkit-publications.mjs",
     "lint:offline": "eslint src/offline src/app.ts",
     "admin:dev": "vite --config admin-web/vite.config.js",
     "admin:build": "tsc -p admin-web/tsconfig.json && vite build --config admin-web/vite.config.js",

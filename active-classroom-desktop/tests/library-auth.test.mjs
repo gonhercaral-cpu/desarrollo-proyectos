@@ -33,7 +33,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
       const root = dom.window.document.querySelector("#root");
       const signedIn = deferred(); const cacheLoaded = deferred();
       const identity = { deviceId: "b".repeat(32), name: "active-T4-PRO", activated: true, revoked: false };
-      let firebaseReady = false; let calls = 0; let status = 200; let label = "Salón 4"; let interval;
+      let firebaseReady = false; let calls = 0; let status = 200; let label = "Salón 4"; let interval; let available = [publication];
       let session;
       Object.defineProperty(globalThis, "window", { value: dom.window, configurable: true });
       Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
@@ -42,7 +42,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
       Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (_url, init) => {
         assert.equal(firebaseReady, true, "No consultar con un marcador de activación sin ID token");
         assert.equal(init.headers.Authorization, "Bearer firebase-id-token"); calls++;
-        return new Response(JSON.stringify({ result: { publications: [publication], nextCursor: null, device: { deviceId: identity.deviceId, displayName: label } } }), { status });
+        return new Response(JSON.stringify({ result: { publications: available, nextCursor: null, device: { deviceId: identity.deviceId, displayName: label } } }), { status });
       } });
       globalThis.classroomHarness = {
         cacheList: () => cacheLoaded.promise,
@@ -73,6 +73,10 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
         dom.window.dispatchEvent(new dom.window.Event("offline"));
         assert.match(root.textContent, /Modo offline/); assert.equal(root.querySelector("[data-open]").disabled, false);
         interval(); await settle(() => root.textContent.includes("Actualizado"));
+        available = []; root.querySelector("[data-refresh]").click();
+        await settle(() => root.textContent.includes("No hay clases publicadas"));
+        assert.match(root.textContent, /Actualizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
+        assert.match(root.textContent, /Aula Audiovisual/);
       } finally { dom.window.close(); }
     });
   } finally {

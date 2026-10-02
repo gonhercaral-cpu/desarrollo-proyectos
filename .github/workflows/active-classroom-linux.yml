@@ -98,7 +98,8 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential pkg-config curl wget file \
             libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
-            libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11
+            libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 \
+            python3-gi gir1.2-webkit2-4.1 xvfb xauth
 
       - name: Rust estable mediante rustup
         run: |
@@ -119,6 +120,9 @@ jobs:
 
       - name: Tests de identidad y activación
         run: npm run test:device
+
+      - name: Transporte de publicaciones en WebKitGTK real
+        run: npm run test:webkit
 
       - name: Tests Player
         run: npm run test:player

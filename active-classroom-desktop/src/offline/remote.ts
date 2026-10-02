@@ -10,11 +10,19 @@ export class PublicationApi {
   timeout: number;
   onDenied?: () => Promise<void>;
   onDevice?: (device: DeviceLabel) => Promise<void>;
-  constructor(token: TokenProvider, fetcher: typeof fetch = fetch, timeout = 540000) { this.token = token; this.fetcher = fetcher; this.timeout = timeout; }
+  constructor(token: TokenProvider, fetcher: typeof fetch = fetch, timeout = 540000) {
+    this.token = token;
+    // Window.fetch requires a Window receiver. Calling an unbound native function
+    // as this.fetcher throws before networking in WebKit/Chromium (Node masks it).
+    this.fetcher = fetcher.bind(globalThis);
+    this.timeout = timeout;
+  }
 
   async request<T>(endpoint: string, init: RequestInit, consume: (response: Response, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const controller = new AbortController();
     let timedOut = false;
+    const endpointName = endpoint.split("?")[0];
+    let httpStatus: number | undefined;
     const cancel = () => controller.abort();
     signal?.addEventListener("abort", cancel, { once: true });
     if (signal?.aborted) cancel();
@@ -28,24 +36,26 @@ export class PublicationApi {
     try {
       return await Promise.race([aborted, (async () => {
         for (let attempt = 0; attempt < 2; attempt++) {
+          httpStatus = undefined;
           const token = await this.token(attempt === 1);
           controller.signal.throwIfAborted();
           const response = await this.fetcher(`${API_BASE}/${endpoint}`, { ...init, signal: controller.signal, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
-          if (response.status === 401 && attempt === 0) { diagnose("publications", "refresh-id-token", "401"); await response.body?.cancel(); continue; }
+          httpStatus = response.status;
+          if (response.status === 401 && attempt === 0) { diagnose("publications", "refresh-id-token", "401", { endpoint: endpointName, httpStatus }); await response.body?.cancel(); continue; }
           if (!response.ok) {
             await response.body?.cancel();
             if (response.status === 401 || response.status === 403) await this.onDenied?.();
-            throw new SyncError(String(response.status), response.status === 401 ? "No se pudo renovar la conexión del equipo. Reintenta." : response.status === 403 ? "El equipo no tiene autorización para esta publicación." : response.status === 404 ? "Publicación o archivo no disponible." : `Error del servidor (${response.status}). Reintenta.`);
+            throw new SyncError(String(response.status), response.status === 401 ? "No se pudo renovar la conexión del equipo. Reintenta." : response.status === 403 ? "El equipo no tiene autorización para esta publicación." : response.status === 404 ? "Publicación o archivo no disponible." : "El servidor no pudo completar la solicitud. Reintenta.");
           }
           return await consume(response, controller.signal);
         }
         throw new SyncError("401", "Sesión expirada.");
       })()]);
     } catch (error) {
-      if (error instanceof SyncError) { diagnose("publications", "failed", error.code); throw error; }
-      if (controller.signal.aborted) throw new SyncError(timedOut ? "timeout" : "cancelled", timedOut ? "Tiempo agotado. Reintenta." : "Descarga cancelada.");
-      const failure = connectionError(error, "publications");
-      diagnose("publications", "failed", failure.code);
+      const failure = error instanceof SyncError ? error : controller.signal.aborted
+        ? new SyncError(timedOut ? "timeout" : "cancelled", timedOut ? "Tiempo agotado. Reintenta." : "Descarga cancelada.")
+        : connectionError(error, "publications");
+      diagnose("publications", "failed", failure.code, { endpoint: endpointName, httpStatus });
       throw failure;
     } finally {
       clearTimeout(timer); signal?.removeEventListener("abort", cancel); controller.signal.removeEventListener("abort", rejectAbort); controller.abort();
@@ -54,7 +64,7 @@ export class PublicationApi {
   async call<T>(name: string, data: unknown, signal?: AbortSignal): Promise<T> {
     return this.request(name, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) }, async (response) => {
       const payload = await response.json();
-      if (!payload.result) throw new SyncError("server", "Respuesta del servidor inválida.");
+      if (!payload || typeof payload !== "object" || !payload.result || typeof payload.result !== "object") throw new SyncError("response", "No se pudo leer la respuesta del servidor.");
       return payload.result as T;
     }, signal);
   }
@@ -65,20 +75,28 @@ export class PublicationApi {
     do {
       const page: { publications: Publication[]; nextCursor: string | null; device?: DeviceLabel } = await this.call("listActiveClassroomPublications", { limit: 50, cursor }, signal);
       if (page.device) await this.onDevice?.(page.device);
-      if (!Array.isArray(page.publications)) throw new SyncError("server", "Catálogo inválido.");
+      if (!Array.isArray(page.publications)) throw this.invalidCatalog();
       for (const publication of page.publications) {
-        if (!validId(publication.unitId) || !validId(publication.levelId) || typeof publication.name !== "string" || !validHash(publication.contentHash) || !Number.isSafeInteger(publication.version) || publication.version < 1) throw new SyncError("server", "Publicación inválida.");
+        if (!publication || !validId(publication.unitId) || !validId(publication.levelId) || typeof publication.name !== "string" || !validHash(publication.contentHash) || !Number.isSafeInteger(publication.version) || publication.version < 1) throw this.invalidCatalog();
         result.set(publication.unitId, publication);
       }
       cursor = page.nextCursor;
-      if (cursor !== null && (!validId(cursor) || visited.has(cursor))) throw new SyncError("server", "Paginación inválida.");
+      if (cursor !== null && (!validId(cursor) || visited.has(cursor))) throw this.invalidCatalog();
       if (cursor) visited.add(cursor);
     } while (cursor);
     return [...result.values()];
   }
+  private invalidCatalog(): SyncError {
+    diagnose("publications", "failed", "response", { endpoint: "listActiveClassroomPublications", httpStatus: 200 });
+    return new SyncError("response", "No se pudo leer la biblioteca recibida. Solicita asistencia técnica.");
+  }
   async manifest(publication: Publication, signal?: AbortSignal): Promise<unknown> {
     const result = await this.call<{ manifest: unknown; device?: DeviceLabel }>("getActiveClassroomPublication", { unitId: publication.unitId, version: publication.version }, signal);
     if (result.device) await this.onDevice?.(result.device);
+    if (!result.manifest || typeof result.manifest !== "object" || Array.isArray(result.manifest)) {
+      diagnose("publications", "failed", "response", { endpoint: "getActiveClassroomPublication", httpStatus: 200 });
+      throw new SyncError("response", "No se pudo leer la publicación recibida. Solicita asistencia técnica.");
+    }
     return result.manifest;
   }
   async download(manifest: Manifest, resource: PublishedResource, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void> {

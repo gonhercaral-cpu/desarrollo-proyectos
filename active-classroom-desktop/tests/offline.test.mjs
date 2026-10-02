@@ -6,6 +6,44 @@ import { join } from "node:path";
 import { canonical, sha256, validateManifest, localState, SyncError } from "../src/offline/manifest.ts";
 import { SyncEngine, openLocalClass } from "../src/offline/sync.ts";
 import { PublicationApi } from "../src/offline/remote.ts";
+import { connectionError, connectionLabel } from "../src/offline/connection.ts";
+
+test("transporte conserva el receptor global exigido por Window.fetch", async () => {
+  let calls = 0;
+  const api = new PublicationApi(async () => "id-token", function (_url, init) {
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    calls++; assert.equal(init.headers.Authorization, "Bearer id-token");
+    return Promise.resolve(new Response(JSON.stringify({ result: { publications: [], nextCursor: null } })));
+  });
+  assert.deepEqual(await api.list(), []); assert.equal(calls, 1);
+});
+
+test("diagnóstico mantiene endpoint/HTTP sin tokens, queries, secretos ni cuerpos", async () => {
+  const logs = []; const previous = console.info; console.info = (...args) => logs.push(args);
+  try {
+    for (const status of [401, 403, 404, 500, 503]) {
+      const api = new PublicationApi(async () => "secret-token", async () => new Response("secret-body", { status }));
+      await assert.rejects(api.request("activeClassroomPublicationFile?resourceId=private-id", {}, async () => null), { code: String(status) });
+      const failure = connectionError(new SyncError(String(status), ""), "publications");
+      assert.notEqual(connectionLabel(failure.code), "Modo offline");
+      assert.notEqual(connectionLabel(failure.code), "Servidor inaccesible");
+      assert.doesNotMatch(failure.message, /401|403|404|500|503/);
+    }
+  } finally { console.info = previous; }
+  assert.doesNotMatch(JSON.stringify(logs), /secret-token|secret-body|private-id/);
+  for (const status of [401, 403, 404, 500, 503]) assert.ok(logs.some((entry) => entry[1].endpoint === "activeClassroomPublicationFile" && entry[1].httpStatus === status));
+});
+
+test("respuesta ilegible, catálogo inválido, red y error del cliente se distinguen", async () => {
+  for (const payload of ["broken-json", "null", '{"result":{}}', '{"result":{"publications":[null],"nextCursor":null}}']) {
+    const api = new PublicationApi(async () => "token", async () => new Response(payload));
+    await assert.rejects(api.list(), { code: "response" });
+  }
+  const illegal = new PublicationApi(async () => "token", async () => { throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation"); });
+  await assert.rejects(illegal.list(), { code: "client" });
+  assert.equal(connectionError(new TypeError("Failed to fetch"), "publications", false).code, "offline");
+  assert.equal(connectionError(new TypeError("Failed to fetch"), "publications", true).code, "backend");
+});
 
 const example = JSON.parse(await readFile(new URL("../../docs/active-classroom-manifest.example.json", import.meta.url), "utf8"));
 async function fixture(version = 1, changed = false) {
