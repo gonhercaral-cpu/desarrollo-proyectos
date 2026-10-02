@@ -8,7 +8,7 @@ import { build } from "vite";
 
 // Exercise the real Window.fetch in the same WebKitGTK API used by Linux Tauri.
 // Auth and claims are independently exercised by device-auth-emulator.test.mjs.
-const bytes = Buffer.from("Archivo congelado de prueba WebKit");
+const bytes = Buffer.alloc(36633632, 117);
 const hash = createHash("sha256").update(bytes).digest("hex");
 const manifest = JSON.parse(await readFile(new URL("../../docs/active-classroom-manifest.example.json", import.meta.url), "utf8"));
 Object.assign(manifest.resources[0].download, { sizeBytes: bytes.length, checksums: { sha256: hash } });
@@ -28,7 +28,16 @@ const server = createServer((request, response) => {
   if (path === "/probe") { response.statusCode = Number(url.searchParams.get("status")); return response.end(); }
   seen.add(path);
   if (path === "/activeClassroomPublicationFile") {
-    response.setHeader("Content-Type", "application/octet-stream"); response.setHeader("Content-Length", bytes.length); response.setHeader("X-Content-SHA256", hash); return response.end(bytes);
+    assert.equal(url.searchParams.get("unitId"), manifest.unit.unitId);
+    assert.equal(url.searchParams.get("version"), String(manifest.version));
+    assert.equal(url.searchParams.get("resourceId"), manifest.resources[0].resourceId);
+    const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range || "");
+    assert.ok(range, "Archivo grande requiere rangos");
+    const start = Number(range[1]); const end = Number(range[2]); const part = bytes.subarray(start, end + 1);
+    assert.ok(part.length <= 4 * 1024 * 1024);
+    response.statusCode = 206;
+    response.setHeader("Content-Range", `bytes ${start}-${end}/${bytes.length}`);
+    response.setHeader("Content-Type", "application/octet-stream"); response.setHeader("Content-Length", part.length); response.setHeader("X-Content-SHA256", hash); return response.end(part);
   }
   response.setHeader("Content-Type", "application/json");
   if (path === "/listActiveClassroomPublications") return response.end(JSON.stringify({ result: { publications: [publication], nextCursor: null, device } }));

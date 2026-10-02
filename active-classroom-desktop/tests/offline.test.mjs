@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, mkdir, readFile, writeFile, appendFile, rename, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonical, sha256, validateManifest, localState, SyncError } from "../src/offline/manifest.ts";
-import { SyncEngine, openLocalClass } from "../src/offline/sync.ts";
+import { DiskCache } from "./disk-cache.mjs";
+import { SyncEngine, openLocalClass, unitSyncMessage } from "../src/offline/sync.ts";
 import { PublicationApi } from "../src/offline/remote.ts";
 import { connectionError, connectionLabel } from "../src/offline/connection.ts";
 
@@ -67,55 +68,6 @@ async function seal(manifest) {
 
 // Real filesystem adapter for portable contract tests. Rust implements the same
 // CacheStore protocol; these tests do not replace cargo/native integration tests.
-class DiskCache {
-  constructor(root) { this.root = root; this.full = false; }
-  object(hash) { return join(this.root, "objects", hash); }
-  part(hash) { return join(this.root, "temporary", hash); }
-  version(manifest) { return join(this.root, "units", manifest.unit.unitId, "versions", String(manifest.version)); }
-  async list() {
-    const selected = [];
-    for (const unit of await readdir(join(this.root, "units")).catch(() => [])) {
-      const versions = (await readdir(join(this.root, "units", unit, "versions"))).map(Number).sort((a, b) => b - a);
-      for (const version of versions) {
-        try { selected.push((await this.open(unit, version)).manifest); break; } catch { /* Uncommitted/corrupt versions are invisible. */ }
-      }
-    }
-    return selected;
-  }
-  async has(hash, size) { try { const bytes = await readFile(this.object(hash)); return bytes.length === size && await sha256(bytes) === hash; } catch { return false; } }
-  async begin(hash) { await mkdir(join(this.root, "temporary"), { recursive: true }); await writeFile(this.part(hash), ""); }
-  async append(hash, offset, chunk) {
-    if (this.full) throw new SyncError("disk-full", "Espacio insuficiente");
-    assert.equal((await stat(this.part(hash))).size, offset);
-    await appendFile(this.part(hash), chunk);
-  }
-  async finish(hash, size) {
-    const bytes = await readFile(this.part(hash));
-    if (bytes.length !== size || await sha256(bytes) !== hash) throw new SyncError("integrity", "SHA-256 incorrecto");
-    await mkdir(join(this.root, "objects"), { recursive: true });
-    await rename(this.part(hash), this.object(hash));
-  }
-  async discard(hash) { await rm(this.part(hash), { force: true }); }
-  async commit(manifest) {
-    await validateManifest(manifest);
-    for (const resource of manifest.resources) if (!await this.has(resource.download.checksums.sha256, resource.download.sizeBytes)) throw new SyncError("integrity", "Archivo ausente");
-    const directory = this.version(manifest);
-    await mkdir(directory, { recursive: true });
-    const previous = await readFile(join(directory, "manifest.json"), "utf8").catch(() => null);
-    if (previous && canonical(JSON.parse(previous)) !== canonical(manifest)) throw new SyncError("version", "Versión inmutable");
-    await writeFile(join(directory, "manifest.pending"), JSON.stringify(manifest));
-    await rename(join(directory, "manifest.pending"), join(directory, "manifest.json"));
-  }
-  async open(unitId, version) {
-    const manifest = await validateManifest(JSON.parse(await readFile(join(this.root, "units", unitId, "versions", String(version), "manifest.json"), "utf8")));
-    const paths = {};
-    for (const resource of manifest.resources) {
-      assert.ok(await this.has(resource.download.checksums.sha256, resource.download.sizeBytes));
-      paths[resource.resourceId] = this.object(resource.download.checksums.sha256);
-    }
-    return { manifest, paths };
-  }
-}
 async function temporary(t) { const root = await mkdtemp(join(tmpdir(), "ac-offline-")); t.after(() => rm(root, { recursive: true, force: true })); return new DiskCache(root); }
 function source(data, overrides = {}) {
   const calls = [];
@@ -257,4 +209,60 @@ test("descarga HTTP respeta metadata y propaga error de disco, sin reclasificarl
   await assert.rejects(api.download(data.manifest, resource, async () => { throw new SyncError("disk-full", "Sin espacio"); }, new AbortController().signal), { code: "disk-full" });
   const bad = new PublicationApi(async () => "token", async () => new Response("abc", { headers: { "X-Content-SHA256": "wrong" } }));
   await assert.rejects(bad.download(data.manifest, resource, async () => {}, new AbortController().signal), { code: "integrity" });
+});
+
+
+test("archivo grande usa rangos autenticados y verifica SHA-256 antes de activar", async (t) => {
+  const cache = await temporary(t); const data = await fixture();
+  const resource = data.manifest.resources[0];
+  const bytes = new Uint8Array(36633632).fill(117);
+  Object.assign(resource.download, { sizeBytes: bytes.length, checksums: { sha256: await sha256(bytes) } });
+  await seal(data.manifest); data.publication.contentHash = data.manifest.integrity.contentHash;
+  const ranges = []; let tokens = 0;
+  const api = new PublicationApi(async () => { tokens++; return "device-id-token"; }, async (url, init) => {
+    assert.equal(init.headers.Authorization, "Bearer device-id-token");
+    if (url.includes("getActiveClassroomPublication")) return new Response(JSON.stringify({ result: { manifest: data.manifest } }));
+    const id = new URL(url).searchParams.get("resourceId");
+    const current = data.manifest.resources.find(item => item.resourceId === id);
+    const content = id === resource.resourceId ? bytes : data.bytes.get(id);
+    if (init.headers.Range) {
+      ranges.push(init.headers.Range);
+      const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range).map(Number);
+      const part = content.slice(start, end + 1);
+      assert.ok(part.length <= 4 * 1024 * 1024);
+      return new Response(part, { status: 206, headers: { "Content-Length": String(part.length), "Content-Range": `bytes ${start}-${end}/${content.length}`, "X-Content-SHA256": current.download.checksums.sha256 } });
+    }
+    return new Response(content);
+  });
+  await new SyncEngine(cache, api).sync(data.publication);
+  assert.equal(ranges.length, 9); assert.ok(tokens >= 10);
+  const reboot = new DiskCache(cache.root);
+  assert.equal((await reboot.list())[0].version, 1);
+  const local = await openLocalClass(reboot, data.publication.unitId, 1);
+  assert.equal(await sha256(new Uint8Array(await readFile(local.resolveResource(resource.resourceId).path))), resource.download.checksums.sha256);
+});
+
+test("bloque con rango falso, tamaño incorrecto o fallo intermedio no activa versión", async (t) => {
+  for (const mode of ["range", "size", "network"]) {
+    const cache = await temporary(t); const data = await fixture(); const resource = data.manifest.resources[0];
+    const content = new Uint8Array(5 * 1024 * 1024).fill(9);
+    Object.assign(resource.download, { sizeBytes: content.length, checksums: { sha256: await sha256(content) } });
+    await seal(data.manifest); data.publication.contentHash = data.manifest.integrity.contentHash;
+    const api = new PublicationApi(async () => "token", async (url, init) => {
+      if (url.includes("getActiveClassroomPublication")) return new Response(JSON.stringify({ result: { manifest: data.manifest } }));
+      const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(init.headers.Range).map(Number);
+      if (mode === "network" && start > 0) throw new TypeError("Failed to fetch");
+      const bytes = content.slice(start, end + 1 - (mode === "size" ? 1 : 0));
+      return new Response(bytes, { status: 206, headers: { "Content-Range": mode === "range" ? "bytes 0-1/2" : `bytes ${start}-${end}/${content.length}` } });
+    });
+    await assert.rejects(new SyncEngine(cache, api).sync(data.publication));
+    assert.deepEqual(await cache.list(), []);
+  }
+});
+
+test("mensajes de Unit conservan etapa y distinguen caché, integridad y espacio", () => {
+  for (const [code, stage, message] of [["500", "manifest", /obtener el manifest/], ["backend", "download", /descargar un archivo/], ["integrity", "verify", /Archivo corrupto/], ["disk-full", "cache", /Sin espacio disponible/], ["cache", "activate", /guardar la clase local/]]) {
+    const error = new SyncError(code, "technical-secret"); error.stage = stage;
+    assert.match(unitSyncMessage(error), message); assert.doesNotMatch(unitSyncMessage(error), /technical-secret/);
+  }
 });

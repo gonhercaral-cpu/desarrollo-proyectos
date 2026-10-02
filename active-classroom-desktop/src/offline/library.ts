@@ -6,7 +6,7 @@ import { connectionLabel, diagnose } from "./connection";
 import { NativeCache } from "./native-cache";
 import { PublicationApi } from "./remote";
 import { localState, type Manifest, type Publication } from "./manifest";
-import { openLocalClass, SyncEngine, type Progress } from "./sync";
+import { openLocalClass, SyncEngine, unitSyncMessage, type Progress } from "./sync";
 import "./library.css";
 import { ClassroomPlayer } from "../player/ClassroomPlayer";
 import "../player/player.css";
@@ -91,7 +91,14 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         // Reporting is best effort after activation; it cannot invalidate a verified offline class.
         if (!player && !opening) void currentApi.call("reportActiveClassroomDeviceSync", { unitId: publication.unitId, version: publication.version }).catch(() => {});
       }
-    } catch (error) { if (current === epoch) { errors.set(publication.unitId, error instanceof Error ? error.message : String(error)); if (error && typeof error === "object" && "code" in error && ["network", "offline", "backend", "server", "timeout", "auth", "expired", "401", "403"].includes(String(error.code))) { retryPublication = publication; session.reportFailure(error, "publications"); } } }
+    } catch (error) {
+      if (current === epoch) {
+        errors.set(publication.unitId, unitSyncMessage(error));
+        // A failed Unit does not invalidate a successful catalog connection.
+        // Authorization revocation is still handled by api.onDenied.
+        if (error && typeof error === "object" && "code" in error && ["network", "offline", "backend", "server", "timeout", "auth", "expired", "401", "403"].includes(String(error.code))) retryPublication = publication;
+      }
+    }
     finally { if (current === epoch) { downloading = ""; progress = undefined; render(); } }
   }
   async function open(unitId: string): Promise<void> {

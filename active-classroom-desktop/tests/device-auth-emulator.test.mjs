@@ -9,6 +9,12 @@ import { initializeAuth, inMemoryPersistence, connectAuthEmulator, signOut } fro
 import { DeviceSession } from "../src/offline/device-session.ts";
 import { signInDevice, deviceIdToken } from "../src/offline/firebase-session.ts";
 import { PublicationApi } from "../src/offline/remote.ts";
+import { canonical, sha256 } from "../src/offline/manifest.ts";
+import { SyncEngine, openLocalClass } from "../src/offline/sync.ts";
+import { DiskCache } from "./disk-cache.mjs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const require = createRequire(new URL("../../drive/package.json", import.meta.url));
 const admin = require("firebase-admin");
@@ -28,7 +34,8 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
     if (request.auth?.uid !== "test-admin") throw new HttpsError("permission-denied", "Administrador requerido.");
     return { uid: "test-admin", role: "admin", active: true };
   } });
-  const content = Buffer.from("snapshot offline íntegro");
+  // Larger than the 32 MB Functions response limit; each request stays <= 4 MiB.
+  const content = Buffer.alloc(36633632, 117);
   const hash = createHash("sha256").update(content).digest("hex");
   const bucket = fixtures.storage().bucket();
   const frozen = bucket.file(`active-classroom/publications/files/${hash}`);
@@ -36,7 +43,9 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
   const [fileMetadata] = await frozen.getMetadata();
   const manifest = JSON.parse(await readFile(new URL("../../docs/active-classroom-manifest.example.json", import.meta.url), "utf8"));
   manifest.unit.unitId = `auth-${randomBytes(8).toString("hex")}`;
-  Object.assign(manifest.resources[0].download, { path: frozen.name, generation: fileMetadata.generation, sizeBytes: content.length, checksums: { sha256: hash } });
+  for (const resource of manifest.resources) Object.assign(resource.download, { path: frozen.name, generation: fileMetadata.generation, sizeBytes: content.length, checksums: { sha256: hash } });
+  const sealed = Object.fromEntries(Object.entries(manifest).filter(([key]) => !["version", "publishedAt", "integrity"].includes(key)));
+  manifest.integrity.contentHash = await sha256(new TextEncoder().encode(canonical(sealed)));
   await db.doc(`activeClassroomUnits/${manifest.unit.unitId}`).set({ publishedVersion: manifest.version });
   await db.doc(`activeClassroomUnits/${manifest.unit.unitId}/publications/${manifest.version}`).set({ manifest });
   let authenticatedRequests = 0; let force401 = false; let network = true;
@@ -56,6 +65,7 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
   const server = createServer(app); await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const identity = { deviceId: randomBytes(16).toString("hex"), name: "active-test", activated: false, revoked: false };
+  const cacheRoot = await mkdtemp(join(tmpdir(), "ac-auth-sync-"));
   const credential = randomBytes(32).toString("hex"); const clients = [];
   const transport = async (url, init) => {
     if (!network) throw new TypeError("Network unavailable");
@@ -94,6 +104,13 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
     const chunks = []; await reboot.api.download(manifest, manifest.resources[0], async (chunk) => chunks.push(chunk), new AbortController().signal);
     assert.deepEqual(Buffer.concat(chunks), content);
     assert.equal(createHash("sha256").update(Buffer.concat(chunks)).digest("hex"), hash);
+    const cache = new DiskCache(cacheRoot);
+    await new SyncEngine(cache, reboot.api).sync(publication);
+    assert.equal((await cache.list())[0].version, 1);
+    network = false;
+    const reopened = await openLocalClass(new DiskCache(cacheRoot), manifest.unit.unitId, 1);
+    for (const resource of manifest.resources) assert.ok(reopened.resolveResource(resource.resourceId).path);
+    network = true;
     // A draft without a publication never appears in the device catalog.
     const draftId = `draft-${randomBytes(8).toString("hex")}`;
     await db.doc(`activeClassroomUnits/${draftId}`).set({ draft: { name: "Privado" } });
@@ -126,5 +143,6 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
   } finally {
     await Promise.all(clients.map(deleteApp)); await new Promise((resolve) => server.close(resolve));
     await backend.delete(); await fixtures.delete();
+    await rm(cacheRoot, { recursive: true, force: true });
   }
 });

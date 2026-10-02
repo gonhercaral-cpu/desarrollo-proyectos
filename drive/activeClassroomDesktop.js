@@ -1,5 +1,22 @@
 const { HttpsError } = require("firebase-functions/v2/https");
 const { pipeline } = require("node:stream/promises");
+const MAX_DOWNLOAD_CHUNK = 4 * 1024 * 1024;
+
+function downloadRange(header, size) {
+  if (!header) {
+    if (size > MAX_DOWNLOAD_CHUNK) throw new HttpsError("failed-precondition", "El archivo requiere descarga por bloques. Actualiza Active Classroom Desktop.");
+    return null;
+  }
+  const match = /^bytes=(\d+)-(\d+)$/.exec(header);
+  const start = match ? Number(match[1]) : NaN;
+  const end = match ? Number(match[2]) : NaN;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= size || end - start + 1 > MAX_DOWNLOAD_CHUNK) {
+    const error = new HttpsError("invalid-argument", "Rango de descarga inválido.");
+    error.httpStatus = 416;
+    throw error;
+  }
+  return { start, end };
+}
 
 function id(value) {
   if (typeof value !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(value)) throw new HttpsError("invalid-argument", "Identificador inválido.");
@@ -68,21 +85,24 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
   }
   async function file(request, response) {
     response.set("Cache-Control", "private, no-store");
-    response.set("Access-Control-Expose-Headers", "Content-Length, Content-Disposition, X-Content-SHA256");
+    response.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, Content-Disposition, X-Content-SHA256");
     if (request.method !== "GET") return response.status(405).set("Allow", "GET").json({ error: "method-not-allowed" });
     try {
       const profile = await getRequestProfile(request);
       const download = await resolveDownload(profile, request.query);
-      response.set({ "Content-Type": download.mimeType, "Content-Length": String(download.sizeBytes),
+      const range = downloadRange(request.headers.range, download.sizeBytes);
+      response.status(range ? 206 : 200);
+      response.set({ "Content-Type": download.mimeType, "Content-Length": String(range ? range.end - range.start + 1 : download.sizeBytes), "Accept-Ranges": "bytes",
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(download.name)}`,
         "X-Content-SHA256": download.checksums.sha256, "X-Content-Type-Options": "nosniff" });
-      await pipeline(bucket.file(download.path, { generation: download.generation }).createReadStream(), response);
+      if (range) response.set("Content-Range", `bytes ${range.start}-${range.end}/${download.sizeBytes}`);
+      await pipeline(bucket.file(download.path, { generation: download.generation }).createReadStream(range || {}), response);
     } catch (error) {
       if (response.headersSent) { response.destroy(); return; }
       response.removeHeader("Content-Length");
       response.removeHeader("Content-Disposition");
       const code = String(error.code || "internal");
-      const status = { unauthenticated: 401, "permission-denied": 403, "not-found": 404, "invalid-argument": 400, "failed-precondition": 409 }[code]
+      const status = error.httpStatus || { unauthenticated: 401, "permission-denied": 403, "not-found": 404, "invalid-argument": 400, "failed-precondition": 409 }[code]
         || (code.startsWith("auth/") ? 401 : [403, 404].includes(Number(code)) ? Number(code) : 500);
       response.status(status).json({ error: status === 500 ? "internal" : code, message: status === 500 ? "No se pudo descargar el archivo publicado." : error.message });
     }
@@ -90,4 +110,4 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
   return { list, get, file, resolveDownload };
 }
 
-module.exports = { createDesktopHandlers };
+module.exports = { createDesktopHandlers, downloadRange, MAX_DOWNLOAD_CHUNK };

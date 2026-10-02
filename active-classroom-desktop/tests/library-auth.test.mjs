@@ -42,6 +42,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
       Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (_url, init) => {
         assert.equal(firebaseReady, true, "No consultar con un marcador de activación sin ID token");
         assert.equal(init.headers.Authorization, "Bearer firebase-id-token"); calls++;
+        if (String(_url).includes("getActiveClassroomPublication")) return new Response("", { status: 503 });
         return new Response(JSON.stringify({ result: { publications: available, nextCursor: null, device: { deviceId: identity.deviceId, displayName: label } } }), { status });
       } });
       globalThis.classroomHarness = {
@@ -77,6 +78,15 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
         await settle(() => root.textContent.includes("No hay clases publicadas"));
         assert.match(root.textContent, /Actualizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
         assert.match(root.textContent, /Aula Audiovisual/);
+        available = [{ ...publication, unitId: "new-unit" }];
+        root.querySelector("[data-refresh]").click(); await settle(() => root.querySelector('[data-sync="new-unit"]'));
+        assert.equal(root.querySelector('[data-open="new-unit"]').disabled, true);
+        root.querySelector('[data-sync="new-unit"]').click();
+        await settle(() => root.textContent.includes("No se pudo obtener el manifest"));
+        assert.match(root.textContent, /Actualizado/);
+        assert.doesNotMatch(root.textContent, /Servidor inaccesible|Modo offline/);
+        assert.equal(root.querySelector('[data-open="new-unit"]').disabled, true);
+        assert.equal(root.querySelector('[data-open="unit1"]').disabled, false);
       } finally { dom.window.close(); }
     });
   } finally {

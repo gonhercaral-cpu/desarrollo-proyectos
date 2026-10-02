@@ -64,7 +64,7 @@ Authorization: Bearer <FIREBASE_ID_TOKEN>
 
 Devuelve bytes originales o exportados de esa publicación. Headers: `Content-Type`, `Content-Length`, `Content-Disposition`, `X-Content-SHA256`, `Cache-Control: private, no-store`. Resuelve la ruta y generación exclusivamente desde el manifest servidor; no acepta una ruta arbitraria, URL, ni ID Drive como destino.
 
-Desktop recorre `manifest.resources` en orden, descarga cada `resourceId`, comprueba tamaño y SHA-256 y solo activa localmente la versión cuando tiene todos los archivos. Presentación: `mainPresentationId`; generales: `generalResourceIds`; por slide: `slides[index].resourceIds`. `download.path` es identidad interna, no URL pública ni permiso para usar Storage directamente. Descarga completa, sin contrato de Range/reanudación en este MVP.
+Desktop recorre `manifest.resources` en orden, descarga cada `resourceId`, comprueba tamaño y SHA-256 y solo activa localmente la versión cuando tiene todos los archivos. Presentación: `mainPresentationId`; generales: `generalResourceIds`; por slide: `slides[index].resourceIds`. `download.path` es identidad interna, no URL pública ni permiso para usar Storage directamente. Desktop 0.1.3 descarga archivos grandes con rangos de hasta 4 MiB; un reintento comienza un temporal nuevo y conserva la última versión activa.
 
 El endpoint admite CORS para clientes Desktop/web y expone headers de checksum y descarga; autorización sigue exigiendo Bearer. El prototipo Tauri existente tiene CSP limitada a su servidor local: su futura integración deberá permitir Firebase o usar HTTP nativo. Este hito no cambia configuración ni código Desktop.
 
@@ -100,3 +100,25 @@ Deploy de reglas protege documentos y snapshots; luego publicar una Unit de prue
 - Exportación nativa Google conserva el límite de Drive `files.export` (10 MB; documentado también en tipos del SDK instalado). Subir un PPTX/PDF binario es alternativa cuando la exportación nativa exceda ese límite.
 - No extracción automática de páginas PDF: cantidad/orden manuales, con `pageNumber`. Linux tendrá que interpretar PDF o disponer de un renderizador para PPT/PPTX; no hay slides visuales convertidas.
 - Pruebas de Drive usan respuestas/streams controlados y ACL existentes; no acreditan acceso real al tenant. Hace falta prueba tras despliegue con archivos reales y perfil de salón. No impide desarrollar Linux contra el contrato/emuladores.
+# Descarga por bloques (Desktop 0.1.3)
+
+`activeClassroomPublicationFile` conserva autenticación Firebase ID token,
+validación del dispositivo/versión y referencia congelada por generación.
+Archivos mayores de 4 MiB requieren `Range: bytes=inicio-fin` (un rango,
+máximo 4 MiB por solicitud). Cada bloque devuelve HTTP 206, `Content-Range`,
+`Content-Length` del bloque y `X-Content-SHA256` del archivo completo.
+Estos headers están expuestos por CORS. Rangos inválidos devuelven 416;
+descarga completa de archivos grandes devuelve 409 para evitar el límite
+de respuesta de Functions. Archivos pequeños conservan HTTP 200.
+
+Desktop concatena bloques en el temporal existente, comprueba tamaño y
+SHA-256 completo mediante Rust antes de activar el manifest local. Revalida
+autorización en cada bloque; nunca entrega una URL pública ni un token Storage.
+No cambia manifests ni publicaciones existentes.
+
+Diagnóstico seguro: `LIST_OK`, `MANIFEST_OK`, `MANIFEST_401/403/404/5XX`,
+`MANIFEST_ERROR`, `DOWNLOAD_START`, `DOWNLOAD_HTTP_xxx`, `DOWNLOAD_ERROR`,
+`HASH_MISMATCH`, `CACHE_WRITE_ERROR`, `VERSION_ACTIVATED`.
+Solo incluye operación, versión, HTTP y número de bytes; omite credenciales,
+identidades, nombres, URLs y cuerpos. Un error de una Unit no invalida un
+listado exitoso ni bloquea otras clases locales.

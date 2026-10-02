@@ -1,6 +1,8 @@
 import { SyncError, validHash, validId, type Publication, type Manifest, type PublishedResource } from "./manifest.ts";
 import type { DeviceLabel } from "./device-label.ts";
 import { connectionError, diagnose } from "./connection.ts";
+import { syncDiagnostic } from "./sync-diagnostics.ts";
+export const DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 
 export const API_BASE = "https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net";
 type TokenProvider = (force: boolean) => Promise<string>;
@@ -41,6 +43,11 @@ export class PublicationApi {
           controller.signal.throwIfAborted();
           const response = await this.fetcher(`${API_BASE}/${endpoint}`, { ...init, signal: controller.signal, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
           httpStatus = response.status;
+          if (endpointName === "activeClassroomPublicationFile") syncDiagnostic(`DOWNLOAD_HTTP_${response.status}`, { httpStatus: response.status });
+          if (endpointName === "getActiveClassroomPublication" && !response.ok) {
+            const status = response.status;
+            syncDiagnostic(status === 401 ? "MANIFEST_401" : status === 403 ? "MANIFEST_403" : status === 404 ? "MANIFEST_404" : status >= 500 ? "MANIFEST_5XX" : "MANIFEST_ERROR", { httpStatus: status });
+          }
           if (response.status === 401 && attempt === 0) { diagnose("publications", "refresh-id-token", "401", { endpoint: endpointName, httpStatus }); await response.body?.cancel(); continue; }
           if (!response.ok) {
             await response.body?.cancel();
@@ -84,6 +91,7 @@ export class PublicationApi {
       if (cursor !== null && (!validId(cursor) || visited.has(cursor))) throw this.invalidCatalog();
       if (cursor) visited.add(cursor);
     } while (cursor);
+    syncDiagnostic("LIST_OK");
     return [...result.values()];
   }
   private invalidCatalog(): SyncError {
@@ -101,23 +109,37 @@ export class PublicationApi {
   }
   async download(manifest: Manifest, resource: PublishedResource, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void> {
     const params = new URLSearchParams({ unitId: manifest.unit.unitId, version: String(manifest.version), resourceId: resource.resourceId });
-    await this.request(`activeClassroomPublicationFile?${params}`, {}, async (response, activeSignal) => {
-      if (!response.body) throw new SyncError("network", "Respuesta sin archivo.");
-      const length = response.headers.get("Content-Length");
-      const hash = response.headers.get("X-Content-SHA256");
-      if ((length !== null && Number(length) !== resource.download.sizeBytes) || (hash !== null && hash !== resource.download.checksums.sha256)) throw new SyncError("integrity", "El archivo entregado no coincide con el manifest.");
-      const reader = response.body.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          activeSignal.throwIfAborted();
-          for (let offset = 0; offset < value.length; offset += 65536) {
+    const size = resource.download.sizeBytes;
+    syncDiagnostic("DOWNLOAD_START", { bytes: size });
+    for (let start = 0; start < size || (size === 0 && start === 0); start += DOWNLOAD_CHUNK_BYTES) {
+      const ranged = size > DOWNLOAD_CHUNK_BYTES;
+      const end = Math.min(start + DOWNLOAD_CHUNK_BYTES, size) - 1;
+      const expected = ranged ? end - start + 1 : size;
+      await this.request(`activeClassroomPublicationFile?${params}`, ranged ? { headers: { Range: `bytes=${start}-${end}` } } : {}, async (response, activeSignal) => {
+        if (!response.body) throw new SyncError("response", "Respuesta sin archivo.");
+        if (ranged && (response.status !== 206 || response.headers.get("Content-Range") !== `bytes ${start}-${end}/${size}`)) throw new SyncError("response", "El servidor no permite descargar este archivo por bloques. Solicita actualizar el backend.");
+        const length = response.headers.get("Content-Length");
+        const hash = response.headers.get("X-Content-SHA256");
+        if ((length !== null && Number(length) !== expected) || (hash !== null && hash !== resource.download.checksums.sha256)) throw new SyncError("integrity", "El archivo entregado no coincide con el manifest.");
+        const reader = response.body.getReader();
+        let received = 0;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            received += value.length;
+            if (received > expected) throw new SyncError("integrity", "Bloque de archivo demasiado grande.");
             activeSignal.throwIfAborted();
-            await write(value.subarray(offset, offset + 65536));
+            for (let offset = 0; offset < value.length; offset += 65536) {
+              activeSignal.throwIfAborted();
+              await write(value.subarray(offset, offset + 65536));
+            }
           }
-        }
-      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-    }, signal);
+          if (received !== expected) throw new SyncError("integrity", "Archivo incompleto. Reintenta la descarga.");
+        } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+      }, signal);
+      if (!ranged) break;
+    }
   }
 }
+

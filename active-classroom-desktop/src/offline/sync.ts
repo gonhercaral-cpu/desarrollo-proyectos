@@ -1,4 +1,16 @@
 import { SyncError, validateManifest, type Manifest, type Publication, type PublishedResource } from "./manifest.ts";
+import { syncDiagnostic } from "./sync-diagnostics.ts";
+
+export function unitSyncMessage(error: unknown): string {
+  const failure = error instanceof SyncError ? error : undefined;
+  if (failure?.code === "cancelled") return "Descarga cancelada. La versión local anterior se conserva.";
+  if (failure?.code === "disk-full") return "Sin espacio disponible. Libera espacio y reintenta.";
+  if (failure?.code === "integrity") return "Archivo corrupto o incompleto. Reintenta la descarga.";
+  if (failure?.stage === "cache" || failure?.stage === "activate") return "No se pudo guardar la clase local. Revisa espacio y permisos.";
+  if (failure?.stage === "manifest" || failure?.code === "manifest") return "No se pudo obtener el manifest. Reintenta o solicita revisión de la publicación.";
+  if (failure?.stage === "download") return "No se pudo descargar un archivo. Reintenta o solicita asistencia.";
+  return failure?.message || "No se pudo sincronizar esta clase. Reintenta.";
+}
 
 export interface CacheStore {
   list(): Promise<Manifest[]>;
@@ -20,6 +32,15 @@ export class SyncEngine {
   remote: RemoteStore;
   active?: { unitId: string; controller: AbortController; promise: Promise<Manifest> };
   constructor(cache: CacheStore, remote: RemoteStore) { this.cache = cache; this.remote = remote; }
+  private async cached<T>(operation: string, run: () => Promise<T>): Promise<T> {
+    try { return await run(); }
+    catch (error) {
+      const failure = error instanceof SyncError ? error : new SyncError("cache", "No se pudo acceder al caché local.");
+      failure.stage = operation === "commit" ? "activate" : "cache";
+      syncDiagnostic(failure.code === "integrity" ? "HASH_MISMATCH" : "CACHE_WRITE_ERROR", { operation });
+      throw failure;
+    }
+  }
   cancel(): void { this.active?.controller.abort(); }
   sync(publication: Publication, progress: (value: Progress) => void = () => {}): Promise<Manifest> {
     if (this.active) return this.active.unitId === publication.unitId ? this.active.promise : Promise.reject(new SyncError("busy", "Termina o cancela la descarga actual."));
@@ -30,10 +51,19 @@ export class SyncEngine {
   }
   async perform(publication: Publication, signal: AbortSignal, progress: (value: Progress) => void): Promise<Manifest> {
     const checkCancelled = () => { if (signal.aborted) throw new SyncError("cancelled", "Descarga cancelada. Versión anterior conservada."); };
-    const manifest = await validateManifest(await this.remote.manifest(publication, signal));
-    if (manifest.unit.unitId !== publication.unitId || manifest.version !== publication.version || manifest.integrity.contentHash !== publication.contentHash) throw new SyncError("manifest", "La publicación recibida no coincide con la seleccionada.");
+    let manifest: Manifest;
+    try {
+      manifest = await validateManifest(await this.remote.manifest(publication, signal));
+      if (manifest.unit.unitId !== publication.unitId || manifest.version !== publication.version || manifest.integrity.contentHash !== publication.contentHash) throw new SyncError("manifest", "La publicación recibida no coincide con la seleccionada.");
+      syncDiagnostic("MANIFEST_OK", { version: manifest.version });
+    } catch (error) {
+      const failure = error instanceof SyncError ? error : new SyncError("manifest", "No se pudo validar el manifest.");
+      failure.stage = "manifest";
+      syncDiagnostic("MANIFEST_ERROR");
+      throw failure;
+    }
     checkCancelled();
-    const existing = (await this.cache.list()).find((item) => item.unit.unitId === publication.unitId);
+    const existing = (await this.cached("list", () => this.cache.list())).find((item) => item.unit.unitId === publication.unitId);
     if (existing && existing.version > manifest.version) throw new SyncError("version", "Ya tienes una versión local más reciente. Actualiza el catálogo.");
     const unique = [...new Map(manifest.resources.map((resource) => [resource.download.checksums.sha256, resource])).values()];
     const total = unique.reduce((sum, resource) => sum + resource.download.sizeBytes, 0);
@@ -42,28 +72,36 @@ export class SyncEngine {
       checkCancelled();
       const hash = resource.download.checksums.sha256;
       const size = resource.download.sizeBytes;
-      if (await this.cache.has(hash, size)) { bytes += size; progress({ unitId: publication.unitId, bytes, total, fileName: resource.name, phase: "verify" }); continue; }
+      if (await this.cached("has", () => this.cache.has(hash, size))) { bytes += size; progress({ unitId: publication.unitId, bytes, total, fileName: resource.name, phase: "verify" }); continue; }
       let received = 0;
       try {
-        await this.cache.begin(hash);
+        await this.cached("begin", () => this.cache.begin(hash));
         await this.remote.download(manifest, resource, async (chunk) => {
           checkCancelled();
           if (received + chunk.length > size) throw new SyncError("integrity", "Tamaño descargado superior al publicado.");
-          await this.cache.append(hash, received, chunk);
+          await this.cached("append", () => this.cache.append(hash, received, chunk));
           received += chunk.length;
           progress({ unitId: publication.unitId, bytes: bytes + received, total, fileName: resource.name, phase: "download" });
         }, signal);
         checkCancelled();
         if (received !== size) throw new SyncError("integrity", "Archivo incompleto. Reintenta la descarga.");
         progress({ unitId: publication.unitId, bytes: bytes + received, total, fileName: resource.name, phase: "verify" });
-        await this.cache.finish(hash, size);
+        await this.cached("finish", () => this.cache.finish(hash, size));
         bytes += received;
-      } catch (error) { await this.cache.discard(hash).catch(() => {}); throw error; }
+      } catch (error) {
+        const failure = error instanceof SyncError ? error : new SyncError("download", "No se pudo descargar un archivo.");
+        if (!failure.stage) failure.stage = failure.code === "integrity" ? "verify" : "download";
+        if (failure.code === "integrity") syncDiagnostic("HASH_MISMATCH");
+        else if (failure.stage === "download") syncDiagnostic("DOWNLOAD_ERROR");
+        await this.cache.discard(hash).catch(() => {});
+        throw failure;
+      }
     }
     checkCancelled();
     progress({ unitId: publication.unitId, bytes, total, fileName: "", phase: "activate" });
     // Commit is the atomic boundary; cancellation after it begins cannot revoke a completed version.
-    await this.cache.commit(manifest);
+    await this.cached("commit", () => this.cache.commit(manifest));
+    syncDiagnostic("VERSION_ACTIVATED", { version: manifest.version });
     return manifest;
   }
 }

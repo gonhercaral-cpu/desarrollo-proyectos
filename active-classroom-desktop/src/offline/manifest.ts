@@ -22,6 +22,7 @@ export interface Publication {
 }
 export class SyncError extends Error {
   code: string;
+  stage?: "manifest" | "download" | "verify" | "cache" | "activate";
   constructor(code: string, message: string) { super(message); this.code = code; }
 }
 export const validId = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);

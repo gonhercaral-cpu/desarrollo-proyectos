@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { createDeviceHandlers, isDevice, DEVICE_PREFIX } = require("../drive/activeClassroomDevices");
-const { createDesktopHandlers } = require("../drive/activeClassroomDesktop");
+const { createDesktopHandlers, downloadRange, MAX_DOWNLOAD_CHUNK } = require("../drive/activeClassroomDesktop");
 const example = require("../docs/active-classroom-manifest.example.json");
 const { guardClassroomDevices } = require("../functions/deviceAccess");
 
@@ -177,4 +177,13 @@ test("conexión y sincronización son metadata privada del equipo sin editar pub
   assert.equal(listed.appVersion, "0.1.0"); assert.equal(listed.lastSeenAt, listed.lastSyncAt); assert.equal(listed.lastSyncVersion, example.version);
   assert.deepEqual(f.db.records.get(path), { manifest: example });
   await f.devices.revoke(f.adminRequest({ deviceId: f.proof.deviceId })); await assert.rejects(f.devices.reportSync({ auth, data }), { code: "permission-denied" });
+});
+
+test("descarga por bloques limita cada respuesta y rechaza rangos inválidos", () => {
+  assert.equal(downloadRange(undefined, 10), null);
+  assert.deepEqual(downloadRange(`bytes=0-${MAX_DOWNLOAD_CHUNK - 1}`, 36633632), { start: 0, end: MAX_DOWNLOAD_CHUNK - 1 });
+  for (const header of ["bytes=0-", "bytes=-10", "bytes=0-1,2-3", "bytes=10-9", "bytes=0-36633631", "bytes=36633632-36633633"]) {
+    assert.throws(() => downloadRange(header, 36633632), (error) => error.httpStatus === 416);
+  }
+  assert.throws(() => downloadRange(undefined, 36633632), { code: "failed-precondition" });
 });
