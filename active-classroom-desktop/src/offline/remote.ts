@@ -34,7 +34,7 @@ export class PublicationApi {
           if (response.status === 401 && attempt === 0) { diagnose("publications", "refresh-id-token", "401"); await response.body?.cancel(); continue; }
           if (!response.ok) {
             await response.body?.cancel();
-            if (response.status === 403) await this.onDenied?.();
+            if (response.status === 401 || response.status === 403) await this.onDenied?.();
             throw new SyncError(String(response.status), response.status === 401 ? "No se pudo renovar la conexión del equipo. Reintenta." : response.status === 403 ? "El equipo no tiene autorización para esta publicación." : response.status === 404 ? "Publicación o archivo no disponible." : `Error del servidor (${response.status}). Reintenta.`);
           }
           return await consume(response, controller.signal);

@@ -54,6 +54,11 @@ export class DeviceSession {
     this.pending = this.exchange().finally(() => { this.pending = undefined; });
     return this.pending;
   }
+  async revalidateAccess(): Promise<void> {
+    await this.connect();
+    if (this.state.phase === "revoked") throw new SyncError("403", "La autorización de este equipo fue revocada.");
+    if (this.state.phase !== "ready") throw new SyncError("not-activated", "Este equipo necesita activarse.");
+  }
   private async exchange(): Promise<void> {
     if (!this.state.identity) return;
     let stage: ConnectionStage = "identity";
@@ -65,6 +70,7 @@ export class DeviceSession {
       if (response.status === "revoked") {
         // Block in memory immediately even if the keyring cannot persist this marker.
         this.signedIn = false;
+        this.failure = new SyncError("403", "La autorización de este equipo fue revocada.");
         diagnose(stage, "revoked", "403");
         this.update({ phase: "revoked", online: true, issue: "403", code: undefined, identity: { ...this.state.identity, activated: false, revoked: true }, message: "Este equipo necesita activarse. Su autorización fue revocada." });
         await this.dependencies.mark("revoked");

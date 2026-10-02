@@ -69,7 +69,7 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
       signOut: () => signOut(auth), saveLabel: async ({ displayName }) => { identity.displayName = displayName; },
     }, () => {});
     const api = new PublicationApi((force) => session.token(force), transport);
-    api.onDevice = (label) => session.receiveLabel(label); api.onDenied = () => session.connect();
+    api.onDevice = (label) => session.receiveLabel(label); api.onDenied = () => session.revalidateAccess();
     return { session, api, auth };
   };
   try {

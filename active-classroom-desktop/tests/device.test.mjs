@@ -18,7 +18,7 @@ function setup(activated = false) {
     mark: async (action) => { Object.assign(stored, { activated: action === "activated", revoked: action === "revoked" }); return { ...stored }; },
     exchange: async () => { exchanges++; if (disconnected) throw new Error("network"); return response; },
     signIn: async (_token, owner) => { assert.equal(owner, `ac-device-${stored.deviceId}`); signIns++; expired = false; },
-    token: async () => { if (expired) throw new Error("auth/user-token-expired"); return "id-token"; },
+    token: async () => { if (expired) throw Object.assign(new Error("Expired"), { code: "auth/user-token-expired" }); return "id-token"; },
     signOut: async () => {},
     saveLabel: async (label) => { stored.displayName = label.displayName; },
   };
@@ -84,6 +84,15 @@ test("credencial local ausente se distingue de fallo del servidor", async () => 
   const f = setup(true); f.authorize(); f.dependencies.proof = async () => { throw new Error("missing secure credential"); };
   await f.session.start(true);
   assert.equal(f.session.state.issue, "credential"); assert.equal(f.exchanges(), 0); assert.equal(f.stored.activated, true);
+});
+
+test("401 persistente comprueba registro y detecta revocación sin esperar reintento periódico", async () => {
+  const f = setup(true); f.authorize(); await f.session.start(true); f.revoke();
+  let calls = 0;
+  const api = new PublicationApi((force) => f.session.token(force), async () => { calls++; return new Response("", { status: 401 }); });
+  api.onDenied = () => f.session.revalidateAccess();
+  await assert.rejects(api.list(), { code: "403" });
+  assert.equal(calls, 2); assert.equal(f.session.state.phase, "revoked"); assert.equal(f.stored.revoked, true);
 });
 
 test("activación recibe alias, conserva hostname y reinicio offline conserva último nombre", async () => {
