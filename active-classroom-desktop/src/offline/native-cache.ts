@@ -13,6 +13,7 @@ export class NativeCache implements CacheStore {
     }
   }
   list() { return this.call<Manifest[]>("list"); }
+  adoptLegacy() { return this.call<void>("adopt"); }
   has(hash: string, size: number) { return this.call<boolean>("has", { hash, size }); }
   begin(hash: string) { return this.call<void>("begin", { hash }); }
   append(hash: string, offset: number, chunk: Uint8Array) { return this.call<void>("append", { hash, offset, chunk: Array.from(chunk) }); }

@@ -180,6 +180,43 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
     }
 }
 
+// Adopt verified publications from the previous email-based cache without
+// deleting originals or downloading the same objects again. The format stays v1.
+fn adopt_legacy(root: &Path) -> Result<Value, String> {
+    execute(root, "list", Value::Null)?;
+    let marker = root.join("legacy-adopted");
+    if marker.exists() { return Ok(Value::Null); }
+    let users = root.parent().ok_or("cache: Ruta inválida")?;
+    for entry in fs::read_dir(users).map_err(io_error)?.flatten() {
+        let source = entry.path();
+        if source == root || !entry.file_type().map_err(io_error)?.is_dir() { continue; }
+        let manifests = execute(&source, "list", Value::Null)?;
+        for manifest in manifests.as_array().ok_or("cache: Lista inválida")? {
+            let directory = version_dir(root, text(&manifest["unit"], "unitId")?, manifest["version"].as_u64().unwrap())?;
+            if directory.join("manifest.json").exists() { continue; }
+            for resource in manifest["resources"].as_array().unwrap() {
+                let hash = text(&resource["download"]["checksums"], "sha256")?;
+                let size = resource["download"]["sizeBytes"].as_u64().unwrap();
+                let target = root.join("objects").join(hash);
+                if !verified(&target, hash, size)? {
+                    let temporary = root.join("temporary").join(format!("{hash}.adopt"));
+                    if temporary.exists() { fs::remove_file(&temporary).map_err(io_error)?; }
+                    if fs::hard_link(source.join("objects").join(hash), &temporary).is_err() {
+                        fs::copy(source.join("objects").join(hash), &temporary).map_err(io_error)?;
+                    }
+                    if !verified(&temporary, hash, size)? { return Err("integrity: Caché anterior dañado".into()); }
+                    fs::rename(temporary, target).map_err(io_error)?;
+                    sync_directory(&root.join("objects"))?;
+                }
+            }
+            execute(root, "commit", manifest.clone())?;
+        }
+    }
+    write_synced(&marker, b"1")?;
+    sync_directory(root)?;
+    Ok(Value::Null)
+}
+
 #[tauri::command]
 pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow, gate: tauri::State<'_, CacheGate>, owner: String, action: String, data: Value) -> Result<Value, String> {
     if window.label() != "teacher" || owner.is_empty() || owner.len() > 200 { return Err("cache: Sesión local inválida".into()); }
@@ -187,6 +224,10 @@ pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow
     let lock = gate.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().map_err(|_| "cache: Caché ocupado")?;
+        if action == "adopt" {
+            if !crate::device_identity::authorized_owner(&owner)? { return Err("cache: Equipo no activado".into()); }
+            return adopt_legacy(&root);
+        }
         execute(&root, &action, data)
     }).await.map_err(|e| e.to_string())?
 }
@@ -231,6 +272,18 @@ mod tests {
         assert_eq!(execute(&root, "list", json!({})).unwrap(), json!([]));
         execute(&root, "finish", json!({"hash": hash, "size": 7})).unwrap();
         execute(&root, "commit", manifest.clone()).unwrap();
+        // Isolate adoption from unrelated temporary directories.
+        let migration = root.join("migration");
+        let legacy = migration.join("legacy");
+        let device = migration.join("device");
+        fs::create_dir_all(legacy.join("objects")).unwrap();
+        fs::copy(root.join("objects").join(&hash), legacy.join("objects").join(&hash)).unwrap();
+        execute(&legacy, "commit", manifest.clone()).unwrap();
+        adopt_legacy(&device).unwrap();
+        assert_eq!(execute(&device, "list", Value::Null).unwrap()[0], manifest);
+        assert!(legacy.join("objects").join(&hash).exists());
+        adopt_legacy(&device).unwrap();
+        assert_eq!(execute(&device, "list", Value::Null).unwrap().as_array().unwrap().len(), 1);
         assert_eq!(execute(&root, "list", json!({})).unwrap()[0]["version"], 1);
         let opened = execute(&root, "open", json!({"unitId": manifest["unit"]["unitId"], "version": 1})).unwrap();
         assert_eq!(opened["manifest"], manifest);

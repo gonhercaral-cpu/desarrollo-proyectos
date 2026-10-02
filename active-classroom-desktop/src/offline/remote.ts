@@ -6,6 +6,7 @@ export class PublicationApi {
   token: TokenProvider;
   fetcher: typeof fetch;
   timeout: number;
+  onDenied?: () => Promise<void>;
   constructor(token: TokenProvider, fetcher: typeof fetch = fetch, timeout = 540000) { this.token = token; this.fetcher = fetcher; this.timeout = timeout; }
 
   async request<T>(endpoint: string, init: RequestInit, consume: (response: Response, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -30,7 +31,8 @@ export class PublicationApi {
           if (response.status === 401 && attempt === 0) { await response.body?.cancel(); continue; }
           if (!response.ok) {
             await response.body?.cancel();
-            throw new SyncError(String(response.status), response.status === 401 ? "Sesión expirada. Vuelve a iniciar sesión." : response.status === 403 ? "Tu cuenta no tiene permiso para este archivo o publicación." : response.status === 404 ? "Publicación o archivo no disponible." : `Error del servidor (${response.status}). Reintenta.`);
+            if (response.status === 403) await this.onDenied?.();
+            throw new SyncError(String(response.status), response.status === 401 ? "No se pudo renovar la conexión del equipo. Reintenta." : response.status === 403 ? "El equipo no tiene autorización para esta publicación." : response.status === 404 ? "Publicación o archivo no disponible." : `Error del servidor (${response.status}). Reintenta.`);
           }
           return await consume(response, controller.signal);
         }
@@ -39,7 +41,7 @@ export class PublicationApi {
     } catch (error) {
       if (error instanceof SyncError) throw error;
       if (controller.signal.aborted) throw new SyncError(timedOut ? "timeout" : "cancelled", timedOut ? "Tiempo agotado. Reintenta." : "Descarga cancelada.");
-      if (error instanceof Error && "code" in error && String(error.code).startsWith("auth/")) throw new SyncError("auth", "No se pudo renovar la sesión. Conecta Internet o vuelve a iniciar sesión.");
+      if (error instanceof Error && "code" in error && String(error.code).startsWith("auth/")) throw new SyncError("auth", "No se pudo renovar la conexión del equipo. Las clases locales se conservan.");
       throw new SyncError("network", "Sin conexión o conexión interrumpida. Tu clase local se conserva.");
     } finally {
       clearTimeout(timer); signal?.removeEventListener("abort", cancel); controller.signal.removeEventListener("abort", rejectAbort); controller.abort();

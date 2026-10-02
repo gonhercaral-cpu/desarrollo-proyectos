@@ -791,6 +791,67 @@ describe("roles y perfiles", () => {
 });
 
 describe("Active Classroom", () => {
+  it("equipo no accede directamente a perfiles, borradores, publicaciones, registro ni Storage", async () => {
+    const uid = `ac-device-${"a".repeat(32)}`;
+    const claimed = testEnv.authenticatedContext(uid, { activeClassroomDevice: true, deviceId: "a".repeat(32), deviceGeneration: 1 });
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      // Even an accidentally created administrative profile cannot elevate a device.
+      await setDoc(doc(context.firestore(), "users", uid), { role: "admin", active: true });
+      await setDoc(doc(context.firestore(), "activeClassroomUnits", "device-unit"), { draftRevision: 1 });
+      await setDoc(doc(context.firestore(), "activeClassroomUnits/device-unit/publications/1"), { manifest: {} });
+      await context.storage().ref("active-classroom/publications/files/device-test").putString("pdf", "raw", { contentType: "application/pdf" });
+    });
+    for (const path of ["users/admin", `users/${uid}`, "activeClassroomUnits/device-unit", "activeClassroomUnits/device-unit/publications/1", "activeClassroomDevices/test", "activeClassroomDeviceCodes/ABC", "projects/owned-project", "driveShares/test"]) {
+      await assertFails(getDoc(doc(claimed.firestore(), path)));
+      await assertFails(setDoc(doc(claimed.firestore(), path), { name: "forged" }));
+    }
+    await assertFails(claimed.storage().ref("active-classroom/publications/files/device-test").getMetadata());
+    await assertFails(claimed.storage().ref("active-classroom/resources/forged/a.pdf").putString("pdf", "raw", { contentType: "application/pdf" }));
+  });
+  it("borradores solo admin; publicaciones legibles por perfiles activos e inmutables para todos", async () => {
+    const unitPath = "activeClassroomUnits/editor-unit";
+    const publicationPath = `${unitPath}/publications/1`;
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), unitPath), { draftRevision: 1, publishedVersion: 1 });
+      await setDoc(doc(context.firestore(), publicationPath), { version: 1, manifest: { schemaVersion: 2 } });
+    });
+    await assertSucceeds(getDoc(doc(auth("admin"), unitPath)));
+    await assertFails(getDoc(doc(auth("collab"), unitPath)));
+    for (const uid of ["admin", "collab", "requester"]) {
+      await assertSucceeds(getDoc(doc(auth(uid), publicationPath)));
+      await assertFails(setDoc(doc(auth(uid), publicationPath), { version: 2 }));
+      await assertFails(deleteDoc(doc(auth(uid), publicationPath)));
+      await assertFails(updateDoc(doc(auth(uid), unitPath), { draftRevision: 2 }));
+    }
+    await assertFails(getDoc(doc(auth("inactive"), publicationPath)));
+    await assertFails(getDoc(doc(unauth(), publicationPath)));
+  });
+  it("impide borrar originales retenidos y acceder directamente a snapshots privados", async () => {
+    const resourceId = "retained-original";
+    const path = `active-classroom/resources/${resourceId}/guia.pdf`;
+    const frozenPath = `active-classroom/publications/files/${"a".repeat(64)}`;
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "activeClassroomResources", resourceId), validActiveClassroomResource(resourceId, { retainedByPublication: true }));
+      await context.storage().ref(path).putString("pdf", "raw", { contentType: "application/pdf" });
+      await context.storage().ref(frozenPath).putString("pdf", "raw", { contentType: "application/pdf" });
+    });
+    await assertFails(deleteDoc(doc(auth("admin"), "activeClassroomResources", resourceId)));
+    await assertFails(updateDoc(doc(auth("admin"), "activeClassroomResources", resourceId), { retainedByPublication: false }));
+    await assertFails(storageAuth("admin").ref(path).delete());
+    for (const uid of ["admin", "collab", "inactive"]) {
+      await assertFails(storageAuth(uid).ref(frozenPath).getMetadata());
+      await assertFails(storageAuth(uid).ref(frozenPath).delete());
+      await assertFails(storageAuth(uid).ref(frozenPath).putString("replace"));
+    }
+  });
+  it("carpeta con editor no admite cambios directos ni borrado", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "activeClassroomUnits", "editor-unit"), { draftRevision: 1 });
+      await setDoc(doc(context.firestore(), "activeClassroomFolders", "editor-unit"), validActiveClassroomFolder({ kind: "unit", parentId: "level-1" }));
+    });
+    await assertFails(deleteDoc(doc(auth("admin"), "activeClassroomFolders", "editor-unit")));
+    await assertFails(updateDoc(doc(auth("admin"), "activeClassroomFolders", "editor-unit"), { name: "Cambio", updatedAt: serverTimestamp(), updatedByUid: "admin" }));
+  });
   it("referencias Drive: creación solo backend, metadata inmutable y publicación admin", async () => {
     const payload = {
       ...validActiveClassroomResource("drive-reference"),

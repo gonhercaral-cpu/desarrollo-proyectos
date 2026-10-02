@@ -33,6 +33,7 @@
     }
   },
   "bundle": {
+    "linux": { "deb": { "depends": ["libsecret-tools", "libglib2.0-bin", "gnome-keyring"] } },
     "active": true,
     "targets": "all",
     "icon": [

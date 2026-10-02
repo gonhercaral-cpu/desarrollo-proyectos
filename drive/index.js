@@ -8,6 +8,9 @@ const { randomUUID } = require("crypto");
 const { google } = require("googleapis");
 const { createImportDriveReference } = require("./activeClassroom");
 const { createUnitHandlers } = require("./activeClassroomUnit");
+const { createPublicationFiles } = require("./activeClassroomFiles");
+const { createDesktopHandlers } = require("./activeClassroomDesktop");
+const { createDeviceHandlers, isDevice, DEVICE_PREFIX } = require("./activeClassroomDevices");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 const {
@@ -104,6 +107,9 @@ async function getUserProfile(uid) {
     throw new HttpsError("unauthenticated", "Debes iniciar sesion.");
   }
 
+  if (uid.startsWith(DEVICE_PREFIX)) {
+    throw new HttpsError("permission-denied", "Los equipos solo pueden consultar publicaciones de Active Classroom.");
+  }
   const userSnapshot = await admin.firestore().doc(`users/${uid}`).get();
 
   if (!userSnapshot.exists) {
@@ -1342,15 +1348,46 @@ async function resolveActiveClassroomDriveFile(profile, fileId) {
   return response.data;
 }
 
+const classroomFiles = createPublicationFiles({
+  db: admin.firestore(), bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile,
+  openDrive: async (file, descriptor) => {
+    const drive = await getDriveClient();
+    const response = descriptor.exported
+      ? await drive.files.export({ fileId: file.id, mimeType: descriptor.deliveredMimeType }, { responseType: "stream" })
+      : await drive.files.get({ fileId: file.id, alt: "media", supportsAllDrives: true }, { responseType: "stream" });
+    return response.data;
+  },
+});
 const classroomUnits = createUnitHandlers({
   db: admin.firestore(), getProfile: getUserProfile,
   resolveFile: resolveActiveClassroomDriveFile,
+  prepareResource: classroomFiles.prepareResource,
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
-exports.publishActiveClassroomUnit = onCall(classroomUnits.publish);
+exports.publishActiveClassroomUnit = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomUnits.publish);
 exports.checkActiveClassroomDriveChanges = onCall({ timeoutSeconds: 540 }, classroomUnits.checkDrive);
 exports.refreshActiveClassroomDriveResource = onCall(classroomUnits.refreshDrive);
+
+const classroomDevices = createDeviceHandlers({ db: admin.firestore(), auth: admin.auth(), assertAdmin });
+exports.activeClassroomDeviceSession = onCall(classroomDevices.session);
+exports.approveActiveClassroomDevice = onCall(classroomDevices.approve);
+exports.revokeActiveClassroomDevice = onCall(classroomDevices.revoke);
+const classroomDesktop = createDesktopHandlers({
+  db: admin.firestore(), getProfile: getUserProfile, authorizeDevice: classroomDevices.authorizeDevice, isDevice,
+  getRequestProfile: async (request) => {
+    const authorization = normalizeString(request.headers.authorization);
+    if (!authorization.startsWith("Bearer ")) throw new HttpsError("unauthenticated", "Equipo sin sesión.");
+    const decoded = await admin.auth().verifyIdToken(authorization.slice(7));
+    return isDevice(decoded) ? classroomDevices.authorizeDevice(decoded) : getUserProfile(decoded.uid);
+  },
+  resolveFile: resolveActiveClassroomDriveFile, bucket: admin.storage().bucket(),
+});
+exports.listActiveClassroomPublications = onCall(classroomDesktop.list);
+exports.getActiveClassroomPublication = onCall(classroomDesktop.get);
+exports.activeClassroomPublicationFile = onRequest(
+  { timeoutSeconds: 540, memory: "1GiB", cors: true }, classroomDesktop.file
+);
 
 exports.importDriveFileToActiveClassroom = onCall(
   createImportDriveReference({

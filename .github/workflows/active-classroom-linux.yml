@@ -7,6 +7,13 @@ on:
       - "active-classroom-desktop/**"
       - "docs/active-classroom-manifest.example.json"
       - ".github/workflows/active-classroom-linux.yml"
+      - "drive/activeClassroom*.js"
+      - "drive/index.js"
+      - "functions/deviceAccess.js"
+      - "functions/index.js"
+      - "firestore.rules"
+      - "storage.rules"
+      - "tests/active-classroom-device*"
 
 permissions:
   contents: read
@@ -16,6 +23,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  permissions:
+    name: Autorización de equipos y reglas Firebase
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.firebase/cli-config
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            drive/package-lock.json
+      - name: Instalar dependencias bloqueadas y CLI de emuladores
+        run: |
+          npm ci
+          npm ci --prefix drive
+          npm install --prefix "$RUNNER_TEMP/firebase-cli" firebase-tools@15.27.0
+          test -x "$JAVA_HOME_21_X64/bin/java"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Tests backend y lint específico
+        run: |
+          node --test tests/active-classroom-device.test.cjs
+          npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
+          node --check drive/index.js
+          node --check functions/index.js
+      - name: Reglas y transacciones reales en emuladores
+        run: |
+          "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
+            --config firebase.rules-test.json --project security-rules-audit --only firestore,storage \
+            "node --test tests/firebase-rules.test.mjs tests/active-classroom-device-emulator.test.cjs"
   linux:
     name: Tests, Cargo y paquete Debian
     runs-on: ubuntu-22.04
@@ -48,7 +92,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential pkg-config curl wget file \
             libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
-            libayatana-appindicator3-dev librsvg2-dev
+            libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11
 
       - name: Rust estable mediante rustup
         run: |
@@ -66,6 +110,9 @@ jobs:
 
       - name: Tests offline
         run: npm run test:offline
+
+      - name: Tests de identidad y activación
+        run: npm run test:device
 
       - name: Tests Player
         run: npm run test:player
@@ -86,6 +133,20 @@ jobs:
             | tee "$RUNNER_TEMP/active-classroom-rust-tests.txt"
           test "$(grep -c '^offline_cache::tests::.*: test$' "$RUNNER_TEMP/active-classroom-rust-tests.txt")" -eq 4
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib offline_cache::tests:: -- --nocapture
+
+      - name: Tests Rust de identidad segura
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib device_identity::tests:: -- --nocapture
+
+      - name: Persistencia real en llavero Linux aislado
+        run: |
+          export XDG_DATA_HOME="$(mktemp -d)"
+          export XDG_CONFIG_HOME="$(mktemp -d)"
+          export ACTIVE_CLASSROOM_TEST_KEYRING=1
+          dbus-run-session -- bash -euo pipefail -c '
+            openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib device_identity::tests::linux_keyring_round_trip -- --ignored --nocapture
+          '
 
       - name: Cargo check y validación nativa de configuración/capabilities
         # build.rs ejecuta tauri_build::build(); no se usa un mock de Tauri.

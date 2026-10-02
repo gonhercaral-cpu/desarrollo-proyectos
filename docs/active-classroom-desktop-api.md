@@ -19,9 +19,9 @@
 
 ## Autenticación
 
-Firebase Auth del proyecto `sistema-desarrollo-proyectos`. Desktop obtiene/renueva un Firebase ID token con el flujo de inicio de sesión del proyecto; no incluye credenciales de servicio ni tokens Google Drive. Todas las peticiones usan `Authorization: Bearer <FIREBASE_ID_TOKEN>`. Se exige `users/{uid}.active == true`.
+Firebase Auth del proyecto `sistema-desarrollo-proyectos`. Desktop usa identidad de equipo y `signInWithCustomToken`, sin login interactivo. Todas las peticiones de publicaciones usan `Authorization: Bearer <FIREBASE_ID_TOKEN>`. El servidor comprueba registro autorizado y generación de dispositivo en cada petición. Los clientes web humanos conservan `users/{uid}.active == true`. Ver [activación y despliegue](active-classroom-device-auth.md).
 
-Listado/manifests mantienen acceso de lectura a perfiles activos, igual que las reglas de publicaciones. Para descargar un recurso Drive se vuelve a evaluar la ACL actual de Nube AES (carpetas privadas, departamentos y compartidos); publicar no concede acceso al original. Una cuenta de salón debe tener acceso a esas carpetas. Revocación de permisos o eliminación del original bloquea futuras descargas; los bytes ya descargados/offline no pueden revocarse desde el servidor.
+Listado/manifests mantienen acceso de lectura a perfiles humanos activos. Para humanos se vuelve a evaluar la ACL de Nube AES antes de descargar un recurso Drive. Los equipos autorizados acceden únicamente al snapshot congelado de una publicación; nunca a Drive ni al original. No se crean perfiles `users` para equipos. Revocación del equipo bloquea consultas/descargas inmediatamente, incluso con un ID token aún vigente. Una copia offline no puede recibir revocación hasta recuperar conexión.
 
 ## Endpoints exactos
 

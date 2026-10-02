@@ -3,7 +3,13 @@ const {
   onDocumentWritten,
   onDocumentWrittenWithAuthContext,
 } = require("firebase-functions/v2/firestore");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall: firebaseOnCall, HttpsError } = require("firebase-functions/v2/https");
+const { guardClassroomDevices } = require("./deviceAccess");
+function onCall(options, handler) {
+  return typeof options === "function"
+    ? firebaseOnCall(guardClassroomDevices(options, HttpsError))
+    : firebaseOnCall(options, guardClassroomDevices(handler, HttpsError));
+}
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");

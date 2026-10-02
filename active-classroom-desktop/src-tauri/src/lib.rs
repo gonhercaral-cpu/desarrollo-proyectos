@@ -1,5 +1,6 @@
 mod audience_window;
 mod offline_cache;
+mod device_identity;
 
 use audience_window::{audience_status, show_audience_window};
 use regex::Regex;
@@ -938,8 +939,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(offline_cache::CacheGate::default())
+        .manage(device_identity::DeviceGate::default())
         .invoke_handler(tauri::generate_handler![
             offline_cache::classroom_cache,
+            device_identity::classroom_device,
             show_audience_window,
             audience_status,
             import_presentation

@@ -16,6 +16,7 @@
 .sync-error { color: #ae2636; }
 .offline-login { min-height: 100vh; display: grid; place-items: center; padding: var(--ac-space-4); background: var(--ac-surface-muted); }
 .offline-login section { width: min(100%, 28rem); padding: var(--ac-space-4); }
+.activation-code { font-size: 2rem; letter-spacing: .12em; text-align: center; }
 .offline-login label { display: grid; gap: var(--ac-space-1); }
 .offline-login input { min-height: var(--ac-touch); border: 1px solid var(--ac-border); border-radius: var(--ac-radius-sm); padding: var(--ac-space-2); font: inherit; }
 .offline-shell .sidebar-footer strong { overflow-wrap: anywhere; }

@@ -35,7 +35,7 @@ function normalizeDraft(input) {
     metadata: {
       code: text(metadata.code || "", 80), language: text(metadata.language || "", 40),
       estimatedMinutes: integer(metadata.estimatedMinutes ?? 0, 0, 10000),
-      tags: (Array.isArray(metadata.tags) && metadata.tags.length <= 20 ? metadata.tags : fail("Máximo 20 etiquetas.")).map((tag) => text(tag, 60, true)),
+      tags: (Array.isArray(metadata.tags ?? []) && (metadata.tags || []).length <= 20 ? (metadata.tags || []) : fail("Máximo 20 etiquetas.")).map((tag) => text(tag, 60)).filter(Boolean),
     },
     mainPresentationId: input.mainPresentationId ? id(input.mainPresentationId) : null,
     generalResourceIds: ids(input.generalResourceIds || []), slides,
@@ -59,7 +59,9 @@ function fileReference(resource) {
   } : { provider: "storage", path: resource.storagePath, checksums: { md5: resource.storageMd5Hash || null } };
 }
 function snapshotResource(resourceId, resource) {
-  return { resourceId, name: resource.name, mimeType: resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource) };
+  const iso = (value) => value?.toDate ? value.toDate().toISOString() : typeof value === "string" ? value : null;
+  return { resourceId, name: resource.name, mimeType: resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource),
+    timestamps: { createdAt: iso(resource.createdAt), updatedAt: iso(resource.updatedAt), sourceCheckedAt: iso(resource.sourceCheckedAt) } };
 }
 function stableStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -74,11 +76,11 @@ function driveChanged(resource, file) {
     || (resource.sourceName || resource.name) !== file.name || resource.mimeType !== file.mimeType;
 }
 
-function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () => new Date().toISOString() }) {
+function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, timestamp, now = () => new Date().toISOString() }) {
   async function authorize(request) {
     if (!request.auth?.uid) fail("Debes iniciar sesión.", "unauthenticated");
     const profile = await getProfile(request.auth.uid);
-    if (profile.active !== true || profile.role !== "admin") fail("Solo administradores activos pueden editar Units.", "permission-denied");
+    if (profile?.active !== true || profile.role !== "admin") fail("Solo administradores activos pueden editar Units.", "permission-denied");
     return profile;
   }
   const unitRef = (unitId) => db.collection("activeClassroomUnits").doc(id(unitId));
@@ -110,6 +112,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
     const profile = await authorize(request);
     const unitId = id(request.data?.unitId);
     const draft = normalizeDraft(request.data?.draft);
+    if (Buffer.byteLength(JSON.stringify(draft), "utf8") > 700000) fail("El borrador supera 700 KB.", "resource-exhausted");
     return db.runTransaction(async (transaction) => {
       const stored = (await transaction.get(unitRef(unitId))).data();
       revision(stored, request.data.expectedRevision);
@@ -131,9 +134,20 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
   }
 
   async function publish(request) {
-    await authorize(request);
+    const profile = await authorize(request);
     const unitId = id(request.data?.unitId);
-    const publishedAt = now();
+    // Network/file IO must stay outside retriable Firestore transactions.
+    const prepared = await db.runTransaction(async (transaction) => {
+      const stored = (await transaction.get(unitRef(unitId))).data();
+      if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");
+      revision(stored, request.data.expectedRevision);
+      const draft = normalizeDraft(stored.draft);
+      if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
+      await validateFolders(transaction, unitId, draft);
+      return readResources(transaction, draft, unitId);
+    });
+    const files = new Map();
+    for (const resource of prepared) files.set(resource.id, await prepareResource(profile, resource));
     return db.runTransaction(async (transaction) => {
       const stored = (await transaction.get(unitRef(unitId))).data();
       if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");
@@ -142,17 +156,21 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
       if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
+      if (contentHash(resources.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(prepared.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
       const content = {
-        schemaVersion: 1, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
+        schemaVersion: 2, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
         mainPresentationId: draft.mainPresentationId, generalResourceIds: draft.generalResourceIds,
-        slides: draft.slides, resources: resources.map((resource) => snapshotResource(resource.id, resource)),
+        slides: draft.slides, resources: resources.map((resource) => ({ ...snapshotResource(resource.id, resource), download: files.get(resource.id) })),
       };
       const hash = contentHash(content);
       const previous = stored.publishedVersion
         ? await transaction.get(unitRef(unitId).collection("publications").doc(String(stored.publishedVersion))) : null;
-      if (previous?.data()?.contentHash === hash) return { version: stored.publishedVersion, unchanged: true };
+      if (previous?.data()?.contentHash === hash) {
+        transaction.update(unitRef(unitId), { publishedDraftRevision: stored.draftRevision });
+        return { version: stored.publishedVersion, unchanged: true };
+      }
       const version = (stored.publishedVersion || 0) + 1;
-      const manifest = { ...content, version, publishedAt, integrity: { algorithm: "sha256", contentHash: hash } };
+      const manifest = { ...content, version, publishedAt: now(), integrity: { algorithm: "sha256", contentHash: hash } };
       if (Buffer.byteLength(JSON.stringify(manifest), "utf8") > 700000) fail("El manifest supera 700 KB. Reduce notas o asociaciones.", "resource-exhausted");
       transaction.create(unitRef(unitId).collection("publications").doc(String(version)), {
         version, manifest, contentHash: hash, draftRevision: stored.draftRevision,
