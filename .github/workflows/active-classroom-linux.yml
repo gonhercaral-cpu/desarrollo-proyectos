@@ -14,6 +14,7 @@ on:
       - "firestore.rules"
       - "storage.rules"
       - "tests/active-classroom-device*"
+      - "src/active-classroom/**"
 
 permissions:
   contents: read
@@ -41,18 +42,22 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             drive/package-lock.json
+            active-classroom-desktop/package-lock.json
       - name: Instalar dependencias bloqueadas y CLI de emuladores
         run: |
           npm ci
           npm ci --prefix drive
+          npm ci --prefix active-classroom-desktop
           npm install --prefix "$RUNNER_TEMP/firebase-cli" firebase-tools@15.27.0
           test -x "$JAVA_HOME_21_X64/bin/java"
           echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
       - name: Tests backend y lint específico
         run: |
-          node --test tests/active-classroom-device.test.cjs
+          node --test tests/active-classroom-device.test.cjs tests/active-classroom-device-ui.test.mjs
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
+          npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
+          npm run build
           node --check drive/index.js
           node --check functions/index.js
       - name: Reglas y transacciones reales en emuladores

@@ -25,6 +25,8 @@ Listado/manifests mantienen acceso de lectura a perfiles humanos activos. Para h
 
 ## Endpoints exactos
 
+Clientes de equipo reciben metadata opcional `device: { deviceId, deviceName, displayName }` junto al resultado de listado y manifest. No forma parte del manifest/publicación, no cambia su hash ni versión. Humanos y clientes antiguos mantienen contrato previo. Desktop conserva el último alias offline; `displayName` vacío usa hostname. Cambiar nombre no modifica credenciales ni ID y no necesita nueva activación.
+
 Base producción: `https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net`
 
 ### 1. `listActiveClassroomPublications` (callable)

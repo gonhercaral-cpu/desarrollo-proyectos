@@ -7,8 +7,12 @@ const { guardClassroomDevices } = require("../functions/deviceAccess");
 
 function database() {
   const records = new Map();
-  const doc = (path) => ({ path, id: path.split("/").at(-1), get: async () => ({ exists: records.has(path), data: () => structuredClone(records.get(path)) }), collection: (name) => collection(`${path}/${name}`) });
-  const collection = (path) => ({ doc: (name) => doc(`${path}/${name}`), orderBy: () => ({ limit: () => ({ get: async () => ({ docs: [{ id: example.unit.unitId, data: () => ({ publishedVersion: example.version }) }] }) }) }) });
+  const doc = (path) => ({ path, id: path.split("/").at(-1), get: async () => ({ exists: records.has(path), data: () => structuredClone(records.get(path)) }), update: async (data) => records.set(path, { ...records.get(path), ...data }), collection: (name) => collection(`${path}/${name}`) });
+  const collection = (path) => ({ doc: (name) => doc(`${path}/${name}`), orderBy: () => {
+    let maximum = Infinity; let cursor = "";
+    const query = { limit: (value) => { maximum = value; return query; }, startAfter: (value) => { cursor = value; return query; }, get: async () => ({ docs: path === "activeClassroomDevices" ? [...records.keys()].filter((key) => key.startsWith(`${path}/`) && key.split("/").at(-1) > cursor).sort().slice(0, maximum).map((key) => ({ id: key.split("/").at(-1), data: () => structuredClone(records.get(key)) })) : [{ id: example.unit.unitId, data: () => ({ publishedVersion: example.version }) }] }) };
+    return query;
+  } });
   return { records, doc, collection, runTransaction: async (operation) => {
     const writes = [];
     const result = await operation({ get: (ref) => ref.get(), set: (ref, value) => writes.push(() => records.set(ref.path, structuredClone(value))), update: (ref, value) => writes.push(() => records.set(ref.path, { ...records.get(ref.path), ...structuredClone(value) })), delete: (ref) => writes.push(() => records.delete(ref.path)) });
@@ -91,4 +95,86 @@ test("equipo no ejecuta callables administrativos ni de otros módulos", () => {
   assert.throws(() => guarded({ auth: { uid: "ac-device-123", token: {} } }), { code: "permission-denied" });
   assert.throws(() => guarded({ auth: { uid: "any", token: { activeClassroomDevice: true } } }), { code: "permission-denied" });
   assert.equal(guarded({ auth: { uid: "admin", token: {} } }), "human-result");
+});
+
+test("listado administrativo paginado no filtra credenciales y bloquea profesores/equipos", async () => {
+  const f = setup(); await f.session();
+  for (const uid of ["teacher", "inactive", `${DEVICE_PREFIX}${f.proof.deviceId}`]) await assert.rejects(f.devices.list({ auth: { uid }, data: {} }), { code: "permission-denied" });
+  const first = await f.devices.list(f.adminRequest({}));
+  assert.equal(first.devices.length, 1); assert.equal(first.devices[0].code.length, 10);
+  assert.equal(first.devices[0].credentialHash, undefined); assert.equal(first.devices[0].credential, undefined);
+  for (let index = 0; index < 102; index++) f.db.records.set(`activeClassroomDevices/${index.toString(16).padStart(32, "0")}`, { name: "Equipo", status: "authorized" });
+  const page = await f.devices.list(f.adminRequest({})); assert.equal(page.devices.length, 100);
+  const next = await f.devices.list(f.adminRequest({ cursor: page.nextCursor })); assert.equal(next.devices.length, 3); assert.equal(next.nextCursor, null);
+});
+
+test("rechazo consume código y bloquea credencial permanentemente", async () => {
+  const f = setup(); const pending = await f.session();
+  await f.devices.reject(f.adminRequest({ deviceId: f.proof.deviceId }));
+  assert.equal((await f.session()).status, "revoked");
+  await assert.rejects(f.devices.approve(f.adminRequest({ code: pending.code })), { code: "not-found" });
+  assert.equal(f.db.records.get(`activeClassroomDevices/${f.proof.deviceId}`).revokedReason, "rejected");
+  await assert.rejects(f.devices.reject(f.adminRequest({ deviceId: f.proof.deviceId })), { code: "failed-precondition" });
+});
+
+test("renombrado persiste tras renovación del código y requiere admin", async () => {
+  const f = setup(); await f.session();
+  await assert.rejects(f.devices.rename({ auth: { uid: "teacher" }, data: { deviceId: f.proof.deviceId, name: "Otro" } }), { code: "permission-denied" });
+  await assert.rejects(f.devices.rename(f.adminRequest({ deviceId: f.proof.deviceId, name: "<Salón>" })), { code: "invalid-argument" });
+  await f.devices.rename(f.adminRequest({ deviceId: f.proof.deviceId, name: "  Aula 10  " })); f.advance(); await f.session();
+  const device = f.db.records.get(`activeClassroomDevices/${f.proof.deviceId}`);
+  assert.equal(device.displayName, "Aula 10"); assert.equal(device.deviceName, f.proof.name); assert.equal(device.name, f.proof.name);
+});
+
+test("nombre visible opcional al aprobar y renombrado no cambian hostname, generación ni credencial", async () => {
+  const f = setup(); const pending = await f.session();
+  await f.devices.approve(f.adminRequest({ code: pending.code, displayName: "  Salón 4 - Inglés  " }));
+  const path = `activeClassroomDevices/${f.proof.deviceId}`; const previous = structuredClone(f.db.records.get(path));
+  const first = await f.session(); assert.equal(first.displayName, "Salón 4 - Inglés"); assert.equal(first.deviceName, f.proof.name);
+  await f.devices.rename(f.adminRequest({ deviceId: f.proof.deviceId, displayName: "Aula Audiovisual" }));
+  assert.equal((await f.session()).displayName, "Aula Audiovisual");
+  await f.devices.authorizeDevice(f.decoded(first.customToken));
+  const renamed = f.db.records.get(path);
+  for (const field of ["credentialHash", "generation", "deviceName", "name", "approvedAt", "status"]) assert.equal(renamed[field], previous[field]);
+  await f.devices.rename(f.adminRequest({ deviceId: f.proof.deviceId, displayName: "" }));
+  const listed = (await f.devices.list(f.adminRequest({}))).devices[0];
+  assert.equal(listed.displayName, ""); assert.equal(listed.name, f.proof.name);
+});
+
+test("rechaza controles, HTML, bidi y longitud; normaliza Unicode sin consumir código", async () => {
+  const f = setup(); const pending = await f.session();
+  for (const name of ["Aula\n4", "<script>", "\u202Eabc", "\u200Babc", "x".repeat(101), null, 42]) {
+    await assert.rejects(f.devices.approve(f.adminRequest({ code: pending.code, displayName: name })), { code: "invalid-argument" });
+    await assert.rejects(f.devices.rename(f.adminRequest({ deviceId: f.proof.deviceId, displayName: name })), { code: "invalid-argument" });
+  }
+  await f.devices.approve(f.adminRequest({ code: pending.code, displayName: "Salo\u0301n 4" }));
+  assert.equal((await f.session()).displayName, "Salón 4");
+});
+
+test("registro legado conserva alias y recupera hostname mediante prueba autenticada sin migración", async () => {
+  const f = setup(); await f.activate(); const path = `activeClassroomDevices/${f.proof.deviceId}`;
+  const legacy = f.db.records.get(path); delete legacy.displayName; delete legacy.deviceName;
+  Object.assign(legacy, { name: "Aula antigua", renamedAt: 1000 });
+  const session = await f.session(); assert.equal(session.displayName, "Aula antigua"); assert.equal(session.deviceName, f.proof.name);
+  assert.equal(f.db.records.get(path).name, "Aula antigua");
+  const desktop = createDesktopHandlers({ db: f.db, isDevice, authorizeDevice: f.devices.authorizeDevice });
+  f.db.records.set(`activeClassroomUnits/${example.unit.unitId}/publications/${example.version}`, { manifest: example });
+  const request = { auth: f.decoded(session.customToken), data: { unitId: example.unit.unitId, version: example.version } };
+  assert.deepEqual((await desktop.list(request)).device, { deviceId: f.proof.deviceId, displayName: "Aula antigua", deviceName: f.proof.name });
+  assert.equal((await desktop.get(request)).device.displayName, "Aula antigua");
+});
+
+test("conexión y sincronización son metadata privada del equipo sin editar publicaciones", async () => {
+  const f = setup(); const { customToken } = await f.activate();
+  f.advance(); await f.session({ ...f.proof, appVersion: "0.1.0" });
+  const auth = f.decoded(customToken); const path = `activeClassroomUnits/${example.unit.unitId}/publications/${example.version}`;
+  f.db.records.set(path, { manifest: example });
+  const data = { unitId: example.unit.unitId, version: example.version };
+  await assert.rejects(f.devices.reportSync({ auth: { uid: "admin", token: {} }, data }), { code: "permission-denied" });
+  await assert.rejects(f.devices.reportSync({ auth, data: { ...data, version: 999 } }), { code: "not-found" });
+  await f.devices.reportSync({ auth, data });
+  const listed = (await f.devices.list(f.adminRequest({}))).devices[0];
+  assert.equal(listed.appVersion, "0.1.0"); assert.equal(listed.lastSeenAt, listed.lastSyncAt); assert.equal(listed.lastSyncVersion, example.version);
+  assert.deepEqual(f.db.records.get(path), { manifest: example });
+  await f.devices.revoke(f.adminRequest({ deviceId: f.proof.deviceId })); await assert.rejects(f.devices.reportSync({ auth, data }), { code: "permission-denied" });
 });

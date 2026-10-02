@@ -1,6 +1,8 @@
-export interface DeviceIdentity { deviceId: string; name: string; activated: boolean; revoked: boolean }
+import { normalizeDisplayName, type DeviceLabel } from "./device-label.ts";
+
+export interface DeviceIdentity { deviceId: string; name: string; displayName?: string; activated: boolean; revoked: boolean }
 export interface DeviceProof { deviceId: string; name: string; credential: string }
-export type DeviceResponse = { status: "pending"; code: string; expiresAt: number } | { status: "revoked" } | { status: "authorized"; customToken: string };
+export type DeviceResponse = ({ status: "pending"; code: string; expiresAt: number } | { status: "revoked" } | { status: "authorized"; customToken: string }) & { displayName?: string; deviceName?: string | null };
 export interface DeviceDependencies {
   load(): Promise<DeviceIdentity>;
   proof(): Promise<DeviceProof>;
@@ -9,6 +11,7 @@ export interface DeviceDependencies {
   signIn(customToken: string, owner: string): Promise<void>;
   token(owner: string, force: boolean): Promise<string>;
   signOut(): Promise<void>;
+  saveLabel(label: DeviceLabel): Promise<void>;
 }
 export interface DeviceState { phase: "loading" | "activation" | "ready" | "revoked" | "error"; identity?: DeviceIdentity; code?: string; online: boolean; message: string }
 export class DeviceSession {
@@ -20,6 +23,15 @@ export class DeviceSession {
   constructor(dependencies: DeviceDependencies, notify: (state: DeviceState) => void) { this.dependencies = dependencies; this.notify = notify; }
   get owner(): string { return `ac-device-${this.state.identity?.deviceId || ""}`; }
   private update(patch: Partial<DeviceState>): void { this.state = { ...this.state, ...patch }; this.notify(this.state); }
+  async receiveLabel(label: DeviceLabel): Promise<void> {
+    if (!this.state.identity || label.deviceId !== this.state.identity.deviceId) return;
+    let displayName: string;
+    try { displayName = normalizeDisplayName(label.displayName); } catch { return; }
+    if (displayName === this.state.identity.displayName) return;
+    // A missing/full WebView metadata store must never rotate identity or block local classes.
+    await this.dependencies.saveLabel({ deviceId: label.deviceId, displayName }).catch(() => {});
+    this.update({ identity: { ...this.state.identity, displayName } });
+  }
   async start(online: boolean): Promise<void> {
     try {
       const identity = await this.dependencies.load();
@@ -37,6 +49,7 @@ export class DeviceSession {
     if (!this.state.identity) return;
     try {
       const response = await this.dependencies.exchange(await this.dependencies.proof());
+      if (response.displayName !== undefined) await this.receiveLabel({ deviceId: this.state.identity.deviceId, displayName: response.displayName });
       if (response.status === "revoked") {
         // Block in memory immediately even if the keyring cannot persist this marker.
         this.signedIn = false;
@@ -50,7 +63,7 @@ export class DeviceSession {
       } else {
         this.signedIn = false;
         await this.dependencies.signIn(response.customToken, this.owner);
-        const identity = await this.dependencies.mark("activated");
+        const identity = { ...await this.dependencies.mark("activated"), displayName: this.state.identity?.displayName };
         this.signedIn = true;
         this.update({ phase: "ready", identity, online: true, code: undefined, message: "" });
       }

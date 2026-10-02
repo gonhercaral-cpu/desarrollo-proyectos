@@ -1373,6 +1373,10 @@ const classroomDevices = createDeviceHandlers({ db: admin.firestore(), auth: adm
 exports.activeClassroomDeviceSession = onCall(classroomDevices.session);
 exports.approveActiveClassroomDevice = onCall(classroomDevices.approve);
 exports.revokeActiveClassroomDevice = onCall(classroomDevices.revoke);
+exports.listActiveClassroomDevices = onCall(classroomDevices.list);
+exports.rejectActiveClassroomDevice = onCall(classroomDevices.reject);
+exports.renameActiveClassroomDevice = onCall(classroomDevices.rename);
+exports.reportActiveClassroomDeviceSync = onCall(classroomDevices.reportSync);
 const classroomDesktop = createDesktopHandlers({
   db: admin.firestore(), getProfile: getUserProfile, authorizeDevice: classroomDevices.authorizeDevice, isDevice,
   getRequestProfile: async (request) => {

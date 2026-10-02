@@ -791,6 +791,19 @@ describe("roles y perfiles", () => {
 });
 
 describe("Active Classroom", () => {
+  it("registro y códigos de equipos son privados incluso para admin web; gestión solo por callable", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "activeClassroomDevices", "private-device"), { credentialHash: "private", status: "pending" });
+      await setDoc(doc(context.firestore(), "activeClassroomDeviceCodes", "PRIVATE"), { deviceId: "private-device" });
+    });
+    for (const db of [auth("admin"), auth("collab"), auth("inactive"), unauth()]) {
+      for (const path of ["activeClassroomDevices/private-device", "activeClassroomDeviceCodes/PRIVATE"]) {
+        await assertFails(getDoc(doc(db, path)));
+        await assertFails(updateDoc(doc(db, path), { status: "authorized" }));
+      }
+      await assertFails(getDocs(collection(db, "activeClassroomDevices")));
+    }
+  });
   it("equipo no accede directamente a perfiles, borradores, publicaciones, registro ni Storage", async () => {
     const uid = `ac-device-${"a".repeat(32)}`;
     const claimed = testEnv.authenticatedContext(uid, { activeClassroomDevice: true, deviceId: "a".repeat(32), deviceGeneration: 1 });

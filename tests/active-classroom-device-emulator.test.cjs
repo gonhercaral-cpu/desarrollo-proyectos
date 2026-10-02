@@ -24,3 +24,27 @@ test("Firestore: registro concurrente conserva un único código y aprobación a
   await assert.rejects(handlers.authorizeDevice(decoded), { code: "permission-denied" });
   assert.equal((await handlers.session(request)).status, "revoked");
 });
+
+test("Firestore: listado privado, renombrado, telemetría y rechazo usan registro existente", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Aula inicial" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const pending = await handlers.session(request);
+  let result = await handlers.list({ data: {} });
+  assert.equal(result.devices.find((device) => device.deviceId === data.deviceId).code, pending.code);
+  assert.ok(result.devices.every((device) => !Object.hasOwn(device, "credentialHash")));
+  await handlers.rename({ data: { deviceId: data.deviceId, name: "Aula renombrada" } });
+  await handlers.approve({ data: { code: pending.code } });
+  const authorized = await handlers.session({ ...request, data: { ...data, appVersion: "0.1.0" } });
+  const auth = { uid: authorized.customToken.uid, token: authorized.customToken.claims };
+  const unitId = `test-${randomBytes(8).toString("hex")}`;
+  await db.doc(`activeClassroomUnits/${unitId}/publications/1`).set({ manifest: { version: 1 } });
+  await handlers.reportSync({ auth, data: { unitId, version: 1 } });
+  const device = (await handlers.list({ data: {} })).devices.find((item) => item.deviceId === data.deviceId);
+  assert.equal(device.name, "Aula renombrada"); assert.equal(device.displayName, "Aula renombrada"); assert.equal(device.deviceName, "Aula inicial"); assert.equal(device.appVersion, "0.1.0"); assert.ok(device.lastSyncAt > 0);
+  assert.equal((await db.doc(`activeClassroomDevices/${data.deviceId}`).get()).data().name, "Aula inicial");
+  assert.equal(device.lastSyncUnitId, unitId);
+  const rejected = { ...data, deviceId: randomBytes(16).toString("hex") };
+  await handlers.session({ ...request, data: rejected });
+  await handlers.reject({ data: { deviceId: rejected.deviceId } });
+  assert.equal((await handlers.session({ ...request, data: rejected })).status, "revoked");
+});

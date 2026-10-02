@@ -6,6 +6,16 @@ La app abre Biblioteca y clases locales sin pedir correo/contraseña. Una instal
 
 ## Identidad y almacenamiento
 
+### Nombre visible y hostname
+
+`activeClassroomDevices/{deviceId}` conserva `deviceName` (hostname original, obtenido de la prueba autenticada del equipo) y `displayName` (alias administrado, vacío usa hostname). El campo histórico `name` se conserva por compatibilidad y nunca se sobrescribe al renombrar. Registros antiguos con `renamedAt` recuperan ese alias; hostname se recupera en la siguiente conexión autenticada, sin migración obligatoria.
+
+**Equipos → Renombrar** cambia únicamente `displayName` y auditoría. Al autorizar una solicitud puede introducirse un alias opcional. Normalización Unicode NFC, máximo 100 caracteres, letras/números Unicode, espacios y puntuación habitual; controles, HTML y controles bidi se rechazan. Vacío elimina alias y restaura fallback. Credencial, generación, `deviceId`, UID, caché y publicaciones no cambian.
+
+Desktop recibe `displayName` en `activeClassroomDeviceSession` y en la metadata `device` de `listActiveClassroomPublications`/`getActiveClassroomPublication`. Actualiza el indicador inferior en la siguiente conexión o consulta/sincronización de Biblioteca, sin nueva activación ni reinstalación por cada renombrado. No consulta backend durante Player.
+
+Último alias se guarda como metadata pública del WebView en `localStorage`, clave `active-classroom:device-label:v1:<deviceId>`, únicamente `{deviceId, displayName}`. Nunca credenciales/tokens. Al reiniciar offline se restaura junto a identidad del llavero; vacío/corrupto usa hostname. Si el almacenamiento del alias falla, clases y autenticación siguen funcionando; el alias nuevo permanece en memoria y no se garantiza su persistencia hasta recuperar almacenamiento. Incorporar esta funcionalidad inicialmente requiere distribuir el build Desktop actualizado; cambios posteriores de nombre no requieren actualizarlo.
+
 - `deviceId`: 128 bits aleatorios; credencial: 256 bits aleatorios, generados por `/dev/urandom` nativo. No se deriva del hostname/MAC ni se distribuye en el instalador.
 - Identidad, credencial y marcadores de autorización/revocación se guardan exclusivamente en Secret Service del usuario Linux mediante `libsecret-tools`. Atributos: `application=com.activeclassroom.desktop`, `credential=device-v1`. La credencial viaja por stdin, no por argumentos/env/archivos/logs.
 - Se comprueba que la colección predeterminada esté desbloqueada antes de usarla. La lectura usa `secret-tool search` sin `--unlock`. Sin llavero disponible la app pide asistencia; no guarda secretos en texto plano ni abre un diálogo de contraseña del salón.
@@ -41,6 +51,14 @@ Cada petición consulta autorización/generación en Firestore; un ID token anti
 
 ## Aprobar y revocar (administrador)
 
+Interfaz disponible en **Active Classroom → Equipos**, solo para administrador activo. Listado se actualiza al entrar, cada 30 segundos y con **Actualizar equipos**. Pendientes muestran nombre, código, solicitud y vencimiento. **Autorizar** exige comparar el código con el equipo físico; usa `approveActiveClassroomDevice`, consume el código y autoriza la misma credencial del llavero. **Rechazar** usa `rejectActiveClassroomDevice`, consume código y bloquea esa credencial. Códigos vencidos deben renovarse desde Desktop.
+
+Activos muestran última conexión observada por backend, última sincronización declarada por Desktop después de activar la copia verificada y versión instalada si el cliente la informa. Clientes anteriores muestran **Sin registro/No informada**. `reportActiveClassroomDeviceSync` solo permite al equipo autorizado registrar su propia telemetría para una publicación existente; no cambia publicaciones. El fallo del reporte nunca invalida la clase offline. Durante Player no se emiten nuevos reportes.
+
+`listActiveClassroomDevices` pagina 100 registros por ID y entrega únicamente metadata; hashes de credencial permanecen privados. `renameActiveClassroomDevice` modifica solo nombre/auditoría. Listado, renombrado, rechazo, aprobación y revocación requieren administrador activo mediante callable. No se habilita lectura directa de `activeClassroomDevices` ni `activeClassroomDeviceCodes`, incluso para web admin.
+
+Revocados/rechazados muestran instrucciones de reinscripción: no se reactiva la credencial anterior desde la web. Soporte renueva identidad local y aprueba otro código. Se conservan caché y mínimo privilegio.
+
 Desde una sesión **web** existente de administrador activo, usar Firebase Functions SDK del proyecto (ningún login del profesor):
 
 ```js
@@ -60,7 +78,7 @@ Al conocer una revocación, la app cancela operaciones, cierra Player y persiste
 
 ## Despliegue Firebase
 
-1. Desplegar codebase `drive` con `activeClassroomDeviceSession`, `approveActiveClassroomDevice`, `revokeActiveClassroomDevice` y autorización adaptada de los tres endpoints existentes. Desplegar codebase `default` para el bloqueo de equipos en callables ajenos.
+1. Desplegar codebase `drive` con `activeClassroomDeviceSession`, `approveActiveClassroomDevice`, `revokeActiveClassroomDevice`, `listActiveClassroomDevices`, `rejectActiveClassroomDevice`, `renameActiveClassroomDevice`, `reportActiveClassroomDeviceSync` y autorización adaptada de los tres endpoints existentes. Desplegar codebase `default` para el bloqueo de equipos en callables ajenos. Publicar Hosting para la interfaz Equipos.
 2. Desplegar reglas Firestore y Storage. No hay cambios de índices obligatorios ni migración de Units/publicaciones.
 3. Habilitar IAM Service Account Credentials API. La cuenta de ejecución de `activeClassroomDeviceSession` necesita únicamente `iam.serviceAccounts.signBlob` sobre su cuenta firmante (rol `roles/iam.serviceAccountTokenCreator`, limitado a esa cuenta); el Admin SDK firma mediante IAM, nunca con JSON privado en el repositorio. Ver [custom tokens oficiales](https://firebase.google.com/docs/auth/admin/create-custom-tokens).
 4. Configurar TTL opcional para limpieza de registros pendientes/contadores; actualmente `expiresAt` numérico **no es campo TTL Firestore**. La expiración se valida en servidor, no depende de TTL. Para limpieza automática se requiere convertir un campo adicional a Timestamp en otro hito.
@@ -69,5 +87,7 @@ Al conocer una revocación, la app cancela operaciones, cierra Player y persiste
 ```sh
 firebase deploy --only functions:drive,functions:default,firestore:rules,storage
 ```
+
+Actualización de Equipos sobre backend ya desplegado: `npm run build` y `firebase deploy --only functions:drive,hosting`. Sin cambios de reglas ni índices en esta interfaz. Distribuir nuevo `.deb` para informar versión/última sincronización; activar equipos funciona también con Desktop anterior. IAM puede limitarse al rol personalizado `projects/sistema-desarrollo-proyectos/roles/activeClassroomDeviceSigner` (`iam.serviceAccounts.signBlob`), asignado a la cuenta de ejecución únicamente sobre sí misma.
 
 No hacer públicos listado/manifests/descargas. El callable de bootstrap requiere posesión de credencial aunque todavía no exista Firebase ID token.

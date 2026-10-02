@@ -1,6 +1,7 @@
 import { escapeHtml as escape } from "../utils/dom";
 import { createDeviceSession } from "./device-auth";
 import type { DeviceState } from "./device-session";
+import { visibleDeviceName } from "./device-label";
 import { NativeCache } from "./native-cache";
 import { PublicationApi } from "./remote";
 import { localState, type Manifest, type Publication } from "./manifest";
@@ -34,7 +35,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   function render(): void {
     if (player) return;
     if (device.phase !== "ready") {
-      root.innerHTML = `<main class="offline-login"><section class="ui-card ui-stack"><img src="/active-classroom-icon.png" alt="" width="64"/><h1>${device.phase === "loading" ? "Active Classroom" : "Este equipo necesita activarse"}</h1><p>${escape(device.identity?.name || "Preparando equipo…")}</p>${device.code ? `<strong class="activation-code" aria-label="Código de activación">${escape(`${device.code.slice(0, 5)}-${device.code.slice(5)}`)}</strong>` : ""}<p role="status">${escape(device.message || "Conecta Internet para obtener el código de activación.")}</p><button class="button button-primary" data-activate ${device.phase === "loading" ? "disabled" : ""}>Reintentar activación</button></section></main>`;
+      root.innerHTML = `<main class="offline-login"><section class="ui-card ui-stack"><img src="/active-classroom-icon.png" alt="" width="64"/><h1>${device.phase === "loading" ? "Active Classroom" : "Este equipo necesita activarse"}</h1><p>${escape(device.identity ? visibleDeviceName(device.identity) : "Preparando equipo…")}</p>${device.code ? `<strong class="activation-code" aria-label="Código de activación">${escape(`${device.code.slice(0, 5)}-${device.code.slice(5)}`)}</strong>` : ""}<p role="status">${escape(device.message || "Conecta Internet para obtener el código de activación.")}</p><button class="button button-primary" data-activate ${device.phase === "loading" ? "disabled" : ""}>Reintentar activación</button></section></main>`;
       root.querySelector<HTMLButtonElement>("[data-activate]")!.onclick = () => { void reconnect(); };
       return;
     }
@@ -48,7 +49,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const percent = progress?.unitId === unitId ? (progress.total ? Math.min(100, Math.floor(100 * progress.bytes / progress.total)) : 0) : 0;
       return `<article class="ui-card unit-sync-card"><p class="section-kicker">${escape(levelName(remote?.levelId || local!.unit.levelId))}</p><h2>${escape(remote?.name || local!.unit.name)}</h2><p>Publicada: ${remote ? `v${remote.version}` : "Sin consultar"} · Local: ${local ? `v${local.version}` : "—"}</p><strong class="sync-label ${state === "Error" ? "sync-error" : ""}">${state}</strong>${busy ? `<progress max="100" value="${percent}" aria-label="Progreso de descarga"></progress><small>${percent}% · ${escape(progress?.phase === "activate" ? "Activando versión verificada…" : progress?.phase === "verify" ? "Verificando integridad…" : progress?.fileName || "Obteniendo manifest…")}</small>` : ""}${errors.has(unitId) ? `<p role="alert" class="sync-error">${escape(errors.get(unitId)!)}</p>` : ""}<div class="ui-cluster"><button class="button button-outline" data-sync="${unitId}" ${downloading || !remote || (!errors.has(unitId) && local && local.version >= remote.version) ? "disabled" : ""}>${errors.has(unitId) ? "Reintentar" : local ? "Actualizar" : "Descargar"}</button><button class="button button-primary" data-open="${unitId}" ${!local || opening ? "disabled" : ""}>Abrir clase</button>${busy ? `<button class="button button-quiet" data-cancel ${progress?.phase === "activate" ? "disabled" : ""}>Cancelar</button>` : ""}</div></article>`;
     }).join("");
-    root.innerHTML = `<div class="teacher-shell offline-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark"><img src="/active-classroom-icon.png" alt=""/></span><div><strong>Active Classroom</strong><span>Biblioteca de clases</span></div></div><nav class="ui-stack offline-levels" aria-label="Niveles"><button class="button button-quiet" data-level="" aria-pressed="${!selectedLevel}">Todos los niveles</button>${levels.map((level) => `<button class="button button-quiet" data-level="${level}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><div class="sidebar-footer"><div><strong>${escape(device.identity?.name || "Equipo del salón")}</strong><small>${device.online ? downloading || refreshing ? "Sincronizando" : "Actualizado" : "Modo offline"}</small></div></div></aside><section class="workspace"><header class="workspace-header"><div><p class="breadcrumb">Nivel / Unit</p><h1>Biblioteca</h1></div><button class="button button-outline" data-refresh ${refreshing ? "disabled" : ""}>${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header><main class="offline-content">${feedback()}<div class="ui-grid">${unitCards}</div>${combined.size === 0 ? "<p>No hay clases locales. Conecta Internet y actualiza la biblioteca para consultar publicaciones.</p>" : ""}</main></section></div>`;
+    root.innerHTML = `<div class="teacher-shell offline-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark"><img src="/active-classroom-icon.png" alt=""/></span><div><strong>Active Classroom</strong><span>Biblioteca de clases</span></div></div><nav class="ui-stack offline-levels" aria-label="Niveles"><button class="button button-quiet" data-level="" aria-pressed="${!selectedLevel}">Todos los niveles</button>${levels.map((level) => `<button class="button button-quiet" data-level="${level}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><div class="sidebar-footer"><div><strong>${escape(visibleDeviceName(device.identity))}</strong><small>${device.online ? downloading || refreshing ? "Sincronizando" : "Actualizado" : "Modo offline"}</small></div></div></aside><section class="workspace"><header class="workspace-header"><div><p class="breadcrumb">Nivel / Unit</p><h1>Biblioteca</h1></div><button class="button button-outline" data-refresh ${refreshing ? "disabled" : ""}>${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header><main class="offline-content">${feedback()}<div class="ui-grid">${unitCards}</div>${combined.size === 0 ? "<p>No hay clases locales. Conecta Internet y actualiza la biblioteca para consultar publicaciones.</p>" : ""}</main></section></div>`;
     root.querySelectorAll<HTMLButtonElement>("[data-level]").forEach((button) => { button.onclick = () => { selectedLevel = button.dataset.level!; render(); }; });
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.onclick = () => { void refresh(); };
     root.querySelector<HTMLButtonElement>("[data-cancel]")?.addEventListener("click", () => engine?.cancel());
@@ -68,9 +69,10 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     finally { if (current === epoch) { refreshing = false; render(); } }
   }
   async function synchronize(publication: Publication): Promise<void> {
-    if (!engine || !cache || downloading || player || opening) return;
+    if (!engine || !cache || !api || downloading || player || opening) return;
     const current = epoch;
     const currentCache = cache;
+    const currentApi = api;
     downloading = publication.unitId; errors.delete(publication.unitId); progress = undefined; render();
     try {
       await engine.sync(publication, (value) => {
@@ -79,7 +81,11 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = undefined; if (current === epoch) render(); }, 100);
       });
       const updated = await currentCache.list();
-      if (current === epoch) { locals = updated; retryPublication = undefined; message = "Versión verificada. Puedes abrir la clase sin conexión."; }
+      if (current === epoch) {
+        locals = updated; retryPublication = undefined; message = "Versión verificada. Puedes abrir la clase sin conexión.";
+        // Reporting is best effort after activation; it cannot invalidate a verified offline class.
+        if (!player && !opening) void currentApi.call("reportActiveClassroomDeviceSync", { unitId: publication.unitId, version: publication.version }).catch(() => {});
+      }
     } catch (error) { if (current === epoch) { errors.set(publication.unitId, error instanceof Error ? error.message : String(error)); if (error && typeof error === "object" && "code" in error && ["network", "timeout", "auth", "401"].includes(String(error.code))) { retryPublication = publication; device.online = false; } } }
     finally { if (current === epoch) { downloading = ""; progress = undefined; render(); } }
   }
@@ -134,6 +140,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       cache = new NativeCache(owner);
       api = new PublicationApi((force) => session.token(force));
       api.onDenied = () => session.connect();
+      api.onDevice = (label) => session.receiveLabel(label);
       engine = new SyncEngine(cache, api);
       try {
         await cache.adoptLegacy().catch(() => { if (current === epoch) message = "No se pudo recuperar alguna clase anterior. Las clases locales existentes se conservan."; });

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { FuturePanel, SettingsPanel, TeamsPanel } from "./components/AccessPanel";
+import { FuturePanel, SettingsPanel } from "./components/AccessPanel";
+import TeamsPanel from "./components/TeamsPanel";
 import ActiveClassroomNavigation from "./components/ActiveClassroomNavigation";
 import FolderDialog from "./components/FolderDialog";
 import DriveResourceImportDialog from "./components/DriveResourceImportDialog";

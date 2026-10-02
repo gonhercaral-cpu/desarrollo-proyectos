@@ -17,8 +17,11 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
   const units = db.collection("activeClassroomUnits");
   async function authorize(request) {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
-    requireActive(isDevice(request.auth) ? await authorizeDevice(request.auth) : await getProfile(request.auth.uid));
+    const profile = isDevice(request.auth) ? await authorizeDevice(request.auth) : await getProfile(request.auth.uid);
+    requireActive(profile);
+    return profile;
   }
+  const deviceMetadata = (profile) => profile.activeClassroomDevice ? { device: { deviceId: profile.deviceId, deviceName: profile.deviceName || null, displayName: profile.displayName || "" } } : {};
   async function readManifest(unitId, requestedVersion) {
     const unit = units.doc(id(unitId));
     const version = requestedVersion == null ? (await unit.get()).data()?.publishedVersion : versionNumber(requestedVersion);
@@ -28,7 +31,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
     return manifest;
   }
   async function list(request) {
-    await authorize(request);
+    const profile = await authorize(request);
     const limit = request.data?.limit ?? 25;
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new HttpsError("invalid-argument", "Límite entre 1 y 50.");
     let query = units.orderBy("__name__").limit(limit + 1);
@@ -42,11 +45,11 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
       publications.push({ unitId: document.id, version: manifest.version, name: manifest.unit.name, levelId: manifest.unit.levelId, schemaVersion: manifest.schemaVersion, publishedAt: manifest.publishedAt, contentHash: manifest.integrity.contentHash });
     }
     // Cursor counts scanned Units, including drafts; keep paging even on an empty page.
-    return { publications, nextCursor: page.docs.length > limit ? scanned.at(-1).id : null };
+    return { publications, nextCursor: page.docs.length > limit ? scanned.at(-1).id : null, ...deviceMetadata(profile) };
   }
   async function get(request) {
-    await authorize(request);
-    return { manifest: await readManifest(request.data?.unitId, request.data?.version) };
+    const profile = await authorize(request);
+    return { manifest: await readManifest(request.data?.unitId, request.data?.version), ...deviceMetadata(profile) };
   }
   async function resolveDownload(profile, data) {
     requireActive(profile);

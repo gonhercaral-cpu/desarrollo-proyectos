@@ -1,4 +1,5 @@
 import { SyncError, validHash, validId, type Publication, type Manifest, type PublishedResource } from "./manifest.ts";
+import type { DeviceLabel } from "./device-label.ts";
 
 export const API_BASE = "https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net";
 type TokenProvider = (force: boolean) => Promise<string>;
@@ -7,6 +8,7 @@ export class PublicationApi {
   fetcher: typeof fetch;
   timeout: number;
   onDenied?: () => Promise<void>;
+  onDevice?: (device: DeviceLabel) => Promise<void>;
   constructor(token: TokenProvider, fetcher: typeof fetch = fetch, timeout = 540000) { this.token = token; this.fetcher = fetcher; this.timeout = timeout; }
 
   async request<T>(endpoint: string, init: RequestInit, consume: (response: Response, signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -59,7 +61,8 @@ export class PublicationApi {
     const visited = new Set<string>();
     let cursor: string | null = null;
     do {
-      const page: { publications: Publication[]; nextCursor: string | null } = await this.call("listActiveClassroomPublications", { limit: 50, cursor }, signal);
+      const page: { publications: Publication[]; nextCursor: string | null; device?: DeviceLabel } = await this.call("listActiveClassroomPublications", { limit: 50, cursor }, signal);
+      if (page.device) await this.onDevice?.(page.device);
       if (!Array.isArray(page.publications)) throw new SyncError("server", "Catálogo inválido.");
       for (const publication of page.publications) {
         if (!validId(publication.unitId) || !validId(publication.levelId) || typeof publication.name !== "string" || !validHash(publication.contentHash) || !Number.isSafeInteger(publication.version) || publication.version < 1) throw new SyncError("server", "Publicación inválida.");
@@ -72,7 +75,9 @@ export class PublicationApi {
     return [...result.values()];
   }
   async manifest(publication: Publication, signal?: AbortSignal): Promise<unknown> {
-    return (await this.call<{ manifest: unknown }>("getActiveClassroomPublication", { unitId: publication.unitId, version: publication.version }, signal)).manifest;
+    const result = await this.call<{ manifest: unknown; device?: DeviceLabel }>("getActiveClassroomPublication", { unitId: publication.unitId, version: publication.version }, signal);
+    if (result.device) await this.onDevice?.(result.device);
+    return result.manifest;
   }
   async download(manifest: Manifest, resource: PublishedResource, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void> {
     const params = new URLSearchParams({ unitId: manifest.unit.unitId, version: String(manifest.version), resourceId: resource.resourceId });
