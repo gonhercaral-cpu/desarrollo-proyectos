@@ -155,7 +155,14 @@ mod tests {
         save(&revoked).unwrap();
         assert!(load().unwrap().revoked);
         secret_tool("clear", None).unwrap();
-        let locked = Command::new("/usr/bin/secret-tool").args(["lock", "--collection", "default"]).output().unwrap();
+        // libsecret 0.20 (Ubuntu 22.04) does not resolve "default" aliases in
+        // secret-tool lock. Resolve and lock through the stable D-Bus API.
+        let alias = Command::new("/usr/bin/gdbus").args(["call", "--session", "--dest", "org.freedesktop.secrets", "--object-path", "/org/freedesktop/secrets", "--method", "org.freedesktop.Secret.Service.ReadAlias", "default"]).output().unwrap();
+        assert!(alias.status.success());
+        let alias_text = String::from_utf8(alias.stdout).unwrap();
+        let path = alias_text.split('\'').nth(1).unwrap();
+        assert!(path.starts_with("/org/freedesktop/secrets/collection/"));
+        let locked = Command::new("/usr/bin/gdbus").args(["call", "--session", "--dest", "org.freedesktop.secrets", "--object-path", "/org/freedesktop/secrets", "--method", "org.freedesktop.Secret.Service.Lock", &format!("[objectpath '{path}']")]).output().unwrap();
         assert!(locked.status.success());
         assert!(load().is_err(), "locked keyring must fail without asking for a password or creating a new identity");
     }
