@@ -266,3 +266,25 @@ test("mensajes de Unit conservan etapa y distinguen caché, integridad y espacio
     assert.match(unitSyncMessage(error), message); assert.doesNotMatch(unitSyncMessage(error), /technical-secret/);
   }
 });
+
+test("publicación Office entrega PDF local y conserva original como metadata sin descargarlo", async (t) => {
+  const cache=await temporary(t); const data=await fixture();
+  for(const resource of data.manifest.resources.slice(0,2)) {
+    resource.originalMime="application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    resource.deliveryMime="application/pdf";
+    resource.mimeType=resource.originalMime;
+    resource.original={snapshot:{path:"original.pptx",mimeType:resource.originalMime}};
+    resource.derivative={revision:"revision1",processorVersion:"office-pdf-v1",pageCount:2,file:resource.download};
+    resource.download.mimeType="application/pdf"; resource.download.name="Presentation.pdf";
+  }
+  await seal(data.manifest);data.publication.contentHash=data.manifest.integrity.contentHash;
+  const remote=source(data); await new SyncEngine(cache,remote).sync(data.publication);
+  const classroom=await openLocalClass(cache,data.publication.unitId,1);
+  const {rendererKind}=await import("../src/player/types.ts");
+  for(const resource of data.manifest.resources.slice(0,2)) {
+    const local=classroom.resolveResource(resource.resourceId);
+    assert.equal(local.mimeType,"application/pdf");assert.equal(rendererKind(local.mimeType),"pdf");
+    assert.doesNotMatch(local.path,/original\.pptx/);
+  }
+  assert.equal(remote.calls.length,data.manifest.resources.length);
+});

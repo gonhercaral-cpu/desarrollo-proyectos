@@ -791,6 +791,17 @@ describe("roles y perfiles", () => {
 });
 
 describe("Active Classroom", () => {
+  it("procesamiento y derivados solo backend; admin web no puede falsificar PDF listo", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "activeClassroomProcessingJobs", "office-job"), { state: "ready" });
+      await setDoc(doc(context.firestore(), "activeClassroomResources", "office-resource"), { source: "drive", folderId: "unit", published: false, processing: { state: "processing" } });
+    });
+    for (const db of [auth("admin"), auth("collab"), unauth()]) {
+      await assertFails(getDoc(doc(db, "activeClassroomProcessingJobs/office-job")));
+      await assertFails(updateDoc(doc(db, "activeClassroomProcessingJobs/office-job"), { state: "ready" }));
+      await assertFails(updateDoc(doc(db, "activeClassroomResources/office-resource"), { processing: { state: "ready", download: { path: "forged" } } }));
+    }
+  });
   it("registro y códigos de equipos son privados incluso para admin web; gestión solo por callable", async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "activeClassroomDevices", "private-device"), { credentialHash: "private", status: "pending" });

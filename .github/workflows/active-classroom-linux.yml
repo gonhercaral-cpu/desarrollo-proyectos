@@ -16,6 +16,9 @@ on:
       - "firebase.rules-test.json"
       - "tests/active-classroom-device*"
       - "src/active-classroom/**"
+      - "active-classroom-processor/**"
+      - "tests/active-classroom-office*"
+      - "docs/active-classroom-manifest.office.example.json"
 
 permissions:
   contents: read
@@ -55,7 +58,9 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
       - name: Tests backend y lint específico
         run: |
-          node --test tests/active-classroom-device.test.cjs tests/active-classroom-device-ui.test.mjs
+          node --test tests/active-classroom-device.test.cjs tests/active-classroom-device-ui.test.mjs tests/active-classroom-office.test.cjs
+          npx eslint drive/activeClassroomProcessing*.js drive/activeClassroomProcessorClient.js drive/activeClassroomUnit.js tests/active-classroom-office*.cjs
+          npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
           npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
           npm run build
@@ -65,7 +70,19 @@ jobs:
         run: |
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test tests/firebase-rules.test.mjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs"
+            "node --test tests/firebase-rules.test.mjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs"
+  office:
+    name: Conversión Office real en contenedor
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build del mismo contenedor usado por Cloud Run
+        run: docker build --tag active-classroom-office:test active-classroom-processor
+      - name: PPT/PPTX/DOC/DOCX a PDF, páginas, integridad y fallos reales
+        run: docker run --rm --network none --memory 2g --cpus 2 --entrypoint python active-classroom-office:test -m unittest discover -s tests -v
   linux:
     name: Tests, Cargo y paquete Debian
     runs-on: ubuntu-22.04

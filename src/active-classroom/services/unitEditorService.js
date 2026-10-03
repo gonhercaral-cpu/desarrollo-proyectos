@@ -3,9 +3,10 @@ import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 
 const save = httpsCallable(functions, "saveActiveClassroomUnit");
-const publish = httpsCallable(functions, "publishActiveClassroomUnit");
+const publish = httpsCallable(functions, "publishActiveClassroomUnit", { timeout: 540000 });
 const check = httpsCallable(functions, "checkActiveClassroomDriveChanges", { timeout: 540000 });
 const refresh = httpsCallable(functions, "refreshActiveClassroomDriveResource");
+const processDocument = httpsCallable(functions, "processActiveClassroomDocument", { timeout: 540000 });
 
 export async function loadUnitEditor(unitId) {
   const snapshot = await getDoc(doc(db, "activeClassroomUnits", unitId));
@@ -22,8 +23,16 @@ export async function publishUnit(unitId, expectedRevision) {
   return (await publish({ unitId, expectedRevision })).data;
 }
 export async function checkUnitDriveChanges(unitId, resourceIds) {
-  return (await check({ unitId, resourceIds })).data;
+  const results = [];
+  for (let index = 0; index < resourceIds.length; index += 200) {
+    const batch = (await check({ unitId, resourceIds: resourceIds.slice(index, index + 200) })).data;
+    results.push(...batch.results);
+  }
+  return { results };
 }
 export async function refreshUnitDriveResource(unitId, resourceId, expectedRevision) {
   return (await refresh({ unitId, resourceId, expectedRevision })).data;
+}
+export async function processUnitDocument(unitId, resourceId, expectedRevision) {
+  return (await processDocument({ unitId, resourceId, expectedRevision })).data;
 }

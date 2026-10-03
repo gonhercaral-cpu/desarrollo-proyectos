@@ -2,6 +2,10 @@ export interface PublishedResource {
   resourceId: string;
   name: string;
   mimeType: string;
+  originalMime?: string;
+  deliveryMime?: string;
+  original?: Record<string, unknown>;
+  derivative?: { revision: string; processorVersion: string; sourceFingerprint: string; pageCount: number; processedAt: string; textExtraction: null; file: Record<string, unknown> };
   kind: string;
   file: Record<string, unknown>;
   download: { endpoint: string; name: string; mimeType: string; sizeBytes: number; checksums: { sha256: string }; [key: string]: unknown };

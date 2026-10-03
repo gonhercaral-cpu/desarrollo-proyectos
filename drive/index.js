@@ -9,6 +9,9 @@ const { google } = require("googleapis");
 const { createImportDriveReference } = require("./activeClassroom");
 const { createUnitHandlers } = require("./activeClassroomUnit");
 const { createPublicationFiles } = require("./activeClassroomFiles");
+const { createDocumentProcessing } = require("./activeClassroomProcessing");
+const { createProcessorClient } = require("./activeClassroomProcessorClient");
+const { defineString } = require("firebase-functions/params");
 const { createDesktopHandlers } = require("./activeClassroomDesktop");
 const { createDeviceHandlers, isDevice, DEVICE_PREFIX } = require("./activeClassroomDevices");
 const { Readable } = require("stream");
@@ -1358,10 +1361,19 @@ const classroomFiles = createPublicationFiles({
     return response.data;
   },
 });
+const processorUrl = defineString("ACTIVE_CLASSROOM_PROCESSOR_URL", { default: "" });
+const processorAuth = new google.auth.GoogleAuth();
+const classroomProcessing = createDocumentProcessing({
+  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getUserProfile,
+  prepareResource: classroomFiles.prepareResource,
+  timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+  convert: createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) }),
+});
+exports.processActiveClassroomDocument = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomProcessing.process);
 const classroomUnits = createUnitHandlers({
   db: admin.firestore(), getProfile: getUserProfile,
   resolveFile: resolveActiveClassroomDriveFile,
-  prepareResource: classroomFiles.prepareResource,
+  prepareResource: classroomProcessing.prepareDelivery,
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);

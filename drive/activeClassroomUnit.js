@@ -1,6 +1,7 @@
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
+const { officeExtension, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
 
 const MAX_RESOURCES = 200;
 const MAX_SLIDES = 200;
@@ -60,7 +61,12 @@ function fileReference(resource) {
 }
 function snapshotResource(resourceId, resource) {
   const iso = (value) => value?.toDate ? value.toDate().toISOString() : typeof value === "string" ? value : null;
-  return { resourceId, name: resource.name, mimeType: resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource),
+  const processing = readyProcessing(resource) ? resource.processing : null;
+  return { resourceId, name: resource.name, mimeType: resource.mimeType, originalMime: resource.mimeType, deliveryMime: processing?.download.mimeType || resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource),
+    ...(processing ? {
+      original: { ...fileReference(resource), name: resource.sourceName || resource.name, mimeType: resource.mimeType, snapshot: processing.original },
+      derivative: { revision: processing.revision, processorVersion: processing.processorVersion, sourceFingerprint: processing.sourceFingerprint, pageCount: processing.pageCount, processedAt: processing.completedAt, textExtraction: null, file: processing.download },
+    } : {}),
     timestamps: { createdAt: iso(resource.createdAt), updatedAt: iso(resource.updatedAt), sourceCheckedAt: iso(resource.sourceCheckedAt) } };
 }
 function stableStringify(value) {
@@ -117,7 +123,9 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const stored = (await transaction.get(unitRef(unitId))).data();
       revision(stored, request.data.expectedRevision);
       await validateFolders(transaction, unitId, draft);
-      await readResources(transaction, draft, unitId);
+      const resources = await readResources(transaction, draft, unitId);
+      const main = resources.find((resource) => resource.id === draft.mainPresentationId);
+      if (officeExtension(main) && readyProcessing(main)) draft.slides = pdfSlides(main, draft.slides);
       const draftRevision = (stored?.draftRevision || 0) + 1;
       transaction.set(unitRef(unitId), {
         schemaVersion: 1, draft, draftRevision, publishedVersion: stored?.publishedVersion || 0,
@@ -144,7 +152,11 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const draft = normalizeDraft(stored.draft);
       if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
-      return readResources(transaction, draft, unitId);
+      const resources = await readResources(transaction, draft, unitId);
+      for (const resource of resources) requireReady(resource);
+      const main = resources.find((resource) => resource.id === draft.mainPresentationId);
+      if (officeExtension(main) && (draft.slides.length !== main.processing.pageCount || draft.slides.some((slide, index) => slide.metadata.pageNumber !== index + 1))) fail("Aplica las diapositivas del PDF procesado antes de publicar.", "failed-precondition");
+      return resources;
     });
     const files = new Map();
     for (const resource of prepared) files.set(resource.id, await prepareResource(profile, resource));
@@ -156,11 +168,16 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
+      for (const resource of resources) requireReady(resource);
       if (contentHash(resources.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(prepared.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
       const content = {
         schemaVersion: 2, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
         mainPresentationId: draft.mainPresentationId, generalResourceIds: draft.generalResourceIds,
-        slides: draft.slides, resources: resources.map((resource) => ({ ...snapshotResource(resource.id, resource), download: files.get(resource.id) })),
+        slides: draft.slides.map((slide) => {
+          const main = resources.find((resource) => resource.id === draft.mainPresentationId);
+          const download = files.get(draft.mainPresentationId);
+          return officeExtension(main) ? { ...slide, metadata: { ...slide.metadata, delivery: { resourceId: main.id, revision: main.processing.revision, generation: download.generation, mimeType: download.mimeType, sizeBytes: download.sizeBytes, checksum: download.checksums.sha256 } } } : slide;
+        }), resources: resources.map((resource) => ({ ...snapshotResource(resource.id, resource), deliveryMime: files.get(resource.id).mimeType, download: files.get(resource.id) })),
       };
       const hash = contentHash(content);
       const previous = stored.publishedVersion
@@ -223,6 +240,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
         driveModifiedTime: file.modifiedTime || "", driveVersion: String(file.version || ""),
         driveMd5Checksum: file.md5Checksum || "", driveParentIds: file.parents || [],
         sourceCheckedAt: timestamp(), version: (current.version || 1) + 1,
+        ...(current.processing ? { processing: { state: "pending", sourceFingerprint: null } } : {}),
         updatedAt: timestamp(), updatedByUid: request.auth.uid, updatedByName: profile.name || "Administrador",
       };
       if (stored.draft.mainPresentationId === ref.id && !isMainPresentation({ ...current, ...updated })) fail("El original ya no es una presentación compatible.");
