@@ -1,13 +1,13 @@
 {
   "name": "active-classroom",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && npm run test:bundle",
     "test:bundle": "node --test tests/bundle.test.mjs",
-    "test:offline": "node --test tests/offline.test.mjs",
+    "test:offline": "node --test tests/offline.test.mjs tests/publication-refresh.test.mjs",
     "test:device": "node --test tests/device.test.mjs tests/library-auth.test.mjs",
     "test:webkit": "node tests/webkit-publications.mjs",
     "lint:offline": "eslint src/offline src/app.ts",

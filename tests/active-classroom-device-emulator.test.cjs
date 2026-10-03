@@ -3,12 +3,32 @@ const { test, after } = require("node:test");
 const { randomBytes } = require("node:crypto");
 const admin = require("../drive/node_modules/firebase-admin");
 const { createDeviceHandlers } = require("../drive/activeClassroomDevices");
+const { createDesktopHandlers } = require("../drive/activeClassroomDesktop");
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Requiere emulador Firestore.");
 const app = admin.initializeApp({ projectId: "active-classroom-device-tests" }, "device-tests");
 const db = app.firestore();
 const handlers = createDeviceHandlers({ db, auth: { createCustomToken: async (uid, claims) => ({ uid, claims }), revokeRefreshTokens: async () => {} }, assertAdmin: async () => ({ uid: "admin", role: "admin", active: true }) });
 after(() => app.delete());
+test("Firestore: dispositivo consulta última publicación v1, v2 y v10 sin conservar cursor", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Equipo refresh" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const pending = await handlers.session(request); await handlers.approve({ data: { code: pending.code } });
+  const session = await handlers.session(request);
+  const auth = { uid: session.customToken.uid, token: session.customToken.claims };
+  const desktop = createDesktopHandlers({ db, isDevice: () => true, authorizeDevice: handlers.authorizeDevice });
+  const unitId = `refresh-${randomBytes(8).toString("hex")}`;
+  for (const version of [1, 2, 10]) {
+    const manifest = { version, schemaVersion: 2, unit: { name: "Unit refresh", levelId: "level-1" }, publishedAt: new Date().toISOString(), integrity: { contentHash: "a".repeat(64) } };
+    const batch = db.batch();
+    batch.create(db.doc(`activeClassroomUnits/${unitId}/publications/${version}`), { manifest });
+    batch.set(db.doc(`activeClassroomUnits/${unitId}`), { publishedVersion: version }); await batch.commit();
+    const page = await desktop.list({ auth, data: { limit: 50 } });
+    assert.equal(page.publications.find((item) => item.unitId === unitId).version, version);
+    assert.equal((await desktop.get({ auth, data: { unitId } })).manifest.version, version);
+  }
+  assert.equal((await desktop.get({ auth, data: { unitId, version: 1 } })).manifest.version, 1);
+});
 test("Firestore: registro concurrente conserva un único código y aprobación atómica", async () => {
   const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Salón test" };
   const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };

@@ -12,10 +12,11 @@ async function run() {
   const labels = []; api.onDevice = async (device) => { labels.push(device.displayName); };
   const publications = await api.list(); check(publications[0].unitId === fixture.publication.unitId, "Catálogo incorrecto");
   const manifest = await api.manifest(publications[0]); check(manifest.version === fixture.manifest.version, "Manifest incorrecto");
+  const refreshed = await api.list(); check(refreshed[0].version === publications[0].version + 1, "Refresh conserva versión antigua");
   const chunks = [];
   await api.download(manifest, manifest.resources[0], async (chunk) => chunks.push(chunk), new AbortController().signal);
   check(await sha256(new Uint8Array(await new Blob(chunks).arrayBuffer())) === manifest.resources[0].download.checksums.sha256, "Integridad incorrecta");
-  check(labels.length === 2 && labels.every((name) => name === "Equipo Prueba"), "Nombre visible perdido");
+  check(labels.length === 3 && labels.every((name) => name === "Equipo Prueba"), "Nombre visible perdido");
   for (const status of [401, 403, 404, 500, 503]) {
     let failure;
     try { await api.request(`probe?status=${status}`, {}, async () => null); } catch (error) { failure = error; }

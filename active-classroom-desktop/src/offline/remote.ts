@@ -69,7 +69,7 @@ export class PublicationApi {
     }
   }
   async call<T>(name: string, data: unknown, signal?: AbortSignal): Promise<T> {
-    return this.request(name, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) }, async (response) => {
+    return this.request(name, { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) }, async (response) => {
       const payload = await response.json();
       if (!payload || typeof payload !== "object" || !payload.result || typeof payload.result !== "object") throw new SyncError("response", "No se pudo leer la respuesta del servidor.");
       return payload.result as T;
@@ -85,13 +85,15 @@ export class PublicationApi {
       if (!Array.isArray(page.publications)) throw this.invalidCatalog();
       for (const publication of page.publications) {
         if (!publication || !validId(publication.unitId) || !validId(publication.levelId) || typeof publication.name !== "string" || !validHash(publication.contentHash) || !Number.isSafeInteger(publication.version) || publication.version < 1) throw this.invalidCatalog();
-        result.set(publication.unitId, publication);
+        const previous = result.get(publication.unitId);
+        if (!previous || publication.version > previous.version) result.set(publication.unitId, publication);
       }
       cursor = page.nextCursor;
       if (cursor !== null && (!validId(cursor) || visited.has(cursor))) throw this.invalidCatalog();
       if (cursor) visited.add(cursor);
     } while (cursor);
     syncDiagnostic("LIST_OK");
+    for (const publication of result.values()) syncDiagnostic("REMOTE_PUBLICATION", { unitId: publication.unitId, version: publication.version });
     return [...result.values()];
   }
   private invalidCatalog(): SyncError {

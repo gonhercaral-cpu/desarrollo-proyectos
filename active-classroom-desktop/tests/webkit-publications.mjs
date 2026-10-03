@@ -18,6 +18,7 @@ const bundle = await build({ configFile: false, logLevel: "error", build: { writ
 const javascript = (Array.isArray(bundle) ? bundle[0] : bundle).output.find((item) => item.type === "chunk").code;
 const csp = JSON.parse(await readFile(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8")).app.security.csp;
 const seen = new Set();
+let listCalls = 0;
 const server = createServer((request, response) => {
   const url = new URL(request.url, "http://localhost");
   const path = url.pathname;
@@ -40,7 +41,7 @@ const server = createServer((request, response) => {
     response.setHeader("Content-Type", "application/octet-stream"); response.setHeader("Content-Length", part.length); response.setHeader("X-Content-SHA256", hash); return response.end(part);
   }
   response.setHeader("Content-Type", "application/json");
-  if (path === "/listActiveClassroomPublications") return response.end(JSON.stringify({ result: { publications: [publication], nextCursor: null, device } }));
+  if (path === "/listActiveClassroomPublications") { listCalls++; return response.end(JSON.stringify({ result: { publications: [{ ...publication, version: publication.version + listCalls - 1 }], nextCursor: null, device } })); }
   if (path === "/getActiveClassroomPublication") return response.end(JSON.stringify({ result: { manifest, device } }));
   response.statusCode = 404; response.end();
 });
@@ -52,6 +53,7 @@ try {
     child.on("error", reject); child.on("exit", resolve);
   });
   assert.equal(status, 0, "Falló transporte en WebKitGTK");
+  assert.equal(listCalls, 2, "Refresh debe realizar otra consulta HTTP en WebKitGTK");
   assert.deepEqual([...seen].sort(), ["/activeClassroomPublicationFile", "/getActiveClassroomPublication", "/listActiveClassroomPublications"]);
   console.log("WebKitGTK: listado, manifest, descarga, SHA-256, displayName y estados HTTP correctos.");
 } finally { await new Promise((resolve) => server.close(resolve)); }

@@ -6,6 +6,8 @@ import { connectionLabel, diagnose } from "./connection";
 import { NativeCache } from "./native-cache";
 import { PublicationApi } from "./remote";
 import { localState, type Manifest, type Publication } from "./manifest";
+import { mergeLibraryPublications } from "./library-publications";
+import { syncDiagnostic } from "./sync-diagnostics";
 import { openLocalClass, SyncEngine, unitSyncMessage, type Progress } from "./sync";
 import "./library.css";
 import { ClassroomPlayer } from "../player/ClassroomPlayer";
@@ -41,9 +43,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       root.querySelector<HTMLButtonElement>("[data-activate]")!.onclick = () => { void reconnect(); };
       return;
     }
-    const combined = new Map<string, { local?: Manifest; remote?: Publication }>();
-    for (const local of locals) combined.set(local.unit.unitId, { local });
-    for (const remote of publications) combined.set(remote.unitId, { ...combined.get(remote.unitId), remote });
+    const combined = mergeLibraryPublications(locals, publications);
     const levels = [...new Set([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
     const unitCards = [...combined.entries()].filter(([, item]) => !selectedLevel || (item.remote?.levelId || item.local!.unit.levelId) === selectedLevel).map(([unitId, { local, remote }]) => {
       const busy = downloading === unitId;
@@ -61,15 +61,21 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   async function refresh(): Promise<void> {
     if (!api || refreshing || player || opening) return;
     const current = epoch;
+    syncDiagnostic("REFRESH_START");
     refreshing = true; render();
     refreshController = new AbortController();
     try {
       const available = await api.list(refreshController.signal);
       if (current !== epoch) return;
       publications = available;
+      for (const [unitId, entry] of mergeLibraryPublications(locals, available)) {
+        if (entry.localVersion !== undefined) syncDiagnostic("LOCAL_PUBLICATION", { unitId, version: entry.localVersion });
+        if (entry.localVersion !== undefined && entry.remoteVersion !== undefined && entry.remoteVersion > entry.localVersion) syncDiagnostic("UPDATE_AVAILABLE", { unitId, version: entry.remoteVersion, localVersion: entry.localVersion });
+      }
       session.connected();
       diagnose("publications", available.length ? "listed" : "empty");
       message = available.length ? "Publicaciones consultadas. Las clases locales se conservan hasta completar cada actualización." : "No hay clases publicadas. Tus clases locales se conservan.";
+      syncDiagnostic("REFRESH_COMPLETE");
     } catch (error) { if (current === epoch) { session.reportFailure(error, "publications"); message = device.message; } }
     finally { if (current === epoch) { refreshing = false; render(); } }
   }
