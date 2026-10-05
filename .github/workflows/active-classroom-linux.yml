@@ -169,7 +169,8 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib device_identity::tests:: -- --nocapture
 
       - name: Tests Rust de permisos y sesión de proyección
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib audience_window::tests:: -- --nocapture
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib audience_window::tests:: -- --nocapture
 
       - name: Persistencia real en llavero Linux aislado
         run: |
