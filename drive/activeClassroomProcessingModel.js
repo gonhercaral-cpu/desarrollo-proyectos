@@ -4,6 +4,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const PROCESSOR_VERSION = "office-pdf-v1";
 const SLIDES_PROCESSOR_VERSION = "google-slides-png-v1";
 const isGoogleSlides = (resource) => resource?.mimeType === "application/vnd.google-apps.presentation";
+const validPageObjectId = (value) => typeof value === "string" && /^[a-zA-Z0-9_][a-zA-Z0-9_:-]{0,199}$/.test(value);
 const processorVersion = (resource) => isGoogleSlides(resource) ? SLIDES_PROCESSOR_VERSION : PROCESSOR_VERSION;
 const slideResourceId = (resourceId, pageObjectId) => `gs-${createHash("sha256").update(`${resourceId}:${pageObjectId}`).digest("hex").slice(0, 40)}`;
 const slidesTargetPath = (revision, pageObjectId) => `active-classroom/publications/files/${createHash("sha256").update(`${revision}:png:${pageObjectId}`).digest("hex")}`;
@@ -45,4 +46,4 @@ function pdfSlides(resource, previous = []) {
     return { slideId: old?.slideId || `pdf-${createHash("sha256").update(resource.id).digest("hex").slice(0, 16)}-${pageNumber}`, index, title: old?.title || "", resourceIds: old?.resourceIds || [], metadata: { pageNumber, notes: old?.metadata?.notes || "" } };
   });
 }
-module.exports = { PROCESSOR_VERSION, SLIDES_PROCESSOR_VERSION, isGoogleSlides, processorVersion, needsDocumentProcessing, slideResourceId, slidesTargetPath, processingTargetPath, OFFICE_MIMES, officeExtension, processingFingerprint, readyProcessing, requireReady, pdfSlides };
+module.exports = { PROCESSOR_VERSION, SLIDES_PROCESSOR_VERSION, isGoogleSlides, validPageObjectId, processorVersion, needsDocumentProcessing, slideResourceId, slidesTargetPath, processingTargetPath, OFFICE_MIMES, officeExtension, processingFingerprint, readyProcessing, requireReady, pdfSlides };

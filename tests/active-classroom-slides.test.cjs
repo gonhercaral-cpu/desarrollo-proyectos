@@ -5,6 +5,7 @@ const { Readable } = require("node:stream");
 const { createGoogleSlidesProcessor, pngDimensions, downloadThumbnail } = require("../drive/activeClassroomSlides");
 const { openActiveClassroomDrive, processingError } = require("../drive/activeClassroomDriveContent");
 const { needsDocumentProcessing, officeExtension, processingFingerprint, pdfSlides, SLIDES_PROCESSOR_VERSION } = require("../drive/activeClassroomProcessingModel");
+const { normalizeDraft } = require("../drive/activeClassroomUnit");
 
 const png = readFileSync(require.resolve("../active-classroom-desktop/public/active-classroom-icon.png"));
 const dimensions = pngDimensions(png);
@@ -70,6 +71,26 @@ test("Google Slides grande supera límite de exportación sin llamar a Drive exp
   assert.equal(result.pageCount, 100); assert.equal(f.calls.length, 100);
   assert.equal(result.processorVersion, SLIDES_PROCESSOR_VERSION);
   assert.equal(f.bucket.objects.size, 100);
+});
+
+test("IDs Google con dos puntos se conservan al procesar y guardar borrador", async () => {
+  const f = fixture(["page:valid"]);
+  const processing = { ...await f.processor.render({ profile: {}, resource, revision: "colon" }), state: "ready", sourceFingerprint: processingFingerprint(resource) };
+  await f.processor.verify(processing);
+  const slides = pdfSlides({ ...resource, processing });
+  const draft = normalizeDraft({ name: "Unit", levelId: "level", status: "active", mainPresentationId: resource.id, generalResourceIds: [], slides });
+  assert.equal(draft.slides[0].metadata.pageObjectId, "page:valid");
+});
+
+test("descarga temporal usa HTTPS acotado y valida MIME, sin persistir contentUrl", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.hostname, "slides.googleusercontent.com"); assert.equal(options.redirect, "error"); assert.ok(options.signal instanceof AbortSignal);
+    requests++;
+    return new Response(png, { headers: { "Content-Type": requests === 1 ? "image/png" : "text/html", "Content-Length": String(png.length) } });
+  });
+  assert.deepEqual(await downloadThumbnail("https://slides.googleusercontent.com/file?temporary-secret"), png);
+  await assert.rejects(downloadThumbnail("https://slides.googleusercontent.com/file?temporary-secret"), { code: "data-loss" });
 });
 
 test("fallo de thumbnail elimina intento parcial, reintento usa otra revisión; 429 reintenta", async () => {

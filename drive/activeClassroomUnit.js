@@ -1,7 +1,7 @@
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
-const { needsDocumentProcessing, isGoogleSlides, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
+const { needsDocumentProcessing, isGoogleSlides, validPageObjectId, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
 
 const MAX_RESOURCES = 200;
 const MAX_SLIDES = 200;
@@ -26,7 +26,7 @@ function normalizeDraft(input) {
   const metadata = input.metadata || {};
   const slides = input.slides.map((slide, index) => ({
     slideId: id(slide.slideId), index, title: text(slide.title || "", 160),
-    metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000), ...(slide.metadata?.pageObjectId ? { pageObjectId: id(slide.metadata.pageObjectId), presentationResourceId: id(slide.metadata.presentationResourceId) } : {}) },
+    metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000), ...(slide.metadata?.pageObjectId ? { pageObjectId: validPageObjectId(slide.metadata.pageObjectId) ? slide.metadata.pageObjectId : fail("Identificador Google Slides inválido."), presentationResourceId: id(slide.metadata.presentationResourceId) } : {}) },
     resourceIds: ids(slide.resourceIds || []),
   }));
   ids(slides.map(({ slideId }) => slideId), MAX_SLIDES);

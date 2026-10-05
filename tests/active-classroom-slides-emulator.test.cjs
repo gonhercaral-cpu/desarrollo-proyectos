@@ -19,7 +19,7 @@ test("Google Slides: fallo/reintento, PNG privados, orden, manifest Desktop, cam
   const resolveFile = async () => ({ ...source });
   const bytes = readFileSync(require.resolve("../active-classroom-desktop/public/active-classroom-icon.png"));
   const dimensions = pngDimensions(bytes);
-  let pageIds = ["slide_z", "slide_a", "slide_m"]; let failThumbnail = true; let thumbnailCalls = 0;
+  let pageIds = ["slide:z", "slide_a", "slide_m"]; let failThumbnail = true; let thumbnailCalls = 0;
   const googleSlides = createGoogleSlidesProcessor({ bucket, resolveFile, wait: async () => {}, download: async () => bytes,
     getSlides: async () => ({ presentations: {
       get: async () => ({ data: { revisionId: source.version, slides: pageIds.map((objectId) => ({ objectId })) } }),
@@ -82,7 +82,7 @@ test("Google Slides: fallo/reintento, PNG privados, orden, manifest Desktop, cam
     assert.equal(applied.draftRevision, 3); assert.equal(thumbnailCalls, calls);
     assert.equal((await units.publish(request(3))).unchanged, true);
     source.version = "2"; source.modifiedTime = "2026-10-05T02:00:00Z";
-    pageIds = ["slide_m", "slide_z", "slide_new"];
+    pageIds = ["slide_m", "slide:z", "slide_new"];
     assert.equal((await units.checkDrive({ ...request(3), data: { unitId, resourceIds: [mainRef.id] } })).results[0].status, "changed");
     await assert.rejects(units.publish(request(3)), { code: "failed-precondition" });
     const refreshed = await units.refreshDrive(request(3)); assert.equal(refreshed.draftRevision, 4);

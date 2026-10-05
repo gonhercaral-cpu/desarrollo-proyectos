@@ -3,7 +3,7 @@ const { setTimeout: sleep } = require("node:timers/promises");
 const { crc32 } = require("node:zlib");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { checkOriginal, descriptor } = require("./activeClassroomFiles");
-const { SLIDES_PROCESSOR_VERSION, slidesTargetPath } = require("./activeClassroomProcessingModel");
+const { SLIDES_PROCESSOR_VERSION, slidesTargetPath, validPageObjectId } = require("./activeClassroomProcessingModel");
 
 const MAX_PNG_BYTES = 20 * 1024 * 1024;
 function pngDimensions(bytes) {
@@ -61,7 +61,7 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
       const presentation = await read();
       if (!Array.isArray(presentation.slides) || !presentation.slides.length || presentation.slides.length > 200 || new Set(presentation.slides.map((page) => page.objectId)).size !== presentation.slides.length) throw new HttpsError("resource-exhausted", "Google Slides requiere entre 1 y 200 diapositivas únicas.");
       for (const [index, slide] of presentation.slides.entries()) {
-        if (!/^[a-zA-Z0-9_-]{1,200}$/.test(slide.objectId || "")) throw new HttpsError("data-loss", "Identificador de slide inválido.");
+        if (!validPageObjectId(slide.objectId)) throw new HttpsError("data-loss", "Identificador de slide inválido.");
         if (index) await wait(1100); // Stay below the documented 60 expensive reads/user/minute.
         const thumbnail = (await retry(() => slides.presentations.pages.getThumbnail({ presentationId, pageObjectId: slide.objectId, "thumbnailProperties.mimeType": "PNG", "thumbnailProperties.thumbnailSize": "LARGE" }, { timeout: 20000 }))).data;
         // Fetch immediately; this access-bearing URL never enters persisted metadata or logs.
@@ -93,7 +93,7 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     const first = processing.pages[0].download;
     if (!first || processing.download?.path !== first.path || processing.download.generation !== first.generation || processing.download.checksums?.sha256 !== first.checksums?.sha256 || processing.download.sizeBytes !== first.sizeBytes || processing.download.mimeType !== "image/png") throw new HttpsError("data-loss", "Derivado principal inválido.");
     for (const [index, page] of processing.pages.entries()) {
-      if (page.index !== index || !/^[a-zA-Z0-9_-]{1,200}$/.test(page.pageObjectId || "") || page.storagePath !== slidesTargetPath(processing.revision, page.pageObjectId) || page.download?.path !== page.storagePath || page.download.endpoint !== "activeClassroomPublicationFile" || page.download.provider !== "storage" || !/^\d+$/.test(page.download.generation || "") || page.download.mimeType !== "image/png" || !/^[a-f0-9]{64}$/.test(page.sha256 || "") || page.sha256 !== page.download.checksums?.sha256 || !Number.isSafeInteger(page.size) || page.size < 45 || page.size > MAX_PNG_BYTES || page.size !== page.download.sizeBytes || !Number.isInteger(page.width) || !Number.isInteger(page.height) || Math.min(page.width, page.height) < 1 || Math.max(page.width, page.height) > 1600) throw new HttpsError("data-loss", "Referencia thumbnail inválida.");
+      if (page.index !== index || !validPageObjectId(page.pageObjectId) || page.storagePath !== slidesTargetPath(processing.revision, page.pageObjectId) || page.download?.path !== page.storagePath || page.download.endpoint !== "activeClassroomPublicationFile" || page.download.provider !== "storage" || !/^\d+$/.test(page.download.generation || "") || page.download.mimeType !== "image/png" || !/^[a-f0-9]{64}$/.test(page.sha256 || "") || page.sha256 !== page.download.checksums?.sha256 || !Number.isSafeInteger(page.size) || page.size < 45 || page.size > MAX_PNG_BYTES || page.size !== page.download.sizeBytes || !Number.isInteger(page.width) || !Number.isInteger(page.height) || Math.min(page.width, page.height) < 1 || Math.max(page.width, page.height) > 1600) throw new HttpsError("data-loss", "Referencia thumbnail inválida.");
       const [metadata] = await bucket.file(page.storagePath, { generation: page.download.generation }).getMetadata();
       if (String(metadata.generation) !== page.download.generation || Number(metadata.size) !== page.size || metadata.contentType !== "image/png" || metadata.metadata?.sha256 !== page.sha256 || metadata.metadata?.processingRevision !== processing.revision || metadata.metadata?.pageObjectId !== page.pageObjectId || Number(metadata.metadata?.width) !== page.width || Number(metadata.metadata?.height) !== page.height) throw new HttpsError("data-loss", "Thumbnail congelada no disponible.");
     }
