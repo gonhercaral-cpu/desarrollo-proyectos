@@ -103,8 +103,8 @@ pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::W
             audience.set_fullscreen(false).map_err(|e| e.to_string())?;
             audience.set_position(PhysicalPosition::new(monitor.x, monitor.y)).map_err(|e| e.to_string())?;
             audience.set_size(PhysicalSize::new(monitor.width, monitor.height)).map_err(|e| e.to_string())?;
-            audience.set_fullscreen(true).map_err(|e| e.to_string())?;
             audience.show().map_err(|e| e.to_string())?;
+            audience.set_fullscreen(true).map_err(|e| { let _ = audience.hide(); e.to_string() })?;
             let mut state = gate.0.lock().map_err(|_| "projection: Estado no disponible")?;
             state.target = Some(monitor.id.clone()); let snapshot = state.snapshot.clone().unwrap_or(Value::Null); drop(state);
             app.emit_to("audience", "classroom-projection", snapshot).map_err(|e| e.to_string())?;
