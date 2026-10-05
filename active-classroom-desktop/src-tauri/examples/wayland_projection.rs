@@ -15,7 +15,18 @@ fn check_and_advance(app: &tauri::AppHandle, phase: &AtomicUsize) -> tauri::Resu
     let monitors = teacher.available_monitors()?;
     assert_eq!(monitors.len(), 2, "Fixture Wayland requiere dos salidas");
     let current = phase.load(Ordering::SeqCst);
-    let target = if current == 1 { &monitors[0] } else { &monitors[1] };
+    if current == 1 || current == 3 {
+        // hide() queues a native operation. Let the main loop process it before
+        // selecting the next output, exactly as separate frontend IPC calls do.
+        if audience.is_visible()? { return Ok(false); }
+        let next = if current == 1 { &monitors[0] } else { &monitors[1] };
+        println!("WAYLAND_HIDDEN_OK phase={current}");
+        fullscreen_on(&audience, next)?;
+        audience.show()?;
+        phase.store(current + 1, Ordering::SeqCst);
+        return Ok(false);
+    }
+    let target = if current == 2 { &monitors[0] } else { &monitors[1] };
     let teacher_monitor = teacher.current_monitor()?;
     let audience_monitor = audience.current_monitor()?;
     let correct = teacher_monitor.as_ref().map(|monitor| monitor.position() == monitors[0].position()).unwrap_or(false)
@@ -23,12 +34,8 @@ fn check_and_advance(app: &tauri::AppHandle, phase: &AtomicUsize) -> tauri::Resu
         && audience.is_fullscreen()? && audience.is_visible()?;
     if !correct { return Ok(false); }
     println!("WAYLAND_MONITOR_OK phase={current} position={:?} teacher_position={:?}", target.position(), teacher_monitor.unwrap().position());
-    if current == 2 { phase.store(3, Ordering::SeqCst); return Ok(true); }
-    let next = if current == 0 { &monitors[0] } else { &monitors[1] };
+    if current == 4 { phase.store(5, Ordering::SeqCst); return Ok(true); }
     audience.hide()?;
-    assert!(!audience.is_visible()?);
-    fullscreen_on(&audience, next)?; // No set_position or generic fullscreen before mapping.
-    audience.show()?;
     phase.store(current + 1, Ordering::SeqCst);
     Ok(false)
 }
