@@ -49,3 +49,18 @@ CI ejecuta tests de Desktop, prototipo conservado, backend, reglas/emuladores, O
 Se conservan diagnósticos operativos con eventos/estados, versiones y datos de monitor; no incluyen tokens, credenciales ni respuestas completas. No se encontró debugging temporal obsoleto en la entrada de producción.
 
 Conservar `.deb`, checksum y referencia al commit: artefactos CI caducan a los 14 días. No hay autoactualización ni firma de distribución. Códecs y configuración física de audio/monitor deben comprobarse por equipo. Consultar [changelog](../active-classroom-desktop/CHANGELOG.md) y [proyector](active-classroom-projection.md).
+
+## Resultado de validación 1.0.0
+
+- [CI Linux 37372033051](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/37372033051), completada con éxito el 2026-10-05. Código del instalador: `9bb1adb15d236ed74b840712cc4f86dc1fc045cf`.
+- Desktop: 86 tests, dos de empaquetado y dos de release, además de smoke/admin e integración del prototipo conservado. Backend: 40 tests en CI, 45 locales incluyendo el test Unit ya existente sin seguimiento Git. Emuladores/reglas: 143 tests.
+- Rust: 17 tests generales y un test adicional de llavero Linux real. Un test legado de PPTX real depende de un archivo externo opcional; no acredita conversión de contenido privado no proporcionado.
+- Cargo `--locked`, configuración/capabilities, WebKitGTK, Wayland con dos salidas virtuales, Office real en contenedor, frontend y build Tauri `.deb`: correctos.
+- Lint específico: correcto. Lint global del repositorio conserva 137 errores y 37 advertencias en archivos ajenos a este cierre; no bloquea el artefacto Desktop. No se modificaron esos módulos.
+- Paquete `Active Classroom_1.0.0_amd64.deb`, 7 509 912 bytes. SHA-256 generado/verificado en CI y vuelto a calcular tras descargar/extractar el artefacto:
+
+```text
+7f9f1b2329a29bcea4ef5b290f0f806a15e5524a73ee51041fd084fcc4e698e0
+```
+
+No requiere despliegue de Firebase ni migración. Listo para distribución gradual; validar monitor/audio/códecs y llavero en cada salón nuevo.
