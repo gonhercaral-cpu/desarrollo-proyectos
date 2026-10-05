@@ -13,6 +13,7 @@ export interface RendererState {
 }
 export interface RendererOptions {
   page: number; volume: number; muted: boolean;
+  silent?: boolean;
   onState(state: RendererState): void;
   onPage(page: number): void;
 }
@@ -23,6 +24,7 @@ export interface LocalRenderer {
   setPage(page: number): void | Promise<void>;
   seek(seconds: number): void;
   setVolume(volume: number): void;
+  applyPlayback?(state: RendererState): void | Promise<void>;
   destroy(): void;
 }
 export function rendererKind(mime: string): RendererKind {

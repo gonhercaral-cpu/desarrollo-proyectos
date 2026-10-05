@@ -1,18 +1,22 @@
-import { PlayerController } from "./controller.ts";
+import { ClassSessionController } from "./ClassSessionController.ts";
+import { ProjectionCoordinator, type ProjectionBridge } from "./projection/ProjectionCoordinator.ts";
 import { localSource } from "./local-source.ts";
 import { createRenderer } from "./renderers/factory.ts";
 import { shortcutFor } from "./shortcuts.ts";
-import { initialRendererState, rendererKind, type LocalClassroom, type LocalRenderer, type PlayerCommand, type RendererState } from "./types.ts";
+import { initialRendererState, rendererKind, type LocalClassroom, type LocalRenderer, type PlayerCommand, type RendererState, type RendererSource } from "./types.ts";
 
 export interface PlayerDependencies {
   verifyResource(id: string): Promise<boolean>;
   createRenderer?: typeof createRenderer;
   toUrl?: (path: string) => string;
+  projectionBridge?: ProjectionBridge;
 }
 const timeLabel = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
 
 export class ClassroomPlayer {
-  readonly controller: PlayerController;
+  readonly controller: ClassSessionController;
+  private projection: ProjectionCoordinator;
+  private source?: RendererSource;
   private root: HTMLElement;
   private classroom: LocalClassroom;
   private dependencies: PlayerDependencies;
@@ -31,10 +35,11 @@ export class ClassroomPlayer {
   };
 
   constructor(root: HTMLElement, classroom: LocalClassroom, onExit: () => void, dependencies: PlayerDependencies) {
-    this.controller = new PlayerController(classroom.manifest);
+    this.controller = new ClassSessionController(classroom.manifest);
+    this.projection = new ProjectionCoordinator(() => this.updateProjection(), dependencies.projectionBridge, dependencies.projectionBridge ? true : undefined);
     this.root = root; this.classroom = classroom; this.onExit = onExit; this.dependencies = dependencies;
     this.layout(); window.addEventListener("keydown", this.keyListener);
-    void this.showResource();
+    this.projection.start(); void this.showResource();
   }
   private element<T extends HTMLElement = HTMLElement>(selector: string): T { return this.root.querySelector<T>(selector)!; }
   private layout(): void {
@@ -48,7 +53,28 @@ export class ClassroomPlayer {
     this.root.querySelectorAll<HTMLButtonElement>("[data-command]").forEach((button) => { button.onclick = () => { void this.dispatch(button.dataset.command as PlayerCommand); }; });
     this.element<HTMLInputElement>("[data-seek]").oninput = (event) => this.renderer?.seek(Number((event.target as HTMLInputElement).value));
     this.element<HTMLInputElement>("[data-volume]").oninput = (event) => this.renderer?.setVolume(Number((event.target as HTMLInputElement).value));
-    this.updateLists(); this.updateState();
+    const tools = document.createElement("section"); tools.className = "ui-card player-projection";
+    tools.innerHTML = '<h2>Proyector</h2><p data-projector-status role="status"></p><label>Pantalla<select data-monitor aria-label="Monitor del proyector"></select></label><button class="button button-outline" data-project>Proyectar</button><small>Audio exclusivo de esta ventana. Vista principal como preview.</small><h3>Notas de la diapositiva</h3><p data-notes></p>';
+    this.element(".player-resources").prepend(tools);
+    this.element<HTMLSelectElement>("[data-monitor]").onchange = (event) => this.projection.select((event.target as HTMLSelectElement).value);
+    this.element("[data-project]").onclick = () => { void this.projection.toggle(); };
+    this.updateProjection(); this.updateLists(); this.updateState();
+  }
+  private updateProjection(): void {
+    if (this.disposed) return;
+    const projection = this.projection;
+    const select = this.element<HTMLSelectElement>("[data-monitor]"); select.replaceChildren();
+    for (const monitor of projection.monitors) {
+      const option = document.createElement("option"); option.value = monitor.id;
+      option.textContent = `${monitor.name} · ${monitor.primary ? "Principal" : "Secundario"} · ${monitor.width}×${monitor.height} · (${monitor.x}, ${monitor.y})`;
+      select.append(option);
+    }
+    select.value = projection.selected?.id || ""; select.disabled = projection.projecting || projection.monitors.length < 2;
+    this.element("[data-projector-status]").textContent = projection.message + (projection.projecting ? " · Proyectando" : "");
+    const button = this.element<HTMLButtonElement>("[data-project]"); button.disabled = projection.monitors.length < 2;
+    button.textContent = projection.projecting ? "Detener proyección" : projection.message.includes("Restaurar") ? "Restaurar proyección" : "Proyectar";
+    this.controller.projector = { projecting: projection.projecting, connected: projection.monitors.length > 1, message: projection.message };
+    this.updateState();
   }
   private updateLists(): void {
     const slides = this.element("[data-slides]"); slides.replaceChildren();
@@ -92,10 +118,14 @@ export class ClassroomPlayer {
     this.element<HTMLInputElement>("[data-volume]").value = String(this.volume);
     this.element("[data-command='MUTE']").setAttribute("aria-pressed", String(this.muted));
     this.element("[data-command='MUTE']").textContent = this.muted ? "Activar sonido" : "Silenciar";
+    this.element("[data-notes]").textContent = controller.slideIndex === null ? "" : String(this.classroom.manifest.slides[controller.slideIndex].metadata.notes || "Sin notas.");
+    controller.record({ ...this.state, volume: this.volume, muted: this.muted }, this.source);
+    this.projection.update(controller.snapshot());
   }
   private async showResource(): Promise<void> {
     if (this.disposed) return;
     const id = this.controller.selectedResourceId;
+    if (this.renderedId !== id) this.source = undefined;
     this.updateLists();
     if (this.renderedId === id && this.renderer && !this.state.error) {
       try { await this.renderer.setPage(this.controller.page); } catch { this.state.error = "No se pudo abrir esta página."; this.updateState(); }
@@ -103,6 +133,7 @@ export class ClassroomPlayer {
     }
     const sequence = ++this.sequence;
     this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
+    this.source = undefined;
     this.state = { ...initialRendererState(), loading: true };
     const host = document.createElement("div"); host.className = "player-renderer-content";
     this.element("[data-renderer]").replaceChildren(host);
@@ -116,6 +147,7 @@ export class ClassroomPlayer {
       const renderer = await (this.dependencies.createRenderer || createRenderer)(rendererKind(source.mimeType));
       if (sequence !== this.sequence || this.disposed) { renderer.destroy(); return; }
       this.renderer = renderer; this.renderedId = id;
+      this.source = source;
       await renderer.mount(host, source, {
         page: this.controller.page, volume: this.volume, muted: this.muted,
         onState: (state: RendererState) => {
@@ -151,6 +183,7 @@ export class ClassroomPlayer {
   destroy(): void {
     if (this.disposed) return;
     this.disposed = true; ++this.sequence;
+    this.projection.destroy();
     window.removeEventListener("keydown", this.keyListener); this.renderer?.destroy(); this.renderer = undefined;
     if (document.fullscreenElement && this.root.contains(document.fullscreenElement)) void document.exitFullscreen().catch(() => {});
     this.root.replaceChildren();

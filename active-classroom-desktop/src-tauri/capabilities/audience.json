@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "audience",
+  "description": "Proyector local de solo lectura; sin controles, credenciales ni caché mutable",
+  "windows": ["audience"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

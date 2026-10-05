@@ -2,7 +2,7 @@ mod audience_window;
 mod offline_cache;
 mod device_identity;
 
-use audience_window::{audience_status, show_audience_window};
+use audience_window::classroom_projection;
 use regex::Regex;
 use serde::Serialize;
 use std::{
@@ -104,8 +104,10 @@ struct Relationship {
 #[tauri::command]
 fn import_presentation(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     path: String,
 ) -> Result<InternalPresentation, String> {
+    if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }
     let source = PathBuf::from(&path);
     if source
         .extension()
@@ -940,11 +942,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(offline_cache::CacheGate::default())
         .manage(device_identity::DeviceGate::default())
+        .manage(audience_window::ProjectionGate::default())
+        .on_window_event(audience_window::window_event)
         .invoke_handler(tauri::generate_handler![
             offline_cache::classroom_cache,
             device_identity::classroom_device,
-            show_audience_window,
-            audience_status,
+            classroom_projection,
             import_presentation
         ])
         .run(tauri::generate_context!())
