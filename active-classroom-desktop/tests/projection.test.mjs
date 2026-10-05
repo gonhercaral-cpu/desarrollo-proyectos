@@ -6,6 +6,8 @@ import { ClassSessionController, isProjectionSnapshot } from "../src/player/Clas
 import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
 import { ProjectionCoordinator } from "../src/player/projection/ProjectionCoordinator.ts";
 import { ProjectionPlayer } from "../src/player/projection/ProjectionPlayer.ts";
+import { showProjectionOnMonitor } from "../src/player/projection/windowPlacement.ts";
+import { PhysicalPosition } from "@tauri-apps/api/window";
 import { preferredMonitor, readMonitorPreference, saveMonitorPreference } from "../src/player/projection/monitors.ts";
 import { initialRendererState } from "../src/player/types.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
@@ -99,6 +101,51 @@ test("IPC serializa snapshots, combina pendientes y bloquea doble apertura", asy
   showing.resolve(); await opening; assert.equal(native.shown.length, 1);
 });
 
+test("cambiar monitor durante proyección reutiliza salida sin cambiar sesión", async t => {
+  const { cleanup } = dom(t); const native = bridge(); native.monitors.push({ ...monitors[1], id: "other", name: "DP-1", x: -1280 });
+  const controller = new ClassSessionController(fixture()); controller.goSlide(1);
+  const coordinator = new ProjectionCoordinator(() => {}, native, true); cleanup(() => coordinator.destroy());
+  coordinator.update(controller.snapshot()); await coordinator.poll(); await coordinator.toggle();
+  await coordinator.select("other"); assert.deepEqual(native.shown, ["projector", "other"]);
+  assert.equal(coordinator.projecting, true); assert.equal(coordinator.selected.id, "other");
+  assert.equal(readMonitorPreference().id, "other"); assert.equal(controller.page, 2); assert.equal(native.closed.length, 0);
+});
+
+test("SDK Tauri real usa posición física del monitor antes de mostrar y solo controla audiencia", async t => {
+  const { window } = dom(t); const calls = [];
+  const selected = { ...monitors[1], x: -2560, y: 300, width: 2560, height: 1440, scaleFactor: 2 };
+  const display = monitor => ({ name: monitor.name, position: { x: monitor.x, y: monitor.y }, size: { width: monitor.width, height: monitor.height }, scaleFactor: monitor.scaleFactor, workArea: { position: { x: monitor.x, y: monitor.y }, size: { width: monitor.width, height: monitor.height } } });
+  window.__TAURI_INTERNALS__ = { async invoke(command, args) {
+    calls.push({ command, args });
+    if (command === "classroom_projection" && args.action === "prepare") return { operation: 1, monitor: selected };
+    if (command === "plugin:window|available_monitors") return [display(monitors[0]), display(selected)];
+    if (command === "plugin:window|get_all_windows") return ["teacher", "audience"];
+    if (command === "plugin:window|set_fullscreen_on_monitor") {
+      assert.equal(args.label, "audience"); assert.equal(args.value.x, -2560); assert.equal(args.value.y, 300);
+      assert.ok(args.value instanceof PhysicalPosition); return null;
+    }
+    if (command === "classroom_projection" && args.action === "activate") { assert.equal(args.data.operation, 1); return null; }
+    throw new Error(`Comando inesperado: ${command}`);
+  } };
+  await showProjectionOnMonitor(selected.id);
+  assert.deepEqual(calls.map(call => call.command === "classroom_projection" ? call.args.action : call.command), ["prepare", "plugin:window|available_monitors", "plugin:window|get_all_windows", "plugin:window|set_fullscreen_on_monitor", "activate"]);
+});
+
+for (const failure of ["missing-monitor", "fullscreen-denied", "disconnected-before-show", "missing-window"]) test(`${failure}: nunca muestra ventana ni usa fullscreen genérico como fallback`, async () => {
+  const calls = []; const selected = monitors[1];
+  const real = { name: selected.name, position: new PhysicalPosition(selected.x, selected.y), size: { width: selected.width, height: selected.height }, scaleFactor: selected.scaleFactor };
+  const api = {
+    async prepare(id) { assert.equal(id, selected.id); calls.push("prepare-hidden"); return { operation: 7, monitor: selected }; },
+    async availableMonitors() { return failure === "missing-monitor" ? [] : [real]; },
+    async audience() { return failure === "missing-window" ? null : { async setFullscreenOnMonitor(position) { calls.push("fullscreen-on-monitor"); assert.equal(position, real.position); if (failure === "fullscreen-denied") throw new Error("permission denied"); } }; },
+    async activate() { calls.push("activate-attempt"); throw new Error("Monitor desconectado"); },
+    async abort(operation) { assert.equal(operation, 7); calls.push("abort-hidden"); },
+  };
+  await assert.rejects(showProjectionOnMonitor(selected.id, api));
+  assert.equal(calls.at(-1), "abort-hidden");
+  if (failure !== "disconnected-before-show") assert.equal(calls.includes("activate-attempt"), false);
+});
+
 test("fallo nativo informa sin modificar sesión ni impedir clase local", async t => {
   const { cleanup } = dom(t); const native = bridge(); native.show = async () => { throw new Error("HDMI unavailable"); };
   const coordinator = new ProjectionCoordinator(() => {}, native, true); cleanup(() => coordinator.destroy());
@@ -186,6 +233,8 @@ test("shortcuts del profesor gobiernan proyector offline y mantienen notas priva
 test("capabilities separan audiencia de caché/identidad/dialog y bootstrap no inicia Firebase", async () => {
   const capability = JSON.parse(await readFile(new URL("../src-tauri/capabilities/audience.json", import.meta.url), "utf8"));
   assert.deepEqual(capability.windows, ["audience"]); assert.deepEqual(capability.permissions, ["core:event:allow-listen", "core:event:allow-unlisten"]);
+  const teacher = JSON.parse(await readFile(new URL("../src-tauri/capabilities/default.json", import.meta.url), "utf8"));
+  assert.deepEqual(teacher.windows, ["teacher"]); assert.ok(teacher.permissions.includes("core:window:allow-set-fullscreen-on-monitor"));
   const main = await readFile(new URL("../src/main.ts", import.meta.url), "utf8"); assert.match(main, /getCurrentWindow\(\).label === "audience"/);
   const audienceEntry = await readFile(new URL("../src/player/projection/mountProjection.ts", import.meta.url), "utf8");
   assert.doesNotMatch(audienceEntry, /firebase|offline\/auth|sync\.ts/); assert.match(audienceEntry, /stopPropagation/);

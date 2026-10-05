@@ -116,7 +116,7 @@ jobs:
             build-essential pkg-config curl wget file \
             libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
             libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 \
-            python3-gi gir1.2-webkit2-4.1 xvfb xauth
+            python3-gi gir1.2-webkit2-4.1 xvfb xauth weston
 
       - name: Rust estable mediante rustup
         run: |
@@ -185,6 +185,9 @@ jobs:
       - name: Cargo check y validación nativa de configuración/capabilities
         # build.rs ejecuta tauri_build::build(); no se usa un mock de Tauri.
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: Fullscreen Tauri real en Wayland con dos monitores virtuales
+        run: bash tests/wayland-projection.sh
 
       - name: Build Tauri Linux .deb
         run: npm run tauri:build -- --bundles deb -- --locked

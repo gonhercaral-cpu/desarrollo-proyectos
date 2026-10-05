@@ -56,7 +56,7 @@ export class ClassroomPlayer {
     const tools = document.createElement("section"); tools.className = "ui-card player-projection";
     tools.innerHTML = '<h2>Proyector</h2><p data-projector-status role="status"></p><label>Pantalla<select data-monitor aria-label="Monitor del proyector"></select></label><button class="button button-outline" data-project>Proyectar</button><small>Audio exclusivo de esta ventana. Vista principal como preview.</small><h3>Notas de la diapositiva</h3><p data-notes></p>';
     this.element(".player-resources").prepend(tools);
-    this.element<HTMLSelectElement>("[data-monitor]").onchange = (event) => this.projection.select((event.target as HTMLSelectElement).value);
+    this.element<HTMLSelectElement>("[data-monitor]").onchange = (event) => { void this.projection.select((event.target as HTMLSelectElement).value); };
     this.element("[data-project]").onclick = () => { void this.projection.toggle(); };
     this.updateProjection(); this.updateLists(); this.updateState();
   }
@@ -69,7 +69,7 @@ export class ClassroomPlayer {
       option.textContent = `${monitor.name} · ${monitor.primary ? "Principal" : "Secundario"} · ${monitor.width}×${monitor.height} · (${monitor.x}, ${monitor.y})`;
       select.append(option);
     }
-    select.value = projection.selected?.id || ""; select.disabled = projection.projecting || projection.monitors.length < 2;
+    select.value = projection.selected?.id || ""; select.disabled = projection.monitors.length < 2;
     this.element("[data-projector-status]").textContent = projection.message + (projection.projecting ? " · Proyectando" : "");
     const button = this.element<HTMLButtonElement>("[data-project]"); button.disabled = projection.monitors.length < 2;
     button.textContent = projection.projecting ? "Detener proyección" : projection.message.includes("Restaurar") ? "Restaurar proyección" : "Proyectar";

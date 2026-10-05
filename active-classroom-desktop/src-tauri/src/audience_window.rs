@@ -2,12 +2,16 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Default)]
 pub(crate) struct ProjectionGate(pub Mutex<ProjectionState>);
 #[derive(Default)]
-pub(crate) struct ProjectionState { snapshot: Option<Value>, target: Option<String>, retired: Vec<String> }
+pub(crate) struct ProjectionState {
+    snapshot: Option<Value>, target: Option<String>, retired: Vec<String>,
+    next_operation: u64, prepared: Option<Prepared>,
+}
+struct Prepared { operation: u64, monitor_id: String, session_id: String }
 impl ProjectionState {
     fn accept(&mut self, snapshot: &Value) -> bool {
         if self.retired.iter().any(|id| snapshot["sessionId"].as_str() == Some(id.as_str())) { return false; }
@@ -19,7 +23,23 @@ impl ProjectionState {
     fn retire(&mut self, session_id: &str) -> bool {
         self.retired.push(session_id.to_string()); if self.retired.len() > 16 { self.retired.remove(0); }
         let current = self.snapshot.as_ref().map(|value| value["sessionId"].as_str() == Some(session_id)).unwrap_or(false);
+        if self.prepared.as_ref().map(|value| value.session_id == session_id).unwrap_or(false) { self.prepared = None; }
         if current { self.snapshot = None; } current
+    }
+    fn prepare(&mut self, monitor_id: &str) -> Result<u64, String> {
+        let session_id = self.snapshot.as_ref().and_then(|value| value["sessionId"].as_str()).ok_or("projection: Clase cerrada")?.to_string();
+        self.next_operation += 1; self.target = None;
+        self.prepared = Some(Prepared { operation: self.next_operation, monitor_id: monitor_id.to_string(), session_id });
+        Ok(self.next_operation)
+    }
+    fn prepared_monitor(&self, operation: u64) -> Option<String> {
+        self.prepared.as_ref().filter(|value| value.operation == operation &&
+            self.snapshot.as_ref().and_then(|snapshot| snapshot["sessionId"].as_str()) == Some(value.session_id.as_str()))
+            .map(|value| value.monitor_id.clone())
+    }
+    fn abort(&mut self, operation: u64) -> bool {
+        let current = self.prepared.as_ref().map(|value| value.operation == operation).unwrap_or(false);
+        if current { self.prepared = None; self.target = None; } current
     }
 }
 #[derive(Clone, Serialize)]
@@ -32,7 +52,9 @@ fn monitor_id(name: &str, width: u32, height: u32, x: i32, y: i32) -> String {
     format!("{:x}", Sha256::digest(format!("{name}:{width}:{height}:{x}:{y}").as_bytes()))
 }
 fn displays(window: &tauri::WebviewWindow) -> Result<Vec<Display>, String> {
-    let primary = window.primary_monitor().map_err(|e| e.to_string())?;
+    // Wayland may not expose an OS primary monitor; use the teacher's output then.
+    let primary = window.primary_monitor().map_err(|e| e.to_string())?
+        .or_else(|| window.current_monitor().ok().flatten());
     Ok(window.available_monitors().map_err(|e| e.to_string())?.iter().map(|monitor| {
         let name = monitor.name().cloned().unwrap_or_else(|| "Pantalla".into());
         let size = monitor.size(); let position = monitor.position();
@@ -52,7 +74,7 @@ fn valid_snapshot(data: &Value) -> bool {
     }).unwrap_or(false)
 }
 fn hide(app: &tauri::AppHandle, gate: &ProjectionGate) -> Result<(), String> {
-    gate.0.lock().map_err(|_| "projection: Estado no disponible")?.target = None;
+    { let mut state = gate.0.lock().map_err(|_| "projection: Estado no disponible")?; state.target = None; state.prepared = None; }
     if let Some(audience) = app.get_webview_window("audience") { audience.hide().map_err(|e| e.to_string())?; audience.set_fullscreen(false).map_err(|e| e.to_string())?; }
     app.emit_to("audience", "classroom-projection", Value::Null).map_err(|e| e.to_string())
 }
@@ -90,7 +112,7 @@ pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::W
             if current { hide(&app, &gate)?; }
             Ok(Value::Null)
         }
-        "show" => {
+        "prepare" => {
             let monitors = displays(&window)?;
             if monitors.len() < 2 { return Err("projection: Sin segunda pantalla".into()); }
             let requested = data.as_ref().and_then(|value| value["monitorId"].as_str()).ok_or("projection: Selecciona monitor")?;
@@ -100,15 +122,43 @@ pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::W
                     .title("Active Classroom · Proyector").visible(false).decorations(false).resizable(false).skip_taskbar(true).focused(false)
                     .build().map_err(|e| e.to_string())?
             };
-            audience.set_fullscreen(false).map_err(|e| e.to_string())?;
-            audience.set_position(PhysicalPosition::new(monitor.x, monitor.y)).map_err(|e| e.to_string())?;
-            audience.set_size(PhysicalSize::new(monitor.width, monitor.height)).map_err(|e| e.to_string())?;
-            audience.show().map_err(|e| e.to_string())?;
-            audience.set_fullscreen(true).map_err(|e| { let _ = audience.hide(); e.to_string() })?;
+            // Hide before selecting a monitor. Wayland ignores absolute window positioning.
+            // The teacher's SDK calls setFullscreenOnMonitor before "activate" can show audience.
+            audience.hide().map_err(|e| e.to_string())?;
             let mut state = gate.0.lock().map_err(|_| "projection: Estado no disponible")?;
-            state.target = Some(monitor.id.clone()); let snapshot = state.snapshot.clone().unwrap_or(Value::Null); drop(state);
+            let operation = state.prepare(&monitor.id)?;
+            eprintln!("[Active Classroom Projection] {}", json!({
+                "event": "MONITOR_SELECTED", "operation": operation, "selectedMonitor": monitor.id,
+                "name": monitor.name, "position": { "x": monitor.x, "y": monitor.y },
+                "resolution": { "width": monitor.width, "height": monitor.height },
+                "scaleFactor": monitor.scale_factor, "primary": monitor.primary,
+                "sessionType": std::env::var("XDG_SESSION_TYPE").unwrap_or_default()
+            }));
+            Ok(json!({ "operation": operation, "monitor": monitor }))
+        }
+        "activate" => {
+            let operation = data.as_ref().and_then(|value| value["operation"].as_u64()).ok_or("projection: Operación ausente")?;
+            let monitors = displays(&window)?;
+            let audience = app.get_webview_window("audience").ok_or("projection: Ventana ausente")?;
+            let mut state = gate.0.lock().map_err(|_| "projection: Estado no disponible")?;
+            let monitor_id = state.prepared_monitor(operation).ok_or("projection: Operación cancelada")?;
+            if monitors.len() < 2 || !monitors.iter().any(|monitor| monitor.id == monitor_id) {
+                state.abort(operation); return Err("projection: Monitor desconectado".into());
+            }
+            audience.show().map_err(|e| e.to_string())?;
+            state.prepared = None; state.target = Some(monitor_id.clone());
+            let snapshot = state.snapshot.clone().unwrap_or(Value::Null);
             app.emit_to("audience", "classroom-projection", snapshot).map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
+            eprintln!("[Active Classroom Projection] {}", json!({ "event": "SET_FULLSCREEN_ON_MONITOR", "operation": operation, "selectedMonitor": monitor_id, "result": "ok" }));
+            // Focusing the teacher never moves it or makes it fullscreen.
+            let _ = window.set_focus();
+            Ok(Value::Null)
+        }
+        "abort" => {
+            let operation = data.as_ref().and_then(|value| value["operation"].as_u64()).ok_or("projection: Operación ausente")?;
+            let current = gate.0.lock().map_err(|_| "projection: Estado no disponible")?.abort(operation);
+            if current { if let Some(audience) = app.get_webview_window("audience") { let _ = audience.hide(); } }
+            eprintln!("[Active Classroom Projection] {}", json!({ "event": "PROJECTION_OPEN_FAILED", "operation": operation, "result": "error" }));
             Ok(Value::Null)
         }
         _ => Err("projection: Acción desconocida".into()),
@@ -147,5 +197,23 @@ mod tests {
         assert!(!state.accept(&first));
         assert!(!state.retire("first"));
         assert_eq!(state.snapshot, Some(second));
+    }
+    #[test] fn closed_class_cannot_activate_pending_window() {
+        let mut state = ProjectionState::default();
+        assert!(state.prepare("HDMI-1").is_err());
+        state.accept(&json!({ "sessionId": "first", "revision": 1 }));
+        let operation = state.prepare("HDMI-1").unwrap();
+        assert_eq!(state.prepared_monitor(operation), Some("HDMI-1".into()));
+        state.retire("first"); assert_eq!(state.prepared_monitor(operation), None);
+    }
+    #[test] fn stale_operation_cannot_show_or_hide_new_monitor_selection() {
+        let mut state = ProjectionState::default();
+        state.accept(&json!({ "sessionId": "first", "revision": 1 }));
+        let old = state.prepare("HDMI-1").unwrap();
+        let current = state.prepare("HDMI-2").unwrap();
+        assert_eq!(state.prepared_monitor(old), None);
+        assert!(!state.abort(old));
+        assert_eq!(state.prepared_monitor(current), Some("HDMI-2".into()));
+        assert!(state.abort(current)); assert_eq!(state.prepared_monitor(current), None);
     }
 }

@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permisos mínimos para las ventanas de Active Classroom",
   "windows": ["teacher"],
-  "permissions": ["core:default", "dialog:allow-open"]
+  "permissions": ["core:default", "dialog:allow-open", "core:window:allow-set-fullscreen-on-monitor"]
 }
