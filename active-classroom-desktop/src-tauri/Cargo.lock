@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "active-classroom"
-version = "0.1.6"
+version = "1.0.0"
 dependencies = [
  "regex",
  "serde",

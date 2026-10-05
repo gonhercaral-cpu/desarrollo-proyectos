@@ -1,6 +1,6 @@
 # Active Classroom Desktop: proyector local
 
-Versión 0.1.6; Tauri Rust/API/CLI 2.12.1. Sin cambios en Firebase, publicaciones o sincronización.
+Versión 1.0.0; Tauri Rust/API/CLI 2.12.1. Sin cambios en Firebase, publicaciones o sincronización. Piloto físico Zorin confirmado por el usuario; validación de cada nueva instalación en [guía 1.0.0](active-classroom-1.0.0.md).
 
 ## Arquitectura
 
@@ -29,7 +29,7 @@ Al perder el monitor seleccionado, Rust oculta la audiencia. La sesión docente 
 
 CI Ubuntu ejecuta además tests existentes de Player/offline/dispositivo/empaquetado, tests Rust de caché/identidad/proyección, llavero Linux, `cargo check --locked` y build Tauri `.deb`. `tests/wayland-projection.sh` ejecuta un binario Tauri real (`examples/wayland_projection.rs`) contra Weston con dos salidas virtuales y `GDK_BACKEND=wayland`: verifica selección secundaria, cambio/restauración y monitor docente conservado. Xvfb aloja el compositor Weston, no el cliente Tauri. El fixture nativo usa páginas vacías sin Auth, Player, caché ni red; no se empaqueta en el instalador.
 
-La validación virtual no acredita HDMI físico, GNOME/Mutter de Zorin, desconexión real ni códecs. Esos pasos siguen pendientes de hardware.
+La validación virtual no acredita HDMI físico, GNOME/Mutter de Zorin, desconexión real ni códecs. El piloto Zorin fue confirmado por el usuario; repetir aceptación física en cada nuevo salón.
 
 ## Diagnóstico Wayland
 
@@ -37,9 +37,9 @@ Ejecutar `active-classroom 2>&1 | tee active-classroom-projection.log`. Los even
 
 API y permiso oficiales: [setFullscreenOnMonitor](https://v2.tauri.app/reference/javascript/api/namespacewindow/#setfullscreenonmonitor).
 
-## Aceptación física en Zorin (pendiente de hardware real)
+## Aceptación física en cada salón
 
-1. Instalar `Active Classroom_0.1.6_amd64.deb` y conservar el caché existente. Confirmar `echo $XDG_SESSION_TYPE` muestra `wayland`.
+1. Instalar `Active Classroom_1.0.0_amd64.deb` y conservar el caché existente. Confirmar `echo $XDG_SESSION_TYPE` muestra `wayland` si se usa esa sesión.
 2. Conectar segundo monitor en modo extendido. Abrir Unit ya descargada.
 3. Confirmar `Segunda pantalla conectada`, nombres, principal/secundario, resolución y posición. Seleccionar monitor y pulsar `Proyectar`.
 4. Verificar fullscreen y solo contenido en monitor secundario; panel, notas y controles permanecen en principal. Cambiar monitor seleccionado mientras se proyecta y verificar que se mueve la salida sin perder posición/reproducción.

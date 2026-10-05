@@ -12,28 +12,31 @@ Workflow único: `.github/workflows/active-classroom-linux.yml`.
 ## Validaciones obligatorias
 
 1. Dependencias nativas Tauri/WebKitGTK 4.1 desde APT, sin packs adicionales de códecs.
-2. `npm ci`, tests offline, tests Player y lint específico.
-3. `npm run build`: TypeScript/Vite y `test:bundle`, que verifica bytes/rutas de los 200 assets PDF.js y su worker. Verifica además index e icono local.
-4. Listar y exigir exactamente cuatro tests `offline_cache::tests`, ejecutarlos con Cargo `--locked`.
+2. `npm ci`, todos los tests Desktop (offline, activación, actualización, Player, proyección y prototipo conservado), WebKitGTK real y lint específico. Jobs separados verifican backend/reglas en emuladores y conversión Office real.
+3. `npm run build`: TypeScript/Vite y `test:bundle`, que verifica bytes/rutas de los 200 assets PDF.js y su worker. `test:release` comprueba versión única, identidad de instalación y patrones de secretos en fuentes/build.
+4. Exigir exactamente cuatro tests `offline_cache::tests` y ejecutar todos los tests Rust con Cargo `--locked`, además del test de persistencia real en llavero Linux.
 5. `cargo check --locked --all-targets`. El build script Tauri valida configuración/capabilities reales.
 6. `npm run tauri:build -- --bundles deb -- --locked`. Mantiene el build frontend previo configurado por Tauri y empaqueta el `frontendDist` completo.
-7. Comprobar `.deb` amd64, imprimir metadata, calcular SHA-256 y exigir lockfiles intactos.
+7. Comprobar `.deb` amd64 con la misma versión de package/Tauri/Cargo (1.0.0), imprimir metadata, calcular/verificar SHA-256 portable y exigir lockfiles intactos.
 8. Subir artefacto únicamente tras éxito completo. Sin `continue-on-error` ni sustitutos de Cargo/Tauri.
 
 ## Descargar e instalar
 
-Artefacto: `active-classroom-linux-amd64-<commit SHA>`, conservado 14 días.
+Artefacto: `active-classroom-1.0.0-linux-amd64-<commit SHA>`, conservado 14 días. El workflow obtiene la versión del package verificado, sin otra versión hardcodeada.
 
 Ruta original del instalador: `active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb`; se adjunta también su `.sha256`. El nombre exacto y versiones utilizadas aparecen en el resumen de la ejecución.
 
 Tras descargar/descomprimir en Linux compatible:
 
 ```bash
-sudo apt install ./active-classroom_*.deb
+sha256sum --check 'Active Classroom_1.0.0_amd64.deb.sha256'
+sudo apt install './Active Classroom_1.0.0_amd64.deb'
 active-classroom
 ```
 
 No usar como evidencia de reproducción un build verde: CI no inicia sesión Firebase ni descarga material privado, ni verifica GPU/sonido/códecs del salón. PDF, imágenes, audio/video, protocolo asset, reinicio y clase offline deben pasar la aceptación de [LINUX_NATIVE_VALIDATION.md](LINUX_NATIVE_VALIDATION.md) en el binario instalado.
+
+Piloto Zorin confirmado por el usuario. Operación de 1.0.0 y aceptación por salón en [guía de instalación](../../docs/active-classroom-1.0.0.md).
 
 ## Fuente a validar
 

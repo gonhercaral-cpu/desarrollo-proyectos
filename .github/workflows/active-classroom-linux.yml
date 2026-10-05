@@ -58,7 +58,8 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
       - name: Tests backend y lint específico
         run: |
-          node --test tests/active-classroom-device.test.cjs tests/active-classroom-device-ui.test.mjs tests/active-classroom-office.test.cjs
+          mapfile -t classroom_tests < <(find tests -maxdepth 1 -type f -name 'active-classroom-*.test.*' ! -name '*-emulator.test.*' | sort)
+          node --test "${classroom_tests[@]}"
           npx eslint drive/activeClassroomProcessing*.js drive/activeClassroomProcessorClient.js drive/activeClassroomUnit.js tests/active-classroom-office*.cjs
           npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
@@ -70,7 +71,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test tests/firebase-rules.test.mjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs"
   office:
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04
@@ -147,6 +148,11 @@ jobs:
       - name: Tests de sesión y proyector offline
         run: npm run test:projection
 
+      - name: Tests existentes del prototipo conservado
+        run: |
+          npm run admin:test
+          npm run local:integration:test
+
       - name: Lint específico
         run: npm run lint:player
 
@@ -154,8 +160,13 @@ jobs:
         # npm run build incluye test:bundle: worker, fuentes, CMaps, ICC y WASM.
         run: |
           npm run build
+          npm run test:release
           test -s dist/index.html
           test -s dist/active-classroom-icon.png
+
+      - name: Versión única de la distribución
+        id: release
+        run: echo "version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')" >> "$GITHUB_OUTPUT"
 
       - name: Cuatro tests Rust de caché offline
         run: |
@@ -164,13 +175,9 @@ jobs:
           test "$(grep -c '^offline_cache::tests::.*: test$' "$RUNNER_TEMP/active-classroom-rust-tests.txt")" -eq 4
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib offline_cache::tests:: -- --nocapture
 
-      - name: Tests Rust de identidad segura
+      - name: Todos los tests Rust (identidad, caché, proyección y legado)
         run: |
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib device_identity::tests:: -- --nocapture
-
-      - name: Tests Rust de permisos y sesión de proyección
-        run: |
-          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib audience_window::tests:: -- --nocapture
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets -- --nocapture
 
       - name: Persistencia real en llavero Linux aislado
         run: |
@@ -198,13 +205,22 @@ jobs:
           mapfile -t packages < <(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb')
           test "${#packages[@]}" -eq 1
           test "$(dpkg-deb --field "${packages[0]}" Architecture)" = amd64
+          test "$(dpkg-deb --field "${packages[0]}" Version)" = '${{ steps.release.outputs.version }}'
+          test "$(basename "${packages[0]}")" = 'Active Classroom_${{ steps.release.outputs.version }}_amd64.deb'
           dpkg-deb --info "${packages[0]}"
           file src-tauri/target/release/active-classroom
-          sha256sum "${packages[0]}" > "${packages[0]}.sha256"
+          (
+            cd "$(dirname "${packages[0]}")"
+            package_name="$(basename "${packages[0]}")"
+            sha256sum "$package_name" > "$package_name.sha256"
+            sha256sum --check "$package_name.sha256"
+          )
           {
             printf '### Active Classroom Desktop Linux\n\n'
             printf 'Paquete: `%s`\n\n' "${packages[0]}"
             printf 'Commit: `%s`\n\n' "$GITHUB_SHA"
+            printf 'Versión: `%s`\n\n' '${{ steps.release.outputs.version }}'
+            printf 'SHA-256: `%s`\n\n' "$(cut -d ' ' -f 1 "${packages[0]}.sha256")"
             printf 'Runner: Ubuntu 22.04 x64\n\n'
             printf 'Rust: `%s`\n\n' "$(rustc --version)"
             printf 'Cargo: `%s`\n\n' "$(cargo --version)"
@@ -215,7 +231,7 @@ jobs:
       - name: Subir instalador Debian y SHA-256
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: active-classroom-linux-amd64-${{ github.sha }}
+          name: active-classroom-${{ steps.release.outputs.version }}-linux-amd64-${{ github.sha }}
           path: |
             active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb
             active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb.sha256

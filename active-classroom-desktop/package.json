@@ -1,7 +1,7 @@
 {
   "name": "active-classroom",
   "private": true,
-  "version": "0.1.6",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,7 +21,8 @@
     "tauri:build": "tauri build",
     "test:player": "node --test tests/player.test.mjs",
     "test:projection": "node --test tests/projection.test.mjs",
-    "lint:player": "eslint src/player src/offline src/app.ts"
+    "test:release": "node --test tests/release.test.mjs",
+    "lint:player": "eslint src/player src/offline src/app.ts tests/release.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.1",

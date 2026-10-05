@@ -1,0 +1,27 @@
+# Changelog
+
+## 1.0.0 — 2026-10-05
+
+Primera versión estable para Linux tras piloto real en Zorin confirmado por el usuario.
+
+- Activación por código y autorización administrativa del equipo; sin login humano en el salón.
+- Nombre visible administrado desde Active Classroom → Equipos, persistido también offline.
+- Biblioteca Nivel/Unit con versiones remotas y locales independientes; actualización sin destruir la última copia funcional.
+- Descargas autenticadas, temporales, comprobación de tamaño/SHA-256 y activación solo al completar la versión.
+- Caché y manifest persistentes; reapertura de clases descargadas después de reiniciar y sin Internet.
+- Player local para PDF, imágenes, audio y video; Office entregado como PDF procesado por backend.
+- Proyector independiente con sesión docente única, audio exclusivo del profesor y restauración tras reconectar.
+- Selección de monitor compatible con Wayland mediante Tauri 2.12.1 `setFullscreenOnMonitor`.
+- Versiones package/Tauri/Cargo unificadas. CI verifica versión del `.deb`, integridad del instalador, assets PDF.js y patrones de secretos en fuentes/build.
+- Documentación de instalación, activación, renombrado, sincronización, actualización y recuperación offline.
+
+Sin nuevas funciones, migraciones de caché, cambios backend ni cambios de UX en este cierre.
+
+### Límites conocidos
+
+- Códecs MP4/H.264/AAC y otros formatos multimedia dependen de WebKitGTK/GStreamer del equipo.
+- El llavero Secret Service debe estar configurado y desbloquearse con la sesión Linux.
+- Una clase requiere descarga completa previa para funcionar offline. Una instalación nueva requiere Internet y autorización.
+- Office se reproduce mediante derivados PDF; sin PPTX directo, animaciones Office ni segunda salida de audio.
+- Sin autoactualizador. Nuevas versiones de aplicación se instalan mediante `.deb`.
+- SHA-256 verifica integridad; no sustituye firma digital del distribuidor. Descargar desde la ejecución CI verificada.

@@ -1,11 +1,11 @@
 # Active Classroom
 
-## MVP vigente: Biblioteca, sincronización offline y Player local
+## Versión 1.0.0: Biblioteca, Player offline y proyector
 
-La entrada Desktop usa identidad de dispositivo, Firebase Auth automático, publicaciones versionadas y caché nativo. No pide correo/contraseña. Primera activación requiere aprobación administrativa y llavero Linux configurado; consulta [activación, seguridad y despliegue](../docs/active-classroom-device-auth.md). Continúa esta misma app Tauri; no requiere el servidor admin local. `Abrir clase` inicia el Player local para PDF, imágenes, audio y video. No convierte PPTX ni activa segunda pantalla.
+La entrada Desktop usa identidad de dispositivo, Firebase Auth automático, publicaciones versionadas y caché nativo. No pide correo/contraseña. Primera activación requiere aprobación administrativa y llavero Linux configurado; consulta [instalación y operación 1.0.0](../docs/active-classroom-1.0.0.md) y [changelog](CHANGELOG.md). Continúa esta misma app Tauri; no requiere el servidor admin local. `Abrir clase` inicia el Player local para PDF, imágenes, audio y video. Office se procesa en backend. Proyector usa una segunda ventana con fullscreen específico del monitor, también bajo Wayland; consulta [arquitectura y aceptación](../docs/active-classroom-projection.md).
 
 Consulta [arquitectura, caché, sincronización, pruebas y aceptación Linux](docs/OFFLINE_MVP.md).
-Consulta [Player, formatos, comandos y validación nativa pendiente](docs/LOCAL_PLAYER.md).
+Consulta [Player, formatos y comandos](docs/LOCAL_PLAYER.md).
 Consulta [estado comprobado y comandos de validación nativa Linux](docs/LINUX_NATIVE_VALIDATION.md).
 Consulta [pipeline CI Linux y descarga del instalador](docs/LINUX_CI.md).
 
