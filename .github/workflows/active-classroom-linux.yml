@@ -18,6 +18,7 @@ on:
       - "src/active-classroom/**"
       - "active-classroom-processor/**"
       - "tests/active-classroom-office*"
+      - "tests/active-classroom-slides*"
       - "docs/active-classroom-manifest.office.example.json"
 
 permissions:
@@ -61,6 +62,7 @@ jobs:
           mapfile -t classroom_tests < <(find tests -maxdepth 1 -type f -name 'active-classroom-*.test.*' ! -name '*-emulator.test.*' | sort)
           node --test "${classroom_tests[@]}"
           npx eslint drive/activeClassroomProcessing*.js drive/activeClassroomProcessorClient.js drive/activeClassroomUnit.js tests/active-classroom-office*.cjs
+          npx eslint drive/activeClassroomSlides.js drive/activeClassroomDriveContent.js tests/active-classroom-slides*.cjs
           npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
           npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
@@ -71,7 +73,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs"
   office:
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04

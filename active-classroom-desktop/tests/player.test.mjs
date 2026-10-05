@@ -14,8 +14,9 @@ import { AudioRenderer } from "../src/player/renderers/AudioRenderer.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
 import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
 import { createRenderer } from "../src/player/renderers/factory.ts";
-import { canonical, sha256 } from "../src/offline/manifest.ts";
-import { openLocalClass } from "../src/offline/sync.ts";
+import { canonical, sha256, validateManifest } from "../src/offline/manifest.ts";
+import { openLocalClass, SyncEngine } from "../src/offline/sync.ts";
+import { DiskCache } from "./disk-cache.mjs";
 
 const example = JSON.parse(await readFile(new URL("../../docs/active-classroom-manifest.example.json", import.meta.url), "utf8"));
 const fixture = () => {
@@ -23,6 +24,18 @@ const fixture = () => {
   manifest.resources[0].download.mimeType = "application/pdf";
   return manifest;
 };
+function googleSlidesFixture() {
+  const manifest = fixture();
+  const first = manifest.resources[0];
+  Object.assign(first, { mimeType: "application/vnd.google-apps.presentation", originalMime: "application/vnd.google-apps.presentation", deliveryMime: "image/png", sourceType: "google-slides", name: "Songs · 1" });
+  first.download.mimeType = "image/png";
+  first.download.name = "slide-1.png";
+  const second = structuredClone(first); second.resourceId = "gs-second-page"; second.name = "Songs · 2";
+  second.download.name = "slide-2.png";
+  manifest.resources.push(second);
+  for (const [index, slide] of manifest.slides.entries()) Object.assign(slide.metadata, { pageNumber: 1, pageObjectId: `google-page-${index}`, presentationResourceId: index === 0 ? first.resourceId : second.resourceId });
+  return manifest;
+}
 async function waitFor(condition) {
   const end = Date.now() + 2000;
   while (!condition() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 2));
@@ -255,6 +268,53 @@ test("reinicio con manifest en disco permite abrir Player offline y detecta corr
   await waitFor(() => root.querySelector("[role='alert']"));
   assert.match(root.querySelector("[role='alert']").textContent, /corrupto/);
   assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("Google Slides PNG: navegación elige imagen por slide y conserva posición al volver", () => {
+  const controller = new PlayerController(googleSlidesFixture());
+  assert.equal(controller.selectedResourceId, "drive-presentation");
+  controller.moveSlide(1); assert.equal(controller.selectedResourceId, "gs-second-page"); assert.equal(controller.isPresentation, true);
+  controller.pageChanged(1); assert.equal(controller.slideIndex, 1); // Every image has page 1; never reset to slide 0.
+  controller.selectResource("uploaded-guide"); controller.pageChanged(3); controller.returnToPresentation();
+  assert.equal(controller.selectedResourceId, "gs-second-page"); assert.equal(controller.page, 1); assert.equal(controller.slideIndex, 1);
+  assert.deepEqual(controller.associatedIds, controller.manifest.slides[1].resourceIds);
+  controller.moveSlide(-1); assert.equal(controller.selectedResourceId, "drive-presentation");
+  const bad = googleSlidesFixture(); bad.slides[1].metadata.presentationResourceId = "missing";
+  assert.throws(() => new PlayerController(bad), /imagen de diapositiva ausente/);
+});
+
+test("Google Slides PNG sincroniza, verifica hash, reinicia y navega Player sin Internet", async (t) => {
+  const { root, window, cleanup } = dom(t);
+  const directory = await mkdtemp(join(tmpdir(), "ac-google-slides-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const manifest = googleSlidesFixture(); const bytes = new Map();
+  const image = await readFile(new URL("../public/active-classroom-icon.png", import.meta.url));
+  for (const resource of manifest.resources) {
+    const content = resource.download.mimeType === "image/png" ? image : new TextEncoder().encode(resource.name);
+    Object.assign(resource.download, { sizeBytes: content.length, checksums: { sha256: await sha256(content) } }); bytes.set(resource.resourceId, content);
+  }
+  const content = Object.fromEntries(Object.entries(manifest).filter(([key]) => !["version", "publishedAt", "integrity"].includes(key)));
+  manifest.integrity.contentHash = await sha256(new TextEncoder().encode(canonical(content)));
+  await validateManifest(manifest);
+  const publication = { unitId: manifest.unit.unitId, version: manifest.version, contentHash: manifest.integrity.contentHash };
+  await new SyncEngine(new DiskCache(directory), { manifest: async () => manifest, download: async (_manifest, resource, write) => write(bytes.get(resource.resourceId)) }).sync(publication);
+  t.mock.method(globalThis, "fetch", () => { throw new Error("Internet prohibido"); });
+  const restarted = new DiskCache(directory);
+  const classroom = await openLocalClass(restarted, manifest.unit.unitId, manifest.version);
+  const renderers = [];
+  const player = new ClassroomPlayer(root, classroom, () => {}, { toUrl: (path) => `asset://localhost/cache/${encodeURIComponent(path)}`, verifyResource: async (id) => {
+    const resource = manifest.resources.find((item) => item.resourceId === id); return restarted.has(resource.download.checksums.sha256, resource.download.sizeBytes);
+  }, createRenderer: async (kind) => { const renderer = rendererDouble(kind); renderers.push(renderer); return renderer; } });
+  cleanup(() => player.destroy()); await waitFor(() => renderers.length === 1);
+  assert.equal(renderers[0].kind, "image");
+  window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }));
+  await waitFor(() => renderers.length === 2);
+  assert.equal(renderers[1].kind, "image"); assert.equal(renderers[1].source.name, "slide-2.png"); assert.equal(renderers[0].destroyed, true);
+  root.querySelector("[data-general] button").click(); await waitFor(() => renderers.length === 3);
+  root.querySelector("[data-presentation]").click(); await waitFor(() => renderers.length === 4);
+  assert.equal(player.controller.slideIndex, 1); assert.equal(renderers[3].source.name, "slide-2.png");
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  const bad = structuredClone(manifest); bad.slides[1].metadata.presentationResourceId = "missing";
+  await assert.rejects(validateManifest(bad), { code: "manifest" });
 });
 
 test("fullscreen y Escape respetan presentación, recurso y cierre de clase", async (t) => {

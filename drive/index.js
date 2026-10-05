@@ -11,6 +11,8 @@ const { createUnitHandlers } = require("./activeClassroomUnit");
 const { createPublicationFiles } = require("./activeClassroomFiles");
 const { createDocumentProcessing } = require("./activeClassroomProcessing");
 const { createProcessorClient } = require("./activeClassroomProcessorClient");
+const { createGoogleSlidesProcessor } = require("./activeClassroomSlides");
+const { openActiveClassroomDrive } = require("./activeClassroomDriveContent");
 const { defineString } = require("firebase-functions/params");
 const { createDesktopHandlers } = require("./activeClassroomDesktop");
 const { createDeviceHandlers, isDevice, DEVICE_PREFIX } = require("./activeClassroomDevices");
@@ -1355,10 +1357,7 @@ const classroomFiles = createPublicationFiles({
   db: admin.firestore(), bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile,
   openDrive: async (file, descriptor) => {
     const drive = await getDriveClient();
-    const response = descriptor.exported
-      ? await drive.files.export({ fileId: file.id, mimeType: descriptor.deliveredMimeType }, { responseType: "stream" })
-      : await drive.files.get({ fileId: file.id, alt: "media", supportsAllDrives: true }, { responseType: "stream" });
-    return response.data;
+    return openActiveClassroomDrive(drive, file, descriptor);
   },
 });
 const processorUrl = defineString("ACTIVE_CLASSROOM_PROCESSOR_URL", { default: "" });
@@ -1366,6 +1365,7 @@ const processorAuth = new google.auth.GoogleAuth();
 const classroomProcessing = createDocumentProcessing({
   db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getUserProfile,
   prepareResource: classroomFiles.prepareResource,
+  googleSlides: createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }) }),
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
   convert: createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) }),
 });

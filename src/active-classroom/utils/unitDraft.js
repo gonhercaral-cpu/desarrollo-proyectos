@@ -27,8 +27,11 @@ export function needsOfficeProcessing(resource) {
 export function documentProcessingLabel(resource) {
   if (!needsOfficeProcessing(resource)) return "";
   const processing = resource.processing;
-  if (processing?.state === "ready") return `✓ Procesada · ${processing.pageCount} ${resource.kind === "presentation" ? "diapositivas" : "páginas"}`;
+  if (documentProcessingReady(resource)) return `✓ Procesada · ${processing.pageCount} ${resource.kind === "presentation" ? "diapositivas" : "páginas"}`;
   if (processing?.state === "failed") return "Error de procesamiento · Reintentar";
   if (processing?.state === "processing" || processing?.leaseUntil) return "Procesando…";
   return "Pendiente de procesar";
+}
+export function documentProcessingReady(resource) {
+  return resource?.processing?.state === "ready" && (resource.mimeType !== "application/vnd.google-apps.presentation" || resource.processing.processorVersion === "google-slides-png-v1");
 }

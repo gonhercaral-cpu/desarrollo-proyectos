@@ -4,6 +4,7 @@ export interface PublishedResource {
   mimeType: string;
   originalMime?: string;
   deliveryMime?: string;
+  sourceType?: string;
   original?: Record<string, unknown>;
   derivative?: { revision: string; processorVersion: string; sourceFingerprint: string; pageCount: number; processedAt: string; textExtraction: null; file: Record<string, unknown> };
   kind: string;
@@ -69,6 +70,8 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
   m.slides.forEach((slide, index) => {
     require(slide && validId(slide.slideId) && !slides.has(slide.slideId) && slide.index === index && associations(slide.resourceIds));
     slides.add(slide.slideId);
+    const presentationResourceId = slide.metadata?.presentationResourceId;
+    require(presentationResourceId == null || (validId(presentationResourceId) && ids.has(presentationResourceId)));
   });
   require(m.integrity?.algorithm === "sha256" && validHash(m.integrity.contentHash));
   const content = Object.fromEntries(Object.entries(m).filter(([key]) => !["version", "publishedAt", "integrity"].includes(key)));

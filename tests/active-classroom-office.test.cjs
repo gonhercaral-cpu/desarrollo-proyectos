@@ -7,7 +7,7 @@ const resource = { id: "main", source: "drive", name: "Clase.pptx", mimeType: "a
 
 test("reconoce Office binario y exportaciones Google sin cambiar originales", () => {
   assert.equal(officeExtension(resource), "pptx");
-  assert.equal(officeExtension({ mimeType: "application/vnd.google-apps.presentation" }), "pptx");
+  assert.equal(officeExtension({ mimeType: "application/vnd.google-apps.presentation" }), null);
   assert.equal(officeExtension({ mimeType: "application/vnd.google-apps.document" }), "docx");
   assert.equal(officeExtension({ name: "A.DOC", mimeType: "application/octet-stream" }), "doc");
   assert.equal(officeExtension({ mimeType: "application/pdf" }), null);

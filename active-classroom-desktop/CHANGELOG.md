@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — 2026-10-05
+
+- Google Slides entregado como PNG privados por diapositiva; evita el límite de exportación de Drive.
+- Player elige el archivo local de cada slide y conserva posición al volver de recursos asociados. PDF/Office procesado conservan su contrato anterior.
+- Manifest schema 2 mantiene original, revisión del procesamiento y checksum/generación por imagen; sincronización, caché y autenticación no cambian.
+- Nuevas pruebas de procesamiento, fallo/reintento, publicación inmutable y navegación de slides PNG offline.
+
 ## 1.0.0 — 2026-10-05
 
 Primera versión estable para Linux tras piloto real en Zorin confirmado por el usuario.

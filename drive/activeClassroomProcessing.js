@@ -1,12 +1,19 @@
 const { createHash, randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
-const { PROCESSOR_VERSION, processingTargetPath, officeExtension, processingFingerprint, requireReady, readyProcessing, pdfSlides } = require("./activeClassroomProcessingModel");
+const { PROCESSOR_VERSION, processingTargetPath, officeExtension, isGoogleSlides, processorVersion, needsDocumentProcessing, processingFingerprint, requireReady, readyProcessing, pdfSlides } = require("./activeClassroomProcessingModel");
+const { processingError, googleErrorReason } = require("./activeClassroomDriveContent");
 
 const MAX_BYTES = 250 * 1024 * 1024;
 const validId = (value) => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
 const fail = (message, code = "failed-precondition") => { throw new HttpsError(code, message); };
+function logFailure(error, nativeSlides, stage) {
+  const safeError = processingError(error, nativeSlides);
+  const reason = googleErrorReason(error).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+  console.error("Active Classroom document processing failed", { stage, code: safeError.code, sourceType: nativeSlides ? "google-slides" : "office", upstreamStatus: Number(error?.response?.status || error.status) || null, reason });
+  return safeError;
+}
 
-function createDocumentProcessing({ db, bucket, getProfile, prepareResource, convert, timestamp, clock = Date.now }) {
+function createDocumentProcessing({ db, bucket, getProfile, prepareResource, convert, googleSlides, timestamp, clock = Date.now }) {
   const units = db.collection("activeClassroomUnits");
   const resources = db.collection("activeClassroomResources");
   const jobs = db.collection("activeClassroomProcessingJobs");
@@ -58,12 +65,20 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
     if (!validId(unitId) || !validId(resourceId) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) fail("Solicitud de procesamiento inválida.", "invalid-argument");
     const resourceRef = resources.doc(resourceId);
     const resource = { id: resourceId, ...(await resourceRef.get()).data() };
-    if (resource.folderId !== unitId || resource.archived || !officeExtension(resource)) fail("El recurso Office no pertenece a esta Unit.");
+    if (resource.folderId !== unitId || resource.archived || !needsDocumentProcessing(resource)) fail("El documento no pertenece a esta Unit.");
     // Existing snapshot infrastructure checks Drive ACL/version before and after reading.
-    const original = await prepareResource(profile, resource);
+    const nativeSlides = isGoogleSlides(resource);
+    let original;
+    try { original = nativeSlides ? await googleSlides.original(profile, resource) : await prepareResource(profile, resource); }
+    catch (error) { throw logFailure(error, nativeSlides, "original"); }
     const fingerprint = processingFingerprint(resource);
     if (readyProcessing(resource)) {
-      if (resource.processing.original.path !== original.path || resource.processing.original.generation !== original.generation) fail("El original cambió. Actualiza el borrador.");
+      const saved = resource.processing.original;
+      const matches = nativeSlides
+        ? ["fileId", "name", "mimeType", "version", "modifiedTime"].every((key) => saved?.[key] === original[key])
+        : saved?.path === original.path && saved.generation === original.generation && saved.checksums?.sha256 === original.checksums?.sha256;
+      if (!matches) fail("El original cambió. Actualiza el borrador.");
+      if (nativeSlides) await googleSlides.verify(resource.processing);
       return applyReady(unitId, resourceId, expectedRevision);
     }
     const attemptId = randomUUID(); const jobRef = jobs.doc(attemptId);
@@ -73,7 +88,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       if (!unit?.draft || unit.draftRevision !== expectedRevision) fail("El borrador cambió. Recarga antes de procesar.", "aborted");
       if (!current || current.folderId !== unitId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante la solicitud.", "aborted");
       if (["pending", "processing"].includes(current.processing?.state) && current.processing.leaseUntil > clock()) return false;
-      const processing = { state: "pending", jobId: attemptId, revision: attemptId, processorVersion: PROCESSOR_VERSION, sourceFingerprint: fingerprint, original, requestedAt: new Date(clock()).toISOString(), leaseUntil: clock() + 540000, requestedByUid: request.auth.uid };
+      const processing = { state: "pending", jobId: attemptId, revision: attemptId, processorVersion: processorVersion(resource), sourceFingerprint: fingerprint, original, requestedAt: new Date(clock()).toISOString(), leaseUntil: clock() + 540000, requestedByUid: request.auth.uid };
       transaction.create(jobRef, { ...processing, unitId, resourceId });
       transaction.update(resourceRef, { processing });
       return true;
@@ -86,30 +101,35 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         transaction.update(jobRef, { state: "processing", startedAt: timestamp() });
         transaction.update(resourceRef, { "processing.state": "processing" });
       });
-      const result = await convert({ revision: attemptId, processorVersion: PROCESSOR_VERSION, extension: officeExtension(resource), original });
-      const download = await verifyDerivative(result, attemptId);
+      const result = nativeSlides ? await googleSlides.render({ profile, resource, revision: attemptId }) : await convert({ revision: attemptId, processorVersion: PROCESSOR_VERSION, extension: officeExtension(resource), original });
+      const download = nativeSlides ? await googleSlides.verify(result) : await verifyDerivative(result, attemptId);
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
         if (current?.processing?.jobId !== attemptId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante el procesamiento. Reintenta desde el borrador actual.", "aborted");
-        const processing = { ...current.processing, state: "ready", download, pageCount: result.pageCount, completedAt: new Date(clock()).toISOString(), textExtraction: null };
+        const processing = { ...current.processing, state: "ready", download, pageCount: result.pageCount, completedAt: new Date(clock()).toISOString(), textExtraction: null, ...(nativeSlides ? { sourceType: "google-slides", pages: result.pages } : {}) };
         transaction.update(resourceRef, { processing });
         transaction.update(jobRef, { state: "ready", download, pageCount: result.pageCount, completedAt: timestamp() });
       });
     } catch (error) {
       // Keep diagnostics fixed; converter stdout/paths and upstream credentials are never exposed.
-      console.error("Active Classroom document processing failed", { code: error instanceof HttpsError ? error.code : "conversion-failed" });
+      const safeError = logFailure(error, nativeSlides, "derivative");
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
-        transaction.update(jobRef, { state: "failed", errorCode: error instanceof HttpsError ? error.code : "conversion-failed", failedAt: timestamp() });
-        if (current?.processing?.jobId === attemptId) transaction.update(resourceRef, { "processing.state": "failed", "processing.error": "No se pudo procesar el documento. Reintenta o revisa el original." });
+        transaction.update(jobRef, { state: "failed", errorCode: safeError.code, failedAt: timestamp() });
+        if (current?.processing?.jobId === attemptId) transaction.update(resourceRef, { "processing.state": "failed", "processing.error": nativeSlides ? "No se pudo procesar la presentación de Google Slides" : safeError.message });
       });
-      fail("Error de procesamiento. Reintenta o revisa el original.");
+      if (nativeSlides && safeError.code !== "aborted" && safeError.code !== "resource-exhausted") fail("No se pudo procesar la presentación de Google Slides");
+      throw safeError;
     }
     return applyReady(unitId, resourceId, expectedRevision);
   }
 
   async function prepareDelivery(profile, resource) {
     requireReady(resource);
+    if (isGoogleSlides(resource)) {
+      await googleSlides.original(profile, resource);
+      return googleSlides.verify(resource.processing);
+    }
     const original = await prepareResource(profile, resource);
     if (!officeExtension(resource)) return original;
     const processing = resource.processing;

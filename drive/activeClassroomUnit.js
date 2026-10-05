@@ -1,7 +1,7 @@
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
-const { officeExtension, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
+const { needsDocumentProcessing, isGoogleSlides, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
 
 const MAX_RESOURCES = 200;
 const MAX_SLIDES = 200;
@@ -26,7 +26,7 @@ function normalizeDraft(input) {
   const metadata = input.metadata || {};
   const slides = input.slides.map((slide, index) => ({
     slideId: id(slide.slideId), index, title: text(slide.title || "", 160),
-    metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000) },
+    metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000), ...(slide.metadata?.pageObjectId ? { pageObjectId: id(slide.metadata.pageObjectId), presentationResourceId: id(slide.metadata.presentationResourceId) } : {}) },
     resourceIds: ids(slide.resourceIds || []),
   }));
   ids(slides.map(({ slideId }) => slideId), MAX_SLIDES);
@@ -63,9 +63,10 @@ function snapshotResource(resourceId, resource) {
   const iso = (value) => value?.toDate ? value.toDate().toISOString() : typeof value === "string" ? value : null;
   const processing = readyProcessing(resource) ? resource.processing : null;
   return { resourceId, name: resource.name, mimeType: resource.mimeType, originalMime: resource.mimeType, deliveryMime: processing?.download.mimeType || resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource),
+    ...(isGoogleSlides(resource) ? { sourceType: "google-slides" } : {}),
     ...(processing ? {
-      original: { ...fileReference(resource), name: resource.sourceName || resource.name, mimeType: resource.mimeType, snapshot: processing.original },
-      derivative: { revision: processing.revision, processorVersion: processing.processorVersion, sourceFingerprint: processing.sourceFingerprint, pageCount: processing.pageCount, processedAt: processing.completedAt, textExtraction: null, file: processing.download },
+      original: { ...fileReference(resource), name: resource.sourceName || resource.name, mimeType: resource.mimeType, ...(isGoogleSlides(resource) ? {} : { snapshot: processing.original }) },
+      derivative: { revision: processing.revision, processorVersion: processing.processorVersion, sourceFingerprint: processing.sourceFingerprint, pageCount: processing.pageCount, processedAt: processing.completedAt, textExtraction: null, file: processing.download, ...(isGoogleSlides(resource) ? { pages: processing.pages } : {}) },
     } : {}),
     timestamps: { createdAt: iso(resource.createdAt), updatedAt: iso(resource.updatedAt), sourceCheckedAt: iso(resource.sourceCheckedAt) } };
 }
@@ -125,7 +126,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
       const main = resources.find((resource) => resource.id === draft.mainPresentationId);
-      if (officeExtension(main) && readyProcessing(main)) draft.slides = pdfSlides(main, draft.slides);
+      if (needsDocumentProcessing(main) && readyProcessing(main)) draft.slides = pdfSlides(main, draft.slides);
       const draftRevision = (stored?.draftRevision || 0) + 1;
       transaction.set(unitRef(unitId), {
         schemaVersion: 1, draft, draftRevision, publishedVersion: stored?.publishedVersion || 0,
@@ -155,7 +156,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const resources = await readResources(transaction, draft, unitId);
       for (const resource of resources) requireReady(resource);
       const main = resources.find((resource) => resource.id === draft.mainPresentationId);
-      if (officeExtension(main) && (draft.slides.length !== main.processing.pageCount || draft.slides.some((slide, index) => slide.metadata.pageNumber !== index + 1))) fail("Aplica las diapositivas del PDF procesado antes de publicar.", "failed-precondition");
+      if (needsDocumentProcessing(main) && contentHash(draft.slides) !== contentHash(pdfSlides(main, draft.slides))) fail("Aplica las diapositivas procesadas antes de publicar.", "failed-precondition");
       return resources;
     });
     const files = new Map();
@@ -170,15 +171,30 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const resources = await readResources(transaction, draft, unitId);
       for (const resource of resources) requireReady(resource);
       if (contentHash(resources.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(prepared.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
+      const deliveredIds = (references) => [...new Set(references.flatMap((resourceId) => {
+        const resource = resources.find((item) => item.id === resourceId);
+        return isGoogleSlides(resource) ? resource.processing.pages.map((page, index) => index === 0 ? resourceId : slideResourceId(resourceId, page.pageObjectId)) : [resourceId];
+      }))];
       const content = {
         schemaVersion: 2, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
-        mainPresentationId: draft.mainPresentationId, generalResourceIds: draft.generalResourceIds,
-        slides: draft.slides.map((slide) => {
+        mainPresentationId: draft.mainPresentationId, generalResourceIds: deliveredIds(draft.generalResourceIds),
+        slides: draft.slides.map((draftSlide) => {
+          const slide = { ...draftSlide, resourceIds: deliveredIds(draftSlide.resourceIds) };
           const main = resources.find((resource) => resource.id === draft.mainPresentationId);
           const download = files.get(draft.mainPresentationId);
-          return officeExtension(main) ? { ...slide, metadata: { ...slide.metadata, delivery: { resourceId: main.id, revision: main.processing.revision, generation: download.generation, mimeType: download.mimeType, sizeBytes: download.sizeBytes, checksum: download.checksums.sha256 } } } : slide;
-        }), resources: resources.map((resource) => ({ ...snapshotResource(resource.id, resource), deliveryMime: files.get(resource.id).mimeType, download: files.get(resource.id) })),
+          const page = isGoogleSlides(main) ? main.processing.pages[slide.index] : null;
+          const delivered = page?.download || download;
+          return needsDocumentProcessing(main) ? { ...slide, metadata: { ...slide.metadata, ...(page ? { pageObjectId: page.pageObjectId, storagePath: page.storagePath, size: page.size, sha256: page.sha256, width: page.width, height: page.height } : {}), delivery: { resourceId: page ? slide.metadata.presentationResourceId : main.id, revision: main.processing.revision, generation: delivered.generation, mimeType: delivered.mimeType, sizeBytes: delivered.sizeBytes, checksum: delivered.checksums.sha256 } } } : slide;
+        }), resources: resources.flatMap((resource) => {
+          const snapshot = snapshotResource(resource.id, resource);
+          if (!isGoogleSlides(resource)) return [{ ...snapshot, deliveryMime: files.get(resource.id).mimeType, download: files.get(resource.id) }];
+          const derivative = { ...snapshot.derivative };
+          delete derivative.pages;
+          return resource.processing.pages.map((page, index) => ({ ...snapshot, resourceId: index === 0 ? resource.id : slideResourceId(resource.id, page.pageObjectId), name: `${resource.name} · ${index + 1}`, deliveryMime: "image/png", pageObjectId: page.pageObjectId, index, width: page.width, height: page.height, derivative: { ...derivative, file: page.download }, download: page.download }));
+        }),
       };
+      if (content.resources.length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} archivos por publicación, incluyendo diapositivas PNG.`, "resource-exhausted");
+      if (new Set(content.resources.map((resource) => resource.resourceId)).size !== content.resources.length) fail("Identificadores de archivos publicados duplicados.", "data-loss");
       const hash = contentHash(content);
       const previous = stored.publishedVersion
         ? await transaction.get(unitRef(unitId).collection("publications").doc(String(stored.publishedVersion))) : null;
