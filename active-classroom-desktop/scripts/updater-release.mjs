@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 export const releaseRepository = "gonhercaral-cpu/desarrollo-proyectos";
 export const updateEndpoint = `https://github.com/${releaseRepository}/releases/latest/download/latest.json`;
+// GitHub normalizes spaces in uploaded filenames. Publish an explicit safe name.
+export const updaterArtifactName = version => `Active.Classroom_${version}_amd64.deb`;
 export function publicKey(value) {
   const decoded = Buffer.from(value || "", "base64").toString("utf8");
   const lines = decoded.trim().split(/\r?\n/);
@@ -18,7 +20,7 @@ export function manifest(version, signature, notes, date = new Date().toISOStrin
   const trusted = decoded.split(/\r?\n/).find(line => line.startsWith("trusted comment:"));
   if (!trusted?.split("\t").includes(`version:${version}`)) throw new Error("Firma no vinculada a versión de release");
   return { version, notes, pub_date: date, platforms: {
-    "linux-x86_64-deb": { signature: signature.trim(), url: `https://github.com/${releaseRepository}/releases/download/active-classroom-v${version}/${encodeURIComponent(`Active Classroom_${version}_amd64.deb`)}` },
+    "linux-x86_64-deb": { signature: signature.trim(), url: `https://github.com/${releaseRepository}/releases/download/active-classroom-v${version}/${updaterArtifactName(version)}` },
   } };
 }
 export async function releaseNotes(version) {
@@ -48,6 +50,10 @@ async function main() {
     await mkdir(destination, { recursive: true });
     await writeFile(join(destination, "latest.json"), JSON.stringify(manifest(version, signature, notes), null, 2) + "\n");
     await writeFile(join(destination, "release-notes.md"), notes + "\n");
+    const published = updaterArtifactName(version);
+    await writeFile(join(destination, published), bytes);
+    await writeFile(join(destination, `${published}.sig`), signature);
+    await writeFile(join(destination, `${published}.sha256`), `${createHash("sha256").update(bytes).digest("hex")}  ${published}\n`);
     await writeFile(join(directory, `${expected}.sha256`), `${createHash("sha256").update(bytes).digest("hex")}  ${basename(expected)}\n`);
   } else { throw new Error("Uso: updater-release.mjs config <path> | metadata <directory>"); }
 }

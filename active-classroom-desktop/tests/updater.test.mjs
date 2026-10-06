@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { JSDOM } from "jsdom";
 import { ProgramUpdater } from "../src/updater/controller.ts";
 import { renderUpdater } from "../src/updater/view.ts";
@@ -57,7 +62,8 @@ test("Acerca de muestra versiones/notas seguras, botones y progreso", async t =>
 });
 test("metadata estable apunta a .deb, firma versión y clave pública exige formato", () => {
   const signature = Buffer.from("untrusted comment: test\nabc\ntrusted comment: timestamp:1\tfile:test\tversion:1.0.5\nxyz\n").toString("base64");
-  const result = manifest("1.0.5", signature, "Notas"); assert.ok(result.platforms["linux-x86_64-deb"].url.endsWith("_amd64.deb"));
+  const result = manifest("1.0.5", signature, "Notas");
+  assert.equal(result.platforms["linux-x86_64-deb"].url, "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.5/Active.Classroom_1.0.5_amd64.deb");
   assert.throws(() => manifest("1.0.2", signature, "")); assert.throws(() => manifest("1.0.5-beta", signature, "")); assert.throws(() => publicKey(""));
   assert.equal(new URL(updateEndpoint).protocol, "https:");
 });
@@ -65,6 +71,29 @@ test("notas CI incluyen sección completa y excluyen versiones anteriores", asyn
   const notes = await releaseNotes("1.0.4");
   assert.match(notes, /Actualización del programa/); assert.match(notes, /CI verifica/);
   assert.doesNotMatch(notes, /Panel derecho acotado/);
+});
+
+test("CI publica nombre compatible con GitHub sin alterar paquete o firma", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "classroom-release-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const bundle = join(directory, "src-tauri/target/release/bundle/deb");
+  const destination = join(directory, "assets");
+  const bytes = Buffer.from("Debian fixture exact bytes");
+  const signature = Buffer.from("untrusted comment: test\nabc\ntrusted comment: timestamp:1\tfile:test\tversion:1.0.5\nxyz\n").toString("base64");
+  await mkdir(bundle, { recursive: true });
+  await writeFile(join(directory, "package.json"), JSON.stringify({ version: "1.0.5" }));
+  await writeFile(join(directory, "CHANGELOG.md"), "## 1.0.5\nNotas de prueba\n");
+  await writeFile(join(bundle, "Active Classroom_1.0.5_amd64.deb"), bytes);
+  await writeFile(join(bundle, "Active Classroom_1.0.5_amd64.deb.sig"), signature);
+  const script = fileURLToPath(new URL("../scripts/updater-release.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, "metadata", destination], { cwd: directory, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const published = "Active.Classroom_1.0.5_amd64.deb";
+  assert.deepEqual(await readFile(join(destination, published)), bytes);
+  assert.equal(await readFile(join(destination, `${published}.sig`), "utf8"), signature);
+  assert.equal(await readFile(join(destination, `${published}.sha256`), "utf8"), `${createHash("sha256").update(bytes).digest("hex")}  ${published}\n`);
+  const metadata = JSON.parse(await readFile(join(destination, "latest.json"), "utf8"));
+  assert.ok(metadata.platforms["linux-x86_64-deb"].url.endsWith(`/${published}`));
 });
 
 test("configuración distribuida tiene clave pública válida y artefactos de updater habilitados", async () => {

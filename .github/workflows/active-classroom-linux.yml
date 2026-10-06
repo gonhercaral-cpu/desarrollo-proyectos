@@ -299,11 +299,7 @@ jobs:
         with:
           name: active-classroom-${{ steps.release.outputs.version }}-linux-amd64-${{ github.sha }}
           path: |
-            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb
-            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb.sha256
-            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb.sig
-            ${{ runner.temp }}/updater-assets/latest.json
-            ${{ runner.temp }}/updater-assets/release-notes.md
+            ${{ runner.temp }}/updater-assets/*
             ${{ runner.temp }}/updater-acceptance.json
           if-no-files-found: error
           retention-days: 14
