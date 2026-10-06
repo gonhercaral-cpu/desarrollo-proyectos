@@ -259,7 +259,6 @@ jobs:
           npm run tauri:build -- --config "$RUNNER_TEMP/updater-release.json" --bundles deb -- --locked
           node scripts/updater-release.mjs metadata "$RUNNER_TEMP/updater-assets"
           # Verify the signed bytes with the embedded public key before publication.
-          sudo apt-get install --no-install-recommends -y minisign
           node scripts/verify-updater-signature.mjs
 
       - name: Comprobar paquete y lockfiles
