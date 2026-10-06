@@ -70,8 +70,13 @@ fn valid_snapshot(data: &Value) -> bool {
     if data.to_string().len() > 16000 || data["revision"].as_u64().is_none() || data["sessionId"].as_str().map(|s| s.len() > 80).unwrap_or(true) { return false; }
     let source = &data["source"];
     source.is_null() || source["url"].as_str().map(|url| {
-        url.len() <= 4096 && ["asset://localhost/", "http://asset.localhost/", "https://asset.localhost/"].iter().any(|prefix| url.starts_with(prefix))
+        url.len() <= 4096 && (["asset://localhost/", "http://asset.localhost/", "https://asset.localhost/"].iter().any(|prefix| url.starts_with(prefix)) || media_url_shape(url))
     }).unwrap_or(false)
+}
+fn media_url_shape(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("http://127.0.0.1:") else { return false; };
+    let Some((port, token)) = rest.split_once("/media/") else { return false; };
+    port.parse::<u16>().map(|port| port > 0).unwrap_or(false) && token.len() == 64 && token.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 fn hide(app: &tauri::AppHandle, gate: &ProjectionGate) -> Result<(), String> {
     { let mut state = gate.0.lock().map_err(|_| "projection: Estado no disponible")?; state.target = None; state.prepared = None; }
@@ -90,6 +95,9 @@ pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::W
         "publish" => {
             let snapshot = data.ok_or("projection: Snapshot ausente")?;
             if !valid_snapshot(&snapshot) { return Err("projection: Snapshot local inválido".into()); }
+            if let Some(url) = snapshot["source"]["url"].as_str().filter(|url| media_url_shape(url)) {
+                if !app.state::<crate::local_media::MediaServer>().allows_url(url) { return Err("projection: Recurso multimedia no autorizado".into()); }
+            }
             let mut state = gate.0.lock().map_err(|_| "projection: Estado no disponible")?;
             if !state.accept(&snapshot) { return Ok(Value::Null); }
             // Emit while holding the gate so retiring a Unit cannot overtake its last event.
@@ -179,6 +187,8 @@ mod tests {
     #[test] fn projector_cannot_control_session() { assert!(teacher("teacher").is_ok()); assert!(teacher("audience").is_err()); }
     #[test] fn only_local_snapshots_are_accepted() {
         let mut data = json!({ "sessionId": "session", "revision": 1, "source": { "url": "asset://localhost/local.pdf" } });
+        assert!(valid_snapshot(&data));
+        data["source"]["url"] = json!(format!("http://127.0.0.1:34567/media/{}", "a".repeat(64)));
         assert!(valid_snapshot(&data));
         for url in ["https://google.com/file", "http://asset.localhost.evil/file", "file:///etc/passwd"] { data["source"]["url"] = json!(url); assert!(!valid_snapshot(&data)); }
     }

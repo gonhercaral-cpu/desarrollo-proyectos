@@ -6,7 +6,7 @@ export interface LocalClassroom {
   manifest: Manifest;
   resolveResource(resourceId: string): { path: string; mimeType: string; kind: string; name: string };
 }
-export interface RendererSource { url: string; mimeType: string; name: string; sizeBytes: number }
+export interface RendererSource { url: string; mimeType: string; name: string; sizeBytes: number; codecMime?: string }
 export interface RendererState {
   loading: boolean; page: number; pages: number; playing: boolean;
   time: number; duration: number; volume: number; muted: boolean; error: string;

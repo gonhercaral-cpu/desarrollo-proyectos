@@ -196,7 +196,7 @@ for (const Renderer of [AudioRenderer, VideoRenderer]) test(`${Renderer.name}: r
   await renderer.command("VOLUME_DOWN"); assert.equal(media.volume, .9);
   await renderer.command("MUTE"); assert.equal(media.muted, true);
   await renderer.command("NEXT"); assert.equal(media.currentTime, 0);
-  media.dispatchEvent(new window.Event("error")); assert.match(states.at(-1).error, /códec/);
+  media.dispatchEvent(new window.Event("error")); assert.match(states.at(-1).error, /No se pudo leer/);
   renderer.destroy(); assert.equal(media.hasAttribute("src"), false); assert.equal(media.isConnected, false); assert.equal(paused, true);
 });
 

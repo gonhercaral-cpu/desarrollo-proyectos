@@ -1,3 +1,5 @@
+import publicationLimits from "../../../drive/activeClassroomPublicationLimits.json" with { type: "json" };
+
 export interface PublishedResource {
   resourceId: string;
   name: string;
@@ -59,7 +61,7 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
     require(typeof r.name === "string" && typeof r.mimeType === "string" && typeof r.kind === "string");
     require(r.download?.endpoint === "activeClassroomPublicationFile" && validHash(r.download.checksums?.sha256));
     require(typeof r.download.mimeType === "string" && r.download.mimeType.length > 0);
-    require(Number.isSafeInteger(r.download.sizeBytes) && r.download.sizeBytes >= 0 && r.download.sizeBytes <= 250 * 1024 * 1024);
+    require(Number.isSafeInteger(r.download.sizeBytes) && r.download.sizeBytes >= 0 && r.download.sizeBytes <= publicationLimits.maxFileBytes);
     const hash = r.download.checksums.sha256;
     require(!sizes.has(hash) || sizes.get(hash) === r.download.sizeBytes); sizes.set(hash, r.download.sizeBytes);
   }

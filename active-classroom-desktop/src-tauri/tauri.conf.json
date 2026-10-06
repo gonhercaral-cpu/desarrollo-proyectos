@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Active Classroom",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "identifier": "com.activeclassroom.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -29,11 +29,21 @@
           "$APPDATA/**"
         ]
       },
-      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' asset: http://asset.localhost https://asset.localhost ipc: http://ipc.localhost https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; font-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'"
+      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' http://127.0.0.1:* asset: http://asset.localhost https://asset.localhost ipc: http://ipc.localhost https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' http://127.0.0.1:* asset: http://asset.localhost blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; font-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'"
     }
   },
   "bundle": {
-    "linux": { "deb": { "depends": ["libsecret-tools", "libglib2.0-bin", "gnome-keyring"] } },
+    "createUpdaterArtifacts": true,
+    "linux": {
+      "deb": {
+        "depends": [
+          "libsecret-tools",
+          "libglib2.0-bin",
+          "gnome-keyring",
+          "policykit-1"
+        ]
+      }
+    },
     "active": true,
     "targets": "all",
     "icon": [
@@ -41,5 +51,14 @@
     ],
     "category": "Education",
     "shortDescription": "Panel de aula con vista docente y proyección para el alumnado"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE3RkExM0UzMjc3QjY5MTcKUldRWGFYc240eFA2Ri85RUZyS2NHMTEvM052cFA1NHVlSWtrb2NUbUpWd2xyc2ZSTi9NOUlxOXUK",
+      "endpoints": [
+        "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
+    }
   }
 }

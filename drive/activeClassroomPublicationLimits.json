@@ -1,0 +1,6 @@
+{
+  "maxFileBytes": 10737418240,
+  "transferTimeoutSeconds": 1680,
+  "taskTimeoutSeconds": 1800,
+  "uploadHighWaterMarkBytes": 65536
+}

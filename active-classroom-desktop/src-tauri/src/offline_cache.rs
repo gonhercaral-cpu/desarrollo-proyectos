@@ -5,6 +5,10 @@ use tauri::Manager;
 
 #[derive(Default)]
 pub struct CacheGate(pub Arc<Mutex<()>>);
+fn maximum_file_bytes() -> u64 {
+    static LIMIT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *LIMIT.get_or_init(|| serde_json::from_str::<Value>(include_str!("../../../drive/activeClassroomPublicationLimits.json")).expect("publication limits")["maxFileBytes"].as_u64().expect("publication byte limit"))
+}
 fn io_error(error: std::io::Error) -> String {
     match error.raw_os_error() {
         Some(28) | Some(112) | Some(39) if error.kind() != std::io::ErrorKind::NotFound => "disk-full: Espacio insuficiente. Libera espacio y reintenta.".into(),
@@ -39,7 +43,7 @@ fn checked_manifest(manifest: &Value) -> Result<(), String> {
         let id = safe_id(text(resource, "resourceId")?)?;
         if !ids.insert(id) { return Err("manifest: Recurso duplicado".into()); }
         hash_id(text(&resource["download"]["checksums"], "sha256")?)?;
-        if resource["download"]["sizeBytes"].as_u64().filter(|size| *size <= 250 * 1024 * 1024).is_none() { return Err("manifest: Tamaño inválido".into()); }
+        if resource["download"]["sizeBytes"].as_u64().filter(|size| *size <= maximum_file_bytes()).is_none() { return Err("manifest: Tamaño inválido".into()); }
     }
     let expected = hash_id(text(&manifest["integrity"], "contentHash")?)?;
     let mut content = manifest.clone();
@@ -67,7 +71,7 @@ fn write_synced(path: &Path, bytes: &[u8]) -> Result<(), String> {
     file.write_all(bytes).map_err(io_error)?;
     file.sync_all().map_err(io_error)
 }
-fn load(path: &Path) -> Result<Value, String> {
+pub(crate) fn load(path: &Path) -> Result<Value, String> {
     let file = File::open(path).map_err(io_error)?;
     if file.metadata().map_err(io_error)?.len() > 700000 { return Err("manifest: Manifest demasiado grande".into()); }
     let manifest = serde_json::from_reader(file).map_err(|_| "manifest: JSON local dañado")?;
@@ -85,7 +89,7 @@ fn paths(root: &Path, manifest: &Value) -> Result<Value, String> {
     }
     Ok(Value::Object(paths))
 }
-fn version_dir(root: &Path, unit: &str, version: u64) -> Result<PathBuf, String> {
+pub(crate) fn version_dir(root: &Path, unit: &str, version: u64) -> Result<PathBuf, String> {
     safe_id(unit)?;
     if version == 0 || version > 9007199254740991 { return Err("manifest: Versión inválida".into()); }
     Ok(root.join("units").join(unit).join("versions").join(version.to_string()))
@@ -153,7 +157,7 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
                 "append" => {
                     let offset = data["offset"].as_u64().ok_or("cache: Offset inválido")?;
                     let bytes: Vec<u8> = serde_json::from_value(data["chunk"].clone()).map_err(|_| "cache: Bloque inválido")?;
-                    if bytes.len() > 65536 || offset + bytes.len() as u64 > 250 * 1024 * 1024 { return Err("cache: Bloque demasiado grande".into()); }
+                    if bytes.len() > 65536 || offset.checked_add(bytes.len() as u64).filter(|size| *size <= maximum_file_bytes()).is_none() { return Err("cache: Bloque demasiado grande".into()); }
                     let mut file = OpenOptions::new().append(true).open(&temporary).map_err(io_error)?;
                     if file.metadata().map_err(io_error)?.len() != offset { return Err("cache: Descarga concurrente o fuera de orden".into()); }
                     file.write_all(&bytes).map_err(io_error)?;
@@ -253,6 +257,36 @@ mod tests {
     fn accepts_published_contract() {
         let example: Value = serde_json::from_str(include_str!("../../../docs/active-classroom-manifest.example.json")).unwrap();
         checked_manifest(&example).unwrap();
+    }
+    #[test]
+    fn large_cache_verifies_and_activates_atomically() {
+        let root = std::env::temp_dir().join(format!("ac-cache-large-{}", std::process::id()));
+        let size = 300_u64 * 1024 * 1024;
+        let block = [0_u8; 65536];
+        let mut sha = Sha256::new();
+        for _ in 0..size / block.len() as u64 { sha.update(block); }
+        let hash = format!("{:x}", sha.finalize());
+        execute(&root, "begin", json!({"hash": hash})).unwrap();
+        let temporary = root.join("temporary").join(format!("{hash}.part"));
+        // Sparse prefix avoids allocating or buffering a 300 MiB test fixture.
+        OpenOptions::new().write(true).open(&temporary).unwrap().set_len(size - block.len() as u64).unwrap();
+        execute(&root, "append", json!({"hash": hash, "offset": size - block.len() as u64, "chunk": block.to_vec()})).unwrap();
+        assert!(execute(&root, "finish", json!({"hash": hash, "size": size + 1})).is_err());
+        assert_eq!(execute(&root, "list", Value::Null).unwrap(), json!([]));
+        execute(&root, "finish", json!({"hash": hash, "size": size})).unwrap();
+        let mut manifest: Value = serde_json::from_str(include_str!("../../../docs/active-classroom-manifest.example.json")).unwrap();
+        for resource in manifest["resources"].as_array_mut().unwrap() {
+            resource["download"]["sizeBytes"] = json!(size);
+            resource["download"]["checksums"]["sha256"] = json!(hash);
+        }
+        let mut content = manifest.clone();
+        for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+        manifest["integrity"]["contentHash"] = json!(digest(canonical(&content).as_bytes()));
+        execute(&root, "commit", manifest.clone()).unwrap();
+        assert_eq!(execute(&root, "list", Value::Null).unwrap()[0], manifest);
+        manifest["resources"][0]["download"]["sizeBytes"] = json!(maximum_file_bytes() + 1);
+        assert!(checked_manifest(&manifest).unwrap_err().starts_with("manifest: Tamaño"));
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn committed_cache_survives_reopen_and_failed_update() {

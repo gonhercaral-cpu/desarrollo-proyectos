@@ -3,11 +3,16 @@ name: Active Classroom Desktop Linux
 on:
   workflow_dispatch:
   push:
+    branches:
+      - "**"
+    tags:
+      - "active-classroom-v*"
     paths:
       - "active-classroom-desktop/**"
       - "docs/active-classroom-manifest.example.json"
       - ".github/workflows/active-classroom-linux.yml"
       - "drive/activeClassroom*.js"
+      - "drive/activeClassroomPublicationLimits.json"
       - "drive/index.js"
       - "functions/deviceAccess.js"
       - "functions/index.js"
@@ -71,9 +76,13 @@ jobs:
           node --check functions/index.js
       - name: Reglas y transacciones reales en emuladores
         run: |
+          publication_tests=""
+          if [[ -f tests/active-classroom-large-publication-emulator.test.cjs ]]; then
+            publication_tests=" tests/active-classroom-large-publication-emulator.test.cjs"
+          fi
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs${publication_tests}"
   office:
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04
@@ -119,7 +128,9 @@ jobs:
             build-essential pkg-config curl wget file \
             libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
             libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 \
-            python3-gi gir1.2-webkit2-4.1 xvfb xauth weston
+            policykit-1 sudo \
+            python3-gi gir1.2-webkit2-4.1 xvfb xauth weston ffmpeg \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
 
       - name: Rust estable mediante rustup
         run: |
@@ -135,6 +146,17 @@ jobs:
       - name: Instalar dependencias del lockfile
         run: npm ci
 
+      - name: Restaurar compilación nativa sin claves de firma
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+
       - name: Tests offline
         run: npm run test:offline
 
@@ -146,6 +168,9 @@ jobs:
 
       - name: Tests Player
         run: npm run test:player
+
+      - name: Tests del updater del programa
+        run: npm run test:updater
 
       - name: Tests de sesión y proyector offline
         run: npm run test:projection
@@ -170,11 +195,11 @@ jobs:
         id: release
         run: echo "version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')" >> "$GITHUB_OUTPUT"
 
-      - name: Cuatro tests Rust de caché offline
+      - name: Cinco tests Rust de caché offline
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib offline_cache::tests:: -- --list \
             | tee "$RUNNER_TEMP/active-classroom-rust-tests.txt"
-          test "$(grep -c '^offline_cache::tests::.*: test$' "$RUNNER_TEMP/active-classroom-rust-tests.txt")" -eq 4
+          test "$(grep -c '^offline_cache::tests::.*: test$' "$RUNNER_TEMP/active-classroom-rust-tests.txt")" -eq 5
           cargo test --locked --manifest-path src-tauri/Cargo.toml --lib offline_cache::tests:: -- --nocapture
 
       - name: Todos los tests Rust (identidad, caché, proyección y legado)
@@ -188,6 +213,7 @@ jobs:
           export ACTIVE_CLASSROOM_TEST_KEYRING=1
           dbus-run-session -- bash -euo pipefail -c '
             openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
+            openssl rand -hex 32 | secret-tool store --label CI-fixture application com.activeclassroom.desktop credential device-v1
             cargo test --locked --manifest-path src-tauri/Cargo.toml --lib device_identity::tests::linux_keyring_round_trip -- --ignored --nocapture
           '
 
@@ -195,11 +221,46 @@ jobs:
         # build.rs ejecuta tauri_build::build(); no se usa un mock de Tauri.
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
 
+      - name: MP4 H.264/AAC local, Range, controles, proyección y scroll largo en Tauri real
+        run: npm run test:media:linux
+
       - name: Fullscreen Tauri real en Wayland con dos monitores virtuales
         run: bash tests/wayland-projection.sh
 
+      # Save BEFORE acceptance fixtures and production signing. No production
+      # private key has been exposed to any process cached by this step.
+      - name: Guardar compilación nativa antes de usar claves de firma
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+
+      - name: Updater .deb real 1.0.4 a 1.0.5, firmas, reinicio y persistencia
+        env:
+          ACTIVE_CLASSROOM_UPDATER_CI_REPORT: ${{ runner.temp }}/updater-acceptance.json
+        run: bash tests/updater-linux.sh
+
       - name: Build Tauri Linux .deb
-        run: npm run tauri:build -- --bundles deb -- --locked
+        env:
+          ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY: ${{ vars.ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/active-classroom-v* ]]; then
+            test "$GITHUB_REF_NAME" = "active-classroom-v${{ steps.release.outputs.version }}"
+          fi
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          node scripts/updater-release.mjs config "$RUNNER_TEMP/updater-release.json"
+          npm run tauri:build -- --config "$RUNNER_TEMP/updater-release.json" --bundles deb -- --locked
+          node scripts/updater-release.mjs metadata "$RUNNER_TEMP/updater-assets"
+          # Verify the signed bytes with the embedded public key before publication.
+          sudo apt-get install --no-install-recommends -y minisign
+          node scripts/verify-updater-signature.mjs
 
       - name: Comprobar paquete y lockfiles
         run: |
@@ -211,6 +272,10 @@ jobs:
           test "$(basename "${packages[0]}")" = 'Active Classroom_${{ steps.release.outputs.version }}_amd64.deb'
           dpkg-deb --info "${packages[0]}"
           file src-tauri/target/release/active-classroom
+          if grep -a -q 'ACTIVE_CLASSROOM_UPDATER_STAGE' src-tauri/target/release/active-classroom; then
+            echo 'El instalador de producción incluye hooks de aceptación; release bloqueada.' >&2
+            exit 1
+          fi
           (
             cd "$(dirname "${packages[0]}")"
             package_name="$(basename "${packages[0]}")"
@@ -237,6 +302,56 @@ jobs:
           path: |
             active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb
             active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb.sha256
+            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb.sig
+            ${{ runner.temp }}/updater-assets/latest.json
+            ${{ runner.temp }}/updater-assets/release-notes.md
+            ${{ runner.temp }}/updater-acceptance.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  release:
+    name: Publicar release estable verificado
+    if: startsWith(github.ref, 'refs/tags/active-classroom-v')
+    needs: [permissions, office, linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: active-classroom-stable-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: active-classroom-*-linux-amd64-${{ github.sha }}
+          path: release-assets
+      - name: Subir a draft y publicar solo después de completar todos los assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t installers < <(find release-assets -type f -name '*.deb')
+          mapfile -t manifests < <(find release-assets -type f -name latest.json)
+          mapfile -t notes < <(find release-assets -type f -name release-notes.md)
+          test "${#installers[@]}" -eq 1
+          test "${#manifests[@]}" -eq 1
+          test "${#notes[@]}" -eq 1
+          version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).version' "${manifests[0]}")"
+          test "$GITHUB_REF_NAME" = "active-classroom-v$version"
+          latest_tag="$(gh release view --json tagName --jq '.tagName' 2>/dev/null || true)"
+          if [[ "$latest_tag" == active-classroom-v* ]]; then
+            node -e 'const [old,next]=process.argv.slice(1).map(v=>v.replace(/^active-classroom-v/, "").split(".").map(Number)); const index=next.findIndex((v,i)=>v!==old[i]); if(index<0 || next[index]<old[index]) process.exit(1)' "$latest_tag" "$GITHUB_REF_NAME"
+          fi
+          test -s "${installers[0]}.sig"
+          (cd "$(dirname "${installers[0]}")" && sha256sum --check "$(basename "${installers[0]}").sha256")
+          # Never overwrite an already published installer or race stable versions.
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft' > existing-release.txt 2>/dev/null; then
+            test "$(cat existing-release.txt)" = true
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Active Classroom $version" --notes-file "${notes[0]}"
+          fi
+          gh release upload "$GITHUB_REF_NAME" "${installers[0]}" "${installers[0]}.sig" "${installers[0]}.sha256" "${manifests[0]}" --clobber
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest --notes-file "${notes[0]}"

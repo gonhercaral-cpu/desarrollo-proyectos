@@ -1,0 +1,6 @@
+.app-updater { position: fixed; bottom: 1rem; left: 1rem; z-index: 100; max-width: calc(100vw - 2rem); }
+.app-about { background: var(--surface, #fff); }
+.app-update-card { position: fixed; top: 5rem; right: 1.5rem; width: min(29rem, calc(100vw - 3rem)); max-height: calc(100dvh - 7rem); overflow-y: auto; display: grid; gap: 1rem; box-shadow: 0 12px 40px #0002; }
+.app-update-card h2, .app-update-card p { margin: 0; }
+.app-update-card progress { width: 100%; }
+.app-update-notes { white-space: pre-wrap; font: inherit; max-height: 12rem; overflow-y: auto; overflow-wrap: anywhere; }

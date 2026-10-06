@@ -7,6 +7,7 @@ import { initialRendererState, rendererKind, type LocalClassroom, type LocalRend
 
 export interface PlayerDependencies {
   verifyResource(id: string): Promise<boolean>;
+  prepareMediaSource?(id: string): Promise<RendererSource>;
   createRenderer?: typeof createRenderer;
   toUrl?: (path: string) => string;
   projectionBridge?: ProjectionBridge;
@@ -55,7 +56,12 @@ export class ClassroomPlayer {
     this.element<HTMLInputElement>("[data-volume]").oninput = (event) => this.renderer?.setVolume(Number((event.target as HTMLInputElement).value));
     const tools = document.createElement("section"); tools.className = "ui-card player-projection";
     tools.innerHTML = '<h2>Proyector</h2><p data-projector-status role="status"></p><label>Pantalla<select data-monitor aria-label="Monitor del proyector"></select></label><button class="button button-outline" data-project>Proyectar</button><small>Audio exclusivo de esta ventana. Vista principal como preview.</small><h3>Notas de la diapositiva</h3><p data-notes></p>';
-    this.element(".player-resources").prepend(tools);
+    const sections = document.createElement("div"); sections.className = "player-resource-sections";
+    sections.append(...this.element(".player-resources").children);
+    this.element(".player-resources").replaceChildren(tools, sections);
+    for (const [selector, label] of [["[data-slides]", "Diapositivas"], ["[data-associated]", "Recursos de la diapositiva"], ["[data-general]", "Recursos generales"]]) {
+      const list = this.element(selector); list.classList.add("player-scroll-list"); list.tabIndex = 0; list.setAttribute("aria-label", label);
+    }
     this.element<HTMLSelectElement>("[data-monitor]").onchange = (event) => { void this.projection.select((event.target as HTMLSelectElement).value); };
     this.element("[data-project]").onclick = () => { void this.projection.toggle(); };
     this.updateProjection(); this.updateLists(); this.updateState();
@@ -77,6 +83,7 @@ export class ClassroomPlayer {
     this.updateState();
   }
   private updateLists(): void {
+    const positions = ["[data-slides]", "[data-associated]", "[data-general]"].map(selector => [selector, this.element(selector).scrollTop] as const);
     const slides = this.element("[data-slides]"); slides.replaceChildren();
     this.classroom.manifest.slides.forEach((slide, index) => {
       const button = document.createElement("button"); button.className = "button player-list-button";
@@ -96,6 +103,7 @@ export class ClassroomPlayer {
         button.onclick = () => { this.controller.selectResource(id); void this.showResource(); }; list.append(button);
       }
     }
+    for (const [selector, position] of positions) this.element(selector).scrollTop = position;
     this.updateState();
   }
   private updateState(): void {
@@ -141,9 +149,11 @@ export class ClassroomPlayer {
     this.element("[data-resource-name]").textContent = resource.name;
     this.updateState();
     try {
-      if (!await this.dependencies.verifyResource(id)) throw new Error("Archivo local ausente o corrupto. Vuelve a Biblioteca para sincronizarlo de nuevo.");
+      const isMedia = ["audio", "video"].includes(rendererKind(resource.download.mimeType));
+      const prepared = isMedia && this.dependencies.prepareMediaSource ? await this.dependencies.prepareMediaSource(id) : undefined;
+      if (!prepared && !await this.dependencies.verifyResource(id)) throw new Error("Archivo local ausente o corrupto. Vuelve a Biblioteca para sincronizarlo de nuevo.");
       if (sequence !== this.sequence || this.disposed) return;
-      const source = localSource(this.classroom, id, this.dependencies.toUrl);
+      const source = prepared || localSource(this.classroom, id, this.dependencies.toUrl);
       const renderer = await (this.dependencies.createRenderer || createRenderer)(rendererKind(source.mimeType));
       if (sequence !== this.sequence || this.disposed) { renderer.destroy(); return; }
       this.renderer = renderer; this.renderedId = id;

@@ -84,6 +84,20 @@ test("manifest exige integridad, IDs seguros, asociaciones válidas y orden de s
   await assert.rejects(validateManifest(tampered), { code: "manifest" });
 });
 
+test("manifest acepta 300 MiB; rechaza más de 10 GiB manteniendo hash obligatorio", async () => {
+  const large = structuredClone(example);
+  large.resources[0].download.sizeBytes = 300 * 1024 * 1024;
+  await seal(large);
+  await validateManifest(large);
+  large.resources[0].download.sizeBytes = 10 * 1024 * 1024 * 1024 + 1;
+  await seal(large);
+  await assert.rejects(validateManifest(large), { code: "manifest" });
+  large.resources[0].download.sizeBytes = 300 * 1024 * 1024;
+  large.resources[0].download.checksums.sha256 = "";
+  await seal(large);
+  await assert.rejects(validateManifest(large), { code: "manifest" });
+});
+
 test("descarga, verifica SHA-256, reinicia proceso lógico y abre clase sin ningún servicio remoto", async (t) => {
   const cache = await temporary(t);
   const data = await fixture();

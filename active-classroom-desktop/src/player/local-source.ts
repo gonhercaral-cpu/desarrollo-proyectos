@@ -8,6 +8,7 @@ export function localAssetUrl(path: string): string {
 
 export function assertLocalUrl(url: string): void {
   const parsed = new URL(url);
+  if (parsed.protocol === "http:" && parsed.hostname === "127.0.0.1" && /^\d+$/.test(parsed.port) && /^\/media\/[a-f0-9]{64}$/.test(parsed.pathname) && !parsed.username && !parsed.password && !parsed.search && !parsed.hash) return;
   if ((parsed.protocol === "asset:" && parsed.hostname === "localhost") ||
       (["http:", "https:"].includes(parsed.protocol) && parsed.hostname === "asset.localhost" && !parsed.port && !parsed.username && !parsed.password)) return;
   throw new Error("El Player solo admite archivos del caché local.");

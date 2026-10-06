@@ -11,6 +11,7 @@ import { syncDiagnostic } from "./sync-diagnostics";
 import { openLocalClass, SyncEngine, unitSyncMessage, type Progress } from "./sync";
 import "./library.css";
 import { ClassroomPlayer } from "../player/ClassroomPlayer";
+import { prepareNativeMedia } from "../player/native-media";
 import "../player/player.css";
 
 export function mountOfflineLibrary(root: HTMLDivElement): void {
@@ -128,6 +129,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
             message = "Biblioteca local verificada."; render();
           }).catch((error) => { if (current === epoch) { message = String(error); render(); } });
         }, {
+          prepareMediaSource: (id) => prepareNativeMedia(currentCache.owner, classroom, id),
           verifyResource: async (id) => {
             const resource = classroom.manifest.resources.find((item) => item.resourceId === id);
             return !!resource && await currentCache.has(resource.download.checksums.sha256, resource.download.sizeBytes);

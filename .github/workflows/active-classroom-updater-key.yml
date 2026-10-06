@@ -1,0 +1,26 @@
+name: Active Classroom - habilitar firma una sola vez
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: active-classroom-updater-key-bootstrap
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+      - name: Instalar CLI de firma fijado, independiente de la versión instalada
+        run: npm install --prefix "$RUNNER_TEMP/updater-bootstrap" --ignore-scripts --no-audit --no-fund @tauri-apps/cli@2.12.1
+      - name: Crear clave en memoria y guardarla directamente en GitHub Secrets
+        working-directory: active-classroom-desktop
+        env:
+          GH_TOKEN: ${{ secrets.UPDATER_BOOTSTRAP_TOKEN }}
+        run: TAURI_BOOTSTRAP_CLI="$RUNNER_TEMP/updater-bootstrap/node_modules/.bin/tauri" node scripts/bootstrap-updater-key.mjs
