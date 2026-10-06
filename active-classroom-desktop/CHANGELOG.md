@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5 — 2026-10-06
+
+- Release firmada para validar actualización automática desde 1.0.4 habilitada.
+- Misma clave pública, endpoint y contrato de datos; activación, caché, Units y preferencias se conservan.
+- Estados distinguen versión actual, nueva versión, error de Internet y configuración ausente.
+
 ## 1.0.4 — 2026-10-06
 
 - Actualización del programa mediante updater oficial Tauri 2, paquetes Debian firmados y versión vinculada criptográficamente.

@@ -2,10 +2,9 @@
 
 Workflow único: `.github/workflows/active-classroom-linux.yml`.
 
-Compilación local autorizada desde Windows: `scripts/active-classroom-linux-cloudbuild.yaml`
-ejecuta los checks Desktop en Ubuntu 22.04 dentro del proyecto Firebase existente.
-No requiere publicar el checkout en GitHub. Guarda el `.deb` y su SHA-256 en Storage
-solo después de completar tests, aceptación nativa y build Tauri.
+Distribución habilitada: build firmado en GitHub Actions con Secrets de firma.
+Clave pública real se compila en Desktop; privada nunca se copia a Windows,
+Cloud Build ni binarios. Builds sin Secrets no generan instalador distribuible.
 
 ## Ejecución
 
@@ -22,7 +21,7 @@ solo después de completar tests, aceptación nativa y build Tauri.
 4. Exigir cinco tests `offline_cache::tests` y ejecutar todos los tests Rust con Cargo `--locked`, además del test de persistencia real en llavero Linux. Multimedia comprueba integridad, paths, Range/206/416 y transferencia incremental de 600 MiB con medición de RAM.
 5. `cargo check --locked --all-targets`. El build script Tauri valida configuración/capabilities reales.
    `npm run test:media:linux` ejecuta el Player real bajo Tauri/WebKitGTK: compara `asset://` con HTTP loopback, valida H.264/AAC, seek, reproducción, reapertura, volumen/mute, fullscreen, seguidor de proyección y scroll hasta el último elemento. Prueba una ventana normal y el tamaño mínimo, 80 slides, 60 recursos asociados y 60 generales; también un MP4 válido de 600 MiB con padding sparse.
-6. `bash tests/updater-linux.sh` instala fixtures reales 1.0.0/1.0.1, verifica firmas, replay, fallo de Internet, reinicio Tauri, llavero, caché y preferencias WebKit conservadas. Después `npm run tauri:build -- --bundles deb -- --locked` empaqueta producción sin feature de aceptación. Tags usan overlay de clave pública y generan `.deb.sig` vinculado a versión, con verificación Minisign adicional.
+6. `bash tests/updater-linux.sh` instala fixtures reales 1.0.4/1.0.5, verifica misma versión, firmas, replay, fallo de Internet, reinicio Tauri, llavero, caché y preferencias WebKit conservadas. Después build firmado empaqueta producción sin feature de aceptación. Clave pública compilada debe coincidir con variable de Actions. Genera `.deb.sig` vinculado a versión y verifica Minisign antes de publicar.
 7. Comprobar `.deb` amd64 con la misma versión de package/Tauri/Cargo, imprimir metadata, calcular/verificar SHA-256 portable y exigir lockfiles intactos.
 8. Subir artefacto únicamente tras éxito completo. Sin `continue-on-error` ni sustitutos de Cargo/Tauri.
 
