@@ -1,10 +1,13 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import "../src/design-system.css";
+import "../src/styles.css";
 import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
 import { ProjectionPlayer } from "../src/player/projection/ProjectionPlayer.ts";
 import { initialRendererState } from "../src/player/types.ts";
 import { sidebarMarkup } from "../src/ui/shell.ts";
 import "../src/offline/library.css";
+import "../src/player/player.css";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,6 +58,7 @@ export async function scroll(seed) {
   manifest.generalResourceIds = manifest.resources.slice(61).map(item => item.resourceId);
   manifest.slides = Array.from({ length: 80 }, (_, index) => ({ slideId: `slide-${index}`, index, title: `Diapositiva ${index + 1}`, resourceIds: manifest.resources.slice(1, 61).map(item => item.resourceId), metadata: { pageNumber: index + 1, notes: "Notas" } }));
   const root = document.querySelector("#app");
+  for (const selector of ["#media", "#audience"]) { const host = document.querySelector(selector); if (host) host.hidden = true; }
   root.className = "desktop-shell is-classroom";
   root.innerHTML = sidebarMarkup({ levels: ["level-1"], selectedLevel: "", inClass: true, deviceName: "Aula de prueba", state: "Sincronizado", updatedAt: Date.now() }) + '<main class="classroom-workspace"></main>';
   const host = root.querySelector(".classroom-workspace");
@@ -79,8 +83,11 @@ export async function scroll(seed) {
     for (const selector of ["[data-slides]", "[data-associated]", "[data-general]"]) {
       const list = root.querySelector(selector); const last = list.lastElementChild;
       list.scrollTop = list.scrollHeight;
-      const sections = root.querySelector(".player-resource-sections"); sections.scrollTop += last.getBoundingClientRect().bottom - sections.getBoundingClientRect().bottom;
-      await delay(25);
+      await until(() => Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) <= 1.5, 2);
+      const sections = root.querySelector(".player-resource-sections");
+      const bottomOverflow = last.getBoundingClientRect().bottom - sections.getBoundingClientRect().bottom;
+      if (bottomOverflow > 0) sections.scrollTop += bottomOverflow;
+      await delay(50);
       const rectangle = last.getBoundingClientRect();
       observations.push({ viewport: [innerWidth, innerHeight], selector, scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, list: list.getBoundingClientRect().toJSON(), last: rectangle.toJSON(), sections: sections.getBoundingClientRect().toJSON(), display: getComputedStyle(last).display });
       assert(rectangle.top >= list.getBoundingClientRect().top - 1 && rectangle.bottom <= list.getBoundingClientRect().bottom + 1, `${selector}: último elemento cortado`);

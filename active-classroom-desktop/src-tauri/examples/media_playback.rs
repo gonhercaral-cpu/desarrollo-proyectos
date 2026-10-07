@@ -58,7 +58,7 @@ fn main() {
         .register_uri_scheme_protocol("tauri", move |_, request| {
             let (mime, body) = match request.uri().path() {
                 "/test.js" => ("text/javascript", script.clone()), "/style.css" => ("text/css", css.as_bytes().to_vec()),
-                _ => ("text/html", b"<!doctype html><html><head><link rel='stylesheet' href='/style.css'></head><body><div id='app'></div><div id='media' style='height:240px'></div><div id='audience' style='height:100px'></div><script src='/test.js'></script></body></html>".to_vec()),
+                _ => ("text/html", b"<!doctype html><html><head><meta charset='utf-8'><link rel='stylesheet' href='/style.css'></head><body><div id='app'></div><div id='media' style='height:240px'></div><div id='audience' style='height:100px'></div><script src='/test.js'></script></body></html>".to_vec()),
             };
             tauri::http::Response::builder().header("Content-Type", mime).header("Content-Security-Policy", &csp).body(body).unwrap()
         })

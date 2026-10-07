@@ -1,7 +1,4 @@
 import { scroll, observations } from "./media-browser.mjs";
-import "../src/design-system.css";
-import "../src/styles.css";
-import "../src/player/player.css";
 async function run() {
   try {
     const manifest = await (await fetch("/fixture")).json();
