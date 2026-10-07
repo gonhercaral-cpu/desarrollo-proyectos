@@ -9,7 +9,7 @@ import "../src/offline/library.css";
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, seconds = 8) { const end = Date.now() + seconds * 1000; while (!check() && Date.now() < end) await delay(25); assert(check(), "Estado multimedia esperado no llegó"); }
-const observations = [];
+export const observations = [];
 const rendererOptions = { page: 1, volume: .5, muted: true, onPage() {}, onState() {} };
 async function oldAsset(source, path) {
   const renderer = new VideoRenderer(); let state = initialRendererState();
@@ -47,7 +47,7 @@ async function video(source) {
 function emptyRenderer(kind) {
   return { kind, async mount(host, source, options) { host.textContent = source.name; options.onState({ ...initialRendererState(), pages: 80 }); }, command() {}, setPage() {}, seek() {}, setVolume() {}, destroy() {} };
 }
-async function scroll(seed) {
+export async function scroll(seed) {
   const manifest = structuredClone(seed); const base = manifest.resources[0];
   base.download.mimeType = "image/png"; base.kind = "image";
   manifest.resources = [base];
@@ -82,6 +82,7 @@ async function scroll(seed) {
       const sections = root.querySelector(".player-resource-sections"); sections.scrollTop += last.getBoundingClientRect().bottom - sections.getBoundingClientRect().bottom;
       await delay(25);
       const rectangle = last.getBoundingClientRect();
+      observations.push({ viewport: [innerWidth, innerHeight], selector, scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, list: list.getBoundingClientRect().toJSON(), last: rectangle.toJSON(), sections: sections.getBoundingClientRect().toJSON(), display: getComputedStyle(last).display });
       assert(rectangle.top >= list.getBoundingClientRect().top - 1 && rectangle.bottom <= list.getBoundingClientRect().bottom + 1, `${selector}: último elemento cortado`);
       assert(rectangle.bottom <= innerHeight + 1, `${selector}: último elemento fuera de ventana`);
       assert(projection.getBoundingClientRect().top === bounds.top, "Bloque proyección se desplazó");
@@ -106,4 +107,4 @@ try {
   await invoke("fixture_report", { ok: true, result: observations });
 } catch (error) { await invoke("fixture_report", { ok: false, result: { error: String(error), observations } }); }
 }
-void run();
+if (!document.documentElement.hasAttribute("data-layout-only")) void run();

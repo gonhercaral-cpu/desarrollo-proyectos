@@ -172,6 +172,9 @@ jobs:
       - name: Tests de interfaz visual Desktop
         run: npm run test:frontend
 
+      - name: Layout WebKitGTK en cuatro resoluciones antes del build nativo
+        run: npm run test:design:webkit
+
       - name: Tests del updater del programa
         run: npm run test:updater
 
@@ -233,7 +236,7 @@ jobs:
       # Save BEFORE acceptance fixtures and production signing. No production
       # private key has been exposed to any process cached by this step.
       - name: Guardar compilación nativa antes de usar claves de firma
-        if: steps.native-cache.outputs.cache-hit != 'true'
+        if: always() && steps.native-cache.outputs.cache-hit != 'true' && steps.native-cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |

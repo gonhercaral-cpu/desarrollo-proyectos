@@ -8,6 +8,7 @@
     "build": "tsc && vite build && npm run test:bundle",
     "test:bundle": "node --test tests/bundle.test.mjs",
     "test:frontend": "node --test tests/design.test.mjs",
+    "test:design:webkit": "node tests/design-webkit.mjs",
     "test:offline": "node --test tests/offline.test.mjs tests/publication-refresh.test.mjs",
     "test:device": "node --test tests/device.test.mjs tests/library-auth.test.mjs",
     "test:webkit": "node tests/webkit-publications.mjs",
