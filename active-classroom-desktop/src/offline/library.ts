@@ -5,7 +5,11 @@ import { visibleDeviceName } from "./device-label";
 import { connectionLabel, diagnose } from "./connection";
 import { NativeCache } from "./native-cache";
 import { PublicationApi } from "./remote";
-import { localState, type Manifest, type Publication } from "./manifest";
+import { type Manifest, type Publication } from "./manifest";
+import { icon } from "../ui/icons";
+import { sidebarMarkup, levelName } from "../ui/shell";
+import { unitCard } from "../ui/library-view";
+import { LocalThumbnails } from "../ui/thumbnails";
 import { mergeLibraryPublications } from "./library-publications";
 import { syncDiagnostic } from "./sync-diagnostics";
 import { openLocalClass, SyncEngine, unitSyncMessage, type Progress } from "./sync";
@@ -25,6 +29,11 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   let locals: Manifest[] = [];
   let publications: Publication[] = [];
   let selectedLevel = "";
+  let search = "";
+  let view: "grid" | "list" = "grid";
+  let localOnly = false;
+  let updatedAt: number | undefined;
+  const thumbnails = new LocalThumbnails();
   let player: ClassroomPlayer | undefined;
   let progress: Progress | undefined;
   let downloading = "";
@@ -35,10 +44,31 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   let refreshController: AbortController | undefined;
   let renderTimer: ReturnType<typeof setTimeout> | undefined;
   const errors = new Map<string, string>();
-  const levelName = (id: string) => /^level-\d+$/.test(id) ? `Nivel ${id.slice(6)}` : id;
-  const feedback = () => message || device.message ? `<p class="offline-feedback" role="status">${escape(message || device.message)}</p>` : "";
+  const feedback = () => message || device.message ? `<p class="offline-feedback ${device.issue || opening ? "" : "visually-hidden"}" role="status">${escape(message || device.message)}</p>` : "";
+  function sidebar(inClass = false): string {
+    const combined = mergeLibraryPublications(locals, publications);
+    const levels = [...new Set([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    return sidebarMarkup({ levels, selectedLevel, localOnly, inClass, deviceName: device.identity ? visibleDeviceName(device.identity) : "", state: device.online ? "Sincronizado" : device.issue && device.issue !== "offline" ? connectionLabel(device.issue) : "Offline", detail: device.issue ? connectionLabel(device.issue) : "", busy: !!downloading || refreshing, updatedAt });
+  }
+  function bindSidebar(inClass = false): void {
+    root.querySelectorAll<HTMLButtonElement>("[data-library-nav], [data-my-classes], .classroom-sidebar [data-level]").forEach(button => {
+      button.onclick = () => {
+        if (button.hasAttribute("data-my-classes")) localOnly = true;
+        else if (button.hasAttribute("data-library-nav")) localOnly = false;
+        else selectedLevel = button.dataset.level!;
+        if (inClass) root.querySelector<HTMLButtonElement>("[data-exit]")?.click();
+        else render();
+      };
+    });
+    root.querySelector<HTMLButtonElement>("[data-sidebar-refresh]")!.onclick = () => { void refresh(); };
+  }
   function render(): void {
-    if (player) return;
+    if (player) {
+      const current = root.querySelector(".classroom-sidebar");
+      if (current) { current.outerHTML = sidebar(true); bindSidebar(true); }
+      return;
+    }
+    thumbnails.pause();
     if (device.phase !== "ready") {
       root.innerHTML = `<main class="offline-login"><section class="ui-card ui-stack"><img src="/active-classroom-icon.png" alt="" width="64"/><h1>${device.phase === "loading" ? "Active Classroom" : "Este equipo necesita activarse"}</h1><p>${escape(device.identity ? visibleDeviceName(device.identity) : "Preparando equipo…")}</p>${device.code ? `<strong class="activation-code" aria-label="Código de activación">${escape(`${device.code.slice(0, 5)}-${device.code.slice(5)}`)}</strong>` : ""}<p role="status">${escape(device.message || "Conecta Internet para obtener el código de activación.")}</p><button class="button button-primary" data-activate ${device.phase === "loading" ? "disabled" : ""}>Reintentar activación</button></section></main>`;
       root.querySelector<HTMLButtonElement>("[data-activate]")!.onclick = () => { void reconnect(); };
@@ -46,18 +76,34 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     }
     const combined = mergeLibraryPublications(locals, publications);
     const levels = [...new Set([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
-    const unitCards = [...combined.entries()].filter(([, item]) => !selectedLevel || (item.remote?.levelId || item.local!.unit.levelId) === selectedLevel).map(([unitId, { local, remote }]) => {
-      const busy = downloading === unitId;
-      const state = busy ? "Descargando" : errors.has(unitId) ? "Error" : localState(local, remote);
-      const percent = progress?.unitId === unitId ? (progress.total ? Math.min(100, Math.floor(100 * progress.bytes / progress.total)) : 0) : 0;
-      return `<article class="ui-card unit-sync-card"><p class="section-kicker">${escape(levelName(remote?.levelId || local!.unit.levelId))}</p><h2>${escape(remote?.name || local!.unit.name)}</h2><p>Publicada: ${remote ? `v${remote.version}` : "Sin consultar"} · Local: ${local ? `v${local.version}` : "—"}</p><strong class="sync-label ${state === "Error" ? "sync-error" : ""}">${state}</strong>${busy ? `<progress max="100" value="${percent}" aria-label="Progreso de descarga"></progress><small>${percent}% · ${escape(progress?.phase === "activate" ? "Activando versión verificada…" : progress?.phase === "verify" ? "Verificando integridad…" : progress?.fileName || "Obteniendo manifest…")}</small>` : ""}${errors.has(unitId) ? `<p role="alert" class="sync-error">${escape(errors.get(unitId)!)}</p>` : ""}<div class="ui-cluster"><button class="button button-outline" data-sync="${unitId}" ${downloading || !remote || (!errors.has(unitId) && local && local.version >= remote.version) ? "disabled" : ""}>${errors.has(unitId) ? "Reintentar" : local ? "Actualizar" : "Descargar"}</button><button class="button button-primary" data-open="${unitId}" ${!local || opening ? "disabled" : ""}>Abrir clase</button>${busy ? `<button class="button button-quiet" data-cancel ${progress?.phase === "activate" ? "disabled" : ""}>Cancelar</button>` : ""}</div></article>`;
-    }).join("");
-    root.innerHTML = `<div class="teacher-shell offline-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark"><img src="/active-classroom-icon.png" alt=""/></span><div><strong>Active Classroom</strong><span>Biblioteca de clases</span></div></div><nav class="ui-stack offline-levels" aria-label="Niveles"><button class="button button-quiet" data-level="" aria-pressed="${!selectedLevel}">Todos los niveles</button>${levels.map((level) => `<button class="button button-quiet" data-level="${level}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><div class="sidebar-footer"><div><strong>${escape(visibleDeviceName(device.identity))}</strong><small>${device.online ? downloading || refreshing ? "Sincronizando" : "Actualizado" : escape(connectionLabel(device.issue))}</small></div></div></aside><section class="workspace"><header class="workspace-header"><div><p class="breadcrumb">Nivel / Unit</p><h1>Biblioteca</h1></div><button class="button button-outline" data-refresh ${refreshing ? "disabled" : ""}>${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header><main class="offline-content">${feedback()}<div class="ui-grid">${unitCards}</div>${combined.size === 0 ? device.online ? "<p>No hay clases publicadas.</p>" : "<p>No hay clases locales. Actualiza la biblioteca cuando puedas conectar con el servidor.</p>" : ""}</main></section></div>`;
-    root.querySelectorAll<HTMLButtonElement>("[data-level]").forEach((button) => { button.onclick = () => { selectedLevel = button.dataset.level!; render(); }; });
+    const matches = [...combined.entries()].filter(([, { local, remote }]) =>
+      (!localOnly || !!local) && (!selectedLevel || (remote?.levelId || local!.unit.levelId) === selectedLevel)
+      && (remote?.name || local!.unit.name).toLocaleLowerCase("es").includes(search.toLocaleLowerCase("es")));
+    const cards = matches.map(([unitId, { local, remote }]) => unitCard({ unitId, local, remote,
+      busy: downloading === unitId, error: errors.get(unitId), opening,
+      percent: progress?.unitId === unitId && progress.total ? Math.min(100, Math.floor(100 * progress.bytes / progress.total)) : 0,
+      progressLabel: progress?.phase === "activate" ? "Activando versión verificada…" : progress?.phase === "verify" ? "Verificando integridad…" : progress?.fileName || "Obteniendo manifest…",
+      disableSync: !!downloading || !remote || !!(!errors.has(unitId) && local && local.version >= remote.version), activating: progress?.phase === "activate",
+    })).join("");
+    root.innerHTML = `<div class="desktop-shell offline-shell">${sidebar()}<section class="library-workspace">
+      <header class="library-header"><div class="library-heading"><span class="library-heading-icon">${icon("library")}</span><div><h1>${localOnly ? "Mis clases" : "Biblioteca"}</h1><p>Gestiona y abre tus clases</p></div></div><button class="button button-primary" data-refresh ${refreshing ? "disabled" : ""}>${icon("refresh", refreshing ? "is-spinning" : "")}${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header>
+      <section class="library-controls" aria-label="Filtros de Biblioteca"><nav class="library-filters" aria-label="Filtrar por nivel"><button class="button ${!selectedLevel ? "button-primary" : "button-level"}" data-level="" aria-pressed="${!selectedLevel}">${icon("levels")}Todos los niveles</button>${levels.map(level => `<button class="button button-level ${selectedLevel === level ? "is-active" : ""}" data-level="${escape(level)}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><label class="library-search">${icon("search")}<input data-search type="search" placeholder="Buscar unidades..." aria-label="Buscar unidades" value="${escape(search)}"/></label><div class="library-view-toggle" aria-label="Vista de unidades"><button data-view="grid" aria-label="Vista de cuadrícula" aria-pressed="${view === "grid"}">${icon("grid")}</button><button data-view="list" aria-label="Vista de lista" aria-pressed="${view === "list"}">${icon("list")}</button></div></section>
+      <main class="offline-content">${feedback()}<div class="unit-grid ${view === "list" ? "is-list" : ""}">${cards}</div>${!matches.length ? `<p class="library-empty">${combined.size ? "No hay unidades que coincidan con los filtros." : device.online ? "No hay clases publicadas." : "No hay clases locales. Actualiza la biblioteca cuando puedas conectar con el servidor."}</p>` : ""}</main></section></div>`;
+    bindSidebar();
+    root.querySelectorAll<HTMLButtonElement>(".library-filters [data-level]").forEach(button => { button.onclick = () => { selectedLevel = button.dataset.level!; render(); }; });
+    root.querySelectorAll<HTMLButtonElement>("[data-view]").forEach(button => { button.onclick = () => { view = button.dataset.view as "grid" | "list"; render(); }; });
+    root.querySelector<HTMLInputElement>("[data-search]")!.oninput = event => {
+      const input = event.target as HTMLInputElement; search = input.value;
+      const position = input.selectionStart; render();
+      const restored = root.querySelector<HTMLInputElement>("[data-search]")!; restored.focus();
+      if (position !== null) { try { restored.setSelectionRange(position, position); } catch { /* Search inputs may not support selection. */ } }
+    };
     root.querySelector<HTMLButtonElement>("[data-refresh]")!.onclick = () => { void refresh(); };
     root.querySelector<HTMLButtonElement>("[data-cancel]")?.addEventListener("click", () => engine?.cancel());
-    root.querySelectorAll<HTMLButtonElement>("[data-sync]").forEach((button) => { button.onclick = () => { const remote = publications.find((item) => item.unitId === button.dataset.sync); if (remote) void synchronize(remote); }; });
-    root.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((button) => { button.onclick = () => { void open(button.dataset.open!); }; });
+    root.querySelectorAll<HTMLButtonElement>("[data-sync]").forEach(button => { button.onclick = () => { const remote = publications.find(item => item.unitId === button.dataset.sync); if (remote) void synchronize(remote); }; });
+    root.querySelectorAll<HTMLButtonElement>("[data-open]").forEach(button => { button.onclick = () => { void open(button.dataset.open!); }; });
+    root.querySelectorAll<HTMLButtonElement>("[data-unit-action]").forEach(button => { button.onclick = () => { button.closest("article")?.querySelector<HTMLButtonElement>(`[data-${button.dataset.unitAction}]`)?.click(); }; });
+    void thumbnails.mount(root, owner, locals);
   }
   async function refresh(): Promise<void> {
     if (!api || refreshing || player || opening) return;
@@ -69,6 +115,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const available = await api.list(refreshController.signal);
       if (current !== epoch) return;
       publications = available;
+      updatedAt = Date.now();
       for (const [unitId, entry] of mergeLibraryPublications(locals, available)) {
         if (entry.localVersion !== undefined) syncDiagnostic("LOCAL_PUBLICATION", { unitId, version: entry.localVersion });
         if (entry.localVersion !== undefined && entry.remoteVersion !== undefined && entry.remoteVersion > entry.localVersion) syncDiagnostic("UPDATE_AVAILABLE", { unitId, version: entry.remoteVersion, localVersion: entry.localVersion });
@@ -120,7 +167,10 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       if (current !== epoch) return;
       const classroom = await openLocalClass(currentCache, unitId, local.version);
       if (current === epoch) {
-        player = new ClassroomPlayer(root, classroom, () => {
+        thumbnails.pause();
+        root.innerHTML = `<div class="desktop-shell is-classroom">${sidebar(true)}<div class="classroom-workspace" data-classroom-host></div></div>`;
+        bindSidebar(true);
+        player = new ClassroomPlayer(root.querySelector<HTMLElement>("[data-classroom-host]")!, classroom, () => {
           player = undefined; message = "Clase cerrada. Verificando biblioteca local…"; render();
           void currentCache.list().then((saved) => {
             if (current !== epoch) return;

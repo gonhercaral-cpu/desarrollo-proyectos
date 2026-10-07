@@ -169,6 +169,9 @@ jobs:
       - name: Tests Player
         run: npm run test:player
 
+      - name: Tests de interfaz visual Desktop
+        run: npm run test:frontend
+
       - name: Tests del updater del programa
         run: npm run test:updater
 

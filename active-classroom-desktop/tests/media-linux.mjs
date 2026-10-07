@@ -12,7 +12,9 @@ try {
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "8", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-level:v", "3.0", "-c:a", "aac", "-y", fixture]);
   command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", fixture]);
   const bundle = await build({ configFile: false, logLevel: "error", build: { write: false, minify: false, lib: { entry: fileURLToPath(new URL("./media-browser.mjs", import.meta.url)), name: "MediaAcceptance", formats: ["iife"] } } });
-  const script = join(directory, "media.js"); await writeFile(script, (Array.isArray(bundle) ? bundle[0] : bundle).output.find(item => item.type === "chunk").code);
+  const output = (Array.isArray(bundle) ? bundle[0] : bundle).output;
+  const css = output.filter(item => item.type === "asset" && item.fileName.endsWith(".css")).map(item => item.source).join("\n");
+  const script = join(directory, "media.js"); await writeFile(script, `const fixtureStyle = document.createElement("style"); fixtureStyle.textContent = ${JSON.stringify(css)}; document.head.append(fixtureStyle);\n` + output.find(item => item.type === "chunk").code);
   command("cargo", ["build", "--release", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--example", "media_playback"]);
   // Cloud CI cannot create nested sandbox namespaces or use a hardware GPU.
   // These settings apply only to this test process, never the installed app.

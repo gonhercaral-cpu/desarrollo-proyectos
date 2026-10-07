@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.6 — 2026-10-06
+
+- Biblioteca y panel docente reproducen el diseño aprobado: sidebar azul, acciones coral, cards claras e iconografía consistente.
+- Filtros, búsqueda, grid/list, miniaturas de archivos locales y estados reales de sincronización.
+- Proyector fijo; scroll independiente para diapositivas y ambos grupos de recursos; footer sin superposiciones.
+- Comprobación responsive en 1366×768, 1440×900, 1920×1080 y 920×640, con 80 diapositivas y 60 recursos por grupo.
+- Conserva autenticación, caché offline, reproducción, segunda pantalla y updater firmado.
+
 ## 1.0.5 — 2026-10-06
 
 - Release firmada para validar actualización automática desde 1.0.4 habilitada.
