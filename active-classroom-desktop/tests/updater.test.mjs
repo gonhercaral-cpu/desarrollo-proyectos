@@ -10,6 +10,10 @@ import { JSDOM } from "jsdom";
 import { ProgramUpdater } from "../src/updater/controller.ts";
 import { renderUpdater } from "../src/updater/view.ts";
 import { manifest, publicKey, updateEndpoint, releaseNotes } from "../scripts/updater-release.mjs";
+test("versión del paquete tiene notas antes de generar metadata del updater", async () => {
+  const { version } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.ok((await releaseNotes(version)).trim());
+});
 const status = (phase, extra = {}) => ({ phase, currentVersion: "1.0.4", downloaded: 0, message: phase, ...extra });
 function fixture(actions = {}) {
   let emit; const calls = []; let closed = false;

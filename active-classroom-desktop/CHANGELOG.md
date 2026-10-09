@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.9 — 2026-10-09
+
+- Biblioteca recibe nombres, orden y estado de niveles desde el catálogo de Active Classroom, sin listas fijas.
+- Crear, renombrar u ordenar niveles después de esta actualización solo requiere sincronizar Biblioteca.
+- Nombres de niveles conservados al reiniciar sin Internet; Units descargadas mantienen sus manifests y archivos.
+- Conserva activación, Player, revelados, multimedia, segunda pantalla, updater, autostart y preferencias existentes.
+
 ## 1.0.8 — 2026-10-09
 
 - Revelados progresivos por clic, Espacio, flechas y botones; Anterior retrocede un paso antes de cambiar de diapositiva.
