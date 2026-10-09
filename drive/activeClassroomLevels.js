@@ -28,6 +28,11 @@ function createLevelHandler({ db, getProfile, timestamp }) {
         const children = await transaction.get(folders.where("parentId", "==", ref.id).limit(1));
         const drafts = await transaction.get(db.collection("activeClassroomUnits").where("draft.levelId", "==", ref.id).limit(1));
         if (!children.empty || !drafts.empty) throw new HttpsError("failed-precondition", "Este nivel contiene Units. Desactívalo o reasigna sus Units antes de eliminarlo.");
+        // Legacy publications also retain level IDs. Read only their tiny level field;
+        // never download manifests/files or require a new collection-group index.
+        const publishedUnits = await transaction.get(db.collection("activeClassroomUnits").where("publishedVersion", ">", 0).select("publishedVersion"));
+        const histories = await Promise.all(publishedUnits.docs.map(unit => transaction.get(unit.ref.collection("publications").select("manifest.unit.levelId"))));
+        if (histories.some(history => history.docs.some(version => version.data().manifest?.unit?.levelId === ref.id))) throw new HttpsError("failed-precondition", "Este nivel pertenece a publicaciones existentes. Desactívalo para conservar esas clases.");
         transaction.delete(ref);
         return { id: ref.id, deleted: true };
       }

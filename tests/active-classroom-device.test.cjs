@@ -8,7 +8,10 @@ const { guardClassroomDevices } = require("../functions/deviceAccess");
 function database() {
   const records = new Map();
   const doc = (path) => ({ path, id: path.split("/").at(-1), get: async () => ({ exists: records.has(path), data: () => structuredClone(records.get(path)) }), update: async (data) => records.set(path, { ...records.get(path), ...data }), collection: (name) => collection(`${path}/${name}`) });
-  const collection = (path) => ({ doc: (name) => doc(`${path}/${name}`), orderBy: () => {
+  const collection = (path) => ({ doc: (name) => doc(`${path}/${name}`), where: (field, operator, value) => {
+    assert.equal(operator, "==");
+    return { get: async () => ({ docs: [...records.entries()].filter(([key, data]) => key.startsWith(`${path}/`) && key.slice(path.length + 1).indexOf("/") < 0 && data[field] === value).map(([key, data]) => ({ id: key.split("/").at(-1), data: () => structuredClone(data) })) }) };
+  }, orderBy: () => {
     let maximum = Infinity; let cursor = "";
     const query = { limit: (value) => { maximum = value; return query; }, startAfter: (value) => { cursor = value; return query; }, get: async () => ({ docs: path === "activeClassroomDevices" ? [...records.keys()].filter((key) => key.startsWith(`${path}/`) && key.split("/").at(-1) > cursor).sort().slice(0, maximum).map((key) => ({ id: key.split("/").at(-1), data: () => structuredClone(records.get(key)) })) : [{ id: example.unit.unitId, data: () => ({ publishedVersion: example.version }) }] }) };
     return query;

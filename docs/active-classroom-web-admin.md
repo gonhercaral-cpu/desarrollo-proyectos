@@ -4,7 +4,7 @@ Niveles viven en `activeClassroomFolders`, con ID estable, `kind: level`, nombre
 posición y estado activo. No existe bootstrap que recree Nivel 1–5 ni Units de
 ejemplo. Los registros existentes se conservan. El callable de administración
 valida administrador activo; ordenar es transaccional. Eliminar requiere nivel
-sin Units ni borradores que lo referencien. Desactivar impide nuevas publicaciones;
+sin Units, borradores ni publicaciones que lo referencien. Desactivar impide nuevas publicaciones;
 reasignar desde el editor cambia solo catálogo y borrador.
 
 Editor muestra Nombre, Nivel y Estado. Metadata anterior permanece guardada.

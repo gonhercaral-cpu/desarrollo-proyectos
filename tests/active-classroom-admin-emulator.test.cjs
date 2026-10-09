@@ -85,7 +85,10 @@ test("administración real: niveles, refresco múltiple, reemplazo/quitar e inmu
   await manage(request({ action: "update", levelId: first.id, active: false }));
   await assert.rejects(units.preparePublish(request({ unitId, expectedRevision: saved.draftRevision })), { code: "failed-precondition" });
   await units.save(request({ unitId, draft: { ...saved.draft, levelId: second.id }, expectedRevision: saved.draftRevision }));
-  await manage(request({ action: "delete", levelId: first.id }));
+  await assert.rejects(manage(request({ action: "delete", levelId: first.id })), { code: "failed-precondition" });
+  const unused = await manage(request({ action: "create", name: "Temporal" })); created.push(unused.id);
+  await manage(request({ action: "delete", levelId: unused.id }));
+  assert.equal((await db.doc(`activeClassroomFolders/${unused.id}`).get()).exists, false);
   assert.equal((await db.doc(`activeClassroomFolders/${unitId}`).get()).data().parentId, second.id);
   assert.equal(JSON.stringify((await publication.get()).data()), frozen);
   await assert.rejects(manage({ auth: { uid: "reader" }, data: { action: "create", name: "Blocked" } }), { code: "permission-denied" });

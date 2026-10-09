@@ -329,6 +329,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const resource = (await resourceRef(resourceId).get()).data();
       if (!resource || resource.archived || resource.folderId !== request.data.unitId) { issues.push("Un archivo del borrador ya no está disponible. Selecciona un reemplazo o quítalo."); continue; }
       if (needsDocumentProcessing(resource) && !readyProcessing(resource)) issues.push(`Completa el procesamiento de ${resource.name}.`);
+      if (resourceId === draft.mainPresentationId && needsDocumentProcessing(resource) && readyProcessing(resource) && contentHash(draft.slides) !== contentHash(pdfSlides({ ...resource, id: resourceId }, draft.slides))) issues.push("Aplica las diapositivas procesadas de la presentación antes de publicar.");
       if (resource.source === "drive") driveIds.push(resourceId);
     }
     const checked = await checkDrive({ ...request, data: { ...request.data, resourceIds: driveIds } });

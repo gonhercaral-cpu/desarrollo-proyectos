@@ -107,8 +107,8 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     setDriveChecks(Object.fromEntries(result.results.map(entry => [entry.resourceId, entry])));
     return result;
   }
-  async function processInto(resource, context) {
-    if (!needsOfficeProcessing(resource) || documentProcessingReady(resource)) return context;
+  async function processInto(resource, context, applyReady = false) {
+    if (!needsOfficeProcessing(resource) || (documentProcessingReady(resource) && !applyReady)) return context;
     setOperationProgress(`Procesando ${resource.name}…`);
     const result = await processUnitDocument(unit.id, resource.id, context.revision);
     if (result.state !== "ready") throw new Error("El archivo sigue procesándose. Espera y vuelve a comprobar antes de publicar.");
@@ -162,7 +162,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
   }
   async function processResource(resource) {
     const context = dirty || !revision ? await persist() : { draft, revision };
-    await processInto(resource, context);
+    await processInto(resource, context, true);
     setNotice("Procesamiento terminado. Borrador actualizado.");
   }
   async function reload() {
