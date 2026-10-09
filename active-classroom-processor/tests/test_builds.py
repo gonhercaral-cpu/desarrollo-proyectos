@@ -6,7 +6,7 @@ import unittest
 import zipfile
 from xml.etree import ElementTree as ET
 from pypdf import PdfReader
-from builds import P, NS, analyze_pptx, click_steps, state_pptx, render_pptx, slide_parts
+from builds import P, NS, analyze_pptx, click_steps, state_pptx, render_pptx, slide_parts, serialize_part
 from converter import convert_office
 from test_converter import office_fixture
 
@@ -38,7 +38,7 @@ def interactive_fixture(workspace, unsupported=False):
                 </p:childTnLst></p:cTn></p:seq></p:childTnLst></p:cTn></p:par></p:tnLst>'''))
                 if unsupported:
                     timing.find(".//p:cTn[@id='5']", NS).set("presetClass", "path")
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                data = serialize_part(root, data)
             output.writestr(item, data)
     return target
 

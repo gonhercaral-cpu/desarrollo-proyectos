@@ -9,6 +9,7 @@ import posixpath
 from pathlib import Path
 import subprocess
 import shutil
+from io import BytesIO
 import zipfile
 from xml.etree import ElementTree as ET
 from converter import convert_office, file_integrity, validate_office
@@ -26,8 +27,25 @@ for prefix, uri in NS.items():
 def slide_parts(archive):
     presentation = ET.fromstring(archive.read("ppt/presentation.xml"))
     relationships = ET.fromstring(archive.read("ppt/_rels/presentation.xml.rels"))
-    targets = {item.get("Id"): posixpath.normpath("ppt/" + item.get("Target")) for item in relationships}
+    targets = {item.get("Id"): posixpath.normpath(item.get("Target").lstrip("/") if item.get("Target").startswith("/") else "ppt/" + item.get("Target")) for item in relationships}
     return [targets[item.get(f"{{{R}}}id")] for item in presentation.findall("p:sldIdLst/p:sldId", NS)]
+
+
+def serialize_part(root, original):
+    # ElementTree drops declarations used only in QName-valued attributes such
+    # as mc:Ignorable="a14". LibreOffice rejects those undeclared prefixes.
+    namespaces = dict(item for _event, item in ET.iterparse(BytesIO(original), events=["start-ns"]))
+    used = set()
+    for element in root.iter():
+        for name in [element.tag, *element.attrib]:
+            if name.startswith("{"):
+                used.add(name[1:].split("}")[0])
+    for prefix, uri in namespaces.items():
+        if not prefix.startswith("ns") or not prefix[2:].isdigit():
+            ET.register_namespace(prefix, uri)
+        if prefix and uri not in used:
+            root.set(f"xmlns:{prefix}", uri)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def click_steps(root):
@@ -101,7 +119,7 @@ def state_pptx(source, target, plan):
                     if shape_id is not None and shape_id.get("id") in hidden:
                         tree.remove(shape)
                 name = f"ppt/slides/classroomState{number}.xml"
-                output.writestr(name, ET.tostring(root, encoding="utf-8", xml_declaration=True))
+                output.writestr(name, serialize_part(root, archive.read(part)))
                 original_rels = posixpath.dirname(part) + "/_rels/" + posixpath.basename(part) + ".rels"
                 if original_rels in archive.namelist():
                     output.writestr(f"ppt/slides/_rels/classroomState{number}.xml.rels", archive.read(original_rels))
@@ -112,7 +130,7 @@ def state_pptx(source, target, plan):
         replacements = {"ppt/presentation.xml": presentation, "ppt/_rels/presentation.xml.rels": rels, "[Content_Types].xml": types}
         for item in archive.infolist():
             if item.filename in replacements:
-                output.writestr(item, ET.tostring(replacements[item.filename], encoding="utf-8", xml_declaration=True))
+                output.writestr(item, serialize_part(replacements[item.filename], archive.read(item)))
             else:
                 with archive.open(item) as stream, output.open(item, "w") as destination:
                     shutil.copyfileobj(stream, destination, 65536)
