@@ -87,6 +87,7 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
 export function validateSlideInteraction(slide: PublishedSlide, resource: (id: string) => PublishedResource | undefined): void {
   const fail = () => { throw new SyncError("manifest", "Interactividad incompatible o incompleta."); };
   const mode = slide.interaction?.mode || slide.interactionMode || "static";
+  if (slide.interactionMode != null && slide.interactionMode !== mode) fail();
   if (!["static", "builds"].includes(mode)) fail();
   const steps = slide.builds || [];
   if (mode === "static") { if (steps.length || slide.buildCount || slide.interaction?.buildCount) fail(); return; }

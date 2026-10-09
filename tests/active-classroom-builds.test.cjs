@@ -4,6 +4,8 @@ const { normalizeInteraction, interactionResourceIds } = require("../drive/activ
 const { normalizeDraft, contentHash, resourceIds } = require("../drive/activeClassroomUnit");
 const { pdfSlides, PPTX_PROCESSOR_VERSION, processingFingerprint, slideResourceId } = require("../drive/activeClassroomProcessingModel");
 const { createBuildPreview } = require("../drive/activeClassroomBuildPreview");
+const { createProcessorClient } = require("../drive/activeClassroomProcessorClient");
+const { rasterTargetPath } = require("../drive/activeClassroomProcessingModel");
 const layer = { type: "answer", text: "Respuesta", x: 10, y: 20, width: 40, height: 10, color: "#102954", fontSize: 3 };
 const steps = [{ order: 1, layers: [layer] }, { order: 2, layers: [{ type: "image", resourceId: "answer-image", x: 30, y: 40, width: 20, height: 10 }] }];
 
@@ -46,4 +48,25 @@ test("preview exige admin y recurso de Unit; nunca acepta paths del cliente", as
   await assert.rejects(preview({ auth: { uid: "admin" }, data: { unitId: "other", resourceId: "asset" } }), { code: "not-found" });
   await assert.rejects(preview({ auth: { uid: "admin" }, data: { unitId: "unit", resourceId: "../../secret" } }), { code: "invalid-argument" });
   assert.equal((await preview({ auth: { uid: "admin" }, data: { unitId: "unit", resourceId: "asset", path: "arbitrary" } })).sha256, "a".repeat(64)); assert.equal(signed, 1);
+});
+
+for (const failed of [false, true]) test(`cliente privado firma estados exactos y limpia fallo parcial: ${failed}`, async () => {
+  const revision = "a".repeat(36); const signed = [], deleted = [];
+  const metadata = new Map();
+  const bucket = { file(path) { return {
+    async getSignedUrl(options) { signed.push({ path, options }); return [`https://storage.googleapis.com/private/${path}?X-Goog-Signature=test`]; },
+    async setMetadata(value) { metadata.set(path, { contentType: "image/png", size: "30", generation: "7", ...value }); },
+    async getMetadata() { return [metadata.get(path)]; }, async delete() { deleted.push(path); },
+  }; } };
+  const plan = { stateCount: 2, slides: [{ index: 0, steps: [["2"]], warnings: [] }] };
+  const convert = createProcessorClient({ bucket, getUrl: () => "https://processor-abc-uc.a.run.app", getClient: async () => ({ async request(request) {
+    if (request.url.endsWith("/plan")) return { data: plan };
+    assert.equal(request.data.stateUploadUrls.length, 2);
+    if (failed) throw new Error("transfer-interrupted");
+    return { data: { revision, processorVersion: PPTX_PROCESSOR_VERSION, pageCount: 1, slides: plan.slides, states: Array.from({ length: 2 }, () => ({ sizeBytes: 30, sha256: "b".repeat(64), width: 1, height: 1 })) } };
+  } }) });
+  const request = { revision, processorVersion: PPTX_PROCESSOR_VERSION, extension: "pptx", original: { path: "original", generation: "1", name: "Unit.pptx" } };
+  if (failed) { await assert.rejects(convert(request), /transfer-interrupted/); assert.deepEqual(deleted, [rasterTargetPath(revision, 0), rasterTargetPath(revision, 1)]); }
+  else { const result = await convert(request); assert.equal(result.pages[0].builds[0].download.generation, "7"); assert.equal(deleted.length, 0); }
+  for (const grant of signed.filter(item => item.options.contentType === "image/png")) { assert.equal(grant.options.extensionHeaders["x-goog-if-generation-match"], "0"); assert.ok([0, 1].some(index => grant.path === rasterTargetPath(revision, index))); }
 });

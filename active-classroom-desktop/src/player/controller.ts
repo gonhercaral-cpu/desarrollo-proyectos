@@ -49,6 +49,7 @@ export class PlayerController {
       if (this.slideIndex !== null && this.manifest.slides[this.slideIndex].metadata?.presentationResourceId) return;
       this.presentationPage = page;
       const index = this.manifest.slides.findIndex((_slide, position) => this.pageForSlide(position) === page);
+      if (index !== this.slideIndex) this.currentBuild = 0;
       this.slideIndex = index < 0 ? null : index;
     } else this.resourcePages.set(this.selectedResourceId, page);
   }
