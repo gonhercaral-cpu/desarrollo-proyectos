@@ -58,7 +58,7 @@ pub fn run() {
                 else { ("text/html", b"<!doctype html><h1>Startup acceptance</h1><script src='/updater-test.js'></script>".to_vec()) };
             tauri::http::Response::builder().header("Content-Type", mime).body(bytes).unwrap()
         })
-        .invoke_handler(tauri::generate_handler![acceptance_stage, acceptance_ready, acceptance_restart, acceptance_duplicate, classroom_startup, classroom_app_update])
+        .invoke_handler(tauri::generate_handler![acceptance_stage, acceptance_ready, acceptance_restart, acceptance_duplicate, crate::startup::classroom_startup, crate::app_updater::classroom_app_update])
         .setup(|app| {
             app.manage(StartupGate::load(app.handle()));
             WebviewWindowBuilder::new(app, "teacher", WebviewUrl::CustomProtocol("tauri://localhost/updater-test".parse().unwrap())).build()?; Ok(())
