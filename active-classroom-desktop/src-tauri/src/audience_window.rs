@@ -67,7 +67,9 @@ fn teacher(label: &str) -> Result<(), String> {
     if label == "teacher" { Ok(()) } else { Err("projection: Ventana sin permiso de control".into()) }
 }
 fn valid_snapshot(data: &Value) -> bool {
-    if data.to_string().len() > 256000 || data["revision"].as_u64().is_none() || data["sessionId"].as_str().map(|s| s.len() > 80).unwrap_or(true) { return false; }
+    // Match the manifest envelope: 50 bounded layers can exceed 256 KB when
+    // text uses multibyte UTF-8. Keep the byte limit and per-layer validation.
+    if data.to_string().len() > 700000 || data["revision"].as_u64().is_none() || data["sessionId"].as_str().map(|s| s.len() > 80).unwrap_or(true) { return false; }
     if !data["currentBuild"].is_null() && data["currentBuild"].as_u64().filter(|value| *value <= 50).is_none() { return false; }
     let source = &data["source"];
     if !source["layers"].is_null() {
@@ -220,6 +222,12 @@ mod tests {
         assert!(!valid_snapshot(&data));
         data["source"]["layers"][0]["url"] = json!("asset://localhost/cache/asset.png"); assert!(valid_snapshot(&data));
         data["source"]["layers"][0]["width"] = json!(100); assert!(!valid_snapshot(&data));
+        let layer = json!({"type":"answer","text":"答".repeat(2000),"x":10,"y":20,"width":30,"height":10,"fontSize":3});
+        data["source"]["layers"] = json!(vec![layer; 50]);
+        assert!(data.to_string().len() > 256000);
+        assert!(valid_snapshot(&data));
+        data["source"]["layers"][0]["text"] = json!("x".repeat(700000));
+        assert!(!valid_snapshot(&data));
     }
     #[test] fn late_updates_cannot_restore_closed_or_older_session() {
         let mut state = ProjectionState::default();
