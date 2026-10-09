@@ -12,7 +12,7 @@ function PreviewAsset({ unitId, resourceId, pageObjectId, buildIndex = 0, pageNu
   }, [unitId, resourceId, pageObjectId, buildIndex]);
   if (error) return <p role="alert">{error}</p>;
   if (!asset) return <p role="status">Preparando vista previa…</p>;
-  return asset.mimeType === "application/pdf" ? <object data={`${asset.url}#page=${pageNumber}&toolbar=0&view=Fit`} type="application/pdf" aria-label="Diapositiva base" /> : <img src={asset.url} alt="Estado de la diapositiva" onLoad={event => onRatio?.(event.target.naturalWidth / event.target.naturalHeight)} />;
+  return asset.mimeType === "application/pdf" ? <iframe src={`${asset.url}#page=${pageNumber}&toolbar=0&view=Fit`} title="Diapositiva base" referrerPolicy="no-referrer" /> : <img src={asset.url} alt="Estado de la diapositiva" onLoad={event => onRatio?.(event.target.naturalWidth / event.target.naturalHeight)} />;
 }
 
 export default function SlideInteractionEditor({ unitId, slide, main, resources, onChange }) {

@@ -74,7 +74,8 @@ la sincronización y verificación existentes.
 1. Desplegar imagen Cloud Run del procesador (añade Poppler y builds.py).
 2. Desplegar Functions de Drive: `processActiveClassroomDocument`,
    `getActiveClassroomBuildPreview`, `saveActiveClassroomUnit`,
-   `publishActiveClassroomUnit`, `publishActiveClassroomUnitResources`.
+   `publishActiveClassroomUnit`, `publishActiveClassroomUnitResources`,
+   `refreshActiveClassroomDriveResource`, `checkActiveClassroomDriveChanges`.
 3. Desplegar web con el editor; publicar Desktop **1.0.8**, distribuible mediante
    el updater firmado existente. Sin migración de caché, identidad o activación.
 4. Reprocesar PPTX deseados, revisar preview inicial/pasos y publicar nueva Unit.
