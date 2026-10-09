@@ -50,20 +50,23 @@ async function video(source) {
 function emptyRenderer(kind) {
   return { kind, async mount(host, source, options) { host.textContent = source.name; options.onState({ ...initialRendererState(), pages: 80 }); }, command() {}, setPage() {}, seek() {}, setVolume() {}, destroy() {} };
 }
-export async function scroll(seed) {
+export async function scroll(seed, slideCount = 80, changeProjectorStatus = false) {
   const manifest = structuredClone(seed); const base = manifest.resources[0];
   base.download.mimeType = "image/png"; base.kind = "image";
   manifest.resources = [base];
   for (let index = 0; index < 120; index++) { const resource = structuredClone(base); resource.resourceId = `resource-${index}`; resource.name = `Recurso ${index + 1} con nombre largo`; manifest.resources.push(resource); }
   manifest.generalResourceIds = manifest.resources.slice(61).map(item => item.resourceId);
-  manifest.slides = Array.from({ length: 80 }, (_, index) => ({ slideId: `slide-${index}`, index, title: `Diapositiva ${index + 1}`, resourceIds: manifest.resources.slice(1, 61).map(item => item.resourceId), metadata: { pageNumber: index + 1, notes: "Notas" } }));
+  manifest.slides = Array.from({ length: slideCount }, (_, index) => ({ slideId: `slide-${index}`, index, title: `Diapositiva ${index + 1}`, resourceIds: manifest.resources.slice(1, 61).map(item => item.resourceId), metadata: { pageNumber: index + 1, notes: "Notas" } }));
   const root = document.querySelector("#app");
   for (const selector of ["#media", "#audience"]) { const host = document.querySelector(selector); if (host) host.hidden = true; }
   root.className = "desktop-shell is-classroom";
   root.innerHTML = sidebarMarkup({ levels: ["level-1"], selectedLevel: "", inClass: true, deviceName: "Aula de prueba", state: "Sincronizado", updatedAt: Date.now() }) + '<main class="classroom-workspace"></main>';
   const host = root.querySelector(".classroom-workspace");
   const classroom = { manifest, resolveResource(id) { const resource = manifest.resources.find(item => item.resourceId === id); return { path: "/cache/hash", name: resource.name, mimeType: resource.download.mimeType, kind: resource.kind }; } };
-  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: () => "asset://localhost/cache/hash", createRenderer: async kind => emptyRenderer(kind) });
+  let failProjectorPublish;
+  const pendingPublish = new Promise((resolve, reject) => { failProjectorPublish = reject; });
+  const projectionBridge = changeProjectorStatus ? { status: () => new Promise(() => {}), publish: () => pendingPublish, async show() {}, async hide() {} } : undefined;
+  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: () => "asset://localhost/cache/hash", createRenderer: async kind => emptyRenderer(kind), projectionBridge });
   try {
     await delay(100);
     const panel = root.querySelector(".player-resources"); const projection = root.querySelector(".player-projection");
@@ -84,22 +87,28 @@ export async function scroll(seed) {
       const list = root.querySelector(selector); const last = list.lastElementChild;
       list.scrollTop = list.scrollHeight;
       await until(() => Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) <= 1.5, 2);
+      const before = { projectorHeight: projection.getBoundingClientRect().height, clientHeight: list.clientHeight, scrollTop: list.scrollTop, status: root.querySelector("[data-projector-status]").textContent };
+      if (changeProjectorStatus && selector === "[data-slides]") failProjectorPublish(new Error("Salida de proyección desconectada"));
       const sections = root.querySelector(".player-resource-sections");
       const bottomOverflow = last.getBoundingClientRect().bottom - sections.getBoundingClientRect().bottom;
       if (bottomOverflow > 0) sections.scrollTop += bottomOverflow;
       await delay(50);
       const rectangle = last.getBoundingClientRect();
-      observations.push({ viewport: [innerWidth, innerHeight], selector, scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, list: list.getBoundingClientRect().toJSON(), last: rectangle.toJSON(), sections: sections.getBoundingClientRect().toJSON(), display: getComputedStyle(last).display });
-      assert(rectangle.top >= list.getBoundingClientRect().top - 1 && rectangle.bottom <= list.getBoundingClientRect().bottom + 1, `${selector}: último elemento cortado`);
+      observations.push({ viewport: [innerWidth, innerHeight], slides: slideCount, selector, before, projectorHeight: projection.getBoundingClientRect().height, status: root.querySelector("[data-projector-status]").textContent, scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, clientWidth: list.clientWidth, scrollWidth: list.scrollWidth, list: list.getBoundingClientRect().toJSON(), last: rectangle.toJSON(), sections: sections.getBoundingClientRect().toJSON(), display: getComputedStyle(last).display });
+      if (changeProjectorStatus && selector === "[data-slides]") {
+        assert(root.querySelector("[data-projector-status]").textContent.includes("No se pudo actualizar el proyector"), "La transición del estado no ocurrió");
+        assert(projection.getBoundingClientRect().height === before.projectorHeight && list.clientHeight === before.clientHeight, "El estado del Proyector cambió la altura de la lista");
+      }
+      assert(rectangle.top >= list.getBoundingClientRect().top - 1 && rectangle.bottom <= list.getBoundingClientRect().bottom, `${selector}: último elemento cortado`);
       assert(rectangle.bottom <= innerHeight + 1, `${selector}: último elemento fuera de ventana`);
       assert(projection.getBoundingClientRect().top === bounds.top, "Bloque proyección se desplazó");
       observations.push({ scroll: selector, last: last.textContent, reachable: true });
     }
-    root.querySelector("[data-slides]").lastElementChild.click(); await delay(25); assert(player.controller.slideIndex === 79, "Última diapositiva inaccesible");
+    root.querySelector("[data-slides]").lastElementChild.click(); await delay(25); assert(player.controller.slideIndex === slideCount - 1, "Última diapositiva inaccesible");
     root.querySelector("[data-associated]").lastElementChild.querySelector("[data-resource]").click(); await delay(25); assert(player.controller.selectedResourceId === "resource-59", "Último asociado inaccesible");
     root.querySelector("[data-general]").lastElementChild.querySelector("[data-resource]").click(); await delay(25); assert(player.controller.selectedResourceId === "resource-119", "Último general inaccesible");
     root.querySelector("[data-presentation]").click(); await delay(25); assert(player.controller.isPresentation, "Volver a presentación");
-    observations.push({ responsive: [innerWidth, innerHeight], slides: 80, associated: 60, general: 60, footerSeparated: true, allLastItemsAccessible: true });
+    observations.push({ responsive: [innerWidth, innerHeight], slides: slideCount, associated: 60, general: 60, footerSeparated: true, allLastItemsAccessible: true });
   } finally { player.destroy(); }
 }
 async function run() {
@@ -110,6 +119,7 @@ try {
   await video(fixture.largeSource);
   for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [920, 640]]) {
     await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
+    for (const count of [10, 50, 120]) await scroll(fixture.manifest, count, true);
   }
   await invoke("fixture_report", { ok: true, result: observations });
 } catch (error) { await invoke("fixture_report", { ok: false, result: { error: String(error), observations } }); }
