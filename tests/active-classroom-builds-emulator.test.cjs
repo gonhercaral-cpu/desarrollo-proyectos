@@ -28,7 +28,7 @@ test("PPTX revela offline: congelado de estados/assets, fallo, reintento e inmut
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const path = rasterTargetPath(data.revision, index); attemptedPaths.push(path);
       const file = bucket.file(path);
-      await file.save(bytes, { resumable: false, preconditionOpts: { ifGenerationMatch: 0 }, metadata: { contentType: "image/png", metadata: { sha256, processingRevision: data.revision, deliveredName: `state-${index}.png` } } });
+      await file.save(bytes, { resumable: false, preconditionOpts: { ifGenerationMatch: 0 }, metadata: { contentType: "image/png", metadata: { sha256, processingRevision: data.revision, deliveredName: `state-${index}.png`, capturedAt: new Date().toISOString() } } });
       const [metadata] = await file.getMetadata(); const download = descriptor(path, metadata);
       if (corrupt && index === 1) download.checksums.sha256 = "0".repeat(64);
       states.push({ download, width: 1, height: 1 });
