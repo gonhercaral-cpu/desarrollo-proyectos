@@ -99,6 +99,9 @@
 .player-notes summary { cursor: pointer; }
 .player-notes small { display: block; padding-top: 5px; font-size: 10px; }
 .player-projection [data-notes] { max-height: 4rem; min-height: 0; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Narrow cards wrap resource names. Keep space for a complete row plus its
+   bottom margin; the section container can scroll when the window is shorter. */
+@media (max-width: 1150px) { .player-resource-sections { grid-template-rows: minmax(100px, 1.3fr) minmax(9rem, 1fr) minmax(9rem, 1fr); } }
 @media (max-width: 1150px) { .classroom-player { padding: 18px 12px 12px; gap: 12px; } .player-layout { grid-template-columns: minmax(0, 1fr) 260px; gap: 10px; } .player-header { padding: 0; } .player-resources .ui-card { padding: 10px; } .player-panel-heading h2 { font-size: 12px; gap: 6px; } .player-panel-heading > span { font-size: 10px; } .player-controls { padding: 8px; } .player-slide-controls { gap: 7px; } .player-slide-controls .button { font-size: 11px; padding-inline: 8px; } .player-slide-controls .ac-icon { width: 16px; height: 16px; } .player-shortcuts { gap: 7px; padding: 9px; } }
 @media (max-height: 720px) { .classroom-player { padding-top: 12px; gap: 10px; } .player-header h1 { font-size: 27px; } .player-main { gap: 8px; } .player-shortcuts { padding: 7px; gap: 5px 8px; } .player-controls { padding: 7px; gap: 6px; } .player-controls .button { min-height: 32px; padding-block: 6px; } .player-media-controls { gap: 5px; padding-top: 5px; } }
 
