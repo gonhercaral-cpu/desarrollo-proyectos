@@ -178,6 +178,9 @@ jobs:
       - name: Tests del updater del programa
         run: npm run test:updater
 
+      - name: Arranque automático, recuperación offline y prevención de reinicios repetidos
+        run: npm run test:startup
+
       - name: Tests de sesión y proyector offline
         run: npm run test:projection
 
@@ -245,7 +248,7 @@ jobs:
             active-classroom-desktop/src-tauri/target
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
-      - name: Updater .deb real 1.0.4 a 1.0.5, firmas, reinicio y persistencia
+      - name: Arranque Wayland y updater .deb 1.0.6 a 1.0.7, autostart, kiosco y persistencia
         env:
           ACTIVE_CLASSROOM_UPDATER_CI_REPORT: ${{ runner.temp }}/updater-acceptance.json
         run: bash tests/updater-linux.sh

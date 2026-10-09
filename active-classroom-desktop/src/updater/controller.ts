@@ -11,6 +11,7 @@ export const updateBusy = (phase: UpdatePhase) => ["checking", "downloading", "v
 export class ProgramUpdater {
   status: UpdateStatus = { phase: "idle", currentVersion: "", downloaded: 0, message: "Sin comprobar" };
   visible = false;
+  automatic = false;
   private running = false;
   private unlisten?: () => void;
   private transport: UpdateTransport;
@@ -21,14 +22,15 @@ export class ProgramUpdater {
     if (status.phase === "available" || status.phase === "installed") this.visible = true;
     this.changed();
   }
-  async start(): Promise<void> {
+  async start(check = true): Promise<void> {
     try {
       this.unlisten = await this.transport.listen(status => this.accept(status));
       this.accept(await this.transport.action("status"));
-      if (this.status.phase !== "unconfigured") await this.run("check");
+      if (check && this.status.phase !== "unconfigured") await this.run("check");
     } catch { this.failed("check"); }
   }
   show(): void { this.visible = true; this.changed(); }
+  setAutomatic(active: boolean): void { this.automatic = active; this.changed(); }
   later(): void { if (!updateBusy(this.status.phase)) { this.visible = false; this.changed(); } }
   async run(action: "check" | "install" | "restart"): Promise<void> {
     if (this.running || updateBusy(this.status.phase) || (action === "restart" && this.status.phase !== "installed")) return;

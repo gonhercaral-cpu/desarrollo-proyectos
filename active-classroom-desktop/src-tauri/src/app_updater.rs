@@ -88,7 +88,7 @@ mod tests {
 }
 #[tauri::command]
 pub async fn classroom_app_update(window: tauri::WebviewWindow, app: tauri::AppHandle,
-    gate: tauri::State<'_, UpdateGate>, action: String) -> Result<Status, String> {
+    gate: tauri::State<'_, UpdateGate>, action: String, startup: Option<bool>) -> Result<Status, String> {
     if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }
     let mut status = {
         let mut session = gate.0.lock().map_err(|_| "Actualizador ocupado")?;
@@ -100,7 +100,10 @@ pub async fn classroom_app_update(window: tauri::WebviewWindow, app: tauri::AppH
         if session.busy { return Err("Ya hay una actualización en curso".into()); }
         if action == "restart" {
             if !session.installed { return Err("No hay actualización instalada para reiniciar".into()); }
-            drop(session); app.restart();
+            drop(session);
+            // Release the D-Bus name before Tauri spawns the updated executable.
+            tauri_plugin_single_instance::destroy(&app);
+            app.restart();
         }
         if session.installed || !configured(&app) { return Ok(session.status.clone()); }
         if action != "check" && action != "install" { return Err("Acción no válida".into()); }
@@ -137,7 +140,9 @@ pub async fn classroom_app_update(window: tauri::WebviewWindow, app: tauri::AppH
         }
     } else {
         let mut update = gate.0.lock().map_err(|_| "Actualizador ocupado")?.update.clone().ok_or("No hay actualización")?;
-        update.timeout = Some(Duration::from_secs(15 * 60));
+        // A stalled boot download returns to the Library within one minute.
+        // Manual updates retain their existing timeout.
+        update.timeout = Some(Duration::from_secs(if startup == Some(true) { 60 } else { 15 * 60 }));
         status.phase = "downloading".into(); status.downloaded = 0; status.total = None;
         status.message = "Descargando actualización del programa…".into(); publish(&app, &gate, status.clone());
         let mut progress = status.clone();

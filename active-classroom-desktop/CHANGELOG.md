@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.7 — 2026-10-09
+
+- Actualización firmada del programa al iniciar: descarga, instalación y relanzamiento automáticos, con progreso y protección frente a ciclos de reinicio.
+- Sin Internet o ante errores, continúa la Biblioteca local. La búsqueda manual permanece disponible en Acerca de.
+- Inicio de sesión Linux mediante el plugin oficial de autostart, habilitado después de activar el equipo; instancia única mediante D-Bus.
+- Ajustes de Inicio: autostart, kiosco y salida temporal. Arranque automático en pantalla principal sin abrir el proyector.
+- Identidad, activación, Units, caché y preferencias de proyección conservan sus rutas y contenido.
+- La versión 1.0.6 publicada requiere actualizar manualmente una vez para incorporar el arranque automático; las siguientes versiones se instalan al iniciar.
+
 ## 1.0.6 — 2026-10-06
 
 - Biblioteca y panel docente reproducen el diseño aprobado: sidebar azul, acciones coral, cards claras e iconografía consistente.

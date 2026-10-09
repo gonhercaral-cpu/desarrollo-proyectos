@@ -1,6 +1,6 @@
 [package]
 name = "active-classroom"
-version = "1.0.6"
+version = "1.0.7"
 description = "Panel docente y vista de alumnado para un salón de clases activo"
 authors = ["Active Classroom"]
 edition = "2021"
@@ -26,5 +26,8 @@ sha2 = "0.10"
 tauri = { version = "=2.12.1", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "=2.13.1"
+tauri-plugin-autostart = "=2.7.0"
+tauri-plugin-single-instance = "=2.5.2"
+semver = "1"
 regex = "1"
 zip = "2.4"

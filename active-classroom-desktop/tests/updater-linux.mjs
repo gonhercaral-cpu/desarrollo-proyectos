@@ -2,7 +2,7 @@
 // Runs only in an ephemeral Linux CI runner/container, never on a user's desktop.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFile, writeFile, mkdir, mkdtemp, copyFile, rm } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, copyFile, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
@@ -22,6 +22,7 @@ const command = (program, args, options = {}) => {
 const privileged = (program, args) => process.getuid() === 0 ? command(program, args) : command("sudo", ["-n", program, ...args]);
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 let server; let mode = "corrupt"; let endpoint; let packageBytes; let signature; let oldSignature; let oldBytes;
+let downloads = 0;
 const certPath = `/usr/local/share/ca-certificates/ac-updater-ci-${process.pid}.crt`;
 try {
   const bundle = await build({ configFile: false, logLevel: "error", build: { write: false, minify: false, lib: { entry: fileURLToPath(new URL("./updater-browser.mjs", import.meta.url)), name: "UpdaterAcceptance", formats: ["iife"] } } });
@@ -46,9 +47,10 @@ try {
     console.log("UPDATER_FIXTURE_REQUEST", mode, request.url);
     if (mode === "offline") { response.writeHead(503).end(); return; }
     if (request.url === "/fixture/releases/latest/download/latest.json") {
-      const version = mode === "current" ? "1.0.4" : "1.0.5";
+      const version = mode === "current" ? "1.0.6" : "1.0.7";
       response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ version, notes: "Prueba CI instalada", platforms: { "linux-x86_64-deb": { url: endpoint.replace("/latest/download/latest.json", `/download/active-classroom-v${version}/fixture.deb`), signature: ["current", "replay"].includes(mode) ? oldSignature : signature } } }));
-    } else if (request.url === "/fixture/releases/download/active-classroom-v1.0.5/fixture.deb") {
+    } else if (request.url === "/fixture/releases/download/active-classroom-v1.0.7/fixture.deb") {
+      downloads++;
       const bytes = mode === "replay" ? oldBytes : mode === "corrupt" ? Buffer.concat([packageBytes, Buffer.from("tampered")]) : packageBytes;
       response.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": bytes.length });
       response.end(bytes);
@@ -62,7 +64,7 @@ try {
   const probeCode = await new Promise(resolve => { probe.on("exit", resolve); });
   assert.equal(probeCode, 0, "TLS local confiable para aceptación");
   const overlay = join(directory, "updater.json");
-  for (const version of ["1.0.4", "1.0.5"]) {
+  for (const version of ["1.0.6", "1.0.7"]) {
     for (const path of saved) {
       const text = original.get(path);
       if (path.endsWith(".json")) { const value = JSON.parse(text); value.version = version; if (value.packages) value.packages[""].version = version; await writeFile(path, JSON.stringify(value, null, 2) + "\n"); }
@@ -73,13 +75,13 @@ try {
     const bundle = resolve(`src-tauri/target/release/bundle/deb/Active Classroom_${version}_amd64.deb`);
     const copy = join(directory, `${version}.deb`); await copyFile(bundle, copy);
     const sig = await readFile(`${bundle}.sig`, "utf8");
-    if (version === "1.0.4") { oldBytes = await readFile(copy); oldSignature = sig; }
+    if (version === "1.0.6") { oldBytes = await readFile(copy); oldSignature = sig; }
     else { packageBytes = await readFile(copy); signature = sig; }
     // Remove only the two named test bundles, so production metadata sees one installer.
     assert.ok(bundle.startsWith(resolve("src-tauri/target/release/bundle/deb") + "/"));
     await rm(bundle); await rm(`${bundle}.sig`);
   }
-  privileged("dpkg", ["-i", join(directory, "1.0.4.deb")]);
+  privileged("dpkg", ["-i", join(directory, "1.0.6.deb")]);
   const identity = { deviceId: "a".repeat(32), credential: randomBytes(32).toString("hex"), name: "Salón updater CI", activated: true, revoked: false };
   command("secret-tool", ["store", "--label", "CI-updater", "application", "com.activeclassroom.desktop", "credential", "device-v1"], { input: JSON.stringify(identity), stdio: "pipe" });
   const appData = join(process.env.XDG_DATA_HOME, "com.activeclassroom.desktop");
@@ -98,13 +100,21 @@ try {
   await mkdir(process.env.XDG_CONFIG_HOME, { recursive: true }); await writeFile(preferences, JSON.stringify({ projector: "HDMI-1", displayName: identity.name }));
   const before = new Map(); for (const path of [object, manifestPath, preferences]) before.set(path, digest(await readFile(path)));
   const report = join(directory, "result.json");
-  async function run(stage) {
-    const child = spawn("/usr/bin/active-classroom", [], { stdio: "inherit", env: { ...process.env, ACTIVE_CLASSROOM_UPDATER_STAGE: stage, ACTIVE_CLASSROOM_UPDATER_REPORT: report, ACTIVE_CLASSROOM_UPDATER_SCRIPT: script } });
+  async function run(stage, desktop) {
+    await rm(report, { force: true });
+    const child = spawn(desktop ? "gio" : "/usr/bin/active-classroom", desktop ? ["launch", desktop] : ["--from-autostart"], { stdio: "inherit", env: { ...process.env, ACTIVE_CLASSROOM_UPDATER_STAGE: stage, ACTIVE_CLASSROOM_UPDATER_REPORT: report, ACTIVE_CLASSROOM_UPDATER_SCRIPT: script } });
     const code = await new Promise((resolve, reject) => { child.on("error", reject); child.on("exit", resolve); }); assert.equal(code, 0, `Etapa ${stage}`);
+    if (desktop) {
+      for (let attempt = 0; attempt < 900; attempt++) {
+        if (await readFile(report, "utf8").then(JSON.parse).catch(() => undefined)) return;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      throw new Error(`Autostart no terminó: ${stage}`);
+    }
   }
   for (const stage of ["current", "offline", "corrupt", "replay"]) {
     mode = stage; await run(stage);
-    const version = command("dpkg-query", ["-W", "-f=${Version}", "active-classroom"], { stdio: "pipe" }).stdout.toString(); assert.equal(version, "1.0.4");
+    const version = command("dpkg-query", ["-W", "-f=${Version}", "active-classroom"], { stdio: "pipe" }).stdout.toString(); assert.equal(version, "1.0.6");
   }
   mode = "success"; await run("update");
   let result;
@@ -113,9 +123,22 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.equal(result?.ok, true, "Proceso reiniciado registra versión instalada");
+  const autostartDirectory = join(process.env.XDG_CONFIG_HOME, "autostart");
+  const entries = (await readdir(autostartDirectory)).filter(name => name.endsWith(".desktop"));
+  assert.equal(entries.length, 1, "Una entrada de autostart");
+  const desktop = join(autostartDirectory, entries[0]);
+  const entry = await readFile(desktop, "utf8");
+  assert.match(entry, /Exec=.*\/usr\/bin\/active-classroom.*--from-autostart/);
+  const beforeBoot = downloads;
+  // A session launcher executes the real plugin-generated entry, with no Terminal.
+  await new Promise(resolve => setTimeout(resolve, 500));
+  mode = "offline"; await run("offline-restarted", desktop);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  mode = "success"; await run("current-restarted", desktop);
+  assert.equal(downloads, beforeBoot, "Dos nuevos arranques no reinstalan ni reinician");
   for (const [path, expected] of before) assert.equal(digest(await readFile(path)), expected, "Datos conservados byte a byte");
   const after = command("secret-tool", ["lookup", "application", "com.activeclassroom.desktop", "credential", "device-v1"], { stdio: "pipe" }).stdout.toString().trim(); assert.deepEqual(JSON.parse(after), identity);
-  const verified = { ...result, cachePreserved: true, unitsPreserved: true, preferencesPreserved: true, credentialPreserved: true, rejectedCorruptSignature: true, rejectedSignedVersionReplay: true, offlineFailurePreservedVersion: true, sameVersionRecognized: true };
+  const verified = { ...result, sessionAutostartEntryLaunched: true, offlineAutostart: true, onlineSubsequentBootNoReinstall: true, wayland: process.env.GDK_BACKEND === "wayland", cachePreserved: true, unitsPreserved: true, preferencesPreserved: true, credentialPreserved: true, rejectedCorruptSignature: true, rejectedSignedVersionReplay: true, offlineFailurePreservedVersion: true, sameVersionRecognized: true };
   console.log("UPDATER_LINUX_RESULT", JSON.stringify(verified));
   if (process.env.ACTIVE_CLASSROOM_UPDATER_CI_REPORT) await writeFile(process.env.ACTIVE_CLASSROOM_UPDATER_CI_REPORT, JSON.stringify(verified, null, 2));
 } finally {
