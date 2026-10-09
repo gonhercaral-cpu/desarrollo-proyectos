@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8 — 2026-10-09
+
+- Revelados progresivos por clic, Espacio, flechas y botones; Anterior retrocede un paso antes de cambiar de diapositiva.
+- PPTX con aparición o fade por clic conserva estados PNG acumulativos; animaciones no compatibles mantienen la diapositiva estática.
+- El profesor controla cada paso y el proyector sigue la misma sesión offline, sin mostrar el indicador privado de pasos.
+- Editor web con texto, respuestas, imágenes, posición, orden y vista previa de cada estado.
+- Publicaciones congelan estados y assets con integridad y orden, sin modificar versiones existentes.
+- Conserva autenticación, caché, multimedia, segunda pantalla, updater e inicio automático existentes.
+
 ## 1.0.7 — 2026-10-09
 
 - Actualización firmada del programa al iniciar: descarga, instalación y relanzamiento automáticos, con progreso y protección frente a ciclos de reinicio.
