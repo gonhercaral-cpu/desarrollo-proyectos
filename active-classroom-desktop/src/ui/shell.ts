@@ -3,7 +3,8 @@ import { icon } from "./icons.ts";
 import packageInfo from "../../package.json" with { type: "json" };
 import "./shell.css";
 
-export const levelName = (id: string) => /^level-\d+$/.test(id) ? `Nivel ${id.slice(6)}` : id;
+import { levelName } from "../offline/levels.ts";
+export { levelName, libraryLevelIds } from "../offline/levels.ts";
 let updateAvailable = false;
 export function setProgramUpdateVisual(available: boolean): void {
   updateAvailable = available;

@@ -33,5 +33,5 @@ export function documentProcessingLabel(resource) {
   return "Pendiente de procesar";
 }
 export function documentProcessingReady(resource) {
-  return resource?.processing?.state === "ready" && (resource.mimeType !== "application/vnd.google-apps.presentation" || resource.processing.processorVersion === "google-slides-png-v1") && (!/presentationml\.presentation/.test(resource.mimeType || "") && !/\.pptx$/i.test(resource.sourceName || resource.name || "") || resource.processing.processorVersion === "pptx-builds-png-v1");
+  return resource?.processing?.state === "ready" && (resource.mimeType !== "application/vnd.google-apps.presentation" || resource.processing.processorVersion === "google-slides-png-v1") && (!/presentationml\.presentation/.test(resource.mimeType || "") && !/\.pptx$/i.test(resource.sourceName || resource.name || "") || ["pptx-builds-png-v1", "office-pdf-v1"].includes(resource.processing.processorVersion));
 }

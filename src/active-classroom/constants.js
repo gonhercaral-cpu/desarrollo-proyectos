@@ -1,5 +1,6 @@
 export const ACTIVE_CLASSROOM_SECTIONS = [
   { id: "library", label: "Biblioteca", icon: "library" },
+  { id: "levels", label: "Niveles", icon: "library" },
   { id: "publications", label: "Publicaciones", icon: "publications" },
   { id: "teams", label: "Equipos", icon: "teams" },
   { id: "settings", label: "Ajustes", icon: "settings" },

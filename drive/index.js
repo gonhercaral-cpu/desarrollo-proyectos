@@ -1384,6 +1384,8 @@ const classroomUnits = createUnitHandlers({
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
+exports.manageActiveClassroomLevel = onCall(require("./activeClassroomLevels").createLevelHandler({ db: admin.firestore(), getProfile: getUserProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
+exports.validateActiveClassroomPublication = onCall({ timeoutSeconds: 540 }, classroomUnits.validatePublication);
 const classroomPublicationJobs = createPublicationJobs({
   db: admin.firestore(), units: classroomUnits, getProfile: getUserProfile,
   prepareResource: classroomProcessing.prepareDelivery, verifyDownload: classroomFiles.verifyDownload,

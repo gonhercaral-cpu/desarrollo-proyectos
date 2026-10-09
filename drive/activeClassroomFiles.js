@@ -14,9 +14,10 @@ function checkSize(size) {
   if (!Number.isSafeInteger(size) || size < 0) throw new HttpsError("data-loss", "Tamaño de archivo inválido.");
   if (size > MAX_BYTES) throw new HttpsError("resource-exhausted", "El archivo supera el límite operativo de publicación de 10 GiB.");
 }
-function unavailable() { throw new HttpsError("failed-precondition", "El original cambió o no está disponible. Actualiza el borrador desde Nube AES."); }
+function unavailable() { throw new HttpsError("failed-precondition", "Hay una versión más reciente de este archivo en Nube AES. Actualiza a la última versión antes de publicar."); }
 function checkOriginal(resource, file) {
-  if (file.trashed || file.capabilities?.canDownload === false || driveChanged(resource, file)) unavailable();
+  if (file.trashed || file.capabilities?.canDownload === false) throw new HttpsError("failed-precondition", "El archivo original ya no está disponible en Nube AES");
+  if (driveChanged(resource, file)) unavailable();
 }
 function descriptor(path, metadata) {
   checkSize(Number(metadata.size));

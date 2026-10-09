@@ -10,6 +10,13 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
   const unitRef = (unitId) => db.collection("activeClassroomUnits").doc(unitId);
   const fingerprint = (resources) => contentHash(resources.map((resource) => snapshotResource(resource.id, resource)));
   async function start(request) {
+    if (units.validatePublication) {
+      const validation = await units.validatePublication(request);
+      if (!validation.ready) {
+        const changed = validation.results.filter(result => result.status === "changed").length;
+        throw new HttpsError("failed-precondition", changed ? `Hay ${changed} archivos con una versión más reciente en Nube AES.` : validation.issues[0] || "Hay archivos no disponibles en Nube AES. Selecciona un reemplazo o quítalos del borrador.", validation);
+      }
+    }
     const resources = await units.preparePublish(request);
     const { unitId, expectedRevision } = request.data;
     const attemptId = randomUUID();

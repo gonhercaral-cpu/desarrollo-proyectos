@@ -55,6 +55,8 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
     if (request.data?.cursor) query = query.startAfter(id(request.data.cursor));
     const page = await query.get();
     const scanned = page.docs.slice(0, limit);
+    const catalog = await db.collection("activeClassroomFolders").where("kind", "==", "level").get();
+    const levels = catalog.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id, position: doc.data().position ?? 999, active: doc.data().active !== false })).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, "es"));
     const publications = [];
     for (const document of scanned) {
       if (!document.data().publishedVersion) continue;
@@ -62,7 +64,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
       publications.push({ unitId: document.id, version: manifest.version, name: manifest.unit.name, levelId: manifest.unit.levelId, schemaVersion: manifest.schemaVersion, publishedAt: manifest.publishedAt, contentHash: manifest.integrity.contentHash });
     }
     // Cursor counts scanned Units, including drafts; keep paging even on an empty page.
-    return { publications, nextCursor: page.docs.length > limit ? scanned.at(-1).id : null, ...deviceMetadata(profile) };
+    return { publications, levels, nextCursor: page.docs.length > limit ? scanned.at(-1).id : null, ...deviceMetadata(profile) };
   }
   async function get(request) {
     const profile = await authorize(request);

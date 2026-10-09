@@ -73,6 +73,7 @@ jobs:
           npx eslint drive/activeClassroomInteraction.js drive/activeClassroomBuildPreview.js src/active-classroom/components/SlideInteractionEditor.jsx src/active-classroom/utils/slideInteraction.js tests/active-classroom-builds*.cjs
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
           npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
+          npx eslint drive/activeClassroomLevels.js src/active-classroom tests/active-classroom-admin*
           npm run build
           node --check drive/index.js
           node --check functions/index.js
@@ -84,7 +85,7 @@ jobs:
           fi
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
   office:
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04

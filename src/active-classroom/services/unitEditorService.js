@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 
@@ -7,10 +7,15 @@ const publish = httpsCallable(functions, "publishActiveClassroomUnit");
 const check = httpsCallable(functions, "checkActiveClassroomDriveChanges", { timeout: 540000 });
 const refresh = httpsCallable(functions, "refreshActiveClassroomDriveResource");
 const processDocument = httpsCallable(functions, "processActiveClassroomDocument", { timeout: 540000 });
+const validatePublication = httpsCallable(functions, "validateActiveClassroomPublication", { timeout: 540000 });
 
 export async function loadUnitEditor(unitId) {
   const snapshot = await getDoc(doc(db, "activeClassroomUnits", unitId));
   return snapshot.exists() ? snapshot.data() : null;
+}
+export async function loadUnitResources(unitId) {
+  const result = await getDocs(query(collection(db, "activeClassroomResources"), where("folderId", "==", unitId)));
+  return result.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() }));
 }
 export async function loadUnitPublications(unitId) {
   const result = await getDocs(collection(db, "activeClassroomUnits", unitId, "publications"));
@@ -21,6 +26,9 @@ export async function saveUnitDraft(unitId, draft, expectedRevision) {
 }
 export async function publishUnit(unitId, expectedRevision) {
   return (await publish({ unitId, expectedRevision })).data;
+}
+export async function validateUnitPublication(unitId, expectedRevision) {
+  return (await validatePublication({ unitId, expectedRevision })).data;
 }
 export function subscribeUnitPublication(unitId, onChange, onError) {
   return onSnapshot(doc(db, "activeClassroomUnits", unitId), (snapshot) => onChange(snapshot.data()?.publicationJob || null), onError);

@@ -7,7 +7,7 @@ import { NativeCache } from "./native-cache";
 import { PublicationApi } from "./remote";
 import { type Manifest, type Publication } from "./manifest";
 import { icon } from "../ui/icons";
-import { sidebarMarkup, levelName } from "../ui/shell";
+import { sidebarMarkup, levelName, libraryLevelIds } from "../ui/shell";
 import { unitCard } from "../ui/library-view";
 import { LocalThumbnails } from "../ui/thumbnails";
 import { mergeLibraryPublications } from "./library-publications";
@@ -47,7 +47,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   const feedback = () => message || device.message ? `<p class="offline-feedback ${device.issue || opening ? "" : "visually-hidden"}" role="status">${escape(message || device.message)}</p>` : "";
   function sidebar(inClass = false): string {
     const combined = mergeLibraryPublications(locals, publications);
-    const levels = [...new Set([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    const levels = libraryLevelIds([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId));
     return sidebarMarkup({ levels, selectedLevel, localOnly, inClass, deviceName: device.identity ? visibleDeviceName(device.identity) : "", state: device.online ? "Sincronizado" : device.issue && device.issue !== "offline" ? connectionLabel(device.issue) : "Offline", detail: device.issue ? connectionLabel(device.issue) : "", busy: !!downloading || refreshing, updatedAt });
   }
   function bindSidebar(inClass = false): void {
@@ -75,7 +75,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       return;
     }
     const combined = mergeLibraryPublications(locals, publications);
-    const levels = [...new Set([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    const levels = libraryLevelIds([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId));
     const matches = [...combined.entries()].filter(([, { local, remote }]) =>
       (!localOnly || !!local) && (!selectedLevel || (remote?.levelId || local!.unit.levelId) === selectedLevel)
       && (remote?.name || local!.unit.name).toLocaleLowerCase("es").includes(search.toLocaleLowerCase("es")));

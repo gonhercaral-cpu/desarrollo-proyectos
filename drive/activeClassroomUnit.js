@@ -42,9 +42,11 @@ function normalizeDraft(input) {
     },
     mainPresentationId: input.mainPresentationId ? id(input.mainPresentationId) : null,
     generalResourceIds: ids(input.generalResourceIds || []), slides,
+    excludedResourceIds: ids(input.excludedResourceIds || []),
   };
   if (draft.generalResourceIds.includes(draft.mainPresentationId)) fail("La presentación principal debe estar separada de recursos generales.");
   if (resourceIds(draft).length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} recursos por Unit.`);
+  if (resourceIds(draft).some(resourceId => draft.excludedResourceIds.includes(resourceId))) fail("Un archivo quitado no puede seguir asociado al borrador.");
   return draft;
 }
 
@@ -116,7 +118,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     const folder = await transaction.get(folderRef(unitId));
     if (!folder.exists || folder.data().kind !== "unit") fail("Unit no encontrada.", "not-found");
     const level = await transaction.get(folderRef(draft.levelId));
-    if (!level.exists || level.data().kind !== "level" || level.data().active !== true) fail("Selecciona un Nivel activo.", "failed-precondition");
+    if (!level.exists || level.data().kind !== "level" || (level.data().active !== true && folder.data().parentId !== draft.levelId)) fail("Selecciona un Nivel activo.", "failed-precondition");
     return folder;
   }
 
@@ -128,6 +130,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     return db.runTransaction(async (transaction) => {
       const stored = (await transaction.get(unitRef(unitId))).data();
       revision(stored, request.data.expectedRevision);
+      if (stored?.draft?.mainPresentationId && stored.draft.mainPresentationId !== draft.mainPresentationId) draft.slides = [];
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
       const main = resources.find((resource) => resource.id === draft.mainPresentationId);
@@ -157,6 +160,8 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       revision(stored, request.data.expectedRevision);
       const draft = normalizeDraft(stored.draft);
       if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
+      const level = await transaction.get(folderRef(draft.levelId));
+      if (level.data()?.active !== true) fail("Activa el Nivel o reasigna la Unit antes de publicar.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
       for (const resource of resources) requireReady(resource);
@@ -184,6 +189,8 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       revision(stored, request.data.expectedRevision);
       const draft = normalizeDraft(stored.draft);
       if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
+      const level = await transaction.get(folderRef(draft.levelId));
+      if (level.data()?.active !== true) fail("Activa el Nivel o reasigna la Unit antes de publicar.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
       for (const resource of resources) requireReady(resource);
@@ -256,9 +263,12 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
         const resource = (await resourceRef(resourceId).get()).data();
         if (!resource || resource.folderId !== unitId || resource.source !== "drive") fail("Referencia Drive no válida.");
         const file = await resolveFile(profile, resource.driveFileId);
-        if (file.trashed) fail("Original eliminado de Drive.", "not-found");
+        if (file.trashed || file.capabilities?.canDownload === false) fail("El archivo original ya no está disponible en Nube AES", "not-found");
         results.push({ resourceId, status: driveChanged(resource, file) ? "changed" : "current", observedVersion: String(file.version || ""), modifiedTime: file.modifiedTime || "" });
-      } catch (error) { results.push({ resourceId, status: "unavailable", message: error instanceof HttpsError ? error.message : "No se pudo consultar el original en Nube AES." }); }
+      } catch (error) {
+        const missing = ["not-found", "permission-denied", 403, 404].includes(error.code) || [403, 404].includes(error.response?.status);
+        results.push({ resourceId, status: missing ? "unavailable" : "error", message: missing ? "El archivo original ya no está disponible en Nube AES" : "No se pudo comprobar este archivo. Reintenta." });
+      }
     }
     return { results, checkedAt: now() };
   }
@@ -269,8 +279,13 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     const ref = resourceRef(request.data?.resourceId);
     const before = (await ref.get()).data();
     if (!before || before.folderId !== unitId || before.source !== "drive") fail("Referencia Drive no válida.");
-    const file = await resolveFile(profile, before.driveFileId);
-    if (file.trashed || file.capabilities?.canDownload === false) fail("Original no disponible para descargar.", "failed-precondition");
+    let file;
+    try { file = await resolveFile(profile, before.driveFileId); }
+    catch (error) {
+      if (["not-found", "permission-denied", 403, 404].includes(error.code) || [403, 404].includes(error.response?.status)) fail("El archivo original ya no está disponible en Nube AES", "not-found");
+      fail("No se pudo consultar Nube AES. Reintenta cuando se restablezca la conexión.", "unavailable");
+    }
+    if (file.trashed || file.capabilities?.canDownload === false) fail("El archivo original ya no está disponible en Nube AES", "failed-precondition");
     const kind = resourceKind(file);
     if (!kind) fail("El nuevo formato del original no es compatible.");
     return db.runTransaction(async (transaction) => {
@@ -280,6 +295,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const current = (await transaction.get(ref)).data();
       if (!current || current.folderId !== unitId || current.driveFileId !== before.driveFileId) fail("La referencia cambió. Recarga el borrador.", "aborted");
       if (current.driveVersion !== before.driveVersion || current.driveModifiedTime !== before.driveModifiedTime) fail("Otro administrador actualizó el original. Recarga.", "aborted");
+      if (!driveChanged(current, file)) return { draftRevision: stored.draftRevision, resource: { id: ref.id, ...current }, unchanged: true };
       const updated = {
         name: text(file.name, 160, true), sourceName: file.name, mimeType: file.mimeType, kind,
         sizeBytes: file.size == null || file.size === "" ? null : Number(file.size),
@@ -293,10 +309,32 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const draftRevision = stored.draftRevision + 1;
       transaction.update(ref, updated);
       transaction.update(unitRef(unitId), { draftRevision, updatedAt: timestamp(), updatedByUid: request.auth.uid });
-      return { draftRevision };
+      return { draftRevision, resource: { id: ref.id, ...current, ...updated, sourceCheckedAt: now(), updatedAt: now() } };
     });
   }
-  return { save, publish, preparePublish, checkDrive, refreshDrive };
+  async function validatePublication(request) {
+    await authorize(request);
+    const stored = (await unitRef(request.data?.unitId).get()).data();
+    revision(stored, request.data?.expectedRevision);
+    if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");
+    const draft = normalizeDraft(stored.draft);
+    const issues = [];
+    if (!draft.mainPresentationId) issues.push("Selecciona una presentación principal.");
+    if (!draft.slides.length) issues.push("La presentación todavía no tiene diapositivas.");
+    if (draft.status !== "active") issues.push("Activa la Unit antes de publicar.");
+    const level = (await folderRef(draft.levelId).get()).data();
+    if (level?.active !== true) issues.push("Activa el Nivel o reasigna la Unit antes de publicar.");
+    const driveIds = [];
+    for (const resourceId of resourceIds(draft)) {
+      const resource = (await resourceRef(resourceId).get()).data();
+      if (!resource || resource.archived || resource.folderId !== request.data.unitId) { issues.push("Un archivo del borrador ya no está disponible. Selecciona un reemplazo o quítalo."); continue; }
+      if (needsDocumentProcessing(resource) && !readyProcessing(resource)) issues.push(`Completa el procesamiento de ${resource.name}.`);
+      if (resource.source === "drive") driveIds.push(resourceId);
+    }
+    const checked = await checkDrive({ ...request, data: { ...request.data, resourceIds: driveIds } });
+    return { ...checked, issues, ready: issues.length === 0 && checked.results.every(result => result.status === "current"), canPublishCurrent: false };
+  }
+  return { save, publish, preparePublish, checkDrive, refreshDrive, validatePublication };
 }
 
 module.exports = { createUnitHandlers, normalizeDraft, resourceIds, isMainPresentation, snapshotResource, stableStringify, contentHash, driveChanged };

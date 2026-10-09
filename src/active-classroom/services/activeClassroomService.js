@@ -9,7 +9,6 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  writeBatch,
   where,
 } from "firebase/firestore";
 import {
@@ -105,7 +104,7 @@ export function ensureActiveClassroomStructure(user) {
   const pendingInitialization = structureInitializationByUser.get(user.uid);
   if (pendingInitialization) return pendingInitialization;
 
-  const initialization = initializeActiveClassroomStructure(user)
+  const initialization = initializeActiveClassroomStructure()
     .finally(() => {
       if (structureInitializationByUser.get(user.uid) === initialization) {
         structureInitializationByUser.delete(user.uid);
@@ -116,70 +115,16 @@ export function ensureActiveClassroomStructure(user) {
   return initialization;
 }
 
-async function initializeActiveClassroomStructure(user) {
-  const folderCollection = collection(db, ACTIVE_CLASSROOM_FOLDERS_COLLECTION);
-  const snapshot = await getDocs(folderCollection);
-  const existingFolderIds = new Set(snapshot.docs.map((folderDoc) => folderDoc.id));
-  let createdCount = 0;
-  const levelBatch = writeBatch(db);
+async function initializeActiveClassroomStructure() {
+  // Existing IDs and Units remain untouched. Levels are managed explicitly.
+  await getDocs(collection(db, ACTIVE_CLASSROOM_FOLDERS_COLLECTION));
+  return false;
+}
 
-  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
-    const levelId = `level-${levelNumber}`;
-    if (existingFolderIds.has(levelId)) continue;
-
-    const createdAt = serverTimestamp();
-    levelBatch.set(doc(folderCollection, levelId), {
-      name: `Nivel ${levelNumber}`,
-      parentId: null,
-      kind: "level",
-      position: levelNumber,
-      active: true,
-      createdAt,
-      createdByUid: user.uid,
-      updatedAt: createdAt,
-      updatedByUid: user.uid,
-    });
-    createdCount += 1;
-  }
-
-  if (createdCount > 0) {
-    await levelBatch.commit();
-  }
-
-  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
-    const levelId = `level-${levelNumber}`;
-    const unitBatch = writeBatch(db);
-    let unitCount = 0;
-
-    for (let unitNumber = 1; unitNumber <= 16; unitNumber += 1) {
-      const unitSuffix = String(unitNumber).padStart(2, "0");
-      const unitId = `${levelId}-unit-${unitSuffix}`;
-      if (existingFolderIds.has(unitId)) continue;
-
-      const createdAt = serverTimestamp();
-      unitBatch.set(doc(folderCollection, unitId), {
-        name: `Unit ${unitSuffix}`,
-        parentId: levelId,
-        kind: "unit",
-        position: unitNumber,
-        active: true,
-        createdAt,
-        createdByUid: user.uid,
-        updatedAt: createdAt,
-        updatedByUid: user.uid,
-      });
-      unitCount += 1;
-      createdCount += 1;
-    }
-
-    // Cada lote usa como máximo 16 lecturas de padre en reglas; Firestore
-    // permite 20 accesos de documentos por solicitud de varias escrituras.
-    if (unitCount > 0) {
-      await unitBatch.commit();
-    }
-  }
-
-  return createdCount > 0;
+const manageLevel = httpsCallable(functions, "manageActiveClassroomLevel");
+export async function manageActiveClassroomLevel(data, user) {
+  assertAdmin(user);
+  return (await manageLevel(data)).data;
 }
 
 export async function createActiveClassroomUnit({ parentId, name, position }, user) {
