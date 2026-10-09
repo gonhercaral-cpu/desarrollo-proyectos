@@ -9,6 +9,10 @@ const { google } = require("googleapis");
 const { createImportDriveReference } = require("./activeClassroom");
 const { createUnitHandlers } = require("./activeClassroomUnit");
 const { createPublicationFiles } = require("./activeClassroomFiles");
+const { createPublicationJobs } = require("./activeClassroomPublicationJobs");
+const { onTaskDispatched } = require("firebase-functions/v2/tasks");
+const { getFunctions } = require("firebase-admin/functions");
+const { taskTimeoutSeconds } = require("./activeClassroomPublicationLimits.json");
 const { createDocumentProcessing } = require("./activeClassroomProcessing");
 const { createProcessorClient } = require("./activeClassroomProcessorClient");
 const { createGoogleSlidesProcessor } = require("./activeClassroomSlides");
@@ -1370,6 +1374,9 @@ const classroomProcessing = createDocumentProcessing({
   convert: createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) }),
 });
 exports.processActiveClassroomDocument = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomProcessing.process);
+exports.getActiveClassroomBuildPreview = onCall({ timeoutSeconds: 120, memory: "1GiB" }, require("./activeClassroomBuildPreview").createBuildPreview({
+  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getUserProfile, prepareResource: classroomProcessing.prepareDelivery,
+}));
 const classroomUnits = createUnitHandlers({
   db: admin.firestore(), getProfile: getUserProfile,
   resolveFile: resolveActiveClassroomDriveFile,
@@ -1377,7 +1384,17 @@ const classroomUnits = createUnitHandlers({
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
-exports.publishActiveClassroomUnit = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomUnits.publish);
+const classroomPublicationJobs = createPublicationJobs({
+  db: admin.firestore(), units: classroomUnits, getProfile: getUserProfile,
+  prepareResource: classroomProcessing.prepareDelivery, verifyDownload: classroomFiles.verifyDownload,
+  enqueue: (data) => getFunctions().taskQueue("locations/us-central1/functions/publishActiveClassroomUnitResources").enqueue(data, { dispatchDeadlineSeconds: taskTimeoutSeconds }),
+});
+exports.publishActiveClassroomUnit = onCall({ timeoutSeconds: 60 }, classroomPublicationJobs.start);
+exports.publishActiveClassroomUnitResources = onTaskDispatched({
+  timeoutSeconds: taskTimeoutSeconds, memory: "1GiB", concurrency: 1,
+  retryConfig: { maxAttempts: 10, minBackoffSeconds: 60, maxBackoffSeconds: 600 },
+  rateLimits: { maxConcurrentDispatches: 5 },
+}, classroomPublicationJobs.work);
 exports.checkActiveClassroomDriveChanges = onCall({ timeoutSeconds: 540 }, classroomUnits.checkDrive);
 exports.refreshActiveClassroomDriveResource = onCall(classroomUnits.refreshDrive);
 

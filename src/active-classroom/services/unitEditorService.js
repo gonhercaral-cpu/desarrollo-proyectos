@@ -1,9 +1,9 @@
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, onSnapshot } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 
 const save = httpsCallable(functions, "saveActiveClassroomUnit");
-const publish = httpsCallable(functions, "publishActiveClassroomUnit", { timeout: 540000 });
+const publish = httpsCallable(functions, "publishActiveClassroomUnit");
 const check = httpsCallable(functions, "checkActiveClassroomDriveChanges", { timeout: 540000 });
 const refresh = httpsCallable(functions, "refreshActiveClassroomDriveResource");
 const processDocument = httpsCallable(functions, "processActiveClassroomDocument", { timeout: 540000 });
@@ -22,6 +22,9 @@ export async function saveUnitDraft(unitId, draft, expectedRevision) {
 export async function publishUnit(unitId, expectedRevision) {
   return (await publish({ unitId, expectedRevision })).data;
 }
+export function subscribeUnitPublication(unitId, onChange, onError) {
+  return onSnapshot(doc(db, "activeClassroomUnits", unitId), (snapshot) => onChange(snapshot.data()?.publicationJob || null), onError);
+}
 export async function checkUnitDriveChanges(unitId, resourceIds) {
   const results = [];
   for (let index = 0; index < resourceIds.length; index += 200) {
@@ -35,4 +38,8 @@ export async function refreshUnitDriveResource(unitId, resourceId, expectedRevis
 }
 export async function processUnitDocument(unitId, resourceId, expectedRevision) {
   return (await processDocument({ unitId, resourceId, expectedRevision })).data;
+}
+export async function getBuildPreview(unitId, resourceId, pageObjectId, buildIndex = 0) {
+  const result = await httpsCallable(functions, "getActiveClassroomBuildPreview", { timeout: 120000 })({ unitId, resourceId, ...(pageObjectId ? { pageObjectId } : {}), buildIndex });
+  return result.data;
 }

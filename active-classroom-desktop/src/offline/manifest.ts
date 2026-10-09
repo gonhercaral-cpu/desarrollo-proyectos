@@ -13,6 +13,9 @@ export interface PublishedResource {
   file: Record<string, unknown>;
   download: { endpoint: string; name: string; mimeType: string; sizeBytes: number; checksums: { sha256: string }; [key: string]: unknown };
 }
+export interface BuildLayer { type: "text" | "answer" | "image"; x: number; y: number; width: number; height: number; text?: string; color?: string; fontSize?: number; resourceId?: string }
+export interface SlideBuild { order: number; resourceId?: string; layers?: BuildLayer[] }
+export interface PublishedSlide { slideId: string; index: number; title: string; resourceIds: string[]; metadata: Record<string, unknown>; interactionMode?: "static" | "builds"; buildCount?: number; interaction?: { mode: "static" | "builds"; buildCount: number; source?: string }; builds?: SlideBuild[] }
 export interface Manifest {
   schemaVersion: number;
   unit: { unitId: string; name: string; levelId: string; description: string; metadata: Record<string, unknown>; [key: string]: unknown };
@@ -20,7 +23,7 @@ export interface Manifest {
   publishedAt: string;
   mainPresentationId: string;
   generalResourceIds: string[];
-  slides: { slideId: string; index: number; title: string; resourceIds: string[]; metadata: Record<string, unknown> }[];
+  slides: PublishedSlide[];
   resources: PublishedResource[];
   integrity: { algorithm: string; contentHash: string };
 }
@@ -74,11 +77,31 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
     slides.add(slide.slideId);
     const presentationResourceId = slide.metadata?.presentationResourceId;
     require(presentationResourceId == null || (validId(presentationResourceId) && ids.has(presentationResourceId)));
+    validateSlideInteraction(slide, (id) => m.resources.find(resource => resource.resourceId === id));
   });
   require(m.integrity?.algorithm === "sha256" && validHash(m.integrity.contentHash));
   const content = Object.fromEntries(Object.entries(m).filter(([key]) => !["version", "publishedAt", "integrity"].includes(key)));
   require(await sha256(new TextEncoder().encode(canonical(content))) === m.integrity.contentHash);
   return m;
+}
+export function validateSlideInteraction(slide: PublishedSlide, resource: (id: string) => PublishedResource | undefined): void {
+  const fail = () => { throw new SyncError("manifest", "Interactividad incompatible o incompleta."); };
+  const mode = slide.interaction?.mode || slide.interactionMode || "static";
+  if (!["static", "builds"].includes(mode)) fail();
+  const steps = slide.builds || [];
+  if (mode === "static") { if (steps.length || slide.buildCount || slide.interaction?.buildCount) fail(); return; }
+  if (!steps.length || steps.length > 50 || slide.interaction?.buildCount !== steps.length || slide.buildCount !== steps.length) fail();
+  if (steps.reduce((count, step) => count + (step.layers?.length || 0), 0) > 50) fail();
+  for (const [index, step] of steps.entries()) {
+    if (step.order !== index + 1 || (!!step.resourceId === !!step.layers?.length)) fail();
+    if (step.resourceId && resource(step.resourceId)?.download.mimeType !== "image/png") fail();
+    if (step.layers && step.layers.length > 20) fail();
+    for (const layer of step.layers || []) {
+      if (!["text", "answer", "image"].includes(layer.type) || [layer.x, layer.y, layer.width, layer.height].some(value => !Number.isFinite(value) || value < 0 || value > 100) || layer.width <= 0 || layer.height <= 0 || layer.x + layer.width > 100 || layer.y + layer.height > 100) fail();
+      if (layer.type === "image") { if (!layer.resourceId || !["image/png", "image/jpeg", "image/webp"].includes(resource(layer.resourceId)?.download.mimeType || "")) fail(); }
+      else if (typeof layer.text !== "string" || !layer.text.trim() || layer.text.length > 2000 || !/^#[a-fA-F0-9]{6}$/.test(layer.color || "") || !Number.isFinite(layer.fontSize) || Number(layer.fontSize) < 0.5 || Number(layer.fontSize) > 20) fail();
+    }
+  }
 }
 export function localState(local?: Manifest, remote?: Publication): string {
   if (!local) return "No descargada";

@@ -11,6 +11,7 @@ try {
   const fixture = join(directory, "h264-aac.mp4");
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "8", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-level:v", "3.0", "-c:a", "aac", "-y", fixture]);
   command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", fixture]);
+  for (const [index, color] of ["red", "green", "blue"].entries()) command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `color=c=${color}:s=320x180`, "-frames:v", "1", "-threads", "1", "-y", join(directory, `state-${index}.png`)]);
   const bundle = await build({ configFile: false, logLevel: "error", build: { write: false, minify: false, lib: { entry: fileURLToPath(new URL("./media-browser.mjs", import.meta.url)), name: "MediaAcceptance", formats: ["iife"] } } });
   const output = (Array.isArray(bundle) ? bundle[0] : bundle).output;
   const css = output.filter(item => item.type === "asset" && item.fileName.endsWith(".css")).map(item => item.source).join("\n");

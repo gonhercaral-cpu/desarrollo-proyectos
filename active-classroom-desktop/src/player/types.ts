@@ -1,12 +1,13 @@
 import type { Manifest } from "../offline/manifest.ts";
 
-export type PlayerCommand = "NEXT" | "PREVIOUS" | "PLAY_PAUSE" | "STOP" | "SEEK_FORWARD" | "SEEK_BACKWARD" | "VOLUME_UP" | "VOLUME_DOWN" | "MUTE" | "FULLSCREEN";
+export type PlayerCommand = "ADVANCE" | "BACK" | "NEXT" | "PREVIOUS" | "PLAY_PAUSE" | "STOP" | "SEEK_FORWARD" | "SEEK_BACKWARD" | "VOLUME_UP" | "VOLUME_DOWN" | "MUTE" | "FULLSCREEN";
 export type RendererKind = "pdf" | "image" | "audio" | "video" | "unsupported";
 export interface LocalClassroom {
   manifest: Manifest;
   resolveResource(resourceId: string): { path: string; mimeType: string; kind: string; name: string };
 }
-export interface RendererSource { url: string; mimeType: string; name: string; sizeBytes: number; codecMime?: string }
+export interface ResolvedLayer { type: "text" | "answer" | "image"; x: number; y: number; width: number; height: number; text?: string; color?: string; fontSize?: number; url?: string }
+export interface RendererSource { url: string; mimeType: string; name: string; sizeBytes: number; codecMime?: string; layers?: ResolvedLayer[] }
 export interface RendererState {
   loading: boolean; page: number; pages: number; playing: boolean;
   time: number; duration: number; volume: number; muted: boolean; error: string;
@@ -22,6 +23,7 @@ export interface LocalRenderer {
   mount(host: HTMLElement, source: RendererSource, options: RendererOptions): Promise<void>;
   command(command: PlayerCommand): void | Promise<void>;
   setPage(page: number): void | Promise<void>;
+  setSource?(source: RendererSource): Promise<void>;
   seek(seconds: number): void;
   setVolume(volume: number): void;
   applyPlayback?(state: RendererState): void | Promise<void>;

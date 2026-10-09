@@ -8,6 +8,7 @@ import { initialRendererState } from "../src/player/types.ts";
 import { sidebarMarkup } from "../src/ui/shell.ts";
 import "../src/offline/library.css";
 import "../src/player/player.css";
+import { interactiveSlides } from "./builds-browser.mjs";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -117,6 +118,7 @@ try {
   await oldAsset(fixture.source, fixture.path);
   await video(fixture.source); await video(fixture.source); // Reopen, fully local.
   await video(fixture.largeSource);
+  observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
   for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [920, 640]]) {
     await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
     for (const count of [10, 50, 120]) await scroll(fixture.manifest, count, true);

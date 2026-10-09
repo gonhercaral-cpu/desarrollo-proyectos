@@ -1,8 +1,9 @@
-import type { Manifest } from "../offline/manifest.ts";
+import { validateSlideInteraction, type Manifest } from "../offline/manifest.ts";
 
 export class PlayerController {
   manifest: Manifest;
   slideIndex: number | null = 0;
+  currentBuild = 0;
   presentationPage: number;
   selectedResourceId: string;
   resourcePages = new Map<string, number>();
@@ -10,6 +11,7 @@ export class PlayerController {
     if (!manifest.slides?.length || !manifest.resources?.some((resource) => resource.resourceId === manifest.mainPresentationId)) throw new Error("Manifest inconsistente: faltan presentación o diapositivas.");
     if (!Array.isArray(manifest.generalResourceIds) || manifest.generalResourceIds.some((id) => !manifest.resources.some((resource) => resource.resourceId === id))) throw new Error("Manifest inconsistente: recurso general ausente.");
     manifest.slides.forEach((slide, index) => {
+      validateSlideInteraction(slide, id => manifest.resources.find(resource => resource.resourceId === id));
       const page = slide.metadata?.pageNumber;
       if (slide.index !== index || (page != null && (!Number.isInteger(page) || Number(page) < 1))) throw new Error("Manifest inconsistente: orden o página inválidos.");
       if (slide.resourceIds.some((id) => !manifest.resources.some((resource) => resource.resourceId === id))) throw new Error("Manifest inconsistente: recurso asociado ausente.");
@@ -22,12 +24,16 @@ export class PlayerController {
   }
   get presentationId(): string { return String(this.slideIndex === null ? this.manifest.mainPresentationId : this.manifest.slides[this.slideIndex].metadata?.presentationResourceId || this.manifest.mainPresentationId); }
   get isPresentation(): boolean { return this.selectedResourceId === this.presentationId; }
+  get buildCount(): number { return this.slideIndex === null ? 0 : this.manifest.slides[this.slideIndex].interaction?.buildCount || 0; }
+  advance(): void { if (this.currentBuild < this.buildCount) this.currentBuild++; else this.moveSlide(1); }
+  back(): void { if (this.currentBuild > 0) this.currentBuild--; else this.moveSlide(-1); }
   get associatedIds(): string[] { return this.slideIndex === null ? [] : this.manifest.slides[this.slideIndex].resourceIds; }
   get page(): number { return this.isPresentation ? this.presentationPage : this.resourcePages.get(this.selectedResourceId) || 1; }
   pageForSlide(index: number): number { return Number(this.manifest.slides[index].metadata?.pageNumber ?? index + 1); }
   goSlide(index: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= this.manifest.slides.length) return;
     this.slideIndex = index;
+    this.currentBuild = 0;
     this.presentationPage = this.pageForSlide(index);
     this.selectedResourceId = this.presentationId;
   }

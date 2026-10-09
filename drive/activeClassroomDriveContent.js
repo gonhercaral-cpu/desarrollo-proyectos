@@ -8,6 +8,7 @@ function googleErrorReason(error) {
 }
 function processingError(error, slides = false) {
   if (googleErrorReason(error) === "exportSizeLimitExceeded") return new HttpsError("resource-exhausted", "El archivo de Google supera el límite de exportación. Procesa Google Slides por diapositivas.", { reason: "exportSizeLimitExceeded" });
+  if (Number(error?.response?.status || error?.code) === 413) return new HttpsError("resource-exhausted", "El proveedor rechazó el archivo por superar su límite de tamaño.", { reason: "providerSizeLimitExceeded" });
   if (error instanceof HttpsError) return error;
   return new HttpsError("failed-precondition", slides ? "No se pudo procesar la presentación de Google Slides" : "No se pudo procesar el documento. Reintenta o revisa el original.");
 }

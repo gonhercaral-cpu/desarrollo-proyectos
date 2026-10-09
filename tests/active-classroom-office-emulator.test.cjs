@@ -9,26 +9,26 @@ const { createDocumentProcessing } = require("../drive/activeClassroomProcessing
 const { PROCESSOR_VERSION, processingTargetPath } = require("../drive/activeClassroomProcessingModel");
 if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) throw new Error("Solo emuladores Firestore/Storage.");
 
-test("PPTX y DOCX procesados, bloqueo, fallo/reintento, v2 PDF y v1 intacta", async () => {
+test("PPT y DOCX procesados, bloqueo, fallo/reintento, v2 PDF y v1 intacta", async () => {
   const app = admin.initializeApp({ projectId: "office-processing-tests", storageBucket: "office-processing-tests.appspot.com" }, "office-processing");
   const db = app.firestore(); const bucket = app.storage().bucket();
   const profile = { uid: "admin", active: true, role: "admin" };
   const getProfile = async(uid) => uid === "admin" ? profile : { active: true, role: "requester" };
   const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
   const unitId = "unit-office"; const unitRef = db.doc(`activeClassroomUnits/${unitId}`);
-  const source = { id: "drive-main", name: "Songs.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", version: "1", modifiedTime: "2026-10-02" };
+  const source = { id: "drive-main", name: "Songs.ppt", mimeType: "application/vnd.ms-powerpoint", version: "1", modifiedTime: "2026-10-02" };
   const mainRef = db.doc("activeClassroomResources/main-office"); const docRef = db.doc("activeClassroomResources/doc-office");
   const files = createPublicationFiles({ db, bucket, resolveFile: async()=>({...source}), openDrive: async()=>Readable.from(`original-${source.version}`) });
   let calls = 0; let failDoc = true; let unlock; const hold = new Promise(resolve=>{unlock=resolve;});
   const processing = createDocumentProcessing({ db, bucket, getProfile, prepareResource: files.prepareResource, timestamp,
     convert: async(data) => {
       calls++;
-      if(data.extension === "pptx" && calls === 1) await hold;
+      if(data.extension === "ppt" && calls === 1) await hold;
       if(data.extension === "docx" && failDoc) throw new Error("private-upstream-error");
       const bytes = Buffer.from(`%PDF-1.4\nconversion-${data.revision}\n%%EOF`);
       const hash = createHash("sha256").update(bytes).digest("hex");
       const path = processingTargetPath(data.revision);
-      const file = bucket.file(path); const pageCount = data.extension === "pptx" ? 3 : 1;
+      const file = bucket.file(path); const pageCount = data.extension === "ppt" ? 3 : 1;
       await file.save(bytes, { resumable:false, preconditionOpts:{ifGenerationMatch:0}, metadata:{contentType:"application/pdf",metadata:{sha256:hash,processingRevision:data.revision,pageCount:String(pageCount)}} });
       const [metadata] = await file.getMetadata();
       return { processorVersion:PROCESSOR_VERSION, revision:data.revision, pageCount, download:{endpoint:"activeClassroomPublicationFile",provider:"storage",path,generation:String(metadata.generation),mimeType:"application/pdf",name:"Songs.pdf",sizeBytes:bytes.length,checksums:{sha256:hash},capturedAt:new Date().toISOString()} };
@@ -65,7 +65,7 @@ test("PPTX y DOCX procesados, bloqueo, fallo/reintento, v2 PDF y v1 intacta", as
     assert.equal(published.slides.length,3);
     for(const resource of published.resources) {
       assert.equal(resource.deliveryMime,"application/pdf"); assert.equal(resource.download.mimeType,"application/pdf");
-      assert.ok(resource.originalMime.includes("officedocument")); assert.notEqual(resource.original.snapshot.path,resource.download.path);
+      assert.ok(/officedocument|powerpoint/.test(resource.originalMime)); assert.notEqual(resource.original.snapshot.path,resource.download.path);
       assert.equal(resource.derivative.file.generation,resource.download.generation);
     }
     assert.deepEqual(published.slides.map(s=>s.metadata.pageNumber),[1,2,3]);

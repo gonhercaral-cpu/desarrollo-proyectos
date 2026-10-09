@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import DriveResourceImportDialog from "./DriveResourceImportDialog";
 import ResourceInspector from "./ResourceInspector";
+import SlideInteractionEditor from "./SlideInteractionEditor";
 import { ACTIVE_CLASSROOM_ACCEPTED_FILES } from "../constants";
 import { canBeMainPresentation, createUnitDraft, reorderSlides, needsOfficeProcessing, documentProcessingLabel, documentProcessingReady } from "../utils/unitDraft";
 import { getDriveResourceKind } from "../utils/driveResources";
-import { checkUnitDriveChanges, loadUnitEditor, loadUnitPublications, publishUnit, refreshUnitDriveResource, saveUnitDraft, processUnitDocument } from "../services/unitEditorService";
+import { checkUnitDriveChanges, loadUnitEditor, loadUnitPublications, publishUnit, refreshUnitDriveResource, saveUnitDraft, processUnitDocument, subscribeUnitPublication } from "../services/unitEditorService";
 
 export default function UnitEditor(props) {
   const [loaded, setLoaded] = useState(null);
@@ -29,6 +30,8 @@ function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [publicationJob, setPublicationJob] = useState(initial.editor?.publicationJob || null);
+  const publishing = ["pending", "publishing"].includes(publicationJob?.state);
   const [selectedSlideId, setSelectedSlideId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
   const [count, setCount] = useState(1);
@@ -39,11 +42,24 @@ function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, o
   const main = unitResources.find((resource) => resource.id === draft.mainPresentationId);
   const automaticSlides = needsOfficeProcessing(main);
   const nativeSlides = main?.mimeType === "application/vnd.google-apps.presentation";
-  const referencedIds = new Set([draft.mainPresentationId, ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => slide.resourceIds)]);
+  const referencedIds = new Set([draft.mainPresentationId, ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => [...slide.resourceIds, ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId).filter(Boolean))])]);
   const processingBlocked = unitResources.some((resource) => referencedIds.has(resource.id) && needsOfficeProcessing(resource) && !documentProcessingReady(resource));
   const selectedSlide = draft.slides.find((slide) => slide.slideId === selectedSlideId);
   const selectedResource = unitResources.find((resource) => resource.id === selectedResourceId);
   const version = publications.find((item) => item.version === manifestVersion);
+
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = subscribeUnitPublication(unit.id, (job) => {
+      setPublicationJob(job);
+      if (job?.state === "failed") setError(job.error || "Publicación fallida. Reintenta desde el borrador.");
+      if (job?.state === "ready") {
+        setNotice(job.unchanged ? `Sin cambios respecto a versión ${job.version}.` : `Versión ${job.version} publicada.`);
+        loadUnitPublications(unit.id).then((items) => { if (active) setPublications(items); }).catch((loadError) => { if (active) setError(loadError.message); });
+      }
+    }, (loadError) => setError(loadError.message));
+    return () => { active = false; unsubscribe(); };
+  }, [unit.id]);
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -113,11 +129,12 @@ function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, o
         <div className="ac-unit-actions">
           <button className="ac-outline-button" disabled={busy} onClick={() => run(reload)}>Recargar</button>
           <button className="ac-outline-button" disabled={busy} onClick={() => run(save)}>Guardar borrador</button>
-          <button className="ac-primary-button" disabled={busy || dirty || !revision || processingBlocked} title={processingBlocked ? "Procesa los documentos antes de publicar" : dirty ? "Guarda primero el borrador" : "Crear una versión inmutable"} onClick={() => run(async () => { const result = await publishUnit(unit.id, revision); setPublications(await loadUnitPublications(unit.id)); setNotice(result.unchanged ? `Sin cambios respecto a versión ${result.version}.` : `Versión ${result.version} publicada.`); })}>Publicar versión</button>
+          <button className="ac-primary-button" disabled={busy || publishing || dirty || !revision || processingBlocked} title={processingBlocked ? "Procesa los documentos antes de publicar" : dirty ? "Guarda primero el borrador" : "Crear una versión inmutable"} onClick={() => run(async () => { await publishUnit(unit.id, revision); })}>{publishing ? "Publicando recursos…" : "Publicar versión"}</button>
         </div>
       </header>
       {error && <div className="ac-unit-feedback is-error" role="alert">{error}</div>}
       {notice && <div className="ac-unit-feedback" role="status">{notice}</div>}
+      {publishing && <div className="ac-unit-feedback" role="status">Publicando recursos… {publicationJob.completedResources} / {publicationJob.totalResources}<progress value={publicationJob.completedResources} max={publicationJob.totalResources || 1} /></div>}
       <fieldset disabled={busy} className="ac-unit-fields">
         <legend>Datos de la Unit</legend>
         <label>Nombre<input value={draft.name} maxLength={56} onChange={(event) => edit({ name: event.target.value })} /></label>
@@ -146,6 +163,7 @@ function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, o
             <label>Título<input value={selectedSlide.title} maxLength={160} onChange={(event) => updateSlide({ title: event.target.value })} /></label>
             <label>{nativeSlides ? "Diapositiva de Google Slides" : "Página del PDF"}<input type="number" min="1" max="200" disabled={automaticSlides} value={nativeSlides ? selectedSlide.index + 1 : selectedSlide.metadata.pageNumber ?? ""} onChange={(event) => updateSlide({ metadata: { ...selectedSlide.metadata, pageNumber: event.target.value ? Number(event.target.value) : null } })} /></label>
             <label>Notas<textarea value={selectedSlide.metadata.notes} maxLength={1000} onChange={(event) => updateSlide({ metadata: { ...selectedSlide.metadata, notes: event.target.value } })} /></label>
+            <SlideInteractionEditor key={selectedSlide.slideId} unitId={unit.id} slide={selectedSlide} main={main} resources={unitResources} onChange={updateSlide} />
             {!automaticSlides && <div className="ac-unit-actions"><button className="ac-outline-button" disabled={selectedSlide.index === 0} onClick={() => edit({ slides: reorderSlides(draft.slides, selectedSlideId, -1) })}>Subir</button><button className="ac-outline-button" disabled={selectedSlide.index === draft.slides.length - 1} onClick={() => edit({ slides: reorderSlides(draft.slides, selectedSlideId, 1) })}>Bajar</button><button className="ac-clear-filters" onClick={() => { if (window.confirm("Eliminar diapositiva y sus asociaciones? Los recursos se conservan.")) { edit({ slides: draft.slides.filter((slide) => slide.slideId !== selectedSlideId).map((slide, index) => ({ ...slide, index })) }); setSelectedSlideId(""); } }}>Eliminar diapositiva</button></div>}
             <h3>Recursos asociados</h3>
             {!selectedSlide.resourceIds.length && <p>Selecciona recursos en el panel derecho.</p>}

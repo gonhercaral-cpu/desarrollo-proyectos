@@ -7,6 +7,8 @@ import { initialRendererState, rendererKind, type LocalClassroom, type LocalRend
 import { playerMarkup } from "../ui/player-view.ts";
 import { icon, resourceIcon, fileDescription } from "../ui/icons.ts";
 import { escapeHtml } from "../utils/dom.ts";
+import { InteractionSurface } from "./InteractionSurface.ts";
+import type { ResolvedLayer } from "./types.ts";
 
 export interface PlayerDependencies {
   verifyResource(id: string): Promise<boolean>;
@@ -21,6 +23,11 @@ export class ClassroomPlayer {
   readonly controller: ClassSessionController;
   private projection: ProjectionCoordinator;
   private source?: RendererSource;
+  private surface?: InteractionSurface;
+  private buildSequence = 0;
+  private sourceSlide: number | null = null;
+  private sourceBuild = 0;
+  private verifiedSources = new Map<string, Promise<RendererSource>>();
   private root: HTMLElement;
   private classroom: LocalClassroom;
   private dependencies: PlayerDependencies;
@@ -33,7 +40,7 @@ export class ClassroomPlayer {
   private volume = 0.8;
   private muted = false;
   private keyListener = (event: KeyboardEvent) => {
-    const command = shortcutFor(event);
+    const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""));
     if (!command || (event.repeat && ["PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
     event.preventDefault(); void this.dispatch(command);
   };
@@ -56,6 +63,7 @@ export class ClassroomPlayer {
     this.element("[data-slide-next]").onclick = () => this.navigate(1);
     this.element("[data-stage-previous]").onclick = () => this.navigate(-1);
     this.element("[data-stage-next]").onclick = () => this.navigate(1);
+    this.element("[data-renderer]").onclick = (event) => { if (this.controller.isPresentation && !this.state.loading && !this.state.error && !(event.target as HTMLElement).closest("button, input, select, a, video, audio")) void this.dispatch("ADVANCE"); };
     this.root.querySelectorAll<HTMLButtonElement>("[data-command]").forEach((button) => { button.onclick = () => { void this.dispatch(button.dataset.command as PlayerCommand); }; });
     this.element<HTMLInputElement>("[data-seek]").oninput = (event) => this.renderer?.seek(Number((event.target as HTMLInputElement).value));
     this.element<HTMLInputElement>("[data-volume]").oninput = (event) => this.renderer?.setVolume(Number((event.target as HTMLInputElement).value));
@@ -125,13 +133,15 @@ export class ClassroomPlayer {
     for (const selector of ["[data-counter]", "[data-stage-counter]", "[data-slide-count]"]) this.element(selector).textContent = position;
     this.element("[data-associated-count]").textContent = `${controller.associatedIds.length} archivos`;
     this.element("[data-general-count]").textContent = `${this.classroom.manifest.generalResourceIds.length} archivos`;
+    const buildIndicator = this.element("[data-build]"); buildIndicator.hidden = !controller.isPresentation || !controller.buildCount;
+    buildIndicator.textContent = `Paso ${controller.currentBuild} / ${controller.buildCount}`;
     this.element("[data-view-title]").hidden = controller.isPresentation;
     this.element(".player-stage").dataset.mediaKind = this.renderer?.kind || "";
     this.element("[data-position]").textContent = `${controller.slideIndex === null ? "Página sin diapositiva asociada" : `Diapositiva ${controller.slideIndex + 1} / ${count}`}${this.renderer?.kind === "pdf" ? ` · PDF ${this.state.page} / ${this.state.pages || "…"}` : ""}`;
-    this.element<HTMLButtonElement>("[data-slide-previous]").disabled = controller.slideIndex === 0;
-    this.element<HTMLButtonElement>("[data-slide-next]").disabled = controller.slideIndex === count - 1;
-    this.element<HTMLButtonElement>("[data-stage-previous]").disabled = controller.slideIndex === 0;
-    this.element<HTMLButtonElement>("[data-stage-next]").disabled = controller.slideIndex === count - 1;
+    this.element<HTMLButtonElement>("[data-slide-previous]").disabled = controller.slideIndex === 0 && controller.currentBuild === 0;
+    this.element<HTMLButtonElement>("[data-slide-next]").disabled = controller.slideIndex === count - 1 && controller.currentBuild === controller.buildCount;
+    this.element<HTMLButtonElement>("[data-stage-previous]").disabled = controller.slideIndex === 0 && controller.currentBuild === 0;
+    this.element<HTMLButtonElement>("[data-stage-next]").disabled = controller.slideIndex === count - 1 && controller.currentBuild === controller.buildCount;
     this.element("[data-stage-previous]").hidden = !controller.isPresentation;
     this.element("[data-stage-next]").hidden = !controller.isPresentation;
     this.element("[data-progress-thumb]").style.left = `${controller.slideIndex === null ? 0 : 100 * (controller.slideIndex + 1) / count}%`;
@@ -150,7 +160,7 @@ export class ClassroomPlayer {
     this.element("[data-command='MUTE']").innerHTML = `${icon(this.muted ? "mute" : "volume")}${this.muted ? "Activar sonido" : "Silenciar"}`;
     this.element("[data-notes]").textContent = controller.slideIndex === null ? "" : String(this.classroom.manifest.slides[controller.slideIndex].metadata.notes || "Sin notas.");
     controller.record({ ...this.state, volume: this.volume, muted: this.muted }, this.source);
-    this.projection.update(controller.snapshot());
+    if (!this.source || !controller.isPresentation || this.state.error || (this.sourceSlide === controller.slideIndex && this.sourceBuild === controller.currentBuild)) this.projection.update(controller.snapshot());
   }
   private async showResource(): Promise<void> {
     if (this.disposed) return;
@@ -158,10 +168,11 @@ export class ClassroomPlayer {
     if (this.renderedId !== id) this.source = undefined;
     this.updateLists();
     if (this.renderedId === id && this.renderer && !this.state.error) {
-      try { await this.renderer.setPage(this.controller.page); } catch { this.state.error = "No se pudo abrir esta página."; this.updateState(); }
+      try { await this.renderer.setPage(this.controller.page); await this.showBuild(); } catch { this.state.error = "No se pudo abrir esta página o paso local."; this.updateState(); }
       return;
     }
     const sequence = ++this.sequence;
+    ++this.buildSequence; this.surface?.destroy(); this.surface = undefined;
     this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
     this.source = undefined;
     this.state = { ...initialRendererState(), loading: true };
@@ -190,13 +201,52 @@ export class ClassroomPlayer {
         },
         onPage: (page: number) => { if (sequence === this.sequence && !this.disposed) { this.controller.pageChanged(page); this.updateLists(); } },
       });
+      if (sequence !== this.sequence || this.disposed) return;
+      if (this.controller.isPresentation) await this.showBuild();
     } catch (error) {
       if (sequence !== this.sequence || this.disposed) return;
       this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
       this.state = { ...initialRendererState(), error: error instanceof Error ? error.message : "No se pudo abrir el recurso local." }; this.updateState();
     }
   }
-  private navigate(direction: number): void { this.controller.moveSlide(direction); void this.showResource(); }
+  private async buildSource(id: string): Promise<RendererSource> {
+    if (!this.verifiedSources.has(id)) {
+      const prepared = this.dependencies.verifyResource(id).then(valid => { if (!valid) throw new Error("Asset del revelado ausente o dañado. Sincroniza la Unit de nuevo."); return localSource(this.classroom, id, this.dependencies.toUrl); });
+      this.verifiedSources.set(id, prepared);
+      void prepared.catch(() => this.verifiedSources.delete(id));
+    }
+    return this.verifiedSources.get(id)!;
+  }
+  private async showBuild(): Promise<void> {
+    if (!this.controller.isPresentation || this.controller.slideIndex === null || !this.renderer) return;
+    const generation = ++this.buildSequence;
+    const slide = this.classroom.manifest.slides[this.controller.slideIndex];
+    if (!this.controller.buildCount) {
+      this.surface?.destroy(); this.surface = undefined;
+      if (this.renderer.kind === "image") {
+        const base = localSource(this.classroom, this.controller.presentationId, this.dependencies.toUrl);
+        if (this.source && this.source.url !== base.url) await this.renderer.setSource?.(base);
+        if (generation !== this.buildSequence || this.disposed) return;
+        this.source = base;
+      } else if (this.source) this.source = { ...this.source, layers: undefined };
+      this.sourceSlide = this.controller.slideIndex; this.sourceBuild = 0; this.updateState(); return;
+    }
+    if (!this.surface) this.surface = new InteractionSurface(this.element(".player-renderer-content"));
+    const current = this.controller.currentBuild;
+    // Verify and preload the complete sequence once, so clicking never fetches remote content.
+    const ids = [...new Set((slide.builds || []).flatMap(step => [step.resourceId, ...(step.layers || []).map(layer => layer.resourceId)].filter((id): id is string => !!id)))];
+    await Promise.all(ids.map(id => this.buildSource(id)));
+    if (generation !== this.buildSequence || this.disposed) return;
+    const raster = current ? slide.builds?.[current - 1]?.resourceId : undefined;
+    const source = await this.buildSource(raster || this.controller.presentationId);
+    const layers: ResolvedLayer[] = [];
+    for (const step of (slide.builds || []).slice(0, current)) for (const layer of step.layers || []) layers.push({ ...layer, ...(layer.resourceId ? { url: (await this.buildSource(layer.resourceId)).url } : {}) });
+    if (generation !== this.buildSequence || this.disposed) return;
+    if (this.renderer.kind === "image") await this.renderer.setSource?.(source);
+    if (generation !== this.buildSequence || this.disposed) return;
+    this.source = { ...source, layers }; this.sourceSlide = this.controller.slideIndex; this.sourceBuild = current; this.surface.update(layers); this.updateState();
+  }
+  private navigate(direction: number): void { if (!this.controller.isPresentation) this.controller.moveSlide(direction); else if (direction > 0) this.controller.advance(); else this.controller.back(); void this.showResource(); }
   async dispatch(command: PlayerCommand | "ESCAPE"): Promise<void> {
     if (this.disposed) return;
     try {
@@ -207,7 +257,8 @@ export class ClassroomPlayer {
       } else if (command === "FULLSCREEN") {
         if (document.fullscreenElement) await document.exitFullscreen();
         else await this.element(".classroom-player").requestFullscreen();
-      } else if ((command === "NEXT" || command === "PREVIOUS") && this.controller.isPresentation) this.navigate(command === "NEXT" ? 1 : -1);
+      } else if (["ADVANCE", "BACK", "NEXT", "PREVIOUS"].includes(command) && this.controller.isPresentation) this.navigate(["ADVANCE", "NEXT"].includes(command) ? 1 : -1);
+      else if (command === "PLAY_PAUSE" && this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || "")) this.navigate(1);
       else await this.renderer?.command(command);
     } catch { if (!this.disposed) { this.state.error = "Este control no está disponible en este equipo o archivo."; this.updateState(); } }
   }
@@ -215,6 +266,7 @@ export class ClassroomPlayer {
   destroy(): void {
     if (this.disposed) return;
     this.disposed = true; ++this.sequence;
+    ++this.buildSequence; this.surface?.destroy(); this.verifiedSources.clear();
     this.projection.destroy();
     window.removeEventListener("keydown", this.keyListener); this.renderer?.destroy(); this.renderer = undefined;
     if (document.fullscreenElement && this.root.contains(document.fullscreenElement)) void document.exitFullscreen().catch(() => {});

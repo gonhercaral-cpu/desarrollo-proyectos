@@ -96,7 +96,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(download.name)}`,
         "X-Content-SHA256": download.checksums.sha256, "X-Content-Type-Options": "nosniff" });
       if (range) response.set("Content-Range", `bytes ${range.start}-${range.end}/${download.sizeBytes}`);
-      await pipeline(bucket.file(download.path, { generation: download.generation }).createReadStream(range || {}), response);
+      await pipeline(bucket.file(download.path, { generation: download.generation }).createReadStream({ ...range, decompress: false }), response);
     } catch (error) {
       if (response.headersSent) { response.destroy(); return; }
       response.removeHeader("Content-Length");

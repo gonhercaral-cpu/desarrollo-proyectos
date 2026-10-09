@@ -2,10 +2,12 @@ import { createRenderer } from "../renderers/factory.ts";
 import { rendererKind, type LocalRenderer } from "../types.ts";
 import { assertLocalUrl } from "../local-source.ts";
 import { isProjectionSnapshot, type ProjectionSnapshot } from "../ClassSessionController.ts";
+import { InteractionSurface } from "../InteractionSurface.ts";
 
 // Read-only follower. No shortcuts, session controller, auth or remote APIs.
 export class ProjectionPlayer {
   private renderer?: LocalRenderer;
+  private surface?: InteractionSurface;
   private snapshot?: ProjectionSnapshot;
   private key = "";
   private generation = 0;
@@ -24,8 +26,18 @@ export class ProjectionPlayer {
     if (!snapshot.source || snapshot.playback.error) { this.clear(); return; }
     const source = snapshot.source;
     try { assertLocalUrl(source.url); } catch { this.clear(); return; }
-    const key = `${snapshot.sessionId}:${snapshot.resourceId}:${source.url}`;
-    if (key === this.key) { if (snapshot.page !== this.page) { this.page = snapshot.page; void Promise.resolve(this.renderer?.setPage(snapshot.page)).catch(() => this.clear()); } this.followPlayback(); return; }
+    const key = `${snapshot.sessionId}:${snapshot.resourceId}:${rendererKind(source.mimeType) === "image" ? "image" : source.url}`;
+    if (key === this.key) {
+      try {
+        if (this.renderer?.kind === "image") await this.renderer.setSource?.(source);
+        if (this.snapshot !== snapshot || this.disposed) return;
+        if (snapshot.page !== this.page) { this.page = snapshot.page; await this.renderer?.setPage(snapshot.page); }
+        if (source.layers) { this.surface ||= new InteractionSurface(this.host); this.surface.update(source.layers); }
+        else { this.surface?.destroy(); this.surface = undefined; }
+        this.followPlayback();
+      } catch { this.clear(); }
+      return;
+    }
     this.clear(); this.key = key; const generation = this.generation;
     const kind = rendererKind(source.mimeType);
     // Teacher alone owns audio, including video sound. Audio projection has no media element.
@@ -38,6 +50,7 @@ export class ProjectionPlayer {
       await renderer.mount(this.host, { ...source, name: "" }, { page: snapshot.page, volume: 0, muted: true, silent: true, onPage: () => {}, onState: () => {} });
       if (generation !== this.generation || this.disposed) return;
       const latest = this.snapshot!; if (latest.page !== this.page) { this.page = latest.page; await renderer.setPage(latest.page); }
+      if ((kind === "image" || kind === "pdf") && latest.source?.layers) { this.surface = new InteractionSurface(this.host); if (kind === "image") await renderer.setSource?.(latest.source!); this.surface.update(latest.source.layers); }
       this.followPlayback();
     } catch { if (generation === this.generation) this.clear(); }
   }
@@ -46,6 +59,6 @@ export class ProjectionPlayer {
     const time = snapshot.playback.time + (snapshot.playback.playing ? Math.max(0, Date.now() - snapshot.updatedAt) / 1000 : 0);
     void Promise.resolve(this.renderer.applyPlayback({ ...snapshot.playback, time: Math.min(snapshot.playback.duration || time, time), muted: true, volume: 0 })).catch(() => this.clear());
   }
-  private clear(): void { ++this.generation; this.renderer?.destroy(); this.renderer = undefined; this.key = ""; this.page = 0; this.host.replaceChildren(); }
+  private clear(): void { ++this.generation; this.surface?.destroy(); this.surface = undefined; this.renderer?.destroy(); this.renderer = undefined; this.key = ""; this.page = 0; this.host.replaceChildren(); }
   destroy(): void { this.disposed = true; clearInterval(this.tick); this.clear(); }
 }

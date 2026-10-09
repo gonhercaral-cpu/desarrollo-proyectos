@@ -67,8 +67,23 @@ fn teacher(label: &str) -> Result<(), String> {
     if label == "teacher" { Ok(()) } else { Err("projection: Ventana sin permiso de control".into()) }
 }
 fn valid_snapshot(data: &Value) -> bool {
-    if data.to_string().len() > 16000 || data["revision"].as_u64().is_none() || data["sessionId"].as_str().map(|s| s.len() > 80).unwrap_or(true) { return false; }
+    if data.to_string().len() > 256000 || data["revision"].as_u64().is_none() || data["sessionId"].as_str().map(|s| s.len() > 80).unwrap_or(true) { return false; }
+    if !data["currentBuild"].is_null() && data["currentBuild"].as_u64().filter(|value| *value <= 50).is_none() { return false; }
     let source = &data["source"];
+    if !source["layers"].is_null() {
+        let Some(layers) = source["layers"].as_array().filter(|layers| layers.len() <= 50) else { return false; };
+        for layer in layers {
+            for key in ["x", "y", "width", "height"] {
+                if layer[key].as_f64().filter(|value| value.is_finite() && *value >= 0.0 && *value <= 100.0).is_none() { return false; }
+            }
+            if layer["width"].as_f64().unwrap_or(0.0) <= 0.0 || layer["height"].as_f64().unwrap_or(0.0) <= 0.0 || layer["x"].as_f64().unwrap_or(0.0) + layer["width"].as_f64().unwrap_or(0.0) > 100.0 || layer["y"].as_f64().unwrap_or(0.0) + layer["height"].as_f64().unwrap_or(0.0) > 100.0 { return false; }
+            match layer["type"].as_str() {
+                Some("image") => if !layer["url"].as_str().map(|url| url.len() <= 4096 && ["asset://localhost/", "http://asset.localhost/", "https://asset.localhost/"].iter().any(|prefix| url.starts_with(prefix))).unwrap_or(false) { return false; },
+                Some("text" | "answer") => if layer["text"].as_str().map(|text| text.len() <= 8000).unwrap_or(false) == false || layer["fontSize"].as_f64().filter(|value| *value >= 0.5 && *value <= 20.0).is_none() { return false; },
+                _ => return false,
+            }
+        }
+    }
     source.is_null() || source["url"].as_str().map(|url| {
         url.len() <= 4096 && (["asset://localhost/", "http://asset.localhost/", "https://asset.localhost/"].iter().any(|prefix| url.starts_with(prefix)) || media_url_shape(url))
     }).unwrap_or(false)
@@ -195,6 +210,16 @@ mod tests {
     #[test] fn monitor_identity_is_stable_and_distinct() {
         assert_eq!(monitor_id("HDMI", 1920, 1080, 1920, 0), monitor_id("HDMI", 1920, 1080, 1920, 0));
         assert_ne!(monitor_id("HDMI", 1920, 1080, 1920, 0), monitor_id("HDMI", 1920, 1080, 0, 0));
+    }
+    #[test] fn build_state_and_assets_remain_local_and_bounded() {
+        let mut data = json!({"sessionId":"session","revision":1,"currentBuild":2,"source":{"url":"asset://localhost/base.png","layers":[{"type":"answer","text":"Respuesta","x":10,"y":20,"width":30,"height":10,"fontSize":3}]}});
+        assert!(valid_snapshot(&data));
+        data["currentBuild"] = json!(51); assert!(!valid_snapshot(&data));
+        data["currentBuild"] = json!(2);
+        data["source"]["layers"][0] = json!({"type":"image","url":"https://example.com/remote.png","x":10,"y":20,"width":30,"height":10});
+        assert!(!valid_snapshot(&data));
+        data["source"]["layers"][0]["url"] = json!("asset://localhost/cache/asset.png"); assert!(valid_snapshot(&data));
+        data["source"]["layers"][0]["width"] = json!(100); assert!(!valid_snapshot(&data));
     }
     #[test] fn late_updates_cannot_restore_closed_or_older_session() {
         let mut state = ProjectionState::default();

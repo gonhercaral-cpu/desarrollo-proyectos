@@ -1,7 +1,7 @@
 {
   "name": "active-classroom",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,7 +28,8 @@
     "test:media:linux": "node tests/media-linux.mjs",
     "test:updater": "node --test tests/updater.test.mjs",
     "test:updater:linux": "node tests/updater-linux.mjs",
-    "test:startup": "node --test tests/startup.test.mjs"
+    "test:startup": "node --test tests/startup.test.mjs",
+    "test:builds": "node --test tests/builds.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.1",

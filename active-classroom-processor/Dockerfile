@@ -1,13 +1,13 @@
 FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp PORT=8080
 RUN apt-get update && apt-get install --no-install-recommends -y \
-    libreoffice-impress libreoffice-writer fonts-liberation fonts-crosextra-carlito \
+    libreoffice-impress libreoffice-writer poppler-utils fonts-liberation fonts-crosextra-carlito \
     fonts-dejavu-core fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py converter.py ./
+COPY app.py converter.py builds.py ./
 COPY tests ./tests
 RUN useradd --system --uid 10001 --no-create-home classroom
 USER 10001:10001

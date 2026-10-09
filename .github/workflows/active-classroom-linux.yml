@@ -24,6 +24,7 @@ on:
       - "active-classroom-processor/**"
       - "tests/active-classroom-office*"
       - "tests/active-classroom-slides*"
+      - "tests/active-classroom-builds*"
       - "docs/active-classroom-manifest.office.example.json"
 
 permissions:
@@ -69,6 +70,7 @@ jobs:
           npx eslint drive/activeClassroomProcessing*.js drive/activeClassroomProcessorClient.js drive/activeClassroomUnit.js tests/active-classroom-office*.cjs
           npx eslint drive/activeClassroomSlides.js drive/activeClassroomDriveContent.js tests/active-classroom-slides*.cjs
           npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
+          npx eslint drive/activeClassroomInteraction.js drive/activeClassroomBuildPreview.js src/active-classroom/components/SlideInteractionEditor.jsx src/active-classroom/utils/slideInteraction.js tests/active-classroom-builds*.cjs
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
           npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
           npm run build
@@ -82,7 +84,7 @@ jobs:
           fi
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs${publication_tests}"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
   office:
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04
@@ -168,6 +170,8 @@ jobs:
 
       - name: Tests Player
         run: npm run test:player
+      - name: Revelados progresivos y sesión offline compartida
+        run: npm run test:builds
 
       - name: Tests de interfaz visual Desktop
         run: npm run test:frontend

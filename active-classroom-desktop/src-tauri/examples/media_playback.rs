@@ -50,11 +50,26 @@ fn main() {
     let large_source = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), manifest["resources"][0]["resourceId"].as_str().unwrap()).unwrap(); assert!(large_source.url.is_some(), "{}", large_source.error.unwrap_or_default());
     let large_source = json!({"url": large_source.url, "mimeType": "video/mp4", "codecMime": large_source.codec_mime, "name": "H264 AAC 600 MiB fixture", "sizeBytes": large_size});
     let script = fs::read(std::env::var("ACTIVE_CLASSROOM_MEDIA_SCRIPT").unwrap()).unwrap();
+    let png_directory = std::path::PathBuf::from(std::env::var("ACTIVE_CLASSROOM_MEDIA_FIXTURE").unwrap()).parent().unwrap().to_path_buf();
+    let mut build_manifest = manifest.clone(); build_manifest["mainPresentationId"] = json!("state-0"); build_manifest["generalResourceIds"] = json!([]);
+    let mut build_resources = Vec::new(); let mut paths = serde_json::Map::new(); let mut allowed_paths = Vec::new();
+    for index in 0..3 {
+        let png = fs::read(png_directory.join(format!("state-{index}.png"))).unwrap(); let hash = format!("{:x}", Sha256::digest(&png));
+        let path = root.join("objects").join(&hash); fs::write(&path, &png).unwrap();
+        let mut resource = manifest["resources"][0].clone(); resource["resourceId"] = json!(format!("state-{index}")); resource["kind"] = json!("image"); resource["deliveryMime"] = json!("image/png"); resource["download"]["mimeType"] = json!("image/png"); resource["download"]["sizeBytes"] = json!(png.len()); resource["download"]["checksums"]["sha256"] = json!(hash);
+        paths.insert(format!("state-{index}"), json!(path)); allowed_paths.push(path); build_resources.push(resource);
+    }
+    build_manifest["resources"] = json!(build_resources);
+    build_manifest["slides"] = json!([
+        {"slideId":"interactive","index":0,"title":"Revelados","metadata":{"pageNumber":1,"presentationResourceId":"state-0"},"resourceIds":[],"interactionMode":"builds","buildCount":2,"interaction":{"mode":"builds","buildCount":2,"source":"pptx"},"builds":[{"order":1,"resourceId":"state-1"},{"order":2,"resourceId":"state-2"}]},
+        {"slideId":"static","index":1,"title":"Estática","metadata":{"pageNumber":1,"presentationResourceId":"state-0"},"resourceIds":[]}
+    ]);
+    let build_fixture = json!({"manifest":build_manifest,"paths":paths});
     let css = format!("{}\n{}\n{}", include_str!("../../src/design-system.css"), include_str!("../../src/styles.css"), include_str!("../../src/player/player.css"));
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap(); let csp = config["app"]["security"]["csp"].as_str().unwrap().to_string();
     let mut context = tauri::generate_context!(); context.config_mut().app.windows.clear();
     let passed = Arc::new(AtomicBool::new(false));
-    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "path": path, "manifest": manifest}))).manage(server).manage(passed.clone())
+    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "path": path, "manifest": manifest, "buildFixture": build_fixture}))).manage(server).manage(passed.clone())
         .register_uri_scheme_protocol("tauri", move |_, request| {
             let (mime, body) = match request.uri().path() {
                 "/test.js" => ("text/javascript", script.clone()), "/style.css" => ("text/css", css.as_bytes().to_vec()),
@@ -65,6 +80,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![media_fixture, fixture_report, fixture_fullscreen, fixture_size, local_media::classroom_media_diagnostic])
         .setup(move |app| {
             app.asset_protocol_scope().allow_file(&path)?;
+            for png_path in &allowed_paths { app.asset_protocol_scope().allow_file(png_path)?; }
             // Direct Cargo builds use devUrl unless custom-protocol is enabled.
             // Select the installed app's origin explicitly for this fixture.
             WebviewWindowBuilder::new(app, "teacher", WebviewUrl::CustomProtocol("tauri://localhost/media-test.html".parse().unwrap())).title("Media + scroll fixture").inner_size(1240.0, 820.0)

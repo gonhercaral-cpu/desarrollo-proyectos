@@ -112,3 +112,7 @@
 .projection-content .player-image, .projection-content .player-video { display: block; width: 100%; height: 100%; object-fit: contain; min-height: 0; }
 .projection-content .player-pdf-area { display: flex; align-items: center; justify-content: center; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
 .projection-content .player-pdf-area canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.player-renderer-content, .projection-content { position: relative; }
+.interaction-surface { position: absolute; pointer-events: none; }
+.player-build-indicator { position: absolute; right: 14px; bottom: 12px; border-radius: 999px; padding: 6px 12px; background: #ffffffec; color: #164d95; font-size: 12px; }
