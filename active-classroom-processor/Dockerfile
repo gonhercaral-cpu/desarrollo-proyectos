@@ -1,4 +1,5 @@
-FROM python:3.12-slim-bookworm
+# Docker Official Image from Docker's public ECR registry; avoids Hub CI 429s.
+FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp PORT=8080
 RUN apt-get update && apt-get install --no-install-recommends -y \
     libreoffice-impress libreoffice-writer poppler-utils fonts-liberation fonts-crosextra-carlito \
