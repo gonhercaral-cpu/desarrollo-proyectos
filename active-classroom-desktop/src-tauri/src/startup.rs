@@ -61,7 +61,10 @@ pub fn single_instance_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     })
 }
 pub fn enter_kiosk(window: &tauri::WebviewWindow) -> Result<(), String> {
-    if let Some(monitor) = window.primary_monitor().map_err(|_| "No se pudo consultar el monitor principal")? {
+    let monitor = window.primary_monitor().map_err(|_| "No se pudo consultar el monitor principal")?
+        .or_else(|| window.available_monitors().ok().and_then(|monitors| monitors.into_iter().next()));
+    // Some Wayland compositors expose no primary flag; use their first output.
+    if let Some(monitor) = monitor {
         let position = monitor.position();
         window.set_fullscreen_on_monitor(PhysicalPosition::new(position.x as f64, position.y as f64))
             .map_err(|_| "No se pudo iniciar el modo kiosco")?;

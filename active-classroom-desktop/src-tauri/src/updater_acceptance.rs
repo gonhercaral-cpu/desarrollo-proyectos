@@ -31,7 +31,9 @@ async fn acceptance_ready(window: tauri::WebviewWindow, app: tauri::AppHandle, p
     let startup = classroom_startup(window.clone(), app.clone(), app.state::<StartupGate>(), "status".into(), None, None).await?;
     assert!(startup.autostart && startup.kiosk && startup.launched_automatically && startup.kiosk_active);
     assert!(app.get_webview_window("audience").is_none(), "Kiosco no abre el proyector");
-    assert_eq!(window.current_monitor().map_err(|error| error.to_string())?.unwrap().position(), window.primary_monitor().map_err(|error| error.to_string())?.unwrap().position());
+    let primary = window.primary_monitor().map_err(|error| error.to_string())?
+        .or_else(|| window.available_monitors().ok().and_then(|monitors| monitors.into_iter().next())).unwrap();
+    assert_eq!(window.current_monitor().map_err(|error| error.to_string())?.unwrap().position(), primary.position());
     let status = classroom_app_update(window, app.clone(), app.state::<UpdateGate>(), "status".into(), Some(true)).await?;
     let expected = if stage.ends_with("restarted") { "1.0.7" } else { "1.0.6" };
     assert_eq!(app.package_info().version.to_string(), expected);
