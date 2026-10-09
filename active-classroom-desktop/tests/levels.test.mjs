@@ -17,3 +17,18 @@ test("catálogo legado sigue funcionando; metadata inválida rechazada", async (
   const api = new PublicationApi(async () => "token", async () => new Response(JSON.stringify({ result: { publications: [], levels: [{}], nextCursor: null } })));
   await assert.rejects(api.list(), { code: "response" });
 });
+test("nombres y orden sobreviven reinicio offline sin tocar caché de Units", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const saved = new Map();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) } });
+  try {
+    setLibraryLevels([{ id: "offline-level", name: "Conversación offline", position: 0, active: true }]);
+    const restarted = await import("../src/offline/levels.ts?offline-restart");
+    assert.equal(restarted.levelName("offline-level"), "Conversación offline");
+    assert.deepEqual(restarted.libraryLevelIds([]), ["offline-level"]);
+    assert.deepEqual([...saved.keys()], ["active-classroom-levels"]);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete globalThis.localStorage;
+  }
+});
