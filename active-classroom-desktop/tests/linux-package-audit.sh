@@ -9,15 +9,10 @@ apt-get update
 dpkg-deb -I "$deb"
 dpkg-deb -c "$deb"
 apt-cache policy policykit-1 pkexec libsecret-tools
-if [[ "$mode" == packagekit ]]; then
-  apt-get install -y --no-install-recommends packagekit-tools dbus
-  mkdir -p /run/dbus
-  dbus-daemon --system --fork --nopidfile
-  # Use the installed system D-Bus service. Starting a second daemon races
-  # auto-activation and corrupts the diagnostic with a locked SQLite database.
-  pkcon backend-details
+if [[ "$mode" == gdebi ]]; then
+  apt-get install -y --no-install-recommends gdebi-core
   set +e
-  timeout 240s pkcon --noninteractive --allow-untrusted install-local "$deb" 2>&1 | tee /tmp/installation.log
+  timeout 240s gdebi --non-interactive "$deb" 2>&1 | tee /tmp/installation.log
   status=${PIPESTATUS[0]}
   set -e
 else

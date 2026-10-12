@@ -89,6 +89,11 @@ test("CI publica nombre compatible con GitHub sin alterar paquete o firma", asyn
   await writeFile(join(directory, "CHANGELOG.md"), "## 1.0.5\nNotas de prueba\n");
   await writeFile(join(bundle, "Active Classroom_1.0.5_amd64.deb"), bytes);
   await writeFile(join(bundle, "Active Classroom_1.0.5_amd64.deb.sig"), signature);
+  const appimage = join(directory, "src-tauri/target/release/bundle/appimage");
+  await mkdir(appimage, { recursive: true });
+  const imageBytes = Buffer.from("AppImage fixture exact bytes");
+  await writeFile(join(appimage, "Active Classroom_1.0.5_amd64.AppImage"), imageBytes);
+  await writeFile(join(appimage, "Active Classroom_1.0.5_amd64.AppImage.sig"), signature);
   const script = fileURLToPath(new URL("../scripts/updater-release.mjs", import.meta.url));
   const result = spawnSync(process.execPath, [script, "metadata", destination], { cwd: directory, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
@@ -98,6 +103,11 @@ test("CI publica nombre compatible con GitHub sin alterar paquete o firma", asyn
   assert.equal(await readFile(join(destination, `${published}.sha256`), "utf8"), `${createHash("sha256").update(bytes).digest("hex")}  ${published}\n`);
   const metadata = JSON.parse(await readFile(join(destination, "latest.json"), "utf8"));
   assert.ok(metadata.platforms["linux-x86_64-deb"].url.endsWith(`/${published}`));
+  assert.deepEqual(Object.keys(metadata.platforms), ["linux-x86_64-deb"], "La opción portátil no cambia el contrato del updater Debian");
+  const publishedImage = "Active-Classroom-1.0.5-x86_64.AppImage";
+  assert.deepEqual(await readFile(join(destination, publishedImage)), imageBytes);
+  assert.equal(await readFile(join(destination, `${publishedImage}.sig`), "utf8"), signature);
+  assert.equal(await readFile(join(destination, `${publishedImage}.sha256`), "utf8"), `${createHash("sha256").update(imageBytes).digest("hex")}  ${publishedImage}\n`);
 });
 
 test("configuración distribuida tiene clave pública válida y artefactos de updater habilitados", async () => {

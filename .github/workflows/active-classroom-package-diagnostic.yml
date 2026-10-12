@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         ubuntu: ['22.04', '24.04', '26.04']
-        installer: [apt, packagekit]
+        installer: [apt, gdebi]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:

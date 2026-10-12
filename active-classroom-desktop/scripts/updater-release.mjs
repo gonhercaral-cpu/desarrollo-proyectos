@@ -1,4 +1,5 @@
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, copyFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,24 @@ export const releaseRepository = "gonhercaral-cpu/desarrollo-proyectos";
 export const updateEndpoint = `https://github.com/${releaseRepository}/releases/latest/download/latest.json`;
 // GitHub normalizes spaces in uploaded filenames. Publish an explicit safe name.
 export const updaterArtifactName = version => `Active.Classroom_${version}_amd64.deb`;
+export const appImageArtifactName = version => `Active-Classroom-${version}-x86_64.AppImage`;
+export async function bundleArtifacts(version) {
+  const deb = `Active Classroom_${version}_amd64.deb`;
+  const debDirectory = "src-tauri/target/release/bundle/deb";
+  const imagesDirectory = "src-tauri/target/release/bundle/appimage";
+  const debs = (await readdir(debDirectory)).filter(name => name.endsWith(".deb"));
+  const images = (await readdir(imagesDirectory)).filter(name => name.endsWith(".AppImage"));
+  if (debs.length !== 1 || debs[0] !== deb || images.length !== 1 || !new RegExp(`^Active Classroom_${version.replaceAll(".", "\\.")}_(amd64|x86_64)\\.AppImage$`).test(images[0])) throw new Error("Artefactos Linux inesperados");
+  return [
+    { path: join(debDirectory, deb), name: updaterArtifactName(version) },
+    { path: join(imagesDirectory, images[0]), name: appImageArtifactName(version) },
+  ];
+}
+export async function sha256(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
 export function publicKey(value) {
   const decoded = Buffer.from(value || "", "base64").toString("utf8");
   const lines = decoded.trim().split(/\r?\n/);
@@ -34,27 +53,29 @@ export async function releaseNotes(version) {
 async function main() {
   const [action, destination] = process.argv.slice(2);
   const version = JSON.parse(await readFile("package.json", "utf8")).version;
-  if (action === "config") {
+  if (action === "config" || action === "build-config") {
     const key = publicKey(process.env.ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY);
     const configured = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
     if (publicKey(configured.plugins?.updater?.pubkey) !== key || configured.plugins.updater.endpoints?.[0] !== updateEndpoint) throw new Error("Clave/endpoint compilados no coinciden con configuración oficial de release");
-    await writeFile(destination, JSON.stringify({ bundle: { createUpdaterArtifacts: true }, plugins: { updater: { pubkey: key, endpoints: [updateEndpoint], requireSignedVersion: true } } }));
+    // Build without signing secrets. CI signs these exact bytes only after clean
+    // installation and executable smoke tests pass on every supported base.
+    await writeFile(destination, JSON.stringify({ bundle: { createUpdaterArtifacts: action !== "build-config" }, plugins: { updater: { pubkey: key, endpoints: [updateEndpoint], requireSignedVersion: true } } }));
   } else if (action === "metadata") {
-    const directory = "src-tauri/target/release/bundle/deb";
-    const expected = `Active Classroom_${version}_amd64.deb`;
-    const packages = (await readdir(directory)).filter(name => name.endsWith(".deb"));
-    if (packages.length !== 1 || packages[0] !== expected) throw new Error("Paquete Debian inesperado");
-    const bytes = await readFile(join(directory, expected));
-    const signature = await readFile(join(directory, `${expected}.sig`), "utf8");
+    const artifacts = await bundleArtifacts(version);
+    const signature = await readFile(`${artifacts[0].path}.sig`, "utf8");
     const notes = await releaseNotes(version);
     await mkdir(destination, { recursive: true });
     await writeFile(join(destination, "latest.json"), JSON.stringify(manifest(version, signature, notes), null, 2) + "\n");
     await writeFile(join(destination, "release-notes.md"), notes + "\n");
-    const published = updaterArtifactName(version);
-    await writeFile(join(destination, published), bytes);
-    await writeFile(join(destination, `${published}.sig`), signature);
-    await writeFile(join(destination, `${published}.sha256`), `${createHash("sha256").update(bytes).digest("hex")}  ${published}\n`);
-    await writeFile(join(directory, `${expected}.sha256`), `${createHash("sha256").update(bytes).digest("hex")}  ${basename(expected)}\n`);
-  } else { throw new Error("Uso: updater-release.mjs config <path> | metadata <directory>"); }
+    for (const artifact of artifacts) {
+      const signed = await readFile(`${artifact.path}.sig`, "utf8");
+      manifest(version, signed, notes); // Require signed version for both formats.
+      const checksum = await sha256(artifact.path);
+      await copyFile(artifact.path, join(destination, artifact.name));
+      await writeFile(join(destination, `${artifact.name}.sig`), signed);
+      await writeFile(join(destination, `${artifact.name}.sha256`), `${checksum}  ${artifact.name}\n`);
+      await writeFile(`${artifact.path}.sha256`, `${checksum}  ${basename(artifact.path)}\n`);
+    }
+  } else { throw new Error("Uso: updater-release.mjs config|build-config <path> | metadata <directory>"); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

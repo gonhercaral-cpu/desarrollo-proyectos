@@ -1,8 +1,8 @@
 [package]
 name = "active-classroom"
-version = "1.0.12"
+version = "1.0.13"
 description = "Panel docente y vista de alumnado para un salón de clases activo"
-authors = ["Active Classroom"]
+authors = ["Active Classroom <gonher.car.al@gmail.com>"]
 edition = "2021"
 
 [lib]
