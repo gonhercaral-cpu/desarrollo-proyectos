@@ -1355,6 +1355,7 @@ async function getClassroomProfile(uid) {
 const classroomPermissions = createPermissionHandlers({ db: admin.firestore(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() });
 exports.listActiveClassroomCollaborators = onCall(classroomPermissions.list);
 exports.setActiveClassroomPermissions = onCall(classroomPermissions.save);
+exports.discardActiveClassroomUpload = onCall(require("./activeClassroomUploadCleanup").createUploadCleanup({ db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
 async function assertClassroomDriveRead(profile, drive, fileId) {
   try { return await assertCanAccessDriveItem({ profile, drive, fileId, requireWrite: false }); }
   catch (error) {

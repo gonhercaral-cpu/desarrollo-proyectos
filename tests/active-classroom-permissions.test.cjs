@@ -33,3 +33,15 @@ test("gestionar permisos no concede administración global y escritura valida ca
   const denied = createPermissionHandlers({ db, getProfile: async () => grant(["editUnits"]) });
   await assert.rejects(denied.save({ auth: { uid: "editor" }, data: {} }), { code: "permission-denied" });
 });
+
+test("rollback de subida valida dueño, impide borrar asociados e invalida reutilización del ID", async () => {
+  const { createUploadCleanup } = require("../drive/activeClassroomUploadCleanup");
+  let associated = false, deleted = 0; const markers = [];
+  const db = { collection: name => ({ doc: id => ({ name, id }) }), runTransaction: operation => operation({ get: async () => ({ exists: associated }), set: (ref, value) => markers.push([ref, value]) }) };
+  const file = { getMetadata: async () => [{ generation: "12", metadata: { uploadedByUid: "collaborator" } }], delete: async options => { assert.equal(options.ifGenerationMatch, "12"); deleted++; } };
+  const cleanup = createUploadCleanup({ db, bucket: { file: path => { assert.match(path, /^active-classroom\/resources\/upload\/a.pdf$/); return file; } }, getProfile: async () => grant(["uploadMaterial"]), timestamp: () => "now" });
+  const request = { auth: { uid: "collaborator" }, data: { resourceId: "upload", fileName: "a.pdf" } };
+  associated = true; await assert.rejects(cleanup(request), { code: "failed-precondition" }); assert.equal(deleted, 0);
+  associated = false; await cleanup(request); assert.equal(deleted, 1); assert.equal(markers[0][0].name, "activeClassroomDiscardedUploads");
+  await assert.rejects(cleanup({ ...request, auth: { uid: "other" } }), { code: "permission-denied" });
+});

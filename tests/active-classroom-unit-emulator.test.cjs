@@ -24,14 +24,15 @@ const files = createPublicationFiles({ db, bucket, resolveFile, openDrive: async
   if (changeDuringRead) source = { ...source, version: "999" };
   return Readable.from(bytes);
 } });
-const getProfile = async (uid) => uid === "admin" ? profile : { role: "requester", active: uid !== "inactive" };
+const getProfile = async (uid) => uid === "admin" ? profile : { ...readerProfile, active: uid !== "inactive", activeClassroomPermissions: uid === "ungranted" ? {} : readerProfile.activeClassroomPermissions };
 const handlers = createUnitHandlers({ db, getProfile, resolveFile, prepareResource: files.prepareResource, timestamp: () => admin.firestore.FieldValue.serverTimestamp() });
 const desktop = createDesktopHandlers({ db, getProfile, resolveFile, bucket, getRequestProfile: async (request) => {
   if (request.headers.authorization !== "Bearer test-token") { const error = new Error("Debes iniciar sesión."); error.code = "unauthenticated"; throw error; }
-  return { active: true };
+  return readerProfile;
 } });
 const request = (data, uid = "admin") => ({ auth: { uid }, data: { unitId, ...data } });
 const draft = { name: "Unit 1", description: "Prueba", levelId: "mvp-level", status: "active", metadata: { tags: [] }, mainPresentationId: "mvp-main", generalResourceIds: ["mvp-audio"], slides: [{ slideId: "slide-1", title: "Inicio", resourceIds: ["mvp-audio"], metadata: { pageNumber: 1 } }] };
+const readerProfile = { active: true, role: "requester", activeClassroomPermissions: { access: true } };
 let versionOne;
 before(async () => {
   await db.doc(`activeClassroomUnits/${unitId}`).delete();
@@ -64,7 +65,7 @@ test("publicaciones concurrentes congelan bytes una sola versión y retienen ori
   const { version, publishedAt, integrity, ...content } = versionOne;
   assert.equal(version, 1); assert.ok(publishedAt);
   assert.equal(integrity.contentHash, contentHash(content));
-  const downloaded = await desktop.resolveDownload({ active: true }, { unitId, version: 1, resourceId: "mvp-main" });
+  const downloaded = await desktop.resolveDownload(readerProfile, { unitId, version: 1, resourceId: "mvp-main" });
   const [actual] = await bucket.file(downloaded.path, { generation: downloaded.generation }).download();
   assert.deepEqual(actual, bytes);
   assert.equal(downloaded.checksums.sha256, createHash("sha256").update(actual).digest("hex"));
@@ -81,7 +82,7 @@ test("actualizar Drive solo cambia borrador; versión anterior conserva manifest
   assert.equal((await handlers.refreshDrive(request({ resourceId: "mvp-main", expectedRevision: 1 }))).draftRevision, 2);
   assert.equal((await handlers.publish(request({ expectedRevision: 2 }))).version, 2);
   assert.deepEqual((await desktop.get(request({ version: 1 }, "reader"))).manifest, versionOne);
-  const old = await desktop.resolveDownload({ active: true }, { unitId, version: 1, resourceId: "mvp-main" });
+  const old = await desktop.resolveDownload(readerProfile, { unitId, version: 1, resourceId: "mvp-main" });
   const [actual] = await bucket.file(old.path, { generation: old.generation }).download();
   assert.equal(actual.toString(), "contenido original PDF simulado");
   assert.equal((await desktop.get(request({}, "reader"))).manifest.version, 2);
@@ -89,11 +90,12 @@ test("actualizar Drive solo cambia borrador; versión anterior conserva manifest
 test("Desktop no expone borradores, exige perfil activo, pertenencia a publicación y ACL Drive", async () => {
   await assert.rejects(desktop.get({ data: { unitId } }), { code: "unauthenticated" });
   await assert.rejects(desktop.list(request({}, "inactive")), { code: "permission-denied" });
+  await assert.rejects(desktop.list(request({}, "ungranted")), { code: "permission-denied" });
   await assert.rejects(desktop.get(request({ version: 99 }, "reader")), { code: "not-found" });
-  await assert.rejects(desktop.resolveDownload({ active: true }, { unitId, version: 1, resourceId: "foreign" }), { code: "not-found" });
-  await assert.rejects(desktop.resolveDownload({ active: true }, { unitId, version: 1, resourceId: "../secrets" }), { code: "invalid-argument" });
+  await assert.rejects(desktop.resolveDownload(readerProfile, { unitId, version: 1, resourceId: "foreign" }), { code: "not-found" });
+  await assert.rejects(desktop.resolveDownload(readerProfile, { unitId, version: 1, resourceId: "../secrets" }), { code: "invalid-argument" });
   denySource = true;
-  await assert.rejects(desktop.resolveDownload({ active: true }, { unitId, version: 1, resourceId: "mvp-main" }), { code: "permission-denied" });
+  await assert.rejects(desktop.resolveDownload(readerProfile, { unitId, version: 1, resourceId: "mvp-main" }), { code: "permission-denied" });
   denySource = false;
   await db.doc("activeClassroomUnits/aaa-draft-only").set({ draft: { name: "Secreto" } });
   const first = await desktop.list(request({ limit: 1 }, "reader"));
@@ -146,7 +148,7 @@ test("HTTP entrega bytes exactos y checksum, rechaza sesión ausente y métodos 
 
 test("publicación antigua exige nueva versión; publicar nunca modifica un borrador concurrente", async () => {
   await db.doc(`activeClassroomUnits/${unitId}/publications/99`).set({ manifest: { ...versionOne, schemaVersion: 1, version: 99 } });
-  await assert.rejects(desktop.resolveDownload({ active: true }, { unitId, version: 99, resourceId: "mvp-main" }), { code: "failed-precondition" });
+  await assert.rejects(desktop.resolveDownload(readerProfile, { unitId, version: 99, resourceId: "mvp-main" }), { code: "failed-precondition" });
   await db.doc(`activeClassroomUnits/${unitId}/publications/99`).delete();
   let edited = false;
   const concurrent = createUnitHandlers({ db, getProfile, resolveFile, timestamp: () => admin.firestore.FieldValue.serverTimestamp(), prepareResource: async () => {

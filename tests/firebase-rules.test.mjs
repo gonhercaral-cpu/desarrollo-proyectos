@@ -2844,7 +2844,7 @@ describe("Permisos granulares Active Classroom", () => {
     await prepare(); await grant({ uploadMaterial: true });
     const file = validActiveClassroomResource("uploaded", { createdByUid: "collab", updatedByUid: "collab" });
     await assertSucceeds(setDoc(doc(auth("collab"), "activeClassroomResources", "uploaded"), file));
-    await assertSucceeds(storageAuth("collab").ref("active-classroom/resources/uploaded/a.pdf").putString("pdf", "raw", { contentType: "application/pdf" }));
+    await assertSucceeds(storageAuth("collab").ref("active-classroom/resources/uploaded/a.pdf").putString("pdf", "raw", { contentType: "application/pdf", customMetadata: { uploadedByUid: "collab" } }));
     await assertFails(updateDoc(doc(auth("collab"), "activeClassroomResources", "uploaded"), { published: true, updatedAt: serverTimestamp(), updatedByUid: "collab", updatedByName: "Collab" }));
     await assertFails(setDoc(doc(auth("collab"), "activeClassroomFolders", "new-level"), validActiveClassroomFolder({ createdByUid: "collab", updatedByUid: "collab" })));
     await assertFails(deleteDoc(doc(auth("collab"), "activeClassroomResources", "granular")));
@@ -2861,5 +2861,9 @@ describe("Permisos granulares Active Classroom", () => {
     await assertFails(getDoc(doc(auth("collab"), "activeClassroomResources", "granular")));
     await assertSucceeds(getDoc(doc(auth("admin"), "activeClassroomResources", "granular")));
     await assertFails(updateDoc(doc(auth("collab"), "users", "collab"), { role: "admin" }));
+    await grant({ uploadMaterial: true });
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomDiscardedUploads", "discarded"), { ownerUid: "collab" }); });
+    await assertFails(setDoc(doc(auth("collab"), "activeClassroomResources", "discarded"), validActiveClassroomResource("discarded", { createdByUid: "collab", updatedByUid: "collab" })));
+    await assertFails(storageAuth("collab").ref("active-classroom/resources/forged-owner/a.pdf").putString("pdf", "raw", { contentType: "application/pdf", customMetadata: { uploadedByUid: "admin" } }));
   });
 });

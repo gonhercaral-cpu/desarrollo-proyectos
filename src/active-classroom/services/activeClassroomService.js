@@ -193,6 +193,7 @@ export async function uploadActiveClassroomResources(files, folderId, user) {
       customMetadata: {
         folderId,
         originalName: file.name,
+        uploadedByUid: user.uid,
       },
     });
 
@@ -218,7 +219,7 @@ export async function uploadActiveClassroomResources(files, folderId, user) {
       await setDoc(resourceRef, payload);
       return { id: resourceRef.id, ...payload };
     } catch (error) {
-      await deleteObject(storageReference).catch(() => {});
+      await httpsCallable(functions, "discardActiveClassroomUpload")({ resourceId: resourceRef.id, fileName: cleanFileName(file.name) }).catch(() => {});
       throw error;
     }
   }));

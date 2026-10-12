@@ -2534,6 +2534,7 @@ service cloud.firestore {
     function validActiveClassroomResourceCreate(resourceId) {
       let incomingData = request.resource.data;
       return canClassroom("uploadMaterial")
+        && !exists(/databases/$(database)/documents/activeClassroomDiscardedUploads/$(resourceId))
         && validStringPair(incomingData, "storagePath", "createdByName")
         && validBoolPair(incomingData, "published", "archived")
         && incomingData.published == false && incomingData.archived == false

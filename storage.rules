@@ -978,11 +978,12 @@ service firebase.storage {
       allow read: if canReadActiveClassroomResource(resourceId);
 
       allow create: if canClassroom("uploadMaterial")
-        && validActiveClassroomFile(fileName);
+        && validActiveClassroomFile(fileName)
+        && (isAdmin() || request.resource.metadata.get("uploadedByUid", "") == request.auth.uid);
 
       allow update: if false;
 
-      allow delete: if (canClassroom("orderMaterial") || (canClassroom("uploadMaterial") && !firestore.exists(activeClassroomResourcePath(resourceId))))
+      allow delete: if isAdmin()
         && (!firestore.exists(activeClassroomResourcePath(resourceId))
           || firestore.get(activeClassroomResourcePath(resourceId)).data.get("retainedByPublication", false) == false);
     }
