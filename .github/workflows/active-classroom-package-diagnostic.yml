@@ -1,0 +1,29 @@
+name: Diagnóstico paquete Linux publicado
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/active-classroom-linux-packaging]
+    paths:
+      - .github/workflows/active-classroom-package-diagnostic.yml
+      - active-classroom-desktop/tests/linux-package-audit.sh
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['22.04', '24.04', '26.04']
+        installer: [apt, packagekit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Bytes exactos de 1.0.12 y sistema limpio
+        run: |
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/current.deb" https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.12/Active.Classroom_1.0.12_amd64.deb
+          echo 'fb11b42dfddaedaf2f4b49902bf23da5f2d9b89edd14fd64e95a399d3a881572  current.deb' > "$RUNNER_TEMP/current.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum --check current.sha256)
+          docker run --rm -v "$RUNNER_TEMP/current.deb:/package/current.deb:ro" -v "$GITHUB_WORKSPACE/active-classroom-desktop/tests/linux-package-audit.sh:/audit.sh:ro" ubuntu:${{ matrix.ubuntu }} bash /audit.sh /package/current.deb '${{ matrix.installer }}'
