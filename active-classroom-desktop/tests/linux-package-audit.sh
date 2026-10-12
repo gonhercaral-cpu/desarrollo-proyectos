@@ -13,16 +13,11 @@ if [[ "$mode" == packagekit ]]; then
   apt-get install -y --no-install-recommends packagekit-tools dbus
   mkdir -p /run/dbus
   dbus-daemon --system --fork --nopidfile
-  daemon="$(dpkg -L packagekit | grep '/packagekitd$')"
-  "$daemon" > /tmp/packagekit.log 2>&1 &
-  daemon_pid=$!
-  trap 'kill "$daemon_pid" 2>/dev/null || true; cat /tmp/packagekit.log' EXIT
-  for attempt in $(seq 1 60); do
-    pkcon backend-details >/dev/null 2>&1 && break
-    sleep .5
-  done
+  # Use the installed system D-Bus service. Starting a second daemon races
+  # auto-activation and corrupts the diagnostic with a locked SQLite database.
+  pkcon backend-details
   set +e
-  pkcon --noninteractive --allow-untrusted install-local "$deb" 2>&1 | tee /tmp/installation.log
+  timeout 240s pkcon --noninteractive --allow-untrusted install-local "$deb" 2>&1 | tee /tmp/installation.log
   status=${PIPESTATUS[0]}
   set -e
 else
