@@ -1351,7 +1351,7 @@ async function resolveActiveClassroomDriveFile(profile, fileId) {
   await assertCanAccessDriveItem({ profile, drive, fileId, requireWrite: false });
   const response = await drive.files.get({
     fileId,
-    fields: "id,name,mimeType,modifiedTime,version,md5Checksum,size,parents,trashed,capabilities(canDownload)",
+    fields: "id,name,mimeType,modifiedTime,version,md5Checksum,size,parents,trashed,resourceKey,capabilities(canDownload)",
     supportsAllDrives: true,
   });
   return response.data;
@@ -1374,7 +1374,7 @@ const classroomProcessing = createDocumentProcessing({
     rasterize: async ({ profile, resource, revision }) => {
       const deliveredMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
       const original = await classroomFiles.prepareResource(profile, resource, { deliveryOverride: { exported: true, deliveredMimeType, deliveredName: `${resource.name.replace(/\.pptx$/i, "")}.pptx` } });
-      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v1", extension: "pptx" });
+      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx" });
     },
     verifyRaster: (result, revision) => classroomProcessing.verifyDerivative(result, revision),
   }),

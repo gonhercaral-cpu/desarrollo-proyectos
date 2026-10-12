@@ -16,7 +16,7 @@ app.config["MAX_CONTENT_LENGTH"] = 512 * 1024
 
 
 def validate_request(data):
-    if not isinstance(data, dict) or data.get("processorVersion") not in {PROCESSOR_VERSION, "pptx-builds-png-v1"}:
+    if not isinstance(data, dict) or data.get("processorVersion") not in {PROCESSOR_VERSION, "pptx-builds-png-v1", "pptx-builds-png-v2"}:
         raise ValueError("invalid-processor-version")
     revision = data.get("revision", "")
     if not re.fullmatch(r"[a-f0-9-]{36}", revision) or data.get("extension") not in {"ppt", "pptx", "doc", "docx"}:
@@ -59,7 +59,7 @@ def plan():
     try:
         data = request.get_json()
         original = validate_request(data)
-        if data["extension"] != "pptx" or data["processorVersion"] != "pptx-builds-png-v1":
+        if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
             raise ValueError("invalid-plan-request")
         with tempfile.TemporaryDirectory(prefix="classroom-plan-") as workspace:
             result = analyze_pptx(download_source(data, original, workspace))
@@ -92,7 +92,7 @@ def upload_pngs(data, source, workspace):
                 if response.status not in [200, 201]:
                     raise ValueError("upload-failed")
         del state["path"]
-    return {"processorVersion": "pptx-builds-png-v1", "revision": data["revision"], "pageCount": len(plan["slides"]), "slides": plan["slides"], "states": states}
+    return {"processorVersion": data["processorVersion"], "revision": data["revision"], "pageCount": len(plan["slides"]), "slides": plan["slides"], "states": states}
 
 
 @app.get("/health")
@@ -110,7 +110,7 @@ def convert():
     try:
         with tempfile.TemporaryDirectory(prefix="classroom-office-") as workspace:
             source = download_source(data, original, workspace)
-            if data["processorVersion"] == "pptx-builds-png-v1":
+            if data["processorVersion"] in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
                 if data["extension"] != "pptx":
                     raise ValueError("invalid-pptx-extension")
                 return jsonify(upload_pngs(data, source, workspace))

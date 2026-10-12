@@ -167,3 +167,11 @@ test("Google Slides conserva builds de PPTX exportado, IDs nativos y verificaci�
   assert.equal(rendered.pages[0].builds.length, 1); assert.equal(f.calls.length, 0);
   assert.equal(await f.processor.verify(rendered), rendered.download); assert.equal(verified, 1);
 });
+
+test("LRO ya listo no se sondea; conserva resource key y autenticación solo hacia Google", async () => {
+  const { openSlidesExport } = require("../drive/activeClassroomDriveContent");
+  const drive = { files: { download: async () => ({ data: { done: true, metadata: { resourceKey: "key" }, response: { downloadUri: "https://www.googleapis.com/download/drive/file" } } }) }, operations: { get: () => assert.fail("No sondear operación ya terminada") }, context: { _options: { auth: { getRequestHeaders: async () => new Headers({ Authorization: "Bearer test" }) } } } };
+  const stream = await openSlidesExport(drive, "file", { request: async (url, options) => { assert.equal(url.hostname, "www.googleapis.com"); assert.equal(options.headers.get("X-Goog-Drive-Resource-Keys"), "file/key"); assert.equal(options.headers.get("Authorization"), "Bearer test"); return new Response("export"); } });
+  let value = ""; for await (const chunk of stream) value += chunk;
+  assert.equal(value, "export");
+});
