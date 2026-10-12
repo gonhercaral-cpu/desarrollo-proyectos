@@ -1346,9 +1346,46 @@ exports.driveFileContent = onRequest(
   }
 );
 
+const { requireClassroom, createPermissionHandlers } = require("./activeClassroomPermissions");
+async function getClassroomProfile(uid) {
+  const profile = await getUserProfile(uid);
+  const grant = await admin.firestore().doc(`activeClassroomPermissions/${uid}`).get();
+  return { ...profile, activeClassroomPermissions: grant.data()?.permissions || {} };
+}
+const classroomPermissions = createPermissionHandlers({ db: admin.firestore(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() });
+exports.listActiveClassroomCollaborators = onCall(classroomPermissions.list);
+exports.setActiveClassroomPermissions = onCall(classroomPermissions.save);
+async function assertClassroomDriveRead(profile, drive, fileId) {
+  try { return await assertCanAccessDriveItem({ profile, drive, fileId, requireWrite: false }); }
+  catch (error) {
+    if (error.code !== "permission-denied") throw error;
+    requireClassroom(profile, "importDrive");
+    const root = (await admin.firestore().doc(DRIVE_SETTINGS_PATH).get()).data()?.rootFolderId;
+    if (!root) throw error;
+    const access = await resolveFolderAccess(drive, requireString(fileId, "fileId"), [root]);
+    if (!access.insideAllowedRoot || access.privacyRootId) throw error;
+    return fileId;
+  }
+}
+exports.listActiveClassroomDriveFiles = onCall(async request => {
+  const profile = requireClassroom(await getClassroomProfile(request.auth?.uid), "importDrive");
+  const rootFolderId = (await admin.firestore().doc(DRIVE_SETTINGS_PATH).get()).data()?.rootFolderId;
+  if (!rootFolderId) throw new HttpsError("failed-precondition", "Configura Nube AES antes de importar.");
+  const folderId = request.data?.folderId || rootFolderId;
+  const drive = await getDriveClient();
+  await assertClassroomDriveRead(profile, drive, folderId);
+  const files = []; let pageToken;
+  do {
+    const result = await drive.files.list({ q: `'${escapeDriveQueryValue(folderId)}' in parents and trashed = false`, fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,parents)", orderBy: "folder,name_natural", pageSize: 100, pageToken, supportsAllDrives: true, includeItemsFromAllDrives: true });
+    const entries = await enrichDriveFilesWithPrivateMetadata((result.data.files || []).map(normalizeDriveFile));
+    for (const file of entries) { if (!file.isPrivate) { files.push(file); continue; } try { await assertClassroomDriveRead(profile, drive, file.id); files.push(file); } catch (error) { if (error.code !== "permission-denied") throw error; } }
+    pageToken = result.data.nextPageToken;
+  } while (pageToken);
+  return { folderId, rootFolderId, files };
+});
 async function resolveActiveClassroomDriveFile(profile, fileId) {
   const drive = await getDriveClient();
-  await assertCanAccessDriveItem({ profile, drive, fileId, requireWrite: false });
+  await assertClassroomDriveRead(profile, drive, fileId);
   const response = await drive.files.get({
     fileId,
     fields: "id,name,mimeType,modifiedTime,version,md5Checksum,size,parents,trashed,resourceKey,capabilities(canDownload)",
@@ -1368,7 +1405,7 @@ const processorUrl = defineString("ACTIVE_CLASSROOM_PROCESSOR_URL", { default: "
 const processorAuth = new google.auth.GoogleAuth();
 const classroomConvert = createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) });
 const classroomProcessing = createDocumentProcessing({
-  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getUserProfile,
+  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile,
   prepareResource: classroomFiles.prepareResource,
   googleSlides: createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }),
     rasterize: async ({ profile, resource, revision }) => {
@@ -1383,19 +1420,19 @@ const classroomProcessing = createDocumentProcessing({
 });
 exports.processActiveClassroomDocument = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomProcessing.process);
 exports.getActiveClassroomBuildPreview = onCall({ timeoutSeconds: 120, memory: "1GiB" }, require("./activeClassroomBuildPreview").createBuildPreview({
-  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getUserProfile, prepareResource: classroomProcessing.prepareDelivery,
+  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile, prepareResource: classroomProcessing.prepareDelivery,
 }));
 const classroomUnits = createUnitHandlers({
-  db: admin.firestore(), getProfile: getUserProfile,
+  db: admin.firestore(), getProfile: getClassroomProfile,
   resolveFile: resolveActiveClassroomDriveFile,
   prepareResource: classroomProcessing.prepareDelivery,
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
-exports.manageActiveClassroomLevel = onCall(require("./activeClassroomLevels").createLevelHandler({ db: admin.firestore(), getProfile: getUserProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
+exports.manageActiveClassroomLevel = onCall(require("./activeClassroomLevels").createLevelHandler({ db: admin.firestore(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
 exports.validateActiveClassroomPublication = onCall({ timeoutSeconds: 540 }, classroomUnits.validatePublication);
 const classroomPublicationJobs = createPublicationJobs({
-  db: admin.firestore(), units: classroomUnits, getProfile: getUserProfile,
+  db: admin.firestore(), units: classroomUnits, getProfile: getClassroomProfile,
   prepareResource: classroomProcessing.prepareDelivery, verifyDownload: classroomFiles.verifyDownload,
   enqueue: (data) => getFunctions().taskQueue("locations/us-central1/functions/publishActiveClassroomUnitResources").enqueue(data, { dispatchDeadlineSeconds: taskTimeoutSeconds }),
 });
@@ -1408,7 +1445,7 @@ exports.publishActiveClassroomUnitResources = onTaskDispatched({
 exports.checkActiveClassroomDriveChanges = onCall({ timeoutSeconds: 540 }, classroomUnits.checkDrive);
 exports.refreshActiveClassroomDriveResource = onCall(classroomUnits.refreshDrive);
 
-const classroomDevices = createDeviceHandlers({ db: admin.firestore(), auth: admin.auth(), assertAdmin });
+const classroomDevices = createDeviceHandlers({ db: admin.firestore(), auth: admin.auth(), assertAdmin: async request => requireClassroom(await getClassroomProfile(request.auth?.uid), "manageDevices") });
 exports.activeClassroomDeviceSession = onCall(classroomDevices.session);
 exports.approveActiveClassroomDevice = onCall(classroomDevices.approve);
 exports.revokeActiveClassroomDevice = onCall(classroomDevices.revoke);
@@ -1417,12 +1454,12 @@ exports.rejectActiveClassroomDevice = onCall(classroomDevices.reject);
 exports.renameActiveClassroomDevice = onCall(classroomDevices.rename);
 exports.reportActiveClassroomDeviceSync = onCall(classroomDevices.reportSync);
 const classroomDesktop = createDesktopHandlers({
-  db: admin.firestore(), getProfile: getUserProfile, authorizeDevice: classroomDevices.authorizeDevice, isDevice,
+  db: admin.firestore(), getProfile: getClassroomProfile, authorizeDevice: classroomDevices.authorizeDevice, isDevice,
   getRequestProfile: async (request) => {
     const authorization = normalizeString(request.headers.authorization);
     if (!authorization.startsWith("Bearer ")) throw new HttpsError("unauthenticated", "Equipo sin sesión.");
     const decoded = await admin.auth().verifyIdToken(authorization.slice(7));
-    return isDevice(decoded) ? classroomDevices.authorizeDevice(decoded) : getUserProfile(decoded.uid);
+    return isDevice(decoded) ? classroomDevices.authorizeDevice(decoded) : getClassroomProfile(decoded.uid);
   },
   resolveFile: resolveActiveClassroomDriveFile, bucket: admin.storage().bucket(),
 });
@@ -1435,7 +1472,7 @@ exports.activeClassroomPublicationFile = onRequest(
 exports.importDriveFileToActiveClassroom = onCall(
   createImportDriveReference({
     db: admin.firestore(),
-    getProfile: getUserProfile,
+    getProfile: getClassroomProfile,
     timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
     resolveFile: resolveActiveClassroomDriveFile,
   })

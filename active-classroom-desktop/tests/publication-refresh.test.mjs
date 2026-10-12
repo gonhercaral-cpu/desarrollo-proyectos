@@ -176,7 +176,9 @@ test("Biblioteca real: auto-update preparado durante clase, nivel completo y Uni
   globalThis.autoHarness.close(); await settle(() => root.textContent.includes("Publicada: v2 · Local: v2"));
   assert.doesNotMatch(root.textContent, /requiere reparación/);
   assert.equal((await disk.list())[0].version, 2);
-  assert.ok(untouched); root.querySelector(`[data-download-level="${next.publication.levelId}"]`).click();
+  assert.equal(root.querySelector(".library-workspace [data-download-level]"), null);
+  root.querySelector(`.classroom-sidebar [data-level="${old.publication.levelId}"]`).click();
+  assert.ok(untouched); root.querySelector(`.classroom-sidebar [data-download-level="${next.publication.levelId}"]`).click();
   await settle(async () => (await disk.list()).some(manifest => manifest.unit.unitId === "same-level"));
   assert.equal((await disk.list()).some(manifest => manifest.unit.unitId === "other-level"), false);
   const follow = root.querySelector(`[data-follow-level="${next.publication.levelId}"]`); follow.checked = true; follow.dispatchEvent(new dom.window.Event("change"));

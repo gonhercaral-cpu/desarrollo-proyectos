@@ -2,7 +2,7 @@ import { ClassSessionController } from "./ClassSessionController.ts";
 import { ProjectionCoordinator, type ProjectionBridge } from "./projection/ProjectionCoordinator.ts";
 import { localSource } from "./local-source.ts";
 import { createRenderer } from "./renderers/factory.ts";
-import { shortcutFor } from "./shortcuts.ts";
+import { shortcutFor, readShortcuts, shortcutLabel, SHORTCUT_ACTIONS, type ShortcutCommand } from "./shortcuts.ts";
 import { initialRendererState, rendererKind, type LocalClassroom, type LocalRenderer, type PlayerCommand, type RendererState, type RendererSource } from "./types.ts";
 import { playerMarkup } from "../ui/player-view.ts";
 import { icon, resourceIcon, fileDescription } from "../ui/icons.ts";
@@ -39,6 +39,11 @@ export class ClassroomPlayer {
   private state = initialRendererState();
   private volume = 0.8;
   private muted = false;
+  private refreshShortcuts = () => {
+    const host = this.root?.querySelector(".player-shortcuts"); if (!host) return;
+    const map = readShortcuts();
+    host.innerHTML = '<strong>Atajos de teclado:</strong>' + (["BACK", "ADVANCE", "PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"] as ShortcutCommand[]).map(command => `<span><kbd>${escapeHtml(map[command].map(shortcutLabel).join(" / ") || "Sin asignar")}</kbd><small>${escapeHtml(SHORTCUT_ACTIONS[command].label)}</small></span>`).join("");
+  };
   private keyListener = (event: KeyboardEvent) => {
     const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""));
     if (!command || (event.repeat && ["PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
@@ -49,7 +54,7 @@ export class ClassroomPlayer {
     this.controller = new ClassSessionController(classroom.manifest);
     this.projection = new ProjectionCoordinator(() => this.updateProjection(), dependencies.projectionBridge, dependencies.projectionBridge ? true : undefined);
     this.root = root; this.classroom = classroom; this.onExit = onExit; this.dependencies = dependencies;
-    this.layout(); window.addEventListener("keydown", this.keyListener);
+    this.layout(); this.refreshShortcuts(); window.addEventListener("keydown", this.keyListener); window.addEventListener("classroom-shortcuts-changed", this.refreshShortcuts);
     this.projection.start(); void this.showResource();
   }
   private element<T extends HTMLElement = HTMLElement>(selector: string): T { return this.root.querySelector<T>(selector)!; }
@@ -59,10 +64,10 @@ export class ClassroomPlayer {
     this.element("[data-version]").textContent = `${this.classroom.manifest.unit.levelId} · Publicación v${this.classroom.manifest.version} · Sin servicios remotos durante la clase`;
     this.element("[data-exit]").onclick = () => this.exit();
     this.element("[data-presentation]").onclick = () => { this.controller.returnToPresentation(); void this.showResource(); };
-    this.element("[data-slide-previous]").onclick = () => this.navigate(-1);
-    this.element("[data-slide-next]").onclick = () => this.navigate(1);
-    this.element("[data-stage-previous]").onclick = () => this.navigate(-1);
-    this.element("[data-stage-next]").onclick = () => this.navigate(1);
+    this.element("[data-slide-previous]").onclick = () => { void this.dispatch("BACK"); };
+    this.element("[data-slide-next]").onclick = () => { void this.dispatch("ADVANCE"); };
+    this.element("[data-stage-previous]").onclick = () => { void this.dispatch("BACK"); };
+    this.element("[data-stage-next]").onclick = () => { void this.dispatch("ADVANCE"); };
     this.element("[data-renderer]").onclick = (event) => { if (this.controller.isPresentation && !this.state.loading && !this.state.error && !(event.target as HTMLElement).closest("button, input, select, a, video, audio")) void this.dispatch("ADVANCE"); };
     this.root.querySelectorAll<HTMLButtonElement>("[data-command]").forEach((button) => { button.onclick = () => { void this.dispatch(button.dataset.command as PlayerCommand); }; });
     this.element<HTMLInputElement>("[data-seek]").oninput = (event) => this.renderer?.seek(Number((event.target as HTMLInputElement).value));
@@ -71,7 +76,7 @@ export class ClassroomPlayer {
       const list = this.element(selector); list.classList.add("player-scroll-list"); list.tabIndex = 0; list.setAttribute("aria-label", label);
     }
     this.element<HTMLSelectElement>("[data-monitor]").onchange = (event) => { void this.projection.select((event.target as HTMLSelectElement).value); };
-    this.element("[data-project]").onclick = () => { void this.projection.toggle(); };
+    this.element("[data-project]").onclick = () => { void this.dispatch("PROJECT"); };
     this.updateProjection(); this.updateLists(); this.updateState();
   }
   private updateProjection(): void {
@@ -247,7 +252,9 @@ export class ClassroomPlayer {
     this.source = { ...source, layers }; this.sourceSlide = this.controller.slideIndex; this.sourceBuild = current; this.surface.update(layers); this.updateState();
   }
   private navigate(direction: number): void { if (!this.controller.isPresentation) this.controller.moveSlide(direction); else if (direction > 0) this.controller.advance(); else this.controller.back(); void this.showResource(); }
-  async dispatch(command: PlayerCommand | "ESCAPE"): Promise<void> {
+  async dispatch(command: ShortcutCommand): Promise<void> {
+    if (command === "PROJECT") { await this.projection.toggle(); return; }
+    if (command === "OPEN_RESOURCE") { const id = this.classroom.manifest.slides[this.controller.slideIndex ?? 0]?.resourceIds[0]; if (id) { this.controller.selectResource(id); await this.showResource(); } return; }
     if (this.disposed) return;
     try {
       if (command === "ESCAPE") {
@@ -268,7 +275,7 @@ export class ClassroomPlayer {
     this.disposed = true; ++this.sequence;
     ++this.buildSequence; this.surface?.destroy(); this.verifiedSources.clear();
     this.projection.destroy();
-    window.removeEventListener("keydown", this.keyListener); this.renderer?.destroy(); this.renderer = undefined;
+    window.removeEventListener("keydown", this.keyListener); window.removeEventListener("classroom-shortcuts-changed", this.refreshShortcuts); this.renderer?.destroy(); this.renderer = undefined;
     if (document.fullscreenElement && this.root.contains(document.fullscreenElement)) void document.exitFullscreen().catch(() => {});
     this.root.replaceChildren();
   }

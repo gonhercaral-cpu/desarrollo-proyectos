@@ -1,3 +1,4 @@
+import { assertClassroom } from "../utils/permissions";
 import {
   collection,
   deleteDoc,
@@ -31,7 +32,7 @@ const structureInitializationByUser = new Map();
 const importDriveReference = httpsCallable(functions, "importDriveFileToActiveClassroom");
 
 export function importActiveClassroomDriveResources(files, folderId, user, onProgress) {
-  assertAdmin(user);
+  assertClassroom(user, "importDrive");
   return runDriveImportBatch({
     files,
     onProgress,
@@ -42,13 +43,6 @@ export function importActiveClassroomDriveResources(files, folderId, user, onPro
   });
 }
 
-function assertAdmin(user) {
-  const normalizedRole = String(user?.role || "").trim().toLowerCase();
-
-  if (!user?.uid || normalizedRole !== "admin" || user?.active !== true) {
-    throw new Error("Solo administradores activos pueden modificar Active Classroom.");
-  }
-}
 
 function getUserName(user) {
   return String(user?.name || user?.email || "Administrador").trim();
@@ -99,7 +93,7 @@ export function getActiveClassroomResourceUrl(resource) {
 }
 
 export function ensureActiveClassroomStructure(user) {
-  assertAdmin(user);
+  assertClassroom(user);
 
   const pendingInitialization = structureInitializationByUser.get(user.uid);
   if (pendingInitialization) return pendingInitialization;
@@ -123,12 +117,12 @@ async function initializeActiveClassroomStructure() {
 
 const manageLevel = httpsCallable(functions, "manageActiveClassroomLevel");
 export async function manageActiveClassroomLevel(data, user) {
-  assertAdmin(user);
+  assertClassroom(user, "manageLevels");
   return (await manageLevel(data)).data;
 }
 
 export async function createActiveClassroomUnit({ parentId, name, position }, user) {
-  assertAdmin(user);
+  assertClassroom(user, "editUnits");
   const unitRef = doc(collection(db, ACTIVE_CLASSROOM_FOLDERS_COLLECTION));
   const timestamp = serverTimestamp();
   const payload = {
@@ -152,7 +146,7 @@ export async function createActiveClassroomUnit({ parentId, name, position }, us
 }
 
 export async function renameActiveClassroomUnit(folderId, name, user) {
-  assertAdmin(user);
+  assertClassroom(user, "editUnits");
   const cleanFolderName = cleanName(name).slice(0, 56);
 
   if (!cleanFolderName) throw new Error("Escribe un nombre para la Unit.");
@@ -165,7 +159,7 @@ export async function renameActiveClassroomUnit(folderId, name, user) {
 }
 
 export async function deleteActiveClassroomUnit(folderId, user) {
-  assertAdmin(user);
+  assertClassroom(user, "editUnits");
   const resourcesSnapshot = await getDocs(query(
     collection(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION),
     where("folderId", "==", folderId),
@@ -180,7 +174,7 @@ export async function deleteActiveClassroomUnit(folderId, user) {
 }
 
 export async function uploadActiveClassroomResources(files, folderId, user) {
-  assertAdmin(user);
+  assertClassroom(user, "uploadMaterial");
   const fileList = Array.from(files || []);
 
   if (!folderId || fileList.length === 0) return [];
@@ -231,7 +225,7 @@ export async function uploadActiveClassroomResources(files, folderId, user) {
 }
 
 export async function setActiveClassroomResourcePublished(resource, published, user) {
-  assertAdmin(user);
+  assertClassroom(user, "publishVersions");
   await updateDoc(doc(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION, resource.id), {
     published: published === true,
     ...(isDriveResource(resource) ? {
@@ -245,7 +239,7 @@ export async function setActiveClassroomResourcePublished(resource, published, u
 }
 
 export async function deleteActiveClassroomResource(resource, user) {
-  assertAdmin(user);
+  assertClassroom(user, "orderMaterial");
   if (resource?.retainedByPublication) throw new Error("Este recurso se conserva porque pertenece a una publicación de Unit.");
 
   if (!isDriveResource(resource) && resource?.storagePath) {
@@ -256,3 +250,5 @@ export async function deleteActiveClassroomResource(resource, user) {
 
   await deleteDoc(doc(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION, resource.id));
 }
+
+export async function listClassroomDriveFiles(folderId) { return (await httpsCallable(functions, "listActiveClassroomDriveFiles")({ folderId })).data; }

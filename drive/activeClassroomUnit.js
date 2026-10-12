@@ -1,3 +1,4 @@
+const { canClassroom, requireClassroom } = require("./activeClassroomPermissions");
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
@@ -88,10 +89,10 @@ function driveChanged(resource, file) {
 }
 
 function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, timestamp, now = () => new Date().toISOString() }) {
-  async function authorize(request) {
+  async function authorize(request, action = "access") {
     if (!request.auth?.uid) fail("Debes iniciar sesión.", "unauthenticated");
     const profile = await getProfile(request.auth.uid);
-    if (profile?.active !== true || profile.role !== "admin") fail("Solo administradores activos pueden editar Units.", "permission-denied");
+    requireClassroom(profile, action);
     return profile;
   }
   const unitRef = (unitId) => db.collection("activeClassroomUnits").doc(id(unitId));
@@ -124,12 +125,17 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
 
   async function save(request) {
     const profile = await authorize(request);
+    if (!canClassroom(profile, "editUnits") && !canClassroom(profile, "orderMaterial")) fail("No tienes permiso para editar el borrador.", "permission-denied");
     const unitId = id(request.data?.unitId);
     const draft = normalizeDraft(request.data?.draft);
     if (Buffer.byteLength(JSON.stringify(draft), "utf8") > 700000) fail("El borrador supera 700 KB.", "resource-exhausted");
     return db.runTransaction(async (transaction) => {
       const stored = (await transaction.get(unitRef(unitId))).data();
       revision(stored, request.data.expectedRevision);
+      const before = stored?.draft || {};
+      const different = keys => keys.some(key => contentHash(before[key] ?? null) !== contentHash(draft[key] ?? null));
+      if (!canClassroom(profile, "editUnits") && different(["name", "description", "levelId", "status", "metadata"])) fail("No tienes permiso para editar datos de la Unit.", "permission-denied");
+      if (!canClassroom(profile, "orderMaterial") && different(["mainPresentationId", "slides", "generalResourceIds", "excludedResourceIds"])) fail("No tienes permiso para ordenar o asociar material.", "permission-denied");
       if (stored?.draft?.mainPresentationId && stored.draft.mainPresentationId !== draft.mainPresentationId) draft.slides = [];
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
@@ -139,7 +145,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       transaction.set(unitRef(unitId), {
         schemaVersion: 1, draft, draftRevision, publishedVersion: stored?.publishedVersion || 0,
         publishedDraftRevision: stored?.publishedDraftRevision || 0,
-        updatedAt: timestamp(), updatedByUid: request.auth.uid,
+        updatedAt: timestamp(), updatedByUid: request.auth.uid, updatedByName: profile.name || profile.email || "",
       }, { merge: true });
       // Keep the existing library's IDs and catalog in sync without migrating resources.
       transaction.update(folderRef(unitId), {
@@ -151,7 +157,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
   }
 
   async function preparePublish(request) {
-    await authorize(request);
+    await authorize(request, "publishVersions");
     const unitId = id(request.data?.unitId);
     // Network/file IO must stay outside retriable Firestore transactions.
     return db.runTransaction(async (transaction) => {
@@ -172,7 +178,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
   }
 
   async function publish(request, { preparedFiles, expectedResources, jobId } = {}) {
-    const profile = await authorize(request);
+    const profile = await authorize(request, "publishVersions");
     const unitId = id(request.data?.unitId);
     const prepared = await preparePublish(request);
     if (expectedResources && contentHash(prepared.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(expectedResources.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
@@ -257,7 +263,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
         version, manifest, contentHash: hash, draftRevision: stored.draftRevision,
         publishedAt: timestamp(), publishedByUid: request.auth.uid,
       });
-      transaction.update(unitRef(unitId), { publishedVersion: version, publishedDraftRevision: stored.draftRevision, ...(jobId ? { publicationJob: { ...stored.publicationJob, state: "ready", version, unchanged: false } } : {}) });
+      transaction.update(unitRef(unitId), { publishedVersion: version, publishedDraftRevision: stored.draftRevision, lastPublishedAt: manifest.publishedAt, lastPublishedByUid: request.auth.uid, lastPublishedByName: profile.name || profile.email || "", ...(jobId ? { publicationJob: { ...stored.publicationJob, state: "ready", version, unchanged: false } } : {}) });
       if (jobId) transaction.update(db.collection("activeClassroomPublicationJobs").doc(jobId), { state: "ready", version, unchanged: false });
       // Retain originals referenced by immutable publications. Never alter their publication flags.
       for (const resource of resources) if (!resource.retainedByPublication) transaction.update(resourceRef(resource.id), { retainedByPublication: true });
@@ -286,7 +292,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
   }
 
   async function refreshDrive(request) {
-    const profile = await authorize(request);
+    const profile = await authorize(request, "importDrive");
     const unitId = id(request.data?.unitId);
     const ref = resourceRef(request.data?.resourceId);
     const before = (await ref.get()).data();
@@ -325,7 +331,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     });
   }
   async function validatePublication(request) {
-    await authorize(request);
+    await authorize(request, "publishVersions");
     const stored = (await unitRef(request.data?.unitId).get()).data();
     revision(stored, request.data?.expectedRevision);
     if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");

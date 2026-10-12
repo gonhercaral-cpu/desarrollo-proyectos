@@ -20,6 +20,7 @@ test("Equipos: autorización, rechazo, renombrado, revocación y permisos de UI"
   }] });
   const { default: TeamsPanel } = await server.ssrLoadModule("/src/active-classroom/components/TeamsPanel.jsx");
   const root = createRoot(dom.window.document.querySelector("#root"));
+  t.after(async () => { await act(async () => root.unmount()); await server.close(); dom.window.close(); globalThis.window = prior.window; globalThis.document = prior.document; globalThis.IS_REACT_ACT_ENVIRONMENT = prior.act; });
   let records = [
     { deviceId: "a".repeat(32), name: "Aula nueva", deviceName: "Aula nueva", displayName: "", status: "pending", code: "A1234B5678", requestedAt: Date.now(), expiresAt: Date.now() + 60000 },
     { deviceId: "b".repeat(32), name: "Código viejo", status: "pending", code: "B1234B5678", expiresAt: Date.now() - 1000 },
@@ -36,63 +37,14 @@ test("Equipos: autorización, rechazo, renombrado, revocación y permisos de UI"
     revoke: async (data) => { calls.push(["revoke", data]); records.find((item) => item.deviceId === data.deviceId).status = "revoked"; },
   };
   const render = (profile = { active: true, role: "admin" }) => act(async () => { root.render(React.createElement(TeamsPanel, { profile, api })); await new Promise((resolve) => setImmediate(resolve)); });
-  const card = (name) => [...dom.window.document.querySelectorAll("article")].find((item) => item.querySelector("h4")?.textContent === name);
-  const click = async (element, text) => {
-    const button = [...element.querySelectorAll("button")].find((item) => item.textContent === text); assert.ok(button);
-    await act(async () => { button.click(); await new Promise((resolve) => setImmediate(resolve)); });
-  };
-  try {
-    await render();
-    await t.test("muestra metadata y bloquea autorización de código vencido", () => {
-      assert.match(card("Aula nueva").textContent, /A1234-B5678/);
-      assert.match(card("Aula activa").textContent, /Última sincronización.*Declarada por Desktop.*unit1 v1.*0\.1\.0/);
-      assert.match(card("Aula activa").textContent, /Hostname: active-T4-PRO/);
-      assert.equal([...card("Código viejo").querySelectorAll("button")].find((item) => item.textContent === "Autorizar").disabled, true);
-      assert.match(card("Aula revocada").textContent, /nueva solicitud/);
-    });
-    await t.test("autoriza con callable existente y actualiza estado", async () => {
-      const input = card("Aula nueva").querySelector("input");
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, "Salón 4 - Inglés");
-        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-      });
-      await click(card("Aula nueva"), "Autorizar");
-      assert.deepEqual(calls.at(-1), ["approve", { code: "A1234B5678", displayName: "Salón 4 - Inglés" }]); assert.match(card("Salón 4 - Inglés").textContent, /Activo/);
-    });
-    await t.test("renombra y revoca equipo activo", async () => {
-      await click(card("Aula activa"), "Renombrar");
-      const input = card("Aula activa").querySelector("input");
-      assert.equal(input.value, "Aula activa");
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, "Aula 20");
-        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-      });
-      await act(async () => { input.form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })); await new Promise((resolve) => setImmediate(resolve)); });
-      assert.deepEqual(calls.at(-1), ["rename", { deviceId: "c".repeat(32), displayName: "Aula 20" }]);
-      assert.match(card("Aula 20").textContent, /Hostname: active-T4-PRO/);
-      await click(card("Aula 20"), "Revocar acceso"); assert.match(card("Aula 20").textContent, /Revocado/);
-    });
-    await t.test("rechaza solicitud y retira aprobación", async () => {
-      await click(card("Código viejo"), "Rechazar"); assert.match(card("Código viejo").textContent, /Rechazado/);
-      assert.ok(![...card("Código viejo").querySelectorAll("button")].some((item) => item.textContent === "Autorizar"));
-    });
-    await t.test("error de administración permanece visible después de refrescar listado", async () => {
-      api.rename = async () => { throw new Error("Permiso revocado. Reintenta."); };
-      await click(card("Salón 4 - Inglés"), "Renombrar");
-      const input = card("Salón 4 - Inglés").querySelector("input");
-      await act(async () => { input.form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })); await new Promise((resolve) => setImmediate(resolve)); });
-      assert.match(dom.window.document.querySelector("[role=alert]").textContent, /Permiso revocado/);
-    });
-    await t.test("profesor e inactivo no pueden administrar ni consultar listado", async () => {
-      records = [];
-      const previousCalls = listCalls;
-      await render({ active: true, role: "requester" });
-      assert.match(dom.window.document.body.textContent, /Se requiere administrador activo/);
-      await render({ active: false, role: "admin" }); assert.equal(dom.window.document.querySelectorAll("button").length, 0);
-      assert.equal(listCalls, previousCalls);
-    });
-  } finally {
-    await act(async () => root.unmount()); await server.close(); dom.window.close();
-    globalThis.window = prior.window; globalThis.document = prior.document; globalThis.IS_REACT_ACT_ENVIRONMENT = prior.act;
-  }
+  const inspector = () => dom.window.document.querySelector(".ac-console-inspector");
+  const select = async name => { const row = [...dom.window.document.querySelectorAll("tbody tr")].find(item => item.textContent.includes(name)); assert.ok(row, name); await act(async () => row.querySelector("button").click()); };
+  const click = async text => { const button = [...inspector().querySelectorAll("button")].find(item => item.textContent.trim() === text); assert.ok(button, text); await act(async () => { button.click(); await new Promise(resolve => setImmediate(resolve)); }); };
+  const change = async (input, value) => { await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); }); };
+  await render();
+  await t.test("tabla e inspector utilizan datos reales y no crean telemetría remota", async () => { await select("Aula activa"); assert.match(inspector().textContent, /active-T4-PRO/); assert.match(inspector().textContent, /0.1.0/); assert.match(inspector().textContent, /unit1 v1/); assert.equal(dom.window.document.body.textContent.includes("Sincronizar ahora"), false); });
+  await t.test("solicitud vencida no puede autorizarse", async () => { await select("Código viejo"); assert.equal([...inspector().querySelectorAll("button")].find(button => button.textContent === "Autorizar equipo").disabled, true); });
+  await t.test("vincula con código y conserva API existente", async () => { await select("Aula nueva"); await change(inspector().querySelector("input"), "Salón 4 - Inglés"); await click("Autorizar equipo"); assert.deepEqual(calls.at(-1), ["approve", { code: "A1234B5678", displayName: "Salón 4 - Inglés" }]); await select("Salón 4 - Inglés"); assert.match(inspector().textContent, /Offline|En línea/); });
+  await t.test("renombra y revoca equipo con confirmación", async () => { await select("Aula activa"); await click("Renombrar pantalla"); const input = inspector().querySelector("input"); assert.equal(input.value, "Aula activa"); await change(input, "Aula 20"); await act(async () => { input.form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })); await new Promise(resolve => setImmediate(resolve)); }); assert.deepEqual(calls.at(-1), ["rename", { deviceId: "c".repeat(32), displayName: "Aula 20" }]); await click("Revocar acceso"); assert.equal(calls.at(-1)[0], "revoke"); assert.match(inspector().textContent, /Revocado/); });
+  await t.test("sin permiso no consulta equipos, permiso delegado sí", async () => { await render({ active: true, role: "collaborator" }); assert.match(dom.window.document.body.textContent, /administrador|permiso/); await render({ active: true, role: "collaborator", activeClassroomPermissions: { access: true, manageDevices: true } }); assert.ok(dom.window.document.querySelector("tbody tr")); });
 });

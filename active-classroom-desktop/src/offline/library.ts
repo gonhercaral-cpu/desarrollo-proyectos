@@ -1,3 +1,4 @@
+import { setCacheStatistics } from "../settings/statistics.ts";
 import { escapeHtml as escape } from "../utils/dom";
 import { createDeviceSession } from "./device-auth";
 import type { DeviceState } from "./device-session";
@@ -67,6 +68,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     root.querySelector<HTMLButtonElement>("[data-sidebar-refresh]")!.onclick = () => { void refresh(); };
   }
   function render(): void {
+    setCacheStatistics(locals, Object.fromEntries(libraryLevelIds(locals.map(item => item.unit.levelId)).map(id => [id, levelName(id)])));
     if (player) {
       const current = root.querySelector(".classroom-sidebar");
       if (current) { reconcileLibrary(current as HTMLElement, sidebar(true), true); bindSidebar(true); }
@@ -95,7 +97,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         staged: task?.state === "staged",
       });
     }).join("");
-    const levelControls = levels.map(level => {
+    const levelControls = levels.filter(level => level === selectedLevel).map(level => {
       const available = publications.filter(item => item.levelId === level);
       const installed = new Map(locals.map(item => [item.unit.unitId, item.version]));
       const completed = available.filter(item => (installed.get(item.unitId) || 0) >= item.version).length;
@@ -106,11 +108,11 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const percent = available.length ? Math.min(100, Math.floor(100 * (completed + fraction) / available.length)) : 0;
       const state = active ? completed ? "Actualizando" : "Descargando" : failed ? "Error" : completed && completed === available.length ? device.online ? "Actualizado" : "Disponible offline" : locals.some(item => item.unit.levelId === level) ? !device.online || !available.length ? "Disponible offline" : "Disponible offline · parcial" : "No descargado";
       return `<section class="level-download ui-card" data-level-download="${escape(level)}"><strong>${escape(levelName(level))}</strong><span role="status">${state}${active ? ` ${completed} de ${available.length} Units · ${percent}%` : ""}</span>${active ? `<progress max="100" value="${percent}" aria-label="Descarga de ${escape(levelName(level))}"></progress>` : ""}<button class="button button-outline" data-download-level="${escape(level)}" ${!available.length || active ? "disabled" : ""}>${icon("download")}Descargar nivel completo</button><label><input type="checkbox" data-follow-level="${escape(level)}" ${contentPreferences().followedLevels.includes(level) ? "checked" : ""}/> Mantener este nivel disponible sin conexión</label></section>`;
-    }).filter((_markup, index) => !selectedLevel || levels[index] === selectedLevel).join("");
-    reconcileLibrary(root, `<div class="desktop-shell offline-shell">${sidebar()}<section class="library-workspace">
+    }).join("");
+    reconcileLibrary(root, `<div class="desktop-shell offline-shell">${sidebar().replace("</nav>", `<div class="sidebar-level-download">${levelControls}</div></nav>`)}<section class="library-workspace">
       <header class="library-header"><div class="library-heading"><span class="library-heading-icon">${icon("library")}</span><div><h1>${localOnly ? "Mis clases" : "Biblioteca"}</h1><p>Gestiona y abre tus clases</p></div></div><button class="button button-primary" data-refresh ${refreshing ? "disabled" : ""}>${icon("refresh", refreshing ? "is-spinning" : "")}${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header>
       <section class="library-controls" aria-label="Filtros de Biblioteca"><nav class="library-filters" aria-label="Filtrar por nivel"><button class="button ${!selectedLevel ? "button-primary" : "button-level"}" data-level="" aria-pressed="${!selectedLevel}">${icon("levels")}Todos los niveles</button>${levels.map(level => `<button class="button button-level ${selectedLevel === level ? "is-active" : ""}" data-level="${escape(level)}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><label class="library-search">${icon("search")}<input data-search type="search" placeholder="Buscar unidades..." aria-label="Buscar unidades" value="${escape(search)}"/></label><div class="library-view-toggle" aria-label="Vista de unidades"><button data-view="grid" aria-label="Vista de cuadrícula" aria-pressed="${view === "grid"}">${icon("grid")}</button><button data-view="list" aria-label="Vista de lista" aria-pressed="${view === "list"}">${icon("list")}</button></div></section>
-      <main class="offline-content">${feedback()}<div class="level-downloads">${levelControls}</div><div class="unit-grid ${view === "list" ? "is-list" : ""}">${cards}</div>${!matches.length ? `<p class="library-empty">${combined.size ? "No hay unidades que coincidan con los filtros." : device.online ? "No hay clases publicadas." : "No hay clases locales. Actualiza la biblioteca cuando puedas conectar con el servidor."}</p>` : ""}</main></section></div>`);
+      <main class="offline-content">${feedback()}<div class="unit-grid ${view === "list" ? "is-list" : ""}">${cards}</div>${!matches.length ? `<p class="library-empty">${combined.size ? "No hay unidades que coincidan con los filtros." : device.online ? "No hay clases publicadas." : "No hay clases locales. Actualiza la biblioteca cuando puedas conectar con el servidor."}</p>` : ""}</main></section></div>`);
     bindSidebar();
     root.querySelectorAll<HTMLButtonElement>(".library-filters [data-level]").forEach(button => { button.onclick = () => { selectedLevel = button.dataset.level!; render(); }; });
     root.querySelectorAll<HTMLButtonElement>("[data-view]").forEach(button => { button.onclick = () => { view = button.dataset.view as "grid" | "list"; render(); }; });

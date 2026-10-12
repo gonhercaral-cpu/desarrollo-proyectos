@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 
@@ -39,8 +40,8 @@ function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) 
   return async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = await getProfile(request.auth.uid);
-    if (profile.active !== true || profile.role !== "admin") {
-      throw new HttpsError("permission-denied", "Solo administradores activos pueden importar.");
+    if (!canClassroom(profile, "importDrive")) {
+      throw new HttpsError("permission-denied", "No tienes permiso para importar desde Nube AES.");
     }
     const folderId = requireId(request.data?.folderId);
     const driveFileId = requireId(request.data?.driveFileId);

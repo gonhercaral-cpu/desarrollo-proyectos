@@ -1,13 +1,15 @@
+import { desktopSettings, applyDesktopSettings } from "./settings/preferences";
 import { mountOfflineLibrary } from "./offline/library";
 import { mountProgramUpdater } from "./updater/mount";
 import { StartupUpdate } from "./startup/controller";
 
 export async function mountDesktopApp(root: HTMLDivElement): Promise<void> {
+  applyDesktopSettings();
   root.innerHTML = '<main class="desktop-loading"><strong>Active Classroom</strong><span>Preparando inicio…</span></main>';
   const controls = await mountProgramUpdater();
   if (controls) {
     await controls.preferences.run("initialize");
-    await new StartupUpdate().run(controls.updater, controls.preferences, { online: navigator.onLine, canUpdate: () => !root.querySelector(".classroom-player") });
+    if (desktopSettings().autoAppUpdate) await new StartupUpdate().run(controls.updater, controls.preferences, { online: navigator.onLine, canUpdate: () => !root.querySelector(".classroom-player") });
     // Library owns activation/cache restoration; observe readiness without changing it.
     const observer = new MutationObserver(() => {
       if (!root.querySelector(".offline-shell")) return;

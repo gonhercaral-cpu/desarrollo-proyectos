@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.12 — 2026-10-12
+
+- Ajustes con navegación interna: General, Contenido, Proyector, Apariencia, Inicio, Atajos y Acerca de.
+- Atajos personalizables, combinaciones Ctrl/Alt/Shift, conflictos explícitos y restauración de valores predeterminados.
+- Preferencias persistentes fuera de caché; activación, contenido offline y pantalla recordada se conservan.
+- Descarga de nivel y mantenimiento offline en el sidebar del nivel seleccionado; Biblioteca sin tarjetas superiores permanentes.
+- Mismo updater firmado, autostart, kiosco, single instance, streaming local y revelados compartidos con proyector.
+
 ## 1.0.11 — 2026-10-12
 
 - Reintentar una Unit puede reparar la misma versión si un archivo local se dañó, conservando versiones anteriores verificadas.

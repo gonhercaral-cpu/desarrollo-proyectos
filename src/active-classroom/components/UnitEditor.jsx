@@ -1,3 +1,4 @@
+import { canClassroom } from "../utils/permissions";
 import { useEffect, useState } from "react";
 import DriveResourceImportDialog from "./DriveResourceImportDialog";
 import ResourceInspector from "./ResourceInspector";
@@ -23,7 +24,7 @@ export default function UnitEditor(props) {
   return <UnitEditorForm {...props} initial={loaded} />;
 }
 
-export function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, onUpload, onDirtyChange }) {
+export function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, onUpload, onDirtyChange, profile, initialImport = false }) {
   const [draft, setDraft] = useState(() => initial.editor?.draft || createUnitDraft(unit, resources));
   const [revision, setRevision] = useState(initial.editor?.draftRevision || 0);
   const [publications, setPublications] = useState(initial.publications);
@@ -36,7 +37,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
   const [selectedSlideId, setSelectedSlideId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
   const [count, setCount] = useState(1);
-  const [importMode, setImportMode] = useState("");
+  const [importMode, setImportMode] = useState(initialImport ? "general" : "");
   const [driveChecks, setDriveChecks] = useState({});
   const [publishValidation, setPublishValidation] = useState(null);
   const [resourceOverrides, setResourceOverrides] = useState({});
@@ -72,6 +73,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
   }, [dirty, onDirtyChange]);
 
   function edit(update) {
+    if (!canClassroom(profile, typeof update === "object" && Object.keys(update).every(key => ["name", "levelId", "status", "description", "metadata"].includes(key)) ? "editUnits" : "orderMaterial")) return;
     setDraft((current) => typeof update === "function" ? update(current) : { ...current, ...update });
     setDirty(true);
     setNotice(""); setPublishValidation(null);
@@ -185,8 +187,8 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
         <div><button className="ac-clear-filters" onClick={() => { if (!dirty || window.confirm("Salir sin guardar cambios del borrador?")) onBack(); }}>‹ Volver al Nivel</button><h1>{draft.name}</h1><p>Editor de Unit · Borrador {revision}{dirty ? " · Cambios sin guardar" : ""} · Publicada: {publications[0]?.version || "Ninguna"}</p></div>
         <div className="ac-unit-actions">
           <button className="ac-outline-button" disabled={busy} onClick={() => run(reload)}>Recargar</button>
-          <button className="ac-outline-button" disabled={busy} onClick={() => run(save)}>Guardar borrador</button>
-          <button className="ac-primary-button" disabled={busy || publishing} onClick={() => run(() => beginPublish())}>{publishing ? "Publicando recursos…" : "Publicar versión"}</button>
+          <button className="ac-outline-button" disabled={busy || !(canClassroom(profile, "editUnits") || canClassroom(profile, "orderMaterial"))} onClick={() => run(save)}>Guardar borrador</button>
+          <button className="ac-primary-button" disabled={busy || publishing || !canClassroom(profile, "publishVersions")} onClick={() => run(() => beginPublish())}>{publishing ? "Publicando recursos…" : "Publicar versión"}</button>
         </div>
       </header>
       {error && <div className="ac-unit-feedback is-error" role="alert">{error}</div>}
@@ -198,7 +200,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
       </section>}
       {notice && <div className="ac-unit-feedback" role="status">{notice}</div>}
       {publishing && <div className="ac-unit-feedback" role="status">Publicando recursos… {publicationJob.completedResources} / {publicationJob.totalResources}<progress value={publicationJob.completedResources} max={publicationJob.totalResources || 1} /></div>}
-      <fieldset disabled={busy} className="ac-unit-fields">
+      <fieldset disabled={busy || !canClassroom(profile, "editUnits")} className="ac-unit-fields">
         <legend>Datos de la Unit</legend>
         <label>Nombre<input value={draft.name} maxLength={56} onChange={(event) => edit({ name: event.target.value })} /></label>
         <label>Nivel<select value={draft.levelId} onChange={(event) => edit({ levelId: event.target.value })}>{folders.filter((folder) => folder.kind === "level" && (folder.active !== false || folder.id === draft.levelId)).map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}</select></label>
@@ -206,10 +208,10 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
       </fieldset>
       <section className="ac-unit-card">
         <h2>Presentación principal</h2>
-        <div className="ac-unit-actions"><select aria-label="Presentación principal" value={draft.mainPresentationId || ""} disabled={busy} onChange={(event) => chooseMain(event.target.value)}><option value="">Seleccionar presentación de la Unit</option>{unitResources.filter(canBeMainPresentation).map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select><button className="ac-outline-button" disabled={busy} onClick={() => setImportMode("main")}>Importar presentación desde Nube AES</button>{main && <button className="ac-clear-filters" onClick={() => setSelectedResourceId(main.id)}>Inspeccionar original</button>}</div>
+        <div className="ac-unit-actions"><select aria-label="Presentación principal" value={draft.mainPresentationId || ""} disabled={busy || !canClassroom(profile, "orderMaterial")} onChange={(event) => chooseMain(event.target.value)}><option value="">Seleccionar presentación de la Unit</option>{unitResources.filter(canBeMainPresentation).map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select><button className="ac-outline-button" disabled={busy || !canClassroom(profile, "importDrive") || !canClassroom(profile, "orderMaterial")} onClick={() => setImportMode("main")}>Importar presentación desde Nube AES</button>{main && <button className="ac-clear-filters" onClick={() => setSelectedResourceId(main.id)}>Inspeccionar original</button>}</div>
         <p>{main ? `${main.sourceName || main.name} · Nube AES` : "Admite PPT/PPTX, Google Slides o PDF de Nube AES."}</p>
         {main && <><div className="ac-unit-actions"><button className="ac-outline-button" disabled={busy} onClick={() => run(() => updateResources([main.id]))}>Actualizar desde Nube AES</button><button className="ac-outline-button" disabled={busy} onClick={() => { setReplacementId(main.id); setImportMode("main"); }}>Reemplazar presentación</button><button className="ac-clear-filters" disabled={busy} onClick={() => run(() => removeResource(main))}>Quitar presentación</button></div>{driveChecks[main.id]?.status === "changed" && <p>{DRIVE_NEW_VERSION}</p>}{driveChecks[main.id]?.status === "unavailable" && <p>{DRIVE_UNAVAILABLE}</p>}</>}
-        {automaticSlides ? <><p role="status">{documentProcessingLabel(main)}</p><button className="ac-outline-button" disabled={busy} onClick={() => run(() => processResource(main))}>{main.processing?.state === "failed" ? "Reintentar procesamiento" : documentProcessingReady(main) ? nativeSlides ? "Aplicar imágenes y diapositivas" : "Aplicar diapositivas" : "Procesar presentación"}</button><p>{nativeSlides ? "Reprocesa y publica una versión nueva para recuperar revelados por clic desde Google Slides cuando su exportación los conserve." : "Diapositivas generadas automáticamente desde la presentación."} Publicación bloqueada hasta completar procesamiento.</p></> : <p>Define cantidad y orden de páginas para la presentación PDF original.</p>}
+        {automaticSlides ? <><p role="status">{documentProcessingLabel(main)}</p><button className="ac-outline-button" disabled={busy || !canClassroom(profile, "processMaterial")} onClick={() => run(() => processResource(main))}>{main.processing?.state === "failed" ? "Reintentar procesamiento" : documentProcessingReady(main) ? nativeSlides ? "Aplicar imágenes y diapositivas" : "Aplicar diapositivas" : "Procesar presentación"}</button><p>{nativeSlides ? "Reprocesa y publica una versión nueva para recuperar revelados por clic desde Google Slides cuando su exportación los conserve." : "Diapositivas generadas automáticamente desde la presentación."} Publicación bloqueada hasta completar procesamiento.</p></> : <p>Define cantidad y orden de páginas para la presentación PDF original.</p>}
       </section>
       <div className="ac-unit-workspace">
         <section className="ac-unit-card ac-unit-slides">
@@ -232,12 +234,12 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
         <section className="ac-unit-card ac-unit-resource-panel">
           <h2>Recursos de la Unit</h2><p>General: disponible en toda la Unit. Diapositiva: asociación independiente.</p>
           {draft.generalResourceIds.filter((id) => !unitResources.some((resource) => resource.id === id)).map((id) => <p key={id}>Recurso general no disponible <button className="ac-clear-filters" disabled={busy} onClick={() => edit({ generalResourceIds: draft.generalResourceIds.filter((resourceId) => resourceId !== id) })}>Quitar asociación</button></p>)}
-          <div className="ac-unit-actions"><button className="ac-outline-button" disabled={busy} onClick={() => setImportMode("general")}>Importar desde Nube AES</button><label className="ac-outline-button">Subir archivos<input type="file" multiple accept={ACTIVE_CLASSROOM_ACCEPTED_FILES} disabled={busy} onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) run(async () => { const uploaded = await onUpload(files); setResourceOverrides(current => ({ ...current, ...Object.fromEntries(uploaded.map(resource => [resource.id, resource])) })); let context = await persist({ ...draft, generalResourceIds: [...new Set([...draft.generalResourceIds, ...uploaded.map(resource => resource.id)])] }); for (const resource of uploaded) context = await processInto(resource, context); }); }} /></label></div>
+          <div className="ac-unit-actions"><button className="ac-outline-button" disabled={busy || !canClassroom(profile, "importDrive") || !canClassroom(profile, "orderMaterial")} data-editor-import onClick={() => setImportMode("general")}>Importar desde Nube AES</button><label className="ac-outline-button">Subir archivos<input disabled={busy || !canClassroom(profile, "uploadMaterial")} type="file" multiple accept={ACTIVE_CLASSROOM_ACCEPTED_FILES} disabled={busy || !canClassroom(profile, "orderMaterial")} onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) run(async () => { const uploaded = await onUpload(files); setResourceOverrides(current => ({ ...current, ...Object.fromEntries(uploaded.map(resource => [resource.id, resource])) })); let context = await persist({ ...draft, generalResourceIds: [...new Set([...draft.generalResourceIds, ...uploaded.map(resource => resource.id)])] }); for (const resource of uploaded) context = await processInto(resource, context); }); }} /></label></div>
           <button className="ac-clear-filters" disabled={busy} onClick={() => run(async () => { await checkChanges(); setNotice("Comprobación terminada. Revisa el estado de cada archivo."); })}>Comprobar cambios de Drive</button>
           {Object.values(driveChecks).some(entry => entry.status === "changed") && <button className="ac-primary-button" disabled={busy} onClick={() => run(() => updateResources(Object.entries(driveChecks).filter(([id, entry]) => entry.status === "changed" && unitResources.some(resource => resource.id === id)).map(([id]) => id)))}>Actualizar todos</button>}
           {unitResources.map((resource) => <article className="ac-unit-resource" key={resource.id}>
             <button className="ac-clear-filters" onClick={() => setSelectedResourceId(resource.id)}>{resource.name}</button>
-            {needsOfficeProcessing(resource) && <><p role="status">{documentProcessingLabel(resource)}</p><button className="ac-outline-button" disabled={busy} onClick={() => run(() => processResource(resource))}>{resource.processing?.state === "failed" ? "Reintentar procesamiento" : documentProcessingReady(resource) ? resource.mimeType === "application/vnd.google-apps.presentation" ? "Aplicar imágenes" : "Aplicar PDF" : "Procesar documento"}</button></>}
+            {needsOfficeProcessing(resource) && <><p role="status">{documentProcessingLabel(resource)}</p><button className="ac-outline-button" disabled={busy || !canClassroom(profile, "processMaterial")} onClick={() => run(() => processResource(resource))}>{resource.processing?.state === "failed" ? "Reintentar procesamiento" : documentProcessingReady(resource) ? resource.mimeType === "application/vnd.google-apps.presentation" ? "Aplicar imágenes" : "Aplicar PDF" : "Procesar documento"}</button></>}
             <div className="ac-unit-actions">
               {resource.id === draft.mainPresentationId ? <small>Presentación principal</small> : <label><input type="checkbox" disabled={busy} checked={draft.generalResourceIds.includes(resource.id)} onChange={() => edit({ generalResourceIds: draft.generalResourceIds.includes(resource.id) ? draft.generalResourceIds.filter((id) => id !== resource.id) : [...draft.generalResourceIds, resource.id] })} />General</label>}
               {selectedSlide && <label><input type="checkbox" disabled={busy} checked={selectedSlide.resourceIds.includes(resource.id)} onChange={() => updateSlide({ resourceIds: selectedSlide.resourceIds.includes(resource.id) ? selectedSlide.resourceIds.filter((id) => id !== resource.id) : [...selectedSlide.resourceIds, resource.id] })} />Diapositiva {selectedSlide.index + 1}</label>}

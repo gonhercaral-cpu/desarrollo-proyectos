@@ -1,3 +1,4 @@
+const { requireClassroom } = require("./activeClassroomPermissions");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { pipeline } = require("node:stream/promises");
 const MAX_DOWNLOAD_CHUNK = 4 * 1024 * 1024;
@@ -36,6 +37,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = isDevice(request.auth) ? await authorizeDevice(request.auth) : await getProfile(request.auth.uid);
     requireActive(profile);
+    if (!profile.activeClassroomDevice) requireClassroom(profile);
     return profile;
   }
   const deviceMetadata = (profile) => profile.activeClassroomDevice ? { device: { deviceId: profile.deviceId, deviceName: profile.deviceName || null, displayName: profile.displayName || "" } } : {};
@@ -72,6 +74,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
   }
   async function resolveDownload(profile, data) {
     requireActive(profile);
+    if (!profile.activeClassroomDevice) requireClassroom(profile);
     const manifest = await readManifest(data.unitId, versionNumber(Number(data.version)));
     const resource = manifest.resources.find((item) => item.resourceId === id(data.resourceId));
     if (!resource) throw new HttpsError("not-found", "El recurso no pertenece a esta publicación.");

@@ -1,3 +1,6 @@
+import { ClassroomMetrics, ClassroomInspector } from "./ConsoleLayout";
+import ActiveClassroomIcon from "./ActiveClassroomIcon";
+import { canClassroom } from "../utils/permissions";
 import { useEffect, useState } from "react";
 import { deviceService } from "../services/deviceService";
 
@@ -9,7 +12,8 @@ function activationCode(value) {
 }
 
 export default function TeamsPanel({ profile, api = deviceService }) {
-  const canManage = profile?.active === true && profile?.role === "admin";
+  const canManage = canClassroom(profile, "manageDevices");
+  const [observedAt, setObservedAt] = useState(() => Date.now());
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -18,6 +22,10 @@ export default function TeamsPanel({ profile, api = deviceService }) {
   const [busy, setBusy] = useState("");
   const [revision, setRevision] = useState(0);
   const [renaming, setRenaming] = useState(null);
+  const [selected, setSelected] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [enroll, setEnroll] = useState(false);
   const [activationNames, setActivationNames] = useState({});
 
   useEffect(() => {
@@ -39,7 +47,7 @@ export default function TeamsPanel({ profile, api = deviceService }) {
           if (cursor && visited.has(cursor)) throw new Error("No se pudo completar el listado de equipos.");
           if (cursor) visited.add(cursor);
         } while (cursor);
-        if (live) { setDevices(result); setLoadError(""); }
+        if (live) { setObservedAt(Date.now()); setDevices(result); setLoadError(""); }
       } catch (failure) {
         if (live) setLoadError(failure?.message || "No se pudieron consultar los equipos.");
       } finally {
@@ -68,70 +76,10 @@ export default function TeamsPanel({ profile, api = deviceService }) {
     if (renaming) void perform(renaming.deviceId, "rename", { deviceId: renaming.deviceId, displayName: renaming.name }, "Nombre visible actualizado.");
   }
 
-  if (!canManage) return <section className="ac-section-panel"><h2>Equipos</h2><p role="alert">Se requiere administrador activo para gestionar equipos.</p></section>;
-  const groups = [
-    { title: "Pendientes de activación", items: devices.filter((device) => device.status === "pending") },
-    { title: "Equipos autorizados", items: devices.filter((device) => device.status === "authorized") },
-    { title: "Acceso revocado o rechazado", items: devices.filter((device) => device.status === "revoked") },
-  ];
-  return (
-    <section className="ac-section-panel ac-devices-panel">
-      <header className="ac-section-heading">
-        <div><span>ACCESO INSTITUCIONAL</span><h2>Equipos</h2><p>Autoriza equipos del salón. Acceso exclusivo a publicaciones y archivos publicados.</p></div>
-        <button type="button" className="ac-outline-button" disabled={Boolean(busy)} onClick={() => setRevision((value) => value + 1)}>Actualizar equipos</button>
-      </header>
-      {(error || loadError) && <p className="ac-error-banner" role="alert">{error || loadError}</p>}
-      {notice && <p role="status">{notice}</p>}
-      {loading && <p role="status">Cargando equipos...</p>}
-      {!loading && groups.map(({ title, items }) => (
-        <section key={title} className="ac-device-group">
-          <h3>{title} <small>({items.length})</small></h3>
-          {!items.length && <p>No hay equipos en este estado.</p>}
-          <div className="ac-device-grid">
-            {items.map((device) => {
-              const visibleName = device.displayName || device.deviceName || device.name || "Equipo del salón";
-              const pending = device.status === "pending";
-              const expired = pending && (!device.expiresAt || device.expiresAt <= Date.now());
-              const status = pending ? expired ? "Código vencido" : "Pendiente" : device.status === "authorized" ? "Activo" : device.revokedReason === "rejected" ? "Rechazado" : "Revocado";
-              return (
-                <article key={device.deviceId} className="ac-device-card">
-                  <div className="ac-device-title"><h4>{visibleName}</h4><span className={`ac-status-pill ${device.status === "authorized" ? "is-active" : "is-draft"}`}>{status}</span></div>
-                  <p className="ac-device-technical">Hostname: {device.deviceName || "Se informará en la próxima conexión del equipo"}</p>
-                  {renaming?.deviceId === device.deviceId ? (
-                    <form className="ac-device-actions" onSubmit={handleRename}>
-                      <label>Nombre visible<input autoFocus maxLength={100} placeholder={device.deviceName || device.name} value={renaming.name} onChange={(event) => setRenaming({ ...renaming, name: event.target.value })} disabled={Boolean(busy)} /></label>
-                      <small>Vacío: usar hostname. Máximo 100 caracteres.</small>
-                      <button type="submit" className="ac-primary-button" disabled={Boolean(busy)}>Guardar nombre</button>
-                      <button type="button" className="ac-clear-filters" disabled={Boolean(busy)} onClick={() => setRenaming(null)}>Cancelar</button>
-                    </form>
-                  ) : <button type="button" className="ac-clear-filters" disabled={Boolean(busy)} onClick={() => setRenaming({ deviceId: device.deviceId, name: device.displayName ?? (device.deviceName ? "" : device.name) })}>Renombrar</button>}
-                  <dl className="ac-device-details">
-                    <dt>ID equipo</dt><dd>{device.deviceId}</dd>
-                    {pending ? <><dt>Código de activación</dt><dd className="ac-device-code">{activationCode(device.code)}</dd><dt>Solicitud</dt><dd>{dateTime(device.requestedAt)}</dd><dt>Vence</dt><dd>{dateTime(device.expiresAt)}</dd></> : <><dt>Última conexión</dt><dd>{dateTime(device.lastSeenAt)}</dd><dt>Última sincronización</dt><dd>{dateTime(device.lastSyncAt)}{device.lastSyncAt && <small>Declarada por Desktop{device.lastSyncUnitId ? ` · ${device.lastSyncUnitId} v${device.lastSyncVersion}` : ""}</small>}</dd><dt>Versión Active Classroom</dt><dd>{device.appVersion || "No informada"}</dd></>}
-                  </dl>
-                  {expired && <p>Código vencido. Pulsa Reintentar activación en Desktop para renovarlo.</p>}
-                  {pending && <div className="ac-device-actions"><label>Nombre visible al autorizar (opcional)<input maxLength={100} placeholder="Ej. Salón 4 - Inglés" value={activationNames[device.deviceId] ?? device.displayName ?? ""} disabled={Boolean(busy)} onChange={(event) => setActivationNames((current) => ({ ...current, [device.deviceId]: event.target.value }))} /></label></div>}
-                  <div className="ac-device-actions">
-                    {pending && <>
-                      <button type="button" className="ac-primary-button" disabled={Boolean(busy) || expired || !device.code} onClick={() => {
-                        if (window.confirm(`Autorizar "${activationNames[device.deviceId]?.trim() || visibleName}"? Comprueba que el equipo del salón muestra ${activationCode(device.code)}.`)) void perform(device.deviceId, "approve", { code: device.code, displayName: activationNames[device.deviceId] ?? device.displayName ?? "" }, "Equipo autorizado. Pulsa Reintentar activación en Desktop.");
-                      }}>Autorizar</button>
-                      <button type="button" className="ac-outline-button" disabled={Boolean(busy)} onClick={() => {
-                        if (window.confirm(`Rechazar activación de "${visibleName}"? Esta credencial quedará bloqueada.`)) void perform(device.deviceId, "reject", { deviceId: device.deviceId }, "Solicitud rechazada.");
-                      }}>Rechazar</button>
-                    </>}
-                    {device.status === "authorized" && <button type="button" className="ac-outline-button" disabled={Boolean(busy)} onClick={() => {
-                      if (window.confirm(`Revocar acceso de "${visibleName}"? Un equipo desconectado conservará sus clases hasta conocer la revocación.`)) void perform(device.deviceId, "revoke", { deviceId: device.deviceId }, "Acceso del equipo revocado.");
-                    }}>Revocar acceso</button>}
-                  </div>
-                  {device.status === "revoked" && <p>Para volver a autorizar, soporte debe renovar la identidad del equipo. La nueva solicitud aparecerá aquí con otro código; las clases locales se conservan.</p>}
-                  {busy === device.deviceId && <p role="status">Guardando...</p>}
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </section>
-  );
+  if (!canManage) return <section className="ac-section-panel"><h2>Equipos</h2><p role="alert">Se requiere permiso para gestionar equipos.</p></section>;
+  const online = device => device.status === "authorized" && device.lastSeenAt && observedAt - device.lastSeenAt < 6 * 60 * 1000;
+  const deviceLabel = device => device.status === "pending" ? "Pendiente" : device.status === "revoked" ? "Revocado" : online(device) ? "En línea" : "Offline";
+  const visible = devices.filter(device => (!search || [device.displayName, device.deviceName, device.deviceId].join(" ").toLowerCase().includes(search.toLowerCase())) && (filter === "all" || device.status === filter));
+  const inspected = devices.find(device => device.deviceId === selected) || visible[0];
+  return <><ClassroomMetrics items={[{ title: "Equipos vinculados", value: devices.filter(device => device.status === "authorized").length, detail: "dispositivos autorizados", icon: "teams" }, { title: "En línea", value: devices.filter(online).length, detail: "conexión en los últimos 6 minutos", icon: "refresh", tone: "green" }, { title: "Requieren atención", value: devices.filter(device => device.status === "pending").length, detail: "solicitudes de activación pendientes", icon: "info", tone: "orange" }]} />{(error || loadError) && <p className="ac-error-banner" role="alert">{error || loadError}</p>}{notice && <p role="status">{notice}</p>}<div className="ac-console-layout"><section className="ac-console-panel"><div className="ac-console-toolbar"><label><ActiveClassroomIcon name="search" /><input placeholder="Buscar equipo o identificador…" value={search} onChange={event => setSearch(event.target.value)} /></label><select aria-label="Estado del equipo" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">Todos los estados</option><option value="authorized">Autorizados</option><option value="pending">Pendientes</option><option value="revoked">Revocados</option></select><button className="ac-primary-button" onClick={() => { setEnroll(!enroll); setFilter("pending"); }}>+ Vincular equipo</button><button className="ac-outline-button" disabled={Boolean(busy)} onClick={() => setRevision(value => value + 1)}>Actualizar equipos</button></div>{enroll && <p className="ac-permission-hint">Abre Desktop en el equipo y solicita activación. Selecciona aquí su solicitud y confirma el código mostrado en ese equipo.</p>}{loading && <p role="status">Cargando equipos…</p>}<div className="ac-console-table-scroll"><table className="ac-console-table"><thead><tr><th>Equipo / Pantalla</th><th>Estado</th><th>Última conexión</th><th>Versión de app</th><th>Última sincronización</th><th>Acciones</th></tr></thead><tbody>{visible.map(device => <tr key={device.deviceId} className={inspected?.deviceId === device.deviceId ? "is-selected" : ""}><td><button onClick={() => setSelected(device.deviceId)}><ActiveClassroomIcon name="teams" /><strong>{device.displayName || device.deviceName || device.name}</strong></button><small>{device.deviceName}</small></td><td><span className={`ac-console-status is-${online(device) ? "positive" : "pending"}`}>{deviceLabel(device)}</span></td><td>{dateTime(device.lastSeenAt)}</td><td>{device.appVersion || "No informada"}</td><td>{dateTime(device.lastSyncAt)}</td><td><button className="ac-outline-button" onClick={() => setSelected(device.deviceId)}>···</button></td></tr>)}</tbody></table>{!visible.length && !loading && <p className="ac-console-empty">Sin equipos en este estado.</p>}</div></section><ClassroomInspector>{inspected ? <div className="ac-inspector-body"><div className="ac-device-preview"><ActiveClassroomIcon name="teams" size={62} /></div><h3>{inspected.displayName || inspected.deviceName || inspected.name}</h3><span className={`ac-console-status is-${online(inspected) ? "positive" : "pending"}`}>{deviceLabel(inspected)}</span><dl><dt>Identificador</dt><dd>{inspected.deviceId}</dd><dt>Hostname</dt><dd>{inspected.deviceName || "No informado"}</dd><dt>Última conexión</dt><dd>{dateTime(inspected.lastSeenAt)}</dd><dt>Última sincronización</dt><dd>{dateTime(inspected.lastSyncAt)}</dd><dt>Versión de app</dt><dd>{inspected.appVersion || "No informada"}</dd>{inspected.lastSyncUnitId && <><dt>Última Unit sincronizada</dt><dd>{inspected.lastSyncUnitId} v{inspected.lastSyncVersion}</dd></>}</dl>{renaming?.deviceId === inspected.deviceId ? <form className="ac-device-actions" onSubmit={handleRename}><label>Nombre visible<input autoFocus maxLength={100} value={renaming.name} onChange={event => setRenaming({ ...renaming, name: event.target.value })} disabled={Boolean(busy)} /></label><button className="ac-primary-button" disabled={Boolean(busy)}>Guardar nombre</button><button type="button" className="ac-outline-button" onClick={() => setRenaming(null)}>Cancelar</button></form> : <button className="ac-outline-button" disabled={Boolean(busy)} onClick={() => setRenaming({ deviceId: inspected.deviceId, name: inspected.displayName ?? inspected.deviceName ?? "" })}>Renombrar pantalla</button>}{inspected.status === "pending" && <><h4>Código de vinculación</h4><p className="ac-device-code">{activationCode(inspected.code)}</p><small>Vence: {dateTime(inspected.expiresAt)}</small><label>Nombre visible<input maxLength={100} value={activationNames[inspected.deviceId] || ""} onChange={event => setActivationNames(current => ({ ...current, [inspected.deviceId]: event.target.value }))} /></label><button className="ac-primary-button" disabled={Boolean(busy) || !inspected.code || inspected.expiresAt <= observedAt} onClick={() => { if (window.confirm(`¿Autorizar este equipo? Confirma el código ${activationCode(inspected.code)} en Desktop.`)) void perform(inspected.deviceId, "approve", { code: inspected.code, displayName: activationNames[inspected.deviceId] ?? inspected.displayName ?? "" }, "Equipo autorizado."); }}>Autorizar equipo</button><button className="ac-outline-button" disabled={Boolean(busy)} onClick={() => { if (window.confirm("¿Rechazar esta solicitud de activación?")) void perform(inspected.deviceId, "reject", { deviceId: inspected.deviceId }, "Solicitud rechazada."); }}>Rechazar</button></>}{inspected.status === "authorized" && <button className="ac-danger-button" disabled={Boolean(busy)} onClick={() => { if (window.confirm("¿Revocar acceso? El equipo offline conocerá la revocación al reconectarse.")) void perform(inspected.deviceId, "revoke", { deviceId: inspected.deviceId }, "Acceso revocado."); }}>Revocar acceso</button>}{inspected.status === "revoked" && <p>Para volver a autorizar, soporte debe renovar la identidad del equipo; clases locales conservadas.</p>}</div> : <p>Selecciona un equipo.</p>}</ClassroomInspector></div></>;
 }

@@ -1,0 +1,12 @@
+export interface DesktopSettings { version: 1; autoAppUpdate: boolean; rememberProjector: boolean; density: "comfortable" | "compact" }
+export const SETTINGS_KEY = "active-classroom-settings:v1";
+export function desktopSettings(storage = globalThis.window?.localStorage || globalThis.localStorage): DesktopSettings {
+  try { const value = JSON.parse(storage?.getItem(SETTINGS_KEY) || "{}"); return { version: 1, autoAppUpdate: value.autoAppUpdate !== false, rememberProjector: value.rememberProjector !== false, density: value.density === "compact" ? "compact" : "comfortable" }; }
+  catch { return { version: 1, autoAppUpdate: true, rememberProjector: true, density: "comfortable" }; }
+}
+export function saveDesktopSettings(patch: Partial<DesktopSettings>, storage = globalThis.window?.localStorage || globalThis.localStorage): void {
+  const next = { ...desktopSettings(storage), ...patch, version: 1 };
+  storage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  applyDesktopSettings(); window.dispatchEvent(new window.Event("classroom-settings-changed"));
+}
+export function applyDesktopSettings(): void { if (globalThis.document) document.documentElement.dataset.desktopDensity = desktopSettings().density; }

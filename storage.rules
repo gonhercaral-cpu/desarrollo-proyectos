@@ -71,17 +71,19 @@ service firebase.storage {
         );
     }
 
+    function canClassroom(action) {
+      let path = /databases/(default)/documents/activeClassroomPermissions/$(request.auth.uid);
+      return hasProfile() && (isAdmin() || (firestore.exists(path)
+        && firestore.get(path).data.get("permissions", {}).get("access", false) == true
+        && firestore.get(path).data.get("permissions", {}).get(action, false) == true));
+    }
+
     function activeClassroomResourcePath(resourceId) {
       return /databases/(default)/documents/activeClassroomResources/$(resourceId);
     }
 
     function canReadActiveClassroomResource(resourceId) {
-      return isAdmin()
-        || (
-          hasProfile()
-          && firestore.exists(activeClassroomResourcePath(resourceId))
-          && firestore.get(activeClassroomResourcePath(resourceId)).data.published == true
-        );
+      return canClassroom("access");
     }
 
     function validActiveClassroomFile(fileName) {
@@ -975,12 +977,12 @@ service firebase.storage {
     match /active-classroom/resources/{resourceId}/{fileName} {
       allow read: if canReadActiveClassroomResource(resourceId);
 
-      allow create: if isAdmin()
+      allow create: if canClassroom("uploadMaterial")
         && validActiveClassroomFile(fileName);
 
       allow update: if false;
 
-      allow delete: if isAdmin()
+      allow delete: if (canClassroom("orderMaterial") || (canClassroom("uploadMaterial") && !firestore.exists(activeClassroomResourcePath(resourceId))))
         && (!firestore.exists(activeClassroomResourcePath(resourceId))
           || firestore.get(activeClassroomResourcePath(resourceId)).data.get("retainedByPublication", false) == false);
     }

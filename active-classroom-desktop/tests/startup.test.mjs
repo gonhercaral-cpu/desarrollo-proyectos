@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 import { ProgramUpdater } from "../src/updater/controller.ts";
 import { StartupPreferences, StartupUpdate, newerStableVersion } from "../src/startup/controller.ts";
 import { renderUpdater } from "../src/updater/view.ts";
+import { startupSettingsMarkup } from "../src/startup/view.ts";
 
 const state = (phase, extra = {}) => ({ phase, currentVersion: "1.0.6", newVersion: "1.0.7", downloaded: 0, message: phase, ...extra });
 async function fixture(actions = {}, installedUpdate) {
@@ -65,7 +66,7 @@ test("fallo de descarga/firma continúa; configuración no guardada impide resta
 });
 test("Ajustes permite autostart y kiosco on/off; salida temporal conserva preferencia", async () => {
   const f = await fixture(); f.updater.show(); const dom = new JSDOM('<div id="host"></div>'); const host = dom.window.document.querySelector("#host");
-  renderUpdater(host, f.updater, f.preferences); assert.equal(host.querySelector("[data-autostart]").checked, true); assert.equal(host.querySelector("[data-kiosk]").checked, true);
+  host.innerHTML = startupSettingsMarkup(f.preferences); assert.equal(host.querySelector("[data-autostart]").checked, true); assert.equal(host.querySelector("[data-kiosk]").checked, true);
   await f.preferences.run("autostart", false); await f.preferences.run("kiosk", false); assert.equal(f.preferences.status.autostart, false); assert.equal(f.preferences.status.kiosk, false);
   await f.preferences.run("autostart", true); await f.preferences.run("kiosk", true); await f.preferences.run("library-ready"); await f.preferences.run("exit-kiosk");
   assert.equal(f.preferences.status.kioskActive, false); assert.equal(f.preferences.status.kiosk, true); dom.window.close();

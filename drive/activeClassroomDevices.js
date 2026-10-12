@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash, randomBytes, timingSafeEqual } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 
@@ -32,7 +33,7 @@ function createDeviceHandlers({ db, auth, assertAdmin, now = Date.now }) {
   const expires = () => now() + 15 * 60 * 1000;
   async function administrator(request) {
     const profile = await assertAdmin(request);
-    if (profile.active !== true || profile.role !== "admin" || isDevice(request.auth)) throw new HttpsError("permission-denied", "Se requiere administrador activo.");
+    if (!canClassroom(profile, "manageDevices") || isDevice(request.auth)) throw new HttpsError("permission-denied", "Se requiere permiso para gestionar equipos.");
     return profile;
   }
   async function session(request) {

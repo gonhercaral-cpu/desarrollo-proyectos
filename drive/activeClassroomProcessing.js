@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash, randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, processingTargetPath, officeExtension, isGoogleSlides, processorVersion, needsDocumentProcessing, processingFingerprint, requireReady, readyProcessing, pdfSlides } = require("./activeClassroomProcessingModel");
@@ -81,7 +82,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
   async function process(request) {
     if (!request.auth?.uid) fail("Debes iniciar sesión.", "unauthenticated");
     const profile = await getProfile(request.auth.uid);
-    if (profile?.active !== true || profile.role !== "admin") fail("Solo administradores pueden procesar documentos.", "permission-denied");
+    if (!canClassroom(profile, "processMaterial")) fail("No tienes permiso para procesar material.", "permission-denied");
     const { unitId, resourceId, expectedRevision } = request.data || {};
     if (!validId(unitId) || !validId(resourceId) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) fail("Solicitud de procesamiento inválida.", "invalid-argument");
     const resourceRef = resources.doc(resourceId);

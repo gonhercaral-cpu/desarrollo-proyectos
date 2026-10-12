@@ -1,52 +1,51 @@
 import { useMemo, useState } from "react";
-import { FuturePanel, SettingsPanel } from "./components/AccessPanel";
+import SettingsPanel from "./components/SettingsPanel";
+import { readWebPreferences } from "./utils/webPreferences";
 import TeamsPanel from "./components/TeamsPanel";
 import ActiveClassroomNavigation from "./components/ActiveClassroomNavigation";
 import FolderDialog from "./components/FolderDialog";
-import DriveResourceImportDialog from "./components/DriveResourceImportDialog";
 import UnitEditor from "./components/UnitEditor";
 import LevelsPanel from "./components/LevelsPanel";
-import LibraryTable from "./components/LibraryTable";
-import LibraryToolbar from "./components/LibraryToolbar";
-import PublicationsPanel from "./components/PublicationsPanel";
-import ResourceInspector from "./components/ResourceInspector";
 import ActiveClassroomIcon from "./components/ActiveClassroomIcon";
 import useActiveClassroomLibrary from "./hooks/useActiveClassroomLibrary";
-import {
-  ACTIVE_CLASSROOM_FUTURE_SECTIONS,
-  ACTIVE_CLASSROOM_SECTIONS,
-} from "./constants";
+import { canClassroom } from "./utils/permissions";
+import { unitCatalog, catalogMetrics, filterCatalog } from "./utils/catalog";
+import useUnitCatalog from "./hooks/useUnitCatalog";
+import { UnitCard, UnitInspector, PublicationTable } from "./components/UnitCatalog";
+import { ClassroomHeader, ClassroomMetrics } from "./components/ConsoleLayout";
 import "./styles/active-classroom.css";
+import "./styles/console.css";
 
-const FUTURE_TITLES = {
-  announcements: "Panel de anuncios",
-  observations: "Observaciones",
-  suggestions: "Sugerencias",
+const sectionDetails = {
+ library: ["Biblioteca", "Gestiona y organiza los recursos educativos de tu institución."],
+ levels: ["Niveles", "Organiza los niveles académicos y su estructura de Units."],
+ publications: ["Publicaciones", "Controla versiones, estados y despliegue del contenido educativo."],
+ teams: ["Equipos", "Administra los dispositivos vinculados a Active Classroom."],
+ settings: ["Ajustes", "Configura el módulo y administra permisos y preferencias."],
 };
-
 export default function ActiveClassroomModule({ profile }) {
   const library = useActiveClassroomLibrary(profile);
+  const versions = useUnitCatalog(profile);
+  const catalog = unitCatalog(library.folders, versions.documents, library.resources);
+  const metrics = catalogMetrics(library.folders, catalog);
+  const [selectedUnit, setSelectedUnit] = useState("");
+  const [importPicker, setImportPicker] = useState(false);
+  const [levelCreation, setLevelCreation] = useState(0);
+  const [reorder, setReorder] = useState(false);
   const [activeSection, setActiveSection] = useState("library");
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortMode, setSortMode] = useState("name");
-  const [viewMode, setViewMode] = useState("grid");
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [sortMode, setSortMode] = useState(() => readWebPreferences().sort);
+  const [viewMode, setViewMode] = useState(() => readWebPreferences().view);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [dialogState, setDialogState] = useState({ open: false, folder: null });
   const [toast, setToast] = useState("");
-  const [dragActive, setDragActive] = useState(false);
-  const [driveImportUnit, setDriveImportUnit] = useState(null);
+  const [initialImport, setInitialImport] = useState(false);
   const [unitDirty, setUnitDirty] = useState(false);
-  const activeNavigationItem = [...ACTIVE_CLASSROOM_SECTIONS, ...ACTIVE_CLASSROOM_FUTURE_SECTIONS]
-    .find((section) => section.id === activeSection);
 
-  const visibleItems = useMemo(() => library.getVisibleItems({
-    searchTerm,
-    typeFilter,
-    statusFilter,
-    sortMode,
-  }), [library, searchTerm, sortMode, statusFilter, typeFilter]);
+  const visibleUnits = useMemo(() => filterCatalog(catalog, { search: searchTerm, type: typeFilter, status: statusFilter, sort: sortMode, level: library.selectedFolder?.kind === "level" ? library.selectedFolder.id : "" }), [catalog, searchTerm, typeFilter, statusFilter, sortMode, library.selectedFolder]);
+  const inspected = catalog.find(unit => unit.id === selectedUnit) || visibleUnits[0];
 
   function showToast(message) {
     setToast(message);
@@ -60,13 +59,13 @@ export default function ActiveClassroomModule({ profile }) {
     setSortMode("name");
   }
 
-  async function handleFolderSubmit(name) {
+  async function handleFolderSubmit(name, parentId) {
     try {
       if (dialogState.folder) {
         await library.renameUnit(dialogState.folder.id, name);
         showToast(`Unit renombrada: ${name.trim()}`);
       } else {
-        await library.createUnit(name);
+        await library.createUnit(name, parentId);
         showToast(`Unit creada: ${name.trim()}`);
       }
       setDialogState({ open: false, folder: null });
@@ -89,157 +88,15 @@ export default function ActiveClassroomModule({ profile }) {
     }
   }
 
-  async function handleUpload(files) {
-    try {
-      const uploaded = await library.uploadFiles(files);
-      showToast(`${uploaded.length} archivo${uploaded.length === 1 ? "" : "s"} subido${uploaded.length === 1 ? "" : "s"}.`);
-    } catch (error) {
-      showToast(error?.message || "No se pudieron subir archivos.");
-    }
-  }
-
-  async function handleTogglePublished(resource) {
-    try {
-      await library.togglePublished(resource);
-      showToast(resource.published ? "Recurso movido a borrador." : "Recurso publicado.");
-    } catch (error) {
-      showToast(error?.message || "No se pudo cambiar publicación.");
-    }
-  }
-
-  async function handleDeleteResource(resource) {
-    const confirmed = window.confirm(
-      resource.source === "drive"
-        ? `Quitar "${resource.name}" de esta Unit? El original permanece en Nube AES.`
-        : `Eliminar definitivamente "${resource.name}" de Active Classroom?`
-    );
-    if (!confirmed) return;
-
-    try {
-      await library.removeResource(resource);
-      showToast(resource.source === "drive" ? "Referencia eliminada de la Unit." : "Recurso eliminado de Firestore y Storage.");
-    } catch (error) {
-      showToast(error?.message || "No se pudo eliminar recurso.");
-    }
-  }
-
-  function handlePublicationSelection(resourceId) {
-    const resource = library.resources.find((item) => item.id === resourceId);
-    if (!resource) return;
-    library.openFolder(resource.folderId);
-    library.setSelectedResourceId(resourceId);
-    setActiveSection("library");
-  }
-
-  function handleDrop(event) {
-    event.preventDefault();
-    setDragActive(false);
-    if (library.selectedFolder?.kind !== "unit") {
-      showToast("Abre una Unit antes de soltar archivos.");
-      return;
-    }
-    const files = Array.from(event.dataTransfer.files || []);
-    if (files.length) void handleUpload(files);
-  }
-
-  function renderLibrary() {
-    return (
-      <section className="ac-drive-page">
-        <header className="ac-drive-heading">
-          <div className="ac-drive-title">
-            <div className="ac-product-label">
-              <span className="ac-product-mark">ac</span>
-              <strong>Active Classroom</strong>
-            </div>
-            <div className="ac-title-line">
-              <h1>Biblioteca</h1>
-              <span className="ac-cloud-chip">Catálogo compartido</span>
-            </div>
-            <p>Gestiona y organiza los recursos educativos de tu institución.</p>
-          </div>
-        </header>
-
-        {library.breadcrumbs.length > 0 && (
-          <nav className="ac-breadcrumb" aria-label="Ruta de biblioteca">
-            <button type="button" onClick={() => library.openFolder("root")}>Biblioteca</button>
-            {library.breadcrumbs.map((folder) => (
-              <span key={folder.id}>
-                <i>/</i>
-                <button
-                  type="button"
-                  aria-current={folder.id === library.selectedFolderId ? "page" : undefined}
-                  onClick={() => library.openFolder(folder.id)}
-                >
-                  {folder.name}
-                </button>
-              </span>
-            ))}
-          </nav>
-        )}
-
-        <div className="ac-drive-layout">
-          <section
-            className={`ac-drive-library ${dragActive ? "is-dragging" : ""}`}
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false);
-            }}
-            onDrop={handleDrop}
-          >
-            <LibraryToolbar
-              selectedFolder={library.selectedFolder}
-              searchTerm={searchTerm}
-              typeFilter={typeFilter}
-              statusFilter={statusFilter}
-              sortMode={sortMode}
-              viewMode={viewMode}
-              filtersOpen={filtersOpen}
-              saving={library.saving}
-              onSearchChange={setSearchTerm}
-              onTypeFilterChange={setTypeFilter}
-              onStatusFilterChange={setStatusFilter}
-              onSortModeChange={setSortMode}
-              onViewModeChange={setViewMode}
-              onFiltersOpenChange={setFiltersOpen}
-              onClearFilters={clearFilters}
-              onCreateFolder={() => setDialogState({ open: true, folder: null })}
-              onUploadFiles={handleUpload}
-              onImportDrive={() => setDriveImportUnit(library.selectedFolder)}
-            />
-
-            {dragActive && (
-              <div className="ac-drop-overlay">
-                <strong>Suelta archivos en esta Unit</strong>
-                <small>Se guardarán en Firebase Storage.</small>
-              </div>
-            )}
-
-            <LibraryTable
-              folders={visibleItems.folders}
-              resources={visibleItems.resources}
-              selectedResourceId={library.selectedResourceId}
-              viewMode={viewMode}
-              onOpenFolder={library.openFolder}
-              onSelectResource={library.setSelectedResourceId}
-              onRenameFolder={(folder) => library.openFolder(folder.id)}
-              onDeleteFolder={handleDeleteFolder}
-            />
-          </section>
-
-          <ResourceInspector
-            key={library.selectedResource?.id || "empty"}
-            resource={library.selectedResource}
-            saving={library.saving}
-            onTogglePublished={handleTogglePublished}
-            onDelete={handleDeleteResource}
-          />
-        </div>
-      </section>
-    );
+  function renderLibrary(publications = false) {
+    return <>
+      <ClassroomMetrics items={[{ title: "Niveles activos", value: metrics.levels, detail: `${library.folders.filter(folder => folder.kind === "level").length} niveles registrados`, icon: "library" }, { title: "Units publicadas", value: metrics.published, detail: "con versiones inmutables", icon: "publications", tone: "green" }, { title: publications ? "Borradores pendientes" : "Pendientes de actualizar", value: publications ? metrics.drafts : metrics.pending, detail: "cambios pendientes de publicar", icon: "refresh", tone: "orange" }]} />
+      <div className="ac-console-layout"><section className="ac-console-panel">
+        <div className="ac-console-toolbar"><label><ActiveClassroomIcon name="search" /><input value={searchTerm} placeholder="Buscar por nombre de Unit, nivel o contenido…" onChange={event => setSearchTerm(event.target.value)} /></label><select aria-label="Nivel" value={library.selectedFolder?.kind === "level" ? library.selectedFolder.id : ""} onChange={event => library.openFolder(event.target.value || "root")}><option value="">Todos los niveles</option>{library.folders.filter(folder => folder.kind === "level").map(level => <option key={level.id} value={level.id}>{level.name}</option>)}</select><select aria-label="Estado" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">Todos los estados</option>{["Publicado", "Borrador", "Procesando", "Actualización disponible", "Error"].map(state => <option key={state}>{state}</option>)}</select><select aria-label="Orden" value={sortMode} onChange={event => setSortMode(event.target.value)}><option value="name">Ordenar por: Nombre</option><option value="date">Última modificación</option></select><div className="ac-view-buttons"><button aria-label="Vista de lista" className={viewMode === "list" ? "is-active" : ""} onClick={() => setViewMode("list")}><ActiveClassroomIcon name="list" /></button><button aria-label="Vista de cuadrícula" className={viewMode === "grid" ? "is-active" : ""} onClick={() => setViewMode("grid")}><ActiveClassroomIcon name="grid" /></button></div><button className="ac-outline-button" onClick={() => setFiltersOpen(!filtersOpen)}><ActiveClassroomIcon name="filter" />Filtrar</button></div>
+        {filtersOpen && <div className="ac-console-extra-filters"><select aria-label="Tipo de archivo" value={typeFilter} onChange={event => setTypeFilter(event.target.value)}><option value="all">Todos los tipos</option>{["presentation", "image", "audio", "video", "pdf", "document"].map(type => <option key={type} value={type}>{({ presentation: "Presentación", image: "Imagen", audio: "Audio", video: "Video", pdf: "PDF", document: "Documento" })[type]}</option>)}</select><button onClick={clearFilters}>Limpiar filtros</button></div>}
+        {publications || viewMode === "list" ? <PublicationTable units={visibleUnits} selected={inspected?.id} onSelect={setSelectedUnit} onOpen={library.openFolder} /> : <div className="ac-console-grid">{visibleUnits.map(unit => <UnitCard key={unit.id} unit={unit} selected={inspected?.id === unit.id} resources={library.resources} onSelect={setSelectedUnit} onOpen={library.openFolder} onRename={folder => setDialogState({ open: true, folder })} onDelete={handleDeleteFolder} canEdit={canClassroom(profile, "editUnits")} />)}{!visibleUnits.length && <p className="ac-console-empty">Sin Units que coincidan con los filtros.</p>}</div>}
+      </section><UnitInspector unit={inspected} resources={library.resources} onOpen={id => { library.openFolder(id); setActiveSection("library"); }} publications={publications} canPublish={canClassroom(profile, "publishVersions")} /></div>
+    </>;
   }
 
   function renderSection() {
@@ -248,6 +105,8 @@ export default function ActiveClassroomModule({ profile }) {
     }
     if (activeSection === "library" && library.selectedFolder?.kind === "unit") return (
       <UnitEditor
+        profile={profile}
+        initialImport={initialImport}
         key={library.selectedFolder.id}
         unit={library.selectedFolder}
         folders={library.folders}
@@ -259,55 +118,39 @@ export default function ActiveClassroomModule({ profile }) {
       />
     );
     if (activeSection === "library") return renderLibrary();
-    if (activeSection === "levels") return <LevelsPanel folders={library.folders} profile={profile} onOpen={(id) => { library.openFolder(id); setActiveSection("library"); }} />;
-    if (activeSection === "publications") {
-      return (
-        <PublicationsPanel
-          resources={library.resources}
-          folders={library.folders}
-          saving={library.saving}
-          onTogglePublished={handleTogglePublished}
-          onSelectResource={handlePublicationSelection}
-        />
-      );
-    }
+    if (activeSection === "levels") return <LevelsPanel folders={library.folders} profile={profile} catalog={catalog} resources={library.resources} createRequested={levelCreation} reordering={reorder} onOpen={(id) => { library.openFolder(id); setActiveSection("library"); }} />;
+    if (activeSection === "publications") return renderLibrary(true);
     if (activeSection === "teams") return <TeamsPanel profile={profile} />;
-    if (activeSection === "settings") return <SettingsPanel />;
-    return <FuturePanel title={FUTURE_TITLES[activeSection] || "Módulo futuro"} />;
+    if (activeSection === "settings") return <SettingsPanel profile={profile} />;
+    return null;
   }
 
   return (
-    <section className="ac-module">
-      <nav className="ac-module-breadcrumb" aria-label="Ubicación actual">
-        <ActiveClassroomIcon name="home" size={16} />
-        <span>Active Classroom</span>
-        <ActiveClassroomIcon name="chevron" size={14} />
-        <strong>{activeNavigationItem?.label || "Biblioteca"}</strong>
-      </nav>
-      <ActiveClassroomNavigation activeSection={activeSection} onChange={(section) => {
+    <section className={`ac-module ac-console ac-section-${activeSection}`}>
+      <ClassroomHeader title={sectionDetails[activeSection][0]} subtitle={sectionDetails[activeSection][1]}>
+        {activeSection === "library" && <>{canClassroom(profile, "editUnits") && <button className="ac-primary-button" onClick={() => setDialogState({ open: true, folder: null })}>+ Nueva Unit</button>}{canClassroom(profile, "importDrive") && <button className="ac-hero-outline" onClick={() => { if (library.selectedFolder?.kind === "unit") document.querySelector("[data-editor-import]")?.click(); else setImportPicker(true); }}><ActiveClassroomIcon name="upload" />Importar desde Nube AES</button>}</>}
+        {activeSection === "levels" && canClassroom(profile, "manageLevels") && <><button className="ac-primary-button" onClick={() => setLevelCreation(value => value + 1)}>+ Nuevo nivel</button><button className="ac-hero-outline" onClick={() => setReorder(!reorder)}>Reordenar</button></>}
+        {activeSection === "publications" && canClassroom(profile, "publishVersions") && <button className="ac-primary-button" disabled={!inspected} onClick={() => { library.openFolder(inspected.id); setActiveSection("library"); }}>+ Publicar nueva versión</button>}
+      </ClassroomHeader>
+      <ActiveClassroomNavigation canManageDevices={canClassroom(profile, "manageDevices")} activeSection={activeSection} onChange={(section) => {
         if (!unitDirty || window.confirm("Salir sin guardar cambios del borrador?")) setActiveSection(section);
       }} />
       <main className="ac-module-main">
-        {library.error && (
+        {(library.error || versions.error) && (
           <div className="ac-error-banner" role="alert">
-            <span>{library.error}</span>
+            <span>{library.error || versions.error}</span>
             <button type="button" onClick={() => library.setError("")} aria-label="Cerrar aviso">×</button>
           </div>
         )}
         {renderSection()}
       </main>
 
-      {driveImportUnit && (
-        <DriveResourceImportDialog
-          unit={driveImportUnit}
-          resources={library.resources}
-          onImport={library.importDriveFiles}
-          onClose={() => setDriveImportUnit(null)}
-        />
-      )}
+      {importPicker && <div className="ac-dialog-backdrop"><section className="ac-dialog" role="dialog" aria-modal="true" aria-labelledby="ac-import-unit"><h2 id="ac-import-unit">Importar desde Nube AES</h2><p>Selecciona la Unit de destino.</p><select aria-label="Unit de destino" onChange={event => { const unit = library.folders.find(folder => folder.id === event.target.value); if (unit) { library.openFolder(unit.id); setInitialImport(true); setImportPicker(false); } }} value=""><option value="">Selecciona una Unit</option>{catalog.map(unit => <option value={unit.id} key={unit.id}>{unit.level?.name} · {unit.name}</option>)}</select><button className="ac-outline-button" onClick={() => setImportPicker(false)}>Cancelar</button></section></div>}
       {dialogState.open && (
         <FolderDialog
           key={dialogState.folder?.id || "new-unit"}
+          levels={library.folders.filter(folder => folder.kind === "level" && folder.active !== false)}
+          initialLevel={library.selectedFolder?.kind === "level" ? library.selectedFolder.id : ""}
           folder={dialogState.folder}
           saving={library.saving}
           onClose={() => setDialogState({ open: false, folder: null })}

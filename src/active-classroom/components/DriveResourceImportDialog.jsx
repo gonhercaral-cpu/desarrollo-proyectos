@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getDriveRootSettings, listDriveFolder } from "../../services/driveService";
+import { listClassroomDriveFiles } from "../services/activeClassroomService";
 import { getDriveResourceKind } from "../utils/driveResources";
 import { formatResourceDate, getResourceKindLabel } from "../utils/resourceTypes";
 import { unitOperationMessage, activeDraftResourceIds } from "../utils/draftResources";
@@ -42,12 +42,12 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
     async function load() {
       try {
         if (!folderId) {
-          const settings = await getDriveRootSettings();
+          const settings = await listClassroomDriveFiles();
           if (!settings?.rootFolderId) throw new Error("Configura una carpeta raíz en Nube AES antes de importar.");
           if (active) setPath([{ id: settings.rootFolderId, name: "Nube AES" }]);
           return;
         }
-        const result = await listDriveFolder(folderId);
+        const result = await listClassroomDriveFiles(folderId);
         if (active) { setItems(result.files || []); setLoading(false); }
       } catch (loadError) {
         if (active) { setError(loadError.message || "No se pudo abrir la carpeta."); setLoading(false); }

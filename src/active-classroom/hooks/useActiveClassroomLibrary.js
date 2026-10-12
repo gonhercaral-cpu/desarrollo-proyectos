@@ -1,3 +1,4 @@
+import { canClassroom } from "../utils/permissions";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createActiveClassroomUnit,
@@ -24,7 +25,7 @@ export default function useActiveClassroomLibrary(profile) {
   const profileUid = profile?.uid || profile?.id || "";
   const profileRole = String(profile?.role || "").trim().toLowerCase();
   const profileActive = profile?.active === true;
-  const canManage = Boolean(profileUid) && profileActive && profileRole === "admin";
+  const canManage = Boolean(profileUid) && canClassroom(profile);
 
   useEffect(() => {
     if (!canManage) return undefined;
@@ -58,13 +59,14 @@ export default function useActiveClassroomLibrary(profile) {
       uid: profileUid,
       role: profileRole,
       active: profileActive,
+      activeClassroomPermissions: profile.activeClassroomPermissions,
     }).catch(handleError);
 
     return () => {
       unsubscribeFolders();
       unsubscribeResources();
     };
-  }, [canManage, profileActive, profileRole, profileUid]);
+  }, [canManage, profileActive, profileRole, profileUid, profile.activeClassroomPermissions]);
 
   const selectedFolder = useMemo(
     () => folders.find((folder) => folder.id === selectedFolderId) || null,
@@ -101,12 +103,13 @@ export default function useActiveClassroomLibrary(profile) {
     }
   }, []);
 
-  const createUnit = useCallback((name) => {
-    if (selectedFolder?.kind !== "level") {
+  const createUnit = useCallback((name, parentId) => {
+    const target = folders.find(folder => folder.id === (parentId || selectedFolder?.id));
+    if (target?.kind !== "level") {
       return Promise.reject(new Error("Abre un Nivel antes de crear una Unit."));
     }
 
-    const siblingUnits = folders.filter((folder) => folder.parentId === selectedFolder.id);
+    const siblingUnits = folders.filter((folder) => folder.parentId === target.id);
     const normalizedName = name.trim().toLocaleLowerCase("es");
 
     if (siblingUnits.some((folder) => folder.name.trim().toLocaleLowerCase("es") === normalizedName)) {
@@ -114,7 +117,7 @@ export default function useActiveClassroomLibrary(profile) {
     }
 
     return runMutation(() => createActiveClassroomUnit({
-      parentId: selectedFolder.id,
+      parentId: target.id,
       name,
       position: siblingUnits.length + 1,
     }, profile));

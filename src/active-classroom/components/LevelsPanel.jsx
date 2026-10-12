@@ -1,45 +1,19 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { manageActiveClassroomLevel } from "../services/activeClassroomService";
-
-export default function LevelsPanel({ folders, profile, onOpen }) {
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+import { canClassroom } from "../utils/permissions";
+import { ClassroomMetrics, ClassroomInspector } from "./ConsoleLayout";
+import UnitCover from "./UnitCover";
+import ActiveClassroomIcon from "./ActiveClassroomIcon";
+export default function LevelsPanel({ folders, profile, onOpen, catalog = [], resources = [], createRequested = 0, reordering = false }) {
+  const [name, setName] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [selected, setSelected] = useState(""); const [search, setSearch] = useState(""); const [status, setStatus] = useState("all"); const [view, setView] = useState("grid"); const input = useRef(null);
+  const allowed = canClassroom(profile, "manageLevels");
   const levels = folders.filter(folder => folder.kind === "level").sort((a, b) => (a.position ?? 999) - (b.position ?? 999) || a.name.localeCompare(b.name, "es"));
-  async function change(data) {
-    setBusy(true); setError("");
-    try { await manageActiveClassroomLevel(data, profile); return true; }
-    catch (failure) { setError(failure.message || "No se pudo guardar el nivel."); return false; }
-    finally { setBusy(false); }
-  }
-  async function move(index, direction) {
-    // Normalize existing positions, including duplicates and sparse legacy values.
-    const ordered = [...levels];
-    [ordered[index], ordered[index + direction]] = [ordered[index + direction], ordered[index]];
-    setBusy(true); setError("");
-    try {
-      await manageActiveClassroomLevel({ action: "reorder", levelIds: ordered.map(item => item.id) }, profile);
-    } catch (failure) { setError(failure.message || "No se pudo ordenar niveles."); }
-    finally { setBusy(false); }
-  }
-  return <section className="ac-section-panel">
-    <h1>Niveles</h1><p>Crea y organiza niveles. Desactivar conserva sus Units y publicaciones.</p>
-    {error && <div className="ac-error-banner" role="alert">{error}</div>}
-    <form className="ac-unit-actions" onSubmit={async event => { event.preventDefault(); if (await change({ action: "create", name, position: levels.length ? Math.max(...levels.map(level => level.position || 0)) + 1 : 0 })) setName(""); }}>
-      <label>Nombre del nivel<input required maxLength={160} value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>
-      <button className="ac-primary-button" disabled={busy || !name.trim()}>Crear nivel</button>
-    </form>
-    {levels.map((level, index) => <article className="ac-unit-card" key={level.id}>
-      <h2>{level.name} <small>{level.active === false ? "Inactivo" : "Activo"}</small></h2>
-      <p>{folders.filter(folder => folder.parentId === level.id).length} Units. Para reasignar, abre cada Unit y cambia su Nivel.</p>
-      <div className="ac-unit-actions">
-        <button className="ac-outline-button" disabled={busy} onClick={() => onOpen(level.id)}>Ver Units</button>
-        <button className="ac-outline-button" disabled={busy} onClick={() => { const next = window.prompt("Nombre del nivel", level.name); if (next !== null) void change({ action: "update", levelId: level.id, name: next }); }}>Renombrar</button>
-        <button className="ac-outline-button" disabled={busy || index === 0} onClick={() => move(index, -1)}>Subir</button>
-        <button className="ac-outline-button" disabled={busy || index === levels.length - 1} onClick={() => move(index, 1)}>Bajar</button>
-        <button className="ac-outline-button" disabled={busy} onClick={() => change({ action: "update", levelId: level.id, active: level.active === false })}>{level.active === false ? "Activar" : "Desactivar"}</button>
-        <button className="ac-clear-filters" disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar ${level.name}? Solo se permite si no contiene Units.`)) void change({ action: "delete", levelId: level.id }); }}>Eliminar</button>
-      </div>
-    </article>)}
-  </section>;
+  const visible = levels.filter(level => level.name.toLocaleLowerCase("es").includes(search.trim().toLocaleLowerCase("es")) && (status === "all" || (level.active !== false) === (status === "active")));
+  const inspected = levels.find(level => level.id === selected) || visible[0];
+  useEffect(() => { if (createRequested) { input.current?.scrollIntoView({ block: "center" }); input.current?.focus(); } }, [createRequested]);
+  async function change(data) { if (!allowed || busy) return false; setBusy(true); setError(""); try { await manageActiveClassroomLevel(data, profile); return true; } catch (failure) { setError(failure.message || "No se pudo guardar el nivel."); return false; } finally { setBusy(false); } }
+  async function move(index, direction) { const ordered = [...levels]; [ordered[index], ordered[index + direction]] = [ordered[index + direction], ordered[index]]; await change({ action: "reorder", levelIds: ordered.map(item => item.id) }); }
+  const levelUnits = id => catalog.filter(unit => unit.parentId === id);
+  function actions(level, index) { return <div className="ac-level-actions"><button className="ac-primary-button" onClick={() => onOpen(level.id)}><ActiveClassroomIcon name="folder" />Abrir nivel</button>{allowed && <><button className="ac-outline-button" disabled={busy} onClick={() => { const next = window.prompt("Nombre del nivel", level.name); if (next !== null) void change({ action: "update", levelId: level.id, name: next }); }}>Editar / Renombrar</button><button className="ac-outline-button" disabled={busy} onClick={() => { void change({ action: "update", levelId: level.id, active: level.active === false }); }}>{level.active === false ? "Activar" : "Desactivar"}</button>{reordering && <><button className="ac-outline-button" disabled={busy || index === 0} onClick={() => { void move(index, -1); }}>Subir</button><button className="ac-outline-button" disabled={busy || index === levels.length - 1} onClick={() => { void move(index, 1); }}>Bajar</button></>}<button className="ac-danger-button" disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar ${level.name}? Si contiene Units o publicaciones, debe desactivarse o reasignarse.`)) void change({ action: "delete", levelId: level.id }); }}>Eliminar nivel</button></>}</div>; }
+  return <><ClassroomMetrics items={[{ title: "Niveles activos", value: levels.filter(level => level.active !== false).length, detail: `${levels.length} niveles registrados`, icon: "library" }, { title: "Total de Units", value: catalog.length, detail: "en todos los niveles", icon: "folder", tone: "green" }, { title: "Niveles con publicaciones", value: levels.filter(level => levelUnits(level.id).some(unit => unit.version > 0)).length, detail: "con contenido disponible", icon: "publications", tone: "orange" }]} />{error && <p className="ac-error-banner" role="alert">{error}</p>}<div className="ac-console-layout"><section className="ac-console-panel"><div className="ac-console-toolbar"><label><ActiveClassroomIcon name="search" /><input placeholder="Buscar nivel por nombre…" value={search} onChange={event => setSearch(event.target.value)} /></label><select aria-label="Estado del nivel" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Todos los estados</option><option value="active">Activo</option><option value="inactive">Inactivo</option></select><div className="ac-view-buttons"><button className={view === "list" ? "is-active" : ""} aria-label="Lista de niveles" onClick={() => setView("list")}><ActiveClassroomIcon name="list" /></button><button className={view === "grid" ? "is-active" : ""} aria-label="Cuadrícula de niveles" onClick={() => setView("grid")}><ActiveClassroomIcon name="grid" /></button></div></div><div className={`ac-console-grid ${view === "list" ? "is-list" : ""}`}>{visible.map(level => { const units = levelUnits(level.id); const cover = units.find(unit => unit.document?.draft?.mainPresentationId) || units[0] || { ...level, level }; return <article className={`ac-console-unit ${inspected?.id === level.id ? "is-selected" : ""}`} key={level.id}><button className="ac-card-select" onClick={() => setSelected(level.id)}><UnitCover unit={{ ...cover, level }} resources={resources} /><span className="ac-folder-bubble"><ActiveClassroomIcon name="folder" /></span><h3>{level.name}</h3></button><details className="ac-card-menu"><summary aria-label={`Acciones de ${level.name}`}>···</summary>{actions(level, levels.indexOf(level))}</details><div className="ac-unit-card-info"><span>{units.length} Units</span><span>{units.reduce((sum, unit) => sum + unit.version, 0)} publicaciones</span></div><span className={`ac-console-status is-${level.active !== false ? "positive" : "pending"}`}>{level.active !== false ? "Activo" : "Inactivo"}</span>{reordering && allowed && actions(level, levels.indexOf(level))}</article>; })}</div>{allowed && <form className="ac-new-level-form" onSubmit={async event => { event.preventDefault(); if (await change({ action: "create", name, position: levels.length ? Math.max(...levels.map(level => level.position || 0)) + 1 : 0 })) setName(""); }}><label>Crear nuevo nivel<input ref={input} required maxLength={160} value={name} disabled={busy} placeholder="Nombre del nivel" onChange={event => setName(event.target.value)} /></label><button className="ac-primary-button" disabled={busy || !name.trim()}>+ Crear nivel</button></form>}</section><ClassroomInspector title="Inspector de nivel">{inspected ? <div className="ac-inspector-body"><UnitCover unit={{ ...(levelUnits(inspected.id)[0] || inspected), level: inspected }} resources={resources} /><h3>{inspected.name}</h3><dl><dt>Estado</dt><dd>{inspected.active === false ? "Inactivo" : "Activo"}</dd><dt>Units</dt><dd>{levelUnits(inspected.id).length}</dd><dt>Publicaciones</dt><dd>{levelUnits(inspected.id).reduce((sum, unit) => sum + unit.version, 0)}</dd><dt>Orden</dt><dd>{levels.indexOf(inspected) + 1}</dd></dl>{actions(inspected, levels.indexOf(inspected))}<small>Para reasignar Units, abre cada Unit y cambia su Nivel. Publicaciones antiguas conservan su nivel original.</small></div> : <p>Selecciona un nivel.</p>}</ClassroomInspector></div></>;
 }

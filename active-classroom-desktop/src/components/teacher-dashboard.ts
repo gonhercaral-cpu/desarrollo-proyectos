@@ -1,3 +1,4 @@
+import { shortcutFor } from "../player/shortcuts";
 import type { CatalogFile, CatalogLoadResult } from "../models/library-catalog";
 import { loadLibraryCatalog } from "../services/library-catalog";
 import { getAudienceStatus, importPresentation, isTauri, showAudienceWindow } from "../services/tauri-bridge";
@@ -76,11 +77,10 @@ export function renderTeacher(root: HTMLDivElement, classroomStore: ClassroomSto
     changeSlide(classroomStore.snapshot.currentSlideIndex + Number(button.dataset.slideDirection));
   });
   window.addEventListener("keydown", (event) => {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !classroomStore.snapshot.presentation) return;
-    const target = event.target as HTMLElement | null;
-    if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
-    if (event.key === "ArrowLeft" || event.key === "PageUp") { event.preventDefault(); changeSlide(classroomStore.snapshot.currentSlideIndex - 1); }
-    else if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") { event.preventDefault(); changeSlide(classroomStore.snapshot.currentSlideIndex + 1); }
+    if (!classroomStore.snapshot.presentation) return;
+    const command = shortcutFor(event, true);
+    if (command === "BACK" || command === "PREVIOUS") { event.preventDefault(); changeSlide(classroomStore.snapshot.currentSlideIndex - 1); }
+    else if (command === "ADVANCE" || command === "NEXT") { event.preventDefault(); changeSlide(classroomStore.snapshot.currentSlideIndex + 1); }
   });
   slideJump.addEventListener("change", () => changeSlide(Number(slideJump.value)));
 

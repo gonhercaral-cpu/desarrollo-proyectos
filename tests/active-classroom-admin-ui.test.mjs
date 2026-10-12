@@ -25,17 +25,18 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
     validateUnitPublication: async (_id, expected) => { assert.equal(expected, revision); return { ready: !changed.size && !!draft.mainPresentationId, results: [...changed].map(resourceId => ({ resourceId, status: "changed" })), issues: draft.mainPresentationId ? [] : ["Selecciona una presentación principal."] }; },
     publishUnit: async (_id, expected) => { assert.equal(expected, revision); published.push(structuredClone(draft)); },
     processUnitDocument: async () => { throw new Error("PDF/audio no requieren procesamiento Office"); },
+    listClassroomDriveFiles: async () => ({ rootFolderId: "drive-root", files: [{ id: "replacement", name: "Nueva.pdf", mimeType: "application/pdf" }] }),
     getDriveRootSettings: async () => ({ rootFolderId: "drive-root" }), listDriveFolder: async () => ({ files: [{ id: "replacement", name: "Nueva.pdf", mimeType: "application/pdf" }] }),
   };
   globalThis.__classroomAdminMock = mock;
   const server = await createServer({ server: { middlewareMode: true, hmr: false }, plugins: [{ name: "admin-test-services", enforce: "pre", load(id) {
-    if (/unitEditorService\.js$|services\/driveService\.js$/.test(id.replaceAll("\\", "/"))) return Object.keys(mock).map(name => `export const ${name} = (...args) => globalThis.__classroomAdminMock.${name}(...args);`).join("\n");
+    if (/unitEditorService\.js$|services\/driveService\.js$|activeClassroomService\.js$/.test(id.replaceAll("\\", "/"))) return Object.keys(mock).map(name => `export const ${name} = (...args) => globalThis.__classroomAdminMock.${name}(...args);`).join("\n");
     if (/ResourceInspector\.jsx$|SlideInteractionEditor\.jsx$/.test(id)) return "export default function UnchangedPlayerComponent() { return null; }";
   } }] });
   const root = createRoot(dom.window.document.querySelector("#root"));
   t.after(async () => { await act(async () => root.unmount()); await server.close(); dom.window.close(); Object.assign(globalThis, previous); delete globalThis.__classroomAdminMock; });
   const { UnitEditorForm } = await server.ssrLoadModule("/src/active-classroom/components/UnitEditor.jsx");
-  await act(async () => root.render(React.createElement(UnitEditorForm, { unit: { id: "unit", name: draft.name }, folders: [{ id: "level-1", kind: "level", name: "Nivel actual", active: true }], resources, initial: { editor: { draft, draftRevision: revision }, publications: [] }, onDirtyChange() {}, onBack() {}, onUpload: async () => [], onImport: async () => { resources.push({ id: "replacement", folderId: "unit", source: "drive", name: "Nueva.pdf", mimeType: "application/pdf", kind: "document" }); return { imported: [{ id: "replacement" }], failed: [] }; } })));
+  await act(async () => root.render(React.createElement(UnitEditorForm, { profile: { uid: "admin", active: true, role: "admin" }, unit: { id: "unit", name: draft.name }, folders: [{ id: "level-1", kind: "level", name: "Nivel actual", active: true }], resources, initial: { editor: { draft, draftRevision: revision }, publications: [] }, onDirtyChange() {}, onBack() {}, onUpload: async () => [], onImport: async () => { resources.push({ id: "replacement", folderId: "unit", source: "drive", name: "Nueva.pdf", mimeType: "application/pdf", kind: "document" }); return { imported: [{ id: "replacement" }], failed: [] }; } })));
   const button = text => [...dom.window.document.querySelectorAll("button")].find(item => item.textContent.trim() === text);
   const click = async text => { assert.ok(button(text), text); await act(async () => button(text).click()); };
   const fields = dom.window.document.querySelector(".ac-unit-fields").textContent;

@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { contentHash, snapshotResource } = require("./activeClassroomUnit");
@@ -70,7 +71,7 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
     const signal = AbortSignal.timeout(transferTimeoutSeconds * 1000);
     try {
       const profile = await getProfile(job.requestedByUid);
-      if (profile?.active !== true || profile.role !== "admin") throw new HttpsError("permission-denied", "Solo administradores activos pueden publicar Units.");
+      if (!canClassroom(profile, "publishVersions")) throw new HttpsError("permission-denied", "No tienes permiso para publicar versiones.");
       const request = { auth: { uid: job.requestedByUid }, data: { unitId: job.unitId, expectedRevision: job.expectedRevision } };
       const current = await units.preparePublish(request);
       if (fingerprint(current) !== fingerprint(job.resources)) throw new HttpsError("aborted", "Los recursos cambiaron durante la publicación. Reintenta.");

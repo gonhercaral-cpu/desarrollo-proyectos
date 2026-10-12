@@ -304,6 +304,13 @@ service cloud.firestore {
       return signedIn() && profileDataHasAdminRole(profileData);
     }
 
+    function canClassroom(action) {
+      let path = /databases/$(database)/documents/activeClassroomPermissions/$(request.auth.uid);
+      return hasProfile() && (isAdmin() || (exists(path)
+        && get(path).data.get("permissions", {}).get("access", false) == true
+        && get(path).data.get("permissions", {}).get(action, false) == true));
+    }
+
     function isAdmin() {
       let profileData = userDoc().data;
       return signedIn()
@@ -2467,7 +2474,7 @@ service cloud.firestore {
 
     function validActiveClassroomFolderCreate() {
       let incomingData = request.resource.data;
-      return isAdmin()
+      return canClassroom(request.resource.data.kind == "level" ? "manageLevels" : "editUnits")
         && validTimestampPair(incomingData, "createdAt", "updatedAt")
         && hasOnlyFields(incomingData, [
           "name",
@@ -2504,7 +2511,8 @@ service cloud.firestore {
     function validActiveClassroomFolderUpdate() {
       let incomingData = request.resource.data;
       let storedData = resource.data;
-      return isAdmin()
+      return canClassroom(storedData.kind == "level" ? "manageLevels" : "editUnits")
+        && (storedData.kind == "level" || incomingData.position == storedData.position || canClassroom("orderMaterial"))
         && incomingData.kind == storedData.kind
         && incomingData.parentId == storedData.parentId
         && incomingData.createdAt == storedData.createdAt
@@ -2525,9 +2533,10 @@ service cloud.firestore {
 
     function validActiveClassroomResourceCreate(resourceId) {
       let incomingData = request.resource.data;
-      return isAdmin()
+      return canClassroom("uploadMaterial")
         && validStringPair(incomingData, "storagePath", "createdByName")
         && validBoolPair(incomingData, "published", "archived")
+        && incomingData.published == false && incomingData.archived == false
         && validTimestampPair(incomingData, "createdAt", "updatedAt")
         && hasOnlyFields(incomingData, [
           "folderId",
@@ -2574,7 +2583,10 @@ service cloud.firestore {
     function validActiveClassroomResourceUpdate() {
       let incomingData = request.resource.data;
       let storedData = resource.data;
-      return isAdmin()
+      return canClassroom("access")
+        && (incomingData.published == storedData.published || canClassroom("publishVersions"))
+        && (incomingData.archived == storedData.archived || canClassroom("orderMaterial"))
+        && (incomingData.name == storedData.name || canClassroom("editUnits"))
         && validBoolPair(incomingData, "published", "archived")
         && incomingData.folderId == storedData.folderId
         && incomingData.kind == storedData.kind
@@ -2601,7 +2613,7 @@ service cloud.firestore {
     function validActiveClassroomDriveUpdate() {
       let incoming = request.resource.data;
       let stored = resource.data;
-      return isAdmin()
+      return canClassroom("publishVersions")
         && stored.get("source", "") == "drive"
         && changesOnly(incoming, stored, [
           "published", "publishedVersion", "publishedAt",
@@ -2617,9 +2629,9 @@ service cloud.firestore {
     }
 
     match /{collectionName}/{documentId} {
-      allow get: if collectionName in ["activeClassroomFolders", "announcements", "areas", "attendanceLocations", "departments", "printProducts", "scheduleAdjustments", "userPresence", "workSchedules"]
+      allow get: if collectionName in ["announcements", "areas", "attendanceLocations", "departments", "printProducts", "scheduleAdjustments", "userPresence", "workSchedules"]
         && (hasProfile());
-      allow list: if collectionName in ["activeClassroomFolders", "announcements", "areas", "attendanceLocations", "departments", "messageTypingStates", "printProducts", "scheduleAdjustments", "userPresence", "workSchedules"]
+      allow list: if collectionName in ["announcements", "areas", "attendanceLocations", "departments", "messageTypingStates", "printProducts", "scheduleAdjustments", "userPresence", "workSchedules"]
         && (hasProfile());
       allow create: if collectionName in ["announcements", "areas", "attendanceLocations", "departments", "digitalSignageAssets", "digitalSignageAuditLogs", "digitalSignageCampaigns", "digitalSignagePlaylists", "digitalSignageVisualTemplates", "subscriptions", "users", "workSchedules"]
         && (isAdmin());
@@ -2663,7 +2675,7 @@ service cloud.firestore {
 
     match /{adminCollection}/{adminDocumentId} {
       allow get, list: if adminCollection in ["activeClassroomResources"]
-        && isAdmin();
+        && canClassroom("access");
       allow list: if adminCollection in ["projects", "purchaseRequests", "users"]
         && isAdmin();
       allow update: if adminCollection in ["digitalSignageDevices", "digitalSignagePairingSessions", "editorialTemplates", "ideas", "printRequests", "users", "workSessions"]
@@ -2717,6 +2729,7 @@ service cloud.firestore {
 
 
     match /activeClassroomFolders/{folderId} {
+      allow get, list: if canClassroom("access");
 
 
       allow create: if validActiveClassroomFolderCreate();
@@ -2724,14 +2737,14 @@ service cloud.firestore {
       allow update: if validActiveClassroomFolderUpdate()
         && !exists(/databases/$(database)/documents/activeClassroomUnits/$(folderId));
 
-      allow delete: if isAdmin()
+      allow delete: if canClassroom("editUnits")
         && resource.data.kind == "unit"
         && !exists(/databases/$(database)/documents/activeClassroomUnits/$(folderId));
     }
 
     match /activeClassroomResources/{resourceId} {
-      allow delete: if isAdmin() && resource.data.get("retainedByPublication", false) == false;
-      allow get, list: if (hasProfile() && resource.data.published == true);
+      allow delete: if canClassroom("orderMaterial") && resource.data.get("retainedByPublication", false) == false;
+      allow get, list: if canClassroom("access");
 
       allow create: if validActiveClassroomResourceCreate(resourceId);
 
@@ -2747,11 +2760,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /activeClassroomPermissions/{uid} {
+      allow get: if hasProfile() && (uid == request.auth.uid || canClassroom("managePermissions"));
+      allow list: if canClassroom("managePermissions");
+      allow write: if false;
+    }
+
     match /activeClassroomUnits/{unitId} {
-      allow read: if isAdmin();
+      allow read: if canClassroom("access");
       allow write: if false;
       match /publications/{versionId} {
-        allow read: if hasProfile();
+        allow read: if canClassroom("access");
         allow write: if false;
       }
     }

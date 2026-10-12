@@ -832,7 +832,7 @@ describe("Active Classroom", () => {
     await assertFails(claimed.storage().ref("active-classroom/publications/files/device-test").getMetadata());
     await assertFails(claimed.storage().ref("active-classroom/resources/forged/a.pdf").putString("pdf", "raw", { contentType: "application/pdf" }));
   });
-  it("borradores solo admin; publicaciones legibles por perfiles activos e inmutables para todos", async () => {
+  it("borradores y publicaciones exigen acceso al módulo; historial inmutable para todos", async () => {
     const unitPath = "activeClassroomUnits/editor-unit";
     const publicationPath = `${unitPath}/publications/1`;
     await testEnv.withSecurityRulesDisabled(async (context) => {
@@ -841,8 +841,12 @@ describe("Active Classroom", () => {
     });
     await assertSucceeds(getDoc(doc(auth("admin"), unitPath)));
     await assertFails(getDoc(doc(auth("collab"), unitPath)));
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { permissions: { access: true } }); });
+    await assertSucceeds(getDoc(doc(auth("collab"), unitPath)));
+    await assertSucceeds(getDoc(doc(auth("collab"), publicationPath)));
     for (const uid of ["admin", "collab", "requester"]) {
-      await assertSucceeds(getDoc(doc(auth(uid), publicationPath)));
+      if (["admin", "collab"].includes(uid)) await assertSucceeds(getDoc(doc(auth(uid), publicationPath)));
+      else await assertFails(getDoc(doc(auth(uid), publicationPath)));
       await assertFails(setDoc(doc(auth(uid), publicationPath), { version: 2 }));
       await assertFails(deleteDoc(doc(auth(uid), publicationPath)));
       await assertFails(updateDoc(doc(auth(uid), unitPath), { draftRevision: 2 }));
@@ -898,11 +902,13 @@ describe("Active Classroom", () => {
     await assertFails(updateDoc(adminRef, { ...publish, association: { scope: "slide", slideId: "1" } }));
     await assertFails(updateDoc(adminRef, { published: true }));
     await assertSucceeds(updateDoc(adminRef, publish));
+    await assertFails(getDoc(readerRef));
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { permissions: { access: true } }); });
     await assertSucceeds(getDoc(readerRef));
     await assertFails(getDoc(doc(unauth(), "activeClassroomResources", "drive-reference")));
     await assertFails(getDoc(doc(auth("inactive"), "activeClassroomResources", "drive-reference")));
     await assertSucceeds(updateDoc(adminRef, { ...publish, published: false, publishedVersion: null, publishedAt: null }));
-    await assertFails(getDoc(readerRef));
+    await assertSucceeds(getDoc(readerRef));
     await assertFails(deleteDoc(readerRef));
     await assertSucceeds(deleteDoc(adminRef));
   });
@@ -911,6 +917,8 @@ describe("Active Classroom", () => {
       doc(auth("admin"), "activeClassroomFolders", "level-1"),
       validActiveClassroomFolder()
     ));
+    await assertFails(getDoc(doc(auth("collab"), "activeClassroomFolders", "level-1")));
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { permissions: { access: true } }); });
     await assertSucceeds(getDoc(doc(auth("collab"), "activeClassroomFolders", "level-1")));
     await assertFails(setDoc(
       doc(auth("collab"), "activeClassroomFolders", "level-2"),
@@ -947,7 +955,7 @@ describe("Active Classroom", () => {
     await assertSucceeds(batch.commit());
   });
 
-  it("expone a perfiles activos solo recursos publicados", async () => {
+  it("acceso a borradores requiere permiso del módulo; publicación no concede acceso", async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
       await Promise.all([
@@ -962,7 +970,7 @@ describe("Active Classroom", () => {
       ]);
     });
 
-    await assertSucceeds(getDoc(
+    await assertFails(getDoc(
       doc(auth("collab"), "activeClassroomResources", "published-resource")
     ));
     await assertFails(getDoc(
@@ -971,7 +979,7 @@ describe("Active Classroom", () => {
     await assertSucceeds(getDoc(
       doc(auth("admin"), "activeClassroomResources", "draft-resource")
     ));
-    await assertSucceeds(getDocs(query(
+    await assertFails(getDocs(query(
       collection(auth("collab"), "activeClassroomResources"),
       where("published", "==", true)
     )));
@@ -979,6 +987,10 @@ describe("Active Classroom", () => {
       auth("collab"),
       "activeClassroomResources"
     )));
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { permissions: { access: true } }); });
+    await assertSucceeds(getDoc(doc(auth("collab"), "activeClassroomResources", "draft-resource")));
+    const permitted = await assertSucceeds(getDocs(collection(auth("collab"), "activeClassroomResources")));
+    assert.equal(permitted.size, 2);
   });
 
   it("permite crear y publicar recursos solo a admin", async () => {
@@ -2589,6 +2601,8 @@ describe("storage", () => {
       );
     });
 
+    await assertFails(storageAuth("collab").ref(path).getDownloadURL());
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { permissions: { access: true } }); });
     await assertSucceeds(storageAuth("collab").ref(path).getDownloadURL());
     await assertFails(storageAuth("inactive").ref(path).getDownloadURL());
   });
@@ -2814,5 +2828,38 @@ describe("storage", () => {
         .putString("binary", "raw", { contentType: "application/octet-stream" })
     );
     await assertSucceeds(toolImage.delete());
+  });
+});
+
+describe("Permisos granulares Active Classroom", () => {
+  async function grant(values) { await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { schemaVersion: 1, permissions: { access: true, ...values } }); }); }
+  async function prepare() { await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), "activeClassroomFolders", "level-1"), validActiveClassroomFolder()); await setDoc(doc(context.firestore(), "activeClassroomFolders", "level-1-unit-01"), validActiveClassroomFolder({ name: "Unit", kind: "unit", parentId: "level-1" })); await setDoc(doc(context.firestore(), "activeClassroomResources", "granular"), validActiveClassroomResource("granular")); }); }
+  it("sin acceso no lee draft; no puede autoconcederse ni escribir publicaciones", async () => {
+    await prepare(); await assertFails(getDoc(doc(auth("collab"), "activeClassroomResources", "granular")));
+    await assertFails(setDoc(doc(auth("collab"), "activeClassroomPermissions", "collab"), { permissions: { access: true, managePermissions: true } }));
+    await grant({ editUnits: true }); await assertSucceeds(getDoc(doc(auth("collab"), "activeClassroomResources", "granular")));
+    await assertFails(setDoc(doc(auth("collab"), "activeClassroomUnits/unit/publications/1"), { manifest: {} }));
+  });
+  it("subida no concede publicación, gestión de niveles ni orden", async () => {
+    await prepare(); await grant({ uploadMaterial: true });
+    const file = validActiveClassroomResource("uploaded", { createdByUid: "collab", updatedByUid: "collab" });
+    await assertSucceeds(setDoc(doc(auth("collab"), "activeClassroomResources", "uploaded"), file));
+    await assertSucceeds(storageAuth("collab").ref("active-classroom/resources/uploaded/a.pdf").putString("pdf", "raw", { contentType: "application/pdf" }));
+    await assertFails(updateDoc(doc(auth("collab"), "activeClassroomResources", "uploaded"), { published: true, updatedAt: serverTimestamp(), updatedByUid: "collab", updatedByName: "Collab" }));
+    await assertFails(setDoc(doc(auth("collab"), "activeClassroomFolders", "new-level"), validActiveClassroomFolder({ createdByUid: "collab", updatedByUid: "collab" })));
+    await assertFails(deleteDoc(doc(auth("collab"), "activeClassroomResources", "granular")));
+  });
+  it("orden permite quitar material; publicar se concede separadamente", async () => {
+    await prepare(); await grant({ orderMaterial: true });
+    await assertSucceeds(updateDoc(doc(auth("collab"), "activeClassroomResources", "granular"), { archived: true, updatedAt: serverTimestamp(), updatedByUid: "collab", updatedByName: "Collab" }));
+    await assertFails(updateDoc(doc(auth("collab"), "activeClassroomResources", "granular"), { published: true, updatedAt: serverTimestamp(), updatedByUid: "collab", updatedByName: "Collab" }));
+    await grant({ publishVersions: true });
+    await assertSucceeds(updateDoc(doc(auth("collab"), "activeClassroomResources", "granular"), { published: true, updatedAt: serverTimestamp(), updatedByUid: "collab", updatedByName: "Collab" }));
+  });
+  it("revocar acceso bloquea permisos antiguos y administradores conservan control", async () => {
+    await prepare(); await grant({ access: false, uploadMaterial: true, publishVersions: true });
+    await assertFails(getDoc(doc(auth("collab"), "activeClassroomResources", "granular")));
+    await assertSucceeds(getDoc(doc(auth("admin"), "activeClassroomResources", "granular")));
+    await assertFails(updateDoc(doc(auth("collab"), "users", "collab"), { role: "admin" }));
   });
 });

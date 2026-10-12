@@ -1,3 +1,4 @@
+import { desktopSettings } from "../../settings/preferences.ts";
 export interface ProjectionMonitor { id: string; name: string; primary: boolean; width: number; height: number; x: number; y: number; scaleFactor: number }
 export interface ProjectionStatus { monitors: ProjectionMonitor[]; projecting: boolean; disconnected: boolean }
 const preferenceKey = "active-classroom-projection-monitor";
@@ -12,6 +13,8 @@ export function preferredMonitor(monitors: ProjectionMonitor[], saved?: Partial<
   return monitors.find((monitor) => !monitor.primary) || monitors[1];
 }
 export function readMonitorPreference(): Partial<ProjectionMonitor> | undefined {
+  if (!desktopSettings().rememberProjector) return undefined;
   try { const data = JSON.parse(localStorage.getItem(preferenceKey) || "null"); return data && typeof data === "object" ? data : undefined; } catch { return; }
 }
-export function saveMonitorPreference(monitor: ProjectionMonitor): void { try { localStorage.setItem(preferenceKey, JSON.stringify(monitor)); } catch { /* Selection still works for this class. */ } }
+export function saveMonitorPreference(monitor: ProjectionMonitor): void {
+  if (!desktopSettings().rememberProjector) return; try { localStorage.setItem(preferenceKey, JSON.stringify(monitor)); } catch { /* Selection still works for this class. */ } }

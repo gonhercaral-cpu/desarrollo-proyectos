@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { HttpsError } = require("firebase-functions/v2/https");
 
 // Keep stable IDs: renames/order/status never rewrite immutable manifests.
@@ -5,7 +6,7 @@ function createLevelHandler({ db, getProfile, timestamp }) {
   return async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = await getProfile(request.auth.uid);
-    if (profile?.role !== "admin" || profile.active !== true) throw new HttpsError("permission-denied", "Solo administradores activos pueden gestionar niveles.");
+    if (!canClassroom(profile, "manageLevels")) throw new HttpsError("permission-denied", "No tienes permiso para gestionar niveles.");
     const { action, levelId, name, active, position } = request.data || {};
     if (action === "reorder") {
       const ids = request.data.levelIds;

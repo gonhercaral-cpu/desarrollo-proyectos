@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { isRasterSlides, requireReady } = require("./activeClassroomProcessingModel");
 // Admin-only preview: callers choose IDs, never Storage paths or generations.
@@ -5,7 +6,7 @@ function createBuildPreview({ db, bucket, getProfile, prepareResource, clock = D
   return async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = await getProfile(request.auth.uid);
-    if (profile?.active !== true || profile.role !== "admin") throw new HttpsError("permission-denied", "Solo administradores pueden previsualizar borradores.");
+    if (!canClassroom(profile)) throw new HttpsError("permission-denied", "No tienes acceso a borradores de Active Classroom.");
     const { unitId, resourceId, pageObjectId, buildIndex = 0 } = request.data || {};
     if (![unitId, resourceId].every(value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value)) || !Number.isInteger(buildIndex) || buildIndex < 0 || buildIndex > 50) throw new HttpsError("invalid-argument", "Vista previa inválida.");
     const resource = { id: resourceId, ...(await db.collection("activeClassroomResources").doc(resourceId).get()).data() };

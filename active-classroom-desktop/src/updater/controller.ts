@@ -10,6 +10,7 @@ export interface UpdateTransport {
 export const updateBusy = (phase: UpdatePhase) => ["checking", "downloading", "verifying", "installing"].includes(phase);
 export class ProgramUpdater {
   status: UpdateStatus = { phase: "idle", currentVersion: "", downloaded: 0, message: "Sin comprobar" };
+  lastChecked = 0;
   visible = false;
   automatic = false;
   private running = false;
@@ -19,10 +20,12 @@ export class ProgramUpdater {
   constructor(transport: UpdateTransport, changed: () => void) { this.transport = transport; this.changed = changed; }
   private accept(status: UpdateStatus): void {
     this.status = status;
+    if (["current", "available"].includes(status.phase)) { this.lastChecked = Date.now(); try { localStorage.setItem("active-classroom-updater-last-check", String(this.lastChecked)); } catch { /* Checking continues even if preferences are unavailable. */ } }
     if (status.phase === "available" || status.phase === "installed") this.visible = true;
     this.changed();
   }
   async start(check = true): Promise<void> {
+    try { this.lastChecked = Number(localStorage.getItem("active-classroom-updater-last-check")) || 0; } catch { /* Default: no recorded check. */ }
     try {
       this.unlisten = await this.transport.listen(status => this.accept(status));
       this.accept(await this.transport.action("status"));

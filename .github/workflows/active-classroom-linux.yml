@@ -73,7 +73,7 @@ jobs:
           npx eslint drive/activeClassroomInteraction.js drive/activeClassroomBuildPreview.js src/active-classroom/components/SlideInteractionEditor.jsx src/active-classroom/utils/slideInteraction.js tests/active-classroom-builds*.cjs
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
           npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
-          npx eslint drive/activeClassroomLevels.js src/active-classroom tests/active-classroom-admin*
+          npx eslint drive/activeClassroomLevels.js drive/activeClassroomPermissions.js src/active-classroom tests/active-classroom-admin* tests/active-classroom-permissions.test.cjs tests/active-classroom-console.test.mjs
           npm run build
           node --check drive/index.js
           node --check functions/index.js
@@ -174,11 +174,18 @@ jobs:
       - name: Revelados progresivos y sesión offline compartida
         run: npm run test:builds
 
+      - name: Ajustes persistentes y editor de atajos
+        run: npm run test:settings
+
       - name: Tests de interfaz visual Desktop
         run: npm run test:frontend
 
       - name: Layout WebKitGTK en cuatro resoluciones antes del build nativo
         run: npm run test:design:webkit
+
+      - name: Web institucional e inspectores en tres resoluciones
+        working-directory: .
+        run: node tests/active-classroom-console-webkit.mjs
 
       - name: Tests del updater del programa
         run: npm run test:updater

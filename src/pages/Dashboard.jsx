@@ -1,3 +1,4 @@
+import useClassroomPermissions from "../active-classroom/hooks/useClassroomPermissions";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   collection,
@@ -296,7 +297,7 @@ function renderDashboardNavIconPath(name) {
 }
 
 
-function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial }) {
+function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial, canUseClassroom }) {
   const items = [];
 
   if (isAdmin) {
@@ -351,6 +352,7 @@ function getDashboardNavigationItems({ isAdmin, canUsePrintShop, canUseTechnical
     items.push({ page: "bug-reports", label: "Reporte de errores", mobileLabel: "Errores", icon: "bugReports", section: "Administración" });
   }
 
+  if (!isAdmin && canUseClassroom) items.push({ page: "active-classroom", label: "Active Classroom", mobileLabel: "Classroom", icon: "classroom", section: "Operación" });
   return items;
 }
 
@@ -385,7 +387,7 @@ function getMobilePrimaryNavigationItems(items, { isAdmin, canUsePrintShop, canU
   return [...preferred, ...fallback].slice(0, 4);
 }
 
-function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial }) {
+function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial, canUseClassroom }) {
   const defaultPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const adminOnlyPages = new Set([
     "executive-dashboard",
@@ -394,13 +396,13 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
     "create-project",
     "collaborators-admin",
     "departments-admin",
-    "active-classroom",
     "digital-signage",
     "subscription-manager",
     "protect-cameras",
   ]);
 
   if (!page) return defaultPage;
+  if (page === "active-classroom" && canUseClassroom === false) return defaultPage;
   if (page === "protect-cameras" && !ENABLE_UNIFI_CAMERAS_MODULE) return defaultPage;
   if (adminOnlyPages.has(page) && !isAdmin) return defaultPage;
   if (page === "drive-manager" && !canUseDriveManager) return defaultPage;
@@ -414,6 +416,8 @@ function getSafeDashboardPage(page, { isAdmin, canUsePrintShop, canUseTechnicalS
 
 export default function Dashboard({ theme = "light", onToggleTheme }) {
   const { profile, logout, isAdmin, uid, refreshProfile } = useAuth();
+  const classroomAccess = useClassroomPermissions(profile);
+  const canUseClassroom = classroomAccess.canAccess;
   const userDepartmentNames = getProfileDepartmentNames(profile);
   const canUsePrintShopByDepartment =
     isAdmin ||
@@ -538,6 +542,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       canUseTechnicalSupport,
       canUseDriveManager,
       canUseEditorial,
+      canUseClassroom,
     });
 
     if (safePage !== page) {
@@ -545,7 +550,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       setReturnPage(safePage);
       setPage(safePage);
     }
-  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial]);
+  }, [page, isAdmin, canUsePrintShop, canUseTechnicalSupport, canUseDriveManager, canUseEditorial, canUseClassroom]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -599,6 +604,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       canUseTechnicalSupport,
       canUseDriveManager,
       canUseEditorial,
+      canUseClassroom,
     });
 
     if (!setPage(safePage)) return;
@@ -783,10 +789,10 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
       return <SubscriptionManager />;
     }
 
-    if (page === "active-classroom" && isAdmin) {
+    if (page === "active-classroom" && canUseClassroom) {
       return (
         <Suspense fallback={<div className="loading-screen"><h2>Cargando Active Classroom...</h2></div>}>
-          <ActiveClassroomModule profile={profile} />
+          <ActiveClassroomModule profile={classroomAccess.profile} />
         </Suspense>
       );
     }
@@ -993,6 +999,7 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
     canUseTechnicalSupport,
     canUseDriveManager,
     canUseEditorial,
+    canUseClassroom,
   }).map((item) => {
     if (item.page === "workspace-dashboard") {
       return { ...item, badgeCount: unreadAnnouncementsCount };
