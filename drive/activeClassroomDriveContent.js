@@ -1,3 +1,5 @@
+const { Readable } = require("node:stream");
+const { setTimeout: sleep } = require("node:timers/promises");
 const { HttpsError } = require("firebase-functions/v2/https");
 
 function googleErrorReason(error) {
@@ -12,7 +14,35 @@ function processingError(error, slides = false) {
   if (error instanceof HttpsError) return error;
   return new HttpsError("failed-precondition", slides ? "No se pudo procesar la presentación de Google Slides" : "No se pudo procesar el documento. Reintenta o revisa el original.");
 }
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+async function openSlidesExport(drive, fileId, { wait = sleep, clock = Date.now, request = fetch } = {}) {
+  // files.export caps exports at 10 MB. The official download LRO supports large
+  // Workspace exports. Its access-bearing URL never enters metadata or logs.
+  const deadline = clock() + 120000;
+  let operation = (await drive.files.download({ fileId, mimeType: PPTX_MIME }, { timeout: 20000 })).data;
+  while (!operation.done) {
+    if (clock() >= deadline || !operation.name) throw new HttpsError("deadline-exceeded", "La exportación de Nube AES tardó demasiado. Reintenta.");
+    await wait(10000);
+    operation = (await drive.operations.get({ name: operation.name }, { timeout: 20000 })).data;
+  }
+  if (operation.error || !operation.response?.downloadUri) throw new HttpsError("failed-precondition", "No se pudo exportar esta presentación para extraer revelados.");
+  let url = new URL(operation.response.downloadUri);
+  for (let redirects = 0; redirects <= 3; redirects++) {
+    if (url.protocol !== "https:" || url.username || url.password || !(url.hostname === "docs.google.com" || url.hostname === "drive.google.com" || url.hostname === "drive.usercontent.google.com" || url.hostname === "googleusercontent.com" || url.hostname.endsWith(".googleusercontent.com"))) throw new HttpsError("data-loss", "Exportación de Nube AES inválida.");
+    const headers = await drive.context?._options?.auth?.getRequestHeaders(url.toString());
+    const response = await request(url, { headers, redirect: "manual", signal: AbortSignal.timeout(120000) });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      await response.body?.cancel();
+      url = new URL(response.headers.get("location"), url);
+      continue;
+    }
+    if (!response.ok || !response.body) { await response.body?.cancel(); throw new HttpsError("unavailable", "No se pudo descargar la exportación de Nube AES."); }
+    return Readable.fromWeb(response.body);
+  }
+  throw new HttpsError("data-loss", "Demasiadas redirecciones en exportación de Nube AES.");
+}
 async function openActiveClassroomDrive(drive, file, descriptor) {
+  if (file.mimeType === "application/vnd.google-apps.presentation" && descriptor.deliveredMimeType === PPTX_MIME) return openSlidesExport(drive, file.id);
   if (file.mimeType === "application/vnd.google-apps.presentation") throw new HttpsError("failed-precondition", "Google Slides requiere procesamiento por diapositivas.");
   try {
     // Only native Workspace documents use export. Real PPT/PPTX always use media,
@@ -23,4 +53,4 @@ async function openActiveClassroomDrive(drive, file, descriptor) {
     return response.data;
   } catch (error) { throw processingError(error); }
 }
-module.exports = { openActiveClassroomDrive, googleErrorReason, processingError };
+module.exports = { openSlidesExport, PPTX_MIME, openActiveClassroomDrive, googleErrorReason, processingError };

@@ -95,3 +95,13 @@ class BuildTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SimultaneousBuildTests(unittest.TestCase):
+    def test_with_effect_is_grouped_with_previous_click(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            source = interactive_fixture(workspace)
+            with zipfile.ZipFile(source) as archive:
+                root = ET.fromstring(archive.read(slide_parts(archive)[0]))
+            effect = root.find(".//p:cTn[@id='5']", NS)
+            effect.set("nodeType", "withEffect")
+            self.assertEqual(click_steps(root), ([["100", "101"]], []))

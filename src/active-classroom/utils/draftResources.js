@@ -1,5 +1,9 @@
 export const DRIVE_NEW_VERSION = "Hay una versión más reciente de este archivo en Nube AES.";
 export const DRIVE_UNAVAILABLE = "El archivo original ya no está disponible en Nube AES";
+export function activeDraftResourceIds(draft) {
+  const excluded = new Set(draft?.excludedResourceIds || []);
+  return [...new Set([draft?.mainPresentationId, ...(draft?.generalResourceIds || []), ...(draft?.slides || []).flatMap(slide => [...(slide.resourceIds || []), ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])].filter(id => id && !excluded.has(id)))];
+}
 export function unitOperationMessage(error) {
   if (/data-loss|internal|deadline-exceeded|unavailable/.test(error?.code || "")) return "No se pudo preparar el archivo. El borrador y las publicaciones se conservan. Reintenta.";
   if (/checksum|SHA-256|fingerprint|stale|reference mismatch/i.test(error?.message || "")) return "No se pudo verificar el archivo. Actualiza desde Nube AES o selecciona un reemplazo.";

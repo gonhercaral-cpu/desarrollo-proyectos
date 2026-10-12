@@ -1366,12 +1366,20 @@ const classroomFiles = createPublicationFiles({
 });
 const processorUrl = defineString("ACTIVE_CLASSROOM_PROCESSOR_URL", { default: "" });
 const processorAuth = new google.auth.GoogleAuth();
+const classroomConvert = createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) });
 const classroomProcessing = createDocumentProcessing({
   db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getUserProfile,
   prepareResource: classroomFiles.prepareResource,
-  googleSlides: createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }) }),
+  googleSlides: createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }),
+    rasterize: async ({ profile, resource, revision }) => {
+      const deliveredMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+      const original = await classroomFiles.prepareResource(profile, resource, { deliveryOverride: { exported: true, deliveredMimeType, deliveredName: `${resource.name.replace(/\.pptx$/i, "")}.pptx` } });
+      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v1", extension: "pptx" });
+    },
+    verifyRaster: (result, revision) => classroomProcessing.verifyDerivative(result, revision),
+  }),
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
-  convert: createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) }),
+  convert: classroomConvert,
 });
 exports.processActiveClassroomDocument = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomProcessing.process);
 exports.getActiveClassroomBuildPreview = onCall({ timeoutSeconds: 120, memory: "1GiB" }, require("./activeClassroomBuildPreview").createBuildPreview({

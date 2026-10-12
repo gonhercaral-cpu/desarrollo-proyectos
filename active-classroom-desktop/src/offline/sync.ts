@@ -27,11 +27,36 @@ export interface RemoteStore {
   download(manifest: Manifest, resource: PublishedResource, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void>;
 }
 export interface Progress { unitId: string; bytes: number; total: number; fileName: string; phase: "download" | "verify" | "activate" }
+// Serialize shared hash transfers across queue workers. The second worker checks
+// the verified object again after acquiring the lock; .part files never race.
+export class BlobTransfers {
+  private tails = new Map<string, Promise<void>>();
+  async run<T>(hash: string, signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    const previous = this.tails.get(hash) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>(resolve => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.tails.set(hash, tail);
+    void tail.then(() => { if (this.tails.get(hash) === tail) this.tails.delete(hash); });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const aborted = () => reject(new SyncError("cancelled", "Descarga cancelada."));
+        signal.addEventListener("abort", aborted, { once: true });
+        previous.then(() => { signal.removeEventListener("abort", aborted); resolve(); });
+        if (signal.aborted) aborted();
+      });
+      if (signal.aborted) throw new SyncError("cancelled", "Descarga cancelada.");
+      return await operation();
+    } finally { release(); }
+  }
+}
 export class SyncEngine {
   cache: CacheStore;
   remote: RemoteStore;
   active?: { unitId: string; controller: AbortController; promise: Promise<Manifest> };
-  constructor(cache: CacheStore, remote: RemoteStore) { this.cache = cache; this.remote = remote; }
+  private transfers: BlobTransfers;
+  private activate: (manifest: Manifest) => Promise<void>;
+  constructor(cache: CacheStore, remote: RemoteStore, transfers = new BlobTransfers(), activate = (manifest: Manifest) => cache.commit(manifest)) { this.cache = cache; this.remote = remote; this.transfers = transfers; this.activate = activate; }
   private async cached<T>(operation: string, run: () => Promise<T>): Promise<T> {
     try { return await run(); }
     catch (error) {
@@ -72,7 +97,8 @@ export class SyncEngine {
       checkCancelled();
       const hash = resource.download.checksums.sha256;
       const size = resource.download.sizeBytes;
-      if (await this.cached("has", () => this.cache.has(hash, size))) { bytes += size; progress({ unitId: publication.unitId, bytes, total, fileName: resource.name, phase: "verify" }); continue; }
+      await this.transfers.run(hash, signal, async () => {
+      if (await this.cached("has", () => this.cache.has(hash, size))) { bytes += size; progress({ unitId: publication.unitId, bytes, total, fileName: resource.name, phase: "verify" }); return; }
       let received = 0;
       try {
         await this.cached("begin", () => this.cache.begin(hash));
@@ -96,11 +122,12 @@ export class SyncEngine {
         await this.cache.discard(hash).catch(() => {});
         throw failure;
       }
+      });
     }
     checkCancelled();
     progress({ unitId: publication.unitId, bytes, total, fileName: "", phase: "activate" });
     // Commit is the atomic boundary; cancellation after it begins cannot revoke a completed version.
-    await this.cached("commit", () => this.cache.commit(manifest));
+    await this.cached("commit", () => this.activate(manifest));
     syncDiagnostic("VERSION_ACTIVATED", { version: manifest.version });
     return manifest;
   }

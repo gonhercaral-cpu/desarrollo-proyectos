@@ -4,11 +4,11 @@ import { icon, resourceIcon } from "./icons.ts";
 import { levelName } from "./shell.ts";
 export interface UnitVisual {
   unitId: string; local?: Manifest; remote?: Publication; busy: boolean; error?: string;
-  percent: number; progressLabel: string; disableSync: boolean; opening: boolean; activating: boolean;
+  percent: number; progressLabel: string; disableSync: boolean; opening: boolean; activating: boolean; staged?: boolean;
 }
 export function unitCard(model: UnitVisual): string {
   const { unitId, local, remote } = model;
-  const state = model.busy ? "Descargando" : model.error ? "Error" : localState(local, remote);
+  const state = model.busy ? local ? "Actualizando" : "Descargando" : model.error ? "Error" : model.staged ? "Actualización lista al cerrar clase" : localState(local, remote);
   const stateIcon = model.busy ? "refresh" : state === "Error" ? "error" : state === "Actualizada" ? "check" : state === "No descargada" ? "download" : "refresh";
   const tone = state === "Actualizada" ? "positive" : state === "Error" ? "error" : state === "Actualización disponible" ? "update" : "pending";
   const title = remote?.name || local!.unit.name;
@@ -21,5 +21,5 @@ export function unitCard(model: UnitVisual): string {
     <strong class="sync-label is-${tone}">${icon(stateIcon, model.busy ? "is-spinning" : "")}${state}</strong>
     ${model.busy ? `<progress max="100" value="${model.percent}" aria-label="Progreso de descarga"></progress><small>${model.percent}% · ${escape(model.progressLabel)}</small>` : ""}
     ${model.error ? `<p role="alert" class="sync-error">${escape(model.error)}</p>` : ""}
-    <div class="unit-actions"><button class="button button-outline" data-sync="${escape(unitId)}" ${model.disableSync ? "disabled" : ""}>${icon(local ? "refresh" : "download")}${sync}</button><button class="button button-primary" data-open="${escape(unitId)}" ${!local || model.opening ? "disabled" : ""}>${icon("play")}Abrir clase</button>${model.busy ? `<button class="button button-quiet" data-cancel ${model.activating ? "disabled" : ""}>Cancelar</button>` : ""}</div></div></article>`;
+    <div class="unit-actions"><button class="button button-outline" data-sync="${escape(unitId)}" ${model.disableSync ? "disabled" : ""}>${icon(local ? "refresh" : "download")}${sync}</button><button class="button button-primary" data-open="${escape(unitId)}" ${!local || model.opening ? "disabled" : ""}>${icon("play")}Abrir clase</button>${model.busy ? `<button class="button button-quiet" data-cancel="${escape(unitId)}" ${model.activating ? "disabled" : ""}>Cancelar</button>` : ""}</div></div></article>`;
 }

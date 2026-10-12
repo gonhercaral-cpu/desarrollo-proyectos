@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.10 — 2026-10-12
+
+- Biblioteca estable durante descargas; progreso por Unit y cola de dos trabajadores con blobs compartidos.
+- Actualización automática del contenido descargado y descarga completa de niveles seleccionados.
+- Mantener niveles offline incorpora nuevas Units y actualizaciones sin reemplazar una clase abierta.
+- Versiones pendientes se verifican y activan al cerrar clase o reiniciar; fallos conservan contenido anterior.
+- Google Slides recupera revelados desde exportación PPTX verificable; publicaciones anteriores permanecen intactas.
+- Conserva activación, streaming multimedia, proyector, updater, autostart y kiosco.
+
 ## 1.0.9 — 2026-10-09
 
 - Biblioteca recibe nombres, orden y estado de niveles desde el catálogo de Active Classroom, sin listas fijas.

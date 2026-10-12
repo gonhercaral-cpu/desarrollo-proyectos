@@ -12,6 +12,7 @@ function fixture({ profile = { role: "admin", active: true, name: "Admin" }, fil
     collection: (collection) => ({ doc: (id) => `${collection}/${id}` }),
     runTransaction: (callback) => callback({
       get: async (path) => ({ exists: documents.has(path), data: () => documents.get(path) }),
+      update: (path, data) => { documents.set(path, { ...documents.get(path), ...data }); },
       create: (path, data) => { assert.ok(!documents.has(path)); documents.set(path, data); },
     }),
   };
@@ -47,7 +48,7 @@ test("reintento idempotente conserva publicación y metadata previa", async () =
   const { handler, documents } = fixture();
   const first = await handler(request);
   documents.get(`activeClassroomResources/${first.id}`).published = true;
-  assert.deepEqual(await handler(request), { id: first.id, alreadyImported: true });
+  assert.deepEqual(await handler(request), { id: first.id, alreadyImported: false, knownResource: true, reused: true });
   assert.equal(documents.get(`activeClassroomResources/${first.id}`).published, true);
 });
 
@@ -106,4 +107,18 @@ test("selector y backend coinciden para formatos soportados y rechazados", async
     const file = { name: "archivo.pptx", mimeType };
     assert.equal(resourceKind(file), getDriveResourceKind(file));
   }
+});
+
+test("quitar y reimportar el original, incluso archivado con v1 histórica, no altera publicación", async () => {
+  const { handler, documents } = fixture();
+  const { id } = await handler(request);
+  const historical = { version: 1, resources: [{ resourceId: id, frozen: "unchanged" }] };
+  documents.set("activeClassroomUnits/unit-1", { draft: { mainPresentationId: id, slides: [], generalResourceIds: [] }, publications: [historical] });
+  assert.equal((await handler(request)).alreadyImported, true);
+  documents.get("activeClassroomUnits/unit-1").draft = { mainPresentationId: null, slides: [], generalResourceIds: [], excludedResourceIds: [id] };
+  documents.get(`activeClassroomResources/${id}`).archived = true;
+  const result = await handler(request);
+  assert.equal(result.alreadyImported, false); assert.equal(result.reused, true);
+  assert.equal(documents.get(`activeClassroomResources/${id}`).archived, false);
+  assert.deepEqual(documents.get("activeClassroomUnits/unit-1").publications, [historical]);
 });

@@ -73,13 +73,13 @@ function createPublicationFiles({ db, bucket, resolveFile, openDrive, now = () =
     if (actual.generation !== download.generation || actual.sizeBytes !== download.sizeBytes || actual.mimeType !== download.mimeType || actual.checksums.sha256 !== download.checksums.sha256) throw new HttpsError("data-loss", "La copia publicada no coincide con su tamaño, generación o SHA-256.");
     return download;
   }
-  async function prepareResource(profile, resource, { signal = AbortSignal.timeout(transferTimeoutSeconds * 1000), snapshotId } = {}) {
+  async function prepareResource(profile, resource, { signal = AbortSignal.timeout(transferTimeoutSeconds * 1000), snapshotId, deliveryOverride } = {}) {
     let source, delivery, open, expectedSize, sourceFile, sourceMetadata;
     if (resource.source === "drive") {
       const file = await resolveFile(profile, resource.driveFileId);
       checkOriginal(resource, file);
-      delivery = getDriveContentDescriptor(file);
-      source = { provider: "drive", id: file.id, version: String(file.version || ""), modifiedTime: file.modifiedTime || "", md5: file.md5Checksum || "", mimeType: file.mimeType, name: file.name };
+      delivery = deliveryOverride || getDriveContentDescriptor(file);
+      source = { provider: "drive", id: file.id, version: String(file.version || ""), modifiedTime: file.modifiedTime || "", md5: file.md5Checksum || "", mimeType: file.mimeType, name: file.name, ...(deliveryOverride ? { exportMimeType: delivery.deliveredMimeType } : {}) };
       // A stable source token is required even for native Google exports.
       if (!source.version && !source.modifiedTime && !source.md5) unavailable();
       open = () => openDrive(file, delivery);

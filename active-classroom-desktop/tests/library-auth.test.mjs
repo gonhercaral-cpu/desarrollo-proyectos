@@ -17,7 +17,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
     },
     load(id) {
       if (id === "\0session-test") return "export const createDeviceSession = (notify) => globalThis.classroomHarness.createSession(notify);";
-      if (id === "\0cache-test") return "export class NativeCache { constructor(owner) { this.owner = owner; } adoptLegacy() { return Promise.resolve(); } list() { return globalThis.classroomHarness.cacheList(); } }";
+      if (id === "\0cache-test") return "export class NativeCache { constructor(owner) { this.owner = owner; } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } list() { return globalThis.classroomHarness.cacheList(); } }";
       if (id === "\0player-test") return "export class ClassroomPlayer {}";
     },
   }] });

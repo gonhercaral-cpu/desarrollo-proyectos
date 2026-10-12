@@ -25,6 +25,15 @@ function requireId(value) {
   return value;
 }
 
+function activeDraftResourceIds(draft) {
+  if (!draft) return [];
+  const excluded = new Set(draft.excludedResourceIds || []);
+  return [...new Set([draft.mainPresentationId, ...(draft.generalResourceIds || []),
+    ...(draft.slides || []).flatMap(slide => [...(slide.resourceIds || []),
+      ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])
+  ].filter(id => id && !excluded.has(id)))];
+}
+
 // Uses the existing Drive client and location/private/share authorization from index.js.
 function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) {
   return async (request) => {
@@ -56,7 +65,13 @@ function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) 
         throw new HttpsError("failed-precondition", "El Nivel de la Unit no está activo.");
       }
       const existing = await transaction.get(resourceRef);
-      if (existing.exists) return { id, alreadyImported: true };
+      const draft = (await transaction.get(db.collection("activeClassroomUnits").doc(folderId))).data()?.draft;
+      if (existing.exists) {
+        const associated = activeDraftResourceIds(draft).includes(id);
+        // Reuse identity, not the historical association. Never touch frozen versions.
+        if (existing.data().archived) transaction.update(resourceRef, { archived: false, updatedAt: timestamp(), updatedByUid: request.auth.uid });
+        return { id, alreadyImported: associated, knownResource: true, reused: !associated };
+      }
       const now = timestamp();
       transaction.create(resourceRef, {
         schemaVersion: 2,
@@ -93,4 +108,4 @@ function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) 
   };
 }
 
-module.exports = { createImportDriveReference, resourceKind };
+module.exports = { createImportDriveReference, resourceKind, activeDraftResourceIds };

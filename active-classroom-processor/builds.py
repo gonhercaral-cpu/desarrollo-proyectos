@@ -66,7 +66,7 @@ def click_steps(root):
     for effect in effects:
         targets = effect.findall(".//p:spTgt", NS)
         target_ids = list(dict.fromkeys(target.get("spid") for target in targets))
-        if (effect.get("nodeType") != "clickEffect" or effect.get("presetClass") != "entr"
+        if (effect.get("nodeType") not in {"clickEffect", "withEffect"} or effect.get("presetClass") != "entr"
                 or effect.get("presetID") not in {"1", "10"} or not target_ids
                 or any(target.get("spid") not in shapes or len(target) for target in targets)
                 or any(value in seen for value in target_ids)
@@ -74,7 +74,12 @@ def click_steps(root):
                 or any(item.get("transition") != "in" or item.get("filter") != "fade" for item in effect.findall(".//p:animEffect", NS))
                 or any(item.get("evt") not in {None, "onBegin"} or item.get("delay", "0") not in {"0", "indefinite"} for item in effect.findall("p:stCondLst/p:cond", NS))):
             return [], ["unsupported-animation"]
-        steps.append(target_ids)
+        if effect.get("nodeType") == "withEffect":
+            if not steps:
+                return [], ["unsupported-animation"]
+            steps[-1].extend(target_ids)
+        else:
+            steps.append(target_ids)
         seen.update(target_ids)
     if len(steps) > 50:
         return [], ["too-many-builds"]

@@ -6,20 +6,20 @@ const admin = require("../drive/node_modules/firebase-admin");
 const { createUnitHandlers } = require("../drive/activeClassroomUnit");
 const { createPublicationFiles, descriptor } = require("../drive/activeClassroomFiles");
 const { createDocumentProcessing } = require("../drive/activeClassroomProcessing");
-const { PPTX_PROCESSOR_VERSION, rasterTargetPath } = require("../drive/activeClassroomProcessingModel");
+const { PPTX_PROCESSOR_VERSION, SLIDES_PROCESSOR_VERSION, rasterTargetPath } = require("../drive/activeClassroomProcessingModel");
 if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) throw new Error("Solo emuladores Firestore/Storage.");
 
-test("PPTX revela offline: congelado de estados/assets, fallo, reintento e inmutabilidad real", async () => {
+for (const nativeSlides of [false, true]) test(`${nativeSlides ? "Google Slides exportado" : "PPTX"} revela offline: congelado, reintento e inmutabilidad`, async () => {
   const app = admin.initializeApp({ projectId: "builds-tests", storageBucket: "builds-tests.appspot.com" }, "builds-tests");
   const db = app.firestore(), bucket = app.storage().bucket();
-  const unitId = "unit-builds", resourceId = "main-builds";
+  const unitId = nativeSlides ? "unit-native-builds" : "unit-builds", resourceId = nativeSlides ? "main-native-builds" : "main-builds";
   const unitRef = db.doc(`activeClassroomUnits/${unitId}`), mainRef = db.doc(`activeClassroomResources/${resourceId}`);
   const profile = { active: true, role: "admin" }; const getProfile = async () => profile;
   const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
-  const source = { id: "pptx", name: "Revelados.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", version: "1", modifiedTime: "2026-10-09" };
+  const source = { id: "pptx", name: "Revelados.pptx", mimeType: nativeSlides ? "application/vnd.google-apps.presentation" : "application/vnd.openxmlformats-officedocument.presentationml.presentation", version: "1", modifiedTime: "2026-10-09" };
   const files = createPublicationFiles({ db, bucket, resolveFile: async () => ({ ...source }), openDrive: async () => Readable.from(`pptx-${source.version}`) });
   let corrupt = true; const attemptedPaths = [];
-  const processing = createDocumentProcessing({ db, bucket, getProfile, prepareResource: files.prepareResource, timestamp, async convert(data) {
+  const convertStates = async (data) => {
     assert.equal(data.processorVersion, PPTX_PROCESSOR_VERSION);
     const states = [];
     for (let index = 0; index < 3; index++) {
@@ -35,7 +35,20 @@ test("PPTX revela offline: congelado de estados/assets, fallo, reintento e inmut
     }
     const pages = [{ pageObjectId: "pptx-0", index: 0, ...states[0], builds: states.slice(1).map((state, index) => ({ order: index + 1, ...state })), warnings: [] }];
     return { processorVersion: PPTX_PROCESSOR_VERSION, revision: data.revision, pageCount: 1, pages, download: pages[0].download };
-  } });
+  };
+  let processing = createDocumentProcessing({ db, bucket, getProfile, prepareResource: files.prepareResource, timestamp, convert: convertStates });
+  if (nativeSlides) {
+    const { createGoogleSlidesProcessor } = require("../drive/activeClassroomSlides");
+    const converter = processing;
+    // Same state converter and full integrity verifier; Google page IDs survive.
+    const slides = createGoogleSlidesProcessor({ bucket, resolveFile: async () => ({ ...source }), getSlides: async () => ({ presentations: { get: async () => ({ data: { revisionId: source.version, slides: [{ objectId: "native-page" }] } }) } }),
+      rasterize: async ({ profile, resource, revision }) => {
+        const original = await files.prepareResource(profile, resource, { deliveryOverride: { exported: true, deliveredName: "export.pptx", deliveredMimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" } });
+        return convertStates({ original, revision, processorVersion: PPTX_PROCESSOR_VERSION });
+      }, verifyRaster: converter.verifyDerivative,
+    });
+    processing = createDocumentProcessing({ db, bucket, getProfile, prepareResource: files.prepareResource, timestamp, googleSlides: slides });
+  }
   const units = createUnitHandlers({ db, getProfile, resolveFile: async () => ({ ...source }), prepareResource: processing.prepareDelivery, timestamp });
   const request = expectedRevision => ({ auth: { uid: "admin" }, data: { unitId, resourceId, expectedRevision } });
   try {
@@ -49,6 +62,7 @@ test("PPTX revela offline: congelado de estados/assets, fallo, reintento e inmut
     for (const path of attemptedPaths) assert.equal((await bucket.file(path).exists())[0], false);
     corrupt = false;
     const ready = await processing.process(request(1)); assert.equal(ready.draft.slides[0].buildCount, 2);
+    assert.equal(ready.processing.processorVersion, nativeSlides ? SLIDES_PROCESSOR_VERSION : PPTX_PROCESSOR_VERSION);
     const buildDownload = ready.processing.pages[0].builds[1].download;
     const [buildBytes] = await bucket.file(buildDownload.path).download();
     await bucket.file(buildDownload.path).delete();

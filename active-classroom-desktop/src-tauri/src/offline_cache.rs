@@ -79,12 +79,18 @@ pub(crate) fn load(path: &Path) -> Result<Value, String> {
     Ok(manifest)
 }
 fn paths(root: &Path, manifest: &Value) -> Result<Value, String> {
+    cached_paths(root, manifest, &mut BTreeMap::new())
+}
+fn cached_paths(root: &Path, manifest: &Value, verified_objects: &mut BTreeMap<(String, u64), bool>) -> Result<Value, String> {
     checked_manifest(manifest)?;
     let mut paths = serde_json::Map::new();
     for resource in manifest["resources"].as_array().ok_or("manifest: Recursos inválidos")? {
         let hash = text(&resource["download"]["checksums"], "sha256")?;
         let path = root.join("objects").join(hash);
-        if !verified(&path, hash, resource["download"]["sizeBytes"].as_u64().unwrap())? { return Err("integrity: Archivo local ausente o corrupto. Sincroniza de nuevo.".into()); }
+        let size = resource["download"]["sizeBytes"].as_u64().unwrap();
+        let key = (hash.to_string(), size);
+        let valid = match verified_objects.get(&key) { Some(valid) => *valid, None => { let valid = verified(&path, hash, size)?; verified_objects.insert(key, valid); valid } };
+        if !valid { return Err("integrity: Archivo local ausente o corrupto. Sincroniza de nuevo.".into()); }
         paths.insert(text(resource, "resourceId")?.to_string(), json!(path.to_string_lossy()));
     }
     Ok(Value::Object(paths))
@@ -104,16 +110,17 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
     fs::create_dir_all(root.join("objects")).map_err(io_error)?;
     fs::create_dir_all(root.join("temporary")).map_err(io_error)?;
     match action {
-        "list" => {
+        "list" | "pending" => {
             let mut units = BTreeMap::<String, Value>::new();
+            let mut verified_objects = BTreeMap::new();
             if let Ok(folders) = fs::read_dir(root.join("units")) {
                 for unit in folders.flatten() {
                     if let Ok(versions) = fs::read_dir(unit.path().join("versions")) {
                         for version in versions.flatten() {
-                            if let Ok(manifest) = load(&version.path().join("manifest.json")) {
+                            if let Ok(manifest) = load(&version.path().join(if action == "pending" { "manifest.staged" } else { "manifest.json" })) {
                                 let id = manifest["unit"]["unitId"].as_str().unwrap().to_string();
                                 if unit.file_name().to_string_lossy() != id || version.file_name().to_string_lossy() != manifest["version"].to_string() { continue; }
-                                if paths(root, &manifest).is_ok() && units.get(&id).map(|old| old["version"].as_u64() < manifest["version"].as_u64()).unwrap_or(true) { units.insert(id, manifest); }
+                                if cached_paths(root, &manifest, &mut verified_objects).is_ok() && units.get(&id).map(|old| old["version"].as_u64() < manifest["version"].as_u64()).unwrap_or(true) { units.insert(id, manifest); }
                             }
                         }
                     }
@@ -121,15 +128,16 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
             }
             Ok(json!(units.into_values().collect::<Vec<_>>()))
         }
-        "commit" => {
+        "commit" | "stage" => {
             checked_manifest(&data)?;
             paths(root, &data)?;
             let directory = version_dir(root, text(&data["unit"], "unitId")?, data["version"].as_u64().unwrap())?;
             fs::create_dir_all(&directory).map_err(io_error)?;
-            let final_path = directory.join("manifest.json");
+            let final_path = directory.join(if action == "stage" { "manifest.staged" } else { "manifest.json" });
             if final_path.exists() {
                 if let Ok(existing) = load(&final_path) {
                     if existing != data { return Err("version: La versión local es inmutable".into()); }
+                    if action == "commit" { let _ = fs::remove_file(directory.join("manifest.staged")); }
                     return Ok(Value::Null);
                 }
                 fs::remove_file(&final_path).map_err(io_error)?;
@@ -139,6 +147,7 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
             // The manifest rename is the sole visibility/activation boundary.
             fs::rename(temporary, final_path).map_err(io_error)?;
             sync_directory(&directory)?;
+            if action == "commit" { let _ = fs::remove_file(directory.join("manifest.staged")); }
             Ok(Value::Null)
         }
         "open" => {
@@ -286,6 +295,30 @@ mod tests {
         assert_eq!(execute(&root, "list", Value::Null).unwrap()[0], manifest);
         manifest["resources"][0]["download"]["sizeBytes"] = json!(maximum_file_bytes() + 1);
         assert!(checked_manifest(&manifest).unwrap_err().starts_with("manifest: Tamaño"));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn staged_update_stays_invisible_until_verified_atomic_activation() {
+        let root = std::env::temp_dir().join(format!("ac-cache-staged-{}", std::process::id()));
+        let mut manifest: Value = serde_json::from_str(include_str!("../../../docs/active-classroom-manifest.example.json")).unwrap();
+        let hash = digest(b"offline");
+        for resource in manifest["resources"].as_array_mut().unwrap() { resource["download"]["sizeBytes"] = json!(7); resource["download"]["checksums"]["sha256"] = json!(hash); }
+        let mut content = manifest.clone();
+        for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+        manifest["integrity"]["contentHash"] = json!(digest(canonical(&content).as_bytes()));
+        assert!(execute(&root, "stage", manifest.clone()).is_err());
+        execute(&root, "begin", json!({"hash": hash})).unwrap();
+        execute(&root, "append", json!({"hash": hash, "offset": 0, "chunk": b"offline".to_vec()})).unwrap();
+        execute(&root, "finish", json!({"hash": hash, "size": 7})).unwrap();
+        execute(&root, "commit", manifest.clone()).unwrap();
+        let mut next = manifest.clone(); next["version"] = json!(2);
+        execute(&root, "stage", next.clone()).unwrap();
+        assert_eq!(execute(&root, "list", Value::Null).unwrap()[0]["version"], 1);
+        assert_eq!(execute(&root, "pending", Value::Null).unwrap()[0]["version"], 2);
+        execute(&root, "open", json!({"unitId": manifest["unit"]["unitId"], "version": 1})).unwrap();
+        execute(&root, "commit", next).unwrap();
+        assert_eq!(execute(&root, "list", Value::Null).unwrap()[0]["version"], 2);
+        assert_eq!(execute(&root, "pending", Value::Null).unwrap(), json!([]));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

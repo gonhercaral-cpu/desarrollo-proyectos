@@ -25,7 +25,7 @@ after(async () => app.delete());
 test("importaciones concurrentes crean una sola referencia con timestamps reales", async () => {
   const results = await Promise.all([handler(request), handler(request), handler(request)]);
   assert.equal(new Set(results.map(({ id }) => id)).size, 1);
-  assert.equal(results.filter(({ alreadyImported }) => !alreadyImported).length, 1);
+  assert.equal(results.filter(({ knownResource }) => !knownResource).length, 1);
   const stored = (await db.collection("activeClassroomResources").doc(results[0].id).get()).data();
   assert.ok(stored.createdAt.toMillis() > 0);
   assert.equal(stored.sourceCheckedAt.toMillis(), stored.createdAt.toMillis());

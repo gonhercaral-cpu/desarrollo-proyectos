@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { getDriveRootSettings, listDriveFolder } from "../../services/driveService";
 import { getDriveResourceKind } from "../utils/driveResources";
 import { formatResourceDate, getResourceKindLabel } from "../utils/resourceTypes";
-import { unitOperationMessage } from "../utils/draftResources";
+import { unitOperationMessage, activeDraftResourceIds } from "../utils/draftResources";
+import { loadUnitEditor } from "../services/unitEditorService";
 
-export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, allowExisting = false, onDestinationChange }) {
+export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, draft, onDestinationChange }) {
   const dialogRef = useRef(null);
   const [path, setPath] = useState([]);
   const [items, setItems] = useState([]);
@@ -17,15 +18,24 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
   const [progress, setProgress] = useState(null);
   const [retry, setRetry] = useState(0);
   const [importedIds, setImportedIds] = useState([]);
+  const [savedDraft, setSavedDraft] = useState(null);
+  const associatedIds = new Set(activeDraftResourceIds(draft || savedDraft));
   const folderId = path.at(-1)?.id || "";
   const existingIds = new Set([
-    ...resources.filter((resource) => resource.folderId === unit.id).map((resource) => resource.driveFileId),
+    ...resources.filter((resource) => resource.folderId === unit.id && associatedIds.has(resource.id) && !resource.archived
+      && (!destination || (destination === "Presentación principal" ? resource.id === (draft || savedDraft)?.mainPresentationId : (draft || savedDraft)?.generalResourceIds?.includes(resource.id)))).map((resource) => resource.driveFileId),
     ...importedIds,
   ]);
 
   useEffect(() => {
     dialogRef.current.showModal();
   }, []);
+  useEffect(() => {
+    if (draft) return;
+    let active = true;
+    loadUnitEditor(unit.id).then(value => { if (active) setSavedDraft(value?.draft || null); }).catch(() => {});
+    return () => { active = false; };
+  }, [draft, unit.id]);
 
   useEffect(() => {
     let active = true;
@@ -73,7 +83,7 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
       setImportedIds((current) => [...current, ...selected.filter((file) => !failedIds.has(file.id)).map((file) => file.id)]);
       setSelected(result.failed.map(({ file }) => file));
       const repeated = result.imported.filter((resource) => resource.alreadyImported).length;
-      setNotice(`${result.imported.length - repeated} recurso(s) importado(s) a ${unit.name}.${repeated ? ` ${repeated} ya estaban importados.` : ""}`);
+      setNotice(`${result.imported.length - repeated} recurso(s) asociado(s) al borrador de ${unit.name}.${repeated ? ` ${repeated} ya están asociados al borrador actual.` : ""}`);
       setError(result.failed.map(({ file, message }) => `${file.name}: ${message}`).join("\n"));
     } catch (importError) {
       setError(unitOperationMessage(importError));
@@ -107,10 +117,10 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
             const kind = getDriveResourceKind(file);
             const compatible = kind && (!acceptFile || acceptFile(file));
             if (folder) return <button className="ac-outline-button" key={file.id} type="button" disabled={saving} onClick={() => navigate([...path, { id: file.id, name: file.name }])}>▰ {file.name}</button>;
-            const duplicate = !allowExisting && existingIds.has(file.id);
+            const duplicate = existingIds.has(file.id);
             return <label key={file.id} className={`ac-drive-choice ${!compatible || duplicate ? "is-unavailable" : ""}`}>
               <input type="checkbox" checked={selected.some((item) => item.id === file.id)} disabled={saving || !compatible || duplicate} onChange={() => toggle(file)} />
-              <span><strong>{file.name}</strong><small>{duplicate ? "Ya importado en esta Unit" : compatible ? getResourceKindLabel(kind, file.name) : "Formato no compatible"} · {formatResourceDate(file.modifiedTime)}</small></span>
+              <span><strong>{file.name}</strong><small>{duplicate ? "Ya asociado al borrador actual" : compatible ? getResourceKindLabel(kind, file.name) : "Formato no compatible"} · {formatResourceDate(file.modifiedTime)}</small></span>
             </label>;
           })}
           {!loading && visible.length === 0 && <p>Sin elementos en esta carpeta.</p>}

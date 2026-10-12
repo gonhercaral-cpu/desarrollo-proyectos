@@ -12,6 +12,8 @@ export class NativeCache implements CacheStore {
       throw new SyncError(message.split(":")[0] || "cache", message.includes(":") ? message.slice(message.indexOf(":") + 1).trim() : "Caché nativa no disponible. Abre la aplicación Desktop instalada.");
     }
   }
+  stage(manifest: Manifest) { return this.call<void>("stage", manifest); }
+  pending() { return this.call<Manifest[]>("pending"); }
   list() { return this.call<Manifest[]>("list"); }
   adoptLegacy() { return this.call<void>("adopt"); }
   has(hash: string, size: number) { return this.call<boolean>("has", { hash, size }); }

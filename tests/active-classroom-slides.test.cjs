@@ -136,3 +136,34 @@ test("editor bloquea Google Slides legado hasta reprocesar como PNG", async () =
   const ready = { ...old, processing: { ...old.processing, processorVersion: SLIDES_PROCESSOR_VERSION } };
   assert.equal(documentProcessingReady(ready), true); assert.match(documentProcessingLabel(ready), /18 diapositivas/);
 });
+
+test("exportación Workspace grande usa files.download LRO y stream, nunca files.export", async () => {
+  const { openSlidesExport, PPTX_MIME } = require("../drive/activeClassroomDriveContent");
+  const size = 39 * 1024 * 1024;
+  let polls = 0, waits = 0;
+  const drive = { files: { download: async request => { assert.equal(request.mimeType, PPTX_MIME); return { data: { done: false, name: "operations/test" } }; }, export: () => assert.fail("No usar export con límite 10 MB") }, operations: { get: async () => { polls++; return { data: { done: true, response: { downloadUri: "https://drive.usercontent.google.com/export?private-capability" } } }; } } };
+  const stream = await openSlidesExport(drive, "source", { wait: async ms => { assert.equal(ms, 10000); waits++; }, request: async (_url, options) => {
+    assert.equal(options.redirect, "manual"); let sent = 0;
+    return new Response(new ReadableStream({ pull(controller) { if (sent === size) return controller.close(); const chunk = new Uint8Array(65536); sent += chunk.length; controller.enqueue(chunk); } }));
+  } });
+  let received = 0, largest = 0;
+  for await (const chunk of stream) { received += chunk.length; largest = Math.max(largest, chunk.length); }
+  assert.equal(received, size); assert.ok(largest <= 131072); assert.equal(polls, 1); assert.equal(waits, 1);
+  drive.files.download = async () => ({ data: { done: true, response: { downloadUri: "https://attacker.example/private" } } });
+  await assert.rejects(openSlidesExport(drive, "source", { request: () => assert.fail("No enviar credenciales a otro host") }), { code: "data-loss" });
+});
+
+test("Google Slides conserva builds de PPTX exportado, IDs nativos y verificación integral", async () => {
+  const { rasterTargetPath, PPTX_PROCESSOR_VERSION } = require("../drive/activeClassroomProcessingModel");
+  let verified = 0;
+  const f = fixture(["native-page"], {
+    rasterize: async ({ revision }) => {
+      const state = { download: { path: rasterTargetPath(revision, 0) }, width: 1600, height: 900 };
+      return { revision, processorVersion: PPTX_PROCESSOR_VERSION, pageCount: 1, pages: [{ index: 0, pageObjectId: "pptx-0", ...state, builds: [{ order: 1, download: { path: rasterTargetPath(revision, 1) } }] }], download: state.download };
+    }, verifyRaster: async (result, revision) => { verified++; assert.equal(result.processorVersion, PPTX_PROCESSOR_VERSION); assert.equal(result.revision, revision); assert.equal(result.pages[0].builds.length, 1); return result.download; },
+  });
+  const rendered = await f.processor.render({ profile: {}, resource, revision: "native-reveal" });
+  assert.equal(rendered.processorVersion, SLIDES_PROCESSOR_VERSION); assert.equal(rendered.pages[0].pageObjectId, "native-page");
+  assert.equal(rendered.pages[0].builds.length, 1); assert.equal(f.calls.length, 0);
+  assert.equal(await f.processor.verify(rendered), rendered.download); assert.equal(verified, 1);
+});

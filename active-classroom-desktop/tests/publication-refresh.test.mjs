@@ -94,6 +94,7 @@ test("botón real: refresca v2 sobre local v1, verifica/activa y reinicia offlin
   function mount() {
     dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
     for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: { onLine: online } })) Object.defineProperty(globalThis, key, { value, configurable: true });
+    dom.window.localStorage.setItem(`active-classroom-content:ac-device-${identity.deviceId}`, JSON.stringify({ autoUpdate: false }));
     const root = dom.window.document.querySelector("#root"); mountOfflineLibrary(root); return root;
   }
   let root = mount();

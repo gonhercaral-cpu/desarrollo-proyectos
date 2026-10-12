@@ -3,7 +3,8 @@ const { HttpsError } = require("firebase-functions/v2/https");
 
 const PROCESSOR_VERSION = "office-pdf-v1";
 const PPTX_PROCESSOR_VERSION = "pptx-builds-png-v1";
-const SLIDES_PROCESSOR_VERSION = "google-slides-png-v1";
+const LEGACY_SLIDES_PROCESSOR_VERSION = "google-slides-png-v1";
+const SLIDES_PROCESSOR_VERSION = "google-slides-builds-png-v2";
 const isGoogleSlides = (resource) => resource?.mimeType === "application/vnd.google-apps.presentation";
 const validPageObjectId = (value) => typeof value === "string" && /^[a-zA-Z0-9_][a-zA-Z0-9_:-]{0,199}$/.test(value);
 const processorVersion = (resource) => isGoogleSlides(resource) ? SLIDES_PROCESSOR_VERSION : officeExtension(resource) === "pptx" ? PPTX_PROCESSOR_VERSION : PROCESSOR_VERSION;
@@ -30,6 +31,7 @@ function processingFingerprint(resource, version = processorVersion(resource)) {
 }
 function readyProcessing(resource) {
   const processing = resource?.processing;
+  if (isGoogleSlides(resource) && processing?.state === "ready" && processing.processorVersion === LEGACY_SLIDES_PROCESSOR_VERSION) return processing.sourceFingerprint === processingFingerprint(resource, LEGACY_SLIDES_PROCESSOR_VERSION) && Array.isArray(processing.pages) && processing.pages.length === processing.pageCount;
   if (processing?.state === "ready" && processing.processorVersion === PROCESSOR_VERSION && officeExtension(resource) === "pptx") return [processingFingerprint(resource), processingFingerprint(resource, PROCESSOR_VERSION)].includes(processing.sourceFingerprint);
   return processing?.state === "ready" && processing.sourceFingerprint === processingFingerprint(resource) && processing.processorVersion === processorVersion(resource)
     && (!isRasterSlides(resource) || (Array.isArray(processing.pages) && processing.pages.length === processing.pageCount && processing.pageCount > 0 && processing.pageCount <= 200 && processing.download?.mimeType === "image/png"));
@@ -54,4 +56,4 @@ function pdfSlides(resource, previous = []) {
     return { slideId: old?.slideId || `pdf-${createHash("sha256").update(resource.id).digest("hex").slice(0, 16)}-${pageNumber}`, index, title: old?.title || "", resourceIds: old?.resourceIds || [], ...normalizeInteraction(old?.interaction?.source === "pptx" ? {} : old || {}), metadata: { pageNumber, notes: old?.metadata?.notes || "" } };
   });
 }
-module.exports = { PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, SLIDES_PROCESSOR_VERSION, isGoogleSlides, validPageObjectId, processorVersion, needsDocumentProcessing, slideResourceId, slidesTargetPath, processingTargetPath, OFFICE_MIMES, officeExtension, processingFingerprint, readyProcessing, requireReady, pdfSlides };
+module.exports = { LEGACY_SLIDES_PROCESSOR_VERSION, PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, SLIDES_PROCESSOR_VERSION, isGoogleSlides, validPageObjectId, processorVersion, needsDocumentProcessing, slideResourceId, slidesTargetPath, processingTargetPath, OFFICE_MIMES, officeExtension, processingFingerprint, readyProcessing, requireReady, pdfSlides };

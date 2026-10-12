@@ -3,7 +3,7 @@ const { setTimeout: sleep } = require("node:timers/promises");
 const { crc32 } = require("node:zlib");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { checkOriginal, descriptor } = require("./activeClassroomFiles");
-const { SLIDES_PROCESSOR_VERSION, slidesTargetPath, validPageObjectId } = require("./activeClassroomProcessingModel");
+const { SLIDES_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, rasterTargetPath, slidesTargetPath, validPageObjectId } = require("./activeClassroomProcessingModel");
 
 const MAX_PNG_BYTES = 20 * 1024 * 1024;
 function pngDimensions(bytes) {
@@ -34,7 +34,7 @@ async function downloadThumbnail(url) {
   }
   return Buffer.concat(chunks);
 }
-function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download = downloadThumbnail, wait = sleep, clock = Date.now }) {
+function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download = downloadThumbnail, wait = sleep, clock = Date.now, rasterize, verifyRaster }) {
   async function original(profile, resource) {
     const file = await resolveFile(profile, resource.driveFileId);
     checkOriginal(resource, file);
@@ -60,6 +60,23 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     try {
       const presentation = await read();
       if (!Array.isArray(presentation.slides) || !presentation.slides.length || presentation.slides.length > 200 || new Set(presentation.slides.map((page) => page.objectId)).size !== presentation.slides.length) throw new HttpsError("resource-exhausted", "Google Slides requiere entre 1 y 200 diapositivas únicas.");
+      if (rasterize) {
+        let result;
+        try { result = await rasterize({ profile, resource, revision }); }
+        catch (error) {
+          // Only an explicitly unsupported export may use static thumbnails.
+          // Transfer/conversion/integrity errors must fail, never silently lose builds.
+          if (error.code !== "unimplemented") throw error;
+        }
+        if (result) {
+          uploaded.push(...result.pages.flatMap(page => [page, ...(page.builds || [])]).map(state => state.download.path));
+          if (result.pageCount !== presentation.slides.length) throw new HttpsError("data-loss", "La exportación no conserva todas las diapositivas.");
+          const after = await read();
+          if ((presentation.revisionId && after.revisionId !== presentation.revisionId) || JSON.stringify(after.slides) !== JSON.stringify(presentation.slides)) throw new HttpsError("aborted", "La presentación cambió durante el procesamiento. Actualiza el borrador.");
+          await original(profile, resource);
+          return { ...result, processorVersion: SLIDES_PROCESSOR_VERSION, sourceType: "google-slides", pages: result.pages.map((page, index) => ({ ...page, pageObjectId: presentation.slides[index].objectId })) };
+        }
+      }
       for (const [index, slide] of presentation.slides.entries()) {
         if (!validPageObjectId(slide.objectId)) throw new HttpsError("data-loss", "Identificador de slide inválido.");
         if (index) await wait(1100); // Stay below the documented 60 expensive reads/user/minute.
@@ -77,7 +94,7 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
         const [metadata] = await file.getMetadata(); const frozen = descriptor(path, metadata);
         const [stored] = await bucket.file(path, { generation: frozen.generation }).download();
         if (stored.length !== bytes.length || frozen.sizeBytes !== bytes.length || createHash("sha256").update(stored).digest("hex") !== sha256) throw new HttpsError("data-loss", "PNG almacenada corrupta.");
-        pages.push({ pageObjectId: slide.objectId, index, storagePath: path, size: bytes.length, sha256, ...dimensions, download: frozen });
+        pages.push({ warnings: ["animation-export-unavailable-manual"], pageObjectId: slide.objectId, index, storagePath: path, size: bytes.length, sha256, ...dimensions, download: frozen });
       }
       const after = await read();
       if ((presentation.revisionId && after.revisionId !== presentation.revisionId) || JSON.stringify(after.slides) !== JSON.stringify(presentation.slides)) throw new HttpsError("aborted", "Google Slides cambió durante el procesamiento. Actualiza el borrador.");
@@ -89,7 +106,11 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     }
   }
   async function verify(processing) {
-    if (processing.processorVersion !== SLIDES_PROCESSOR_VERSION || !Array.isArray(processing.pages) || processing.pages.length !== processing.pageCount || !processing.pages.length || processing.pages.length > 200 || new Set(processing.pages.map((page) => page.pageObjectId)).size !== processing.pages.length) throw new HttpsError("data-loss", "Derivados Google Slides incompletos.");
+    if (![SLIDES_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION].includes(processing.processorVersion) || !Array.isArray(processing.pages) || processing.pages.length !== processing.pageCount || !processing.pages.length || processing.pages.length > 200 || new Set(processing.pages.map((page) => page.pageObjectId)).size !== processing.pages.length) throw new HttpsError("data-loss", "Derivados Google Slides incompletos.");
+    if (processing.pages[0].download?.path === rasterTargetPath(processing.revision, 0)) {
+      if (!verifyRaster || processing.pages.some(page => !validPageObjectId(page.pageObjectId) || (page.builds || []).some((build, index) => build.order !== index + 1))) throw new HttpsError("data-loss", "Revelados Google Slides inválidos.");
+      return verifyRaster({ ...processing, processorVersion: PPTX_PROCESSOR_VERSION }, processing.revision);
+    }
     const first = processing.pages[0].download;
     if (!first || processing.download?.path !== first.path || processing.download.generation !== first.generation || processing.download.checksums?.sha256 !== first.checksums?.sha256 || processing.download.sizeBytes !== first.sizeBytes || processing.download.mimeType !== "image/png") throw new HttpsError("data-loss", "Derivado principal inválido.");
     for (const [index, page] of processing.pages.entries()) {

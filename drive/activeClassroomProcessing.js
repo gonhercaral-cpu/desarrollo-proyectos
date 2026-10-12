@@ -145,10 +145,10 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       });
       // An uncertain commit may already be ready. Never delete a committed revision.
       const current = (await resourceRef.get()).data();
-      if (rendered?.processorVersion === PPTX_PROCESSOR_VERSION && current?.processing?.jobId === attemptId && current.processing.state === "failed") {
+      if (rendered?.pages?.[0]?.download?.path === rasterTargetPath(attemptId, 0) && current?.processing?.jobId === attemptId && current.processing.state === "failed") {
         await Promise.allSettled((rendered.pages || []).flatMap(page => [page, ...(page.builds || [])]).map((state, index) => state.download?.path === rasterTargetPath(attemptId, index) ? bucket.file(state.download.path).delete({ ignoreNotFound: true }) : Promise.resolve()));
       }
-      if (nativeSlides && safeError.code !== "aborted" && safeError.code !== "resource-exhausted") fail("No se pudo procesar la presentación de Google Slides");
+      if (nativeSlides && safeError.code !== "aborted" && safeError.code !== "resource-exhausted") fail("No se pudo procesar la presentación de Google Slides", safeError.code);
       throw safeError;
     }
     return applyReady(unitId, resourceId, expectedRevision);

@@ -65,3 +65,10 @@
 @media (max-width: 1250px) { .unit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .library-controls { flex-wrap: wrap; } .library-filters { max-width: 100%; } .library-search { min-width: 200px; } }
 @media (max-width: 1000px) { .library-heading-icon { width: 56px; height: 56px; flex-basis: 56px; } .library-heading { gap: 16px; } .library-heading h1 { font-size: 36px; } .library-heading p { font-size: 16px; } .library-header { flex-wrap: wrap; } .unit-grid.is-list .unit-actions { grid-column: 1 / -1; grid-row: auto; width: auto; } }
 @media (max-height: 720px) { .offline-shell .library-workspace { padding-top: 20px; gap: 18px; } }
+
+.level-downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; margin-bottom: 16px; }
+.level-download { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px; min-width: 0; }
+.level-download > strong { color: var(--color-navy, #092452); }
+.level-download > span { margin-left: auto; font-size: .85rem; }
+.level-download > label { font-size: .85rem; width: 100%; }
+.level-download > progress { width: 100%; }

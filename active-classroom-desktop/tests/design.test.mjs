@@ -17,7 +17,7 @@ test("interfaz aprobada conserva estados, acciones, versión y datos reales", as
   for (const [patch, label, tone] of [
     [{}, "Actualizada", "positive"],
     [{ remote: { ...remote, version: 2 } }, "Actualización disponible", "update"],
-    [{ busy: true, disableSync: true }, "Descargando", "pending"],
+    [{ busy: true, disableSync: true }, "Actualizando", "pending"],
     [{ local: undefined }, "No descargada", "pending"],
     [{ error: "Error <seguro>" }, "Error", "error"],
   ]) await t.test(label, () => {

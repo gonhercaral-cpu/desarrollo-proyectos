@@ -1,3 +1,4 @@
+import { contentSettingsMarkup, bindContentSettings } from "../offline/content-preferences.ts";
 import { ProgramUpdater, updateBusy } from "./controller.ts";
 import { escapeHtml } from "../utils/dom.ts";
 import type { StartupPreferences } from "../startup/controller.ts";
@@ -19,6 +20,7 @@ export function renderUpdater(host: HTMLElement, updater: ProgramUpdater, prefer
   host.querySelector<HTMLButtonElement>("[data-later]")?.addEventListener("click", () => { updater.later(); });
   if (preferences && updater.visible) {
     const section = host.querySelector(".app-update-card")!;
+    section.insertAdjacentHTML("beforeend", contentSettingsMarkup()); bindContentSettings(section as HTMLElement);
     section.insertAdjacentHTML("beforeend", startupSettingsMarkup(preferences)); bindStartupSettings(section as HTMLElement, preferences);
   }
 }
