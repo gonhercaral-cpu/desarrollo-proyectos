@@ -264,7 +264,7 @@ export class ClassroomPlayer {
       } else if (command === "FULLSCREEN") {
         if (document.fullscreenElement) await document.exitFullscreen();
         else await this.element(".classroom-player").requestFullscreen();
-      } else if (["ADVANCE", "BACK", "NEXT", "PREVIOUS"].includes(command) && this.controller.isPresentation) this.navigate(["ADVANCE", "NEXT"].includes(command) ? 1 : -1);
+      } else if (["ADVANCE", "BACK"].includes(command) || ["NEXT", "PREVIOUS"].includes(command) && this.controller.isPresentation) this.navigate(["ADVANCE", "NEXT"].includes(command) ? 1 : -1);
       else if (command === "PLAY_PAUSE" && this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || "")) this.navigate(1);
       else await this.renderer?.command(command);
     } catch { if (!this.disposed) { this.state.error = "Este control no está disponible en este equipo o archivo."; this.updateState(); } }

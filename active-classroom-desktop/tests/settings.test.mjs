@@ -64,4 +64,7 @@ test("shortcut personalizado invoca Player ADVANCE/BACK y conserva builds offlin
   window.dispatchEvent(key(dom, "b", { altKey: true })); await new Promise(resolve => setImmediate(resolve)); assert.equal(player.controller.currentBuild, 1);
   document.querySelector("[data-slide-next]").click(); await new Promise(resolve => setImmediate(resolve)); assert.equal(player.controller.currentBuild, 2);
   assert.equal(readShortcuts().ADVANCE[0], "Ctrl+n");
+  await player.dispatch("OPEN_RESOURCE"); assert.equal(player.controller.isPresentation, false);
+  document.querySelector("[data-slide-next]").click(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(player.controller.slideIndex, 1); assert.equal(player.controller.currentBuild, 0); assert.equal(player.controller.isPresentation, true);
 });
