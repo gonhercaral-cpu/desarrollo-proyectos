@@ -37,7 +37,7 @@ export class LocalThumbnails {
     root.querySelectorAll<HTMLElement>("[data-thumbnail]").forEach(host => {
       const manifest = manifests.find(item => item.unit.unitId === host.dataset.thumbnail);
       if (!manifest) return;
-      const coverId = manifest.slides?.[0]?.metadata.presentationResourceId || manifest.mainPresentationId;
+      const coverId = manifest.slides?.[0]?.interaction?.initialResourceId || manifest.slides?.[0]?.metadata.presentationResourceId || manifest.mainPresentationId;
       const resource = manifest.resources.find(item => item.resourceId === coverId);
       if (!resource || !validHash(resource.download.checksums.sha256) || resource.download.sizeBytes > maxPreviewBytes
           || !/^(image\/(png|jpeg|webp)|application\/pdf)$/.test(resource.download.mimeType)) return;

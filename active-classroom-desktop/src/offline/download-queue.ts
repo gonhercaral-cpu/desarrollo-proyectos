@@ -1,5 +1,5 @@
 import { BlobTransfers, SyncEngine, type CacheStore, type RemoteStore, type Progress } from "./sync.ts";
-import type { Manifest, Publication } from "./manifest.ts";
+import { SyncError, type Manifest, type Publication } from "./manifest.ts";
 
 export interface StagingCache extends CacheStore { stage(manifest: Manifest): Promise<void>; pending(): Promise<Manifest[]> }
 export interface DownloadTask { publication: Publication; state: "queued" | "downloading" | "staged" | "ready" | "failed"; progress?: Progress; error?: unknown; manifest?: Manifest }
@@ -21,7 +21,7 @@ export class DownloadQueue {
     let initial: Promise<void> | undefined;
     const workerCache = new Proxy(cache, { get(target, key) {
       if (key === "list") return async () => {
-        initial ||= cache.list().then(manifests => { for (const manifest of manifests) installed.set(manifest.unit.unitId, manifest); });
+        initial ||= cache.list().then(manifests => { for (const manifest of manifests) installed.set(manifest.unit.unitId, manifest); }).catch(error => { initial = undefined; throw error; });
         await initial; return [...installed.values()];
       };
       const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value;
@@ -32,10 +32,10 @@ export class DownloadQueue {
       if (manifest.unit.unitId !== this.protectedUnit) installed.set(manifest.unit.unitId, manifest);
     }));
   }
-  enqueue(publication: Publication): void {
+  enqueue(publication: Publication, repair = false): void {
     if (this.closed) return;
     const old = this.tasks.get(publication.unitId);
-    if (old && old.publication.version >= publication.version && old.state !== "failed") return;
+    if (!repair && old && old.publication.version >= publication.version && old.state !== "failed") return;
     // A newer catalog is reconciled after the running version finishes.
     if (old?.state === "downloading") return;
     const task: DownloadTask = { publication, state: "queued" };
@@ -45,7 +45,7 @@ export class DownloadQueue {
     const task = this.tasks.get(unitId);
     const worker = this.workers.find(engine => engine.active?.unitId === unitId);
     if (worker) worker.cancel();
-    else if (task?.state === "queued") { task.state = "failed"; this.changed(task); }
+    else if (task?.state === "queued") { task.state = "failed"; task.error = new SyncError("cancelled", "Descarga cancelada."); this.changed(task); }
   }
   close(): void { this.closed = true; this.workers.forEach(worker => worker.cancel()); }
   async activatePending(): Promise<void> {

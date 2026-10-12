@@ -171,8 +171,9 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     if (!queue || !cache || !api) return;
     if (locals.some(local => local.unit.unitId === publication.unitId && local.version >= publication.version) && !errors.has(publication.unitId)) return;
     const pending = new Set(contentPreferences().pendingUnits); pending.add(publication.unitId);
+    const repair = errors.has(publication.unitId);
     errors.delete(publication.unitId);
-    queue.enqueue(publication);
+    queue.enqueue(publication, repair);
     saveContentPreferences({ pendingUnits: [...pending] });
   }
   function downloadChanged(task: DownloadTask, current: number): void {

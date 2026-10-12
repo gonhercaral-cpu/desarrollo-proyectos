@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.11 — 2026-10-12
+
+- Reintentar una Unit puede reparar la misma versión si un archivo local se dañó, conservando versiones anteriores verificadas.
+- Actualización automática, descarga de nivel completo y niveles seguidos mantienen progreso y clases locales disponibles.
+- Miniatura usa el estado inicial manual y se cambia después de decodificar, sin desmontar Biblioteca.
+- Conserva activación, multimedia offline, proyector, updater, autostart y kiosco.
+
 ## 1.0.10 — 2026-10-12
 
 - Biblioteca estable durante descargas; progreso por Unit y cola de dos trabajadores con blobs compartidos.

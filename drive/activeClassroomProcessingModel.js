@@ -30,13 +30,14 @@ function processingFingerprint(resource, version = processorVersion(resource)) {
     : [resource.storagePath, resource.storageMd5Hash || "", resource.name];
   return createHash("sha256").update(JSON.stringify([version, resource.source || "storage", resource.mimeType, ...source])).digest("hex");
 }
+const readyRaster = processing => Array.isArray(processing.pages) && processing.pages.length === processing.pageCount && processing.pageCount > 0 && processing.pageCount <= 200 && processing.download?.mimeType === "image/png";
 function readyProcessing(resource) {
   const processing = resource?.processing;
-  if (officeExtension(resource) === "pptx" && processing?.state === "ready" && processing.processorVersion === LEGACY_PPTX_PROCESSOR_VERSION) return processing.sourceFingerprint === processingFingerprint(resource, LEGACY_PPTX_PROCESSOR_VERSION) && Array.isArray(processing.pages) && processing.pages.length === processing.pageCount;
-  if (isGoogleSlides(resource) && processing?.state === "ready" && processing.processorVersion === LEGACY_SLIDES_PROCESSOR_VERSION) return processing.sourceFingerprint === processingFingerprint(resource, LEGACY_SLIDES_PROCESSOR_VERSION) && Array.isArray(processing.pages) && processing.pages.length === processing.pageCount;
-  if (processing?.state === "ready" && processing.processorVersion === PROCESSOR_VERSION && officeExtension(resource) === "pptx") return [processingFingerprint(resource), processingFingerprint(resource, PROCESSOR_VERSION)].includes(processing.sourceFingerprint);
+  if (officeExtension(resource) === "pptx" && processing?.state === "ready" && processing.processorVersion === LEGACY_PPTX_PROCESSOR_VERSION) return processing.sourceFingerprint === processingFingerprint(resource, LEGACY_PPTX_PROCESSOR_VERSION) && readyRaster(processing);
+  if (isGoogleSlides(resource) && processing?.state === "ready" && processing.processorVersion === LEGACY_SLIDES_PROCESSOR_VERSION) return processing.sourceFingerprint === processingFingerprint(resource, LEGACY_SLIDES_PROCESSOR_VERSION) && readyRaster(processing);
+  if (processing?.state === "ready" && processing.processorVersion === PROCESSOR_VERSION && officeExtension(resource) === "pptx") return [processingFingerprint(resource), processingFingerprint(resource, LEGACY_PPTX_PROCESSOR_VERSION), processingFingerprint(resource, PROCESSOR_VERSION)].includes(processing.sourceFingerprint);
   return processing?.state === "ready" && processing.sourceFingerprint === processingFingerprint(resource) && processing.processorVersion === processorVersion(resource)
-    && (!isRasterSlides(resource) || (Array.isArray(processing.pages) && processing.pages.length === processing.pageCount && processing.pageCount > 0 && processing.pageCount <= 200 && processing.download?.mimeType === "image/png"));
+    && (!isRasterSlides(resource) || readyRaster(processing));
 }
 function requireReady(resource) {
   if (needsDocumentProcessing(resource) && !readyProcessing(resource)) throw new HttpsError("failed-precondition", "Procesando documento: procesa el original antes de publicar.");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JSDOM } from "jsdom";
@@ -83,4 +83,16 @@ test("100 cambios de progreso conservan grid, 32 cards, miniatura, botones y ord
   const image = dom.window.document.createElement("img"); image.className = "unit-cover-image"; cards[0].querySelector(".unit-cover-fallback").replaceWith(image);
   for (let i = 1; i <= 100; i++) { reconcileLibrary(root, markup(i)); assert.equal(root.querySelector(".unit-grid"), grid); assert.deepEqual([...root.querySelectorAll("article")], cards); assert.equal(cards[0].querySelector("img"), image); assert.equal(cards[0].querySelector("button"), button); }
   assert.equal(cards[0].querySelector("progress").value, 100); dom.window.close();
+});
+
+test("reintentar misma versión preparada/instalada repara blob corrupto y conserva fallback", async t => {
+  const cache = await disk(t); const old = await fixture("repair"); const next = await fixture("repair", 2);
+  await new SyncEngine(cache, remote([old])).sync(old.publication);
+  const queue = new DownloadQueue(cache, remote([next]), () => {}); queue.enqueue(next.publication);
+  await settle(() => queue.tasks.get("repair").state === "ready");
+  await writeFile(cache.object(next.manifest.resources[0].download.checksums.sha256), Buffer.alloc(next.size, 9));
+  assert.equal((await cache.list())[0].version, 1);
+  queue.enqueue(next.publication, true);
+  await settle(() => queue.tasks.get("repair").state === "ready");
+  assert.equal((await cache.list())[0].version, 2);
 });
