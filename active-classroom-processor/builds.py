@@ -3,6 +3,7 @@
 No animation engine. Unsupported timing leaves the entire slide static and reports
 a warning. Original source ZIP is never modified. Raster pages share PPTX media.
 """
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
 import posixpath
@@ -149,7 +150,16 @@ def render_pptx(source, workspace, plan):
     if result["pageCount"] != plan["stateCount"]:
         raise ValueError("raster-page-mismatch")
     prefix = workspace / "state"
-    subprocess.run(["pdftoppm", "-png", "-scale-to", "1600", str(result["path"]), str(prefix)], check=True, timeout=120, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Two bounded raster workers match Cloud Run's two CPUs. Each opens the PDF
+    # and writes its own non-overlapping pages, without collecting images in RAM.
+    # A real 48-slide deck with 102 reveals exceeded the old serial 120 s budget.
+    midpoint = (plan["stateCount"] + 1) // 2
+    ranges = [(1, midpoint)] + ([(midpoint + 1, plan["stateCount"])] if midpoint < plan["stateCount"] else [])
+    def rasterize(bounds):
+        first, last = bounds
+        subprocess.run(["pdftoppm", "-png", "-f", str(first), "-l", str(last), "-scale-to", "1600", str(result["path"]), str(prefix)], check=True, timeout=240, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        list(workers.map(rasterize, ranges))
     pages = sorted(workspace.glob("state-*.png"), key=lambda path: int(path.stem.split("-")[-1]))
     if len(pages) != plan["stateCount"]:
         raise ValueError("raster-state-mismatch")
