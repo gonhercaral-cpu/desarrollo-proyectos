@@ -201,7 +201,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       if (current !== epoch) return;
       const classroom = await openLocalClass(currentCache, unitId, local.version);
       if (current === epoch) {
-        thumbnails.pause();
+        thumbnails.pause(); thumbnailSignature = "";
         root.innerHTML = `<div class="desktop-shell is-classroom">${sidebar(true)}<div class="classroom-workspace" data-classroom-host></div></div>`;
         bindSidebar(true);
         player = new ClassroomPlayer(root.querySelector<HTMLElement>("[data-classroom-host]")!, classroom, () => {
@@ -209,7 +209,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
           void (async () => { await queue?.activatePending(); return currentCache.list(); })().then((saved) => {
             if (current !== epoch) return;
             locals = saved;
-            if (!saved.some((item) => item.unit.unitId === unitId && item.version === local.version)) errors.set(unitId, "La copia local requiere reparación. Sincroniza de nuevo cuando tengas conexión.");
+            if (!saved.some((item) => item.unit.unitId === unitId && item.version >= local.version)) errors.set(unitId, "La copia local requiere reparación. Sincroniza de nuevo cuando tengas conexión.");
             message = "Biblioteca local verificada."; render();
           }).catch((error) => { if (current === epoch) { message = String(error); render(); } });
         }, {
