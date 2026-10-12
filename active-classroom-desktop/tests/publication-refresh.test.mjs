@@ -121,3 +121,69 @@ test("botón real: refresca v2 sobre local v1, verifica/activa y reinicia offlin
   assert.match(root.textContent, /Equipo Prueba/); assert.equal(calls, previousCalls);
   globalThis.refreshHarness.opened = undefined; root.querySelector("[data-open]").click(); await settle(() => globalThis.refreshHarness.opened === 2);
 });
+
+test("Biblioteca real: auto-update preparado durante clase, nivel completo y Unit nueva seguida", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "classroom-auto-content-"));
+  const disk = new DiskCache(directory); disk.adoptLegacy = async () => {};
+  const old = await fixture(1); const next = await fixture(2);
+  async function another(id, levelId) {
+    const data = await fixture(1); data.manifest.unit.unitId = id; data.manifest.unit.levelId = levelId;
+    const content = Object.fromEntries(Object.entries(data.manifest).filter(([key]) => !["version", "publishedAt", "integrity"].includes(key)));
+    data.manifest.integrity.contentHash = await sha256(new TextEncoder().encode(canonical(content)));
+    Object.assign(data.publication, { unitId: id, levelId, contentHash: data.manifest.integrity.contentHash });
+    return data;
+  }
+  const second = await another("same-level", next.publication.levelId);
+  const other = await another("other-level", "level-other");
+  const newUnit = await another("tomorrow", next.publication.levelId);
+  const sources = [old, next, second, other, newUnit];
+  await new SyncEngine(disk, { manifest: async () => old.manifest, download: async (_m, r, write) => write(old.bytes.get(r.resourceId)) }).sync(old.publication);
+  const server = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true, include: [] }, plugins: [{
+    name: "auto-content-boundaries", enforce: "pre",
+    resolveId(source) { if (source.endsWith("./device-auth")) return "\0auto-session"; if (source.endsWith("./native-cache")) return "\0auto-cache"; if (source.endsWith("/ClassroomPlayer")) return "\0auto-player"; },
+    load(id) {
+      if (id === "\0auto-session") return "export const createDeviceSession = notify => globalThis.autoHarness.session(notify);";
+      if (id === "\0auto-cache") return "export class NativeCache { constructor() { return globalThis.autoHarness.cache; } }";
+      if (id === "\0auto-player") return "export class ClassroomPlayer { constructor(root, classroom, close) { globalThis.autoHarness.opened = classroom.manifest.version; globalThis.autoHarness.close = close; } destroy() {} }";
+    },
+  }] });
+  const { mountOfflineLibrary } = await server.ssrLoadModule("/src/offline/library.ts");
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+  const descriptors = Object.fromEntries(["window", "document", "navigator", "fetch", "autoHarness"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  let release; const held = new Promise(resolve => { release = resolve; }); let tomorrow = false; const downloaded = [];
+  const identity = { deviceId: "d".repeat(32), displayName: "Equipo offline", activated: true, revoked: false };
+  for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: { onLine: true } })) Object.defineProperty(globalThis, key, { value, configurable: true });
+  globalThis.autoHarness = { cache: disk, session: notify => new DeviceSession({ load: async () => identity, proof: async () => ({ ...identity, credential: "secret" }), exchange: async () => ({ status: "authorized", customToken: "custom" }), signIn: async () => {}, token: async () => "id-token", mark: async () => identity, saveLabel: async () => {}, signOut: async () => {} }, notify) };
+  Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (raw, init) => {
+    const url = new URL(raw); const endpoint = url.pathname.split("/").at(-1);
+    if (endpoint === "listActiveClassroomPublications") return new Response(JSON.stringify({ result: { publications: [next, second, other, ...(tomorrow ? [newUnit] : [])].map(data => data.publication), nextCursor: null } }));
+    if (endpoint === "getActiveClassroomPublication") { const { unitId, version } = JSON.parse(init.body).data; return new Response(JSON.stringify({ result: { manifest: sources.find(data => data.publication.unitId === unitId && data.publication.version === version).manifest } })); }
+    if (endpoint === "activeClassroomPublicationFile") {
+      const unitId = url.searchParams.get("unitId"); const version = Number(url.searchParams.get("version"));
+      downloaded.push(unitId); if (unitId === next.publication.unitId) await held;
+      return new Response(sources.find(data => data.publication.unitId === unitId && data.publication.version === version).bytes.get(url.searchParams.get("resourceId")));
+    }
+    return new Response(JSON.stringify({ result: {} }));
+  } });
+  t.after(async () => { release(); dom.window.dispatchEvent(new dom.window.Event("beforeunload")); dom.window.close(); await server.close(); await rm(directory, { recursive: true, force: true }); for (const [key, value] of Object.entries(descriptors)) { if (value) Object.defineProperty(globalThis, key, value); else delete globalThis[key]; } });
+  const settle = async predicate => { for (let i = 0; i < 500; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail("El contenido automático no alcanzó el estado esperado"); };
+  const root = dom.window.document.querySelector("#root"); mountOfflineLibrary(root);
+  await settle(() => downloaded.length && root.querySelector(`[data-open="${old.publication.unitId}"]`));
+  const untouched = root.querySelector('[data-unit-card="other-level"]');
+  root.querySelector(`[data-open="${old.publication.unitId}"]`).click(); await settle(() => globalThis.autoHarness.opened === 1);
+  release(); await settle(async () => (await disk.pending()).length === 1);
+  assert.equal((await disk.list())[0].version, 1); assert.equal(globalThis.autoHarness.opened, 1);
+  globalThis.autoHarness.close(); await settle(() => root.textContent.includes("Publicada: v2 · Local: v2"));
+  assert.doesNotMatch(root.textContent, /requiere reparación/);
+  assert.equal((await disk.list())[0].version, 2);
+  assert.ok(untouched); root.querySelector(`[data-download-level="${next.publication.levelId}"]`).click();
+  await settle(async () => (await disk.list()).some(manifest => manifest.unit.unitId === "same-level"));
+  assert.equal((await disk.list()).some(manifest => manifest.unit.unitId === "other-level"), false);
+  const follow = root.querySelector(`[data-follow-level="${next.publication.levelId}"]`); follow.checked = true; follow.dispatchEvent(new dom.window.Event("change"));
+  tomorrow = true; root.querySelector("[data-refresh]").click();
+  await settle(async () => (await disk.list()).some(manifest => manifest.unit.unitId === "tomorrow"));
+  assert.equal(downloaded.includes("tomorrow"), false, "El SHA-256 compartido ya verificado no se descarga otra vez");
+  dom.window.dispatchEvent(new dom.window.Event("offline"));
+  assert.ok(root.querySelector(`[data-open="${old.publication.unitId}"]`));
+  assert.equal(root.querySelector(`[data-open="${old.publication.unitId}"]`).disabled, false);
+});
