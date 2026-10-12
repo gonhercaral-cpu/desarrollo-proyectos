@@ -69,7 +69,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   function render(): void {
     if (player) {
       const current = root.querySelector(".classroom-sidebar");
-      if (current) { current.outerHTML = sidebar(true); bindSidebar(true); }
+      if (current) { reconcileLibrary(current as HTMLElement, sidebar(true), true); bindSidebar(true); }
       return;
     }
     if (device.phase !== "ready") {
@@ -104,7 +104,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const failed = tasks.some(task => task?.state === "failed");
       const fraction = tasks.reduce((sum, task) => sum + (task?.state === "downloading" && task.progress?.total ? task.progress.bytes / task.progress.total : 0), 0);
       const percent = available.length ? Math.min(100, Math.floor(100 * (completed + fraction) / available.length)) : 0;
-      const state = active ? completed ? "Actualizando" : "Descargando" : failed ? "Error" : completed && completed === available.length ? device.online ? "Actualizado" : "Disponible offline" : locals.some(item => item.unit.levelId === level) ? "Disponible offline · parcial" : "No descargado";
+      const state = active ? completed ? "Actualizando" : "Descargando" : failed ? "Error" : completed && completed === available.length ? device.online ? "Actualizado" : "Disponible offline" : locals.some(item => item.unit.levelId === level) ? !device.online || !available.length ? "Disponible offline" : "Disponible offline · parcial" : "No descargado";
       return `<section class="level-download ui-card" data-level-download="${escape(level)}"><strong>${escape(levelName(level))}</strong><span role="status">${state}${active ? ` ${completed} de ${available.length} Units · ${percent}%` : ""}</span>${active ? `<progress max="100" value="${percent}" aria-label="Descarga de ${escape(levelName(level))}"></progress>` : ""}<button class="button button-outline" data-download-level="${escape(level)}" ${!available.length || active ? "disabled" : ""}>${icon("download")}Descargar nivel completo</button><label><input type="checkbox" data-follow-level="${escape(level)}" ${contentPreferences().followedLevels.includes(level) ? "checked" : ""}/> Mantener este nivel disponible sin conexión</label></section>`;
     }).filter((_markup, index) => !selectedLevel || levels[index] === selectedLevel).join("");
     reconcileLibrary(root, `<div class="desktop-shell offline-shell">${sidebar()}<section class="library-workspace">
@@ -147,7 +147,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const available = await api.list(refreshController.signal);
       if (current !== epoch) return;
       publications = available;
-      reconcileContent();
+      reconcileContent(true);
       updatedAt = Date.now();
       for (const [unitId, entry] of mergeLibraryPublications(locals, available)) {
         if (entry.localVersion !== undefined) syncDiagnostic("LOCAL_PUBLICATION", { unitId, version: entry.localVersion });
@@ -160,11 +160,11 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     } catch (error) { if (current === epoch) { session.reportFailure(error, "publications"); message = device.message; } }
     finally { if (current === epoch) { refreshing = false; render(); } }
   }
-  function reconcileContent(): void {
+  function reconcileContent(retryFailed = false): void {
     if (!queue || !device.online) return;
     for (const publication of requiredContent(locals, publications, contentPreferences())) {
       const task = queue.tasks.get(publication.unitId);
-      if (!task || task.publication.version < publication.version) synchronize(publication);
+      if (!task || task.publication.version < publication.version || (retryFailed && task.state === "failed")) synchronize(publication);
     }
   }
   function synchronize(publication: Publication): void {

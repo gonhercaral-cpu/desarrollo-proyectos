@@ -15,7 +15,7 @@ export interface PublishedResource {
 }
 export interface BuildLayer { type: "text" | "answer" | "image"; x: number; y: number; width: number; height: number; text?: string; color?: string; fontSize?: number; resourceId?: string }
 export interface SlideBuild { order: number; resourceId?: string; layers?: BuildLayer[] }
-export interface PublishedSlide { slideId: string; index: number; title: string; resourceIds: string[]; metadata: Record<string, unknown>; interactionMode?: "static" | "builds"; buildCount?: number; interaction?: { mode: "static" | "builds"; buildCount: number; source?: string }; builds?: SlideBuild[] }
+export interface PublishedSlide { slideId: string; index: number; title: string; resourceIds: string[]; metadata: Record<string, unknown>; interactionMode?: "static" | "builds"; buildCount?: number; interaction?: { mode: "static" | "builds"; buildCount: number; source?: string; initialResourceId?: string; initialAsset?: Record<string, unknown> }; builds?: SlideBuild[] }
 export interface Manifest {
   schemaVersion: number;
   unit: { unitId: string; name: string; levelId: string; description: string; metadata: Record<string, unknown>; [key: string]: unknown };
@@ -89,6 +89,14 @@ export function validateSlideInteraction(slide: PublishedSlide, resource: (id: s
   const mode = slide.interaction?.mode || slide.interactionMode || "static";
   if (slide.interactionMode != null && slide.interactionMode !== mode) fail();
   if (!["static", "builds"].includes(mode)) fail();
+  const initialId = slide.interaction?.initialResourceId;
+  if (initialId != null && (!validId(initialId) || slide.interaction?.source !== "manual" || !["image/png", "image/jpeg", "image/webp"].includes(resource(initialId)?.download.mimeType || ""))) fail();
+  const initialAsset = slide.interaction?.initialAsset;
+  if (initialAsset) {
+    if (!initialId) fail();
+    const file = resource(initialId!)!.download;
+    if (initialAsset.resourceId !== initialId || initialAsset.mimeType !== file.mimeType || initialAsset.sizeBytes !== file.sizeBytes || initialAsset.sha256 !== file.checksums.sha256 || initialAsset.storagePath !== file.path || initialAsset.generation !== file.generation) fail();
+  }
   const steps = slide.builds || [];
   if (mode === "static") { if (steps.length || slide.buildCount || slide.interaction?.buildCount) fail(); return; }
   if (!steps.length || steps.length > 50 || slide.interaction?.buildCount !== steps.length || slide.buildCount !== steps.length) fail();

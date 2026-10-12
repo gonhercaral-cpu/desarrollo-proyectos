@@ -70,6 +70,8 @@ class ConverterTests(unittest.TestCase):
         target = "active-classroom/publications/files/" + hashlib.sha256(f"{valid['revision']}:pdf".encode()).hexdigest()
         valid["uploadUrl"] = f"https://storage.googleapis.com/test-private-bucket/{target}?X-Goog-Signature=test"
         self.assertEqual(validate_request(valid), valid["original"])
+        for version in ["pptx-builds-png-v1", "pptx-builds-png-v2"]:
+            self.assertEqual(validate_request({**valid, "processorVersion": version}), valid["original"])
         for path in ["https://example.com/secret", "active-classroom/resources/private", "../../secret"]:
             data = {**valid, "original": {**valid["original"], "path": path}}
             with self.assertRaises(ValueError):

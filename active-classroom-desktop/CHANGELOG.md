@@ -6,6 +6,7 @@
 - Actualización automática del contenido descargado y descarga completa de niveles seleccionados.
 - Mantener niveles offline incorpora nuevas Units y actualizaciones sin reemplazar una clase abierta.
 - Versiones pendientes se verifican y activan al cerrar clase o reiniciar; fallos conservan contenido anterior.
+- Fallback manual con imagen inicial sin respuestas y pasos de texto, respuestas o imágenes, congelados y disponibles offline.
 - Google Slides recupera revelados desde exportación PPTX verificable; publicaciones anteriores permanecen intactas.
 - Conserva activación, streaming multimedia, proyector, updater, autostart y kiosco.
 

@@ -218,16 +218,28 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
           return resource.processing.pages.flatMap((page, index) => [page, ...(page.builds || [])].map((state, stateIndex) => ({ ...snapshot, resourceId: stateIndex ? slideResourceId(resource.id, `${page.pageObjectId}-build-${stateIndex}`) : index === 0 ? resource.id : slideResourceId(resource.id, page.pageObjectId), name: `${resource.name} · ${index + 1}`, deliveryMime: "image/png", pageObjectId: page.pageObjectId, index, width: state.width, height: state.height, derivative: { ...derivative, file: state.download }, download: state.download })));
         }),
       };
-      for (const slide of content.slides) slide.builds = slide.builds.map(build => {
-        const references = [...new Set([build.resourceId, ...(build.layers || []).map(layer => layer.resourceId)].filter(Boolean))];
-        const assets = references.map(resourceId => {
-          const resource = content.resources.find(item => item.resourceId === resourceId);
-          if (!resource) fail("Falta un asset del revelado.", "data-loss");
-          return { resourceId, mimeType: resource.download.mimeType, sizeBytes: resource.download.sizeBytes, sha256: resource.download.checksums.sha256, storagePath: resource.download.path, generation: resource.download.generation };
+      // Manual overrides do not ship unused automatic states. Every referenced
+      // base, step and image stays frozen; immutable processing objects stay intact.
+      const used = new Set([content.mainPresentationId, ...content.generalResourceIds, ...content.slides.flatMap(slide => [slide.metadata.presentationResourceId, ...slide.resourceIds, ...slide.builds.map(build => build.resourceId), ...interactionResourceIds(slide)])].filter(Boolean));
+      content.resources = content.resources.filter(resource => used.has(resource.resourceId));
+      for (const slide of content.slides) {
+        const initialId = slide.interaction?.initialResourceId;
+        if (initialId) {
+          const initial = content.resources.find(resource => resource.resourceId === initialId);
+          if (!initial) fail("Falta la imagen del estado inicial.", "data-loss");
+          slide.interaction.initialAsset = { resourceId: initialId, mimeType: initial.download.mimeType, sizeBytes: initial.download.sizeBytes, sha256: initial.download.checksums.sha256, storagePath: initial.download.path, generation: initial.download.generation };
+        }
+        slide.builds = slide.builds.map(build => {
+          const references = [...new Set([build.resourceId, ...(build.layers || []).map(layer => layer.resourceId)].filter(Boolean))];
+          const assets = references.map(resourceId => {
+            const resource = content.resources.find(item => item.resourceId === resourceId);
+            if (!resource) fail("Falta un asset del revelado.", "data-loss");
+            return { resourceId, mimeType: resource.download.mimeType, sizeBytes: resource.download.sizeBytes, sha256: resource.download.checksums.sha256, storagePath: resource.download.path, generation: resource.download.generation };
+          });
+          const frozen = { ...build, assets };
+          return { ...frozen, sizeBytes: assets.reduce((size, asset) => size + asset.sizeBytes, 0), checksums: { sha256: contentHash(frozen) } };
         });
-        const frozen = { ...build, assets };
-        return { ...frozen, sizeBytes: assets.reduce((size, asset) => size + asset.sizeBytes, 0), checksums: { sha256: contentHash(frozen) } };
-      });
+      }
       if (content.resources.length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} archivos por publicación, incluyendo diapositivas PNG.`, "resource-exhausted");
       if (new Set(content.resources.map((resource) => resource.resourceId)).size !== content.resources.length) fail("Identificadores de archivos publicados duplicados.", "data-loss");
       const hash = contentHash(content);

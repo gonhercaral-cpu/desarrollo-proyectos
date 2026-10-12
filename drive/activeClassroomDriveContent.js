@@ -20,7 +20,12 @@ async function openSlidesExport(drive, fileId, { wait = sleep, clock = Date.now,
   // Workspace exports. Its access-bearing URL never enters metadata or logs.
   const deadline = clock() + 120000;
   const resourceHeaders = key => key ? { "X-Goog-Drive-Resource-Keys": `${fileId}/${key}` } : {};
-  let operation = (await drive.files.download({ fileId, mimeType: PPTX_MIME }, { timeout: 20000, headers: resourceHeaders(resourceKey) })).data;
+  let operation;
+  try { operation = (await drive.files.download({ fileId, mimeType: PPTX_MIME }, { timeout: 20000, headers: resourceHeaders(resourceKey) })).data; }
+  catch (error) {
+    if (Number(error?.response?.status || error?.code) === 501) throw new HttpsError("unimplemented", "Esta presentación requiere revelados manuales.");
+    throw error;
+  }
   while (!operation.done) {
     if (clock() >= deadline || !operation.name) throw new HttpsError("deadline-exceeded", "La exportación de Nube AES tardó demasiado. Reintenta.");
     await wait(10000);

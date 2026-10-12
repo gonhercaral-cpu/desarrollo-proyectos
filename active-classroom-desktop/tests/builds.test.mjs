@@ -89,3 +89,22 @@ test("sincroniza raster builds y assets, reinicia y recorre pasos completamente 
   const classroom = await openLocalClass(new DiskCache(root), m.unit.unitId, m.version);
   const controller = new ClassSessionController(classroom.manifest); controller.advance(); assert.equal(controller.currentBuild, 1); assert.ok(classroom.resolveResource("state-1").path.startsWith(root)); controller.advance(); assert.equal(controller.slideIndex, 1);
 });
+
+test("fallback manual usa imagen inicial sin respuestas y mantiene profesor/proyector sincronizados", async t => {
+  const dom = environment(t);
+  const m = fixture(2); const initial = structuredClone(m.resources[0]); initial.resourceId = "initial-image"; initial.download.mimeType = "image/png"; m.resources.push(initial);
+  m.slides[0].interaction.initialResourceId = initial.resourceId;
+  const display = renderer(), projected = renderer();
+  const follower = new ProjectionPlayer(document.querySelector("#audience"), async () => projected);
+  const bridge = { async status() { return { monitors: [], projecting: true, disconnected: false }; }, async show() {}, async hide() {}, async publish(snapshot) { await follower.receive(snapshot); } };
+  const player = new ClassroomPlayer(document.querySelector("#teacher"), { manifest: m, resolveResource(id) { return { path: `/cache/${id}`, mimeType: "image/png", name: id, kind: "image" }; } }, () => {}, { verifyResource: async () => true, toUrl: path => `asset://localhost${path}`, createRenderer: async () => display, projectionBridge: bridge });
+  dom.cleanup(() => { player.destroy(); follower.destroy(); });
+  await settle(); assert.equal(player.controller.presentationId, "initial-image"); assert.match(display.source.url, /initial-image/);
+  assert.equal(document.querySelector("#audience .interaction-surface")?.textContent || "", "");
+  await player.dispatch("ADVANCE"); await settle();
+  assert.match(document.querySelector("#teacher .interaction-surface").textContent, /Respuesta 1/);
+  assert.equal(document.querySelector("#teacher .interaction-surface").textContent, document.querySelector("#audience .interaction-surface").textContent);
+  assert.match(projected.source.url, /initial-image/); assert.equal(display.mounts, 1);
+  await player.dispatch("BACK"); await settle(); assert.equal(document.querySelector("#audience .interaction-surface").textContent, "");
+  const invalid = structuredClone(m); invalid.slides[0].interaction.initialResourceId = "missing"; assert.throws(() => new ClassSessionController(invalid));
+});

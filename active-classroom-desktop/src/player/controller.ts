@@ -22,14 +22,14 @@ export class PlayerController {
     this.presentationPage = this.pageForSlide(0);
     this.selectedResourceId = this.presentationId;
   }
-  get presentationId(): string { return String(this.slideIndex === null ? this.manifest.mainPresentationId : this.manifest.slides[this.slideIndex].metadata?.presentationResourceId || this.manifest.mainPresentationId); }
+  get presentationId(): string { return String(this.slideIndex === null ? this.manifest.mainPresentationId : this.manifest.slides[this.slideIndex].interaction?.initialResourceId || this.manifest.slides[this.slideIndex].metadata?.presentationResourceId || this.manifest.mainPresentationId); }
   get isPresentation(): boolean { return this.selectedResourceId === this.presentationId; }
   get buildCount(): number { return this.slideIndex === null ? 0 : this.manifest.slides[this.slideIndex].interaction?.buildCount || 0; }
   advance(): void { if (this.currentBuild < this.buildCount) this.currentBuild++; else this.moveSlide(1); }
   back(): void { if (this.currentBuild > 0) this.currentBuild--; else this.moveSlide(-1); }
   get associatedIds(): string[] { return this.slideIndex === null ? [] : this.manifest.slides[this.slideIndex].resourceIds; }
   get page(): number { return this.isPresentation ? this.presentationPage : this.resourcePages.get(this.selectedResourceId) || 1; }
-  pageForSlide(index: number): number { return Number(this.manifest.slides[index].metadata?.pageNumber ?? index + 1); }
+  pageForSlide(index: number): number { if (this.manifest.slides[index].interaction?.initialResourceId) return 1; return Number(this.manifest.slides[index].metadata?.pageNumber ?? index + 1); }
   goSlide(index: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= this.manifest.slides.length) return;
     this.slideIndex = index;
@@ -46,7 +46,7 @@ export class PlayerController {
   pageChanged(page: number): void {
     if (!Number.isInteger(page) || page < 1) return;
     if (this.isPresentation) {
-      if (this.slideIndex !== null && this.manifest.slides[this.slideIndex].metadata?.presentationResourceId) return;
+      if (this.slideIndex !== null && (this.manifest.slides[this.slideIndex].metadata?.presentationResourceId || this.manifest.slides[this.slideIndex].interaction?.initialResourceId)) return;
       this.presentationPage = page;
       const index = this.manifest.slides.findIndex((_slide, position) => this.pageForSlide(position) === page);
       if (index !== this.slideIndex) this.currentBuild = 0;

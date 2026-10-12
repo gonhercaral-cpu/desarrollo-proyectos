@@ -21,9 +21,10 @@ export default function SlideInteractionEditor({ unitId, slide, main, resources,
   const steps = slide.builds || [];
   const current = Math.min(state, steps.length);
   const automatic = slide.interaction?.source === "pptx";
+  const initialResourceId = slide.interaction?.initialResourceId || "";
   const mode = slide.interactionMode || slide.interaction?.mode || "static";
   const page = main?.processing?.pages?.find(page => page.pageObjectId === slide.metadata.pageObjectId);
-  function update(builds) { onChange(manualInteraction(builds)); }
+  function update(builds) { onChange(manualInteraction(builds, builds.length ? "builds" : "static", initialResourceId)); }
   function editLayer(index, change) { update(steps.map((step, position) => position === index ? { ...step, layers: [{ ...step.layers[0], ...change }] } : step)); }
   function add(type) {
     if (steps.length >= 50) return;
@@ -35,17 +36,18 @@ export default function SlideInteractionEditor({ unitId, slide, main, resources,
   return <section className="ac-interaction-editor" aria-label="Interactividad de la diapositiva">
     <h3>Interactividad de la diapositiva</h3>
     <label>Modo<select value={mode} onChange={event => {
-      if (event.target.value === "static") { onChange(manualInteraction([], "static")); setState(0); }
+      if (event.target.value === "static") { onChange(manualInteraction([], "static", initialResourceId)); setState(0); }
       else if (!steps.length) add("answer");
     }}><option value="static">Sin interactividad</option><option value="builds">Revelado progresivo</option></select></label>
-    <p>{steps.length} pasos{automatic ? " · Extraídos de PPTX" : ""}</p>
-    {!!page?.warnings?.length && <p role="status">Animación no compatible. Diapositiva estática; puedes crear revelados manuales.</p>}
+    <p>{steps.length} pasos{automatic ? " · Detectados en la presentación" : ""}</p>
+    {!!page?.warnings?.length && <p role="status">No se pudieron recuperar los revelados de esta diapositiva. Puedes crear pasos manuales.</p>}
     <div className="ac-unit-actions"><button type="button" className="ac-outline-button" aria-pressed={current === 0} onClick={() => setState(0)}>Estado inicial</button>{steps.map((step, index) => <button type="button" className="ac-outline-button" key={step.order} aria-pressed={current === index + 1} onClick={() => setState(index + 1)}>Paso {index + 1}</button>)}</div>
     <div className="ac-build-preview" style={{ aspectRatio: ratio }}>
-      {main && <PreviewAsset unitId={unitId} resourceId={main.id} pageObjectId={slide.metadata.pageObjectId} buildIndex={automatic ? current : mode === "static" ? page?.builds?.length || 0 : 0} pageNumber={slide.metadata.pageNumber || slide.index + 1} onRatio={setRatio} />}
+      {initialResourceId ? <PreviewAsset unitId={unitId} resourceId={initialResourceId} onRatio={setRatio} /> : main && <PreviewAsset unitId={unitId} resourceId={main.id} pageObjectId={slide.metadata.pageObjectId} buildIndex={automatic ? current : mode === "static" ? page?.builds?.length || 0 : 0} pageNumber={slide.metadata.pageNumber || slide.index + 1} onRatio={setRatio} />}
       {!automatic && visibleBuildLayers(steps, current).map((layer, index) => <div key={index} className="ac-build-layer" style={{ left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, color: layer.color, fontSize: `${layer.fontSize || 3}cqw` }}>{layer.type === "image" ? <PreviewAsset unitId={unitId} resourceId={layer.resourceId} /> : layer.text}</div>)}
     </div>
-    {automatic ? <p>Estados rasterizados: orden y diseño conservados. <button type="button" className="ac-clear-filters" onClick={() => { onChange(manualInteraction([], "static")); setState(0); }}>Crear pasos manuales</button></p> : <>
+    {!automatic && <><label>Imagen del estado inicial<select value={initialResourceId} onChange={event => onChange(manualInteraction(steps, mode, event.target.value))}><option value="">Usar diapositiva procesada</option>{resources.filter(resource => resource.kind === "image").map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select></label><p>Si la imagen original ya muestra respuestas, importa una imagen sin respuestas y selecciónala como estado inicial.</p></>}
+    {automatic ? <p>Estados rasterizados: orden y diseño conservados. <button type="button" className="ac-clear-filters" onClick={() => { onChange(manualInteraction([], "static", initialResourceId)); setState(0); }}>Crear pasos manuales</button></p> : <>
       <div className="ac-unit-actions"><button type="button" className="ac-outline-button" disabled={steps.length >= 50} onClick={() => add("text")}>Añadir texto</button><button type="button" className="ac-outline-button" disabled={steps.length >= 50} onClick={() => add("answer")}>Añadir respuesta</button><button type="button" className="ac-outline-button" disabled={steps.length >= 50 || !resources.some(resource => resource.kind === "image")} onClick={() => add("image")}>Añadir imagen</button></div>
       <p>Para añadir imágenes, importa o carga el archivo en los recursos de esta Unit.</p>
       {steps.map((step, index) => {

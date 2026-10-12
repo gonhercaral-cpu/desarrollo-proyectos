@@ -80,11 +80,12 @@ for (const nativeSlides of [false, true]) test(`${nativeSlides ? "Google Slides 
     await bucket.file(assetPath).save(buildBytes, { contentType: "image/png" });
     await db.doc("activeClassroomResources/reveal-image").set({ folderId: unitId, source: "storage", kind: "image", name: "answer.png", mimeType: "image/png", storagePath: assetPath });
     const draft = structuredClone((await unitRef.get()).data().draft);
-    Object.assign(draft.slides[0], { interactionMode: "builds", buildCount: 1, interaction: { mode: "builds", source: "manual", buildCount: 1 }, builds: [{ order: 1, layers: [{ type: "image", resourceId: "reveal-image", x: 10, y: 10, width: 20, height: 20 }] }] });
+    Object.assign(draft.slides[0], { interactionMode: "builds", buildCount: 1, interaction: { mode: "builds", source: "manual", buildCount: 1, initialResourceId: "reveal-image" }, builds: [{ order: 1, layers: [{ type: "image", resourceId: "reveal-image", x: 10, y: 10, width: 20, height: 20 }] }] });
     await units.save({ ...request(3), data: { ...request(3).data, draft } });
     assert.equal((await units.publish(request(4))).version, 2);
     const manual = (await unitRef.collection("publications").doc("2").get()).data().manifest;
     assert.ok(manual.resources.find(resource => resource.resourceId === "reveal-image").download.checksums.sha256);
+    assert.equal(manual.slides[0].interaction.initialAsset.sha256, manual.resources.find(resource => resource.resourceId === "reveal-image").download.checksums.sha256);
     assert.deepEqual((await unitRef.collection("publications").doc("1").get()).data().manifest, frozen);
     source.version = "2";
     await units.refreshDrive(request(4)); await processing.process(request(5));

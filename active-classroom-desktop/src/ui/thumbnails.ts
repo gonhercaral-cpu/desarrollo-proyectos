@@ -12,6 +12,7 @@ export class LocalThumbnails {
   private observer?: IntersectionObserver;
   private aborts = new Set<AbortController>();
   private previews = new Map<string, string>();
+  private rendered = new WeakMap<HTMLElement, string>();
   private pdfTasks = new Set<{ destroy(): Promise<void> }>();
   pause(): void {
     this.sequence++; this.observer?.disconnect();
@@ -35,18 +36,22 @@ export class LocalThumbnails {
     const entries = new Map<Element, () => Promise<void>>();
     root.querySelectorAll<HTMLElement>("[data-thumbnail]").forEach(host => {
       const manifest = manifests.find(item => item.unit.unitId === host.dataset.thumbnail);
-      if (!manifest || host.querySelector(".unit-cover-image")) return;
+      if (!manifest) return;
       const coverId = manifest.slides?.[0]?.metadata.presentationResourceId || manifest.mainPresentationId;
       const resource = manifest.resources.find(item => item.resourceId === coverId);
       if (!resource || !validHash(resource.download.checksums.sha256) || resource.download.sizeBytes > maxPreviewBytes
           || !/^(image\/(png|jpeg|webp)|application\/pdf)$/.test(resource.download.mimeType)) return;
       const key = resource.download.checksums.sha256;
-      const display = (url: string) => {
+      if (host.querySelector(".unit-cover-image") && this.rendered.get(host) === key) return;
+      const display = async (url: string) => {
         if (!host.isConnected || sequence !== this.sequence) return;
         const image = document.createElement("img"); image.className = "unit-cover-image"; image.alt = `Vista previa de ${manifest.unit.name}`; image.src = url;
-        host.querySelector(".unit-cover-fallback")?.replaceWith(image);
+        try { await image.decode(); } catch { return; }
+        if (!host.isConnected || sequence !== this.sequence) return;
+        host.querySelector(".unit-cover-image, .unit-cover-fallback")?.replaceWith(image);
+        this.rendered.set(host, key);
       };
-      if (this.previews.has(key)) { display(this.previews.get(key)!); return; }
+      if (this.previews.has(key)) { void display(this.previews.get(key)!); return; }
       entries.set(host, async () => {
         const controller = new AbortController(); this.aborts.add(controller);
         let pdfTask: { destroy(): Promise<void> } | undefined;
@@ -69,7 +74,7 @@ export class LocalThumbnails {
             blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("Vista previa no disponible")), "image/webp"));
           } else blob = new Blob([bytes], { type: resource.download.mimeType });
           if (sequence !== this.sequence) return;
-          const url = URL.createObjectURL(blob); this.previews.set(key, url); display(url);
+          const url = URL.createObjectURL(blob); this.previews.set(key, url); await display(url);
           if (this.previews.size > 24) { const oldest = this.previews.keys().next().value!; URL.revokeObjectURL(this.previews.get(oldest)!); this.previews.delete(oldest); }
         } catch { /* A preview failure never prevents downloading/opening the class. */ }
         finally { if (pdfTask) { this.pdfTasks.delete(pdfTask); await pdfTask.destroy().catch(() => {}); } this.aborts.delete(controller); }

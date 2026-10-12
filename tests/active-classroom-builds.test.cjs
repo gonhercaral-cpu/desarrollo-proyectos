@@ -70,3 +70,12 @@ for (const failed of [false, true]) test(`cliente privado firma estados exactos 
   else { const result = await convert(request); assert.equal(result.pages[0].builds[0].download.generation, "7"); assert.equal(deleted.length, 0); }
   for (const grant of signed.filter(item => item.options.contentType === "image/png")) { assert.equal(grant.options.extensionHeaders["x-goog-if-generation-match"], "0"); assert.ok([0, 1].some(index => grant.path === rasterTargetPath(revision, index))); }
 });
+
+test("estado inicial manual forma parte de assets del draft y no acepta rutas ni fuente automática", () => {
+  const interaction = normalizeInteraction({ interactionMode: "builds", interaction: { source: "manual", initialResourceId: "initial-image" }, builds: steps });
+  assert.deepEqual(interactionResourceIds(interaction), ["initial-image", "answer-image"]);
+  assert.equal(interaction.interaction.initialResourceId, "initial-image");
+  assert.throws(() => normalizeInteraction({ interactionMode: "builds", interaction: { source: "manual", initialResourceId: "../outside" }, builds: steps }), { code: "invalid-argument" });
+  const staticImage = normalizeInteraction({ interactionMode: "static", interaction: { source: "manual", initialResourceId: "initial-image" } });
+  assert.deepEqual(interactionResourceIds(staticImage), ["initial-image"]);
+});

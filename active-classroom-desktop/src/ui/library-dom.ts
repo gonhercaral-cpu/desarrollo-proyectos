@@ -1,6 +1,6 @@
 // Preserve card, thumbnail and control identity while progress/catalog changes.
 // Rendering the markup does not detach the existing grid or its unchanged cards.
-export function reconcileLibrary(root: HTMLElement, markup: string): void {
+export function reconcileLibrary(root: HTMLElement, markup: string, contentsOnly = false): void {
   const HTMLElement = root.ownerDocument.defaultView!.HTMLElement;
   const template = root.ownerDocument.createElement("template"); template.innerHTML = markup;
   const key = (node: Node): string => node instanceof HTMLElement ? node.dataset.unitCard || (node.dataset.level !== undefined ? `level:${node.dataset.level}` : "") : "";
@@ -24,5 +24,5 @@ export function reconcileLibrary(root: HTMLElement, markup: string): void {
     }
     while (cursor) { const next = cursor.nextSibling; parent.removeChild(cursor); cursor = next; }
   }
-  patch(root, template.content);
+  patch(root, contentsOnly ? template.content.firstElementChild! : template.content);
 }

@@ -2,7 +2,7 @@ export const DRIVE_NEW_VERSION = "Hay una versión más reciente de este archivo
 export const DRIVE_UNAVAILABLE = "El archivo original ya no está disponible en Nube AES";
 export function activeDraftResourceIds(draft) {
   const excluded = new Set(draft?.excludedResourceIds || []);
-  return [...new Set([draft?.mainPresentationId, ...(draft?.generalResourceIds || []), ...(draft?.slides || []).flatMap(slide => [...(slide.resourceIds || []), ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])].filter(id => id && !excluded.has(id)))];
+  return [...new Set([draft?.mainPresentationId, ...(draft?.generalResourceIds || []), ...(draft?.slides || []).flatMap(slide => [slide.interaction?.initialResourceId, ...(slide.resourceIds || []), ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])].filter(id => id && !excluded.has(id)))];
 }
 export function unitOperationMessage(error) {
   if (/data-loss|internal|deadline-exceeded|unavailable/.test(error?.code || "")) return "No se pudo preparar el archivo. El borrador y las publicaciones se conservan. Reintenta.";
@@ -17,7 +17,11 @@ export function replaceDraftResource(draft, oldId, newId = null, main = oldId ==
   const general = main ? [...draft.generalResourceIds, ...draft.slides.flatMap(slide => slide.resourceIds)] : draft.generalResourceIds;
   const slides = main ? [] : draft.slides.map(slide => {
     const builds = (slide.builds || []).map(build => ({ ...build, ...(build.resourceId === oldId ? { resourceId: newId } : {}), layers: (build.layers || []).flatMap(layer => layer.resourceId === oldId ? newId ? [{ ...layer, resourceId: newId }] : [] : [layer]) })).filter(build => build.resourceId || build.layers.length).map((build, index) => ({ ...build, order: index + 1 }));
-    return { ...slide, resourceIds: replace(slide.resourceIds), ...(slide.builds ? { builds, buildCount: builds.length, interactionMode: builds.length ? "builds" : "static", interaction: { ...slide.interaction, mode: builds.length ? "builds" : "static", buildCount: builds.length } } : {}) };
+    const interaction = { ...slide.interaction };
+    if (interaction.initialResourceId === oldId) {
+      if (newId) interaction.initialResourceId = newId; else delete interaction.initialResourceId;
+    }
+    return { ...slide, resourceIds: replace(slide.resourceIds), ...(slide.builds ? { builds, buildCount: builds.length, interactionMode: builds.length ? "builds" : "static", interaction: { ...interaction, mode: builds.length ? "builds" : "static", buildCount: builds.length } } : {}) };
   });
   return { ...draft, mainPresentationId: main ? newId : draft.mainPresentationId, slides, generalResourceIds: replace(general).filter(id => id !== oldId && id !== (main ? newId : draft.mainPresentationId)), excludedResourceIds: [...new Set([...(draft.excludedResourceIds || []), ...(oldId ? [oldId] : [])])].filter(id => id !== newId) };
 }

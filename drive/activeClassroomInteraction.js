@@ -5,7 +5,10 @@ function normalizeInteraction(slide) {
   const fail = () => { throw new HttpsError("invalid-argument", "Interactividad inválida: revisa pasos, posición y assets."); };
   const mode = slide.interactionMode || slide.interaction?.mode || "static";
   if (!["static", "builds"].includes(mode)) fail();
-  if (mode === "static") return { interactionMode: "static", buildCount: 0, interaction: { mode: "static", buildCount: 0, ...(slide.interaction?.source === "manual" ? { source: "manual" } : {}) }, builds: [] };
+  const initialResourceId = slide.interaction?.initialResourceId;
+  if (initialResourceId != null && (!validId(initialResourceId) || slide.interaction?.source !== "manual")) fail();
+  const initial = initialResourceId ? { initialResourceId } : {};
+  if (mode === "static") return { interactionMode: "static", buildCount: 0, interaction: { mode: "static", buildCount: 0, ...initial, ...(slide.interaction?.source === "manual" ? { source: "manual" } : {}) }, builds: [] };
   if (!Array.isArray(slide.builds) || !slide.builds.length || slide.builds.length > MAX_BUILDS) fail();
   if (slide.builds.reduce((count, step) => count + (step.layers?.length || 0), 0) > 50) fail();
   const builds = slide.builds.map((step, index) => {
@@ -31,9 +34,9 @@ function normalizeInteraction(slide) {
       return { type: layer.type, ...box, text: layer.text, color: layer.color || "#102954", fontSize: layer.fontSize || 3 };
     }) };
   });
-  return { interactionMode: "builds", buildCount: builds.length, interaction: { mode: "builds", buildCount: builds.length, source: slide.interaction?.source === "pptx" ? "pptx" : "manual" }, builds };
+  return { interactionMode: "builds", buildCount: builds.length, interaction: { mode: "builds", buildCount: builds.length, ...initial, source: slide.interaction?.source === "pptx" ? "pptx" : "manual" }, builds };
 }
 function interactionResourceIds(slide) {
-  return (slide.builds || []).flatMap((step) => (step.layers || []).filter((layer) => layer.type === "image").map((layer) => layer.resourceId));
+  return [slide.interaction?.initialResourceId, ...(slide.builds || []).flatMap((step) => (step.layers || []).filter((layer) => layer.type === "image").map((layer) => layer.resourceId))].filter(Boolean);
 }
 module.exports = { MAX_BUILDS, normalizeInteraction, interactionResourceIds };
