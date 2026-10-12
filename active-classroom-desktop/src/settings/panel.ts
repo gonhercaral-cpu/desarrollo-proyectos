@@ -79,7 +79,9 @@ export class DesktopSettingsPanel {
   }
   private render(): void {
     if (!this.visible) return;
-    const focused = (document.activeElement as HTMLElement)?.dataset.settingsSection;
+    const focusedElement = document.activeElement as HTMLElement;
+    const keepFocus = this.host.contains(focusedElement);
+    const focused = focusedElement?.dataset.settingsSection;
     this.host.innerHTML = `<div class="settings-backdrop"><section class="desktop-settings" role="dialog" aria-modal="true" aria-labelledby="desktop-settings-title" data-settings-dialog><header><h1 id="desktop-settings-title">${icon("settings")}Ajustes</h1><button data-settings-close aria-label="Cerrar ajustes">×</button></header><div class="settings-layout"><nav aria-label="Secciones de Ajustes">${Object.entries(sections).map(([id, [label, symbol]]) => `<button data-settings-section="${id}" aria-current="${this.section === id ? "page" : "false"}" class="${this.section === id ? "is-active" : ""}">${icon(symbol as Parameters<typeof icon>[0])}<span>${label}</span></button>`).join("")}</nav><main class="settings-content">${this.content()}</main></div></section></div>`;
     this.host.querySelector("[data-settings-close]")?.addEventListener("click", () => this.close());
     this.host.querySelectorAll<HTMLButtonElement>("[data-settings-section]").forEach(button => { button.onclick = () => { this.section = button.dataset.settingsSection as Section; this.capture = undefined; this.conflict = undefined; this.message = ""; this.render(); this.host.querySelector<HTMLButtonElement>(`[data-settings-section="${this.section}"]`)?.focus(); }; });
@@ -95,5 +97,6 @@ export class DesktopSettingsPanel {
     this.host.querySelector("[data-restore-shortcuts]")?.addEventListener("click", () => { if (window.confirm("¿Restaurar todos los atajos predeterminados?")) { restoreShortcuts(); this.render(); } });
     const about = this.host.querySelector<HTMLElement>("[data-settings-updater]"); if (about) renderUpdater(about, this.updater, undefined, true);
     if (focused) this.host.querySelector<HTMLButtonElement>(`[data-settings-section="${focused}"]`)?.focus();
+    else if (keepFocus && !this.capture) this.host.querySelector<HTMLButtonElement>("[data-settings-close]")?.focus();
   }
 }

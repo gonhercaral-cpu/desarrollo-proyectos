@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import SettingsPanel from "./components/SettingsPanel";
 import { readWebPreferences } from "./utils/webPreferences";
 import TeamsPanel from "./components/TeamsPanel";
@@ -28,6 +28,8 @@ export default function ActiveClassroomModule({ profile }) {
   const versions = useUnitCatalog(profile);
   const catalog = unitCatalog(library.folders, versions.documents, library.resources);
   const metrics = catalogMetrics(library.folders, catalog);
+  const [metricTime] = useState(() => Date.now());
+  const recentPublications = catalog.filter(unit => unit.version && Date.parse(unit.document.lastPublishedAt || "") >= metricTime - 86400000).length;
   const [selectedUnit, setSelectedUnit] = useState("");
   const [importPicker, setImportPicker] = useState(false);
   const [levelCreation, setLevelCreation] = useState(0);
@@ -43,8 +45,9 @@ export default function ActiveClassroomModule({ profile }) {
   const [toast, setToast] = useState("");
   const [initialImport, setInitialImport] = useState(false);
   const [unitDirty, setUnitDirty] = useState(false);
+  useEffect(() => { const changed = () => { const preferences = readWebPreferences(); setViewMode(preferences.view); setSortMode(preferences.sort); }; window.addEventListener("classroom-web-preferences", changed); return () => window.removeEventListener("classroom-web-preferences", changed); }, []);
 
-  const visibleUnits = useMemo(() => filterCatalog(catalog, { search: searchTerm, type: typeFilter, status: statusFilter, sort: sortMode, level: library.selectedFolder?.kind === "level" ? library.selectedFolder.id : "" }), [catalog, searchTerm, typeFilter, statusFilter, sortMode, library.selectedFolder]);
+  const visibleUnits = filterCatalog(catalog, { search: searchTerm, type: typeFilter, status: statusFilter, sort: sortMode, level: library.selectedFolder?.kind === "level" ? library.selectedFolder.id : "" });
   const inspected = catalog.find(unit => unit.id === selectedUnit) || visibleUnits[0];
 
   function showToast(message) {
@@ -90,7 +93,7 @@ export default function ActiveClassroomModule({ profile }) {
 
   function renderLibrary(publications = false) {
     return <>
-      <ClassroomMetrics items={[{ title: "Niveles activos", value: metrics.levels, detail: `${library.folders.filter(folder => folder.kind === "level").length} niveles registrados`, icon: "library" }, { title: "Units publicadas", value: metrics.published, detail: "con versiones inmutables", icon: "publications", tone: "green" }, { title: publications ? "Borradores pendientes" : "Pendientes de actualizar", value: publications ? metrics.drafts : metrics.pending, detail: "cambios pendientes de publicar", icon: "refresh", tone: "orange" }]} />
+      <ClassroomMetrics items={publications ? [{ title: "Units publicadas", value: metrics.published, detail: "con versiones inmutables", icon: "publications", tone: "green" }, { title: "Borradores pendientes", value: metrics.drafts, detail: "cambios pendientes de publicar", icon: "edit", tone: "orange" }, { title: "Publicaciones recientes", value: recentPublications, detail: "Units publicadas en últimas 24 horas", icon: "refresh" }] : [{ title: "Niveles activos", value: metrics.levels, detail: `${library.folders.filter(folder => folder.kind === "level").length} niveles registrados`, icon: "library" }, { title: "Units publicadas", value: metrics.published, detail: "con versiones inmutables", icon: "publications", tone: "green" }, { title: "Pendientes de actualizar", value: metrics.pending, detail: "cambios pendientes de publicar", icon: "refresh", tone: "orange" }]} />
       <div className="ac-console-layout"><section className="ac-console-panel">
         <div className="ac-console-toolbar"><label><ActiveClassroomIcon name="search" /><input value={searchTerm} placeholder="Buscar por nombre de Unit, nivel o contenido…" onChange={event => setSearchTerm(event.target.value)} /></label><select aria-label="Nivel" value={library.selectedFolder?.kind === "level" ? library.selectedFolder.id : ""} onChange={event => library.openFolder(event.target.value || "root")}><option value="">Todos los niveles</option>{library.folders.filter(folder => folder.kind === "level").map(level => <option key={level.id} value={level.id}>{level.name}</option>)}</select><select aria-label="Estado" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="all">Todos los estados</option>{["Publicado", "Borrador", "Procesando", "Actualización disponible", "Error"].map(state => <option key={state}>{state}</option>)}</select><select aria-label="Orden" value={sortMode} onChange={event => setSortMode(event.target.value)}><option value="name">Ordenar por: Nombre</option><option value="date">Última modificación</option></select><div className="ac-view-buttons"><button aria-label="Vista de lista" className={viewMode === "list" ? "is-active" : ""} onClick={() => setViewMode("list")}><ActiveClassroomIcon name="list" /></button><button aria-label="Vista de cuadrícula" className={viewMode === "grid" ? "is-active" : ""} onClick={() => setViewMode("grid")}><ActiveClassroomIcon name="grid" /></button></div><button className="ac-outline-button" onClick={() => setFiltersOpen(!filtersOpen)}><ActiveClassroomIcon name="filter" />Filtrar</button></div>
         {filtersOpen && <div className="ac-console-extra-filters"><select aria-label="Tipo de archivo" value={typeFilter} onChange={event => setTypeFilter(event.target.value)}><option value="all">Todos los tipos</option>{["presentation", "image", "audio", "video", "pdf", "document"].map(type => <option key={type} value={type}>{({ presentation: "Presentación", image: "Imagen", audio: "Audio", video: "Video", pdf: "PDF", document: "Documento" })[type]}</option>)}</select><button onClick={clearFilters}>Limpiar filtros</button></div>}
