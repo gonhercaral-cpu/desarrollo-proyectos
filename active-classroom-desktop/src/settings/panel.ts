@@ -21,6 +21,7 @@ export class DesktopSettingsPanel {
   private capture?: ShortcutCommand;
   private conflict?: { command: ShortcutCommand; key: string; other: ShortcutCommand };
   private message = "";
+  private projecting = false;
   private monitors: ProjectionStatus["monitors"] = [];
   private updater: ProgramUpdater;
   private startup: StartupPreferences;
@@ -33,7 +34,7 @@ export class DesktopSettingsPanel {
     this.previousFocus = document.activeElement as HTMLElement; this.section = section; this.visible = true; this.capture = undefined; this.conflict = undefined; this.message = "";
     this.render(); this.host.querySelector<HTMLButtonElement>("[data-settings-close]")?.focus();
     void this.startup.run("status");
-    if (isTauri()) void invoke<ProjectionStatus>("classroom_projection", { action: "monitors" }).then(status => { this.monitors = status.monitors; if (this.visible && this.section === "projector") this.render(); }).catch(() => {});
+    if (isTauri()) void invoke<ProjectionStatus>("classroom_projection", { action: "monitors" }).then(status => { this.monitors = status.monitors; this.projecting = status.projecting; if (this.visible && this.section === "projector") this.render(); }).catch(() => {});
   }
   close(): void { this.visible = false; this.capture = undefined; this.host.replaceChildren(); this.previousFocus?.focus(); }
   refresh(): void { if (this.visible && !this.capture) this.render(); }
@@ -69,7 +70,7 @@ export class DesktopSettingsPanel {
       const stats = cacheStatistics(); const followed = contentPreferences().followedLevels;
       return `<h2>Contenido</h2>${contentSettingsMarkup()}<h3>Niveles disponibles sin conexión</h3><p>Se mantienen actualizados e incorporan Units nuevas. Selecciona un nivel en Biblioteca para añadirlo.</p>${followed.length ? followed.map(id => `<label class="settings-row"><span>${escape(stats.levels[id] || id)}</span><input type="checkbox" data-offline-level="${escape(id)}" checked/></label>`).join("") : "<p>No hay niveles seleccionados.</p>"}<h3>Almacenamiento local</h3><p>${stats.units} Units verificadas · ${(stats.bytes / 1024 / 1024).toFixed(1)} MiB en archivos activos, sin contar duplicados.</p><small>Las versiones nuevas se activan al cerrar la clase. Esta pantalla no elimina contenido.</small>`;
     }
-    if (this.section === "projector") return `<h2>Proyector</h2><p>Proyección manual desde la clase. Reconexión segura; el proyector no se abre durante el arranque.</p>${toggle("rememberProjector", "Recordar última pantalla", "Conserva la selección actual entre clases y reinicios.", settings.rememberProjector)}<label class="settings-row"><span>Pantalla preferida</span><select data-preferred-monitor ${!this.monitors.length ? "disabled" : ""}>${this.monitors.length ? this.monitors.map(monitor => `<option value="${escape(monitor.id)}" ${monitor.id === readMonitorPreference()?.id ? "selected" : ""}>${escape(monitor.name)} · ${monitor.width}×${monitor.height} · ${monitor.primary ? "Principal" : "Secundaria"}</option>`).join("") : '<option>Sin pantallas disponibles</option>'}</select></label>`;
+    if (this.section === "projector") return `<h2>Proyector</h2><p>Proyección manual desde la clase. Reconexión segura; el proyector no se abre durante el arranque.</p>${toggle("rememberProjector", "Recordar última pantalla", "Conserva la selección actual entre clases y reinicios.", settings.rememberProjector)}<label class="settings-row"><span>Pantalla preferida</span><select data-preferred-monitor ${!this.monitors.length || this.projecting || !settings.rememberProjector ? "disabled" : ""}>${this.monitors.length ? this.monitors.map(monitor => `<option value="${escape(monitor.id)}" ${monitor.id === readMonitorPreference()?.id ? "selected" : ""}>${escape(monitor.name)} · ${monitor.width}×${monitor.height} · ${monitor.primary ? "Principal" : "Secundaria"}</option>`).join("") : '<option>Sin pantallas disponibles</option>'}</select></label>`;
     if (this.section === "appearance") return `<h2>Apariencia</h2><p>Tema institucional Active Classroom.</p><label class="settings-row"><span>Densidad de Biblioteca</span><select data-density><option value="comfortable" ${settings.density === "comfortable" ? "selected" : ""}>Cómoda</option><option value="compact" ${settings.density === "compact" ? "selected" : ""}>Compacta</option></select></label>`;
     if (this.section === "shortcuts") {
       const map = readShortcuts();
@@ -86,7 +87,7 @@ export class DesktopSettingsPanel {
     this.host.querySelector("[data-settings-close]")?.addEventListener("click", () => this.close());
     this.host.querySelectorAll<HTMLButtonElement>("[data-settings-section]").forEach(button => { button.onclick = () => { this.section = button.dataset.settingsSection as Section; this.capture = undefined; this.conflict = undefined; this.message = ""; this.render(); this.host.querySelector<HTMLButtonElement>(`[data-settings-section="${this.section}"]`)?.focus(); }; });
     bindContentSettings(this.host); bindStartupSettings(this.host, this.startup);
-    this.host.querySelectorAll<HTMLInputElement>("[data-setting]").forEach(input => { input.onchange = () => { saveDesktopSettings({ [input.dataset.setting!]: input.checked }); }; });
+    this.host.querySelectorAll<HTMLInputElement>("[data-setting]").forEach(input => { input.onchange = () => { saveDesktopSettings({ [input.dataset.setting!]: input.checked }); if (input.dataset.setting === "rememberProjector") this.render(); }; });
     this.host.querySelector<HTMLSelectElement>("[data-density]")?.addEventListener("change", event => saveDesktopSettings({ density: (event.target as HTMLSelectElement).value as "compact" | "comfortable" }));
     this.host.querySelector<HTMLSelectElement>("[data-preferred-monitor]")?.addEventListener("change", event => { const monitor = this.monitors.find(item => item.id === (event.target as HTMLSelectElement).value); if (monitor) saveMonitorPreference(monitor); });
     this.host.querySelectorAll<HTMLInputElement>("[data-offline-level]").forEach(input => { input.onchange = () => { if (!window.confirm("¿Dejar de mantener este nivel actualizado? Las Units descargadas se conservan.")) { input.checked = true; return; } saveContentPreferences({ followedLevels: contentPreferences().followedLevels.filter(id => id !== input.dataset.offlineLevel) }); }; });
