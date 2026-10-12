@@ -185,7 +185,9 @@ jobs:
 
       - name: Web institucional e inspectores en tres resoluciones
         working-directory: .
-        run: node tests/active-classroom-console-webkit.mjs
+        run: |
+          npm ci
+          node tests/active-classroom-console-webkit.mjs
 
       - name: Tests del updater del programa
         run: npm run test:updater
