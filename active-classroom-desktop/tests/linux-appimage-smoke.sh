@@ -56,6 +56,13 @@ log="$XDG_CACHE_HOME/appimage-$backend.log"
 /tmp/classroom-test.AppImage --appimage-extract-and-run > "$log" 2>&1 &
 first=$!
 cleanup() {
+  result=$?
+  if [[ "$result" -ne 0 ]]; then
+    echo "APPIMAGE_FAILURE backend=$backend DISPLAY=${DISPLAY:-unset} GDK_BACKEND=${GDK_BACKEND:-unset}"
+    tail -n 120 "$log" || true
+    cat "$XDG_CACHE_HOME/windows.txt" 2>/dev/null || true
+    ps -u "$(id -u)" -o pid,comm
+  fi
   pkill -u "$(id -u)" -f '/usr/bin/active-classroom( |$)' 2>/dev/null || true
   kill "$first" 2>/dev/null || true
   if [[ -n "${compositor:-}" ]]; then kill "$compositor" 2>/dev/null || true; fi

@@ -303,6 +303,19 @@ jobs:
           node scripts/updater-release.mjs metadata "$RUNNER_TEMP/updater-assets"
           node scripts/verify-updater-signature.mjs
 
+      - name: Diagnóstico de empaquetado fallido (sin release)
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: classroom-packaging-diagnostic-${{ github.sha }}
+          path: |
+            active-classroom-desktop/src-tauri/target/release/bundle/deb/*.deb
+            active-classroom-desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            ${{ runner.temp }}/package-validation/*
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 0
+
       - name: Comprobar paquete y lockfiles
         run: |
           git diff --exit-code -- package-lock.json src-tauri/Cargo.lock
