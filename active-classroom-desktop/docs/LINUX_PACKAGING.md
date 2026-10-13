@@ -22,17 +22,25 @@ la identidad real de mantenimiento del repositorio.
 Secret Service/GLib, GNOME Keyring y `pkexec`, más GTK/WebKitGTK agregados por Tauri.
 No se incluye tray ni libxdo: el executable no los enlaza.
 
-`Recommends`: PAM de GNOME Keyring y plugins GStreamer base/good/bad/libav para los
-formatos multimedia. APT y Gdebi en la instalación gráfica normal los
-instalan automáticamente. CI exige que estén presentes después de ambos flujos;
-no se permite publicar si faltan. No se recomienda una instalación con
-`--no-install-recommends` para un equipo de salón completo.
+Pruebas reales detectaron que Gdebi omite `Recommends`: declarar codecs ahí no
+garantiza reproducción tras instalación gráfica. Agregarlos a `Depends` también
+rompería actualizaciones desde una instalación anterior sin esos paquetes,
+porque el updater oficial instala mediante `dpkg` y no descarga dependencias.
 
-La clasificación importa: el updater oficial instala Debian mediante `dpkg`,
-que no descarga dependencias adicionales. Las dependencias obligatorias siguen
-siendo resolubles desde una instalación existente. CI instala los bytes reales
-de 1.0.12 y actualiza usando `dpkg -i`, sin `apt --fix-broken`, comprobando que
-configuración/caché permanezcan intactas. Los plugins existentes se conservan.
+El Debian incluye por tanto el runtime GTK/GStreamer de la AppImage bajo
+`/usr/lib/active-classroom`, mediante `bundle.linux.deb.files` en la configuración
+de producción generada por CI. Un launcher 0755 conserva `/usr/bin/active-classroom`
+y ejecuta ese runtime. El executable interior es el Debian original generado
+por Tauri, conservando su tipo de paquete y updater Debian. No modifica código
+de activación, Player ni updater. Solo PAM de GNOME Keyring sigue recomendado.
+El launcher conserva `/usr/bin/active-classroom` como ruta estable usada por los
+helpers oficiales de autostart/relaunch; el marcador Debian del ELF determina
+por separado el formato del updater. CI comprueba ambos contratos.
+
+CI exige plugins empaquetados, reproducción H.264/AAC con esos plugins, arranque
+real Debian/AppImage en X11/Wayland e identidad compartida. Instala además los
+bytes reales de 1.0.12 y actualiza usando `dpkg -i`, sin `apt --fix-broken`,
+comprobando que configuración/caché permanezcan intactas.
 
 ## AppImage
 

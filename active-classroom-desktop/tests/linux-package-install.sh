@@ -26,9 +26,8 @@ if [[ "$mode" == gdebi ]]; then
   apt-get install -y --no-install-recommends gdebi-core
   timeout 300s gdebi --non-interactive "$deb"
 else
-  # Use the exact recommended user flow. APT and desktop stores automatically
-  # install Recommends (multimedia/PAM); a deliberate --no-install-recommends is
-  # not the normal complete classroom installation.
+  # Use the exact recommended user flow; codecs are part of the package,
+  # including for graphical installers which do not install Recommends.
   apt-get install -y "$deb"
 fi
 test "$(dpkg-query -W -f='${Status}' active-classroom)" = 'install ok installed'
@@ -44,24 +43,30 @@ grep -qx 'Icon=active-classroom' "$desktop"
 grep -qx 'Categories=Education;' "$desktop"
 test -s /usr/share/icons/hicolor/512x512/apps/active-classroom.png
 test "$(file --brief --mime-type /usr/share/icons/hicolor/512x512/apps/active-classroom.png)" = image/png
-ldd /usr/bin/active-classroom | tee /tmp/classroom-ldd.txt
+binary=/usr/lib/active-classroom/usr/bin/active-classroom
+test -x "$binary"
+test "$(stat -c '%a:%U:%G' "$binary")" = '755:root:root'
+grep -a -q '__TAURI_BUNDLE_TYPE_VAR_DEB' "$binary"
+grep -qx 'exec /usr/lib/active-classroom/AppRun "$@"' /usr/bin/active-classroom
+ldd "$binary" | tee /tmp/classroom-ldd.txt
 ! grep -q 'not found' /tmp/classroom-ldd.txt
 # Loader smoke: resolves every DSO and symbol version without entering app main,
 # creating a device or sending a request to the production backend.
-/lib64/ld-linux-x86-64.so.2 --list /usr/bin/active-classroom
-readelf --version-info /usr/bin/active-classroom > /tmp/classroom-abi.txt
+/lib64/ld-linux-x86-64.so.2 --list "$binary"
+readelf --version-info "$binary" > /tmp/classroom-abi.txt
 glibc="$(grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' /tmp/classroom-abi.txt | sort -Vu | tail -1 | cut -d_ -f2)"
 glibcxx="$( (grep -oE 'GLIBCXX_[0-9]+(\.[0-9]+)+' /tmp/classroom-abi.txt || true) | sort -Vu | tail -1 | cut -d_ -f2)"
 dpkg --compare-versions "$glibc" le 2.35
 if [[ -n "$glibcxx" ]]; then dpkg --compare-versions "$glibcxx" le 3.4.30; fi
 for command in secret-tool gdbus pkexec; do test -x "/usr/bin/$command"; done
 for plugin in libgstplayback.so libgstisomp4.so libgstvideoparsersbad.so libgstlibav.so; do
-  test -s "/usr/lib/x86_64-linux-gnu/gstreamer-1.0/$plugin"
+  test -s "$(find /usr/lib/active-classroom -name "$plugin" -print -quit)"
 done
 mkdir -p /home/classroom-ci/.config/com.activeclassroom.desktop
 echo 'activation-and-settings-sentinel' > /home/classroom-ci/.config/com.activeclassroom.desktop/preserved
 dpkg -r active-classroom
 test ! -e /usr/bin/active-classroom
+test ! -e "$binary"
 test ! -e "$desktop"
 test ! -e /usr/share/icons/hicolor/512x512/apps/active-classroom.png
 # Dpkg installation on a base whose declared dependencies have been resolved.

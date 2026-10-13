@@ -26,7 +26,7 @@ for ubuntu in 22.04 24.04 26.04; do
     tag="classroom-package-test:${ubuntu//./-}-${GITHUB_RUN_ID:-local}"
     docker create --name "$name" -v "$deb:/package/classroom.deb:ro" \
       -v "$scripts:/tests:ro" ubuntu:"$ubuntu" \
-      bash -euc 'bash /tests/linux-package-install.sh /package/classroom.deb "$1" "$2"; if [[ "$1" == apt ]]; then apt-get install -y --no-install-recommends xvfb xauth x11-utils dbus-x11 weston procps; fi' -- "$installer" "$version"
+      bash -euc 'bash /tests/linux-package-install.sh /package/classroom.deb "$1" "$2"; if [[ "$1" == apt ]]; then dpkg -i /package/classroom.deb; apt-get install -y --no-install-recommends xvfb xauth x11-utils dbus-x11 weston procps; fi' -- "$installer" "$version"
     docker start --attach "$name" | tee "$report/ubuntu-$ubuntu-$installer.log"
     test "$(docker inspect --format '{{.State.ExitCode}}' "$name")" = 0
     if [[ "$installer" == apt ]]; then

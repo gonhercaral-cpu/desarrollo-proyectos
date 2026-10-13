@@ -2,7 +2,7 @@
 
 ## 1.0.13 — 2026-10-12
 
-- Instalador Debian usa pkexec y declara dependencias de multimedia, D-Bus y llavero.
+- Instalador Debian usa pkexec y declara dependencias de D-Bus y llavero; incluye runtime multimedia para no depender de codecs instalados manualmente.
 - Metadatos Debian completos y validación de instalación limpia en Ubuntu 22.04, 24.04 y 26.04 antes de publicar.
 - AppImage adicional con GStreamer incluido y soporte de sesión Wayland.
 - Conserva identidad, contenido offline, proyección y actualización firmada de instalaciones Debian.

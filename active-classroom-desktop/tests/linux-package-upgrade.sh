@@ -18,7 +18,7 @@ dpkg -i "$next"
 apt-get check
 test -z "$(dpkg --audit)"
 test "$(dpkg-query -W -f='${Version}' active-classroom)" = "$version"
-/lib64/ld-linux-x86-64.so.2 --list /usr/bin/active-classroom
+/lib64/ld-linux-x86-64.so.2 --list /usr/lib/active-classroom/usr/bin/active-classroom
 grep -qx settings /home/classroom-upgrade/.config/com.activeclassroom.desktop/preserved
 grep -qx offline-cache /home/classroom-upgrade/.local/share/com.activeclassroom.desktop/offline-v1/preserved
 echo "PACKAGE_UPGRADE os=$VERSION_ID from=1.0.12 to=$version official_dpkg_flow=true settings_preserved=true cache_preserved=true"

@@ -10,7 +10,8 @@ if [[ "${1:-}" != --session ]]; then
   chmod 755 /tmp/classroom-test.AppImage
   extract="$(mktemp -d)"
   (cd "$extract" && /tmp/classroom-test.AppImage --appimage-extract >/dev/null)
-  appdir="$extract/squashfs-root"
+  media_smoke() {
+  local appdir="$1" distribution="$2" plugins scanner
   test -s "$(find "$appdir" -name 'libwebkit2gtk-4.1.so*' -print -quit)"
   test -s "$(find "$appdir" -name 'libgtk-3.so*' -print -quit)"
   plugins="$(dirname "$(find "$appdir" -name libgstlibav.so -print -quit)")"
@@ -22,24 +23,33 @@ if [[ "${1:-}" != --session ]]; then
   # SDK-matched gst-launch from the Ubuntu 22.04 builder. Only plugins/libraries
   # from this AppImage are allowed; host codecs cannot hide a broken bundle.
   GST_PLUGIN_SYSTEM_PATH_1_0="$plugins" GST_PLUGIN_PATH_1_0="$plugins" \
-    GST_PLUGIN_SCANNER_1_0="$scanner" GST_REGISTRY=/tmp/classroom-bundled-gst.bin \
+    GST_PLUGIN_SCANNER_1_0="$scanner" GST_REGISTRY="/tmp/classroom-bundled-$distribution-gst.bin" \
     LD_LIBRARY_PATH="$appdir/usr/lib:$appdir/usr/lib/x86_64-linux-gnu" \
     /fixtures/gst-launch -q filesrc location=/fixtures/h264-aac.mp4 ! qtdemux name=demux \
     demux.video_0 ! queue ! h264parse ! avdec_h264 ! fakesink \
     demux.audio_0 ! queue ! aacparse ! avdec_aac ! fakesink
-  echo 'APPIMAGE_MEDIA bundled_plugins_only=true h264=true aac=true'
+  echo "PACKAGE_MEDIA distribution=$distribution bundled_plugins_only=true h264=true aac=true"
+  }
+  media_smoke "$extract/squashfs-root" appimage
+  grep -a -q '__TAURI_BUNDLE_TYPE_VAR_APP' "$extract/squashfs-root/usr/bin/active-classroom"
+  media_smoke /usr/lib/active-classroom deb
   # No FUSE device exists in Docker. This is the official runtime fallback;
   # the unchanged production AppImage is still the executable under test.
   export CLASSROOM_CI_KEYRING_PASSWORD="$(head -c 32 /dev/urandom | base64)"
+  for distribution in deb appimage; do
   for backend in x11 wayland; do
     runuser -u classroom-image -- env HOME=/home/classroom-image \
       CLASSROOM_CI_KEYRING_PASSWORD="$CLASSROOM_CI_KEYRING_PASSWORD" \
       xvfb-run -a -s '-screen 0 1920x1200x24' dbus-run-session -- \
-      bash "$0" --session "$backend"
+      bash "$0" --session "$backend" "$distribution"
+  done
   done
   exit 0
 fi
 backend="$2"
+distribution="$3"
+if [[ "$distribution" == deb ]]; then launcher=(/usr/bin/active-classroom);
+else launcher=(/tmp/classroom-test.AppImage --appimage-extract-and-run); fi
 export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_CACHE_HOME="$HOME/.cache"
 export XDG_RUNTIME_DIR="$(mktemp -d)"
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -55,8 +65,8 @@ if [[ "$backend" == wayland ]]; then
   test -S "$XDG_RUNTIME_DIR/wayland-package"
   export WAYLAND_DISPLAY=wayland-package WAYLAND_DEBUG=1
 fi
-log="$XDG_CACHE_HOME/appimage-$backend.log"
-/tmp/classroom-test.AppImage --appimage-extract-and-run > "$log" 2>&1 &
+log="$XDG_CACHE_HOME/$distribution-$backend.log"
+"${launcher[@]}" > "$log" 2>&1 &
 first=$!
 application_pids() {
   local process executable owner
@@ -72,7 +82,7 @@ application_pids() {
 cleanup() {
   result=$?
   if [[ "$result" -ne 0 ]]; then
-    echo "APPIMAGE_FAILURE backend=$backend DISPLAY=${DISPLAY:-unset} GDK_BACKEND=${GDK_BACKEND:-unset}"
+    echo "PACKAGE_RUNTIME_FAILURE distribution=$distribution backend=$backend DISPLAY=${DISPLAY:-unset} GDK_BACKEND=${GDK_BACKEND:-unset}"
     tail -n 120 "$log" || true
     tail -n 80 "$XDG_CACHE_HOME/second-$backend.log" 2>/dev/null || true
     cat "$XDG_CACHE_HOME/windows.txt" 2>/dev/null || true
@@ -97,11 +107,15 @@ test "$ready" = true
 sleep 10
 kill -0 "$first"
 ! grep -Eq 'symbol lookup error|GLIBC_[0-9.]+.*not found|error while loading shared libraries' "$log"
-timeout 20s /tmp/classroom-test.AppImage --appimage-extract-and-run > "$XDG_CACHE_HOME/second-$backend.log" 2>&1
+timeout 20s "${launcher[@]}" > "$XDG_CACHE_HOME/second-$backend.log" 2>&1
 echo "APPIMAGE_SECOND_EXIT backend=$backend success=true"
 mapfile -t applications < <(application_pids)
 echo "APPIMAGE_INSTANCE_COUNT backend=$backend count=${#applications[@]}"
 test "${#applications[@]}" -eq 1
+if [[ "$distribution" == deb ]]; then
+  # Check only these public packaging values, never print arbitrary environment.
+  tr '\0' '\n' < "/proc/${applications[0]}/environ" | grep -qx 'APPIMAGE=/usr/bin/active-classroom'
+fi
 identity="$(secret-tool lookup application com.activeclassroom.desktop credential device-v1 | sha256sum | cut -d' ' -f1)"
 if [[ -f "$XDG_CACHE_HOME/identity.sha256" ]]; then
   test "$(cat "$XDG_CACHE_HOME/identity.sha256")" = "$identity"
@@ -109,4 +123,4 @@ else
   printf '%s\n' "$identity" > "$XDG_CACHE_HOME/identity.sha256"
 fi
 if [[ "$backend" == wayland ]]; then test "$(grep -c '"wl_output"' "$log")" -ge 2; fi
-echo "APPIMAGE_SMOKE backend=$backend actual_window=true single_instance=true identity_preserved=true offline=true"
+echo "PACKAGE_RUNTIME distribution=$distribution backend=$backend actual_window=true single_instance=true identity_preserved=true offline=true"
