@@ -63,6 +63,7 @@ cleanup() {
   if [[ "$result" -ne 0 ]]; then
     echo "APPIMAGE_FAILURE backend=$backend DISPLAY=${DISPLAY:-unset} GDK_BACKEND=${GDK_BACKEND:-unset}"
     tail -n 120 "$log" || true
+    tail -n 80 "$XDG_CACHE_HOME/second-$backend.log" 2>/dev/null || true
     cat "$XDG_CACHE_HOME/windows.txt" 2>/dev/null || true
     ps -u "$(id -u)" -o pid,comm
   fi
@@ -71,6 +72,7 @@ cleanup() {
   if [[ -n "${compositor:-}" ]]; then kill "$compositor" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
+trap 'echo "APPIMAGE_FAILED_CHECK line=$LINENO status=$?"' ERR
 ready=false
 for attempt in $(seq 1 120); do
   if ! kill -0 "$first" 2>/dev/null; then cat "$log"; exit 1; fi
@@ -85,7 +87,9 @@ sleep 10
 kill -0 "$first"
 ! grep -Eq 'symbol lookup error|GLIBC_[0-9.]+.*not found|error while loading shared libraries' "$log"
 timeout 20s /tmp/classroom-test.AppImage --appimage-extract-and-run > "$XDG_CACHE_HOME/second-$backend.log" 2>&1
+echo "APPIMAGE_SECOND_EXIT backend=$backend success=true"
 mapfile -t applications < <(pgrep -u "$(id -u)" -f '/usr/bin/active-classroom( |$)')
+echo "APPIMAGE_INSTANCE_COUNT backend=$backend count=${#applications[@]}"
 test "${#applications[@]}" -eq 1
 identity="$(secret-tool lookup application com.activeclassroom.desktop credential device-v1 | sha256sum | cut -d' ' -f1)"
 if [[ -f "$XDG_CACHE_HOME/identity.sha256" ]]; then

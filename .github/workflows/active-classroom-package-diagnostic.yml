@@ -1,6 +1,11 @@
 name: Diagnóstico paquete Linux publicado
 on:
   workflow_dispatch:
+    inputs:
+      source_run:
+        description: Run fallido con artefactos sin firmar (vacío para diagnosticar 1.0.12)
+        required: false
+        type: string
   push:
     branches: [codex/active-classroom-linux-packaging]
     paths:
@@ -8,8 +13,10 @@ on:
       - active-classroom-desktop/tests/linux-package-audit.sh
 permissions:
   contents: read
+  actions: read
 jobs:
   audit:
+    if: ${{ !inputs.source_run }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     strategy:
@@ -27,3 +34,41 @@ jobs:
           echo 'fb11b42dfddaedaf2f4b49902bf23da5f2d9b89edd14fd64e95a399d3a881572  current.deb' > "$RUNNER_TEMP/current.sha256"
           (cd "$RUNNER_TEMP" && sha256sum --check current.sha256)
           docker run --rm -v "$RUNNER_TEMP/current.deb:/package/current.deb:ro" -v "$GITHUB_WORKSPACE/active-classroom-desktop/tests/linux-package-audit.sh:/audit.sh:ro" ubuntu:${{ matrix.ubuntu }} bash /audit.sh /package/current.deb '${{ matrix.installer }}'
+  packaging:
+    if: ${{ inputs.source_run }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          pattern: classroom-packaging-diagnostic-*
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+          path: unsigned-diagnostic
+          merge-multiple: true
+      - name: Instalar herramientas del harness
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg gstreamer1.0-tools
+      - name: Validar los mismos bytes sin recompilar ni firmar
+        working-directory: active-classroom-desktop
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/target/release/bundle/{deb,appimage}
+          mapfile -t debs < <(find ../unsigned-diagnostic -type f -name '*.deb')
+          mapfile -t images < <(find ../unsigned-diagnostic -type f -name '*.AppImage')
+          test "${#debs[@]}" -eq 1
+          test "${#images[@]}" -eq 1
+          cp "${debs[0]}" src-tauri/target/release/bundle/deb/
+          cp "${images[0]}" src-tauri/target/release/bundle/appimage/
+          chmod 755 src-tauri/target/release/bundle/appimage/*.AppImage
+          version="$(node -p 'require("./package.json").version')"
+          bash tests/validate-linux-packages.sh "$version" "$RUNNER_TEMP/package-validation"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: packaging-recheck-${{ github.run_id }}
+          path: ${{ runner.temp }}/package-validation/*
+          if-no-files-found: warn
+          retention-days: 3
