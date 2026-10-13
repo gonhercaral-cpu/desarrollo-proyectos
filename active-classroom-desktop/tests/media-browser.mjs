@@ -10,7 +10,7 @@ import { sidebarMarkup } from "../src/ui/shell.ts";
 import "../src/offline/library.css";
 import "../src/player/player.css";
 import { interactiveSlides } from "./builds-browser.mjs";
-import { validateManifest } from "../src/offline/manifest.ts";
+import { validateManifest, canonical, sha256 } from "../src/offline/manifest.ts";
 import { createRenderer } from "../src/player/renderers/factory.ts";
 import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
 import { mediaPerformance } from "./media-performance.mjs";
@@ -87,10 +87,18 @@ async function backgroundMusic(fixture, videoSource) {
   // PDF.js official main-thread fallback for this tiny fixture. Production worker
   // stays untouched; fixture origin does not serve the production asset bundle.
   globalThis.pdfjsWorker = { WorkerMessageHandler };
-  const manifest = await validateManifest(fixture.manifest);
+  const input = structuredClone(fixture.manifest);
+  if (fixture.globalTracks) {
+    delete input.backgroundMusic;
+    const content = Object.fromEntries(Object.entries(input).filter(([key]) => !["version","publishedAt","integrity"].includes(key)));
+    input.integrity.contentHash = await sha256(new TextEncoder().encode(canonical(content)));
+  }
+  const manifest = await validateManifest(input);
   const host = document.createElement("div"); document.body.append(host);
   const classroom = { manifest, resolveResource(id) { const resource = manifest.resources.find(item => item.resourceId === id); return { path: fixture.paths[id], mimeType: resource.download.mimeType, name: resource.name, kind: resource.kind }; } };
-  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: convertFileSrc, prepareMediaSource: async id => id === "music-wave" ? fixture.source : videoSource, createRenderer: kind => kind === "pdf" ? Promise.resolve(new PdfRenderer(async data => getDocument({ data }))) : createRenderer(kind) });
+  // Keep old manifests readable, but music selection/resolution uses only the
+  // global catalog. A Unit with no backgroundMusic must behave identically.
+  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: convertFileSrc, prepareMediaSource: async id => id === "music-wave" ? fixture.source : videoSource, ...(fixture.globalTracks ? { ambientMusic: { tracks: fixture.globalTracks, prepare: async () => fixture.globalSource } } : {}), createRenderer: kind => kind === "pdf" ? Promise.resolve(new PdfRenderer(async data => getDocument({ data }))) : createRenderer(kind) });
   try {
     await until(() => !host.querySelector("[data-status]").textContent);
     await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE");

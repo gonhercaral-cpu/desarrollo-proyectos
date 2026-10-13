@@ -153,7 +153,14 @@ fn main() {
     music_manifest["integrity"]["contentHash"] = json!(format!("{:x}", Sha256::digest(canonical(&content).as_bytes())));
     music_paths.insert("transition-pdf".into(), json!(pdf_path));
     music_paths.insert(manifest["resources"][0]["resourceId"].as_str().unwrap().into(), json!(path));
-    let music_fixture = json!({"manifest":music_manifest,"paths":music_paths,"source":music_source});
+    // Global music shares the exact cached WAV object, outside every Unit manifest.
+    let mut ambient = json!({"schemaVersion":1,"ambientCatalogVersion":1,"tracks":[{"id":music_hash,"sha256":music_hash,"title":"Trabajo tranquilo","sourceType":"file","mime":"audio/wav","size":wave.len(),"storagePath":format!("active-classroom/publications/files/{music_hash}"),"generation":"1","order":0,"active":true}],"playlists":[]});
+    ambient["integrity"] = json!({"algorithm":"sha256","contentHash":format!("{:x}",Sha256::digest(canonical(&json!({"schemaVersion":1,"tracks":ambient["tracks"],"playlists":ambient["playlists"]})).as_bytes()))});
+    let ambient_directory = root.join("ambient/versions/1"); fs::create_dir_all(&ambient_directory).unwrap(); fs::write(ambient_directory.join("catalog.json"),serde_json::to_vec(&ambient).unwrap()).unwrap();
+    let global_checked = server.inspect_ambient(&root,1,&music_hash).unwrap(); assert!(global_checked.url.is_some());
+    let global_source = json!({"url":global_checked.url,"mimeType":"audio/wav","name":"Trabajo tranquilo","sizeBytes":wave.len()});
+    let global_tracks = json!([{"id":music_hash,"resourceId":music_hash,"title":"Trabajo tranquilo","sourceType":"file","order":0}]);
+    let music_fixture = json!({"manifest":music_manifest,"paths":music_paths,"source":music_source,"globalSource":global_source,"globalTracks":global_tracks});
     let css = format!("{}\n{}\n{}", include_str!("../../src/design-system.css"), include_str!("../../src/styles.css"), include_str!("../../src/player/player.css"));
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap(); let csp = config["app"]["security"]["csp"].as_str().unwrap().to_string();
     let mut context = tauri::generate_context!(); context.config_mut().app.windows.clear();
