@@ -31,7 +31,7 @@ permissions:
   actions: read
 jobs:
   media:
-    if: github.ref == 'refs/heads/codex/active-classroom-media-music'
+    if: github.ref == 'refs/heads/codex/active-classroom-media-music' && !inputs.source_run
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     defaults:
@@ -100,7 +100,7 @@ jobs:
   packaging:
     if: ${{ inputs.source_run }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -112,9 +112,23 @@ jobs:
           github-token: ${{ github.token }}
           path: unsigned-diagnostic
           merge-multiple: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
       - name: Instalar herramientas del harness
         if: ${{ !inputs.inspect_only }}
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg gstreamer1.0-tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg gstreamer1.0-tools build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+          npm ci --prefix active-classroom-desktop
       - name: Inspeccionar AppRun y hooks del artefacto real
         run: |
           set -euo pipefail

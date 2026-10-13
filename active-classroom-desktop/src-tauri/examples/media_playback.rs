@@ -32,7 +32,7 @@ fn fixture_memory() -> Value {
     while let Some(pid) = pending.pop() {
         let status = fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
         let field = |name: &str| status.lines().find_map(|line| line.strip_prefix(name)).unwrap_or("").trim().to_string();
-        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:")}));
+        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"stdinOpen":fs::metadata(format!("/proc/{pid}/fd/0")).is_ok()}));
         for entry in fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
             if let Ok(children) = fs::read_to_string(entry.path().join("children")) {
                 pending.extend(children.split_whitespace().filter_map(|child| child.parse::<u32>().ok()));

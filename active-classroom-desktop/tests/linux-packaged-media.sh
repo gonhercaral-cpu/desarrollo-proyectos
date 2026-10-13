@@ -36,6 +36,6 @@ if [[ "$CLASSROOM_TEST_BACKEND" == wayland ]]; then
 else
   export GDK_BACKEND=x11
 fi
-timeout 145s "$CLASSROOM_TEST_RUNTIME"
+timeout 145s "$CLASSROOM_TEST_RUNTIME" </dev/null
 EOF
 echo "PACKAGED_MEDIA distribution=$distribution backend=$backend actual_h264_aac=true bounded_memory=true offline=true"

@@ -48,3 +48,14 @@ test("cancelación durante verificación libera grant, impide reproducción tard
   const pending = music.toggle(); music.destroy(); resolve(await source("a")); await pending;
   assert.equal(music.audio.paused, true); assert.equal(releases.length, 1);
 });
+test("play pendiente de pista anterior no pausa una pista nueva", async t => {
+  const dom = environment(t); let finishPrevious; let calls = 0;
+  const music = new BackgroundMusic(document.querySelector("#music"), manifest, source); t.after(() => music.destroy());
+  t.mock.method(music.audio, "play", function () {
+    Object.defineProperty(this, "paused", { configurable: true, value: false }); this.dispatchEvent(new dom.window.Event("play"));
+    return ++calls === 1 ? new Promise(resolve => { finishPrevious = resolve; }) : Promise.resolve();
+  });
+  const previous = music.toggle(); await new Promise(resolve => setImmediate(resolve));
+  await music.move(1); assert.equal(music.audio.paused, false); assert.equal(music.index, 1);
+  finishPrevious(); await previous; assert.equal(music.audio.paused, false); assert.equal(music.index, 1);
+});

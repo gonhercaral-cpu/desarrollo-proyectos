@@ -60,7 +60,9 @@ export class BackgroundMusic {
       }
       if (this.disposed || sequence !== this.sequence || !this.canPlay()) { this.pause("class-media"); return; }
       await this.audio.play();
-      if (this.disposed || sequence !== this.sequence) this.audio.pause(); else this.pauseReason = "";
+      // A late play() completion belongs to the old track/intent. Cancellation
+      // already paused it; never pause a newer track reusing this audio element.
+      if (this.disposed) this.audio.pause(); else if (sequence === this.sequence) this.pauseReason = "";
     } catch { if (!this.disposed && sequence === this.sequence) this.message = "No se pudo reproducir esta pista. Reintenta."; }
     finally { if (sequence === this.sequence) { this.pending = false; this.render(); } }
   }
