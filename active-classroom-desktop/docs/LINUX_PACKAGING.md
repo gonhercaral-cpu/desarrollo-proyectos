@@ -45,6 +45,8 @@ Ubuntu 26.04 requiere `MOUNT_2_40` en GIO. No mezcla esa GIO con libmount antigu
 Tauri copia solo el árbol `usr` de los archivos adicionales a AppDir. CI coloca
 los hooks declarados en `files` en la raíz real de AppRun y vuelve a empaquetar
 con el plugin AppImage oficial ya descargado por Tauri, antes de validar/firmar.
+El Debian final usa XZ para reducir la descarga del runtime sin cambiar timeouts
+del updater. Instalación/verificación/firma se ejecutan sobre esos mismos bytes.
 
 CI exige plugins empaquetados, reproducción H.264/AAC con esos plugins, arranque
 real Debian/AppImage en X11/Wayland e identidad compartida. Instala además los

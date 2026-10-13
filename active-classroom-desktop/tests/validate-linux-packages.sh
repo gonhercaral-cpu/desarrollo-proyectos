@@ -48,4 +48,4 @@ for ubuntu in ${CLASSROOM_PACKAGE_OS:-22.04 24.04 26.04}; do
   fi
 done
 rm "$previous"
-echo 'PACKAGE_VALIDATION clean_ubuntu=22.04,24.04,26.04 apt=true gdebi=true dpkg=true appimage=true'
+echo "PACKAGE_VALIDATION clean_ubuntu=${CLASSROOM_PACKAGE_OS:-22.04,24.04,26.04} apt=true gdebi=true dpkg=true appimage=true"
