@@ -5,8 +5,21 @@
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, io::{Read, Write}, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 struct Fixture(Value);
+#[derive(Default)]
+struct Audience(std::sync::Mutex<Value>);
+#[tauri::command]
+fn fixture_audience_state(state: tauri::State<'_, Audience>, report: Option<Value>) -> Value {
+    let mut value = state.0.lock().unwrap(); if let Some(report) = report { *value = report; } value.clone()
+}
+#[tauri::command]
+fn fixture_project(app: tauri::AppHandle, snapshot: Option<Value>) {
+    if let Some(window) = app.get_webview_window("audience") {
+        if snapshot.is_some() { window.show().unwrap(); } else { window.hide().unwrap(); }
+        app.emit_to("audience", "fixture-projection", snapshot).unwrap();
+    }
+}
 #[tauri::command]
 fn media_fixture(fixture: tauri::State<'_, Fixture>) -> Value { fixture.0.clone() }
 #[tauri::command]
@@ -49,21 +62,25 @@ fn main() {
     let server = local_media::MediaServer::start().unwrap();
     let source = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), manifest["resources"][0]["resourceId"].as_str().unwrap()).unwrap(); assert!(source.url.is_some(), "{}", source.error.unwrap_or_default());
     let source = json!({"url": source.url, "mimeType": "video/mp4", "codecMime": source.codec_mime, "name": "H264 AAC fixture", "sizeBytes": bytes.len()});
-    // A valid MP4 followed by a sparse 'free' box exercises a 600 MiB container
-    // without a huge encoder fixture or any full-file allocation in the test.
-    let large_size: u64 = 600 * 1024 * 1024;
-    let temporary = root.join("large.mp4");
-    let mut large = fs::File::create(&temporary).unwrap(); large.write_all(&bytes).unwrap();
-    large.write_all(&((large_size - bytes.len() as u64) as u32).to_be_bytes()).unwrap(); large.write_all(b"free").unwrap(); large.set_len(large_size).unwrap(); drop(large);
-    let mut file = fs::File::open(&temporary).unwrap(); let mut digest = Sha256::new(); let mut block = [0u8; 65536];
-    loop { let read = file.read(&mut block).unwrap(); if read == 0 { break; } digest.update(&block[..read]); }
-    let large_hash = format!("{:x}", digest.finalize()); drop(file); fs::rename(temporary, root.join("objects").join(&large_hash)).unwrap();
-    let mut large_manifest = manifest.clone(); large_manifest["resources"][0]["download"]["sizeBytes"] = json!(large_size); large_manifest["resources"][0]["download"]["checksums"]["sha256"] = json!(large_hash);
-    let mut content = large_manifest.clone(); for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
-    large_manifest["integrity"]["contentHash"] = json!(format!("{:x}", Sha256::digest(canonical(&content).as_bytes())));
-    fs::write(directory.join("manifest.json"), serde_json::to_vec(&large_manifest).unwrap()).unwrap();
-    let large_source = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), manifest["resources"][0]["resourceId"].as_str().unwrap()).unwrap(); assert!(large_source.url.is_some(), "{}", large_source.error.unwrap_or_default());
-    let large_source = json!({"url": large_source.url, "mimeType": "video/mp4", "codecMime": large_source.codec_mime, "name": "H264 AAC 600 MiB fixture", "sizeBytes": large_size});
+    // Valid MP4 containers with sparse free boxes exercise large transfers.
+    // Encoding stays small; hashing and every HTTP body use bounded reads.
+    let mut large_sources = Vec::new();
+    for mib in [120u64, 600, 1024] {
+        let large_size = mib * 1024 * 1024;
+        let temporary = root.join(format!("large-{mib}.mp4"));
+        let mut large = fs::File::create(&temporary).unwrap(); large.write_all(&bytes).unwrap();
+        large.write_all(&((large_size - bytes.len() as u64) as u32).to_be_bytes()).unwrap(); large.write_all(b"free").unwrap(); large.set_len(large_size).unwrap(); drop(large);
+        let mut file = fs::File::open(&temporary).unwrap(); let mut digest = Sha256::new(); let mut block = [0u8; 65536];
+        loop { let read = file.read(&mut block).unwrap(); if read == 0 { break; } digest.update(&block[..read]); }
+        let large_hash = format!("{:x}", digest.finalize()); drop(file); fs::rename(temporary, root.join("objects").join(&large_hash)).unwrap();
+        let mut large_manifest = manifest.clone(); large_manifest["resources"][0]["download"]["sizeBytes"] = json!(large_size); large_manifest["resources"][0]["download"]["checksums"]["sha256"] = json!(large_hash);
+        let mut content = large_manifest.clone(); for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+        large_manifest["integrity"]["contentHash"] = json!(format!("{:x}", Sha256::digest(canonical(&content).as_bytes())));
+        fs::write(directory.join("manifest.json"), serde_json::to_vec(&large_manifest).unwrap()).unwrap();
+        let checked = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), manifest["resources"][0]["resourceId"].as_str().unwrap()).unwrap(); assert!(checked.url.is_some(), "{}", checked.error.unwrap_or_default());
+        large_sources.push(json!({"url": checked.url, "mimeType": "video/mp4", "codecMime": checked.codec_mime, "name": format!("H264 AAC {mib} MiB"), "sizeBytes": large_size}));
+    }
+    let large_source = large_sources[1].clone();
     let script = fs::read(std::env::var("ACTIVE_CLASSROOM_MEDIA_SCRIPT").unwrap()).unwrap();
     let png_directory = std::path::PathBuf::from(std::env::var("ACTIVE_CLASSROOM_MEDIA_FIXTURE").unwrap()).parent().unwrap().to_path_buf();
     let mut build_manifest = manifest.clone(); build_manifest["mainPresentationId"] = json!("state-0"); build_manifest["generalResourceIds"] = json!([]);
@@ -84,7 +101,7 @@ fn main() {
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap(); let csp = config["app"]["security"]["csp"].as_str().unwrap().to_string();
     let mut context = tauri::generate_context!(); context.config_mut().app.windows.clear();
     let passed = Arc::new(AtomicBool::new(false));
-    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "path": path, "manifest": manifest, "buildFixture": build_fixture}))).manage(server).manage(passed.clone())
+    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "largeSources": large_sources, "path": path, "manifest": manifest, "buildFixture": build_fixture, "nativeProjection": true}))).manage(Audience::default()).manage(server).manage(passed.clone())
         .register_uri_scheme_protocol("tauri", move |_, request| {
             let (mime, body) = match request.uri().path() {
                 "/test.js" => ("text/javascript", script.clone()), "/style.css" => ("text/css", css.as_bytes().to_vec()),
@@ -92,7 +109,7 @@ fn main() {
             };
             tauri::http::Response::builder().header("Content-Type", mime).header("Content-Security-Policy", &csp).body(body).unwrap()
         })
-        .invoke_handler(tauri::generate_handler![media_fixture, fixture_report, fixture_fullscreen, fixture_size, fixture_memory, local_media::classroom_media_diagnostic])
+        .invoke_handler(tauri::generate_handler![media_fixture, fixture_report, fixture_fullscreen, fixture_size, fixture_memory, fixture_project, fixture_audience_state, local_media::classroom_media_diagnostic])
         .setup(move |app| {
             app.asset_protocol_scope().allow_file(&path)?;
             for png_path in &allowed_paths { app.asset_protocol_scope().allow_file(png_path)?; }
@@ -100,9 +117,10 @@ fn main() {
             // Select the installed app's origin explicitly for this fixture.
             WebviewWindowBuilder::new(app, "teacher", WebviewUrl::CustomProtocol("tauri://localhost/media-test.html".parse().unwrap())).title("Media + scroll fixture").inner_size(1240.0, 820.0)
                 .on_page_load(|_, page| eprintln!("MEDIA_FIXTURE_PAGE {:?} {}", page.event(), page.url()))
-                .build()?; Ok(())
+                .build()?;
+            WebviewWindowBuilder::new(app, "audience", WebviewUrl::CustomProtocol("tauri://localhost/projection-test.html".parse().unwrap())).title("Media audience fixture").inner_size(800.0, 600.0).visible(false).build()?; Ok(())
         }).build(context).unwrap();
     let handle = app.handle().clone(); let success = passed.clone();
-    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(70)); if !success.load(Ordering::SeqCst) { eprintln!("MEDIA_NATIVE_TIMEOUT"); handle.exit(1); } });
+    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(120)); if !success.load(Ordering::SeqCst) { eprintln!("MEDIA_NATIVE_TIMEOUT"); handle.exit(1); } });
     app.run(|_, _| {}); fs::remove_dir_all(root).unwrap(); assert!(passed.load(Ordering::SeqCst), "Native media/scroll acceptance failed");
 }

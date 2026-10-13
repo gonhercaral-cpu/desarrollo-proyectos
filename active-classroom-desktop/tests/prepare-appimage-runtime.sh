@@ -16,6 +16,13 @@ for hook in system-glib appimage-wayland; do
   cp "$appdir/usr/lib/active-classroom/packaging/$hook.sh" "$appdir/apprun-hooks/$name"
 done
 node scripts/patch-apprun.mjs "$appdir/AppRun"
+bash tests/prune-media-runtime.sh "$appdir"
+# Separate the packaged registry from host codecs and earlier package versions.
+cat >> "$appdir/apprun-hooks/linuxdeploy-plugin-gstreamer.sh" <<'EOF'
+
+export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/active-classroom/packaged-gstreamer.bin"
+mkdir -p "$(dirname "$GST_REGISTRY_1_0")"
+EOF
 tool="${XDG_CACHE_HOME:-$HOME/.cache}/tauri/linuxdeploy-plugin-appimage.AppImage"
 test -x "$tool"
 output="$(mktemp -d)/normalized.AppImage"

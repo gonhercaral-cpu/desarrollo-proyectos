@@ -9,10 +9,13 @@ import { icon, resourceIcon, fileDescription } from "../ui/icons.ts";
 import { escapeHtml } from "../utils/dom.ts";
 import { InteractionSurface } from "./InteractionSurface.ts";
 import type { ResolvedLayer } from "./types.ts";
+import { BackgroundMusic } from "./BackgroundMusic.ts";
+import { desktopSettings } from "../settings/preferences.ts";
 
 export interface PlayerDependencies {
   verifyResource(id: string): Promise<boolean>;
   prepareMediaSource?(id: string): Promise<RendererSource>;
+  releaseMediaSource?(source: RendererSource): void;
   createRenderer?: typeof createRenderer;
   toUrl?: (path: string) => string;
   projectionBridge?: ProjectionBridge;
@@ -20,6 +23,7 @@ export interface PlayerDependencies {
 const timeLabel = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
 
 export class ClassroomPlayer {
+  private music: BackgroundMusic;
   readonly controller: ClassSessionController;
   private projection: ProjectionCoordinator;
   private source?: RendererSource;
@@ -54,7 +58,13 @@ export class ClassroomPlayer {
     this.controller = new ClassSessionController(classroom.manifest);
     this.projection = new ProjectionCoordinator(() => this.updateProjection(), dependencies.projectionBridge, dependencies.projectionBridge ? true : undefined);
     this.root = root; this.classroom = classroom; this.onExit = onExit; this.dependencies = dependencies;
-    this.layout(); this.refreshShortcuts(); window.addEventListener("keydown", this.keyListener); window.addEventListener("classroom-shortcuts-changed", this.refreshShortcuts);
+    this.layout();
+    this.music = new BackgroundMusic(this.element("[data-background-music]"), classroom.manifest, async id => {
+      if (dependencies.prepareMediaSource) return dependencies.prepareMediaSource(id);
+      if (!await dependencies.verifyResource(id)) throw new Error("Audio local ausente o dañado.");
+      return localSource(classroom, id, dependencies.toUrl);
+    }, () => !(desktopSettings().pauseBackgroundMusic && this.state.playing && ["audio", "video"].includes(this.renderer?.kind || "")), dependencies.releaseMediaSource);
+    this.refreshShortcuts(); window.addEventListener("keydown", this.keyListener); window.addEventListener("classroom-shortcuts-changed", this.refreshShortcuts);
     this.projection.start(); void this.showResource();
   }
   private element<T extends HTMLElement = HTMLElement>(selector: string): T { return this.root.querySelector<T>(selector)!; }
@@ -64,6 +74,8 @@ export class ClassroomPlayer {
     this.element("[data-version]").textContent = `${this.classroom.manifest.unit.levelId} · Publicación v${this.classroom.manifest.version} · Sin servicios remotos durante la clase`;
     this.element("[data-exit]").onclick = () => this.exit();
     this.element("[data-presentation]").onclick = () => { this.controller.returnToPresentation(); void this.showResource(); };
+    this.element("[data-media-retry]").onclick = () => { void this.showResource(); };
+    this.element("[data-media-return]").onclick = () => { this.controller.returnToPresentation(); void this.showResource(); };
     this.element("[data-slide-previous]").onclick = () => { void this.dispatch("BACK"); };
     this.element("[data-slide-next]").onclick = () => { void this.dispatch("ADVANCE"); };
     this.element("[data-stage-previous]").onclick = () => { void this.dispatch("BACK"); };
@@ -155,6 +167,8 @@ export class ClassroomPlayer {
     this.element("[data-presentation]").hidden = controller.isPresentation;
     const status = this.element("[data-status]"); status.textContent = this.state.error || (this.state.loading ? "Abriendo archivo local…" : ""); status.hidden = !status.textContent;
     status.setAttribute("role", this.state.error ? "alert" : "status");
+    this.element("[data-media-error-actions]").hidden = !this.state.error;
+    if (this.state.error && this.renderer?.kind === "video") status.textContent = `No se pudo reproducir este video. ${this.state.error}`;
     const media = this.renderer?.kind === "audio" || this.renderer?.kind === "video";
     this.element("[data-media]").hidden = !media;
     this.element("[data-command='PLAY_PAUSE']").innerHTML = `${icon(this.state.playing ? "pause" : "play")}${this.state.playing ? "Pausar" : "Reproducir"}`;
@@ -170,7 +184,6 @@ export class ClassroomPlayer {
   private async showResource(): Promise<void> {
     if (this.disposed) return;
     const id = this.controller.selectedResourceId;
-    if (this.renderedId !== id) this.source = undefined;
     this.updateLists();
     if (this.renderedId === id && this.renderer && !this.state.error) {
       try { await this.renderer.setPage(this.controller.page); await this.showBuild(); } catch { this.state.error = "No se pudo abrir esta página o paso local."; this.updateState(); }
@@ -179,6 +192,7 @@ export class ClassroomPlayer {
     const sequence = ++this.sequence;
     ++this.buildSequence; this.surface?.destroy(); this.surface = undefined;
     this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
+    if (this.source) this.dependencies.releaseMediaSource?.(this.source);
     this.source = undefined;
     this.state = { ...initialRendererState(), loading: true };
     const host = document.createElement("div"); host.className = "player-renderer-content";
@@ -190,10 +204,10 @@ export class ClassroomPlayer {
       const isMedia = ["audio", "video"].includes(rendererKind(resource.download.mimeType));
       const prepared = isMedia && this.dependencies.prepareMediaSource ? await this.dependencies.prepareMediaSource(id) : undefined;
       if (!prepared && !await this.dependencies.verifyResource(id)) throw new Error("Archivo local ausente o corrupto. Vuelve a Biblioteca para sincronizarlo de nuevo.");
-      if (sequence !== this.sequence || this.disposed) return;
+      if (sequence !== this.sequence || this.disposed) { if (prepared) this.dependencies.releaseMediaSource?.(prepared); return; }
       const source = prepared || localSource(this.classroom, id, this.dependencies.toUrl);
       const renderer = await (this.dependencies.createRenderer || createRenderer)(rendererKind(source.mimeType));
-      if (sequence !== this.sequence || this.disposed) { renderer.destroy(); return; }
+      if (sequence !== this.sequence || this.disposed) { renderer.destroy(); if (prepared) this.dependencies.releaseMediaSource?.(prepared); return; }
       this.renderer = renderer; this.renderedId = id;
       this.source = source;
       await renderer.mount(host, source, {
@@ -201,6 +215,7 @@ export class ClassroomPlayer {
         onState: (state: RendererState) => {
           if (sequence !== this.sequence || this.disposed) return;
           this.state = state;
+          if (state.playing && desktopSettings().pauseBackgroundMusic && ["audio", "video"].includes(renderer.kind)) this.music.pause("class-media");
           if (renderer.kind === "audio" || renderer.kind === "video") { this.volume = state.volume; this.muted = state.muted; }
           this.updateState();
         },
@@ -211,6 +226,7 @@ export class ClassroomPlayer {
     } catch (error) {
       if (sequence !== this.sequence || this.disposed) return;
       this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
+      if (this.source) this.dependencies.releaseMediaSource?.(this.source); this.source = undefined;
       this.state = { ...initialRendererState(), error: error instanceof Error ? error.message : "No se pudo abrir el recurso local." }; this.updateState();
     }
   }
@@ -253,6 +269,10 @@ export class ClassroomPlayer {
   }
   private navigate(direction: number): void { if (!this.controller.isPresentation) this.controller.moveSlide(direction); else if (direction > 0) this.controller.advance(); else this.controller.back(); void this.showResource(); }
   async dispatch(command: ShortcutCommand): Promise<void> {
+    if (this.disposed) return;
+    if (command === "BACKGROUND_MUSIC_PLAY_PAUSE") { await this.music.toggle(); return; }
+    if (command === "BACKGROUND_MUSIC_NEXT") { await this.music.move(1); return; }
+    if (command === "BACKGROUND_MUSIC_PREVIOUS") { await this.music.move(-1); return; }
     if (command === "PROJECT") { await this.projection.toggle(); return; }
     if (command === "OPEN_RESOURCE") { const id = this.classroom.manifest.slides[this.controller.slideIndex ?? 0]?.resourceIds[0]; if (id) { this.controller.selectResource(id); await this.showResource(); } return; }
     if (this.disposed) return;
@@ -272,9 +292,10 @@ export class ClassroomPlayer {
   private exit(): void { this.destroy(); this.onExit(); }
   destroy(): void {
     if (this.disposed) return;
-    this.disposed = true; ++this.sequence;
+    this.disposed = true; this.music.destroy(); ++this.sequence;
     ++this.buildSequence; this.surface?.destroy(); this.verifiedSources.clear();
     this.projection.destroy();
+    if (this.source) this.dependencies.releaseMediaSource?.(this.source); this.source = undefined;
     window.removeEventListener("keydown", this.keyListener); window.removeEventListener("classroom-shortcuts-changed", this.refreshShortcuts); this.renderer?.destroy(); this.renderer = undefined;
     if (document.fullscreenElement && this.root.contains(document.fullscreenElement)) void document.exitFullscreen().catch(() => {});
     this.root.replaceChildren();

@@ -5,6 +5,7 @@ const { resourceKind } = require("./activeClassroom");
 const { needsDocumentProcessing, isGoogleSlides, isRasterSlides, validPageObjectId, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
 
 const MAX_RESOURCES = 200;
+const { normalizeBackgroundMusic, validateMusicResources, freezeBackgroundMusic } = require("./activeClassroomBackgroundMusic");
 const { normalizeInteraction, interactionResourceIds } = require("./activeClassroomInteraction");
 const MAX_SLIDES = 200;
 function fail(message, code = "invalid-argument") { throw new HttpsError(code, message); }
@@ -26,6 +27,7 @@ function normalizeDraft(input) {
   if (!["active", "inactive"].includes(input.status)) fail("Estado inválido.");
   if (!Array.isArray(input.slides) || input.slides.length > MAX_SLIDES) fail(`Máximo ${MAX_SLIDES} diapositivas.`);
   const metadata = input.metadata || {};
+  const backgroundMusic = normalizeBackgroundMusic(input.backgroundMusic);
   const slides = input.slides.map((slide, index) => ({
     slideId: id(slide.slideId), index, title: text(slide.title || "", 160),
     metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000), ...(slide.metadata?.pageObjectId ? { pageObjectId: validPageObjectId(slide.metadata.pageObjectId) ? slide.metadata.pageObjectId : fail("Identificador Google Slides inválido."), presentationResourceId: id(slide.metadata.presentationResourceId) } : {}) },
@@ -44,6 +46,7 @@ function normalizeDraft(input) {
     mainPresentationId: input.mainPresentationId ? id(input.mainPresentationId) : null,
     generalResourceIds: ids(input.generalResourceIds || []), slides,
     excludedResourceIds: ids(input.excludedResourceIds || []),
+    ...(backgroundMusic.length ? { backgroundMusic } : {}),
   };
   if (draft.generalResourceIds.includes(draft.mainPresentationId)) fail("La presentación principal debe estar separada de recursos generales.");
   if (resourceIds(draft).length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} recursos por Unit.`);
@@ -52,7 +55,7 @@ function normalizeDraft(input) {
 }
 
 function resourceIds(draft) {
-  return [...new Set([draft.mainPresentationId, ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => [...slide.resourceIds, ...interactionResourceIds(slide)])].filter(Boolean))];
+  return [...new Set([draft.mainPresentationId, ...(draft.backgroundMusic || []).map(track => track.resourceId), ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => [...slide.resourceIds, ...interactionResourceIds(slide)])].filter(Boolean))];
 }
 function isMainPresentation(resource) {
   return resource?.source === "drive" && (resource.kind === "presentation" || resource.mimeType === "application/pdf" || /\.pdf$/i.test(resource.name));
@@ -113,6 +116,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       if (!["image/png", "image/jpeg", "image/webp"].includes(result.find(resource => resource.id === assetId)?.mimeType)) fail("Los assets de revelado deben ser imágenes PNG, JPEG o WebP.");
     }
     if (draft.mainPresentationId && !isMainPresentation(result.find((resource) => resource.id === draft.mainPresentationId))) fail("Elige PPT/PPTX, Google Slides o PDF de Nube AES como presentación principal.");
+    validateMusicResources(draft.backgroundMusic, result);
     return result;
   }
   async function validateFolders(transaction, unitId, draft) {
@@ -135,7 +139,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const before = stored?.draft || {};
       const different = keys => keys.some(key => contentHash(before[key] ?? null) !== contentHash(draft[key] ?? null));
       if (!canClassroom(profile, "editUnits") && different(["name", "description", "levelId", "status", "metadata"])) fail("No tienes permiso para editar datos de la Unit.", "permission-denied");
-      if (!canClassroom(profile, "orderMaterial") && different(["mainPresentationId", "slides", "generalResourceIds", "excludedResourceIds"])) fail("No tienes permiso para ordenar o asociar material.", "permission-denied");
+      if (!canClassroom(profile, "orderMaterial") && different(["mainPresentationId", "slides", "generalResourceIds", "excludedResourceIds", "backgroundMusic"])) fail("No tienes permiso para ordenar o asociar material.", "permission-denied");
       if (stored?.draft?.mainPresentationId && stored.draft.mainPresentationId !== draft.mainPresentationId) draft.slides = [];
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
@@ -208,6 +212,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const content = {
         schemaVersion: 2, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
         mainPresentationId: draft.mainPresentationId, generalResourceIds: deliveredIds(draft.generalResourceIds),
+        ...(draft.backgroundMusic?.length ? { backgroundMusic: freezeBackgroundMusic(draft.backgroundMusic, files) } : {}),
         slides: draft.slides.map((draftSlide) => {
           const slide = { ...draftSlide, resourceIds: deliveredIds(draftSlide.resourceIds) };
           const main = resources.find((resource) => resource.id === draft.mainPresentationId);
@@ -226,7 +231,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       };
       // Manual overrides do not ship unused automatic states. Every referenced
       // base, step and image stays frozen; immutable processing objects stay intact.
-      const used = new Set([content.mainPresentationId, ...content.generalResourceIds, ...content.slides.flatMap(slide => [slide.metadata.presentationResourceId, ...slide.resourceIds, ...slide.builds.map(build => build.resourceId), ...interactionResourceIds(slide)])].filter(Boolean));
+      const used = new Set([content.mainPresentationId, ...(content.backgroundMusic || []).map(track => track.resourceId), ...content.generalResourceIds, ...content.slides.flatMap(slide => [slide.metadata.presentationResourceId, ...slide.resourceIds, ...slide.builds.map(build => build.resourceId), ...interactionResourceIds(slide)])].filter(Boolean));
       content.resources = content.resources.filter(resource => used.has(resource.resourceId));
       for (const slide of content.slides) {
         const initialId = slide.interaction?.initialResourceId;

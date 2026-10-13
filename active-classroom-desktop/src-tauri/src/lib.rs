@@ -962,6 +962,7 @@ pub fn run() {
             startup::classroom_startup,
             local_media::classroom_media,
             local_media::classroom_media_diagnostic,
+            local_media::classroom_release_media,
             device_identity::classroom_device,
             classroom_projection,
             import_presentation

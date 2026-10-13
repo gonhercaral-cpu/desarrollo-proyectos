@@ -2,7 +2,7 @@ export const DRIVE_NEW_VERSION = "Hay una versión más reciente de este archivo
 export const DRIVE_UNAVAILABLE = "El archivo original ya no está disponible en Nube AES";
 export function activeDraftResourceIds(draft) {
   const excluded = new Set(draft?.excludedResourceIds || []);
-  return [...new Set([draft?.mainPresentationId, ...(draft?.generalResourceIds || []), ...(draft?.slides || []).flatMap(slide => [slide.interaction?.initialResourceId, ...(slide.resourceIds || []), ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])].filter(id => id && !excluded.has(id)))];
+  return [...new Set([draft?.mainPresentationId, ...(draft?.backgroundMusic || []).map(track => track.resourceId), ...(draft?.generalResourceIds || []), ...(draft?.slides || []).flatMap(slide => [slide.interaction?.initialResourceId, ...(slide.resourceIds || []), ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])].filter(id => id && !excluded.has(id)))];
 }
 export function unitOperationMessage(error) {
   if (/data-loss|internal|deadline-exceeded|unavailable/.test(error?.code || "")) return "No se pudo preparar el archivo. El borrador y las publicaciones se conservan. Reintenta.";
@@ -23,7 +23,7 @@ export function replaceDraftResource(draft, oldId, newId = null, main = oldId ==
     }
     return { ...slide, resourceIds: replace(slide.resourceIds), ...(slide.builds ? { builds, buildCount: builds.length, interactionMode: builds.length ? "builds" : "static", interaction: { ...interaction, mode: builds.length ? "builds" : "static", buildCount: builds.length } } : {}) };
   });
-  return { ...draft, mainPresentationId: main ? newId : draft.mainPresentationId, slides, generalResourceIds: replace(general).filter(id => id !== oldId && id !== (main ? newId : draft.mainPresentationId)), excludedResourceIds: [...new Set([...(draft.excludedResourceIds || []), ...(oldId ? [oldId] : [])])].filter(id => id !== newId) };
+  return { ...draft, ...(draft.backgroundMusic ? { backgroundMusic: draft.backgroundMusic.flatMap(track => track.resourceId === oldId ? newId ? [{ ...track, id: newId, resourceId: newId }] : [] : [track]).map((track, order) => ({ ...track, order })) } : {}), mainPresentationId: main ? newId : draft.mainPresentationId, slides, generalResourceIds: replace(general).filter(id => id !== oldId && id !== (main ? newId : draft.mainPresentationId)), excludedResourceIds: [...new Set([...(draft.excludedResourceIds || []), ...(oldId ? [oldId] : [])])].filter(id => id !== newId) };
 }
 
 export function resourceUserState(resource, check, needsProcessing, ready) {

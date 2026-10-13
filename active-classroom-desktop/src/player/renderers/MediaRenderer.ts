@@ -42,7 +42,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     media.addEventListener("loadedmetadata", ready); this.listeners.push(["loadedmetadata", ready]);
     media.addEventListener("error", error); this.listeners.push(["error", error]);
     this.notify({ loading: true, volume: options.volume, muted: options.muted });
-    this.timeout = setTimeout(() => { diagnostic("timeout"); this.notify({ loading: false, error: readableError("No se pudo leer el video local") }); }, 20000);
+    this.timeout = setTimeout(() => { diagnostic("timeout"); media.pause(); media.removeAttribute("src"); media.load(); this.notify({ loading: false, playing: false, error: readableError("No se pudo leer el video local") }); }, 20000);
     const label = document.createElement("p"); label.textContent = source.name; label.className = "player-audio-title";
     host.replaceChildren(...(this.kind === "audio" ? [label, media] : [media]));
     media.src = source.url; media.load();
@@ -91,6 +91,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     const media = this.media;
     if (media) { for (const [name, listener] of this.listeners) media.removeEventListener(name, listener); media.pause(); media.removeAttribute("src"); media.load(); media.remove(); }
     this.listeners = [];
+    this.media = undefined; this.playback = undefined;
     this.reportFailure = undefined;
   }
 }

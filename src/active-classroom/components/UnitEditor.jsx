@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import DriveResourceImportDialog from "./DriveResourceImportDialog";
 import ResourceInspector from "./ResourceInspector";
 import SlideInteractionEditor from "./SlideInteractionEditor";
+import BackgroundMusicEditor from "./BackgroundMusicEditor";
+import { addMusicTracks, isMusicFile } from "../utils/backgroundMusic";
 import { ACTIVE_CLASSROOM_ACCEPTED_FILES } from "../constants";
 import { canBeMainPresentation, createUnitDraft, reorderSlides, needsOfficeProcessing, documentProcessingLabel, documentProcessingReady } from "../utils/unitDraft";
 import { replaceDraftResource, resourceUserState, unitOperationMessage, DRIVE_NEW_VERSION, DRIVE_UNAVAILABLE } from "../utils/draftResources";
@@ -258,12 +260,18 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
         </section>
       </div>
       {selectedResource && <ResourceInspector key={`${selectedResource.id}-${selectedResource.version || 0}`} resource={selectedResource} readOnly />}
+      <BackgroundMusicEditor draft={draft} resources={unitResources} disabled={busy || !canClassroom(profile, "orderMaterial")} canImport={canClassroom(profile, "importDrive")} canUpload={canClassroom(profile, "uploadMaterial")} onChange={edit} onImport={() => setImportMode("music")} onUpload={files => run(async () => {
+        if (files.some(file => !isMusicFile(file))) throw new Error("Selecciona únicamente archivos de audio.");
+        const uploaded = await onUpload(files);
+        setResourceOverrides(current => ({ ...current, ...Object.fromEntries(uploaded.map(resource => [resource.id, resource])) }));
+        await persist(addMusicTracks(draft, uploaded));
+      })} />
       <section className="ac-unit-card">
         <h2>Publicaciones inmutables</h2>{!publications.length && <p>Aún no hay versiones publicadas.</p>}
         {publications.map((publication) => <div className="ac-unit-actions" key={publication.version}><strong>Versión {publication.version}</strong><span>{publication.manifest.publishedAt}</span><button className="ac-clear-filters" onClick={() => setManifestVersion(publication.version)}>Ver manifest</button><button className="ac-clear-filters" onClick={() => downloadManifest(publication)}>Descargar JSON</button></div>)}
         {version && <pre className="ac-unit-manifest">{JSON.stringify(version.manifest, null, 2)}</pre>}
       </section>
-      {importMode && <DriveResourceImportDialog unit={unit} draft={draft} onDestinationChange={replacementId ? undefined : setImportMode} resources={resources.filter(resource => !(draft.excludedResourceIds || []).includes(resource.id))} selectionLimit={importMode !== "general" ? 1 : undefined} acceptFile={importMode === "main" ? acceptMainFile : undefined} destination={importMode === "main" ? "Presentación principal" : "Recurso general"} onClose={() => { setImportMode(""); setReplacementId(""); }} onImport={async (files, folderId, progress) => {
+      {importMode && <DriveResourceImportDialog unit={unit} draft={draft} onDestinationChange={replacementId || importMode === "music" ? undefined : setImportMode} resources={resources.filter(resource => !(draft.excludedResourceIds || []).includes(resource.id))} selectionLimit={["general", "music"].includes(importMode) ? undefined : 1} acceptFile={importMode === "main" ? acceptMainFile : importMode === "music" || (draft.backgroundMusic || []).some(track => track.resourceId === replacementId) ? isMusicFile : undefined} destination={importMode === "main" ? "Presentación principal" : importMode === "music" ? "Música ambiente" : "Recurso general"} onClose={() => { setImportMode(""); setReplacementId(""); }} onImport={async (files, folderId, progress) => {
         setBusy(true); setError("");
         try {
           const result = await onImport(files, folderId, progress);
@@ -271,7 +279,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
             const loaded = await loadUnitResources(unit.id);
             setResourceOverrides(Object.fromEntries(loaded.map(item => [item.id, item])));
             const ids = result.imported.map(resource => resource.id);
-            const next = replacementId ? replaceDraftResource(draft, replacementId, ids[0]) : importMode === "main" ? replaceDraftResource(draft, draft.mainPresentationId, ids[0], true) : { ...draft, generalResourceIds: [...new Set([...draft.generalResourceIds, ...ids])].filter(id => id !== draft.mainPresentationId), excludedResourceIds: (draft.excludedResourceIds || []).filter(id => !ids.includes(id)) };
+            const next = importMode === "music" ? addMusicTracks(draft, loaded.filter(resource => ids.includes(resource.id))) : replacementId ? replaceDraftResource(draft, replacementId, ids[0]) : importMode === "main" ? replaceDraftResource(draft, draft.mainPresentationId, ids[0], true) : { ...draft, generalResourceIds: [...new Set([...draft.generalResourceIds, ...ids])].filter(id => id !== draft.mainPresentationId), excludedResourceIds: (draft.excludedResourceIds || []).filter(id => !ids.includes(id)) };
             let context = await persist(next);
             for (const id of ids) {
               const imported = result.imported.find(resource => resource.id === id);

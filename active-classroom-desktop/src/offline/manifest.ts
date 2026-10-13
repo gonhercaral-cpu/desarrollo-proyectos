@@ -25,6 +25,7 @@ export interface Manifest {
   generalResourceIds: string[];
   slides: PublishedSlide[];
   resources: PublishedResource[];
+  backgroundMusic?: { id: string; resourceId: string; title: string; sourceType: "file"; order: number; mime: string; size: number; sha256: string; storagePath: string; generation: string }[];
   integrity: { algorithm: string; contentHash: string };
 }
 export interface Publication {
@@ -70,6 +71,16 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
   }
   const associations = (references: unknown): references is string[] => Array.isArray(references) && references.every((id) => ids.has(id)) && new Set(references).size === references.length;
   require(ids.has(m.mainPresentationId) && associations(m.generalResourceIds) && !m.generalResourceIds.includes(m.mainPresentationId));
+  if (m.backgroundMusic !== undefined) {
+    require(Array.isArray(m.backgroundMusic) && m.backgroundMusic.length <= 30);
+    const musicIds = new Set<string>();
+    m.backgroundMusic.forEach((track, index) => {
+      const resource = m.resources.find(item => item.resourceId === track?.resourceId);
+      require(track && track.sourceType === "file" && track.id === track.resourceId && ids.has(track.resourceId) && !musicIds.has(track.id) && track.order === index && typeof track.title === "string" && track.title.length > 0 && track.title.length <= 160);
+      require(resource && typeof track.mime === "string" && track.mime.startsWith("audio/") && track.mime === resource.download.mimeType && track.size === resource.download.sizeBytes && track.sha256 === resource.download.checksums.sha256 && track.storagePath === resource.download.path && track.generation === resource.download.generation);
+      musicIds.add(track.id);
+    });
+  }
   require(Array.isArray(m.slides) && m.slides.length > 0 && m.slides.length <= 200);
   const slides = new Set<string>();
   m.slides.forEach((slide, index) => {

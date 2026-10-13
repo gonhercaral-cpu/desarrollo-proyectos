@@ -178,3 +178,21 @@ test("publicación rechaza bytes que no corresponden al MD5 del original Drive",
   const checksumFiles = createPublicationFiles({ db, bucket, resolveFile: async () => original, openDrive: async () => Readable.from("truncado") });
   await assert.rejects(checksumFiles.prepareResource(profile, { id: "checksum", source: "drive", name: original.name, mimeType: original.mimeType, driveFileId: original.id, driveVersion: "1", driveMd5Checksum: original.md5Checksum }), { code: "data-loss" });
 });
+
+
+test("música publicada congela audio, descarga normal e historial inmutable", async () => {
+  const revision = (await db.doc('activeClassroomUnits/'+unitId).get()).data().draftRevision;
+  const current = { ...draft, backgroundMusic: [{ resourceId: 'mvp-audio', title: 'Trabajo tranquilo', sourceType: 'file' }] };
+  const saved = await handlers.save(request({ draft: current, expectedRevision: revision }));
+  const published = await handlers.publish(request({ expectedRevision: saved.draftRevision }));
+  const manifest = (await desktop.get(request({ version: published.version }, 'reader'))).manifest;
+  const track = manifest.backgroundMusic[0];
+  const resource = manifest.resources.find(item => item.resourceId === track.resourceId);
+  assert.equal(track.sha256, resource.download.checksums.sha256);
+  assert.equal(track.size, resource.download.sizeBytes); assert.equal(track.generation, resource.download.generation);
+  const [audio] = await bucket.file(track.storagePath, { generation: track.generation }).download();
+  assert.equal(createHash('sha256').update(audio).digest('hex'), track.sha256);
+  assert.equal((await desktop.get(request({ version: 1 }, 'reader'))).manifest.backgroundMusic, undefined);
+  await handlers.save(request({ draft: { ...current, backgroundMusic: [] }, expectedRevision: saved.draftRevision }));
+  assert.deepEqual((await desktop.get(request({ version: published.version }, 'reader'))).manifest.backgroundMusic, manifest.backgroundMusic);
+});

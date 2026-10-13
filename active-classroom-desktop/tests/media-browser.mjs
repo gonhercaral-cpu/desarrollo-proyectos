@@ -1,4 +1,5 @@
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "../src/design-system.css";
 import "../src/styles.css";
 import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
@@ -14,6 +15,8 @@ const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, seconds = 8) { const end = Date.now() + seconds * 1000; while (!check() && Date.now() < end) await delay(25); assert(check(), "Estado multimedia esperado no llegó"); }
 export const observations = [];
+let nativeProjection = false;
+let projectionRevision = 0;
 const rendererOptions = { page: 1, volume: .5, muted: true, onPage() {}, onState() {} };
 async function oldAsset(source, path) {
   const renderer = new VideoRenderer(); let state = initialRendererState();
@@ -29,6 +32,12 @@ async function video(source) {
   const response = await fetch(source.url, { headers: { Range: "bytes=0-1" } });
   assert(response.status === 206 && response.headers.get("Accept-Ranges") === "bytes" && response.headers.get("Content-Length") === "2" && response.headers.get("Content-Type") === "video/mp4", "Range probe del WebView falló");
   await response.body?.cancel();
+  const full = await fetch(source.url);
+  assert(full.status === 200 && Number(full.headers.get("Content-Length")) === source.sizeBytes, "Respuesta sin Range inválida");
+  const reader = full.body.getReader(); const chunk = await reader.read();
+  assert(chunk.value.length > 0, "Streaming sin Range vacío"); await reader.cancel();
+  const invalid = await fetch(source.url, { headers: { Range: `bytes=${source.sizeBytes}-` } });
+  assert(invalid.status === 416, "Range inválido debe devolver 416"); await invalid.body?.cancel();
   const renderer = new VideoRenderer(); let state = initialRendererState();
   await renderer.mount(document.querySelector("#media"), source, { ...rendererOptions, onState(value) { state = value; } });
   const media = renderer.media;
@@ -44,12 +53,24 @@ async function video(source) {
   renderer.setVolume(.25); assert(media.volume === .25, "Volumen");
   await renderer.command("MUTE"); assert(media.muted === false, "Mute toggle"); await renderer.command("MUTE");
   await invoke("fixture_fullscreen", { active: true }); await delay(200); await invoke("fixture_fullscreen", { active: false });
-  const projected = new ProjectionPlayer(document.querySelector("#audience"));
-  await projected.receive({ sessionId: "media-fixture", revision: 1, unitId: "u", version: 1, resourceId: "v", slideIndex: 0, page: 1, source, playback: { ...state, time: 1, playing: true, muted: false }, updatedAt: Date.now() });
-  await until(() => document.querySelector("#audience video")?.currentTime > 1);
-  assert(document.querySelector("#audience video").muted, "Audiencia debe conservar silencio"); projected.destroy();
+  const snapshot = { sessionId: "media-fixture", revision: ++projectionRevision, unitId: "u", version: 1, resourceId: "v", slideIndex: 0, page: 1, source, playback: { ...state, time: 1, playing: true, muted: false }, updatedAt: Date.now() };
+  if (nativeProjection) {
+    await invoke("fixture_project", { snapshot });
+    let audience;
+    for (let count = 0; count < 100; count++) { audience = await invoke("fixture_audience_state"); if (audience?.time > 1 && audience.revision === snapshot.revision) break; await delay(80); }
+    assert(audience?.revision === snapshot.revision && audience?.time > 1 && audience.muted && audience.videos === 1 && audience.audio === 0 && !audience.error, `Video en segunda ventana falló: ${JSON.stringify(audience)}`);
+    assert(document.querySelectorAll("video").length === 1, "Profesor contiene decoders duplicados");
+    await invoke("fixture_project", { snapshot: null });
+  } else {
+    const projected = new ProjectionPlayer(document.querySelector("#audience"));
+    await projected.receive(snapshot); await until(() => document.querySelector("#audience video")?.currentTime > 1);
+    assert(document.querySelector("#audience video").muted, "Audiencia debe conservar silencio"); projected.destroy();
+  }
   observations.push({ phase: "after-projection", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   observations.push({ transport: "loopback", size: source.sizeBytes, codecMime: source.codecMime, code: media.error?.code || 0, loaded: true, playPauseSeekVolumeMuteFullscreenProjection: true }); renderer.destroy();
+  await delay(250);
+  assert(document.querySelectorAll("video").length === 0, "Quedó un decoder huérfano");
+  observations.push({ phase: "after-close", size: source.sizeBytes, memory: await invoke("fixture_memory") });
 }
 function emptyRenderer(kind) {
   return { kind, async mount(host, source, options) { host.textContent = source.name; options.onState({ ...initialRendererState(), pages: 80 }); }, command() {}, setPage() {}, seek() {}, setVolume() {}, destroy() {} };
@@ -118,9 +139,24 @@ export async function scroll(seed, slideCount = 80, changeProjectorStatus = fals
 async function run() {
 try {
   const fixture = await invoke("media_fixture");
+  nativeProjection = fixture.nativeProjection;
+  if (nativeProjection) { let ready; for (let count = 0; count < 100; count++) { ready = await invoke("fixture_audience_state"); if (ready?.ready) break; await delay(50); } assert(ready?.ready, "Ventana proyector no quedó lista"); }
+  observations.push({ phase: "startup-memory", memory: await invoke("fixture_memory") });
   await oldAsset(fixture.source, fixture.path);
   await video(fixture.source); await video(fixture.source); // Reopen, fully local.
-  await video(fixture.largeSource);
+  for (const source of fixture.largeSources || [fixture.largeSource]) await video(source);
+  const memory = () => invoke("fixture_memory");
+  const baseline = await memory();
+  for (let index = 0; index < 5; index++) await video(fixture.largeSource);
+  const after = await memory();
+  const rss = process => Number.parseInt(process.rss || "0", 10);
+  for (const process of after) {
+    const before = baseline.find(item => item.pid === process.pid);
+    if (before) assert(rss(process) - rss(before) < 160 * 1024, `Memoria crece al reabrir: ${process.name}`);
+    if (process.name.startsWith("active-class")) assert(rss(process) < 256 * 1024, "Proceso principal carga archivo completo");
+    if (process.name.startsWith("WebKitWeb")) assert(rss(process) < 768 * 1024, "WebKit almacena video completo en RAM");
+  }
+  observations.push({ repetitiveMemory: { baseline, after, opens: 5, bounded: true } });
   observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
   for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [920, 640]]) {
     await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
@@ -129,4 +165,12 @@ try {
   await invoke("fixture_report", { ok: true, result: observations });
 } catch (error) { await invoke("fixture_report", { ok: false, result: { error: String(error), observations } }); }
 }
-if (!document.documentElement.hasAttribute("data-layout-only")) void run();
+async function runAudience() {
+  const projected = new ProjectionPlayer(document.querySelector("#audience"));
+  let revision = 0;
+  await listen("fixture-projection", event => { revision = event.payload?.revision || 0; void projected.receive(event.payload); });
+  await invoke("fixture_audience_state", { report: { ready: true } });
+  setInterval(() => { const media = document.querySelector("video"); void invoke("fixture_audience_state", { report: { ready: true, revision, time: media?.currentTime || 0, muted: media?.muted, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } }); }, 80);
+}
+if (location.pathname === "/projection-test.html") void runAudience();
+else if (!document.documentElement.hasAttribute("data-layout-only")) void run();

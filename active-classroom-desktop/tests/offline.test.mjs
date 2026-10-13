@@ -115,6 +115,20 @@ test("descarga, verifica SHA-256, reinicia proceso lógico y abre clase sin ning
   }
   assert.throws(() => classroom.resolveResource("unknown"), { code: "cache" });
 });
+test("música ambiente publicada usa sincronización normal, hash y caché tras reinicio offline", async t => {
+  const cache = await temporary(t); const data = await fixture();
+  const audio = data.manifest.resources.find(resource => resource.download.mimeType === "audio/mpeg");
+  const file = audio.download;
+  data.manifest.backgroundMusic = [{ id: audio.resourceId, resourceId: audio.resourceId, title: "Trabajo tranquilo", sourceType: "file", order: 0, mime: file.mimeType, size: file.sizeBytes, sha256: file.checksums.sha256, storagePath: file.path, generation: file.generation }];
+  await seal(data.manifest); data.publication.contentHash = data.manifest.integrity.contentHash;
+  await new SyncEngine(cache, source(data)).sync(data.publication);
+  const restarted = new DiskCache(cache.root); const classroom = await openLocalClass(restarted, data.publication.unitId, 1);
+  const track = classroom.manifest.backgroundMusic[0];
+  assert.equal(track.title, "Trabajo tranquilo");
+  assert.deepEqual(await readFile(classroom.resolveResource(track.resourceId).path), Buffer.from(data.bytes.get(track.resourceId)));
+  const invalid = structuredClone(data.manifest); invalid.backgroundMusic[0].sha256 = "f".repeat(64); await seal(invalid);
+  await assert.rejects(validateManifest(invalid), { code: "manifest" });
+});
 
 test("actualización descarga solo cambios, conserva versión anterior y activa únicamente al completar", async (t) => {
   const cache = await temporary(t);

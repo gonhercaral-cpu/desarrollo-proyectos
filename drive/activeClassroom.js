@@ -29,7 +29,7 @@ function requireId(value) {
 function activeDraftResourceIds(draft) {
   if (!draft) return [];
   const excluded = new Set(draft.excludedResourceIds || []);
-  return [...new Set([draft.mainPresentationId, ...(draft.generalResourceIds || []),
+  return [...new Set([draft.mainPresentationId, ...(draft.backgroundMusic || []).map(track => track.resourceId), ...(draft.generalResourceIds || []),
     ...(draft.slides || []).flatMap(slide => [slide.interaction?.initialResourceId, ...(slide.resourceIds || []),
       ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])
   ].filter(id => id && !excluded.has(id)))];

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import ActiveClassroomIcon from "./ActiveClassroomIcon";
+import ModuleHeader from "../../components/ModuleHeader";
 export function ClassroomHeader({ title, subtitle, children }) {
-  return <header className="ac-console-header"><span className="ac-console-mark">ac</span><div><strong>Active Classroom</strong><h1>{title}</h1><p>{subtitle}</p></div><div className="ac-console-actions">{children}</div><ActiveClassroomIcon name="library" size={90} className="ac-hero-watermark" /></header>;
+  return <ModuleHeader icon={<img className="ac-institutional-icon" src="/active-classroom-icon.png" alt="Active Classroom" />} kicker="Active Classroom" title={title} subtitle={subtitle}>{children}</ModuleHeader>;
 }
 export function ClassroomMetrics({ items }) {
   return <div className="ac-console-metrics">{items.map(({ title, value, detail, icon = "folder", tone = "blue" }) => <article key={title}><span className={`ac-metric-icon is-${tone}`}><ActiveClassroomIcon name={icon} size={30} /></span><div><strong>{title}</strong><b>{value}</b><small>{detail}</small></div></article>)}</div>;

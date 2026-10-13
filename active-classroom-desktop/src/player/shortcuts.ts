@@ -1,7 +1,10 @@
 import type { PlayerCommand } from "./types.ts";
-export type ShortcutCommand = PlayerCommand | "ESCAPE" | "PROJECT" | "OPEN_RESOURCE";
+export type ShortcutCommand = PlayerCommand | "ESCAPE" | "PROJECT" | "OPEN_RESOURCE" | "BACKGROUND_MUSIC_PLAY_PAUSE" | "BACKGROUND_MUSIC_NEXT" | "BACKGROUND_MUSIC_PREVIOUS";
 export const SHORTCUTS_KEY = "active-classroom-shortcuts:v1";
 export const SHORTCUT_ACTIONS: Record<ShortcutCommand, { label: string; context: "all" | "presentation" | "media"; keys: string[] }> = {
+  BACKGROUND_MUSIC_PLAY_PAUSE: { label: "Música ambiente: reproducir / pausar", context: "all", keys: [] },
+  BACKGROUND_MUSIC_NEXT: { label: "Música ambiente: siguiente pista", context: "all", keys: [] },
+  BACKGROUND_MUSIC_PREVIOUS: { label: "Música ambiente: pista anterior", context: "all", keys: [] },
   ADVANCE: { label: "Avanzar diapositiva o revelado", context: "presentation", keys: ["ArrowRight", "Space", "PageDown"] },
   BACK: { label: "Retroceder diapositiva o revelado", context: "presentation", keys: ["ArrowLeft", "PageUp"] },
   NEXT: { label: "Siguiente página", context: "media", keys: ["ArrowRight"] },

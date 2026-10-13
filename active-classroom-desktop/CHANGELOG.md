@@ -1,3 +1,11 @@
+## 1.0.14
+
+- Corrige aborto WebKit al abrir videos: excluye plugins WebRTC con libsoup2 incompatibles con WebKitGTK/libsoup3.
+- Música ambiente offline por Unit, volumen independiente y pausa ante multimedia de clase.
+- Atajos configurables para música y recuperación de errores multimedia sin cerrar clase.
+- Grants locales con liberación y streams cancelables; lecturas siempre de 64 KiB.
+- CI valida reproducción real y memoria con paquetes Debian/AppImage instalados, X11/Wayland y archivos hasta 1 GiB.
+
 # Changelog
 
 ## 1.0.13 — 2026-10-12

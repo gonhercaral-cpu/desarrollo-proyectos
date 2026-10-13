@@ -2,7 +2,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, fs::{self, File, Metadata}, io::{Read, Seek, SeekFrom, Write}, net::{TcpListener, TcpStream}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}}, time::{Duration, SystemTime}};
+use std::{collections::HashMap, fs::{self, File, Metadata}, io::{Read, Seek, SeekFrom, Write}, net::{TcpListener, TcpStream}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}}, time::{Duration, SystemTime}};
 use tauri::Manager;
 
 const BLOCK_BYTES: usize = 65536;
@@ -11,7 +11,9 @@ const MAX_CONNECTIONS: usize = 8;
 #[derive(Clone)]
 pub(crate) struct MediaServer { pub port: u16, grants: Arc<Mutex<HashMap<String, Grant>>> }
 #[derive(Clone)]
-struct Grant { path: PathBuf, mime: String, size: u64, signature: Signature }
+struct Grant { path: PathBuf, mime: String, size: u64, signature: Signature, leases: usize, active: Arc<AtomicBool> }
+struct TransferLog { read: u64, sent: u64 }
+impl Drop for TransferLog { fn drop(&mut self) { eprintln!("[Active Classroom Media] read_bytes={} sent_bytes={} block_bytes={BLOCK_BYTES}", self.read, self.sent); } }
 #[derive(Clone, PartialEq, Eq)]
 struct Signature { size: u64, modified: Option<SystemTime>, #[cfg(unix)] inode: (u64, u64) }
 impl Signature {
@@ -19,7 +21,7 @@ impl Signature {
         Self { size: metadata.len(), modified: metadata.modified().ok(), #[cfg(unix)] inode: { use std::os::unix::fs::MetadataExt; (metadata.dev(), metadata.ino()) } }
     }
 }
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Inspection {
     pub url: Option<String>, pub local_path: String, pub exists: bool,
@@ -64,7 +66,7 @@ impl MediaServer {
                     active.fetch_sub(1, Ordering::SeqCst); let _ = reply(&mut socket, 503, "", 0, None, "busy"); continue;
                 }
                 let state = state.clone(); let active = active.clone();
-                std::thread::spawn(move || { let _ = state.serve(&mut socket); active.fetch_sub(1, Ordering::SeqCst); });
+                std::thread::spawn(move || { eprintln!("[Active Classroom Media] connections={}", active.load(Ordering::SeqCst)); let _ = state.serve(&mut socket); active.fetch_sub(1, Ordering::SeqCst); });
             }
         });
         Ok(server)
@@ -78,10 +80,20 @@ impl MediaServer {
         let token: String = random.iter().map(|b| format!("{b:02x}")).collect();
         let mut grants = self.grants.lock().map_err(|_| "read")?;
         // Reuse a verified object; bound the capability registry to the manifest limit.
-        if let Some((id, _)) = grants.iter().find(|(_, grant)| grant.path == path && grant.signature == signature && grant.mime == mime) { return Ok(format!("http://127.0.0.1:{}/media/{id}", self.port)); }
-        if grants.len() >= 200 { grants.clear(); }
-        grants.insert(token.clone(), Grant { path, mime, size, signature });
+        if let Some((id, grant)) = grants.iter_mut().find(|(_, grant)| grant.path == path && grant.signature == signature && grant.mime == mime) { grant.leases += 1; return Ok(format!("http://127.0.0.1:{}/media/{id}", self.port)); }
+        if grants.len() >= 200 { return Err("media: demasiados recursos abiertos".into()); }
+        grants.insert(token.clone(), Grant { path, mime, size, signature, leases: 1, active: Arc::new(AtomicBool::new(true)) });
         Ok(format!("http://127.0.0.1:{}/media/{token}", self.port))
+    }
+    pub(crate) fn release(&self, url: &str) {
+        let prefix = format!("http://127.0.0.1:{}/media/", self.port);
+        let Some(token) = url.strip_prefix(&prefix).filter(|token| safe_hash(token)) else { return; };
+        if let Ok(mut grants) = self.grants.lock() {
+            if let Some(grant) = grants.get_mut(token) {
+                grant.leases -= 1;
+                if grant.leases == 0 { grant.active.store(false, Ordering::SeqCst); grants.remove(token); }
+            }
+        }
     }
     pub(crate) fn inspect(&self, root: &Path, unit: &str, version: u64, resource_id: &str) -> Result<Inspection, String> {
         let directory = crate::offline_cache::version_dir(root, unit, version)?;
@@ -152,12 +164,13 @@ impl MediaServer {
         reply(socket, status, &grant.mime, count, content_range, "")?;
         if parts[0] == "HEAD" { return Ok(()); }
         file.seek(SeekFrom::Start(start))?;
-        let mut remaining = count; let mut block = [0u8; BLOCK_BYTES];
+        let mut remaining = count; let mut block = [0u8; BLOCK_BYTES]; let mut transfer = TransferLog { read: 0, sent: 0 };
         while remaining > 0 {
+            if !grant.active.load(Ordering::SeqCst) { break; }
             let limit = remaining.min(BLOCK_BYTES as u64) as usize;
             let read = file.read(&mut block[..limit])?;
             if read == 0 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "cache object changed")); }
-            socket.write_all(&block[..read])?; remaining -= read as u64;
+            transfer.read += read as u64; socket.write_all(&block[..read])?; transfer.sent += read as u64; remaining -= read as u64;
         }
         Ok(())
     }
@@ -246,6 +259,11 @@ pub(crate) async fn classroom_media(app: tauri::AppHandle, window: tauri::Webvie
     let root = app.path().app_data_dir().map_err(|_| "media: Caché no disponible")?.join("offline-v1").join("users").join(format!("{:x}", Sha256::digest(owner.as_bytes())));
     let server = server.inner().clone();
     tauri::async_runtime::spawn_blocking(move || server.inspect(&root, &unit_id, version, &resource_id)).await.map_err(|_| "media: No se pudo leer el video local")?
+}
+#[tauri::command]
+pub(crate) fn classroom_release_media(window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, url: String) -> Result<(), String> {
+    if window.label() != "teacher" { return Err("media: Ventana inválida".into()); }
+    server.release(&url); Ok(())
 }
 #[tauri::command]
 pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, data: Value) -> Result<(), String> {
@@ -340,6 +358,16 @@ mod tests {
         let outside = root.join("outside.mp4"); fs::write(&outside, bytes).unwrap(); fs::remove_file(root.join("objects").join(&hash)).unwrap();
         std::os::unix::fs::symlink(outside, root.join("objects").join(&hash)).unwrap();
         assert_eq!(server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic).error_code.as_deref(), Some("path")); fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn grant_leases_release_and_cancel_without_breaking_other_owner() {
+        let bytes = b"\0\0\0\x18ftypisom0123456789ABCDEF";
+        let (root, server, hash, diagnostic) = fixture(bytes, "video/mp4");
+        let first = server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic.clone()).url.unwrap();
+        let second = server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic).url.unwrap();
+        assert_eq!(first, second); server.release(&first); assert!(server.allows_url(&second));
+        server.release(&second); assert!(!server.allows_url(&second));
+        server.release(&second); fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn large_object_is_streamed_and_range_is_bounded() {

@@ -4,8 +4,9 @@ appdir="$(realpath "${1:?AppDir requerido}")"
 plugins="$appdir/usr/lib/gstreamer-1.0"
 test -d "$plugins"
 # WebKitGTK 4.1 uses libsoup3 and its own HTTP media source. Ubuntu 22's
-# GStreamer HTTP plugins use libsoup2; scanning them in WebKit aborts the process.
-# These network plugins are unnecessary for our verified loopback/file media.
+# The bundled WebRTC plugin pulls libsoup2 through libnice/GUPnP; scanning it
+# inside WebKit aborts the process. No WebRTC is used by our offline projector.
+# Reject every incompatible plugin dependency, including indirect dependencies.
 while IFS= read -r -d '' plugin; do
   dependencies="$(LD_PRELOAD= LD_LIBRARY_PATH="$appdir/usr/lib" ldd "$plugin")"
   if grep -q 'libsoup-2.4' <<< "$dependencies"; then
