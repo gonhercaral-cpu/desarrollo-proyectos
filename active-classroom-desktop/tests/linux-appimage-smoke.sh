@@ -87,6 +87,12 @@ cleanup() {
     tail -n 80 "$XDG_CACHE_HOME/second-$backend.log" 2>/dev/null || true
     cat "$XDG_CACHE_HOME/windows.txt" 2>/dev/null || true
     ps -u "$(id -u)" -o pid,comm
+    while read -r process; do
+      # Only a public library path is selected. Helper output containing the
+      # temporary CI credential is discarded; stderr diagnoses linker failures.
+      library_path="$(tr '\0' '\n' < "/proc/$process/environ" | sed -n 's/^LD_LIBRARY_PATH=//p')"
+      LD_LIBRARY_PATH="$library_path" /usr/bin/secret-tool search --all application com.activeclassroom.desktop credential device-v1 >/dev/null || true
+    done < <(application_pids)
   fi
   while read -r process; do kill "$process" 2>/dev/null || true; done < <(application_pids)
   kill "$first" 2>/dev/null || true

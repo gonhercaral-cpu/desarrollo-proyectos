@@ -6,6 +6,11 @@ on:
         description: Run fallido con artefactos sin firmar (vacío para diagnosticar 1.0.12)
         required: false
         type: string
+      ubuntu:
+        description: Base del diagnóstico de artefactos (vacío para todas)
+        required: false
+        type: choice
+        options: ['', '22.04', '24.04', '26.04']
   push:
     branches: [codex/active-classroom-linux-packaging]
     paths:
@@ -53,6 +58,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg gstreamer1.0-tools
       - name: Validar los mismos bytes sin recompilar ni firmar
         working-directory: active-classroom-desktop
+        env:
+          CLASSROOM_PACKAGE_OS: ${{ inputs.ubuntu }}
         run: |
           set -euo pipefail
           mkdir -p src-tauri/target/release/bundle/{deb,appimage}
