@@ -14,6 +14,7 @@ for hook in system-glib appimage-wayland; do
   esac
   cp "$appdir/usr/lib/active-classroom/packaging/$hook.sh" "$appdir/apprun-hooks/$name"
 done
+node scripts/patch-apprun.mjs "$appdir/AppRun"
 tool="${XDG_CACHE_HOME:-$HOME/.cache}/tauri/linuxdeploy-plugin-appimage.AppImage"
 test -x "$tool"
 output="$(mktemp -d)/normalized.AppImage"

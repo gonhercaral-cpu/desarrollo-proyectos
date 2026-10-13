@@ -122,6 +122,8 @@ echo "APPIMAGE_SECOND_EXIT backend=$backend success=true"
 mapfile -t applications < <(application_pids)
 echo "APPIMAGE_INSTANCE_COUNT backend=$backend count=${#applications[@]}"
 test "${#applications[@]}" -eq 1
+preload="$(tr '\0' '\n' < "/proc/${applications[0]}/environ" | sed -n 's/^LD_PRELOAD=//p')"
+[[ "$preload" == *'/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0'* ]]
 if [[ "$distribution" == deb ]]; then
   # Check only these public packaging values, never print arbitrary environment.
   tr '\0' '\n' < "/proc/${applications[0]}/environ" | grep -qx 'APPIMAGE=/usr/bin/active-classroom'

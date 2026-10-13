@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      repair_launcher:
+        description: Probar parche de AppRun en copias temporales sin firma/publicación
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [codex/active-classroom-linux-packaging]
     paths:
@@ -74,6 +79,26 @@ jobs:
           for name in linuxdeploy-plugin-gtk zz-active-classroom-system-glib zz-active-classroom-wayland; do
             cat "$directory/squashfs-root/apprun-hooks/$name.sh"
           done
+      - name: Preparar copias temporales con parche de launcher
+        if: ${{ inputs.repair_launcher }}
+        working-directory: active-classroom-desktop
+        run: |
+          set -euo pipefail
+          image="$(realpath "$(find ../unsigned-diagnostic -type f -name '*.AppImage' -print -quit)")"
+          deb="$(realpath "$(find ../unsigned-diagnostic -type f -name '*.deb' -print -quit)")"
+          directory="$(mktemp -d)"
+          (cd "$directory" && "$image" --appimage-extract >/dev/null)
+          cp -a "$directory/squashfs-root" "$(dirname "$image")/Active Classroom.AppDir"
+          mkdir -p "$HOME/.cache/tauri"
+          curl --fail --location --retry 3 -o "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage" https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod 755 "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage"
+          bash tests/prepare-appimage-runtime.sh "$image"
+          dpkg-deb --raw-extract "$deb" "$directory/debian"
+          node scripts/patch-apprun.mjs "$directory/debian/usr/lib/active-classroom/AppRun"
+          (cd "$directory/debian" && find usr -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums)
+          dpkg-deb --root-owner-group --build "$directory/debian" "$directory/patched.deb"
+          mv "$directory/patched.deb" "$deb"
+          echo 'DIAGNOSTIC temporary_unsigned_copies=true release=false'
       - name: Validar los mismos bytes sin recompilar ni firmar
         if: ${{ !inputs.inspect_only }}
         working-directory: active-classroom-desktop
