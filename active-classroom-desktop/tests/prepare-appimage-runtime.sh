@@ -16,7 +16,10 @@ for hook in system-glib appimage-wayland; do
 done
 tool="${XDG_CACHE_HOME:-$HOME/.cache}/tauri/linuxdeploy-plugin-appimage.AppImage"
 test -x "$tool"
+output="$(mktemp -d)/normalized.AppImage"
 # Reuse Tauri's already downloaded official output plugin; no separate runtime,
 # update server, signing key or Linux deployment infrastructure is introduced.
-ARCH=x86_64 LDAI_OUTPUT="$image" APPIMAGE_EXTRACT_AND_RUN=1 \
+ARCH=x86_64 LDAI_OUTPUT="$output" APPIMAGE_EXTRACT_AND_RUN=1 \
   "$tool" --appimage-extract-and-run --appdir "$appdir"
+test -s "$output"
+mv "$output" "$image"
