@@ -10,6 +10,7 @@ import { sidebarMarkup } from "../src/ui/shell.ts";
 import "../src/offline/library.css";
 import "../src/player/player.css";
 import { interactiveSlides } from "./builds-browser.mjs";
+import { validateManifest } from "../src/offline/manifest.ts";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -74,6 +75,35 @@ async function video(source) {
 }
 function emptyRenderer(kind) {
   return { kind, async mount(host, source, options) { host.textContent = source.name; options.onState({ ...initialRendererState(), pages: 80 }); }, command() {}, setPage() {}, seek() {}, setVolume() {}, destroy() {} };
+}
+async function backgroundMusic(fixture, videoSource) {
+  const manifest = await validateManifest(fixture.manifest);
+  const host = document.createElement("div"); document.body.append(host);
+  const classroom = { manifest, resolveResource(id) { const resource = manifest.resources.find(item => item.resourceId === id); return { path: fixture.paths[id], mimeType: resource.download.mimeType, name: resource.name, kind: resource.kind }; } };
+  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: convertFileSrc, prepareMediaSource: async id => id === "music-wave" ? fixture.source : videoSource });
+  try {
+    await until(() => !host.querySelector("[data-status]").textContent);
+    await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE");
+    const audio = host.querySelector("audio");
+    await until(() => audio.currentTime > .15); assert(!audio.paused, "Música offline no reproduce");
+    await player.dispatch("ADVANCE"); await delay(200);
+    assert(player.controller.currentBuild === 1 && host.querySelector("audio") === audio && !audio.paused, "Revelado reinició música");
+    await player.dispatch("ADVANCE"); await player.dispatch("ADVANCE"); await delay(200);
+    assert(player.controller.slideIndex === 1 && !audio.paused, "Cambiar slide detuvo música");
+    const volume = host.querySelector("[data-music-volume]"); volume.value = ".2"; volume.dispatchEvent(new Event("input"));
+    assert(audio.volume === .2, "Volumen de música no independiente");
+    host.querySelector("[data-general] [data-resource]").click();
+    await until(() => host.querySelector("video")?.readyState >= 2);
+    assert(!audio.paused, "Abrir recurso pausado reinició música");
+    await player.dispatch("PLAY_PAUSE"); await until(() => host.querySelector("video").currentTime > .15);
+    assert(audio.paused && audio.volume === .2 && host.querySelector("video").volume === .8, "Multimedia compite con música o mezcló volúmenes");
+    host.querySelector("[data-presentation]").click(); await delay(200);
+    assert(audio.paused, "Música reanudó inesperadamente");
+    await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE"); await until(() => !audio.paused);
+    await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE"); assert(audio.paused, "Pausa manual no aplicada");
+    const audience = await invoke("fixture_audience_state"); assert(!audience.audio, "Proyector contiene segunda música");
+    observations.push({ backgroundMusic: true, realWav: true, offline: true, survivesSlidesAndBuilds: true, independentVolume: true, automaticPause: true, explicitResumeOnly: true, singleAudioOwner: true });
+  } finally { player.destroy(); host.remove(); }
 }
 export async function scroll(seed, slideCount = 80, changeProjectorStatus = false) {
   const manifest = structuredClone(seed); const base = manifest.resources[0];
@@ -158,6 +188,7 @@ try {
   }
   observations.push({ repetitiveMemory: { baseline, after, opens: 5, bounded: true } });
   observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
+  if (fixture.musicFixture) await backgroundMusic(fixture.musicFixture, fixture.source);
   for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [920, 640]]) {
     await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
     for (const count of [10, 50, 120]) await scroll(fixture.manifest, count, true);

@@ -184,6 +184,8 @@ export class ClassroomPlayer {
   private async showResource(): Promise<void> {
     if (this.disposed) return;
     const id = this.controller.selectedResourceId;
+    const previousSource = this.source;
+    if (this.renderedId !== id) this.source = undefined;
     this.updateLists();
     if (this.renderedId === id && this.renderer && !this.state.error) {
       try { await this.renderer.setPage(this.controller.page); await this.showBuild(); } catch { this.state.error = "No se pudo abrir esta página o paso local."; this.updateState(); }
@@ -192,7 +194,7 @@ export class ClassroomPlayer {
     const sequence = ++this.sequence;
     ++this.buildSequence; this.surface?.destroy(); this.surface = undefined;
     this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
-    if (this.source) this.dependencies.releaseMediaSource?.(this.source);
+    if (previousSource) this.dependencies.releaseMediaSource?.(previousSource);
     this.source = undefined;
     this.state = { ...initialRendererState(), loading: true };
     const host = document.createElement("div"); host.className = "player-renderer-content";
@@ -200,9 +202,11 @@ export class ClassroomPlayer {
     const resource = this.classroom.manifest.resources.find((item) => item.resourceId === id)!;
     this.element("[data-resource-name]").textContent = resource.name;
     this.updateState();
+    let prepared: RendererSource | undefined;
+    let installed = false;
     try {
       const isMedia = ["audio", "video"].includes(rendererKind(resource.download.mimeType));
-      const prepared = isMedia && this.dependencies.prepareMediaSource ? await this.dependencies.prepareMediaSource(id) : undefined;
+      prepared = isMedia && this.dependencies.prepareMediaSource ? await this.dependencies.prepareMediaSource(id) : undefined;
       if (!prepared && !await this.dependencies.verifyResource(id)) throw new Error("Archivo local ausente o corrupto. Vuelve a Biblioteca para sincronizarlo de nuevo.");
       if (sequence !== this.sequence || this.disposed) { if (prepared) this.dependencies.releaseMediaSource?.(prepared); return; }
       const source = prepared || localSource(this.classroom, id, this.dependencies.toUrl);
@@ -210,6 +214,7 @@ export class ClassroomPlayer {
       if (sequence !== this.sequence || this.disposed) { renderer.destroy(); if (prepared) this.dependencies.releaseMediaSource?.(prepared); return; }
       this.renderer = renderer; this.renderedId = id;
       this.source = source;
+      installed = true;
       await renderer.mount(host, source, {
         page: this.controller.page, volume: this.volume, muted: this.muted,
         onState: (state: RendererState) => {
@@ -224,9 +229,9 @@ export class ClassroomPlayer {
       if (sequence !== this.sequence || this.disposed) return;
       if (this.controller.isPresentation) await this.showBuild();
     } catch (error) {
-      if (sequence !== this.sequence || this.disposed) return;
+      if (sequence !== this.sequence || this.disposed) { if (prepared && !installed) this.dependencies.releaseMediaSource?.(prepared); return; }
       this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
-      if (this.source) this.dependencies.releaseMediaSource?.(this.source); this.source = undefined;
+      if (this.source || prepared) this.dependencies.releaseMediaSource?.(this.source || prepared!); this.source = undefined;
       this.state = { ...initialRendererState(), error: error instanceof Error ? error.message : "No se pudo abrir el recurso local." }; this.updateState();
     }
   }

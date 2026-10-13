@@ -15,7 +15,7 @@ async function run() {
     const header = document.querySelector(".printshop-topbar.digital-signage-header");
     if (!header || !header.querySelector('img[src="/active-classroom-icon.png"]')) throw new Error(`Header/icono institucional faltante: ${section}`);
     const heading = header.getBoundingClientRect();
-    if (heading.right > innerWidth || heading.left < 248) throw new Error(`Header fuera de su área: ${section}`);
+    if (heading.right > innerWidth || heading.left < 248) throw new Error(`Header fuera de su área: ${section} ${JSON.stringify(heading.toJSON())}`);
     const inspector = document.querySelector(".ac-console-inspector");
     if (inspector) { inspector.scrollTop = inspector.scrollHeight; const last = inspector.querySelector(".ac-inspector-body")?.lastElementChild; if (last && last.getBoundingClientRect().bottom > inspector.getBoundingClientRect().bottom + 1) throw new Error(`Inspector inaccesible: ${section}`); }
     if (section === "Ajustes") { const table = document.querySelector(".ac-permissions-table"); if (!table || table.querySelectorAll("input[role=switch]").length !== 20) throw new Error("Permisos reales faltantes"); const scroll = table.parentElement; scroll.scrollLeft = scroll.scrollWidth; const last = table.querySelector("tr:last-child td:last-child"); if (last.getBoundingClientRect().right > scroll.getBoundingClientRect().right + 1) throw new Error("Último permiso inaccesible"); }
@@ -33,4 +33,4 @@ async function run() {
   observations.push({ singleClickOpens: true, menuDoesNotOpen: true, musicEditor: true });
   return { ok: true, observations };
 }
-void run().catch(error => ({ ok: false, message: String(error), observations })).then(result => { if (window.webkit?.messageHandlers?.result) window.webkit.messageHandlers.result.postMessage(JSON.stringify(result)); else window.consoleAcceptance = result; });
+void run().catch(error => ({ ok: false, message: String(error), observations })).then(result => { if (window.webkit?.messageHandlers?.result) window.webkit.messageHandlers.result.postMessage(JSON.stringify(result)); else { window.consoleAcceptance = result; const report = document.createElement("pre"); report.textContent = JSON.stringify(result); document.body.append(report); } });

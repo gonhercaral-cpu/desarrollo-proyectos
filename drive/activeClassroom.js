@@ -9,7 +9,7 @@ const GOOGLE_TYPES = {
 const EXTENSION_TYPES = {
   ppt: "presentation", pptx: "presentation", pdf: "document",
   doc: "document", docx: "document", txt: "document",
-  mp3: "audio", wav: "audio", m4a: "audio",
+  mp3: "audio", wav: "audio", m4a: "audio", aac: "audio", ogg: "audio", flac: "audio",
   mp4: "video", webm: "video", jpg: "image", jpeg: "image", png: "image", webp: "image",
 };
 

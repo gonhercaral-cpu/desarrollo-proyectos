@@ -49,12 +49,14 @@ export class BackgroundMusic {
     const sequence = ++this.sequence; this.pending = true; this.message = ""; this.render();
     try {
       const track = this.tracks[this.index];
+      if (this.audio.error) { this.audio.removeAttribute("src"); this.audio.load(); this.loadedId = ""; if (this.source) this.release?.(this.source); this.source = undefined; }
       if (this.loadedId !== track.id) {
         const source = await this.prepare(track.resourceId);
         if (this.disposed || sequence !== this.sequence) { this.release?.(source); return; }
+        this.source = source;
         assertLocalUrl(source.url);
         if (!source.mimeType.startsWith("audio/")) throw new Error("Música ambiente requiere audio local verificado.");
-        this.source = source; this.audio.src = source.url; this.loadedId = track.id; this.audio.load();
+        this.audio.src = source.url; this.loadedId = track.id; this.audio.load();
       }
       if (this.disposed || sequence !== this.sequence || !this.canPlay()) { this.pause("class-media"); return; }
       await this.audio.play();

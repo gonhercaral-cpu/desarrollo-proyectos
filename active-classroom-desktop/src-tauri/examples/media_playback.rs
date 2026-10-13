@@ -97,11 +97,28 @@ fn main() {
         {"slideId":"static","index":1,"title":"Estática","metadata":{"pageNumber":1,"presentationResourceId":"state-0"},"resourceIds":[]}
     ]);
     let build_fixture = json!({"manifest":build_manifest,"paths":paths});
+    let mut music_manifest = build_manifest.clone();
+    let wave = fs::read(png_directory.join("music.wav")).unwrap(); let music_hash = format!("{:x}", Sha256::digest(&wave));
+    let music_path = root.join("objects").join(&music_hash); fs::write(&music_path, &wave).unwrap();
+    let mut audio = manifest["resources"][0].clone();
+    audio["resourceId"] = json!("music-wave"); audio["name"] = json!("Trabajo tranquilo"); audio["kind"] = json!("audio"); audio["deliveryMime"] = json!("audio/wav"); audio["download"]["mimeType"] = json!("audio/wav"); audio["download"]["sizeBytes"] = json!(wave.len()); audio["download"]["checksums"]["sha256"] = json!(music_hash);
+    music_manifest["resources"].as_array_mut().unwrap().push(audio.clone());
+    music_manifest["resources"].as_array_mut().unwrap().push(manifest["resources"][0].clone());
+    music_manifest["generalResourceIds"] = json!([manifest["resources"][0]["resourceId"]]);
+    music_manifest["backgroundMusic"] = json!([{"id":"music-wave","resourceId":"music-wave","title":"Trabajo tranquilo","sourceType":"file","order":0,"mime":"audio/wav","size":wave.len(),"sha256":music_hash,"storagePath":audio["download"]["path"],"generation":audio["download"]["generation"]}]);
+    let mut content = music_manifest.clone(); for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+    music_manifest["integrity"]["contentHash"] = json!(format!("{:x}", Sha256::digest(canonical(&content).as_bytes())));
+    fs::write(directory.join("manifest.json"), serde_json::to_vec(&music_manifest).unwrap()).unwrap();
+    let checked = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), "music-wave").unwrap(); assert!(checked.url.is_some());
+    let music_source = json!({"url":checked.url,"mimeType":"audio/wav","name":"Trabajo tranquilo","sizeBytes":wave.len()});
+    let mut music_paths = paths.clone(); music_paths.insert("music-wave".into(), json!(music_path));
+    music_paths.insert(manifest["resources"][0]["resourceId"].as_str().unwrap().into(), json!(path));
+    let music_fixture = json!({"manifest":music_manifest,"paths":music_paths,"source":music_source});
     let css = format!("{}\n{}\n{}", include_str!("../../src/design-system.css"), include_str!("../../src/styles.css"), include_str!("../../src/player/player.css"));
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap(); let csp = config["app"]["security"]["csp"].as_str().unwrap().to_string();
     let mut context = tauri::generate_context!(); context.config_mut().app.windows.clear();
     let passed = Arc::new(AtomicBool::new(false));
-    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "largeSources": large_sources, "path": path, "manifest": manifest, "buildFixture": build_fixture, "nativeProjection": true}))).manage(Audience::default()).manage(server).manage(passed.clone())
+    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "largeSources": large_sources, "path": path, "manifest": manifest, "buildFixture": build_fixture, "musicFixture":music_fixture,"nativeProjection": true}))).manage(Audience::default()).manage(server).manage(passed.clone())
         .register_uri_scheme_protocol("tauri", move |_, request| {
             let (mime, body) = match request.uri().path() {
                 "/test.js" => ("text/javascript", script.clone()), "/style.css" => ("text/css", css.as_bytes().to_vec()),

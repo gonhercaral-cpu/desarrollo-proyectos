@@ -184,7 +184,8 @@ test("música publicada congela audio, descarga normal e historial inmutable", a
   const revision = (await db.doc('activeClassroomUnits/'+unitId).get()).data().draftRevision;
   const current = { ...draft, backgroundMusic: [{ resourceId: 'mvp-audio', title: 'Trabajo tranquilo', sourceType: 'file' }] };
   const saved = await handlers.save(request({ draft: current, expectedRevision: revision }));
-  const published = await handlers.publish(request({ expectedRevision: saved.draftRevision }));
+  const refreshed = await handlers.refreshDrive(request({ resourceId: "mvp-main", expectedRevision: saved.draftRevision }));
+  const published = await handlers.publish(request({ expectedRevision: refreshed.draftRevision }));
   const manifest = (await desktop.get(request({ version: published.version }, 'reader'))).manifest;
   const track = manifest.backgroundMusic[0];
   const resource = manifest.resources.find(item => item.resourceId === track.resourceId);
@@ -193,6 +194,6 @@ test("música publicada congela audio, descarga normal e historial inmutable", a
   const [audio] = await bucket.file(track.storagePath, { generation: track.generation }).download();
   assert.equal(createHash('sha256').update(audio).digest('hex'), track.sha256);
   assert.equal((await desktop.get(request({ version: 1 }, 'reader'))).manifest.backgroundMusic, undefined);
-  await handlers.save(request({ draft: { ...current, backgroundMusic: [] }, expectedRevision: saved.draftRevision }));
+  await handlers.save(request({ draft: { ...current, backgroundMusic: [] }, expectedRevision: refreshed.draftRevision }));
   assert.deepEqual((await desktop.get(request({ version: published.version }, 'reader'))).manifest.backgroundMusic, manifest.backgroundMusic);
 });
