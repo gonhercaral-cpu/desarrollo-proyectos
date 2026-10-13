@@ -17,6 +17,7 @@ for hook in system-glib appimage-wayland; do
 done
 node scripts/patch-apprun.mjs "$appdir/AppRun"
 bash tests/prune-media-runtime.sh "$appdir"
+bash tests/build-coreelements.sh "$appdir"
 # Separate the packaged registry from host codecs and earlier package versions.
 cat >> "$appdir/apprun-hooks/linuxdeploy-plugin-gstreamer.sh" <<'EOF'
 

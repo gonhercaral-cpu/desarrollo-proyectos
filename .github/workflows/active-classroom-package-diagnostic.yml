@@ -2,6 +2,11 @@ name: Diagnóstico paquete Linux publicado
 on:
   workflow_dispatch:
     inputs:
+      updater_check:
+        description: Comprobar endpoint público con updater oficial y versión instalada 1.0.13 (solo lectura)
+        required: false
+        type: boolean
+        default: false
       source_run:
         description: Run fallido con artefactos sin firmar (vacío para diagnosticar 1.0.12)
         required: false
@@ -30,8 +35,35 @@ permissions:
   contents: read
   actions: read
 jobs:
+  updater:
+    if: inputs.updater_check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Dependencias de la comprobación Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11
+      - name: Updater real, misma configuración pública, identidad de versión 1.0.13
+        working-directory: active-classroom-desktop
+        env:
+          CI: 'true'
+        run: |
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example check_release
+          xvfb-run -a dbus-run-session -- src-tauri/target/release/examples/check_release
   media:
-    if: github.ref == 'refs/heads/codex/active-classroom-media-music' && !inputs.source_run
+    if: github.ref == 'refs/heads/codex/active-classroom-media-music' && !inputs.source_run && !inputs.updater_check
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     defaults:
@@ -79,7 +111,7 @@ jobs:
           path: ${{ runner.temp }}/packaged-media.log
           retention-days: 5
   audit:
-    if: ${{ !inputs.source_run && github.ref != 'refs/heads/codex/active-classroom-media-music' }}
+    if: ${{ !inputs.source_run && !inputs.updater_check && github.ref != 'refs/heads/codex/active-classroom-media-music' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     strategy:
@@ -127,7 +159,7 @@ jobs:
         if: ${{ !inputs.inspect_only }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg gstreamer1.0-tools build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+          sudo apt-get install -y ffmpeg gstreamer1.0-tools build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav meson ninja-build bison flex patchelf
           npm ci --prefix active-classroom-desktop
       - name: Inspeccionar AppRun y hooks del artefacto real
         run: |
@@ -165,6 +197,7 @@ jobs:
             cp "src-tauri/packaging/$hook.sh" "$directory/debian/usr/lib/active-classroom/usr/lib/active-classroom/packaging/$hook.sh"
           done
           node scripts/patch-apprun.mjs "$directory/debian/usr/lib/active-classroom/AppRun"
+          bash tests/build-coreelements.sh "$directory/debian/usr/lib/active-classroom"
           (cd "$directory/debian" && find usr -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums)
           dpkg-deb --root-owner-group --build "$directory/debian" "$directory/patched.deb"
           mv "$directory/patched.deb" "$deb"
