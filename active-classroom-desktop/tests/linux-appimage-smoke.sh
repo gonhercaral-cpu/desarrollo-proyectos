@@ -58,6 +58,17 @@ fi
 log="$XDG_CACHE_HOME/appimage-$backend.log"
 /tmp/classroom-test.AppImage --appimage-extract-and-run > "$log" 2>&1 &
 first=$!
+application_pids() {
+  local process executable owner
+  owner="$(id -u)"
+  for process in /proc/[0-9]*; do
+    [[ "$(stat -c '%u' "$process" 2>/dev/null || true)" == "$owner" ]] || continue
+    executable="$(readlink "$process/exe" 2>/dev/null || true)"
+    # AppRun may use a relative argv[0]; Linux also truncates comm to 15 bytes.
+    # Identify the executable itself, without exposing identity/helper arguments.
+    if [[ "${executable##*/}" == active-classroom ]]; then printf '%s\n' "${process##*/}"; fi
+  done
+}
 cleanup() {
   result=$?
   if [[ "$result" -ne 0 ]]; then
@@ -67,7 +78,7 @@ cleanup() {
     cat "$XDG_CACHE_HOME/windows.txt" 2>/dev/null || true
     ps -u "$(id -u)" -o pid,comm
   fi
-  pkill -u "$(id -u)" -f '/usr/bin/active-classroom( |$)' 2>/dev/null || true
+  while read -r process; do kill "$process" 2>/dev/null || true; done < <(application_pids)
   kill "$first" 2>/dev/null || true
   if [[ -n "${compositor:-}" ]]; then kill "$compositor" 2>/dev/null || true; fi
 }
@@ -88,7 +99,7 @@ kill -0 "$first"
 ! grep -Eq 'symbol lookup error|GLIBC_[0-9.]+.*not found|error while loading shared libraries' "$log"
 timeout 20s /tmp/classroom-test.AppImage --appimage-extract-and-run > "$XDG_CACHE_HOME/second-$backend.log" 2>&1
 echo "APPIMAGE_SECOND_EXIT backend=$backend success=true"
-mapfile -t applications < <(pgrep -u "$(id -u)" -f '/usr/bin/active-classroom( |$)')
+mapfile -t applications < <(application_pids)
 echo "APPIMAGE_INSTANCE_COUNT backend=$backend count=${#applications[@]}"
 test "${#applications[@]}" -eq 1
 identity="$(secret-tool lookup application com.activeclassroom.desktop credential device-v1 | sha256sum | cut -d' ' -f1)"
