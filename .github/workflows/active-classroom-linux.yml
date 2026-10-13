@@ -128,7 +128,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            build-essential pkg-config curl wget file meson ninja-build bison flex libgstreamer1.0-dev \
+            build-essential pkg-config curl wget file meson ninja-build bison flex \
             libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
             libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 \
             pkexec sudo libfuse2 squashfs-tools patchelf desktop-file-utils \

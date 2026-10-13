@@ -159,7 +159,7 @@ jobs:
         if: ${{ !inputs.inspect_only }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg gstreamer1.0-tools build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav meson ninja-build bison flex patchelf libgstreamer1.0-dev
+          sudo apt-get install -y ffmpeg gstreamer1.0-tools build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav meson ninja-build bison flex patchelf
           npm ci --prefix active-classroom-desktop
       - name: Inspeccionar AppRun y hooks del artefacto real
         run: |
