@@ -190,7 +190,7 @@ jobs:
           node tests/active-classroom-console-webkit.mjs
 
       - name: Sintaxis de packaging Linux
-        run: for script in tests/linux-package-*.sh tests/linux-appimage-smoke.sh tests/validate-linux-packages.sh tests/prepare-debian-runtime.sh src-tauri/packaging/*.sh; do bash -n "$script"; done
+        run: for script in tests/linux-package-*.sh tests/linux-appimage-smoke.sh tests/validate-linux-packages.sh tests/prepare-*-runtime.sh src-tauri/packaging/*.sh; do bash -n "$script"; done
 
       - name: Tests del updater del programa
         run: npm run test:updater
@@ -283,6 +283,7 @@ jobs:
           npm run tauri:build -- --config "$RUNNER_TEMP/updater-release.json" --bundles deb,appimage -- --locked
           mapfile -t images < <(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage')
           test "${#images[@]}" -eq 1
+          bash tests/prepare-appimage-runtime.sh "${images[0]}"
           bash tests/prepare-debian-runtime.sh "${images[0]}" "$RUNNER_TEMP/updater-release.json"
           npm exec -- tauri bundle --config "$RUNNER_TEMP/updater-release.json" --bundles deb
 

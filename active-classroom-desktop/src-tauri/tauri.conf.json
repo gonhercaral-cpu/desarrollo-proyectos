@@ -54,8 +54,8 @@
       "appimage": {
         "bundleMediaFramework": true,
         "files": {
-          "apprun-hooks/zz-active-classroom-system-glib.sh": "packaging/system-glib.sh",
-          "apprun-hooks/zz-active-classroom-wayland.sh": "packaging/appimage-wayland.sh"
+          "usr/lib/active-classroom/packaging/system-glib.sh": "packaging/system-glib.sh",
+          "usr/lib/active-classroom/packaging/appimage-wayland.sh": "packaging/appimage-wayland.sh"
         }
       }
     },
