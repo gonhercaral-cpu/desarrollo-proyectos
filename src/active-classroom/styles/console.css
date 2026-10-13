@@ -5,3 +5,4 @@
 .ac-console .ac-navigation-scroll{padding:0}.ac-console .ac-navigation button.is-active:after{display:none}.ac-console .ac-inspector-body>.ac-primary-button:not(.is-publication-action),.ac-settings-layout .ac-primary-button{background:#005eff;border-color:#005eff;box-shadow:0 4px 12px #075ef524}.ac-console.ac-section-settings>.ac-navigation{order:1}.ac-console.ac-section-settings .ac-console-metrics{order:2}
 
 .ac-institutional-icon{width:42px;height:42px;object-fit:contain}.ac-console>.printshop-topbar{order:0}.ac-console-actions{min-width:0;justify-content:flex-end}
+.ac-console>.ac-ambient-library{order:3}.ac-ambient-library audio{width:100%;max-width:520px;margin:12px 0}.ac-ambient-library td:first-child{min-width:150px}.ac-ambient-library td:last-child{min-width:280px}

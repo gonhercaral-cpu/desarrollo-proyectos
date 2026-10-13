@@ -11,6 +11,16 @@ async function run() {
   for (const section of ["Biblioteca", "Niveles", "Publicaciones", "Equipos", "Ajustes"]) {
     const button = [...document.querySelectorAll(".ac-navigation button")].find(item => item.textContent === section); button.click();
     await new Promise(resolve => setTimeout(resolve, 150));
+    if (section === "Ajustes") {
+      await wait(() => document.querySelectorAll(".ac-ambient-library tbody tr").length === 8);
+      const library = document.querySelector(".ac-ambient-library");
+      if (!library.textContent.includes("Nube AES") || !library.textContent.includes("Calma 1")) throw new Error("Catálogo global no muestra datos reales de la respuesta");
+      [...library.querySelector("tbody tr").querySelectorAll("button")].find(item => item.textContent === "↓").click();
+      await wait(() => library.querySelector("tbody tr strong").textContent === "Calma 2");
+      const scroll = library.querySelector(".ac-console-table-scroll"); scroll.scrollLeft = scroll.scrollWidth;
+      const last = library.querySelector("tbody tr td:last-child"); if (last.getBoundingClientRect().right > scroll.getBoundingClientRect().right + 1) throw new Error("Acciones de música inaccesibles");
+      observations.push({ globalMusic: true, tracks: 8, orderSaved: true, actionsAccessible: true });
+    }
     if (document.documentElement.scrollWidth > innerWidth + 1) throw new Error(`Overflow global: ${section}`);
     const header = document.querySelector(".printshop-topbar.digital-signage-header");
     if (!header || !header.querySelector('img[src="/active-classroom-icon.png"]')) throw new Error(`Header/icono institucional faltante: ${section}`);

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { JSDOM } from "jsdom";
 import { DeviceSession } from "../src/offline/device-session.ts";
-import { SyncError } from "../src/offline/manifest.ts";
+import { SyncError, canonical, sha256 } from "../src/offline/manifest.ts";
 import { connectionError, connectionLabel, diagnose } from "../src/offline/connection.ts";
 
 test("Biblioteca restaura identidad, espera ID token y consulta automáticamente después del caché", async (t) => {
@@ -17,7 +17,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
     },
     load(id) {
       if (id === "\0session-test") return "export const createDeviceSession = (notify) => globalThis.classroomHarness.createSession(notify);";
-      if (id === "\0cache-test") return "export class NativeCache { constructor(owner) { this.owner = owner; } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } list() { return globalThis.classroomHarness.cacheList(); } }";
+      if (id === "\0cache-test") return "export class NativeCache { constructor(owner) { this.owner = owner; } call(action) { if (action !== 'ambient-read') throw new Error('Unexpected cache action'); return Promise.resolve(null); } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } list() { return globalThis.classroomHarness.cacheList(); } }";
       if (id === "\0player-test") return "export class ClassroomPlayer {}";
     },
   }] });
@@ -25,6 +25,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
   const descriptors = Object.fromEntries(["window", "document", "navigator", "fetch", "classroomHarness"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   const publication = { unitId: "unit1", name: "English", levelId: "level-1", version: 1, contentHash: "a".repeat(64) };
   const local = { unit: { unitId: "unit1", name: "English", levelId: "level-1" }, version: 1, integrity: { contentHash: publication.contentHash } };
+  const ambient = { schemaVersion: 1, ambientCatalogVersion: 0, tracks: [], playlists: [], integrity: { algorithm: "sha256", contentHash: await sha256(new TextEncoder().encode(canonical({ schemaVersion: 1, tracks: [], playlists: [] }))) } };
   const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
   const settle = async (predicate) => { for (let count = 0; count < 100; count++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 5)); } assert.fail("El arranque no alcanzó el estado esperado"); };
   try {
@@ -33,7 +34,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
       const root = dom.window.document.querySelector("#root");
       const signedIn = deferred(); const cacheLoaded = deferred();
       const identity = { deviceId: "b".repeat(32), name: "active-T4-PRO", activated: true, revoked: false };
-      let firebaseReady = false; let calls = 0; let status = 200; let label = "Salón 4"; let interval; let available = [publication];
+      let firebaseReady = false; let calls = 0; let ambientCalls = 0; let status = 200; let label = "Salón 4"; let interval; let available = [publication];
       let session;
       Object.defineProperty(globalThis, "window", { value: dom.window, configurable: true });
       Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
@@ -41,7 +42,9 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
       dom.window.setInterval = (callback) => { interval = callback; return 1; };
       Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (_url, init) => {
         assert.equal(firebaseReady, true, "No consultar con un marcador de activación sin ID token");
-        assert.equal(init.headers.Authorization, "Bearer firebase-id-token"); calls++;
+        assert.equal(init.headers.Authorization, "Bearer firebase-id-token");
+        if (String(_url).includes("getActiveClassroomAmbientCatalog")) { ambientCalls++; return new Response(JSON.stringify({ result: { catalog: ambient } })); }
+        calls++;
         if (String(_url).includes("getActiveClassroomPublication")) return new Response("", { status: 503 });
         return new Response(JSON.stringify({ result: { publications: available, nextCursor: null, device: { deviceId: identity.deviceId, displayName: label } } }), { status });
       } });
@@ -61,6 +64,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
         if (cacheFirst) { cacheLoaded.resolve([local]); await settle(() => root.querySelector("[data-open]")); assert.equal(calls, 0); signedIn.resolve(); }
         else { signedIn.resolve(); await settle(() => session.state.online); assert.equal(calls, 0); cacheLoaded.resolve([local]); }
         await settle(() => root.textContent.includes("Salón 4") && calls === 1 && !root.textContent.includes("Consultando…"));
+        await settle(() => ambientCalls === 1);
         assert.match(root.textContent, /Sincronizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
         label = "Aula Audiovisual"; root.querySelector("[data-refresh]").click();
         await settle(() => root.textContent.includes(label)); assert.equal(session.owner, `ac-device-${identity.deviceId}`);
