@@ -36,6 +36,10 @@ de activación, Player ni updater. Solo PAM de GNOME Keyring sigue recomendado.
 El launcher conserva `/usr/bin/active-classroom` como ruta estable usada por los
 helpers oficiales de autostart/relaunch; el marcador Debian del ELF determina
 por separado el formato del updater. CI comprueba ambos contratos.
+El hook de integración usa GLib y libsecret del sistema: con GLib privada de
+Ubuntu 22.04, `/usr/bin/gdbus` de Ubuntu 24.04 falló realmente con
+`undefined symbol: g_string_free_and_steal`. El hook mantiene la ABI del llavero
+sin cambiar autenticación, y conserva GTK/WebKit/GStreamer empaquetados.
 
 CI exige plugins empaquetados, reproducción H.264/AAC con esos plugins, arranque
 real Debian/AppImage en X11/Wayland e identidad compartida. Instala además los
