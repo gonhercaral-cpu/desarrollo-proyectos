@@ -34,7 +34,12 @@ export async function mediaPerformance(fixture) {
       seeks.push({ command, elapsedMs: performance.now() - started, seekingEvents: seekEvents, currentTime: media.currentTime, streams: await invoke("fixture_metrics") }); media.removeEventListener("seeking", seeking);
     }
     const progress = []; const start = performance.now();
-    for (let index = 0; index < 60; index++) { await wait(1000); progress.push({ time: media.currentTime, readyState: media.readyState, seeking: media.seeking, paused: media.paused }); check(host.querySelector("video") === original, "Video remounted during playback"); }
+    for (let index = 0; index < 60; index++) {
+      await wait(1000); const audience = await invoke("fixture_audience_state"); const quality = media.getVideoPlaybackQuality?.();
+      progress.push({ time: media.currentTime, readyState: media.readyState, seeking: media.seeking, paused: media.paused, audienceTime: audience.time, audiencePaused: audience.paused, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames });
+      check(host.querySelector("video") === original, "Video remounted during playback");
+      check(audience.videos === 1 && !audience.paused && Math.abs(audience.time - media.currentTime) < 1, "Projector stopped or lost playback synchronization");
+    }
     check(progress.at(-1).time - progress[0].time > 55, "Video stalled during continuous 60 seconds");
     check(progress.every(sample => !sample.paused && sample.readyState >= 2), "Playback lost continuity");
     const audience = await invoke("fixture_audience_state"); check(audience.videos === 1 && audience.audio === 0 && !audience.error, "Projection duplicated audio or failed");
@@ -51,6 +56,6 @@ export async function mediaPerformance(fixture) {
     check(mounts === 1 && structuralMutations < 100, "Playback rebuilt structural UI");
     check(seeks.every(seek => seek.seekingEvents <= 3), "Keyboard burst queued uncoalesced seeks");
     check(closed.active === 0, "Closed playback left abandoned streams");
-    return { firstPlayMs, events, seeks, mounts, structuralMutations, durationMs: performance.now() - start, continuousSamples: progress.length, before, after, closed, settings };
+    return { firstPlayMs, events, seeks, mounts, structuralMutations, durationMs: performance.now() - start, continuousSamples: progress.length, playbackSamples: progress, before, after, closed, settings };
   } finally { observer.disconnect(); player.destroy(); host.remove(); window.removeEventListener("classroom-media-diagnostic", diagnostic); }
 }

@@ -228,7 +228,7 @@ async function runAudience() {
   let revision = 0;
   await listen("fixture-projection", event => { revision = event.payload?.revision || 0; void projected.receive(event.payload); });
   await invoke("fixture_audience_state", { report: { ready: true } });
-  setInterval(() => { const media = document.querySelector("video"); void invoke("fixture_audience_state", { report: { ready: true, revision, time: media?.currentTime || 0, muted: media?.muted, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } }); }, 80);
+  setInterval(() => { const media = document.querySelector("video"); void invoke("fixture_audience_state", { report: { ready: true, revision, time: media?.currentTime || 0, paused: media?.paused, seeking: media?.seeking, readyState: media?.readyState, muted: media?.muted, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } }); }, 80);
 }
 if (location.pathname === "/projection-test.html") void runAudience();
 else if (!document.documentElement.hasAttribute("data-layout-only")) void run();

@@ -40,7 +40,14 @@ export abstract class MediaRenderer extends BaseRenderer {
       this.frameCallback = media.requestVideoFrameCallback(firstFrame);
     }
     if (media instanceof HTMLVideoElement) { media.playsInline = true; media.className = "player-video"; }
-    const update = () => this.notify({ playing: !media.paused && !media.ended, seeking: media.seeking || this.seekInFlight || this.seekTarget !== undefined, time: Number.isFinite(media.currentTime) ? media.currentTime : 0, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted });
+    const update = () => {
+      const time = Number.isFinite(media.currentTime) ? media.currentTime : 0;
+      // WebKitGTK may resume its clock after a seek without another playing or
+      // canplay event (readyState can remain HAVE_CURRENT_DATA). Clock progress
+      // clears a stale waiting flag so it cannot leave the projector paused.
+      const resumed = !media.paused && !media.seeking && time > this.state.time + .01;
+      this.notify({ playing: !media.paused && !media.ended, buffering: resumed ? false : this.state.buffering, seeking: media.seeking || this.seekInFlight || this.seekTarget !== undefined, time, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted });
+    };
     const timeUpdate = () => { const now = performance.now(); if (now - this.lastTimeUpdate >= 200) { this.lastTimeUpdate = now; update(); } };
     media.addEventListener("timeupdate", timeUpdate); this.listeners.push(["timeupdate", timeUpdate]);
     for (const name of ["durationchange", "play", "pause", "ended", "volumechange", "seeking"]) {
@@ -115,7 +122,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     else if (media.paused && !this.playPending && !this.state.error) {
       this.playPending = true;
       try { this.requestPlay?.(); await media.play(); if (this.disposed || !this.playback?.playing || this.playback?.seeking || this.playback?.buffering) media.pause(); }
-      catch { this.notify({ playing: false, error: "No se pudo reproducir video en el proyector." }); }
+      catch (error) { if (!this.disposed && this.playback?.playing && !this.playback.seeking && !this.playback.buffering && !(error instanceof DOMException && error.name === "AbortError")) this.notify({ playing: false, error: "No se pudo reproducir video en el proyector." }); }
       finally { this.playPending = false; }
     }
   }

@@ -263,7 +263,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       api.onDevice = (label) => session.receiveLabel(label);
       const transfers = new BlobTransfers();
       queue = new DownloadQueue(cache, api, task => downloadChanged(task, current), 2, transfers);
-      ambient = new AmbientLibrary(cache, api, transfers); void ambient.restore();
+      ambient = new AmbientLibrary(cache, api, transfers);
       try {
         await cache.adoptLegacy().catch(() => { if (current === epoch) message = "No se pudo recuperar alguna clase anterior. Las clases locales existentes se conservan."; });
         await queue.activatePending();
@@ -273,6 +273,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       if (current !== epoch) return;
       cacheReady = true;
       render();
+      void ambient?.restore();
       if (device.online) void refresh();
     })();
   });
@@ -288,7 +289,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     }
   }
   window.addEventListener("classroom-content-preferences", () => { reconcileContent(); render(); });
-  window.addEventListener("beforeunload", () => queue?.close());
+  window.addEventListener("beforeunload", () => { queue?.close(); ambient?.close(); });
   window.setInterval(() => { if (device.phase === "ready" && device.online) void refresh(); }, 5 * 60 * 1000);
   void session.start(navigator.onLine);
   window.addEventListener("online", () => { void reconnect(); });

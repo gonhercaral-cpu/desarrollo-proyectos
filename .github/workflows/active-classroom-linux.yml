@@ -95,7 +95,17 @@ jobs:
         with:
           persist-credentials: false
       - name: Build del mismo contenedor usado por Cloud Run
-        run: docker build --tag active-classroom-office:test active-classroom-processor
+        run: |
+          set -euo pipefail
+          if docker build --tag active-classroom-office:test active-classroom-processor 2>&1 | tee "$RUNNER_TEMP/office-build.log"; then exit 0; fi
+          # Public ECR mirrors Docker Official Images. A registry 429 must not
+          # skip Office tests: fetch the identical content-addressed manifest
+          # from Docker's upstream registry, without changing production sources.
+          grep -Eq '429 Too Many Requests|toomanyrequests' "$RUNNER_TEMP/office-build.log"
+          digest="$(grep -oE 'manifests/sha256:[a-f0-9]{64}' "$RUNNER_TEMP/office-build.log" | head -n 1 | cut -d/ -f2)"
+          test -n "$digest"
+          sed "s|^FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm$|FROM docker.io/library/python@$digest|" active-classroom-processor/Dockerfile > "$RUNNER_TEMP/office.Dockerfile"
+          docker build --file "$RUNNER_TEMP/office.Dockerfile" --tag active-classroom-office:test active-classroom-processor
       - name: PPT/PPTX/DOC/DOCX a PDF, páginas, integridad y fallos reales
         run: docker run --rm --network none --memory 2g --cpus 2 --entrypoint python active-classroom-office:test -m unittest discover -s tests -v
   linux:

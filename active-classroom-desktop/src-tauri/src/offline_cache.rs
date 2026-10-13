@@ -279,6 +279,9 @@ pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow
     let root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("offline-v1").join("users").join(digest(owner.as_bytes()));
     let lock = gate.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // Immutable catalogs and atomically renamed SHA objects permit this
+        // read-only scan without holding the write gate or delaying Unit opens.
+        if action == "ambient-read" { return execute(&root,&action,data); }
         let _guard = lock.lock().map_err(|_| "cache: Caché ocupado")?;
         if action == "adopt" {
             if !crate::device_identity::authorized_owner(&owner)? { return Err("cache: Equipo no activado".into()); }

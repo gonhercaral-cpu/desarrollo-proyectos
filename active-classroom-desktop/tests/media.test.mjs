@@ -24,6 +24,8 @@ test("J/L acumulan destino y coalescen; un seek en curso, src/elemento/load esta
   for (let index = 0; index < 10; index++) await renderer.command("SEEK_BACKWARD"); await new Promise(resolve => setTimeout(resolve, 110)); assert.deepEqual(writes, [120]);
   seeking = false; video.dispatchEvent(new dom.window.Event("seeked")); assert.deepEqual(writes, [120, 20]); seeking = false; video.dispatchEvent(new dom.window.Event("seeked"));
   assert.equal(video.src, url); assert.equal(document.querySelector("video"), video); assert.equal(load.mock.callCount(), 1); assert.equal(video.preload, "auto");
+  Object.defineProperty(video,"paused",{value:false}); video.dispatchEvent(new dom.window.Event("waiting")); assert.equal(renderer.state.buffering,true);
+  position = 20.5; video.dispatchEvent(new dom.window.Event("timeupdate")); assert.equal(renderer.state.buffering,false,"Reloj reanudado limpia waiting sin exigir otro playing");
   renderer.seek(999); await new Promise(resolve => setTimeout(resolve, 110)); assert.equal(writes.at(-1), 300);
 });
 test("MediaError distingue lectura, integridad, formato y soporte del equipo", () => {
