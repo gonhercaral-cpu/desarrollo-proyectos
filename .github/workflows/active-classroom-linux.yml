@@ -128,7 +128,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
-            build-essential pkg-config curl wget file meson ninja-build bison flex \
+            build-essential pkg-config curl wget file meson ninja-build bison flex libgstreamer1.0-dev \
             libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
             libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 \
             pkexec sudo libfuse2 squashfs-tools patchelf desktop-file-utils \
@@ -190,7 +190,7 @@ jobs:
           node tests/active-classroom-console-webkit.mjs
 
       - name: Sintaxis de packaging Linux
-        run: for script in tests/linux-package-*.sh tests/linux-appimage-smoke.sh tests/validate-linux-packages.sh tests/prepare-*-runtime.sh tests/compress-debian.sh src-tauri/packaging/*.sh; do bash -n "$script"; done
+        run: for script in tests/linux-package-*.sh tests/linux-packaged-media.sh tests/linux-appimage-smoke.sh tests/validate-linux-packages.sh tests/prepare-*-runtime.sh tests/compress-debian.sh tests/build-coreelements.sh tests/prune-media-runtime.sh src-tauri/packaging/*.sh; do bash -n "$script"; done
 
       - name: Tests del updater del programa
         run: npm run test:updater

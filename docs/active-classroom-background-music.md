@@ -36,6 +36,16 @@ codecs y transporte loopback. Registry separado del sistema. Servidor transmite
 cancelación al liberar el último propietario. Renderers eliminan src/listeners
 y detienen reproducción; UI permite reintentar/volver manteniendo sesión.
 
+La aceptación instalada también reprodujo `gst_sparse_file_set_fd: fd != 0`
+tras reaperturas grandes: descriptor 0 puede ser un archivo temporal válido.
+Se recompila únicamente `libgstcoreelements.so`, versión 1.20.3, cambiando
+esa comprobación a `fd >= 0`. Codecs y versión del framework permanecen.
+La prueba C fuerza descriptor 0, demuestra rechazo original y verifica
+lectura/escritura después del cambio. No se desactivan verificaciones.
+Fuente oficial fijada por SHA-256
+`607daf64bbbd5fb18af9d17e21c0d22c4d702fffe83b23cb22d1b1af2ca23a2a`;
+receta, prueba y licencia incluidas en el paquete y en el repositorio público.
+
 ## Validación
 
 CI prueba el runtime del Debian/AppImage instalado, con el mismo servidor y
