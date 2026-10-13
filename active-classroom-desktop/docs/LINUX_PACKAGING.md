@@ -56,7 +56,7 @@ comprobando que configuración/caché permanezcan intactas.
 ## AppImage
 
 AppImage adicional, con `bundleMediaFramework: true` y GStreamer incluido. Su hook
-de empaquetado conserva sesión Wayland frente al hook GTK que impone X11.
+de empaquetado conserva explícitamente la sesión Wayland en el flujo de GTK.
 No cambia código de Player, activación, sincronización, proyector ni autostart.
 
 La imagen portátil usa el mismo identificador y datos de Active Classroom. No
