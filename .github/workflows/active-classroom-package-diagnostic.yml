@@ -94,6 +94,14 @@ jobs:
           chmod 755 "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage"
           bash tests/prepare-appimage-runtime.sh "$image"
           dpkg-deb --raw-extract "$deb" "$directory/debian"
+          for hook in system-glib appimage-wayland; do
+            case "$hook" in
+              system-glib) name=zz-active-classroom-system-glib.sh ;;
+              appimage-wayland) name=zz-active-classroom-wayland.sh ;;
+            esac
+            cp "src-tauri/packaging/$hook.sh" "$directory/debian/usr/lib/active-classroom/apprun-hooks/$name"
+            cp "src-tauri/packaging/$hook.sh" "$directory/debian/usr/lib/active-classroom/usr/lib/active-classroom/packaging/$hook.sh"
+          done
           node scripts/patch-apprun.mjs "$directory/debian/usr/lib/active-classroom/AppRun"
           (cd "$directory/debian" && find usr -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums)
           dpkg-deb --root-owner-group --build "$directory/debian" "$directory/patched.deb"

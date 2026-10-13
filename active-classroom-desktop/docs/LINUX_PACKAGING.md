@@ -40,6 +40,8 @@ El hook de integración usa GLib y libsecret del sistema: con GLib privada de
 Ubuntu 22.04, `/usr/bin/gdbus` de Ubuntu 24.04 falló realmente con
 `undefined symbol: g_string_free_and_steal`. El hook mantiene la ABI del llavero
 sin cambiar autenticación, y conserva GTK/WebKit/GStreamer empaquetados.
+También mantiene la cadena de dependencias del sistema de GLib/libsecret;
+Ubuntu 26.04 requiere `MOUNT_2_40` en GIO. No mezcla esa GIO con libmount antigua.
 Tauri copia solo el árbol `usr` de los archivos adicionales a AppDir. CI coloca
 los hooks declarados en `files` en la raíz real de AppRun y vuelve a empaquetar
 con el plugin AppImage oficial ya descargado por Tauri, antes de validar/firmar.

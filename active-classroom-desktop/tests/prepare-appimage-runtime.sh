@@ -12,6 +12,7 @@ for hook in system-glib appimage-wayland; do
     system-glib) name=zz-active-classroom-system-glib.sh ;;
     appimage-wayland) name=zz-active-classroom-wayland.sh ;;
   esac
+  cp "src-tauri/packaging/$hook.sh" "$appdir/usr/lib/active-classroom/packaging/$hook.sh"
   cp "$appdir/usr/lib/active-classroom/packaging/$hook.sh" "$appdir/apprun-hooks/$name"
 done
 node scripts/patch-apprun.mjs "$appdir/AppRun"
