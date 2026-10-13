@@ -91,6 +91,7 @@ cleanup() {
       # Only a public library path is selected. Helper output containing the
       # temporary CI credential is discarded; stderr diagnoses linker failures.
       library_path="$(tr '\0' '\n' < "/proc/$process/environ" | sed -n 's/^LD_LIBRARY_PATH=//p')"
+      LD_LIBRARY_PATH="$library_path" /usr/bin/gdbus call --session --timeout 5 --dest org.freedesktop.secrets --object-path /org/freedesktop/secrets/aliases/default --method org.freedesktop.DBus.Properties.Get org.freedesktop.Secret.Collection Locked || true
       LD_LIBRARY_PATH="$library_path" /usr/bin/secret-tool search --all application com.activeclassroom.desktop credential device-v1 >/dev/null || true
     done < <(application_pids)
   fi
