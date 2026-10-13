@@ -11,6 +11,7 @@ if [[ ! -f "$plugin" ]]; then
   tar -xf "$work/source.tar.xz" -C "$work"
   meson setup "$work/build" "$source" --buildtype=release --wrap-mode=nofallback \
     -Dtests=disabled -Dexamples=disabled -Dbenchmarks=disabled -Dtools=disabled -Dintrospection=disabled -Ddoc=disabled -Dlibunwind=disabled -Dlibdw=disabled -Dnls=disabled
+  ninja -C "$work/build" gst/gstenumtypes.h
   # Prove the vendor bug before changing the sole invalid descriptor guard.
   # Vendor/generated headers + installed core SONAME avoid replacing the
   # runner's LLVM/libunwind dev packages. No additional runtime dependency.
