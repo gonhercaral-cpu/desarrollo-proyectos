@@ -70,6 +70,7 @@ jobs:
           scanner="$RUNNER_TEMP/squashfs-root/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
           file "$scanner" || true
           LD_LIBRARY_PATH="$RUNNER_TEMP/squashfs-root/usr/lib" ldd "$scanner" || true
+          bash tests/prune-media-runtime.sh "$RUNNER_TEMP/squashfs-root"
           ACTIVE_CLASSROOM_MEDIA_RUNTIME="$RUNNER_TEMP/squashfs-root/AppRun" npm run test:media:linux 2>&1 | tee "$RUNNER_TEMP/packaged-media.log"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         if: always()
