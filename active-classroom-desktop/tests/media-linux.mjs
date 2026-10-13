@@ -12,6 +12,14 @@ try {
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "8", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-level:v", "3.0", "-c:a", "aac", "-y", fixture]);
   command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", fixture]);
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "8", "-y", join(directory, "music.wav")]);
+  const drawing = "1 0 0 rg 0 0 200 200 re f";
+  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> /Contents 4 0 R >>", `<< /Length ${drawing.length} >>\nstream\n${drawing}\nendstream`];
+  let pdf = "%PDF-1.4\n"; const offsets = [0];
+  objects.forEach((object, index) => { offsets.push(pdf.length); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = pdf.length; pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  await writeFile(join(directory, "transition.pdf"), pdf);
   for (const [index, color] of ["red", "green", "blue"].entries()) command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `color=c=${color}:s=320x180`, "-frames:v", "1", "-threads", "1", "-y", join(directory, `state-${index}.png`)]);
   const bundle = await build({ configFile: false, logLevel: "error", build: { write: false, minify: false, lib: { entry: fileURLToPath(new URL("./media-browser.mjs", import.meta.url)), name: "MediaAcceptance", formats: ["iife"] } } });
   const output = (Array.isArray(bundle) ? bundle[0] : bundle).output;
@@ -23,7 +31,7 @@ try {
   if (process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT) {
     const destination = process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT;
     await mkdir(destination, { recursive: true });
-    for (const name of ["h264-aac.mp4", "music.wav", "media.js", "state-0.png", "state-1.png", "state-2.png"]) await copyFile(join(directory, name), join(destination, name));
+    for (const name of ["h264-aac.mp4", "music.wav", "transition.pdf", "media.js", "state-0.png", "state-1.png", "state-2.png"]) await copyFile(join(directory, name), join(destination, name));
     await copyFile("src-tauri/target/release/examples/media_playback", join(destination, "media_playback"));
   } else {
     const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";

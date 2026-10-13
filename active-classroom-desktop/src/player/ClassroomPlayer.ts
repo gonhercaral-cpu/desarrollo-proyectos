@@ -50,7 +50,7 @@ export class ClassroomPlayer {
   };
   private keyListener = (event: KeyboardEvent) => {
     const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""));
-    if (!command || (event.repeat && ["PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
+    if (!command || (event.repeat && ["PLAY_PAUSE", "BACKGROUND_MUSIC_PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
     event.preventDefault(); void this.dispatch(command);
   };
 

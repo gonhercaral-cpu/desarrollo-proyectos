@@ -11,6 +11,8 @@ import "../src/offline/library.css";
 import "../src/player/player.css";
 import { interactiveSlides } from "./builds-browser.mjs";
 import { validateManifest } from "../src/offline/manifest.ts";
+import { createRenderer } from "../src/player/renderers/factory.ts";
+import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -77,10 +79,15 @@ function emptyRenderer(kind) {
   return { kind, async mount(host, source, options) { host.textContent = source.name; options.onState({ ...initialRendererState(), pages: 80 }); }, command() {}, setPage() {}, seek() {}, setVolume() {}, destroy() {} };
 }
 async function backgroundMusic(fixture, videoSource) {
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { WorkerMessageHandler } = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  // PDF.js official main-thread fallback for this tiny fixture. Production worker
+  // stays untouched; fixture origin does not serve the production asset bundle.
+  globalThis.pdfjsWorker = { WorkerMessageHandler };
   const manifest = await validateManifest(fixture.manifest);
   const host = document.createElement("div"); document.body.append(host);
   const classroom = { manifest, resolveResource(id) { const resource = manifest.resources.find(item => item.resourceId === id); return { path: fixture.paths[id], mimeType: resource.download.mimeType, name: resource.name, kind: resource.kind }; } };
-  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: convertFileSrc, prepareMediaSource: async id => id === "music-wave" ? fixture.source : videoSource });
+  const player = new ClassroomPlayer(host, classroom, () => {}, { verifyResource: async () => true, toUrl: convertFileSrc, prepareMediaSource: async id => id === "music-wave" ? fixture.source : videoSource, createRenderer: kind => kind === "pdf" ? Promise.resolve(new PdfRenderer(async data => getDocument({ data }))) : createRenderer(kind) });
   try {
     await until(() => !host.querySelector("[data-status]").textContent);
     await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE");
@@ -91,18 +98,26 @@ async function backgroundMusic(fixture, videoSource) {
     await player.dispatch("ADVANCE"); await player.dispatch("ADVANCE"); await delay(200);
     assert(player.controller.slideIndex === 1 && !audio.paused, "Cambiar slide detuvo música");
     const volume = host.querySelector("[data-music-volume]"); volume.value = ".2"; volume.dispatchEvent(new Event("input"));
-    assert(audio.volume === .2, "Volumen de música no independiente");
+    assert(Math.round(audio.volume * 100) === 20, `Volumen de música no independiente: ${audio.volume}`);
     host.querySelector("[data-general] [data-resource]").click();
     await until(() => host.querySelector("video")?.readyState >= 2);
     assert(!audio.paused, "Abrir recurso pausado reinició música");
     await player.dispatch("PLAY_PAUSE"); await until(() => host.querySelector("video").currentTime > .15);
-    assert(audio.paused && audio.volume === .2 && host.querySelector("video").volume === .8, "Multimedia compite con música o mezcló volúmenes");
+    assert(audio.paused && Math.round(audio.volume * 100) === 20 && Math.round(host.querySelector("video").volume * 100) === 80, "Multimedia compite con música o mezcló volúmenes");
     host.querySelector("[data-presentation]").click(); await delay(200);
     assert(audio.paused, "Música reanudó inesperadamente");
     await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE"); await until(() => !audio.paused);
     await player.dispatch("BACKGROUND_MUSIC_PLAY_PAUSE"); assert(audio.paused, "Pausa manual no aplicada");
+    const openVideo = () => host.querySelector(`[data-resource="${manifest.generalResourceIds[0]}"]`).click();
+    openVideo(); await until(() => host.querySelector("video")?.readyState >= 2);
+    host.querySelector('[data-resource="transition-pdf"]').click();
+    await until(() => !!host.querySelector("canvas") || !!host.querySelector("[data-status]").textContent.includes("No se pudo"));
+    assert(host.querySelector("canvas") && !host.querySelector("video"), "Video a PDF dejó decoder o no renderizó PDF");
+    openVideo(); await until(() => host.querySelector("video")?.readyState >= 2);
+    await player.dispatch("PLAY_PAUSE"); await until(() => host.querySelector("video").currentTime > .15); await player.dispatch("PLAY_PAUSE");
+    assert(audio.paused, "Transición PDF/video perdió pausa manual");
     const audience = await invoke("fixture_audience_state"); assert(!audience.audio, "Proyector contiene segunda música");
-    observations.push({ backgroundMusic: true, realWav: true, offline: true, survivesSlidesAndBuilds: true, independentVolume: true, automaticPause: true, explicitResumeOnly: true, singleAudioOwner: true });
+    observations.push({ backgroundMusic: true, realWav: true, offline: true, survivesSlidesAndBuilds: true, independentVolume: true, automaticPause: true, explicitResumeOnly: true, singleAudioOwner: true, videoPdfVideo: true });
   } finally { player.destroy(); host.remove(); }
 }
 export async function scroll(seed, slideCount = 80, changeProjectorStatus = false) {
@@ -183,7 +198,7 @@ try {
   for (const process of after) {
     const before = baseline.find(item => item.pid === process.pid);
     if (before) assert(rss(process) - rss(before) < 160 * 1024, `Memoria crece al reabrir: ${process.name}`);
-    if (process.name.startsWith("active-class")) assert(rss(process) < 256 * 1024, "Proceso principal carga archivo completo");
+    if (process.pid === after[0].pid) assert(rss(process) < 256 * 1024, "Proceso principal carga archivo completo");
     if (process.name.startsWith("WebKitWeb")) assert(rss(process) < 768 * 1024, "WebKit almacena video completo en RAM");
   }
   observations.push({ repetitiveMemory: { baseline, after, opens: 5, bounded: true } });

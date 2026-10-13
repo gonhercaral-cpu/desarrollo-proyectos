@@ -112,6 +112,14 @@ fn main() {
     let checked = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), "music-wave").unwrap(); assert!(checked.url.is_some());
     let music_source = json!({"url":checked.url,"mimeType":"audio/wav","name":"Trabajo tranquilo","sizeBytes":wave.len()});
     let mut music_paths = paths.clone(); music_paths.insert("music-wave".into(), json!(music_path));
+    let pdf = fs::read(png_directory.join("transition.pdf")).unwrap(); let pdf_hash = format!("{:x}", Sha256::digest(&pdf));
+    let pdf_path = root.join("objects").join(&pdf_hash); fs::write(&pdf_path, &pdf).unwrap(); allowed_paths.push(pdf_path.clone());
+    let mut pdf_resource = audio.clone(); pdf_resource["resourceId"] = json!("transition-pdf"); pdf_resource["name"] = json!("PDF transición"); pdf_resource["kind"] = json!("document"); pdf_resource["deliveryMime"] = json!("application/pdf"); pdf_resource["download"]["mimeType"] = json!("application/pdf"); pdf_resource["download"]["sizeBytes"] = json!(pdf.len()); pdf_resource["download"]["checksums"]["sha256"] = json!(pdf_hash);
+    music_manifest["resources"].as_array_mut().unwrap().push(pdf_resource);
+    music_manifest["generalResourceIds"].as_array_mut().unwrap().push(json!("transition-pdf"));
+    let mut content = music_manifest.clone(); for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+    music_manifest["integrity"]["contentHash"] = json!(format!("{:x}", Sha256::digest(canonical(&content).as_bytes())));
+    music_paths.insert("transition-pdf".into(), json!(pdf_path));
     music_paths.insert(manifest["resources"][0]["resourceId"].as_str().unwrap().into(), json!(path));
     let music_fixture = json!({"manifest":music_manifest,"paths":music_paths,"source":music_source});
     let css = format!("{}\n{}\n{}", include_str!("../../src/design-system.css"), include_str!("../../src/styles.css"), include_str!("../../src/player/player.css"));
