@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# The application title contains UTF-8. Xlib cannot decode WM_NAME in Docker's
+# default ASCII locale, even when the actual window is visible and healthy.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 if [[ "${1:-}" != --session ]]; then
   image="$1"
   useradd --create-home --shell /bin/bash classroom-image
