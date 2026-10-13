@@ -13,6 +13,7 @@ import { BackgroundMusic } from "./BackgroundMusic.ts";
 import { desktopSettings } from "../settings/preferences.ts";
 
 export interface PlayerDependencies {
+  ambientMusic?: { tracks: NonNullable<import("../offline/manifest.ts").Manifest["backgroundMusic"]>; prepare(id: string): Promise<RendererSource> };
   verifyResource(id: string): Promise<boolean>;
   prepareMediaSource?(id: string): Promise<RendererSource>;
   releaseMediaSource?(source: RendererSource): void;
@@ -43,6 +44,8 @@ export class ClassroomPlayer {
   private state = initialRendererState();
   private volume = 0.8;
   private muted = false;
+  private playbackPlaying?: boolean;
+  private playbackMuted?: boolean;
   private refreshShortcuts = () => {
     const host = this.root?.querySelector(".player-shortcuts"); if (!host) return;
     const map = readShortcuts();
@@ -59,7 +62,8 @@ export class ClassroomPlayer {
     this.projection = new ProjectionCoordinator(() => this.updateProjection(), dependencies.projectionBridge, dependencies.projectionBridge ? true : undefined);
     this.root = root; this.classroom = classroom; this.onExit = onExit; this.dependencies = dependencies;
     this.layout();
-    this.music = new BackgroundMusic(this.element("[data-background-music]"), classroom.manifest, async id => {
+    this.music = new BackgroundMusic(this.element("[data-background-music]"), dependencies.ambientMusic?.tracks || classroom.manifest, async id => {
+      if (dependencies.ambientMusic) return dependencies.ambientMusic.prepare(id);
       if (dependencies.prepareMediaSource) return dependencies.prepareMediaSource(id);
       if (!await dependencies.verifyResource(id)) throw new Error("Audio local ausente o dañado.");
       return localSource(classroom, id, dependencies.toUrl);
@@ -165,19 +169,25 @@ export class ClassroomPlayer {
     this.element<HTMLProgressElement>("[data-slide-progress]").max = count;
     this.element<HTMLProgressElement>("[data-slide-progress]").value = controller.slideIndex === null ? 0 : controller.slideIndex + 1;
     this.element("[data-presentation]").hidden = controller.isPresentation;
-    const status = this.element("[data-status]"); status.textContent = this.state.error || (this.state.loading ? "Abriendo archivo local…" : ""); status.hidden = !status.textContent;
+    this.element("[data-notes]").textContent = controller.slideIndex === null ? "" : String(this.classroom.manifest.slides[controller.slideIndex].metadata.notes || "Sin notas.");
+    this.updatePlaybackState();
+  }
+  private updatePlaybackState(): void {
+    if (this.disposed) return;
+    const controller = this.controller;
+    const status = this.element("[data-status]"); const message = this.state.error || (this.state.loading ? this.renderer?.kind === "video" ? "Preparando video…" : "Abriendo archivo local…" : ""); if (status.textContent !== message) status.textContent = message; if (status.hidden !== !message) status.hidden = !message;
     status.setAttribute("role", this.state.error ? "alert" : "status");
     this.element("[data-media-error-actions]").hidden = !this.state.error;
     if (this.state.error && this.renderer?.kind === "video") status.textContent = `No se pudo reproducir este video. ${this.state.error}`;
     const media = this.renderer?.kind === "audio" || this.renderer?.kind === "video";
-    this.element("[data-media]").hidden = !media;
-    this.element("[data-command='PLAY_PAUSE']").innerHTML = `${icon(this.state.playing ? "pause" : "play")}${this.state.playing ? "Pausar" : "Reproducir"}`;
-    this.element("[data-time]").textContent = `${timeLabel(this.state.time)} / ${timeLabel(this.state.duration)}`;
+    if (this.element("[data-media]").hidden !== !media) this.element("[data-media]").hidden = !media;
+    if (this.playbackPlaying !== this.state.playing) { this.playbackPlaying = this.state.playing; this.element("[data-command='PLAY_PAUSE']").innerHTML = `${icon(this.state.playing ? "pause" : "play")}${this.state.playing ? "Pausar" : "Reproducir"}`; }
+    this.element<HTMLButtonElement>("[data-command='PLAY_PAUSE']").disabled = this.state.loading;
+    const time = `${timeLabel(this.state.time)} / ${timeLabel(this.state.duration)}`; if (this.element("[data-time]").textContent !== time) this.element("[data-time]").textContent = time;
     const seek = this.element<HTMLInputElement>("[data-seek]"); seek.max = String(this.state.duration); seek.value = String(this.state.time); seek.disabled = !this.state.duration;
     this.element<HTMLInputElement>("[data-volume]").value = String(this.volume);
     this.element("[data-command='MUTE']").setAttribute("aria-pressed", String(this.muted));
-    this.element("[data-command='MUTE']").innerHTML = `${icon(this.muted ? "mute" : "volume")}${this.muted ? "Activar sonido" : "Silenciar"}`;
-    this.element("[data-notes]").textContent = controller.slideIndex === null ? "" : String(this.classroom.manifest.slides[controller.slideIndex].metadata.notes || "Sin notas.");
+    if (this.playbackMuted !== this.muted) { this.playbackMuted = this.muted; this.element("[data-command='MUTE']").innerHTML = `${icon(this.muted ? "mute" : "volume")}${this.muted ? "Activar sonido" : "Silenciar"}`; }
     controller.record({ ...this.state, volume: this.volume, muted: this.muted }, this.source);
     if (!this.source || !controller.isPresentation || this.state.error || (this.sourceSlide === controller.slideIndex && this.sourceBuild === controller.currentBuild)) this.projection.update(controller.snapshot());
   }
@@ -214,7 +224,7 @@ export class ClassroomPlayer {
       if (sequence !== this.sequence || this.disposed) { renderer.destroy(); if (prepared) this.dependencies.releaseMediaSource?.(prepared); return; }
       this.renderer = renderer; this.renderedId = id;
       this.source = source;
-      installed = true;
+      installed = true; this.updateState();
       await renderer.mount(host, source, {
         page: this.controller.page, volume: this.volume, muted: this.muted,
         onState: (state: RendererState) => {
@@ -222,7 +232,7 @@ export class ClassroomPlayer {
           this.state = state;
           if (state.playing && desktopSettings().pauseBackgroundMusic && ["audio", "video"].includes(renderer.kind)) this.music.pause("class-media");
           if (renderer.kind === "audio" || renderer.kind === "video") { this.volume = state.volume; this.muted = state.muted; }
-          this.updateState();
+          if (["audio", "video"].includes(renderer.kind)) this.updatePlaybackState(); else this.updateState();
         },
         onPage: (page: number) => { if (sequence === this.sequence && !this.disposed) { this.controller.pageChanged(page); this.updateLists(); } },
       });

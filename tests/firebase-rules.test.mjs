@@ -2866,4 +2866,15 @@ describe("Permisos granulares Active Classroom", () => {
     await assertFails(setDoc(doc(auth("collab"), "activeClassroomResources", "discarded"), validActiveClassroomResource("discarded", { createdByUid: "collab", updatedByUid: "collab" })));
     await assertFails(storageAuth("collab").ref("active-classroom/resources/forged-owner/a.pdf").putString("pdf", "raw", { contentType: "application/pdf", customMetadata: { uploadedByUid: "admin" } }));
   });
+  it("catálogo musical global y snapshots privados solo se modifican mediante Functions autorizadas", async () => {
+    await prepare(); await grant({ uploadMaterial: true, importDrive: true, orderMaterial: true });
+    await testEnv.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(),"activeClassroomAmbientMusic/catalog"),{ ambientCatalogVersion:1,tracks:[] }); });
+    for (const uid of ["collab","admin"]) {
+      await assertFails(getDoc(doc(auth(uid),"activeClassroomAmbientMusic/catalog")));
+      await assertFails(setDoc(doc(auth(uid),"activeClassroomAmbientMusic/catalog"),{ ambientCatalogVersion:2,tracks:[] }));
+      await assertFails(setDoc(doc(auth(uid),"activeClassroomAmbientMusic/catalog/versions/1"),{ tracks:[] }));
+      await assertFails(storageAuth(uid).ref(`active-classroom/publications/files/${"a".repeat(64)}`).putString("audio","raw",{contentType:"audio/mpeg"}));
+    }
+    await assertSucceeds(storageAuth("collab").ref("active-classroom/resources/ambient-upload/calma.mp3").putString("audio","raw",{contentType:"audio/mpeg",customMetadata:{uploadedByUid:"collab"}}));
+  });
 });

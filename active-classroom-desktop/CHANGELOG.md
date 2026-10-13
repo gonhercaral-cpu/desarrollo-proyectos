@@ -1,3 +1,11 @@
+## 1.0.15
+
+- Biblioteca global de música ambiente, sincronización incremental y caché SHA compartida entre Units.
+- Recupera música anterior sin modificar publicaciones históricas; administración en Ajustes Web.
+- Prepara multimedia local al abrir, agrupa seeks rápidos y evita buscar repetidamente en el proyector pausado.
+- Mantiene estable el panel docente, Ajustes y progreso del updater durante reproducción/descarga.
+- Streaming de disco con buffers de 64 KiB, backpressure y cancelación al desconectar/liberar el recurso.
+
 ## 1.0.14
 
 - Corrige aborto WebKit al abrir videos: excluye plugins WebRTC con libsoup2 incompatibles con WebKitGTK/libsoup3.

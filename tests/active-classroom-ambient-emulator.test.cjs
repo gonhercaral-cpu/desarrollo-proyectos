@@ -1,0 +1,20 @@
+const assert = require("node:assert/strict");
+const { test, after } = require("node:test");
+const admin = require("../drive/node_modules/firebase-admin");
+const { createAmbientHandlers } = require("../drive/activeClassroomAmbient");
+if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Requiere emulador Firestore.");
+const app = admin.initializeApp({ projectId: "security-rules-audit" }, "ambient-tests"); const db = app.firestore();
+const request = data => ({ auth: { uid: "admin" }, data }); const path = "activeClassroomAmbientMusic/catalog";
+const download = { path: `active-classroom/publications/files/${"a".repeat(64)}`, generation: "12", name: "Calma.mp3", mimeType: "audio/mpeg", sizeBytes: 12, checksums: { sha256: "a".repeat(64) } };
+const handlers = createAmbientHandlers({ db, bucket: {}, getProfile: async () => ({ active: true, role: "admin" }), authorize: async () => ({}), resolveFile: async (_profile, id) => ({ id, name: "Calma.mp3", mimeType: "audio/mpeg", version: "1" }), prepareResource: async () => download, verifyDownload: async value => value });
+after(async () => { await db.recursiveDelete(db.doc(path)); await db.recursiveDelete(db.doc("activeClassroomUnits/ambient-migration")); await app.delete(); });
+test("Firestore real: importación concurrente, historial inmutable y migración sin cambiar publicación", async () => {
+  await db.recursiveDelete(db.doc(path));
+  await Promise.all(Array.from({ length: 6 }, () => handlers.imported(request({ driveFileId: "audio" }))));
+  const catalog = (await handlers.list(request({}))).catalog; assert.equal(catalog.ambientCatalogVersion, 1); assert.equal(catalog.tracks.length, 1);
+  const before = (await db.doc(`${path}/versions/1`).get()).data();
+  await handlers.edit(request({ action: "rename", id: "a".repeat(64), title: "Writing" })); assert.deepEqual((await db.doc(`${path}/versions/1`).get()).data(), before);
+  const publication = db.doc("activeClassroomUnits/ambient-migration/publications/1"); const frozen = { manifest: { backgroundMusic: [{ resourceId: "audio", title: "Calma" }], resources: [{ resourceId: "audio", download }] } };
+  await db.doc("activeClassroomUnits/ambient-migration").set({ draft: { backgroundMusic: [] } }); await publication.set(frozen);
+  const result = await handlers.migrate(request({})); assert.deepEqual(result.failures, []); assert.equal(result.catalog.tracks.length, 1); assert.deepEqual((await publication.get()).data(), frozen);
+});

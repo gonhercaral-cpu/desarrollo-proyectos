@@ -12,9 +12,8 @@ export class DownloadQueue {
   private installed = new Map<string, Manifest>();
   private cache: StagingCache;
   private changed: (task: DownloadTask) => void;
-  constructor(cache: StagingCache, remote: RemoteStore, changed: (task: DownloadTask) => void, concurrency = 2) {
+  constructor(cache: StagingCache, remote: RemoteStore, changed: (task: DownloadTask) => void, concurrency = 2, transfers = new BlobTransfers()) {
     this.cache = cache; this.changed = changed;
-    const transfers = new BlobTransfers();
     // Initial verified versions are shared by workers, avoiding a full rescan of
     // every installed video for every Unit in a batch. Each blob/commit is verified.
     const installed = this.installed;

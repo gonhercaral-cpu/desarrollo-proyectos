@@ -21,9 +21,9 @@ export class BackgroundMusic {
   private canPlay: () => boolean;
   private release?: (source: RendererSource) => void;
   private changed = () => this.render();
-  constructor(host: HTMLElement, manifest: Manifest, prepare: (id: string) => Promise<RendererSource>, canPlay: () => boolean = () => true, release?: (source: RendererSource) => void) {
+  constructor(host: HTMLElement, manifest: Manifest | NonNullable<Manifest["backgroundMusic"]>, prepare: (id: string) => Promise<RendererSource>, canPlay: () => boolean = () => true, release?: (source: RendererSource) => void) {
     this.host = host; this.prepare = prepare; this.canPlay = canPlay; this.release = release;
-    this.tracks = manifest.backgroundMusic || [];
+    this.tracks = Array.isArray(manifest) ? manifest : manifest.backgroundMusic || [];
     this.audio = document.createElement("audio"); this.audio.preload = "none"; this.audio.volume = this.volume;
     for (const event of ["play", "pause", "ended", "error"]) this.audio.addEventListener(event, this.changed);
     this.audio.addEventListener("error", this.error);
@@ -41,6 +41,9 @@ export class BackgroundMusic {
     controls.querySelector<HTMLButtonElement>("[data-music-next]")?.addEventListener("click", () => { void this.move(1); });
     controls.querySelector<HTMLButtonElement>("[data-music-previous]")?.addEventListener("click", () => { void this.move(-1); });
     controls.querySelector<HTMLInputElement>("[data-music-volume]")!.oninput = event => this.setVolume(Number((event.target as HTMLInputElement).value));
+    const select = document.createElement("select"); select.setAttribute("aria-label", "Biblioteca de música ambiente");
+    this.tracks.forEach((track, index) => { const option = document.createElement("option"); option.value = String(index); option.textContent = track.title; option.selected = index === this.index; select.append(option); });
+    select.onchange = () => { void this.move(Number(select.value) - this.index); }; controls.prepend(select);
   }
   async toggle(): Promise<void> {
     if (this.disposed || !this.tracks.length || this.pending) return;
@@ -71,7 +74,7 @@ export class BackgroundMusic {
     ++this.sequence; this.pending = false; this.pauseReason = reason; this.audio.pause(); this.render();
   }
   async move(direction: number): Promise<void> {
-    if (this.disposed || this.tracks.length < 2) return;
+    if (this.disposed || this.tracks.length < 2 || !direction) return;
     const resume = !this.audio.paused; this.pause("manual");
     this.audio.removeAttribute("src"); this.audio.load(); this.loadedId = "";
     if (this.source) this.release?.(this.source); this.source = undefined;

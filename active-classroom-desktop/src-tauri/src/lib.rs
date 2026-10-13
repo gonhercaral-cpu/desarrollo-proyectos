@@ -961,6 +961,7 @@ pub fn run() {
             app_updater::classroom_app_update,
             startup::classroom_startup,
             local_media::classroom_media,
+            local_media::classroom_ambient_media,
             local_media::classroom_media_diagnostic,
             local_media::classroom_release_media,
             device_identity::classroom_device,

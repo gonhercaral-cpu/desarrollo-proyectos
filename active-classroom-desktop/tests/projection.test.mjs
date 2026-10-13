@@ -210,9 +210,11 @@ test("video real de audiencia permanece silenciado al reproducir, buscar, volume
   await renderer.mount(audience, source("video/webm"), { page: 1, volume: .8, muted: false, silent: true, onState() {}, onPage() {} });
   const video = audience.querySelector("video");
   await renderer.applyPlayback({ ...initialRendererState(), playing: true, time: 15, duration: 100 });
+  await new Promise(resolve => setTimeout(resolve, 110)); video.dispatchEvent(new window.Event("seeked"));
   assert.equal(video.paused, false); assert.equal(video.currentTime, 15);
   await renderer.command("MUTE"); renderer.setVolume(1); assert.equal(video.muted, true); assert.equal(video.volume, 0);
   await renderer.applyPlayback({ ...initialRendererState(), playing: false, time: 35, duration: 100 });
+  await new Promise(resolve => setTimeout(resolve, 110)); video.dispatchEvent(new window.Event("seeked"));
   assert.equal(video.paused, true); assert.equal(video.currentTime, 35); renderer.destroy(); assert.equal(video.hasAttribute("src"), false);
 });
 

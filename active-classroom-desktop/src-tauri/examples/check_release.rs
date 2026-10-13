@@ -6,8 +6,8 @@ use tauri_plugin_updater::UpdaterExt;
 
 fn main() {
     assert_eq!(std::env::var("CI").as_deref(), Ok("true"));
-    let current = std::env::var("CLASSROOM_CHECK_CURRENT").unwrap_or_else(|_| "1.0.13".into());
-    let expected = std::env::var("CLASSROOM_CHECK_EXPECTED").unwrap_or_else(|_| "1.0.14".into());
+    let current = std::env::var("CLASSROOM_CHECK_CURRENT").unwrap_or_else(|_| "1.0.14".into());
+    let expected = std::env::var("CLASSROOM_CHECK_EXPECTED").unwrap_or_else(|_| "1.0.15".into());
     let mut context = tauri::generate_context!(); context.config_mut().app.windows.clear();
     context.package_info_mut().version = current.parse().unwrap();
     let passed = Arc::new(AtomicBool::new(false)); let success = passed.clone();

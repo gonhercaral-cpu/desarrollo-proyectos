@@ -1470,6 +1470,26 @@ exports.activeClassroomPublicationFile = onRequest(
   { timeoutSeconds: 540, memory: "1GiB", cors: true }, classroomDesktop.file
 );
 
+const { createAmbientHandlers } = require("./activeClassroomAmbient");
+const classroomAmbient = createAmbientHandlers({
+  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile,
+  authorize: classroomDesktop.authorize, resolveFile: resolveActiveClassroomDriveFile,
+  prepareResource: classroomFiles.prepareResource, verifyDownload: classroomFiles.verifyDownload,
+  getRequestProfile: async request => {
+    const authorization = normalizeString(request.headers.authorization);
+    if (!authorization.startsWith("Bearer ")) throw new HttpsError("unauthenticated", "Equipo sin sesión.");
+    const decoded = await admin.auth().verifyIdToken(authorization.slice(7));
+    return isDevice(decoded) ? classroomDevices.authorizeDevice(decoded) : getClassroomProfile(decoded.uid);
+  },
+});
+exports.getActiveClassroomAmbientCatalog = onCall(classroomAmbient.list);
+exports.importActiveClassroomAmbient = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomAmbient.imported);
+exports.uploadActiveClassroomAmbient = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomAmbient.upload);
+exports.editActiveClassroomAmbient = onCall(classroomAmbient.edit);
+exports.migrateActiveClassroomAmbient = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomAmbient.migrate);
+exports.previewActiveClassroomAmbient = onCall(classroomAmbient.preview);
+exports.activeClassroomAmbientFile = onRequest({ timeoutSeconds: 540, memory: "1GiB", cors: true }, classroomAmbient.file);
+
 exports.importDriveFileToActiveClassroom = onCall(
   createImportDriveReference({
     db: admin.firestore(),

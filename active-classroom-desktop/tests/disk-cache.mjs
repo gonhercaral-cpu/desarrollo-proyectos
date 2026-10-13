@@ -3,8 +3,21 @@ import { createReadStream } from "node:fs";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile, appendFile, rename, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { validateAmbient } from "../src/offline/ambient.ts";
 import { canonical, validateManifest, SyncError } from "../src/offline/manifest.ts";
 export class DiskCache {
+  async call(action, input) {
+    const directory = join(this.root, "ambient");
+    if (action === "ambient-read") {
+      const versions = (await readdir(directory).catch(() => [])).filter(name => /^\d+\.json$/.test(name)).sort((a,b) => parseInt(b) - parseInt(a));
+      for (const name of versions) { try { const catalog = await validateAmbient(JSON.parse(await readFile(join(directory,name),"utf8"))); for (const track of catalog.tracks.filter(track => track.active)) assert.equal(await this.has(track.sha256,track.size),true); return catalog; } catch { /* Incomplete catalogs stay invisible. */ } } return null;
+    }
+    if (action !== "ambient-commit") throw new Error("Unsupported test cache action");
+    await validateAmbient(input); for (const track of input.tracks.filter(track => track.active)) assert.equal(await this.has(track.sha256,track.size),true);
+    await mkdir(directory,{recursive:true}); const target = join(directory,`${input.ambientCatalogVersion}.json`); const previous = await readFile(target,"utf8").catch(() => null);
+    if (previous) { assert.deepEqual(JSON.parse(previous),input); return; }
+    await writeFile(join(directory,"pending.json"),JSON.stringify(input)); await rename(join(directory,"pending.json"),target);
+  }
   constructor(root) { this.root = root; this.full = false; }
   object(hash) { return join(this.root, "objects", hash); }
   part(hash) { return join(this.root, "temporary", hash); }

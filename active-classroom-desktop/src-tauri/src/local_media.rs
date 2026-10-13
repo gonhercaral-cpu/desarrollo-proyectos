@@ -113,6 +113,13 @@ impl MediaServer {
         let diagnostic = Inspection { url: None, local_path: format!("$APPDATA/offline-v1/users/[local-owner]/objects/{hash}"), exists: false, expected_size: size, actual_size: None, sha256_valid: None, mime: mime.clone(), codec_mime: None, error_code: None, error: None };
         Ok(self.inspect_object(root, hash, size, mime, diagnostic))
     }
+    pub(crate) fn inspect_ambient(&self, root: &Path, version: u64, track_id: &str) -> Result<Inspection, String> {
+        let catalog = crate::offline_cache::ambient_catalog(root, version)?;
+        let track = catalog["tracks"].as_array().and_then(|tracks| tracks.iter().find(|track| track["id"] == track_id && track["active"] == true)).ok_or("media: Pista ausente del catálogo local")?;
+        let hash = track["sha256"].as_str().filter(|hash| safe_hash(hash)).ok_or("media: SHA inválido")?;
+        let mime = track["mime"].as_str().unwrap_or("").to_string(); let size = track["size"].as_u64().ok_or("media: Tamaño inválido")?;
+        Ok(self.inspect_object(root, hash, size, mime.clone(), Inspection { url:None,local_path:"$APPDATA/offline-v1/[verified-ambient]".into(),exists:false,expected_size:size,actual_size:None,sha256_valid:None,mime,codec_mime:None,error_code:None,error:None }))
+    }
     fn inspect_object(&self, root: &Path, hash: &str, size: u64, mime: String, mut diagnostic: Inspection) -> Inspection {
         let path = root.join("objects").join(hash);
         let metadata = match fs::symlink_metadata(&path) {
@@ -172,6 +179,7 @@ impl MediaServer {
         reply(socket, status, &grant.mime, count, content_range, "")?;
         if parts[0] == "HEAD" { return Ok(()); }
         file.seek(SeekFrom::Start(start))?;
+        socket.set_nonblocking(true)?;
         let active = self.metrics.active.fetch_add(1, Ordering::SeqCst) + 1; self.metrics.peak.fetch_max(active, Ordering::SeqCst); self.metrics.opened.fetch_add(1, Ordering::SeqCst);
         let mut remaining = count; let mut block = [0u8; BLOCK_BYTES]; let mut transfer = TransferLog { read: 0, sent: 0, expected: count, metrics: self.metrics.clone() };
         while remaining > 0 {
@@ -179,7 +187,25 @@ impl MediaServer {
             let limit = remaining.min(BLOCK_BYTES as u64) as usize;
             let read = file.read(&mut block[..limit])?;
             if read == 0 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "cache object changed")); }
-            transfer.read += read as u64; socket.write_all(&block[..read])?; transfer.sent += read as u64; remaining -= read as u64;
+            transfer.read += read as u64;
+            let mut written = 0; let mut last_write = std::time::Instant::now();
+            while written < read {
+                // Backpressure holds one 64 KiB block, never another disk read.
+                // Releasing the last lease also cancels a stalled client promptly.
+                if !grant.active.load(Ordering::SeqCst) { return Ok(()); }
+                if let Some(error) = socket.take_error()? { return Err(error); }
+                match socket.write(&block[written..read]) {
+                    Ok(0) => return Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "media disconnected")),
+                    Ok(count) => { written += count; transfer.sent += count as u64; last_write = std::time::Instant::now(); },
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if last_write.elapsed() >= Duration::from_secs(30) { return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "media backpressure timeout")); }
+                        std::thread::sleep(Duration::from_millis(2));
+                    },
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {},
+                    Err(error) => return Err(error),
+                }
+            }
+            remaining -= read as u64;
         }
         Ok(())
     }
@@ -261,6 +287,12 @@ fn reply(socket: &mut TcpStream, status: u16, mime: &str, length: u64, range: Op
     if let Some(range) = range { write!(socket, "Content-Range: {range}\r\n")?; }
     if !error.is_empty() { write!(socket, "X-Active-Media-Error: {error}\r\n")?; }
     socket.write_all(b"\r\n")
+}
+#[tauri::command]
+pub(crate) async fn classroom_ambient_media(app: tauri::AppHandle, window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, owner: String, version: u64, track_id: String) -> Result<Inspection, String> {
+    if window.label() != "teacher" || owner.is_empty() || owner.len() > 200 { return Err("media: Sesión local inválida".into()); }
+    let root = app.path().app_data_dir().map_err(|_| "media: Caché no disponible")?.join("offline-v1").join("users").join(format!("{:x}", Sha256::digest(owner.as_bytes()))); let server = server.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || server.inspect_ambient(&root, version, &track_id)).await.map_err(|_| "media: Audio local no disponible")?
 }
 #[tauri::command]
 pub(crate) async fn classroom_media(app: tauri::AppHandle, window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, owner: String, unit_id: String, version: u64, resource_id: String) -> Result<Inspection, String> {
@@ -396,6 +428,23 @@ mod tests {
         loop { let read = socket.read(&mut block).unwrap(); if read == 0 { break; } received += read as u64; sha.update(&block[..read]); if received % (16 * 1024 * 1024) < BLOCK_BYTES as u64 { peak = peak.max(resident_bytes()); } }
         assert_eq!(received, size); assert_eq!(format!("{:x}", sha.finalize()), hash);
         eprintln!("LARGE_MEDIA_TEST size={size} RSS_growth={}", peak.saturating_sub(baseline)); assert!(peak.saturating_sub(baseline) < 32 * 1024 * 1024);
+        // Rapid open-ended ranges followed by disconnect must release disk/HTTP
+        // workers rather than leaving several transfers running to EOF.
+        for _ in 0..4 {
+            let mut socket = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+            write!(socket,"GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nRange: bytes=15317120-\r\n\r\n",server.port).unwrap();
+            socket.read_exact(&mut [0u8;1024]).unwrap(); drop(socket);
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while server.metrics()["active"].as_u64().unwrap() > 0 && std::time::Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }
+        assert_eq!(server.metrics()["active"],0); assert!(server.metrics()["cancelled"].as_u64().unwrap() >= 4);
+        // A client that stops reading is cancelled by grant release even while
+        // the socket is backpressured, without waiting for its 30s idle timeout.
+        let mut stalled = TcpStream::connect(("127.0.0.1",server.port)).unwrap(); write!(stalled,"GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",server.port).unwrap(); stalled.read_exact(&mut [0u8;1024]).unwrap();
+        server.release(&url);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while server.metrics()["active"].as_u64().unwrap() > 0 && std::time::Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }
+        assert_eq!(server.metrics()["active"],0); drop(stalled);
         fs::remove_dir_all(root).unwrap();
     }
     fn resident_bytes() -> u64 {

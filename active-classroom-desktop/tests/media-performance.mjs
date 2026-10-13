@@ -20,7 +20,7 @@ export async function mediaPerformance(fixture) {
   const observer = new MutationObserver(records => { structuralMutations += records.filter(record => record.type === "childList" && !record.target.closest?.("[data-media],[data-time],[data-status]" )).length; });
   observer.observe(host, { subtree: true, childList: true });
   try {
-    await until(() => host.querySelector("video")?.readyState >= 1);
+    await until(() => host.querySelector("video")?.readyState >= 3 && !renderer.state.loading);
     const media = host.querySelector("video"); const original = media;
     const before = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics") };
     const click = performance.now(); const playing = new Promise(resolve => media.addEventListener("playing", () => resolve(performance.now() - click), { once: true }));
@@ -30,7 +30,7 @@ export async function mediaPerformance(fixture) {
     for (const command of ["SEEK_FORWARD", "SEEK_BACKWARD", "SEEK_FORWARD"]) {
       const started = performance.now(); let seekEvents = 0; const seeking = () => seekEvents++; media.addEventListener("seeking", seeking);
       for (let index = 0; index < 10; index++) { await player.dispatch(command); await wait(10); }
-      await until(() => !media.seeking); await until(() => !media.paused && media.readyState >= 2);
+      await until(() => !renderer.state.seeking && !media.seeking); await until(() => !media.paused && media.readyState >= 2);
       seeks.push({ command, elapsedMs: performance.now() - started, seekingEvents: seekEvents, currentTime: media.currentTime, streams: await invoke("fixture_metrics") }); media.removeEventListener("seeking", seeking);
     }
     const progress = []; const start = performance.now();
@@ -47,6 +47,10 @@ export async function mediaPerformance(fixture) {
     const dialog = document.querySelector("[data-settings-dialog]"); const navigation = dialog.querySelector("nav"); const scroll = dialog.querySelector(".settings-content"); let replacements = 0;
     for (let index = 1; index <= 100; index++) { updater.status.downloaded = index; panel.refresh(); if (document.querySelector("[data-settings-dialog]") !== dialog) replacements++; }
     const settings = { progressEvents: 100, replacements, navigationStable: document.querySelector("[data-settings-dialog] nav") === navigation, contentStable: document.querySelector(".settings-content") === scroll }; panel.destroy();
+    check(settings.replacements === 0 && settings.navigationStable && settings.contentStable, "Updater remounted Settings during progress");
+    check(mounts === 1 && structuralMutations < 100, "Playback rebuilt structural UI");
+    check(seeks.every(seek => seek.seekingEvents <= 3), "Keyboard burst queued uncoalesced seeks");
+    check(closed.active === 0, "Closed playback left abandoned streams");
     return { firstPlayMs, events, seeks, mounts, structuralMutations, durationMs: performance.now() - start, continuousSamples: progress.length, before, after, closed, settings };
   } finally { observer.disconnect(); player.destroy(); host.remove(); window.removeEventListener("classroom-media-diagnostic", diagnostic); }
 }

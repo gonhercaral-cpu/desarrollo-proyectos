@@ -112,7 +112,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
       response.status(status).json({ error: status === 500 ? "internal" : code, message: status === 500 ? "No se pudo descargar el archivo publicado." : error.message });
     }
   }
-  return { list, get, file, resolveDownload };
+  return { list, get, file, resolveDownload, authorize };
 }
 
 module.exports = { createDesktopHandlers, downloadRange, MAX_DOWNLOAD_CHUNK };

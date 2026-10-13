@@ -10,13 +10,13 @@ export async function mountProgramUpdater(): Promise<{ updater: ProgramUpdater; 
   if (!isTauri()) return;
   const host = document.createElement("aside"); host.className = "app-updater";
   host.setAttribute("aria-label", "Actualizaciones del programa"); document.body.append(host);
-  const render = () => { settings?.refresh(); renderUpdater(host, updater, preferences); setProgramUpdateVisual(updater.status.phase === "available"); };
-  const preferences = new StartupPreferences((action: StartupAction, value, target) => invoke<StartupSettings>("classroom_startup", { action, value, target }), render);
+  const render = () => { settings?.refreshUpdater(); renderUpdater(host, updater, preferences, false, settings?.isOpen); setProgramUpdateVisual(updater.status.phase === "available"); };
+  const preferences = new StartupPreferences((action: StartupAction, value, target) => invoke<StartupSettings>("classroom_startup", { action, value, target }), () => { settings?.refresh(); });
   const updater: ProgramUpdater = new ProgramUpdater({
     action: action => invoke<UpdateStatus>("classroom_app_update", { action, startup: updater.automatic }),
     listen: async callback => listen<UpdateStatus>("classroom-app-update", event => callback(event.payload)),
   }, render);
-  const settings = new DesktopSettingsPanel(updater, preferences);
+  const settings = new DesktopSettingsPanel(updater, preferences, render);
   render();
   await updater.start(false);
   const openAbout = (event: Event) => {

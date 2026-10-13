@@ -100,6 +100,38 @@ pub(crate) fn version_dir(root: &Path, unit: &str, version: u64) -> Result<PathB
     if version == 0 || version > 9007199254740991 { return Err("manifest: Versión inválida".into()); }
     Ok(root.join("units").join(unit).join("versions").join(version.to_string()))
 }
+pub(crate) fn ambient_catalog(root: &Path, version: u64) -> Result<Value, String> {
+    let path = root.join("ambient").join("versions").join(version.to_string()).join("catalog.json");
+    let file = File::open(path).map_err(io_error)?;
+    if file.metadata().map_err(io_error)?.len() > 700000 { return Err("manifest: Catálogo excesivo".into()); }
+    let catalog: Value = serde_json::from_reader(file).map_err(|_| "manifest: Catálogo de música ilegible")?;
+    checked_ambient(&catalog)?; if catalog["ambientCatalogVersion"] != version { return Err("manifest: Versión de música incorrecta".into()); } Ok(catalog)
+}
+fn checked_ambient(catalog: &Value) -> Result<(), String> {
+    if catalog.to_string().len() > 700000 || catalog["schemaVersion"] != 1 || catalog["ambientCatalogVersion"].as_u64().filter(|v| *v > 0 && *v <= 9007199254740991).is_none() { return Err("manifest: Catálogo de música inválido".into()); }
+    let tracks = catalog["tracks"].as_array().filter(|tracks| tracks.len() <= 200).ok_or("manifest: Pistas inválidas")?;
+    let mut ids = std::collections::HashSet::new();
+    for (order, track) in tracks.iter().enumerate() {
+        let hash = hash_id(text(track, "sha256")?)?;
+        if track["id"] != hash || !ids.insert(hash) || track["order"] != order || track["sourceType"] != "file" || track["active"].as_bool().is_none() || track["size"].as_u64().filter(|size| *size <= maximum_file_bytes()).is_none() || !text(track, "mime")?.starts_with("audio/") || text(track,"title")?.trim().is_empty() || text(track,"title")?.len() > 640 { return Err("manifest: Pista de música inválida".into()); }
+        let path = text(track,"storagePath")?.strip_prefix("active-classroom/publications/files/").ok_or("manifest: Ruta de música inválida")?; hash_id(path)?;
+        let generation = text(track,"generation")?; if generation.is_empty() || !generation.bytes().all(|byte| byte.is_ascii_digit()) { return Err("manifest: Generación de música inválida".into()); }
+    }
+    let playlists = catalog["playlists"].as_array().filter(|items| items.len() <= 50).ok_or("manifest: Listas inválidas")?;
+    let mut playlist_ids = std::collections::HashSet::new();
+    for playlist in playlists {
+        let id = safe_id(text(playlist,"id")?)?; if !playlist_ids.insert(id) || text(playlist,"title")?.trim().is_empty() || text(playlist,"title")?.len() > 640 { return Err("manifest: Lista inválida".into()); }
+        let track_ids = playlist["trackIds"].as_array().ok_or("manifest: Pistas de lista inválidas")?; let mut seen = std::collections::HashSet::new();
+        for track in track_ids { let id = track.as_str().ok_or("manifest: Pista de lista inválida")?; if !ids.contains(id) || !seen.insert(id) { return Err("manifest: Pista de lista inexistente o duplicada".into()); } }
+    }
+    if catalog["integrity"]["algorithm"] != "sha256" || text(&catalog["integrity"],"contentHash")? != digest(canonical(&json!({"schemaVersion":1,"tracks":catalog["tracks"],"playlists":catalog["playlists"]})).as_bytes()) { return Err("integrity: Catálogo de música dañado".into()); } Ok(())
+}
+fn ambient_paths(root: &Path, catalog: &Value) -> Result<(), String> {
+    for track in catalog["tracks"].as_array().unwrap().iter().filter(|track| track["active"] == true) {
+        let hash = text(track,"sha256")?;
+        if !verified(&root.join("objects").join(hash), hash, track["size"].as_u64().unwrap())? { return Err("integrity: Audio global ausente o dañado".into()); }
+    } Ok(())
+}
 fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
     fs::create_dir_all(root).map_err(io_error)?;
     #[cfg(unix)]
@@ -110,6 +142,17 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
     fs::create_dir_all(root.join("objects")).map_err(io_error)?;
     fs::create_dir_all(root.join("temporary")).map_err(io_error)?;
     match action {
+        "ambient-read" => {
+            let mut versions = fs::read_dir(root.join("ambient/versions")).into_iter().flatten().flatten().filter_map(|entry| entry.file_name().to_str()?.parse::<u64>().ok()).collect::<Vec<_>>(); versions.sort_unstable();
+            for version in versions.into_iter().rev() { if let Ok(catalog) = ambient_catalog(root, version) { if ambient_paths(root, &catalog).is_ok() { return Ok(catalog); } } } Ok(Value::Null)
+        }
+        "ambient-commit" => {
+            checked_ambient(&data)?; ambient_paths(root, &data)?;
+            let version = data["ambientCatalogVersion"].as_u64().unwrap(); let directory = root.join("ambient/versions").join(version.to_string()); fs::create_dir_all(&directory).map_err(io_error)?;
+            let final_path = directory.join("catalog.json");
+            if final_path.exists() { let previous = ambient_catalog(root, version)?; if previous != data { return Err("version: Catálogo de música inmutable".into()); } return Ok(Value::Null); }
+            let temporary = directory.join("catalog.pending"); write_synced(&temporary, data.to_string().as_bytes())?; fs::rename(temporary, final_path).map_err(io_error)?; sync_directory(&directory)?; Ok(Value::Null)
+        }
         "list" | "pending" => {
             let mut units = BTreeMap::<String, Value>::new();
             let mut verified_objects = BTreeMap::new();
@@ -248,6 +291,19 @@ pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ambient_catalog_activation_is_verified_immutable_and_offline() {
+        let root = std::env::temp_dir().join(format!("ac-ambient-{}", std::process::id()));
+        let hash = digest(b"offline audio");
+        execute(&root,"begin",json!({"hash":hash})).unwrap(); execute(&root,"append",json!({"hash":hash,"offset":0,"chunk":b"offline audio".to_vec()})).unwrap(); execute(&root,"finish",json!({"hash":hash,"size":13})).unwrap();
+        let mut catalog = json!({"schemaVersion":1,"ambientCatalogVersion":1,"tracks":[{"id":hash,"sha256":hash,"title":"Calma","sourceType":"file","mime":"audio/mpeg","size":13,"storagePath":format!("active-classroom/publications/files/{hash}"),"generation":"1","order":0,"active":true}],"playlists":[]});
+        fn seal(catalog: &mut Value) { catalog["integrity"] = json!({"algorithm":"sha256","contentHash":digest(canonical(&json!({"schemaVersion":1,"tracks":catalog["tracks"],"playlists":catalog["playlists"]})).as_bytes())}); }
+        seal(&mut catalog); execute(&root,"ambient-commit",catalog.clone()).unwrap(); assert_eq!(execute(&root,"ambient-read",Value::Null).unwrap(),catalog);
+        let mut next = catalog.clone(); next["tracks"][0]["title"] = json!("Writing"); seal(&mut next); assert!(execute(&root,"ambient-commit",next.clone()).is_err());
+        next["ambientCatalogVersion"] = json!(2); next["tracks"][0]["sha256"] = json!(digest(b"missing")); next["tracks"][0]["id"] = next["tracks"][0]["sha256"].clone(); seal(&mut next);
+        assert!(execute(&root,"ambient-commit",next).is_err()); assert_eq!(execute(&root,"ambient-read",Value::Null).unwrap(),catalog);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn rejects_path_traversal_and_bad_hash() {
         assert!(safe_id("../secret").is_err()); assert!(hash_id("../secret").is_err());

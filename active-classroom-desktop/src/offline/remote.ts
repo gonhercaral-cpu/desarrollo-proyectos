@@ -3,6 +3,7 @@ import type { DeviceLabel } from "./device-label.ts";
 import { connectionError, diagnose } from "./connection.ts";
 import { syncDiagnostic } from "./sync-diagnostics.ts";
 import { type LibraryLevel, setLibraryLevels, validLibraryLevels } from "./levels.ts";
+import type { AmbientTrack } from "./ambient.ts";
 export const DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 
 export const API_BASE = "https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net";
@@ -116,18 +117,24 @@ export class PublicationApi {
   }
   async download(manifest: Manifest, resource: PublishedResource, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void> {
     const params = new URLSearchParams({ unitId: manifest.unit.unitId, version: String(manifest.version), resourceId: resource.resourceId });
-    const size = resource.download.sizeBytes;
+    return this.downloadObject(`activeClassroomPublicationFile?${params}`, resource.download.sizeBytes, resource.download.checksums.sha256, write, signal);
+  }
+  async downloadAmbient(version: number, track: AmbientTrack, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void> {
+    const params = new URLSearchParams({ version: String(version), trackId: track.id });
+    return this.downloadObject(`activeClassroomAmbientFile?${params}`, track.size, track.sha256, write, signal);
+  }
+  private async downloadObject(endpoint: string, size: number, sha256: string, write: (chunk: Uint8Array) => Promise<void>, signal: AbortSignal): Promise<void> {
     syncDiagnostic("DOWNLOAD_START", { bytes: size });
     for (let start = 0; start < size || (size === 0 && start === 0); start += DOWNLOAD_CHUNK_BYTES) {
       const ranged = size > DOWNLOAD_CHUNK_BYTES;
       const end = Math.min(start + DOWNLOAD_CHUNK_BYTES, size) - 1;
       const expected = ranged ? end - start + 1 : size;
-      await this.request(`activeClassroomPublicationFile?${params}`, ranged ? { headers: { Range: `bytes=${start}-${end}` } } : {}, async (response, activeSignal) => {
+      await this.request(endpoint, ranged ? { headers: { Range: `bytes=${start}-${end}` } } : {}, async (response, activeSignal) => {
         if (!response.body) throw new SyncError("response", "Respuesta sin archivo.");
         if (ranged && (response.status !== 206 || response.headers.get("Content-Range") !== `bytes ${start}-${end}/${size}`)) throw new SyncError("response", "El servidor no permite descargar este archivo por bloques. Solicita actualizar el backend.");
         const length = response.headers.get("Content-Length");
         const hash = response.headers.get("X-Content-SHA256");
-        if ((length !== null && Number(length) !== expected) || (hash !== null && hash !== resource.download.checksums.sha256)) throw new SyncError("integrity", "El archivo entregado no coincide con el manifest.");
+        if ((length !== null && Number(length) !== expected) || (hash !== null && hash !== sha256)) throw new SyncError("integrity", "El archivo entregado no coincide con la referencia.");
         const reader = response.body.getReader();
         let received = 0;
         try {

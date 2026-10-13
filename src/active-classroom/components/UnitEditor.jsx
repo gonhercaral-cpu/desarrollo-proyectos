@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import DriveResourceImportDialog from "./DriveResourceImportDialog";
 import ResourceInspector from "./ResourceInspector";
 import SlideInteractionEditor from "./SlideInteractionEditor";
-import BackgroundMusicEditor from "./BackgroundMusicEditor";
 import { addMusicTracks, isMusicFile } from "../utils/backgroundMusic";
 import { ACTIVE_CLASSROOM_ACCEPTED_FILES } from "../constants";
 import { canBeMainPresentation, createUnitDraft, reorderSlides, needsOfficeProcessing, documentProcessingLabel, documentProcessingReady } from "../utils/unitDraft";
@@ -260,12 +259,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
         </section>
       </div>
       {selectedResource && <ResourceInspector key={`${selectedResource.id}-${selectedResource.version || 0}`} resource={selectedResource} readOnly />}
-      <BackgroundMusicEditor draft={draft} resources={unitResources} disabled={busy || !canClassroom(profile, "orderMaterial")} canImport={canClassroom(profile, "importDrive")} canUpload={canClassroom(profile, "uploadMaterial")} onChange={edit} onImport={() => setImportMode("music")} onUpload={files => run(async () => {
-        if (files.some(file => !isMusicFile(file))) throw new Error("Selecciona únicamente archivos de audio.");
-        const uploaded = await onUpload(files);
-        setResourceOverrides(current => ({ ...current, ...Object.fromEntries(uploaded.map(resource => [resource.id, resource])) }));
-        await persist(addMusicTracks(draft, uploaded));
-      })} />
+      <section className="ac-unit-card"><h2>Música ambiente</h2><p>Administra la biblioteca compartida desde Active Classroom → Ajustes → Música ambiente. Está disponible en todas las Units sin volver a publicarlas. Las referencias anteriores se conservan para migración.</p></section>
       <section className="ac-unit-card">
         <h2>Publicaciones inmutables</h2>{!publications.length && <p>Aún no hay versiones publicadas.</p>}
         {publications.map((publication) => <div className="ac-unit-actions" key={publication.version}><strong>Versión {publication.version}</strong><span>{publication.manifest.publishedAt}</span><button className="ac-clear-filters" onClick={() => setManifestVersion(publication.version)}>Ver manifest</button><button className="ac-clear-filters" onClick={() => downloadManifest(publication)}>Descargar JSON</button></div>)}

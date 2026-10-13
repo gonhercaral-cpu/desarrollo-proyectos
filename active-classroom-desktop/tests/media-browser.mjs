@@ -195,7 +195,7 @@ try {
   for (const source of fixture.largeSources || [fixture.largeSource]) await video(source);
   const memory = () => invoke("fixture_memory");
   const baseline = await memory();
-  for (let index = 0; index < 5; index++) await video(fixture.largeSource);
+  for (let index = 0; index < 10; index++) await video(fixture.largeSource);
   const after = await memory();
   const rss = process => Number.parseInt(process.rss || "0", 10);
   for (const process of after) {
@@ -204,7 +204,7 @@ try {
     if (process.pid === after[0].pid) assert(rss(process) < 256 * 1024, "Proceso principal carga archivo completo");
     if (process.name.startsWith("WebKitWeb")) assert(rss(process) < 768 * 1024, "WebKit almacena video completo en RAM");
   }
-  observations.push({ repetitiveMemory: { baseline, after, opens: 5, bounded: true } });
+  observations.push({ repetitiveMemory: { baseline, after, opens: 10, bounded: true } });
   observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
   if (fixture.musicFixture) await backgroundMusic(fixture.musicFixture, fixture.source);
   if (fixture.performance) observations.push({ performance: await mediaPerformance(fixture) });

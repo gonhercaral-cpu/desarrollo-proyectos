@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       updater_check:
-        description: Comprobar endpoint público con updater oficial y versión instalada 1.0.13 (solo lectura)
+        description: Comprobar endpoint público con updater oficial y versión instalada 1.0.14 (solo lectura)
         required: false
         type: boolean
         default: false
@@ -55,7 +55,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11
-      - name: Updater real, misma configuración pública, identidad de versión 1.0.13
+      - name: Updater real, misma configuración pública, identidad de versión 1.0.14
         working-directory: active-classroom-desktop
         env:
           CI: 'true'

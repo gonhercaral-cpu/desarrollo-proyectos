@@ -68,3 +68,15 @@ test("shortcut personalizado invoca Player ADVANCE/BACK y conserva builds offlin
   document.querySelector("[data-slide-next]").click(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(player.controller.slideIndex, 1); assert.equal(player.controller.currentBuild, 0); assert.equal(player.controller.isPresentation, true);
 });
+
+test("100 eventos updater conservan dialog/nav/scroll/foco y un único handler", async t => {
+  const dom = environment(); const updater = new ProgramUpdater({ action: async () => updater.status, listen: async () => () => {} }, () => {});
+  const preferences = new StartupPreferences(async () => ({ autostart: true, kiosk: true, kioskActive: false, launchedAutomatically: false }), () => {});
+  const panel = new DesktopSettingsPanel(updater, preferences); t.after(() => { panel.destroy(); dom.restore(); });
+  updater.status = { phase: "downloading", currentVersion: "1.0.14", newVersion: "1.0.15", downloaded: 0, total: 100, message: "Descargando" }; panel.open("about");
+  const dialog = document.querySelector("[data-settings-dialog]"); const nav = dialog.querySelector("nav"); const content = dialog.querySelector("main"); const progress = dialog.querySelector("progress"); content.scrollTop = 123;
+  const focused = dialog.querySelector('[data-settings-section="about"]'); focused.focus();
+  for (let index = 1; index <= 100; index++) { updater.status.downloaded = index; panel.refresh(); assert.equal(document.querySelector("[data-settings-dialog]"), dialog); assert.equal(dialog.querySelector("nav"), nav); assert.equal(dialog.querySelector("main"), content); assert.equal(dialog.querySelector("progress"), progress); assert.equal(document.activeElement, focused); }
+  assert.equal(content.scrollTop, 123); assert.match(content.textContent, /100/);
+  let closed = 0; const close = panel.close.bind(panel); panel.close = () => { closed++; close(); }; document.querySelector("[data-settings-close]").click(); assert.equal(closed, 1);
+});

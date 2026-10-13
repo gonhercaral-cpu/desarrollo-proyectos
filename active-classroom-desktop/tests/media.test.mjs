@@ -11,6 +11,21 @@ test("ruta multimedia exige loopback, grant opaco y ninguna ruta libre", () => {
   assert.equal(safeMediaUrl(`http://127.0.0.1:12345/media/${"a".repeat(64)}`), "http://127.0.0.1:12345/media/[local-grant]");
   assert.equal(safeMediaUrl("asset://localhost/private/home/hash"), "asset://localhost/[cache-file]");
 });
+
+test("J/L acumulan destino y coalescen; un seek en curso, src/elemento/load estables", async t => {
+  const dom = new JSDOM("<div id='host'></div>", { url: "https://tauri.localhost" }); const previous = new Map();
+  for (const name of ["window", "document", "HTMLVideoElement"]) { previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom.window : dom.window[name] }); }
+  const renderer = new VideoRenderer(); t.after(() => { renderer.destroy(); dom.window.close(); for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
+  const prototype = dom.window.HTMLMediaElement.prototype; const load = t.mock.method(prototype, "load", () => {}); t.mock.method(prototype, "pause", () => {});
+  await renderer.mount(document.querySelector("#host"), { url: `http://127.0.0.1:1234/media/${"a".repeat(64)}`, name: "Local", mimeType: "video/mp4", sizeBytes: 1024 * 1024 * 1024 }, { page: 1, volume: .8, muted: true, onPage() {}, onState() {} });
+  const video = renderer.media; const url = video.src; let position = 20; let seeking = false; const writes = [];
+  Object.defineProperties(video, { duration: { value: 300 }, seeking: { get: () => seeking }, currentTime: { get: () => position, set: value => { position = value; seeking = true; writes.push(value); } } }); video.dispatchEvent(new dom.window.Event("canplay"));
+  for (let index = 0; index < 10; index++) await renderer.command("SEEK_FORWARD"); await new Promise(resolve => setTimeout(resolve, 110)); assert.deepEqual(writes, [120]);
+  for (let index = 0; index < 10; index++) await renderer.command("SEEK_BACKWARD"); await new Promise(resolve => setTimeout(resolve, 110)); assert.deepEqual(writes, [120]);
+  seeking = false; video.dispatchEvent(new dom.window.Event("seeked")); assert.deepEqual(writes, [120, 20]); seeking = false; video.dispatchEvent(new dom.window.Event("seeked"));
+  assert.equal(video.src, url); assert.equal(document.querySelector("video"), video); assert.equal(load.mock.callCount(), 1); assert.equal(video.preload, "auto");
+  renderer.seek(999); await new Promise(resolve => setTimeout(resolve, 110)); assert.equal(writes.at(-1), 300);
+});
 test("MediaError distingue lectura, integridad, formato y soporte del equipo", () => {
   const classify = (code, mime = "probably", codecs = "probably", local) => mediaErrorMessage(code, mime, codecs, "video/mp4", local);
   assert.equal(classify(2), "No se pudo leer el video local");
@@ -22,9 +37,10 @@ test("MediaError distingue lectura, integridad, formato y soporte del equipo", (
   assert.equal(mediaErrorMessage(4, "maybe", "", "video/mp4", null, "probably"), "El formato de video no es compatible");
 });
 test("renderer registra eventos/código y MIME sin publicar grant ni URL sensible", async (t) => {
-  const dom = new JSDOM("<div id='host'></div>");
+  const dom = new JSDOM("<div id='host'></div>", { url: "https://tauri.localhost" });
+  dom.window.localStorage.setItem("active-classroom-media-diagnostics", "true");
   const previous = new Map();
-  for (const name of ["window", "document", "HTMLVideoElement"]) { previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom.window : dom.window[name] }); }
+  for (const name of ["window", "document", "HTMLVideoElement", "CustomEvent"]) { previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom.window : dom.window[name] }); }
   const renderer = new VideoRenderer();
   t.after(() => { renderer.destroy(); dom.window.close(); for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   const prototype = dom.window.HTMLMediaElement.prototype;

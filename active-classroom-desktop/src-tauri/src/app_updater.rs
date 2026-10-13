@@ -146,8 +146,12 @@ pub async fn classroom_app_update(window: tauri::WebviewWindow, app: tauri::AppH
         status.phase = "downloading".into(); status.downloaded = 0; status.total = None;
         status.message = "Descargando actualización del programa…".into(); publish(&app, &gate, status.clone());
         let mut progress = status.clone();
+        let mut last_progress = std::time::Instant::now();
         let bytes = update.download(|chunk, total| {
-            progress.downloaded += chunk as u64; progress.total = total; publish(&app, &gate, progress.clone());
+            progress.downloaded += chunk as u64; progress.total = total;
+            if last_progress.elapsed() >= Duration::from_millis(150) || total == Some(progress.downloaded) {
+                publish(&app, &gate, progress.clone()); last_progress = std::time::Instant::now();
+            }
         }, || {
             let mut verifying = status.clone(); verifying.phase = "verifying".into(); verifying.message = "Verificando firma criptográfica…".into(); publish(&app, &gate, verifying);
         }).await;

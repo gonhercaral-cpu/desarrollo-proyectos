@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { assertLocalUrl } from "./local-source.ts";
 import { mediaDiagnostic, type MediaInspection } from "./media-diagnostics.ts";
 import type { LocalClassroom, RendererSource } from "./types.ts";
+import type { AmbientTrack } from "../offline/ambient.ts";
+export async function prepareAmbientMedia(owner: string, version: number, track: AmbientTrack): Promise<RendererSource> {
+  const inspection = await invoke<MediaInspection>("classroom_ambient_media", { owner, version, trackId: track.id });
+  if (inspection.error || !inspection.url || !inspection.sha256Valid || inspection.expectedSize !== track.size || inspection.mime !== track.mime) throw new Error("El audio global no está disponible localmente o está dañado.");
+  assertLocalUrl(inspection.url); return { url: inspection.url, name: track.title, mimeType: inspection.mime, sizeBytes: track.size, ...(inspection.codecMime ? { codecMime: inspection.codecMime } : {}) };
+}
 export function releaseNativeMedia(source: RendererSource): void {
   if (source.url.startsWith("http://127.0.0.1:")) void invoke("classroom_release_media", { url: source.url }).catch(() => {});
 }

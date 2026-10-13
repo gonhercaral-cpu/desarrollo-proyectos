@@ -19,7 +19,9 @@ import { syncDiagnostic } from "./sync-diagnostics";
 import { openLocalClass, unitSyncMessage } from "./sync";
 import "./library.css";
 import { ClassroomPlayer } from "../player/ClassroomPlayer";
-import { prepareNativeMedia, releaseNativeMedia } from "../player/native-media";
+import { prepareNativeMedia, prepareAmbientMedia, releaseNativeMedia } from "../player/native-media";
+import { AmbientLibrary } from "./ambient.ts";
+import { BlobTransfers } from "./sync.ts";
 import "../player/player.css";
 
 export function mountOfflineLibrary(root: HTMLDivElement): void {
@@ -30,6 +32,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   let cacheReady = false;
   let api: PublicationApi | undefined;
   let queue: DownloadQueue | undefined;
+  let ambient: AmbientLibrary | undefined;
   let thumbnailSignature = "";
   let locals: Manifest[] = [];
   let publications: Publication[] = [];
@@ -155,6 +158,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         if (entry.localVersion !== undefined) syncDiagnostic("LOCAL_PUBLICATION", { unitId, version: entry.localVersion });
         if (entry.localVersion !== undefined && entry.remoteVersion !== undefined && entry.remoteVersion > entry.localVersion) syncDiagnostic("UPDATE_AVAILABLE", { unitId, version: entry.remoteVersion, localVersion: entry.localVersion });
       }
+      void ambient?.sync().catch(() => { console.warn("[Active Classroom Ambient] sync-failed; verified local catalog preserved"); });
       session.connected();
       diagnose("publications", available.length ? "listed" : "empty");
       message = available.length ? "Publicaciones consultadas. Las clases locales se conservan hasta completar cada actualización." : "No hay clases publicadas. Tus clases locales se conservan.";
@@ -203,6 +207,8 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     try {
       if (current !== epoch) return;
       const classroom = await openLocalClass(currentCache, unitId, local.version);
+      await ambient?.restore();
+      const music = ambient?.catalog;
       if (current === epoch) {
         thumbnails.pause(); thumbnailSignature = "";
         root.innerHTML = `<div class="desktop-shell is-classroom">${sidebar(true)}<div class="classroom-workspace" data-classroom-host></div></div>`;
@@ -216,6 +222,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
             message = "Biblioteca local verificada."; render();
           }).catch((error) => { if (current === epoch) { message = String(error); render(); } });
         }, {
+          ...(music ? { ambientMusic: { tracks: music.tracks.filter(track => track.active).map(track => ({ ...track, resourceId: track.id })), prepare: async (id: string) => { const track = music.tracks.find(track => track.id === id); if (!track) throw new Error("Audio global no disponible"); return prepareAmbientMedia(currentCache.owner, music.ambientCatalogVersion, track); } } } : {}),
           prepareMediaSource: (id) => prepareNativeMedia(currentCache.owner, classroom, id),
           releaseMediaSource: releaseNativeMedia,
           verifyResource: async (id) => {
@@ -245,7 +252,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         return;
       }
       epoch++; const current = epoch;
-      refreshController?.abort(); queue?.close();
+      refreshController?.abort(); queue?.close(); ambient?.close(); ambient = undefined;
       locals = []; publications = []; errors.clear(); unitOrder.clear(); player?.destroy(); player = undefined; thumbnailSignature = ""; refreshing = false; opening = false; message = ""; retryPublication = undefined;
       cache = undefined; cacheReady = false; api = undefined; queue = undefined;
       if (state.phase !== "ready") { owner = ""; contentOwner(""); render(); return; }
@@ -254,7 +261,9 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       api = new PublicationApi((force) => session.token(force));
       api.onDenied = () => session.revalidateAccess();
       api.onDevice = (label) => session.receiveLabel(label);
-      queue = new DownloadQueue(cache, api, task => downloadChanged(task, current));
+      const transfers = new BlobTransfers();
+      queue = new DownloadQueue(cache, api, task => downloadChanged(task, current), 2, transfers);
+      ambient = new AmbientLibrary(cache, api, transfers); void ambient.restore();
       try {
         await cache.adoptLegacy().catch(() => { if (current === epoch) message = "No se pudo recuperar alguna clase anterior. Las clases locales existentes se conservan."; });
         await queue.activatePending();

@@ -15,14 +15,18 @@ export class ProgramUpdater {
   automatic = false;
   private running = false;
   private unlisten?: () => void;
+  private progressTimer?: ReturnType<typeof setTimeout>;
   private transport: UpdateTransport;
   private changed: () => void;
   constructor(transport: UpdateTransport, changed: () => void) { this.transport = transport; this.changed = changed; }
   private accept(status: UpdateStatus): void {
+    const previous = this.status.phase;
     this.status = status;
     if (["current", "available"].includes(status.phase)) { this.lastChecked = Date.now(); try { localStorage.setItem("active-classroom-updater-last-check", String(this.lastChecked)); } catch { /* Checking continues even if preferences are unavailable. */ } }
     if (status.phase === "available" || status.phase === "installed") this.visible = true;
-    this.changed();
+    if (status.phase === "downloading" && previous === "downloading") {
+      this.progressTimer ||= setTimeout(() => { this.progressTimer = undefined; this.changed(); }, 150);
+    } else { clearTimeout(this.progressTimer); this.progressTimer = undefined; this.changed(); }
   }
   async start(check = true): Promise<void> {
     try { this.lastChecked = Number(localStorage.getItem("active-classroom-updater-last-check")) || 0; } catch { /* Default: no recorded check. */ }
@@ -46,5 +50,5 @@ export class ProgramUpdater {
     if (action === "check") { this.status.newVersion = null; this.status.notes = null; }
     this.changed();
   }
-  destroy(): void { this.unlisten?.(); }
+  destroy(): void { clearTimeout(this.progressTimer); this.unlisten?.(); }
 }

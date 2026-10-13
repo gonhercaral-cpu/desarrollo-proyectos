@@ -56,7 +56,7 @@ export class ProjectionPlayer {
   }
   private followPlayback(): void {
     const snapshot = this.snapshot; if (!snapshot || !this.renderer?.applyPlayback || this.disposed) return;
-    const time = snapshot.playback.time + (snapshot.playback.playing ? Math.max(0, Date.now() - snapshot.updatedAt) / 1000 : 0);
+    const time = snapshot.playback.time + (snapshot.playback.playing && !snapshot.playback.seeking && !snapshot.playback.buffering ? Math.max(0, Date.now() - snapshot.updatedAt) / 1000 : 0);
     void Promise.resolve(this.renderer.applyPlayback({ ...snapshot.playback, time: Math.min(snapshot.playback.duration || time, time), muted: true, volume: 0 })).catch(() => this.clear());
   }
   private clear(): void { ++this.generation; this.surface?.destroy(); this.surface = undefined; this.renderer?.destroy(); this.renderer = undefined; this.key = ""; this.page = 0; this.host.replaceChildren(); }

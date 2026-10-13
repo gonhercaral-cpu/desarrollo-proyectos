@@ -27,6 +27,7 @@ export class ProjectionCoordinator {
   private available: boolean;
   private changed: () => void;
   private bridge: ProjectionBridge;
+  private statusSignature = "";
   constructor(changed: () => void, bridge: ProjectionBridge = nativeProjectionBridge, available = isTauri()) { this.changed = changed; this.bridge = bridge; this.available = available; }
   start(): void { if (!this.available) return; void this.poll(); this.timer = setInterval(() => { void this.poll(); }, 1000); }
   async poll(): Promise<void> {
@@ -38,7 +39,8 @@ export class ProjectionCoordinator {
       this.monitors = status.monitors; this.projecting = status.projecting;
       this.selected = preferredMonitor(this.monitors, readMonitorPreference() || this.selected);
       this.message = this.disconnected ? this.monitors.length > 1 ? "Segunda pantalla conectada · Restaurar proyección" : "Segunda pantalla desconectada" : this.monitors.length > 1 ? "Segunda pantalla conectada" : "Sin segunda pantalla";
-      this.changed();
+      const signature = JSON.stringify([this.monitors, this.selected?.id, this.projecting, this.message]);
+      if (signature !== this.statusSignature) { this.statusSignature = signature; this.changed(); }
     } catch { if (!this.stopped) { this.message = "No se pudo consultar la salida de proyección."; this.changed(); } }
     finally { this.polling = false; }
   }

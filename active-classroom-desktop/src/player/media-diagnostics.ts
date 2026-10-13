@@ -15,7 +15,8 @@ export function safeMediaUrl(url: string): string {
   return "[local media]";
 }
 export function mediaDiagnostic(data: Record<string, unknown>): void {
-  const diagnostic = localStorage.getItem("active-classroom-media-diagnostics") === "true";
+  let diagnostic = false;
+  try { diagnostic = globalThis.window?.localStorage.getItem("active-classroom-media-diagnostics") === "true"; } catch { /* Storage may be unavailable; errors still get recorded. */ }
   if (!diagnostic && !["error", "timeout", "play-rejected"].includes(String(data.event))) return;
   const safe = { ...data };
   if (typeof safe.url === "string") safe.url = safeMediaUrl(safe.url);

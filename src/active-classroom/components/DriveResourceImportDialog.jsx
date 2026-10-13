@@ -5,7 +5,7 @@ import { formatResourceDate, getResourceKindLabel } from "../utils/resourceTypes
 import { unitOperationMessage, activeDraftResourceIds } from "../utils/draftResources";
 import { loadUnitEditor } from "../services/unitEditorService";
 
-export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, draft, onDestinationChange }) {
+export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, draft, onDestinationChange, globalMusic = false }) {
   const dialogRef = useRef(null);
   const [path, setPath] = useState([]);
   const [items, setItems] = useState([]);
@@ -83,7 +83,7 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
       setImportedIds((current) => [...current, ...selected.filter((file) => !failedIds.has(file.id)).map((file) => file.id)]);
       setSelected(result.failed.map(({ file }) => file));
       const repeated = result.imported.filter((resource) => resource.alreadyImported).length;
-      setNotice(`${result.imported.length - repeated} recurso(s) asociado(s) al borrador de ${unit.name}.${repeated ? ` ${repeated} ya están asociados al borrador actual.` : ""}`);
+      setNotice(globalMusic ? `${result.imported.length} pista(s) disponibles en la biblioteca global.` : `${result.imported.length - repeated} recurso(s) asociado(s) al borrador de ${unit.name}.${repeated ? ` ${repeated} ya están asociados al borrador actual.` : ""}`);
       setError(result.failed.map(({ file, message }) => `${file.name}: ${message}`).join("\n"));
     } catch (importError) {
       setError(unitOperationMessage(importError));
