@@ -11,6 +11,11 @@ on:
         required: false
         type: choice
         options: ['', '22.04', '24.04', '26.04']
+      inspect_only:
+        description: Solo inspeccionar scripts de AppRun, sin ejecutar la aplicación
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [codex/active-classroom-linux-packaging]
     paths:
@@ -55,8 +60,22 @@ jobs:
           path: unsigned-diagnostic
           merge-multiple: true
       - name: Instalar herramientas del harness
+        if: ${{ !inputs.inspect_only }}
         run: sudo apt-get update && sudo apt-get install -y ffmpeg gstreamer1.0-tools
+      - name: Inspeccionar AppRun y hooks del artefacto real
+        run: |
+          set -euo pipefail
+          image="$(find unsigned-diagnostic -type f -name '*.AppImage' -print -quit)"
+          image="$(realpath "$image")"
+          chmod 755 "$image"
+          directory="$(mktemp -d)"
+          (cd "$directory" && "$image" --appimage-extract >/dev/null)
+          cat "$directory/squashfs-root/AppRun"
+          for name in linuxdeploy-plugin-gtk zz-active-classroom-system-glib zz-active-classroom-wayland; do
+            cat "$directory/squashfs-root/apprun-hooks/$name.sh"
+          done
       - name: Validar los mismos bytes sin recompilar ni firmar
+        if: ${{ !inputs.inspect_only }}
         working-directory: active-classroom-desktop
         env:
           CLASSROOM_PACKAGE_OS: ${{ inputs.ubuntu }}
