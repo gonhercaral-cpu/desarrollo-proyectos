@@ -111,8 +111,16 @@ jobs:
           name: classroom-media-regression-diagnostic
           path: ${{ runner.temp }}/packaged-media.log
           retention-days: 5
+      - name: Exportar harness público para aceptación privada Cloud Build
+        run: ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$RUNNER_TEMP/performance-fixture" npm run test:media:linux
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: classroom-performance-fixture-${{ github.sha }}
+          path: ${{ runner.temp }}/performance-fixture/*
+          retention-days: 2
+          compression-level: 0
   audit:
-    if: ${{ !inputs.source_run && !inputs.updater_check && github.ref != 'refs/heads/codex/active-classroom-media-music' }}
+    if: ${{ !inputs.source_run && !inputs.updater_check && github.ref != 'refs/heads/codex/active-classroom-media-music' && github.ref != 'refs/heads/codex/active-classroom-ambient-performance' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     strategy:
