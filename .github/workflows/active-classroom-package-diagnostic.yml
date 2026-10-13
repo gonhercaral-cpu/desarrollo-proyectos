@@ -63,7 +63,7 @@ jobs:
           cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example check_release
           xvfb-run -a dbus-run-session -- src-tauri/target/release/examples/check_release
   media:
-    if: github.ref == 'refs/heads/codex/active-classroom-media-music' && !inputs.source_run && !inputs.updater_check
+    if: (github.ref == 'refs/heads/codex/active-classroom-media-music' || github.ref == 'refs/heads/codex/active-classroom-ambient-performance') && !inputs.source_run && !inputs.updater_check
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     defaults:
@@ -104,7 +104,7 @@ jobs:
           LD_LIBRARY_PATH="$RUNNER_TEMP/squashfs-root/usr/lib" ldd "$scanner" || true
           bash tests/prune-media-runtime.sh "$RUNNER_TEMP/squashfs-root"
           bash tests/build-coreelements.sh "$RUNNER_TEMP/squashfs-root"
-          ACTIVE_CLASSROOM_MEDIA_RUNTIME="$RUNNER_TEMP/squashfs-root/AppRun" npm run test:media:linux 2>&1 | tee "$RUNNER_TEMP/packaged-media.log"
+          ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS=1 ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_RUNTIME="$RUNNER_TEMP/squashfs-root/AppRun" npm run test:media:linux 2>&1 | tee "$RUNNER_TEMP/packaged-media.log"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         if: always()
         with:

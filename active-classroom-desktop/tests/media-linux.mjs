@@ -21,6 +21,12 @@ try {
   assert.ok((await stat(encoded)).size > 500 * 1024 * 1024, "MP4 codificado debe superar 500 MiB");
   command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", encoded]);
   await rm(seed);
+  if (process.env.ACTIVE_CLASSROOM_MEDIA_PERFORMANCE === "1") {
+    const seed = join(directory, "performance-seed.mp4");
+    command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-f", "lavfi", "-i", "sine=frequency=660", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-c:a", "aac", "-y", seed]);
+    command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-stream_loop", "119", "-i", seed, "-c", "copy", "-movflags", "+faststart", "-y", join(directory, "performance.mp4")]);
+    await rm(seed);
+  }
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "8", "-y", join(directory, "music.wav")]);
   const drawing = "1 0 0 rg 0 0 200 200 re f";
   const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> /Contents 4 0 R >>", `<< /Length ${drawing.length} >>\nstream\n${drawing}\nendstream`];
@@ -42,9 +48,10 @@ try {
     const destination = process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT;
     await mkdir(destination, { recursive: true });
     for (const name of ["h264-aac.mp4", "encoded-large.mp4", "music.wav", "transition.pdf", "media.js", "state-0.png", "state-1.png", "state-2.png"]) await copyFile(join(directory, name), join(destination, name));
+    if (process.env.ACTIVE_CLASSROOM_MEDIA_PERFORMANCE === "1") await copyFile(join(directory, "performance.mp4"), join(destination, "performance.mp4"));
     await copyFile("src-tauri/target/release/examples/media_playback", join(destination, "media_playback"));
   } else {
     const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";
-    command("xvfb-run", ["-a", "dbus-run-session", "--", executable], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 145000 });
+    command("xvfb-run", ["-a", "dbus-run-session", "--", executable], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 300000 });
   }
 } finally { await rm(directory, { recursive: true, force: true }); }

@@ -2,18 +2,25 @@
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, fs::{self, File, Metadata}, io::{Read, Seek, SeekFrom, Write}, net::{TcpListener, TcpStream}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}}, time::{Duration, SystemTime}};
+use std::{collections::HashMap, fs::{self, File, Metadata}, io::{Read, Seek, SeekFrom, Write}, net::{TcpListener, TcpStream}, path::{Path, PathBuf}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, AtomicU64, Ordering}}, time::{Duration, SystemTime}};
 use tauri::Manager;
 
 const BLOCK_BYTES: usize = 65536;
 const MAX_HEADERS: usize = 16384;
 const MAX_CONNECTIONS: usize = 8;
 #[derive(Clone)]
-pub(crate) struct MediaServer { pub port: u16, grants: Arc<Mutex<HashMap<String, Grant>>> }
+pub(crate) struct MediaServer { pub port: u16, grants: Arc<Mutex<HashMap<String, Grant>>>, metrics: Arc<Metrics> }
+#[derive(Default)]
+struct Metrics { active: AtomicUsize, peak: AtomicUsize, opened: AtomicU64, completed: AtomicU64, cancelled: AtomicU64, read: AtomicU64, sent: AtomicU64 }
 #[derive(Clone)]
 struct Grant { path: PathBuf, mime: String, size: u64, signature: Signature, leases: usize, active: Arc<AtomicBool> }
-struct TransferLog { read: u64, sent: u64 }
-impl Drop for TransferLog { fn drop(&mut self) { eprintln!("[Active Classroom Media] read_bytes={} sent_bytes={} block_bytes={BLOCK_BYTES}", self.read, self.sent); } }
+struct TransferLog { read: u64, sent: u64, expected: u64, metrics: Arc<Metrics> }
+impl Drop for TransferLog { fn drop(&mut self) {
+    self.metrics.active.fetch_sub(1, Ordering::SeqCst); self.metrics.read.fetch_add(self.read, Ordering::SeqCst); self.metrics.sent.fetch_add(self.sent, Ordering::SeqCst);
+    let complete = self.sent == self.expected;
+    if complete { self.metrics.completed.fetch_add(1, Ordering::SeqCst); } else { self.metrics.cancelled.fetch_add(1, Ordering::SeqCst); }
+    if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event={} read_bytes={} sent_bytes={} block_bytes={BLOCK_BYTES}", if complete { "range-completed" } else { "range-cancelled" }, self.read, self.sent); }
+} }
 #[derive(Clone, PartialEq, Eq)]
 struct Signature { size: u64, modified: Option<SystemTime>, #[cfg(unix)] inode: (u64, u64) }
 impl Signature {
@@ -57,7 +64,7 @@ fn signature_matches(mime: &str, head: &[u8]) -> bool {
 impl MediaServer {
     pub fn start() -> std::io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let server = Self { port: listener.local_addr()?.port(), grants: Arc::default() };
+        let server = Self { port: listener.local_addr()?.port(), grants: Arc::default(), metrics: Arc::default() };
         let state = server.clone(); let active = Arc::new(AtomicUsize::new(0));
         std::thread::spawn(move || {
             for connection in listener.incoming() {
@@ -66,11 +73,12 @@ impl MediaServer {
                     active.fetch_sub(1, Ordering::SeqCst); let _ = reply(&mut socket, 503, "", 0, None, "busy"); continue;
                 }
                 let state = state.clone(); let active = active.clone();
-                std::thread::spawn(move || { eprintln!("[Active Classroom Media] connections={}", active.load(Ordering::SeqCst)); let _ = state.serve(&mut socket); active.fetch_sub(1, Ordering::SeqCst); });
+                std::thread::spawn(move || { let _ = state.serve(&mut socket); active.fetch_sub(1, Ordering::SeqCst); });
             }
         });
         Ok(server)
     }
+    pub(crate) fn metrics(&self) -> Value { let m = &self.metrics; serde_json::json!({"active":m.active.load(Ordering::SeqCst),"peak":m.peak.load(Ordering::SeqCst),"opened":m.opened.load(Ordering::SeqCst),"completed":m.completed.load(Ordering::SeqCst),"cancelled":m.cancelled.load(Ordering::SeqCst),"readBytes":m.read.load(Ordering::SeqCst),"sentBytes":m.sent.load(Ordering::SeqCst)}) }
     pub(crate) fn allows_url(&self, url: &str) -> bool {
         let prefix = format!("http://127.0.0.1:{}/media/", self.port);
         url.strip_prefix(&prefix).filter(|id| safe_hash(id)).map(|id| self.grants.lock().map(|map| map.contains_key(id)).unwrap_or(false)).unwrap_or(false)
@@ -160,11 +168,12 @@ impl MediaServer {
             Ok((start, count)) => (if range.is_some() { 206 } else { 200 }, start, count, range.map(|_| format!("bytes {start}-{}/{}", start + count - 1, grant.size))),
             Err(_) => return reply(socket, 416, &grant.mime, 0, Some(format!("bytes */{}", grant.size)), "range"),
         };
-        eprintln!("[Active Classroom Media] range={} status={status} start={start} bytes={count} mime={}", range.unwrap_or("none"), grant.mime);
+        if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event=range-open status={status} start={start} bytes={count} mime={}", grant.mime); }
         reply(socket, status, &grant.mime, count, content_range, "")?;
         if parts[0] == "HEAD" { return Ok(()); }
         file.seek(SeekFrom::Start(start))?;
-        let mut remaining = count; let mut block = [0u8; BLOCK_BYTES]; let mut transfer = TransferLog { read: 0, sent: 0 };
+        let active = self.metrics.active.fetch_add(1, Ordering::SeqCst) + 1; self.metrics.peak.fetch_max(active, Ordering::SeqCst); self.metrics.opened.fetch_add(1, Ordering::SeqCst);
+        let mut remaining = count; let mut block = [0u8; BLOCK_BYTES]; let mut transfer = TransferLog { read: 0, sent: 0, expected: count, metrics: self.metrics.clone() };
         while remaining > 0 {
             if !grant.active.load(Ordering::SeqCst) { break; }
             let limit = remaining.min(BLOCK_BYTES as u64) as usize;
@@ -269,7 +278,7 @@ pub(crate) fn classroom_release_media(window: tauri::WebviewWindow, server: taur
 pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, data: Value) -> Result<(), String> {
     if !["teacher", "audience"].contains(&window.label()) { return Err("media: Ventana inválida".into()); }
     // Client sends only this whitelist, with capability URLs and browser messages redacted.
-    let keys = ["event", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength"];
+    let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength"];
     let mut safe = serde_json::Map::new();
     for key in keys {
         if let Some(value) = data.get(key).filter(|value| value.to_string().len() <= 512) {

@@ -13,6 +13,7 @@ import { interactiveSlides } from "./builds-browser.mjs";
 import { validateManifest } from "../src/offline/manifest.ts";
 import { createRenderer } from "../src/player/renderers/factory.ts";
 import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
+import { mediaPerformance } from "./media-performance.mjs";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -206,6 +207,7 @@ try {
   observations.push({ repetitiveMemory: { baseline, after, opens: 5, bounded: true } });
   observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
   if (fixture.musicFixture) await backgroundMusic(fixture.musicFixture, fixture.source);
+  if (fixture.performance) observations.push({ performance: await mediaPerformance(fixture) });
   for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [920, 640]]) {
     await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
     for (const count of [10, 50, 120]) await scroll(fixture.manifest, count, true);

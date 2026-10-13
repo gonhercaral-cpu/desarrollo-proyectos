@@ -13,6 +13,8 @@ export abstract class MediaRenderer extends BaseRenderer {
   async mount(host: HTMLElement, source: RendererSource, options: RendererOptions): Promise<void> {
     this.options = options;
     const media = document.createElement(this.kind); this.media = media;
+    const opened = performance.now(); let requested = 0;
+    const buffered = () => Array.from({ length: media.buffered.length }, (_, index) => [media.buffered.start(index), media.buffered.end(index)]);
     media.preload = "metadata"; media.controls = false; media.autoplay = false;
     media.volume = options.silent ? 0 : options.volume; media.muted = options.silent || options.muted;
     media.setAttribute("aria-label", source.name);
@@ -21,11 +23,17 @@ export abstract class MediaRenderer extends BaseRenderer {
     const canPlayH264Aac = media.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
     const canPlayCodec = source.codecMime ? media.canPlayType(source.codecMime) : canPlayH264Aac;
     const readableError = (message: string) => this.kind === "audio" ? message.replace("video", "audio") : message;
-    const diagnostic = (event: string) => mediaDiagnostic({ event, kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
-    for (const name of ["loadstart", "loadedmetadata", "canplay", "error", "stalled", "suspend", "seeked"]) {
+    const diagnostic = (event: string) => mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
+    for (const name of ["loadstart", "loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "seeking", "error", "stalled", "suspend", "seeked"]) {
       const listener = () => diagnostic(name); media.addEventListener(name, listener); this.listeners.push([name, listener]);
     }
     diagnostic("source");
+    const playRequested = () => { requested = performance.now(); diagnostic("play-requested"); };
+    media.addEventListener("play", playRequested); this.listeners.push(["play", playRequested]);
+    if (media instanceof HTMLVideoElement && media.requestVideoFrameCallback) {
+      const firstFrame = () => { if (!this.disposed) diagnostic("first-frame"); };
+      media.requestVideoFrameCallback(firstFrame);
+    }
     if (media instanceof HTMLVideoElement) { media.playsInline = true; media.className = "player-video"; }
     const update = () => this.notify({ playing: !media.paused && !media.ended, time: Number.isFinite(media.currentTime) ? media.currentTime : 0, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted });
     for (const name of ["timeupdate", "durationchange", "play", "pause", "ended", "volumechange", "seeked"]) {

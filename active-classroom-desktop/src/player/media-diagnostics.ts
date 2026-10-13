@@ -15,10 +15,13 @@ export function safeMediaUrl(url: string): string {
   return "[local media]";
 }
 export function mediaDiagnostic(data: Record<string, unknown>): void {
+  const diagnostic = localStorage.getItem("active-classroom-media-diagnostics") === "true";
+  if (!diagnostic && !["error", "timeout", "play-rejected"].includes(String(data.event))) return;
   const safe = { ...data };
   if (typeof safe.url === "string") safe.url = safeMediaUrl(safe.url);
   if (typeof safe.mediaErrorMessage === "string") safe.mediaErrorMessage = safe.mediaErrorMessage.replace(/(?:https?|asset):\/\/\S+/gi, "[local URL]").replace(/\b[a-f0-9]{64}\b/gi, "[local-id]").slice(0, 256);
   console.info("[Active Classroom Media]", safe);
+  if (diagnostic) window.dispatchEvent(new CustomEvent("classroom-media-diagnostic", { detail: safe }));
   if (isTauri()) void invoke("classroom_media_diagnostic", { data: safe }).catch(() => {});
 }
 export function mediaErrorMessage(code: number, canPlayMime: string, canPlayCodec: string, mime: string, localError?: string | null, canPlayBaseline = canPlayCodec): string {
