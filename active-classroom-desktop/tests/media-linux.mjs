@@ -1,6 +1,6 @@
 import { build } from "vite";
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,16 @@ try {
   const fixture = join(directory, "h264-aac.mp4");
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "8", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-level:v", "3.0", "-c:a", "aac", "-y", fixture]);
   command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", fixture]);
+  // Actual encoded samples, not sparse/container padding. Remux a noisy seed
+  // to exercise seeks into a >500 MiB mdat without minutes of CI encoding.
+  const seed = join(directory, "encoded-seed.mp4");
+  command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=24", "-f", "lavfi", "-i", "sine=frequency=660", "-vf", "noise=alls=40:allf=t", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-c:a", "aac", "-movflags", "+faststart", "-y", seed]);
+  const repeat = Math.ceil(550 * 1024 * 1024 / (await stat(seed)).size);
+  const encoded = join(directory, "encoded-large.mp4");
+  command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-stream_loop", String(repeat - 1), "-i", seed, "-c", "copy", "-movflags", "+faststart", "-y", encoded]);
+  assert.ok((await stat(encoded)).size > 500 * 1024 * 1024, "MP4 codificado debe superar 500 MiB");
+  command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", encoded]);
+  await rm(seed);
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "8", "-y", join(directory, "music.wav")]);
   const drawing = "1 0 0 rg 0 0 200 200 re f";
   const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << >> /Contents 4 0 R >>", `<< /Length ${drawing.length} >>\nstream\n${drawing}\nendstream`];
@@ -31,7 +41,7 @@ try {
   if (process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT) {
     const destination = process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT;
     await mkdir(destination, { recursive: true });
-    for (const name of ["h264-aac.mp4", "music.wav", "transition.pdf", "media.js", "state-0.png", "state-1.png", "state-2.png"]) await copyFile(join(directory, name), join(destination, name));
+    for (const name of ["h264-aac.mp4", "encoded-large.mp4", "music.wav", "transition.pdf", "media.js", "state-0.png", "state-1.png", "state-2.png"]) await copyFile(join(directory, name), join(destination, name));
     await copyFile("src-tauri/target/release/examples/media_playback", join(destination, "media_playback"));
   } else {
     const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";

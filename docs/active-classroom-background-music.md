@@ -54,6 +54,10 @@ productivos. Red desconectada; Ubuntu 22.04/24.04/26.04, X11/Wayland. Dos
 WebViews de profesor/proyector. MP4 H.264/AAC pequeño y contenedores válidos
 120/600/1024 MiB: MP4 codificado seguido de box `free` disperso; no son una
 hora de video codificado. Valida Range, 200 streaming, seek, controles, repetición,
-RSS, decoders y limpieza. GPU/sandbox flags solo del harness por restricciones
+RSS, decoders y limpieza.
+Además usa un MP4 de más de 500 MiB con muestras H.264/AAC codificadas:
+semilla HD con ruido, repetida mediante remux sin relleno `free`. Sus cinco
+reaperturas y seeks ejercitan datos de video reales.
+GPU/sandbox flags solo del harness por restricciones
 del runner; nunca del paquete. La validación física de GPU/Zorin requiere el
 equipo del usuario. Fallo de aceptación impide firma/publicación.

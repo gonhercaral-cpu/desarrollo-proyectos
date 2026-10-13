@@ -80,7 +80,21 @@ fn main() {
         let checked = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), manifest["resources"][0]["resourceId"].as_str().unwrap()).unwrap(); assert!(checked.url.is_some(), "{}", checked.error.unwrap_or_default());
         large_sources.push(json!({"url": checked.url, "mimeType": "video/mp4", "codecMime": checked.codec_mime, "name": format!("H264 AAC {mib} MiB"), "sizeBytes": large_size}));
     }
-    let large_source = large_sources[1].clone();
+    // Copy/hash the real encoded large video with bounded buffers as well.
+    let encoded_path = std::path::PathBuf::from(std::env::var("ACTIVE_CLASSROOM_MEDIA_FIXTURE").unwrap()).parent().unwrap().join("encoded-large.mp4");
+    let encoded_size = fs::metadata(&encoded_path).unwrap().len(); assert!(encoded_size > 500 * 1024 * 1024);
+    let temporary = root.join("encoded-large.mp4");
+    let mut input = fs::File::open(encoded_path).unwrap(); let mut output = fs::File::create(&temporary).unwrap();
+    let mut digest = Sha256::new(); let mut block = [0u8; 65536];
+    loop { let read = input.read(&mut block).unwrap(); if read == 0 { break; } digest.update(&block[..read]); output.write_all(&block[..read]).unwrap(); }
+    let encoded_hash = format!("{:x}", digest.finalize()); drop(output); fs::rename(temporary, root.join("objects").join(&encoded_hash)).unwrap();
+    let mut encoded_manifest = manifest.clone(); encoded_manifest["resources"][0]["download"]["sizeBytes"] = json!(encoded_size); encoded_manifest["resources"][0]["download"]["checksums"]["sha256"] = json!(encoded_hash);
+    let mut content = encoded_manifest.clone(); for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+    encoded_manifest["integrity"]["contentHash"] = json!(format!("{:x}", Sha256::digest(canonical(&content).as_bytes())));
+    fs::write(directory.join("manifest.json"), serde_json::to_vec(&encoded_manifest).unwrap()).unwrap();
+    let checked = server.inspect(&root, manifest["unit"]["unitId"].as_str().unwrap(), manifest["version"].as_u64().unwrap(), manifest["resources"][0]["resourceId"].as_str().unwrap()).unwrap(); assert!(checked.url.is_some(), "{}", checked.error.unwrap_or_default());
+    let large_source = json!({"url":checked.url,"mimeType":"video/mp4","codecMime":checked.codec_mime,"name":"H264 AAC encoded >500 MiB","sizeBytes":encoded_size});
+    large_sources.push(large_source.clone());
     let script = fs::read(std::env::var("ACTIVE_CLASSROOM_MEDIA_SCRIPT").unwrap()).unwrap();
     let png_directory = std::path::PathBuf::from(std::env::var("ACTIVE_CLASSROOM_MEDIA_FIXTURE").unwrap()).parent().unwrap().to_path_buf();
     let mut build_manifest = manifest.clone(); build_manifest["mainPresentationId"] = json!("state-0"); build_manifest["generalResourceIds"] = json!([]);

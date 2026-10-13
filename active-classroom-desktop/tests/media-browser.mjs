@@ -51,6 +51,8 @@ async function video(source) {
   assert(media.canPlayType(source.codecMime), "Códecs reales no disponibles en runner");
   assert(media.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'), "H264/AAC no disponible en runner");
   await renderer.command("PLAY_PAUSE"); await until(() => media.currentTime > .15); await renderer.command("PLAY_PAUSE"); assert(media.paused, "Pause");
+  const lateSeek = media.duration * .75;
+  renderer.seek(lateSeek); await until(() => !media.seeking && Math.abs(media.currentTime - lateSeek) < .3);
   renderer.seek(5); await until(() => !media.seeking && Math.abs(media.currentTime - 5) < .3);
   renderer.seek(1); await until(() => !media.seeking && Math.abs(media.currentTime - 1) < .3);
   renderer.setVolume(.25); assert(media.volume === .25, "Volumen");
