@@ -25,6 +25,7 @@ async function oldAsset(source, path) {
   renderer.destroy();
 }
 async function video(source) {
+  observations.push({ phase: "before-video", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   const response = await fetch(source.url, { headers: { Range: "bytes=0-1" } });
   assert(response.status === 206 && response.headers.get("Accept-Ranges") === "bytes" && response.headers.get("Content-Length") === "2" && response.headers.get("Content-Type") === "video/mp4", "Range probe del WebView falló");
   await response.body?.cancel();
@@ -32,6 +33,7 @@ async function video(source) {
   await renderer.mount(document.querySelector("#media"), source, { ...rendererOptions, onState(value) { state = value; } });
   const media = renderer.media;
   await until(() => media.readyState >= 2 || !!media.error);
+  observations.push({ phase: "loaded-video", size: source.sizeBytes, memory: await invoke("fixture_memory"), videos: document.querySelectorAll("video").length });
   assert(!media.error, `HTTP MediaError ${media.error?.code}`);
   assert(source.codecMime?.includes("avc1.") && source.codecMime?.includes("mp4a.40.2"), "Códecs reales ausentes del diagnóstico");
   assert(media.canPlayType(source.codecMime), "Códecs reales no disponibles en runner");
@@ -46,6 +48,7 @@ async function video(source) {
   await projected.receive({ sessionId: "media-fixture", revision: 1, unitId: "u", version: 1, resourceId: "v", slideIndex: 0, page: 1, source, playback: { ...state, time: 1, playing: true, muted: false }, updatedAt: Date.now() });
   await until(() => document.querySelector("#audience video")?.currentTime > 1);
   assert(document.querySelector("#audience video").muted, "Audiencia debe conservar silencio"); projected.destroy();
+  observations.push({ phase: "after-projection", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   observations.push({ transport: "loopback", size: source.sizeBytes, codecMime: source.codecMime, code: media.error?.code || 0, loaded: true, playPauseSeekVolumeMuteFullscreenProjection: true }); renderer.destroy();
 }
 function emptyRenderer(kind) {

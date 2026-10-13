@@ -22,7 +22,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [codex/active-classroom-linux-packaging]
+    branches: [codex/active-classroom-linux-packaging, codex/active-classroom-media-music]
     paths:
       - .github/workflows/active-classroom-package-diagnostic.yml
       - active-classroom-desktop/tests/linux-package-audit.sh
@@ -30,8 +30,50 @@ permissions:
   contents: read
   actions: read
 jobs:
+  media:
+    if: github.ref == 'refs/heads/codex/active-classroom-media-music'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: active-classroom-desktop
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+      - name: Dependencias del diagnóstico nativo
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 ffmpeg gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+          npm ci
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Reproducir usando librerías del paquete publicado 1.0.13
+        run: |
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/current.AppImage" https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.13/Active-Classroom-1.0.13-x86_64.AppImage
+          echo '2d37de8ebe3f34d7c339aaaa02de910bdf8b6acc1f11ee91b151c9d26029662f  current.AppImage' > "$RUNNER_TEMP/current.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum --check current.sha256 && chmod 755 current.AppImage && ./current.AppImage --appimage-extract >/dev/null)
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example media_playback
+          cp src-tauri/target/release/examples/media_playback "$RUNNER_TEMP/squashfs-root/usr/bin/active-classroom"
+          cat "$RUNNER_TEMP/squashfs-root/apprun-hooks/linuxdeploy-plugin-gstreamer.sh"
+          ACTIVE_CLASSROOM_MEDIA_RUNTIME="$RUNNER_TEMP/squashfs-root/AppRun" npm run test:media:linux 2>&1 | tee "$RUNNER_TEMP/packaged-media.log"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        if: always()
+        with:
+          name: classroom-media-regression-diagnostic
+          path: ${{ runner.temp }}/packaged-media.log
+          retention-days: 5
   audit:
-    if: ${{ !inputs.source_run }}
+    if: ${{ !inputs.source_run && github.ref != 'refs/heads/codex/active-classroom-media-music' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     strategy:

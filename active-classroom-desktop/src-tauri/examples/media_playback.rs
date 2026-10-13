@@ -14,6 +14,21 @@ fn fixture_fullscreen(window: tauri::WebviewWindow, active: bool) { window.set_f
 #[tauri::command]
 fn fixture_size(window: tauri::WebviewWindow, width: f64, height: f64) { window.set_size(tauri::LogicalSize::new(width, height)).unwrap(); }
 #[tauri::command]
+fn fixture_memory() -> Value {
+    let mut processes = Vec::new(); let mut pending = vec![std::process::id()];
+    while let Some(pid) = pending.pop() {
+        let status = fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
+        let field = |name: &str| status.lines().find_map(|line| line.strip_prefix(name)).unwrap_or("").trim().to_string();
+        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:")}));
+        for entry in fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
+            if let Ok(children) = fs::read_to_string(entry.path().join("children")) {
+                pending.extend(children.split_whitespace().filter_map(|child| child.parse::<u32>().ok()));
+            }
+        }
+    }
+    json!(processes)
+}
+#[tauri::command]
 fn fixture_report(app: tauri::AppHandle, ok: bool, result: Value) { println!("MEDIA_NATIVE_RESULT {}", json!({"ok": ok, "result": result})); app.state::<Arc<AtomicBool>>().store(ok, Ordering::SeqCst); app.exit(if ok { 0 } else { 1 }); }
 fn canonical(value: &Value) -> String {
     match value {
@@ -77,7 +92,7 @@ fn main() {
             };
             tauri::http::Response::builder().header("Content-Type", mime).header("Content-Security-Policy", &csp).body(body).unwrap()
         })
-        .invoke_handler(tauri::generate_handler![media_fixture, fixture_report, fixture_fullscreen, fixture_size, local_media::classroom_media_diagnostic])
+        .invoke_handler(tauri::generate_handler![media_fixture, fixture_report, fixture_fullscreen, fixture_size, fixture_memory, local_media::classroom_media_diagnostic])
         .setup(move |app| {
             app.asset_protocol_scope().allow_file(&path)?;
             for png_path in &allowed_paths { app.asset_protocol_scope().allow_file(png_path)?; }

@@ -19,5 +19,6 @@ try {
   command("cargo", ["build", "--release", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--example", "media_playback"]);
   // Cloud CI cannot create nested sandbox namespaces or use a hardware GPU.
   // These settings apply only to this test process, never the installed app.
-  command("xvfb-run", ["-a", "dbus-run-session", "--", "src-tauri/target/release/examples/media_playback"], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 85000 });
+  const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";
+  command("xvfb-run", ["-a", "dbus-run-session", "--", executable], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 85000 });
 } finally { await rm(directory, { recursive: true, force: true }); }
