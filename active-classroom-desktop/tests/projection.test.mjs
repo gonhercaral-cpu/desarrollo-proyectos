@@ -213,6 +213,8 @@ test("video real de audiencia permanece silenciado al reproducir, buscar, volume
   await new Promise(resolve => setTimeout(resolve, 110)); video.dispatchEvent(new window.Event("seeked"));
   assert.equal(video.paused, false); assert.equal(video.currentTime, 15);
   await renderer.command("MUTE"); renderer.setVolume(1); assert.equal(video.muted, true); assert.equal(video.volume, 0);
+  await renderer.applyPlayback({ ...initialRendererState(), playing: true, seeking: true, buffering: true, time: 75, duration: 100 });
+  assert.equal(video.paused,false,"Seek del profesor no reinicia transporte del decoder de audiencia"); assert.equal(video.currentTime,15);
   await renderer.applyPlayback({ ...initialRendererState(), playing: false, time: 35, duration: 100 });
   await new Promise(resolve => setTimeout(resolve, 110)); video.dispatchEvent(new window.Event("seeked"));
   assert.equal(video.paused, true); assert.equal(video.currentTime, 35); renderer.destroy(); assert.equal(video.hasAttribute("src"), false);

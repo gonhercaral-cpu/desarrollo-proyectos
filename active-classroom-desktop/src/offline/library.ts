@@ -148,6 +148,9 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     syncDiagnostic("REFRESH_START");
     refreshing = true; render();
     refreshController = new AbortController();
+    // Music has its own version/activation and must not depend on a successful
+    // Unit publication response (nor on the automatic Unit-update preference).
+    void ambient?.sync().catch(() => { console.warn("[Active Classroom Ambient] sync-failed; verified local catalog preserved"); });
     try {
       const available = await api.list(refreshController.signal);
       if (current !== epoch) return;
@@ -158,7 +161,6 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         if (entry.localVersion !== undefined) syncDiagnostic("LOCAL_PUBLICATION", { unitId, version: entry.localVersion });
         if (entry.localVersion !== undefined && entry.remoteVersion !== undefined && entry.remoteVersion > entry.localVersion) syncDiagnostic("UPDATE_AVAILABLE", { unitId, version: entry.remoteVersion, localVersion: entry.localVersion });
       }
-      void ambient?.sync().catch(() => { console.warn("[Active Classroom Ambient] sync-failed; verified local catalog preserved"); });
       session.connected();
       diagnose("publications", available.length ? "listed" : "empty");
       message = available.length ? "Publicaciones consultadas. Las clases locales se conservan hasta completar cada actualización." : "No hay clases publicadas. Tus clases locales se conservan.";

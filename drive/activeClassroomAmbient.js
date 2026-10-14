@@ -106,7 +106,7 @@ function createAmbientHandlers({ db, bucket, getProfile, authorize, getRequestPr
   async function list(request) { await authorize(request); return { catalog: await read() }; }
   async function preview(request) {
     await editor(request, "access"); const track = await version(request.data || {});
-    const [url] = await bucket.file(track.storagePath, { generation: track.generation }).getSignedUrl({ action: "read", expires: Date.now() + 5 * 60 * 1000 }); return { url };
+    const [url] = await bucket.file(track.storagePath, { generation: track.generation }).getSignedUrl({ version: "v4", action: "read", expires: Date.now() + 5 * 60 * 1000, queryParams: { generation: track.generation } }); return { url };
   }
   async function file(request, response) {
     response.set("Cache-Control", "private, no-store");

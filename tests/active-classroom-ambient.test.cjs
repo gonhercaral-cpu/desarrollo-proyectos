@@ -9,8 +9,9 @@ function setup(profile = { active: true, role: "admin" }) {
   const ref = path => ({ path, id: path.split("/").at(-1), collection: name => collection(`${path}/${name}`), get: async () => ({ exists: documents.has(path), id: path.split("/").at(-1), ref: ref(path), data: () => structuredClone(documents.get(path)) }), create: async value => { assert.equal(documents.has(path), false); documents.set(path, structuredClone(value)); }, update: async value => documents.set(path, { ...documents.get(path), ...value }) });
   const collection = path => ({ doc: id => ref(`${path}/${id}`), get: async () => ({ docs: await Promise.all([...documents.keys()].filter(key => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes("/")).map(key => ref(key).get())) }) });
   const db = { collection, runTransaction(operation) { const result = tail.then(() => operation({ get: target => target.get(), create: (target, value) => { assert.equal(documents.has(target.path), false); documents.set(target.path, structuredClone(value)); }, set: (target, value) => documents.set(target.path, structuredClone(value)) })); tail = result.catch(() => {}); return result; } };
-  const handlers = createAmbientHandlers({ db, bucket: {}, getProfile: async () => profile, authorize: async () => { if (!profile.active) throw Object.assign(new Error("denied"), { code: "permission-denied" }); }, resolveFile: async (_profile, id) => ({ id, name: "Música.mp3", mimeType: "audio/mpeg", version: "1", modifiedTime: "2026-10-13" }), prepareResource: async (_profile, resource) => frozen(resource.driveFileId === "second" ? "b" : "a"), verifyDownload: async download => download });
-  return { documents, handlers };
+  const signatures = []; const bucket = { file(path, options) { return { getSignedUrl: async config => { signatures.push({ path, options, config }); return ["https://storage.googleapis.com/private/preview"]; } }; } };
+  const handlers = createAmbientHandlers({ db, bucket, getProfile: async () => profile, authorize: async () => { if (!profile.active) throw Object.assign(new Error("denied"), { code: "permission-denied" }); }, resolveFile: async (_profile, id) => ({ id, name: "Música.mp3", mimeType: "audio/mpeg", version: "1", modifiedTime: "2026-10-13" }), prepareResource: async (_profile, resource) => frozen(resource.driveFileId === "second" ? "b" : "a"), verifyDownload: async download => download });
+  return { documents, handlers, signatures };
 }
 test("catálogo global deduplica SHA, versiona y conserva snapshots al renombrar/ordenar/eliminar", async () => {
   const { documents, handlers } = setup(); assert.equal((await handlers.list(request({}))).catalog.ambientCatalogVersion, 0);
@@ -55,4 +56,11 @@ test("permisos reales: importar, subir y ordenar independientes; sin acceso dene
   const denied = setup({ active: false, role: "admin" }).handlers;
   await assert.rejects(denied.list(request({})), { code: "permission-denied" });
   await assert.rejects(handlers.upload({ data: {} }), { code: "unauthenticated" });
+});
+test("preview autorizado conserva generación exacta, URL v4 breve y rechaza otra pista", async () => {
+  const { handlers,signatures } = setup(); const result = await handlers.imported(request({driveFileId:"first"}));
+  await handlers.preview(request({version:result.catalog.ambientCatalogVersion,trackId:"a".repeat(64)}));
+  assert.equal(signatures[0].config.version,"v4"); assert.deepEqual(signatures[0].config.queryParams,{generation:"12"}); assert.equal(signatures[0].options.generation,"12");
+  assert.ok(signatures[0].config.expires > Date.now() && signatures[0].config.expires <= Date.now()+300000);
+  await assert.rejects(handlers.preview(request({version:1,trackId:"b".repeat(64)})),{code:"not-found"}); assert.equal(signatures.length,1);
 });

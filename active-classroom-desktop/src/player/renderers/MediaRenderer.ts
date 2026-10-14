@@ -118,11 +118,14 @@ export abstract class MediaRenderer extends BaseRenderer {
     // Never repeatedly seek an already aligned paused projector, nor chase the
     // teacher clock while its decoder is buffering/seeking.
     if (!state.seeking && !state.buffering && !media.seeking && !this.seekInFlight && this.seekTarget === undefined && Math.abs(media.currentTime - state.time) > 0.35) this.seek(state.time);
-    if (!state.playing || state.seeking || state.buffering) media.pause();
+    // A seek is not a transport pause. Repeated pause/play during a playing
+    // teacher seek can leave WebKitGTK's muted decoder waiting indefinitely.
+    // Keep it running; correct only to the settled teacher target above.
+    if (!state.playing) media.pause();
     else if (media.paused && !this.playPending && !this.state.error) {
       this.playPending = true;
-      try { this.requestPlay?.(); await media.play(); if (this.disposed || !this.playback?.playing || this.playback?.seeking || this.playback?.buffering) media.pause(); }
-      catch (error) { if (!this.disposed && this.playback?.playing && !this.playback.seeking && !this.playback.buffering && !(error instanceof DOMException && error.name === "AbortError")) this.notify({ playing: false, error: "No se pudo reproducir video en el proyector." }); }
+      try { this.requestPlay?.(); await media.play(); if (this.disposed || !this.playback?.playing) media.pause(); }
+      catch (error) { if (!this.disposed && this.playback?.playing && (error as { name?: string })?.name !== "AbortError") this.notify({ playing: false, error: "No se pudo reproducir video en el proyector." }); }
       finally { this.playPending = false; }
     }
   }

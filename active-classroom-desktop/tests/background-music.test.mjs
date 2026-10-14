@@ -16,6 +16,14 @@ function environment(t) {
 }
 const manifest = { backgroundMusic: ["a", "b"].map((id, order) => ({ id, resourceId: id, sourceType: "file", title: `Pista ${id}`, order })) };
 const source = async id => ({ url: `http://127.0.0.1:5000/media/${id.repeat(64)}`, mimeType: "audio/mpeg", name: id, sizeBytes: 6000000 });
+
+test("biblioteca global selecciona canción sin depender del manifest de Unit", async t => {
+  const dom = environment(t); const prepared = [];
+  const music = new BackgroundMusic(document.querySelector("#music"), manifest.backgroundMusic, async id => { prepared.push(id); return source(id); }); t.after(() => music.destroy());
+  const select = document.querySelector('select[aria-label="Biblioteca de música ambiente"]'); assert.equal(select.options.length,2);
+  select.value = "1"; select.dispatchEvent(new dom.window.Event("change")); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(music.index,1); await music.toggle(); assert.deepEqual(prepared,["b"]); assert.equal(document.querySelectorAll("audio").length,1);
+});
 test("música offline: play/pause, siguiente/anterior, un único audio y volumen independiente", async t => {
   environment(t); const released = [];
   const music = new BackgroundMusic(document.querySelector("#music"), manifest, source, () => true, file => released.push(file)); t.after(() => music.destroy());

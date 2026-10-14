@@ -19,6 +19,7 @@ export function isProjectionSnapshot(value: unknown): value is ProjectionSnapsho
       !integer(data.revision, 1) || !integer(data.version, 1) || !integer(data.page, 1) ||
       (data.slideIndex !== null && !integer(data.slideIndex, 0)) || !nonnegative(data.updatedAt)) return false;
   const state = data.playback;
+  if (state && ((state.seeking !== undefined && typeof state.seeking !== "boolean") || (state.buffering !== undefined && typeof state.buffering !== "boolean"))) return false;
   if (!state || typeof state.loading !== "boolean" || typeof state.playing !== "boolean" || typeof state.muted !== "boolean" ||
       typeof state.error !== "string" || !integer(state.page, 1) || !integer(state.pages, 0) ||
       !nonnegative(state.time) || !nonnegative(state.duration) || !nonnegative(state.volume) || state.volume > 1) return false;

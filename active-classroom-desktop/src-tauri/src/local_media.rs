@@ -311,7 +311,7 @@ pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, data: Val
     if !["teacher", "audience"].contains(&window.label()) { return Err("media: Ventana inválida".into()); }
     // Client sends only this whitelist, with capability URLs and browser messages redacted.
     let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength"];
-    let mut safe = serde_json::Map::new();
+    let mut safe = serde_json::Map::new(); safe.insert("window".into(),Value::String(window.label().into()));
     for key in keys {
         if let Some(value) = data.get(key).filter(|value| value.to_string().len() <= 512) {
             let value = if key == "url" || key == "mediaErrorMessage" {

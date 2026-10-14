@@ -259,6 +259,8 @@ jobs:
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
 
       - name: MP4 H.264/AAC local, Range, controles, proyección y scroll largo en Tauri real
+        env:
+          ACTIVE_CLASSROOM_MEDIA_PERFORMANCE: '1'
         run: npm run test:media:linux
 
       - name: Fullscreen Tauri real en Wayland con dos monitores virtuales
