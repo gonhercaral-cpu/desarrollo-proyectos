@@ -123,3 +123,15 @@ reglas y transacciones: 163; Desktop: 154, además de Rust, build y aceptación
 nativa. Paquetes Debian/AppImage se instalan y prueban en Ubuntu 22.04,
 24.04 y 26.04, X11 y Wayland, antes de firmar sus bytes. El tag de producción
 `active-classroom-v1.0.15` vuelve a ejecutar el pipeline antes de publicar.
+
+Producción: pipeline `38502171324` aprobado, release estable publicada con
+Debian, AppImage, ambas firmas, ambos SHA-256 y `latest.json`. Functions de
+catálogo y Hosting desplegados; Rules y Office no cambiaron. Catálogo v1
+verificado en Web; no había pistas antiguas guardadas que recuperar.
+Acceso sin autenticación al catálogo/archivo privado devuelve HTTP 401.
+
+Comprobación oficial del updater `38505886559`: identidad de versión instalada
+1.0.14 detecta 1.0.15 mediante el endpoint público, descarga 123.849.652 bytes
+del paquete publicado y valida la firma (`signature_verified=true`). Esta
+comprobación es de lectura: `install=false`; no equivale a haber instalado o
+reproducido el video en el equipo físico Zorin del usuario.
