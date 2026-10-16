@@ -134,7 +134,7 @@ test("Player opera offline, navega, conserva presentación y libera renderer al 
   cleanup(() => player.destroy()); await tick();
   window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true })); await tick();
   assert.equal(player.controller.slideIndex, 1); assert.deepEqual(renderers[0].pages, [2]);
-  assert.equal(root.querySelectorAll("[data-associated] button").length, 2);
+  assert.equal(root.querySelectorAll("[data-associated] [data-resource]").length, 2);
   root.querySelector("[data-general] button").click(); await tick();
   assert.equal(renderers[0].destroyed, true);
   await player.dispatch("NEXT"); assert.deepEqual(renderers[1].commands, ["NEXT"]);
@@ -196,7 +196,7 @@ for (const Renderer of [AudioRenderer, VideoRenderer]) test(`${Renderer.name}: r
   await renderer.command("VOLUME_DOWN"); assert.equal(media.volume, .9);
   await renderer.command("MUTE"); assert.equal(media.muted, true);
   await renderer.command("NEXT"); assert.equal(media.currentTime, 0);
-  media.dispatchEvent(new window.Event("error")); assert.match(states.at(-1).error, /códec/);
+  media.dispatchEvent(new window.Event("error")); assert.match(states.at(-1).error, /No se pudo leer/);
   renderer.destroy(); assert.equal(media.hasAttribute("src"), false); assert.equal(media.isConnected, false); assert.equal(paused, true);
 });
 

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { getDriveRootSettings, listDriveFolder } from "../../services/driveService";
 import { getDriveResourceKind } from "../utils/driveResources";
 import { formatResourceDate, getResourceKindLabel } from "../utils/resourceTypes";
+import { unitOperationMessage } from "../utils/draftResources";
 
-export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit }) {
+export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, allowExisting = false, onDestinationChange }) {
   const dialogRef = useRef(null);
   const [path, setPath] = useState([]);
   const [items, setItems] = useState([]);
@@ -75,7 +76,7 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
       setNotice(`${result.imported.length - repeated} recurso(s) importado(s) a ${unit.name}.${repeated ? ` ${repeated} ya estaban importados.` : ""}`);
       setError(result.failed.map(({ file, message }) => `${file.name}: ${message}`).join("\n"));
     } catch (importError) {
-      setError(importError.message || "No se pudo importar la selección.");
+      setError(unitOperationMessage(importError));
     } finally {
       setSaving(false);
       setProgress(null);
@@ -91,6 +92,11 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
           <div><h2 id="ac-drive-import-title">Importar desde Nube AES</h2><p>Destino: {unit.name}. Selecciona recursos de una o varias carpetas.</p></div>
           <button type="button" className="ac-outline-button" onClick={onClose} disabled={saving} aria-label="Cerrar importador">×</button>
         </header>
+        {destination && (onDestinationChange ? <label>Importar como<select disabled={saving} value={destination === "Presentación principal" ? "main" : "general"} onChange={event => {
+          const mode = event.target.value;
+          if (mode === "main") setSelected(current => current.filter(file => getDriveResourceKind(file) === "presentation" || file.mimeType === "application/pdf" || /\.pdf$/i.test(file.name)).slice(0, 1));
+          onDestinationChange(mode);
+        }}><option value="main">Presentación principal</option><option value="general">Recurso general</option></select></label> : <p>Importar como: <strong>{destination}</strong></p>)}
         <nav className="ac-breadcrumb" aria-label="Carpetas de Nube AES">
           {path.map((folder, index) => <button key={folder.id} type="button" disabled={loading || saving || index === path.length - 1} onClick={() => navigate(path.slice(0, index + 1))}>{folder.name}</button>)}
         </nav>
@@ -101,7 +107,7 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
             const kind = getDriveResourceKind(file);
             const compatible = kind && (!acceptFile || acceptFile(file));
             if (folder) return <button className="ac-outline-button" key={file.id} type="button" disabled={saving} onClick={() => navigate([...path, { id: file.id, name: file.name }])}>▰ {file.name}</button>;
-            const duplicate = existingIds.has(file.id);
+            const duplicate = !allowExisting && existingIds.has(file.id);
             return <label key={file.id} className={`ac-drive-choice ${!compatible || duplicate ? "is-unavailable" : ""}`}>
               <input type="checkbox" checked={selected.some((item) => item.id === file.id)} disabled={saving || !compatible || duplicate} onChange={() => toggle(file)} />
               <span><strong>{file.name}</strong><small>{duplicate ? "Ya importado en esta Unit" : compatible ? getResourceKindLabel(kind, file.name) : "Formato no compatible"} · {formatResourceDate(file.modifiedTime)}</small></span>

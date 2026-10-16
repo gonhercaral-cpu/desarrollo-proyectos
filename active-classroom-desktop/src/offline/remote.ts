@@ -2,6 +2,7 @@ import { SyncError, validHash, validId, type Publication, type Manifest, type Pu
 import type { DeviceLabel } from "./device-label.ts";
 import { connectionError, diagnose } from "./connection.ts";
 import { syncDiagnostic } from "./sync-diagnostics.ts";
+import { type LibraryLevel, setLibraryLevels, validLibraryLevels } from "./levels.ts";
 export const DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
 
 export const API_BASE = "https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net";
@@ -80,7 +81,11 @@ export class PublicationApi {
     const visited = new Set<string>();
     let cursor: string | null = null;
     do {
-      const page: { publications: Publication[]; nextCursor: string | null; device?: DeviceLabel } = await this.call("listActiveClassroomPublications", { limit: 50, cursor }, signal);
+      const page: { publications: Publication[]; levels?: LibraryLevel[]; nextCursor: string | null; device?: DeviceLabel } = await this.call("listActiveClassroomPublications", { limit: 50, cursor }, signal);
+      if (page.levels !== undefined) {
+        if (!validLibraryLevels(page.levels)) throw this.invalidCatalog();
+        setLibraryLevels(page.levels);
+      }
       if (page.device) await this.onDevice?.(page.device);
       if (!Array.isArray(page.publications)) throw this.invalidCatalog();
       for (const publication of page.publications) {

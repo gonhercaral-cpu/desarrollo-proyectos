@@ -1,6 +1,11 @@
 mod audience_window;
 mod offline_cache;
 mod device_identity;
+mod local_media;
+mod app_updater;
+mod startup;
+#[cfg(feature = "updater-acceptance")]
+mod updater_acceptance;
 
 use audience_window::classroom_projection;
 use regex::Regex;
@@ -938,14 +943,25 @@ mod tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(feature = "updater-acceptance")]
+    if std::env::var_os("ACTIVE_CLASSROOM_UPDATER_STAGE").is_some() { updater_acceptance::run(); return; }
     tauri::Builder::default()
+        .plugin(startup::single_instance_plugin())
+        .plugin(startup::autostart_plugin())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(app_updater::UpdateGate::default())
         .manage(offline_cache::CacheGate::default())
         .manage(device_identity::DeviceGate::default())
         .manage(audience_window::ProjectionGate::default())
+        .setup(|app| { app.manage(startup::StartupGate::load(app.handle())); app.manage(local_media::MediaServer::start()?); Ok(()) })
         .on_window_event(audience_window::window_event)
         .invoke_handler(tauri::generate_handler![
             offline_cache::classroom_cache,
+            app_updater::classroom_app_update,
+            startup::classroom_startup,
+            local_media::classroom_media,
+            local_media::classroom_media_diagnostic,
             device_identity::classroom_device,
             classroom_projection,
             import_presentation

@@ -5,6 +5,13 @@ const { snapshotResource } = require("../drive/activeClassroomUnit");
 const { createProcessorClient } = require("../drive/activeClassroomProcessorClient");
 const resource = { id: "main", source: "drive", name: "Clase.pptx", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", driveFileId: "original", driveVersion: "1" };
 
+test("límite real de proveedor HTTP 413 devuelve error explícito", () => {
+  const { processingError } = require("../drive/activeClassroomDriveContent");
+  const error = processingError({ response: { status: 413 } });
+  assert.equal(error.code, "resource-exhausted");
+  assert.equal(error.details.reason, "providerSizeLimitExceeded");
+});
+
 test("reconoce Office binario y exportaciones Google sin cambiar originales", () => {
   assert.equal(officeExtension(resource), "pptx");
   assert.equal(officeExtension({ mimeType: "application/vnd.google-apps.presentation" }), null);
@@ -29,7 +36,7 @@ test("estado web distingue pendiente, procesamiento, PDF y error", async () => {
   assert.equal(needsOfficeProcessing(resource), true);
   assert.match(documentProcessingLabel(resource), /Pendiente/);
   assert.match(documentProcessingLabel({ ...resource, processing: { state: "processing" } }), /Procesando/);
-  assert.match(documentProcessingLabel({ ...resource, kind: "presentation", processing: { state: "ready", pageCount: 18 } }), /18 diapositivas/);
+  assert.match(documentProcessingLabel({ ...resource, kind: "presentation", processing: { state: "ready", processorVersion: "pptx-builds-png-v1", pageCount: 18 } }), /18 diapositivas/);
   assert.match(documentProcessingLabel({ ...resource, processing: { state: "failed" } }), /Reintentar/);
 });
 test("procesador privado usa audiencia OIDC y capacidades firmadas limitadas a objeto/generación", async () => {

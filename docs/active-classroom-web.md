@@ -2,6 +2,8 @@
 
 Módulo administrativo integrado al Sistema de Desarrollo de Proyectos. Reutiliza autenticación, perfil y rol `admin` del sistema; no conserva login demostrativo ni almacenamiento local del prototipo original.
 
+**MVP web actual:** [contrato Desktop, publicaciones inmutables y despliegue](active-classroom-desktop-api.md). [Manifest completo](active-classroom-manifest.example.json). Las secciones de integración inicial e Hito 1 siguientes documentan compatibilidad histórica.
+
 ## Arquitectura
 
 ```text
@@ -37,7 +39,7 @@ Las reglas viven en `firestore.rules` y `storage.rules`. El URL de descarga no s
 
 Biblioteca, niveles/Units, búsqueda, filtros, lista/cuadrícula, carga, drag-and-drop, preview, descarga, publicación, eliminación, Publicaciones, Equipos y Ajustes están integrados. Panel de anuncios, Observaciones y Sugerencias permanecen marcados como futuros porque prototipo original solo tenía navegación visual para esas secciones.
 
-Aplicación docente Tauri original no fue modificada. Su adaptador local debe reemplazarse por lectura Firebase autenticada para consumir `activeClassroomFolders` y una consulta a `activeClassroomResources` con `published == true`.
+Aplicación docente Tauri original no fue modificada. Su próximo adaptador debe consumir los endpoints autenticados de publicaciones versionadas descritos en el contrato Desktop; los flags históricos de recursos no representan una publicación de Unit.
 
 ## Hito 1: referencias de Nube AES
 
@@ -94,9 +96,7 @@ PDF utiliza iframe de Blob compatible con CSP; imágenes/audio/video usan Blob l
 URLs temporales se revocan al cambiar selección/desmontar. Eliminar referencia
 no elimina ni modifica el original de Drive.
 
-Pendiente: revisiones inmutables, detección periódica de cambios, asociaciones por
-diapositiva y protocolo/caché de sincronización Linux. No se implementan reproductor,
-segunda pantalla ni conversión/render de presentaciones.
+MVP posterior completa revisiones inmutables con archivos congelados, comprobación manual de cambios, asociaciones por diapositiva y endpoints Desktop. Pendientes: caché/sincronización Linux, comprobación periódica, reproductor, segunda pantalla y conversión/render de presentaciones.
 
 ### Validación y activación
 

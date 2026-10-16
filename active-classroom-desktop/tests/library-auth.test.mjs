@@ -61,7 +61,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
         if (cacheFirst) { cacheLoaded.resolve([local]); await settle(() => root.querySelector("[data-open]")); assert.equal(calls, 0); signedIn.resolve(); }
         else { signedIn.resolve(); await settle(() => session.state.online); assert.equal(calls, 0); cacheLoaded.resolve([local]); }
         await settle(() => root.textContent.includes("Salón 4") && calls === 1 && !root.textContent.includes("Consultando…"));
-        assert.match(root.textContent, /Actualizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
+        assert.match(root.textContent, /Sincronizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
         label = "Aula Audiovisual"; root.querySelector("[data-refresh]").click();
         await settle(() => root.textContent.includes(label)); assert.equal(session.owner, `ac-device-${identity.deviceId}`);
         for (const failure of [401, 403]) {
@@ -69,21 +69,36 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
           await settle(() => root.textContent.includes(failure === 401 ? "Problema de autenticación" : "Acceso no autorizado"));
           assert.doesNotMatch(root.textContent, /Modo offline|Sin conexión/);
           assert.equal(root.querySelector("[data-open]").disabled, false);
-          status = 200; root.querySelector("[data-refresh]").click(); await settle(() => root.textContent.includes("Actualizado"));
+          status = 200; root.querySelector("[data-refresh]").click(); await settle(() => root.textContent.includes("Sincronizado"));
         }
         dom.window.dispatchEvent(new dom.window.Event("offline"));
         assert.match(root.textContent, /Modo offline/); assert.equal(root.querySelector("[data-open]").disabled, false);
-        interval(); await settle(() => root.textContent.includes("Actualizado"));
+        interval(); await settle(() => root.textContent.includes("Sincronizado"));
         available = []; root.querySelector("[data-refresh]").click();
         await settle(() => root.textContent.includes("No hay clases publicadas"));
-        assert.match(root.textContent, /Actualizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
+        assert.match(root.textContent, /Sincronizado/); assert.equal(root.querySelector("[data-open]").disabled, false);
         assert.match(root.textContent, /Aula Audiovisual/);
         available = [{ ...publication, unitId: "new-unit" }];
         root.querySelector("[data-refresh]").click(); await settle(() => root.querySelector('[data-sync="new-unit"]'));
+        root.querySelector("[data-search]").value = "English";
+        root.querySelector("[data-search]").dispatchEvent(new dom.window.Event("input"));
+        assert.equal(root.querySelectorAll("[data-unit-card]").length, 2);
+        root.querySelector("[data-search]").value = "no existe";
+        root.querySelector("[data-search]").dispatchEvent(new dom.window.Event("input"));
+        assert.equal(root.querySelectorAll("[data-unit-card]").length, 0);
+        root.querySelector("[data-search]").value = "";
+        root.querySelector("[data-search]").dispatchEvent(new dom.window.Event("input"));
+        root.querySelector("[data-my-classes]").click();
+        assert.equal(root.querySelectorAll("[data-unit-card]").length, 1);
+        assert.ok(root.querySelector('[data-unit-card="unit1"]'));
+        root.querySelector("[data-library-nav]").click();
+        root.querySelector('[data-view="list"]').click();
+        assert.ok(root.querySelector(".unit-grid.is-list"));
+        root.querySelector('[data-view="grid"]').click();
         assert.equal(root.querySelector('[data-open="new-unit"]').disabled, true);
         root.querySelector('[data-sync="new-unit"]').click();
         await settle(() => root.textContent.includes("No se pudo obtener el manifest"));
-        assert.match(root.textContent, /Actualizado/);
+        assert.match(root.textContent, /Sincronizado/);
         assert.doesNotMatch(root.textContent, /Servidor inaccesible|Modo offline/);
         assert.equal(root.querySelector('[data-open="new-unit"]').disabled, true);
         assert.equal(root.querySelector('[data-open="unit1"]').disabled, false);

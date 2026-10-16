@@ -1,0 +1,24 @@
+timeout: 600s
+steps:
+  - name: ubuntu:22.04
+    entrypoint: bash
+    env: [DEBIAN_FRONTEND=noninteractive]
+    args:
+      - -euc
+      - |
+        apt-get update -qq
+        apt-get install --no-install-recommends -y libsecret-tools gnome-keyring dbus-x11 openssl >/dev/null
+        useradd --create-home classroom-keyring
+        runuser -u classroom-keyring -- dbus-run-session -- bash -uc '
+          export XDG_DATA_HOME="$$(mktemp -d)" XDG_CONFIG_HOME="$$(mktemp -d)"
+          openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
+          gdbus call --session --timeout 5 --dest org.freedesktop.secrets --object-path /org/freedesktop/secrets/aliases/default --method org.freedesktop.DBus.Properties.Get org.freedesktop.Secret.Collection Locked
+          secret-tool clear application com.activeclassroom.desktop credential device-v1
+          echo "EMPTY_CLEAR_EXIT=$$?"
+          openssl rand -hex 32 | secret-tool store --label CI-fixture application com.activeclassroom.desktop credential device-v1
+          echo "STORE_EXIT=$$?"
+          secret-tool clear application com.activeclassroom.desktop credential device-v1
+          echo "SEEDED_CLEAR_EXIT=$$?"
+          secret-tool search application com.activeclassroom.desktop credential device-v1 >/dev/null
+          echo "EMPTY_SEARCH_EXIT=$$?"
+        '

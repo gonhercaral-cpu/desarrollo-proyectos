@@ -20,17 +20,5 @@ export async function loadLibraryCatalog(): Promise<CatalogLoadResult> {
 }
 
 function fallbackCatalog(): LibraryCatalog {
-  const folders = Array.from({ length: 5 }, (_, levelIndex) => {
-    const number = levelIndex + 1;
-    const level = { id: `level-${number}`, name: `Nivel ${number}`, parentId: null, kind: "level" as const, updated: "Respaldo local" };
-    const units = Array.from({ length: 16 }, (_, unitIndex) => ({
-      id: `level-${number}-unit-${String(unitIndex + 1).padStart(2, "0")}`,
-      name: `Unit ${String(unitIndex + 1).padStart(2, "0")}`,
-      parentId: level.id,
-      kind: "unit" as const,
-      updated: "Respaldo local",
-    }));
-    return [level, ...units];
-  }).flat();
-  return { version: 1, updatedAt: new Date(0).toISOString(), folders, files: [] };
+  return { version: 1, updatedAt: new Date(0).toISOString(), folders: [], files: [] };
 }

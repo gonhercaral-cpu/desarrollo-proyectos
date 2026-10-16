@@ -5,6 +5,7 @@ import ActiveClassroomNavigation from "./components/ActiveClassroomNavigation";
 import FolderDialog from "./components/FolderDialog";
 import DriveResourceImportDialog from "./components/DriveResourceImportDialog";
 import UnitEditor from "./components/UnitEditor";
+import LevelsPanel from "./components/LevelsPanel";
 import LibraryTable from "./components/LibraryTable";
 import LibraryToolbar from "./components/LibraryToolbar";
 import PublicationsPanel from "./components/PublicationsPanel";
@@ -258,6 +259,7 @@ export default function ActiveClassroomModule({ profile }) {
       />
     );
     if (activeSection === "library") return renderLibrary();
+    if (activeSection === "levels") return <LevelsPanel folders={library.folders} profile={profile} onOpen={(id) => { library.openFolder(id); setActiveSection("library"); }} />;
     if (activeSection === "publications") {
       return (
         <PublicationsPanel

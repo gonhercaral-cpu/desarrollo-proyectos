@@ -1,0 +1,92 @@
+# Build the local Desktop release inside the same Firebase project.
+# Submit only Desktop sources, shared limits and manifest fixtures; no credentials.
+timeout: 3600s
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+steps:
+  - name: ubuntu:22.04
+    entrypoint: bash
+    env:
+      - DEBIAN_FRONTEND=noninteractive
+      - CARGO_BUILD_JOBS=4
+      - CI=true
+      - LANG=C.UTF-8
+    args:
+      - -euc
+      - |
+        apt-get update
+        apt-get install --no-install-recommends -y \
+          build-essential pkg-config curl ca-certificates file git \
+          libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+          libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 sudo policykit-1 \
+          python3-gi gir1.2-webkit2-4.1 xvfb xauth weston ffmpeg \
+          gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+        curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+        apt-get install --no-install-recommends -y nodejs
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+        export PATH="$$HOME/.cargo/bin:$$PATH"
+        rustc --version
+        node --version
+        pkg-config --modversion gtk+-3.0 webkit2gtk-4.1
+        cd active-classroom-desktop
+        npm ci
+        npm run test:offline
+        npm run test:device
+        npm run test:webkit
+        npm run test:player
+        npm run test:updater
+        npm run test:projection
+        npm run admin:test
+        npm run local:integration:test
+        npm run lint:player
+        npm run build
+        npm run test:release
+        cargo test --release --locked --manifest-path src-tauri/Cargo.toml --all-targets -- --nocapture
+        # Secret Service requires a real login home. Cloud Build's root HOME
+        # differs from passwd; run this isolated acceptance as a normal user.
+        useradd --create-home classroom-keyring
+        keyring_directory="$$(mktemp -d)"
+        chown classroom-keyring:classroom-keyring "$$keyring_directory"
+        keyring_binary="$$(find "$$PWD/src-tauri/target/release/deps" -maxdepth 1 -type f -name 'active_classroom_lib-*' -executable | head -n 1)"
+        test -n "$$keyring_binary"
+        runuser -u classroom-keyring -- env ACTIVE_CLASSROOM_TEST_KEYRING=1 \
+          XDG_DATA_HOME="$$keyring_directory/data" XDG_CONFIG_HOME="$$keyring_directory/config" \
+          dbus-run-session -- bash -euc '
+          openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
+          # Seed the entry that the test clears; a brand-new collection has no
+          # matching item, and secret-tool clear returns 1 for that case.
+          openssl rand -hex 32 | secret-tool store --label CI-fixture application com.activeclassroom.desktop credential device-v1
+          "$$1" --exact device_identity::tests::linux_keyring_round_trip --ignored --nocapture
+        ' keyring-test "$$keyring_binary"
+        cargo check --release --locked --manifest-path src-tauri/Cargo.toml --all-targets
+        npm run test:media:linux
+        bash tests/wayland-projection.sh
+        export CARGO_HOME="$$HOME/.cargo" RUSTUP_HOME="$$HOME/.rustup"
+        HOME=/root bash tests/updater-linux.sh
+        npm run tauri:build -- --bundles deb -- --locked
+        package="src-tauri/target/release/bundle/deb/Active Classroom_1.0.4_amd64.deb"
+        test "$$(dpkg-deb --field "$$package" Architecture)" = amd64
+        test "$$(dpkg-deb --field "$$package" Version)" = 1.0.4
+        dpkg-deb --info "$$package"
+        file src-tauri/target/release/active-classroom
+        if grep -a -q 'ACTIVE_CLASSROOM_UPDATER_STAGE' src-tauri/target/release/active-classroom; then
+          echo 'El instalador de producción incluye hooks de aceptación.' >&2
+          exit 1
+        fi
+        cd src-tauri/target/release/bundle/deb
+        sha256sum 'Active Classroom_1.0.4_amd64.deb' > 'Active Classroom_1.0.4_amd64.deb.sha256'
+        sha256sum --check 'Active Classroom_1.0.4_amd64.deb.sha256'
+        cat 'Active Classroom_1.0.4_amd64.deb.sha256'
+  # Explicit gcloud transfer preserves filenames with spaces and reports errors.
+  - name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        cd active-classroom-desktop/src-tauri/target/release/bundle/deb
+        sha256sum --check 'Active Classroom_1.0.4_amd64.deb.sha256'
+        gcloud storage cp 'Active Classroom_1.0.4_amd64.deb' \
+          'Active Classroom_1.0.4_amd64.deb.sha256' \
+          'gs://${PROJECT_ID}_cloudbuild/releases/active-classroom/1.0.4/${BUILD_ID}/'
+

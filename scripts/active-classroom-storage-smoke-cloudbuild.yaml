@@ -1,0 +1,9 @@
+timeout: 600s
+steps:
+  - name: node:24-bookworm-slim
+    entrypoint: bash
+    args:
+      - -euc
+      - |
+        npm ci --prefix drive --omit=dev
+        node scripts/active-classroom-publication-storage-smoke.cjs

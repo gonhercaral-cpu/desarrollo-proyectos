@@ -1,13 +1,15 @@
 {
   "name": "active-classroom",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.9",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && npm run test:bundle",
     "test:bundle": "node --test tests/bundle.test.mjs",
-    "test:offline": "node --test tests/offline.test.mjs tests/publication-refresh.test.mjs",
+    "test:frontend": "node --test tests/design.test.mjs",
+    "test:design:webkit": "node tests/design-webkit.mjs",
+    "test:offline": "node --test tests/offline.test.mjs tests/publication-refresh.test.mjs tests/levels.test.mjs",
     "test:device": "node --test tests/device.test.mjs tests/library-auth.test.mjs",
     "test:webkit": "node tests/webkit-publications.mjs",
     "lint:offline": "eslint src/offline src/app.ts",
@@ -19,10 +21,15 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "test:player": "node --test tests/player.test.mjs",
+    "test:player": "node --test tests/player.test.mjs tests/media.test.mjs",
     "test:projection": "node --test tests/projection.test.mjs",
     "test:release": "node --test tests/release.test.mjs",
-    "lint:player": "eslint src/player src/offline src/app.ts tests/release.test.mjs"
+    "lint:player": "eslint src/player src/offline src/app.ts tests/release.test.mjs src/updater src/ui src/startup",
+    "test:media:linux": "node tests/media-linux.mjs",
+    "test:updater": "node --test tests/updater.test.mjs",
+    "test:updater:linux": "node tests/updater-linux.mjs",
+    "test:startup": "node --test tests/startup.test.mjs",
+    "test:builds": "node --test tests/builds.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.1",

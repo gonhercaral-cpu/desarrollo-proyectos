@@ -1,0 +1,59 @@
+{
+  "activationPreserved": true,
+  "deviceIdPreserved": true,
+  "displayNamePreserved": true,
+  "monitorPreferencePreserved": true,
+  "ok": true,
+  "restarted": true,
+  "version": "1.0.5",
+  "cachePreserved": true,
+  "unitsPreserved": true,
+  "preferencesPreserved": true,
+  "credentialPreserved": true,
+  "rejectedCorruptSignature": true,
+  "rejectedSignedVersionReplay": true,
+  "offlineFailurePreservedVersion": true,
+  "sameVersionRecognized": true,
+  "fromVersion": "1.0.4",
+  "fixtureOnly": true,
+  "productionSigningEnabled": true,
+  "linuxCiStatus": "SUCCESS",
+  "linuxCiRun": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/37545018195",
+  "bootstrapLinuxCiRun": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/37543796971",
+  "rustTestsPassed": 27,
+  "updaterTestsPassed": 10,
+  "productionSignaturesCryptographicallyVerifiedInCi": true,
+  "signingSecretsConfigured": [
+    "TAURI_SIGNING_PRIVATE_KEY",
+    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+  ],
+  "publicKeyVariable": "ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY",
+  "physicalZorinAcceptance": "Pending manual reinstall of enabled 1.0.4 and user verification",
+  "publicEndpointAccessibleWithoutAuthentication": true,
+  "endpoint": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/latest/download/latest.json",
+  "latestVersion": "1.0.5",
+  "publicKeySha256": "fb0e3c2a07b7ef8afbabe2d916cfb09da5d97cb4b1a5af92a493bf7fc76ba8b2",
+  "artifacts": [
+    {
+      "version": "1.0.4",
+      "release": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/tag/active-classroom-v1.0.4",
+      "installer": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.4/Active.Classroom_1.0.4_amd64.deb",
+      "size": 9273450,
+      "sha256": "42c8e0c6d6f3d76338c65b904119e127fc319d52a4f1d57b0a711a7bdb19e69c",
+      "pubkeyInBinary": true,
+      "endpointInBinary": true,
+      "acceptanceHooksAbsent": true
+    },
+    {
+      "version": "1.0.5",
+      "release": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/tag/active-classroom-v1.0.5",
+      "installer": "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.5/Active.Classroom_1.0.5_amd64.deb",
+      "size": 9273232,
+      "sha256": "b019f0eaf66b2f6341160158a8a019b92647bc4944bb104a97b246433ffd736b",
+      "pubkeyInBinary": true,
+      "endpointInBinary": true,
+      "acceptanceHooksAbsent": true
+    }
+  ],
+  "validatedAt": "2026-10-06T23:22:07.062Z"
+}

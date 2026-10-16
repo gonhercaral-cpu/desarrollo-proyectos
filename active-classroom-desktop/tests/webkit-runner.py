@@ -27,6 +27,8 @@ manager.register_script_message_handler("result")
 manager.connect("script-message-received::result", received)
 view = WebKit2.WebView.new_with_user_content_manager(manager)
 window = Gtk.Window()
+if len(sys.argv) >= 4:
+    window.set_default_size(int(sys.argv[2]), int(sys.argv[3]))
 window.add(view)
 window.show_all()
 GLib.timeout_add_seconds(60, timeout)
