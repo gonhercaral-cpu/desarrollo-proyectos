@@ -285,6 +285,7 @@ fn byte_range(range: Option<&str>, size: u64) -> Result<(u64, u64), ()> {
     if end < start { return Err(()); } Ok((start, end - start + 1))
 }
 fn reply(socket: &mut TcpStream, status: u16, mime: &str, length: u64, range: Option<String>, error: &str) -> std::io::Result<()> {
+    if crate::media_report::enabled() { crate::media_report::record(serde_json::json!({"event":"http-response","status":status,"contentType":mime,"contentLength":length,"contentRange":range,"error":error})); }
     let reason = match status { 200 => "OK", 204 => "No Content", 206 => "Partial Content", 416 => "Range Not Satisfiable", 404 => "Not Found", 403 => "Forbidden", 409 => "Conflict", 405 => "Method Not Allowed", 431 => "Request Header Fields Too Large", 503 => "Service Unavailable", _ => "Bad Request" };
     write!(socket, "HTTP/1.1 {status} {reason}\r\nContent-Type: {}\r\nContent-Length: {length}\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\nAccess-Control-Allow-Headers: Range\r\nAccess-Control-Expose-Headers: Accept-Ranges, Content-Range, Content-Length, X-Active-Media-Error\r\nCache-Control: private, no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n", if mime.is_empty() { "text/plain" } else { mime })?;
     if let Some(range) = range { write!(socket, "Content-Range: {range}\r\n")?; }
