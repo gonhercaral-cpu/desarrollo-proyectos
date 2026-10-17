@@ -20,14 +20,24 @@ export function createDeviceSession(notify: (state: DeviceState) => void): Devic
     saveLabel: async (label) => saveDeviceLabel(window.localStorage, label),
     proof: () => native<DeviceProof>("proof"),
     mark: (action) => native<DeviceIdentity>(action),
+    resetBinding: () => native<DeviceIdentity>("reset-binding"),
+    detach: async proof => {
+      const response = await fetch(`${API_BASE}/detachActiveClassroomDevice`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: proof }), signal: AbortSignal.timeout(3000) });
+      if (!response.ok) throw new Error("No se pudo desvincular remotamente.");
+    },
     exchange: async (proof) => {
       const appVersion = await getVersion().catch(() => undefined);
       const response = await fetch(`${API_BASE}/activeClassroomDeviceSession`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: { ...proof, appVersion } }), signal: AbortSignal.timeout(15000),
       });
-      if (!response.ok) throw connectionError(new SyncError(String(response.status), ""), "activation");
-      const data = (await response.json()).result as DeviceResponse;
-      if (!data || !["authorized", "pending", "revoked"].includes(data.status) || (data.status === "authorized" && typeof data.customToken !== "string")) throw new SyncError("server", "Respuesta de activación inválida.");
+      const body = await response.json();
+      if (!response.ok) {
+        const reason = body.error?.details?.deviceState;
+        if (["DEVICE_REVOKED", "DEVICE_NOT_FOUND", "DEVICE_UNLINKED", "INVALID_DEVICE_CREDENTIAL"].includes(reason)) throw new SyncError(reason, "Este equipo necesita volver a vincularse.");
+        throw connectionError(new SyncError(String(response.status), ""), "activation");
+      }
+      const data = body.result as DeviceResponse;
+      if (!data || !["authorized", "pending", "revoked", "rebind_required"].includes(data.status) || (data.status === "authorized" && typeof data.customToken !== "string")) throw new SyncError("server", "Respuesta de activación inválida.");
       return data;
     },
     signIn: (customToken, owner) => signInDevice(auth, customToken, owner),

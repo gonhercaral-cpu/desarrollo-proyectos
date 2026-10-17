@@ -1,3 +1,11 @@
+## 1.0.16
+
+- Recuperación de equipos: reautorizar, desvincular y generar código nuevo sin reinstalar; conserva contenido y preferencias.
+- Preparación multimedia y seeks interrumpidos ya no se convierten en errores fatales por timeout o AbortError.
+- Diagnóstico multimedia voluntario exportable desde Ajustes, con eventos, frames y métricas de procesos/streams sin credenciales.
+- Publicación de MP4 con índice al inicio mediante derivado sin recomprimir; publicaciones anteriores inmutables.
+- VALIDATION completa antes de firmar, crear tag o publicar; release utiliza exactamente los instaladores verificados.
+
 ## 1.0.15
 
 - Biblioteca global de música ambiente, sincronización incremental y caché SHA compartida entre Units.

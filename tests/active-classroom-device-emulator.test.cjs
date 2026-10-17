@@ -10,6 +10,28 @@ const app = admin.initializeApp({ projectId: "active-classroom-device-tests" }, 
 const db = app.firestore();
 const handlers = createDeviceHandlers({ db, auth: { createCustomToken: async (uid, claims) => ({ uid, claims }), revokeRefreshTokens: async () => {} }, assertAdmin: async () => ({ uid: "admin", role: "admin", active: true }) });
 after(() => app.delete());
+test("Firestore: revocar, reautorizar, desvincular, código nuevo y eliminar sin reinstalar", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Salón recuperación" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const pending = await handlers.session(request); await handlers.approve({ data: { code: pending.code, displayName: "Aula conservada" } });
+  const first = await handlers.session(request); const old = { uid: first.customToken.uid, token: first.customToken.claims };
+  await handlers.revoke({ data: { deviceId: data.deviceId } }); assert.equal((await handlers.session(request)).status, "revoked");
+  await handlers.reauthorize({ data: { deviceId: data.deviceId } });
+  await assert.rejects(handlers.authorizeDevice(old), { code: "permission-denied" });
+  const renewed = await handlers.session(request); assert.equal(renewed.displayName, "Aula conservada");
+  assert.equal((await handlers.authorizeDevice({ uid: renewed.customToken.uid, token: renewed.customToken.claims })).active, true);
+  await handlers.revoke({ data: { deviceId: data.deviceId } }); await handlers.unlink({ data: { deviceId: data.deviceId } });
+  assert.equal((await handlers.session({ ...request, data: { ...data, registered: true } })).reason, "DEVICE_UNLINKED");
+  const next = { ...data, deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), displayName: "Aula conservada" };
+  const code = await handlers.session({ ...request, data: next }); assert.notEqual(code.code, pending.code);
+  await handlers.approve({ data: { code: code.code } }); assert.equal((await handlers.session({ ...request, data: next })).status, "authorized");
+  await handlers.remove({ data: { deviceId: data.deviceId } });
+  assert.equal((await handlers.list({ data: {} })).devices.some(device => device.deviceId === data.deviceId), false);
+  await assert.rejects(handlers.revoke({ data: { deviceId: data.deviceId } }), { code: "not-found" });
+  await assert.rejects(handlers.reauthorize({ data: { deviceId: data.deviceId } }), { code: "not-found" });
+  assert.equal((await handlers.session(request)).reason, "DEVICE_NOT_FOUND");
+  const audit = await db.collection("activeClassroomDeviceHistory").where("deviceId", "==", data.deviceId).get(); assert.equal(audit.size, 3);
+});
 test("Firestore: dispositivo consulta última publicación v1, v2 y v10 sin conservar cursor", async () => {
   const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Equipo refresh" };
   const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };

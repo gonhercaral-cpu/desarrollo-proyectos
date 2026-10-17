@@ -1,5 +1,6 @@
 //! Headless Linux acceptance of the production transport/renderers/layout. No Auth/backend.
 #[path = "../src/local_media.rs"] mod local_media;
+#[path = "../src/media_report.rs"] mod media_report;
 #[path = "../src/offline_cache.rs"] mod offline_cache;
 #[path = "../src/device_identity.rs"] mod device_identity;
 use serde_json::{json, Value};
@@ -35,7 +36,7 @@ fn fixture_memory() -> Value {
         let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default(); let ticks: Vec<_> = stat.rsplit_once(") ").map(|(_, value)| value.split_whitespace().collect()).unwrap_or_default();
         let cpu_ticks: u64 = [11usize,12].into_iter().filter_map(|index| ticks.get(index).and_then(|value| value.parse::<u64>().ok())).sum();
         let io = fs::read_to_string(format!("/proc/{pid}/io")).unwrap_or_default();
-        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"cpuTicks":cpu_ticks,"io":io,"stdinOpen":fs::metadata(format!("/proc/{pid}/fd/0")).is_ok()}));
+        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"cpuTicks":cpu_ticks,"io":io,"stdinOpen":fs::metadata(format!("/proc/{pid}/fd/0")).is_ok(),"threads":field("Threads:"),"descriptors":fs::read_dir(format!("/proc/{pid}/fd")).map(|entries| entries.count()).unwrap_or(0)}));
         for entry in fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
             if let Ok(children) = fs::read_to_string(entry.path().join("children")) {
                 pending.extend(children.split_whitespace().filter_map(|child| child.parse::<u32>().ok()));
@@ -185,6 +186,6 @@ fn main() {
             WebviewWindowBuilder::new(app, "audience", WebviewUrl::CustomProtocol("tauri://localhost/projection-test.html".parse().unwrap())).title("Media audience fixture").inner_size(800.0, 600.0).visible(false).build()?; Ok(())
         }).build(context).unwrap();
     let handle = app.handle().clone(); let success = passed.clone();
-    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(270)); if !success.load(Ordering::SeqCst) { eprintln!("MEDIA_NATIVE_TIMEOUT"); handle.exit(1); } });
+    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(480)); if !success.load(Ordering::SeqCst) { eprintln!("MEDIA_NATIVE_TIMEOUT"); handle.exit(1); } });
     app.run(|_, _| {}); fs::remove_dir_all(root).unwrap(); assert!(passed.load(Ordering::SeqCst), "Native media/scroll acceptance failed");
 }

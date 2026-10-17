@@ -190,3 +190,44 @@ test("descarga por bloques limita cada respuesta y rechaza rangos inválidos", (
   }
   assert.throws(() => downloadRange(undefined, 36633632), { code: "failed-precondition" });
 });
+
+
+test("revocar y reautorizar renueva generación y nunca resucita tokens anteriores", async () => {
+  const f = setup(); const original = await f.activate(); const before = f.db.records.get(`activeClassroomDevices/${f.proof.deviceId}`);
+  await f.devices.rename(f.adminRequest({ deviceId: f.proof.deviceId, displayName: "Aula Norte" }));
+  await f.devices.revoke(f.adminRequest({ deviceId: f.proof.deviceId }));
+  await f.devices.reauthorize(f.adminRequest({ deviceId: f.proof.deviceId }));
+  const fresh = await f.session();
+  assert.equal(fresh.status, "authorized"); assert.equal(fresh.displayName, "Aula Norte");
+  assert.equal(f.db.records.get(`activeClassroomDevices/${f.proof.deviceId}`).credentialHash, before.credentialHash);
+  await assert.rejects(f.devices.authorizeDevice(f.decoded(original.customToken)), { code: "permission-denied" });
+  assert.equal((await f.devices.authorizeDevice(f.decoded(fresh.customToken))).active, true);
+});
+test("desvincular y eliminar consumen códigos; nueva identidad obtiene código nuevo", async () => {
+  const f = setup(); const old = await f.activate(); await f.devices.revoke(f.adminRequest({ deviceId: f.proof.deviceId }));
+  await f.devices.unlink(f.adminRequest({ deviceId: f.proof.deviceId }));
+  assert.deepEqual(await f.session(), { status: "rebind_required", reason: "DEVICE_UNLINKED" });
+  await assert.rejects(f.devices.authorizeDevice(f.decoded(old.customToken)), { code: "permission-denied" });
+  await f.devices.remove(f.adminRequest({ deviceId: f.proof.deviceId }));
+  assert.equal((await f.devices.list(f.adminRequest({}))).devices.length, 0);
+  assert.equal((await f.session()).reason, "DEVICE_NOT_FOUND");
+  await f.devices.detach({ data: f.proof });
+  assert.equal((await f.devices.list(f.adminRequest({}))).devices.length, 0, "retirar prueba antigua no resucita equipo eliminado");
+  const pending = await f.session({ ...f.proof, deviceId: "c".repeat(32), credential: "d".repeat(64) });
+  await f.devices.approve(f.adminRequest({ code: pending.code }));
+  assert.equal((await f.session({ ...f.proof, deviceId: "c".repeat(32), credential: "d".repeat(64) })).status, "authorized");
+  assert.equal([...f.db.records.keys()].filter(key => key.startsWith("activeClassroomDeviceHistory/")).length, 2);
+});
+test("recuperación exige manageDevices; retiro propio exige prueba secreta", async () => {
+  const f = setup(); await f.activate();
+  for (const action of ["reauthorize", "unlink", "remove"]) await assert.rejects(f.devices[action]({ auth: { uid: "teacher" }, data: { deviceId: f.proof.deviceId } }), { code: "permission-denied" });
+  await assert.rejects(f.devices.detach({ data: { ...f.proof, credential: "f".repeat(64) } }), { code: "unauthenticated" });
+  await f.devices.detach({ data: f.proof }); assert.equal((await f.session()).reason, "DEVICE_UNLINKED");
+  assert.equal((await f.devices.session({ data: { deviceId: "e".repeat(32), credential: "a".repeat(64), registered: true } })).reason, "DEVICE_NOT_FOUND");
+});
+test("paginación avanza aunque toda la página esté eliminada", async () => {
+  const f = setup();
+  for (let i = 0; i < 101; i++) f.db.records.set(`activeClassroomDevices/${i.toString(16).padStart(32, "0")}`, { status: "deleted" });
+  const first = await f.devices.list(f.adminRequest({})); assert.equal(first.devices.length, 0); assert.ok(first.nextCursor);
+  assert.equal((await f.devices.list(f.adminRequest({ cursor: first.nextCursor }))).nextCursor, null);
+});

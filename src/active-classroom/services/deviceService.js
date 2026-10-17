@@ -8,4 +8,7 @@ export const deviceService = {
   reject: callable("rejectActiveClassroomDevice"),
   rename: callable("renameActiveClassroomDevice"),
   revoke: callable("revokeActiveClassroomDevice"),
+  reauthorize: callable("reauthorizeActiveClassroomDevice"),
+  unlink: callable("unlinkActiveClassroomDevice"),
+  remove: callable("deleteActiveClassroomDevice"),
 };

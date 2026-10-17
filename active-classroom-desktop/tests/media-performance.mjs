@@ -26,24 +26,28 @@ export async function mediaPerformance(fixture) {
     const before = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics") };
     const click = performance.now(); const playing = new Promise(resolve => media.addEventListener("playing", () => resolve(performance.now() - click), { once: true }));
     await player.dispatch("PLAY_PAUSE"); const firstPlayMs = await playing;
-    await wait(20000); check(!media.paused && media.currentTime > 15, "Video did not play 20 seconds");
+    await wait(30000); check(!media.paused && media.currentTime > 25, "Video did not play 30 seconds");
     const seeks = [];
     for (const command of ["SEEK_FORWARD", "SEEK_BACKWARD", "SEEK_FORWARD"]) {
-      const started = performance.now(); let seekEvents = 0; const seeking = () => seekEvents++; media.addEventListener("seeking", seeking);
+      const started = performance.now(); const target = Math.max(0, Math.min(media.duration, media.currentTime + (command === "SEEK_FORWARD" ? 100 : -100))); let seekEvents = 0; const seeking = () => seekEvents++; media.addEventListener("seeking", seeking);
       for (let index = 0; index < 10; index++) { await player.dispatch(command); await wait(10); }
       await until(() => !renderer.state.seeking && !media.seeking); await until(() => !media.paused && media.readyState >= 2);
-      seeks.push({ command, elapsedMs: performance.now() - started, seekingEvents: seekEvents, currentTime: media.currentTime, streams: await invoke("fixture_metrics") }); media.removeEventListener("seeking", seeking);
+      check(Math.abs(media.currentTime - target) < 1, "Last coalesced seek missed its target");
+      await wait(1000);
+      seeks.push({ command, target, elapsedMs: performance.now() - started, seekingEvents: seekEvents, currentTime: media.currentTime, streams: await invoke("fixture_metrics") }); media.removeEventListener("seeking", seeking);
     }
     const progress = []; const start = performance.now();
-    for (let index = 0; index < 60; index++) {
+    for (let index = 0; index < 120; index++) {
       await wait(1000); const audience = await invoke("fixture_audience_state"); const quality = media.getVideoPlaybackQuality?.();
-      progress.push({ time: media.currentTime, readyState: media.readyState, seeking: media.seeking, paused: media.paused, audienceTime: audience.time, audiencePaused: audience.paused, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames });
+      progress.push({ time: media.currentTime, readyState: media.readyState, seeking: media.seeking, paused: media.paused, audienceTime: audience.time, audiencePaused: audience.paused, audienceFrames: audience.frames, audienceDroppedFrames: audience.droppedFrames, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames });
       check(host.querySelector("video") === original, "Video remounted during playback");
       check(audience.videos === 1 && !audience.paused && Math.abs(audience.time - media.currentTime) < 1, `Projector stopped or lost playback synchronization: ${JSON.stringify({ audience, teacher: { time: media.currentTime, paused: media.paused, seeking: renderer.state.seeking, buffering: renderer.state.buffering } })}`);
     }
-    check(progress.at(-1).time - progress[0].time > 55, "Video stalled during continuous 60 seconds");
+    check(progress.at(-1).time - progress[0].time > 115, "Video stalled during continuous 120 seconds");
     check(progress.every(sample => !sample.paused && sample.readyState >= 2), "Playback lost continuity");
     if (progress.every(sample => Number.isFinite(sample.frames))) check(progress.slice(1).every((sample,index) => sample.frames - progress[index].frames >= 5), "Decoder reduced playback to isolated frames");
+    if (progress.every(sample => Number.isFinite(sample.audienceFrames))) check(progress.slice(1).every((sample,index) => sample.audienceFrames - progress[index].audienceFrames >= 5), "Projector decoder reduced playback to isolated frames");
+    check(!events.some(event => event.event === "error" && event.mediaErrorCode), "Fatal MediaError during stress");
     const audience = await invoke("fixture_audience_state"); check(audience.videos === 1 && audience.audio === 0 && !audience.error, "Projection duplicated audio or failed");
     const after = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics") };
     const measurementMs = performance.now() - measurementStarted;
@@ -59,6 +63,7 @@ export async function mediaPerformance(fixture) {
     check(mounts === 1 && structuralMutations < 100, "Playback rebuilt structural UI");
     check(seeks.every(seek => seek.seekingEvents <= 3), "Keyboard burst queued uncoalesced seeks");
     check(closed.active === 0, "Closed playback left abandoned streams");
+    check(after.streams.opened - before.streams.opened === (after.streams.completed - before.streams.completed) + (after.streams.cancelled - before.streams.cancelled) + after.streams.active - before.streams.active, "Range streams leaked");
     return { firstPlayMs, events, seeks, mounts, structuralMutations, measurementMs, durationMs: performance.now() - start, continuousSamples: progress.length, playbackSamples: progress, before, after, closed, settings };
   } finally { observer.disconnect(); player.destroy(); host.remove(); window.removeEventListener("classroom-media-diagnostic", diagnostic); }
 }

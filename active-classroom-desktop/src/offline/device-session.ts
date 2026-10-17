@@ -2,9 +2,9 @@ import { normalizeDisplayName, type DeviceLabel } from "./device-label.ts";
 import { connectionError, diagnose, type ConnectionStage } from "./connection.ts";
 import { SyncError } from "./manifest.ts";
 
-export interface DeviceIdentity { deviceId: string; name: string; displayName?: string; activated: boolean; revoked: boolean }
-export interface DeviceProof { deviceId: string; name: string; credential: string }
-export type DeviceResponse = ({ status: "pending"; code: string; expiresAt: number } | { status: "revoked" } | { status: "authorized"; customToken: string }) & { displayName?: string; deviceName?: string | null };
+export interface DeviceIdentity { deviceId: string; cacheDeviceId?: string | null; name: string; displayName?: string; activated: boolean; revoked: boolean }
+export interface DeviceProof { deviceId: string; name: string; credential: string; displayName?: string; registered?: boolean }
+export type DeviceResponse = ({ status: "pending"; code: string; expiresAt: number } | { status: "revoked" } | { status: "rebind_required"; reason: string } | { status: "authorized"; customToken: string }) & { displayName?: string; deviceName?: string | null };
 export interface DeviceDependencies {
   load(): Promise<DeviceIdentity>;
   proof(): Promise<DeviceProof>;
@@ -14,18 +14,49 @@ export interface DeviceDependencies {
   token(owner: string, force: boolean): Promise<string>;
   signOut(): Promise<void>;
   saveLabel(label: DeviceLabel): Promise<void>;
+  resetBinding?(): Promise<DeviceIdentity>;
+  detach?(proof: DeviceProof): Promise<void>;
 }
-export interface DeviceState { phase: "loading" | "activation" | "ready" | "revoked" | "error"; identity?: DeviceIdentity; code?: string; online: boolean; message: string; issue?: string }
+export type DeviceLifecycle = "UNREGISTERED" | "PENDING_ACTIVATION" | "AUTHORIZED" | "REVOKED" | "REBIND_REQUIRED";
+export interface DeviceState { phase: "loading" | "activation" | "ready" | "revoked" | "rebind" | "error"; lifecycle?: DeviceLifecycle; identity?: DeviceIdentity; code?: string; online: boolean; message: string; issue?: string }
 export class DeviceSession {
-  state: DeviceState = { phase: "loading", online: false, message: "" };
+  state: DeviceState = { phase: "loading", lifecycle: "UNREGISTERED", online: false, message: "" };
   private dependencies: DeviceDependencies;
   private notify: (state: DeviceState) => void;
   private pending?: Promise<void>;
+  private resetting?: Promise<void>;
+  private automaticRebind = false;
   private signedIn = false;
   private failure?: SyncError;
   constructor(dependencies: DeviceDependencies, notify: (state: DeviceState) => void) { this.dependencies = dependencies; this.notify = notify; }
   get owner(): string { return `ac-device-${this.state.identity?.deviceId || ""}`; }
-  private update(patch: Partial<DeviceState>): void { this.state = { ...this.state, ...patch }; this.notify(this.state); }
+  get cacheOwner(): string { return `ac-device-${this.state.identity?.cacheDeviceId || this.state.identity?.deviceId || ""}`; }
+  private update(patch: Partial<DeviceState>): void { this.state = { ...this.state, ...patch }; this.state.lifecycle = ({ loading: "UNREGISTERED", activation: "PENDING_ACTIVATION", ready: "AUTHORIZED", revoked: "REVOKED", rebind: "REBIND_REQUIRED", error: "UNREGISTERED" } as const)[this.state.phase]; this.notify(this.state); }
+  private async requireRebind(): Promise<void> {
+    this.signedIn = false;
+    this.update({ phase: "rebind", online: false, code: undefined, identity: this.state.identity ? { ...this.state.identity, activated: false, revoked: true } : undefined, message: "Este equipo necesita volver a vincularse. Las clases descargadas y preferencias se conservan." });
+    await this.dependencies.signOut().catch(() => {});
+    await this.dependencies.mark("revoked").catch(() => {});
+  }
+  resetBinding(online: boolean): Promise<void> {
+    return this.resetting ||= this.performReset(online).finally(() => { this.resetting = undefined; });
+  }
+  private async performReset(online: boolean): Promise<void> {
+    await this.pending;
+    this.automaticRebind = false;
+    if (!this.dependencies.resetBinding) throw new Error("Recuperación de vinculación no disponible.");
+    const label = this.state.identity?.displayName;
+    this.signedIn = false; this.update({ phase: "loading", online: false, code: undefined, message: "Restableciendo vinculación…" });
+    // Best effort remote retirement; offline recovery must remain possible.
+    if (online && this.dependencies.detach) try { await this.dependencies.detach(await this.dependencies.proof()); } catch { diagnose("activation", "failed", "backend"); }
+    await this.dependencies.signOut().catch(() => {});
+    try {
+      const identity = await this.dependencies.resetBinding();
+      this.update({ identity: { ...identity, displayName: label }, phase: "activation", online: false, issue: undefined, message: "Conecta Internet para obtener un nuevo código de vinculación." });
+      if (label !== undefined) await this.dependencies.saveLabel({ deviceId: identity.deviceId, displayName: label }).catch(() => {});
+      if (online) await this.exchange();
+    } catch (error) { this.reportFailure(error, "identity"); this.update({ phase: "rebind" }); }
+  }
   async receiveLabel(label: DeviceLabel): Promise<void> {
     if (!this.state.identity || label.deviceId !== this.state.identity.deviceId) return;
     let displayName: string;
@@ -50,8 +81,12 @@ export class DeviceSession {
     this.update({ online: false, issue: this.failure.code, message: this.failure.message });
   }
   connect(): Promise<void> {
+    if (this.resetting) return this.resetting;
     if (this.pending) return this.pending;
-    this.pending = this.exchange().finally(() => { this.pending = undefined; });
+    this.pending = this.exchange().finally(() => {
+      this.pending = undefined;
+      if (this.automaticRebind && !this.resetting) { this.automaticRebind = false; void this.resetBinding(true); }
+    });
     return this.pending;
   }
   async revalidateAccess(): Promise<void> {
@@ -65,9 +100,12 @@ export class DeviceSession {
     try {
       const proof = await this.dependencies.proof();
       stage = "activation";
-      const response = await this.dependencies.exchange(proof);
+      const response = await this.dependencies.exchange({ ...proof, ...(this.state.identity.displayName !== undefined ? { displayName: this.state.identity.displayName } : {}) });
       if (response.displayName !== undefined) await this.receiveLabel({ deviceId: this.state.identity.deviceId, displayName: response.displayName });
-      if (response.status === "revoked") {
+      if (response.status === "rebind_required") {
+        await this.requireRebind();
+        this.automaticRebind = ["DEVICE_UNLINKED", "DEVICE_NOT_FOUND"].includes(response.reason);
+      } else if (response.status === "revoked") {
         // Block in memory immediately even if the keyring cannot persist this marker.
         this.signedIn = false;
         this.failure = new SyncError("403", "La autorización de este equipo fue revocada.");
@@ -94,7 +132,10 @@ export class DeviceSession {
         diagnose("token", "authenticated");
         this.update({ phase: "ready", identity, online: true, issue: undefined, code: undefined, message: "" });
       }
-    } catch (error) { this.reportFailure(error, stage); }
+    } catch (error) {
+      if (error instanceof SyncError && ["DEVICE_REVOKED", "DEVICE_NOT_FOUND", "DEVICE_UNLINKED", "INVALID_DEVICE_CREDENTIAL"].includes(error.code)) { await this.requireRebind(); return; }
+      this.reportFailure(error, stage);
+    }
   }
   async token(force = false): Promise<string> {
     if (this.state.phase !== "ready") throw new SyncError(this.state.phase === "revoked" ? "403" : "not-activated", this.state.message || "Este equipo necesita activarse.");

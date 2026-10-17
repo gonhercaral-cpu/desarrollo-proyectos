@@ -2,6 +2,7 @@ mod audience_window;
 mod offline_cache;
 mod device_identity;
 mod local_media;
+mod media_report;
 mod app_updater;
 mod startup;
 #[cfg(feature = "updater-acceptance")]
@@ -963,6 +964,7 @@ pub fn run() {
             local_media::classroom_media,
             local_media::classroom_ambient_media,
             local_media::classroom_media_diagnostic,
+            media_report::classroom_media_report,
             local_media::classroom_release_media,
             device_identity::classroom_device,
             classroom_projection,

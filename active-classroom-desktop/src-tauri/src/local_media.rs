@@ -19,6 +19,7 @@ impl Drop for TransferLog { fn drop(&mut self) {
     self.metrics.active.fetch_sub(1, Ordering::SeqCst); self.metrics.read.fetch_add(self.read, Ordering::SeqCst); self.metrics.sent.fetch_add(self.sent, Ordering::SeqCst);
     let complete = self.sent == self.expected;
     if complete { self.metrics.completed.fetch_add(1, Ordering::SeqCst); } else { self.metrics.cancelled.fetch_add(1, Ordering::SeqCst); }
+    crate::media_report::record(serde_json::json!({"event":if complete {"range-completed"} else {"range-cancelled"},"readBytes":self.read,"sentBytes":self.sent,"expected":self.expected,"activeStreams":self.metrics.active.load(Ordering::SeqCst)}));
     if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event={} read_bytes={} sent_bytes={} block_bytes={BLOCK_BYTES}", if complete { "range-completed" } else { "range-cancelled" }, self.read, self.sent); }
 } }
 #[derive(Clone, PartialEq, Eq)]
@@ -175,6 +176,7 @@ impl MediaServer {
             Ok((start, count)) => (if range.is_some() { 206 } else { 200 }, start, count, range.map(|_| format!("bytes {start}-{}/{}", start + count - 1, grant.size))),
             Err(_) => return reply(socket, 416, &grant.mime, 0, Some(format!("bytes */{}", grant.size)), "range"),
         };
+        crate::media_report::record(serde_json::json!({"event":"range-open","status":status,"start":start,"length":count,"mime":grant.mime,"activeStreams":self.metrics.active.load(Ordering::SeqCst)}));
         if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event=range-open status={status} start={start} bytes={count} mime={}", grant.mime); }
         reply(socket, status, &grant.mime, count, content_range, "")?;
         if parts[0] == "HEAD" { return Ok(()); }
@@ -307,14 +309,14 @@ pub(crate) fn classroom_release_media(window: tauri::WebviewWindow, server: taur
     server.release(&url); Ok(())
 }
 #[tauri::command]
-pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, data: Value) -> Result<(), String> {
+pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, data: Value) -> Result<(), String> {
     if !["teacher", "audience"].contains(&window.label()) { return Err("media: Ventana inválida".into()); }
     // Client sends only this whitelist, with capability URLs and browser messages redacted.
-    let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength"];
+    let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength", "frames", "droppedFrames", "videos", "audio"];
     let mut safe = serde_json::Map::new(); safe.insert("window".into(),Value::String(window.label().into()));
     for key in keys {
         if let Some(value) = data.get(key).filter(|value| value.to_string().len() <= 512) {
-            let value = if key == "url" || key == "mediaErrorMessage" {
+            let value = if key == "localPath" { Value::String("[cache]".into()) } else if key == "url" || key == "mediaErrorMessage" {
                 let text = value.as_str().unwrap_or("");
                 let text = regex::Regex::new(r"/media/[a-f0-9]{64}").unwrap().replace_all(text, "/media/[local-grant]").to_string();
                 Value::String(if key == "mediaErrorMessage" { regex::Regex::new(r"(?i)(?:https?|asset)://\S+").unwrap().replace_all(&text, "[local URL]").to_string() } else { text })
@@ -322,7 +324,10 @@ pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, data: Val
             safe.insert(key.into(), value);
         }
     }
-    eprintln!("[Active Classroom Media] {}", Value::Object(safe)); Ok(())
+    let safe = Value::Object(safe);
+    if safe["window"] == "teacher" && safe["event"] == "playback-sample" { crate::media_report::sample(server.metrics()); }
+    crate::media_report::record(safe.clone());
+    eprintln!("[Active Classroom Media] {}", safe); Ok(())
 }
 
 #[cfg(test)]

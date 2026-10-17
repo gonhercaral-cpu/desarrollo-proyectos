@@ -808,7 +808,7 @@ describe("Active Classroom", () => {
       await setDoc(doc(context.firestore(), "activeClassroomDeviceCodes", "PRIVATE"), { deviceId: "private-device" });
     });
     for (const db of [auth("admin"), auth("collab"), auth("inactive"), unauth()]) {
-      for (const path of ["activeClassroomDevices/private-device", "activeClassroomDeviceCodes/PRIVATE"]) {
+      for (const path of ["activeClassroomDevices/private-device", "activeClassroomDeviceCodes/PRIVATE", "activeClassroomDeviceHistory/private", "activeClassroomVideoSnapshots/private"]) {
         await assertFails(getDoc(doc(db, path)));
         await assertFails(updateDoc(doc(db, path), { status: "authorized" }));
       }

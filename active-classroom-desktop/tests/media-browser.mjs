@@ -208,7 +208,11 @@ try {
   const rss = process => Number.parseInt(process.rss || "0", 10);
   for (const process of after) {
     const before = baseline.find(item => item.pid === process.pid);
-    if (before) assert(rss(process) - rss(before) < 160 * 1024, `Memoria crece al reabrir: ${process.name}`);
+    if (before) {
+      assert(rss(process) - rss(before) < 160 * 1024, `Memoria crece al reabrir: ${process.name}`);
+      if (Number.isFinite(process.descriptors)) assert(process.descriptors <= before.descriptors + 32, `Descriptores crecen al reabrir: ${process.name}`);
+      if (process.threads) assert(Number(process.threads) <= Number(before.threads) + 16, `Threads crecen al reabrir: ${process.name}`);
+    }
     if (process.pid === after[0].pid) assert(rss(process) < 256 * 1024, "Proceso principal carga archivo completo");
     if (process.name.startsWith("WebKitWeb")) assert(rss(process) < 768 * 1024, "WebKit almacena video completo en RAM");
   }
@@ -228,7 +232,7 @@ async function runAudience() {
   let revision = 0;
   await listen("fixture-projection", event => { revision = event.payload?.revision || 0; void projected.receive(event.payload); });
   await invoke("fixture_audience_state", { report: { ready: true } });
-  setInterval(() => { const media = document.querySelector("video"); void invoke("fixture_audience_state", { report: { ready: true, revision, time: media?.currentTime || 0, paused: media?.paused, seeking: media?.seeking, readyState: media?.readyState, muted: media?.muted, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } }); }, 80);
+  setInterval(() => { const media = document.querySelector("video"); const quality = media?.getVideoPlaybackQuality?.(); void invoke("fixture_audience_state", { report: { ready: true, revision, time: media?.currentTime || 0, paused: media?.paused, seeking: media?.seeking, readyState: media?.readyState, muted: media?.muted, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } }); }, 80);
 }
 if (location.pathname === "/projection-test.html") void runAudience();
 else if (!document.documentElement.hasAttribute("data-layout-only")) void run();

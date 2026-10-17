@@ -80,3 +80,14 @@ test("100 eventos updater conservan dialog/nav/scroll/foco y un único handler",
   assert.equal(content.scrollTop, 123); assert.match(content.textContent, /100/);
   let closed = 0; const close = panel.close.bind(panel); panel.close = () => { closed++; close(); }; document.querySelector("[data-settings-close]").click(); assert.equal(closed, 1);
 });
+test("recuperación manual emite una sola acción y conserva preferencias/caché", async t => {
+  const dom = environment(); const updater = new ProgramUpdater({ action: async () => updater.status, listen: async () => () => {} }, () => {});
+  const preferences = new StartupPreferences(async () => ({ autostart: true, kiosk: true, kioskActive: false, launchedAutomatically: false }), () => {});
+  const panel = new DesktopSettingsPanel(updater, preferences); t.after(() => { panel.destroy(); dom.restore(); });
+  localStorage.setItem("offline-cache", "verified-content"); saveDesktopSettings({ density: "compact" }); const before = localStorage.getItem(SETTINGS_KEY);
+  let resets = 0; window.addEventListener("classroom-reset-binding", () => resets++);
+  panel.open("about"); panel.refresh(); panel.refresh();
+  assert.ok(document.querySelector('[data-media-report="start"]')); assert.ok(document.querySelector('[data-media-report="export"]'));
+  document.querySelector("[data-reset-binding]").click(); assert.equal(resets, 1); assert.equal(panel.isOpen, false);
+  assert.equal(localStorage.getItem("offline-cache"), "verified-content"); assert.equal(localStorage.getItem(SETTINGS_KEY), before);
+});

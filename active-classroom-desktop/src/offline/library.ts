@@ -79,8 +79,9 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     }
     if (device.phase !== "ready") {
       thumbnails.pause(); thumbnailSignature = "";
-      root.innerHTML = `<main class="offline-login"><section class="ui-card ui-stack"><img src="/active-classroom-icon.png" alt="" width="64"/><h1>${device.phase === "loading" ? "Active Classroom" : "Este equipo necesita activarse"}</h1><p>${escape(device.identity ? visibleDeviceName(device.identity) : "Preparando equipo…")}</p>${device.code ? `<strong class="activation-code" aria-label="Código de activación">${escape(`${device.code.slice(0, 5)}-${device.code.slice(5)}`)}</strong>` : ""}<p role="status">${escape(device.message || "Conecta Internet para obtener el código de activación.")}</p><button class="button button-primary" data-activate ${device.phase === "loading" ? "disabled" : ""}>Reintentar activación</button></section></main>`;
+      root.innerHTML = `<main class="offline-login"><section class="ui-card ui-stack"><img src="/active-classroom-icon.png" alt="" width="64"/><h1>${device.phase === "loading" ? "Active Classroom" : ["revoked", "rebind"].includes(device.phase) ? "Este equipo necesita volver a vincularse" : "Este equipo necesita activarse"}</h1><p>${escape(device.identity ? visibleDeviceName(device.identity) : "Preparando equipo…")}</p>${device.code ? `<strong class="activation-code" aria-label="Código de activación">${escape(`${device.code.slice(0, 5)}-${device.code.slice(5)}`)}</strong>` : ""}<p role="status">${escape(device.message || "Conecta Internet para obtener el código de activación.")}</p><button class="button button-primary" data-activate ${device.phase === "loading" ? "disabled" : ""}>Reintentar conexión</button>${["revoked", "rebind", "error"].includes(device.phase) ? '<button class="button button-outline" data-rebind>Generar nuevo código de vinculación</button>' : ""}<button class="button button-quiet" data-desktop-about="about">Acerca de / Equipo</button></section></main>`;
       root.querySelector<HTMLButtonElement>("[data-activate]")!.onclick = () => { void reconnect(); };
+      root.querySelector<HTMLButtonElement>("[data-rebind]")?.addEventListener("click", () => { void resetBinding(); });
       return;
     }
     const combined = mergeLibraryPublications(locals, publications);
@@ -248,7 +249,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     const becameOnline = !device.online && state.online;
     device = state;
     void (async () => {
-      if (state.phase === "ready" && owner === session.owner && cache) {
+      if (state.phase === "ready" && owner === session.cacheOwner && cache) {
         render();
         if (becameOnline && cacheReady) void refresh();
         return;
@@ -258,7 +259,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       locals = []; publications = []; errors.clear(); unitOrder.clear(); player?.destroy(); player = undefined; thumbnailSignature = ""; refreshing = false; opening = false; message = ""; retryPublication = undefined;
       cache = undefined; cacheReady = false; api = undefined; queue = undefined;
       if (state.phase !== "ready") { owner = ""; contentOwner(""); render(); return; }
-      owner = session.owner; contentOwner(owner);
+      owner = session.cacheOwner; contentOwner(owner);
       cache = new NativeCache(owner);
       api = new PublicationApi((force) => session.token(force));
       api.onDenied = () => session.revalidateAccess();
@@ -290,6 +291,11 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       if (publication) void synchronize(publication);
     }
   }
+  async function resetBinding(): Promise<void> {
+    if (!window.confirm("Este equipo perderá su autorización y deberá vincularse nuevamente. Las clases descargadas y preferencias se conservarán. ¿Continuar?")) return;
+    await session.resetBinding(navigator.onLine);
+  }
+  window.addEventListener("classroom-reset-binding", () => { void resetBinding(); });
   window.addEventListener("classroom-content-preferences", () => { reconcileContent(); render(); });
   window.addEventListener("beforeunload", () => { queue?.close(); ambient?.close(); });
   window.setInterval(() => { if (device.phase === "ready" && device.online) void refresh(); }, 5 * 60 * 1000);
@@ -297,5 +303,5 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   window.addEventListener("online", () => { void reconnect(); });
   window.addEventListener("offline", () => { session.offline(); message = "Modo offline. Puedes abrir tus clases descargadas."; render(); });
   // Retry actual connectivity failures even when the OS reports an active network.
-  window.setInterval(() => { if (navigator.onLine && device.phase !== "error" && device.phase !== "revoked" && (device.phase === "activation" || !device.online || retryPublication)) void reconnect(); }, 30000);
+  window.setInterval(() => { if (navigator.onLine && device.phase !== "error" && (device.phase === "activation" || device.phase === "revoked" || device.phase === "rebind" || !device.online || retryPublication)) void reconnect(); }, 30000);
 }

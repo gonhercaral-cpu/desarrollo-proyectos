@@ -14,13 +14,15 @@ struct Identity {
     name: String,
     activated: bool,
     revoked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_device_id: Option<String>,
 }
 fn valid_hex(value: &str, length: usize) -> bool {
     value.len() == length && value.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
 fn decode(value: &str) -> Result<Identity, String> {
     let identity: Identity = serde_json::from_str(value).map_err(|_| "device: Identidad local dañada; solicita asistencia técnica.")?;
-    if !valid_hex(&identity.device_id, 32) || !valid_hex(&identity.credential, 64) || identity.name.is_empty() || identity.name.len() > 200 {
+    if !valid_hex(&identity.device_id, 32) || !valid_hex(&identity.credential, 64) || identity.cache_device_id.as_ref().is_some_and(|id| !valid_hex(id, 32)) || identity.name.is_empty() || identity.name.len() > 200 {
         return Err("device: Identidad local inválida; solicita asistencia técnica.".into());
     }
     Ok(identity)
@@ -73,7 +75,7 @@ fn secret_tool(operation: &str, value: Option<&str>) -> Result<Option<String>, S
 fn load() -> Result<Identity, String> {
     if let Some(value) = secret_tool("lookup", None)? { return decode(&value); }
     let name = std::fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "Equipo del salón".into()).trim().chars().take(50).collect();
-    let identity = Identity { device_id: random_hex(16)?, credential: random_hex(32)?, name, activated: false, revoked: false };
+    let identity = Identity { device_id: random_hex(16)?, credential: random_hex(32)?, name, activated: false, revoked: false, cache_device_id: None };
     save(&identity)?;
     Ok(identity)
 }
@@ -83,17 +85,24 @@ fn save(identity: &Identity) -> Result<(), String> {
 }
 pub fn authorized_owner(owner: &str) -> Result<bool, String> {
     let identity = load()?;
-    Ok(identity.activated && !identity.revoked && owner == format!("ac-device-{}", identity.device_id))
+    Ok(identity.activated && !identity.revoked && owner == format!("ac-device-{}", identity.cache_device_id.as_ref().unwrap_or(&identity.device_id)))
 }
 fn operate(mut identity: Identity, action: &str) -> Result<(Identity, Value), String> {
     match action {
         "load" => {},
-        "proof" => return Ok((identity.clone(), json!({ "deviceId": identity.device_id, "credential": identity.credential, "name": identity.name }))),
+        "proof" => return Ok((identity.clone(), json!({ "deviceId": identity.device_id, "credential": identity.credential, "name": identity.name, "registered": identity.activated || identity.revoked }))),
+        "reset-binding" => {
+            // Rotate only pairing secrets. The original namespace remains in the
+            // secure store; no files, preferences or cache aliases supplied by JS.
+            identity.cache_device_id = Some(identity.cache_device_id.unwrap_or_else(|| identity.device_id.clone()));
+            identity.device_id = random_hex(16)?; identity.credential = random_hex(32)?;
+            identity.activated = false; identity.revoked = false;
+        },
         "activated" => { identity.activated = true; identity.revoked = false; },
         "revoked" => { identity.activated = false; identity.revoked = true; },
         _ => return Err("device: Operación inválida.".into()),
     }
-    let public = json!({ "deviceId": identity.device_id, "name": identity.name, "activated": identity.activated, "revoked": identity.revoked });
+    let public = json!({ "deviceId": identity.device_id, "cacheDeviceId": identity.cache_device_id, "name": identity.name, "activated": identity.activated, "revoked": identity.revoked });
     Ok((identity, public))
 }
 #[tauri::command]
@@ -104,14 +113,14 @@ pub async fn classroom_device(window: tauri::WebviewWindow, gate: tauri::State<'
         let _guard = mutex.lock().map_err(|_| "device: Identidad ocupada.")?;
         let original = load()?;
         let (identity, public) = operate(original.clone(), &action)?;
-        if identity.activated != original.activated || identity.revoked != original.revoked { save(&identity)?; }
+        if identity.device_id != original.device_id || identity.activated != original.activated || identity.revoked != original.revoked { save(&identity)?; }
         Ok(public)
     }).await.map_err(|_| "device: No se pudo acceder al llavero.".to_string())?
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn fixture() -> Identity { Identity { device_id: "a".repeat(32), credential: "b".repeat(64), name: "Salón 1".into(), activated: false, revoked: false } }
+    fn fixture() -> Identity { Identity { device_id: "a".repeat(32), credential: "b".repeat(64), name: "Salón 1".into(), activated: false, revoked: false, cache_device_id: None } }
     #[test]
     fn public_identity_never_contains_secret() {
         let (_, value) = operate(fixture(), "load").unwrap();
@@ -129,6 +138,17 @@ mod tests {
         let (identity, _) = operate(fixture(), "activated").unwrap();
         let (revoked, _) = operate(identity, "revoked").unwrap();
         assert!(!revoked.activated); assert!(revoked.revoked);
+    }
+    #[test]
+    fn rebinding_rotates_secrets_and_preserves_only_the_owned_cache_namespace() {
+        let (old, _) = operate(fixture(), "revoked").unwrap();
+        let (next, public) = operate(old.clone(), "reset-binding").unwrap();
+        assert_ne!(next.device_id, old.device_id); assert_ne!(next.credential, old.credential);
+        assert_eq!(next.cache_device_id.as_deref(), Some(old.device_id.as_str()));
+        assert!(!next.activated); assert!(!next.revoked); assert!(public.get("credential").is_none());
+        let (again, _) = operate(next, "reset-binding").unwrap();
+        assert_eq!(again.cache_device_id.as_deref(), Some(old.device_id.as_str()));
+        assert_eq!(decode(&serde_json::to_string(&again).unwrap()).unwrap().cache_device_id, again.cache_device_id);
     }
     #[test]
     fn rejects_corrupt_identity_and_unknown_actions() {
@@ -154,6 +174,15 @@ mod tests {
         let (revoked, _) = operate(reboot, "revoked").unwrap();
         save(&revoked).unwrap();
         assert!(load().unwrap().revoked);
+        // Package removal leaves this keyring item intact. Recovery rotates the
+        // credential, while the original verified cache namespace survives reboot.
+        let (fresh, _) = operate(load().unwrap(), "reset-binding").unwrap();
+        save(&fresh).unwrap(); let restored = load().unwrap();
+        assert_ne!(restored.device_id, first.device_id); assert_ne!(restored.credential, first.credential);
+        assert_eq!(restored.cache_device_id.as_deref(), Some(first.device_id.as_str()));
+        assert!(!authorized_owner(&format!("ac-device-{}", first.device_id)).unwrap());
+        let (authorized, _) = operate(restored, "activated").unwrap(); save(&authorized).unwrap();
+        assert!(authorized_owner(&format!("ac-device-{}", first.device_id)).unwrap());
         secret_tool("clear", None).unwrap();
         // libsecret 0.20 (Ubuntu 22.04) does not resolve "default" aliases in
         // secret-tool lock. Resolve and lock through the stable D-Bus API.

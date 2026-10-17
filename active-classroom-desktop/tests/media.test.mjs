@@ -5,6 +5,42 @@ import { assertLocalUrl } from "../src/player/local-source.ts";
 import { mediaErrorMessage, safeMediaUrl } from "../src/player/media-diagnostics.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
 
+async function mediaFixture(t) {
+  const dom = new JSDOM("<div id='host'></div>", { url: "https://tauri.localhost" }); const previous = new Map();
+  for (const name of ["window", "document", "HTMLVideoElement"]) { previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom.window : dom.window[name] }); }
+  const renderer = new VideoRenderer();
+  t.after(() => { renderer.destroy(); dom.window.close(); for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
+  const prototype = dom.window.HTMLMediaElement.prototype;
+  const load = t.mock.method(prototype, "load", () => {}); const pause = t.mock.method(prototype, "pause", () => {});
+  t.mock.method(prototype, "canPlayType", () => "probably");
+  await renderer.mount(document.querySelector("#host"), { url: `http://127.0.0.1:1234/media/${"a".repeat(64)}`, name: "Local", mimeType: "video/mp4", sizeBytes: 100 }, { page: 1, volume: .8, muted: false, onPage() {}, onState() {} });
+  return { dom, renderer, video: renderer.media, load, pause };
+}
+test("loadeddata/playing sin canplay no cierran video tras 20 segundos", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { dom, renderer, video, load, pause } = await mediaFixture(t); const src = video.src;
+  Object.defineProperties(video, { readyState: { value: 2 }, paused: { value: false }, currentTime: { value: 1 } });
+  video.dispatchEvent(new dom.window.Event("loadeddata")); video.dispatchEvent(new dom.window.Event("playing"));
+  video.dispatchEvent(new dom.window.Event("waiting")); video.dispatchEvent(new dom.window.Event("stalled"));
+  t.mock.timers.tick(25000);
+  assert.equal(video.src, src); assert.equal(load.mock.callCount(), 1); assert.equal(pause.mock.callCount(), 0);
+  assert.equal(renderer.state.error, ""); assert.equal(renderer.state.loading, false); assert.equal(renderer.state.buffering, true);
+});
+test("preparación lenta mantiene reproductor; solo MediaError fatal lo detiene", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { dom, renderer, video, load } = await mediaFixture(t); const src = video.src;
+  t.mock.timers.tick(25000); assert.equal(video.src, src); assert.equal(load.mock.callCount(), 1); assert.equal(renderer.state.error, "");
+  video.dispatchEvent(new dom.window.Event("canplay")); assert.equal(renderer.state.loading, false);
+  Object.defineProperty(video, "error", { value: { code: 3, message: "Decode failed" } }); video.dispatchEvent(new dom.window.Event("error"));
+  assert.ok(renderer.state.error);
+});
+test("play AbortError temporal permite reintento sin destruir sesión ni src", async t => {
+  const { renderer, video, load, pause } = await mediaFixture(t); const src = video.src;
+  t.mock.method(video, "play", async () => { throw Object.assign(new Error("Play interrupted by seek"), { name: "AbortError" }); });
+  await renderer.command("PLAY_PAUSE");
+  assert.equal(renderer.state.error, ""); assert.equal(video.src, src); assert.equal(load.mock.callCount(), 1); assert.equal(pause.mock.callCount(), 0);
+});
+
 test("ruta multimedia exige loopback, grant opaco y ninguna ruta libre", () => {
   assert.doesNotThrow(() => assertLocalUrl(`http://127.0.0.1:12345/media/${"a".repeat(64)}`));
   for (const url of ["http://localhost:1234/media/abc", "http://127.0.0.1:1234/etc/passwd", `http://127.0.0.1:1234/media/${"a".repeat(64)}?path=/etc/passwd`, `http://user:secret@127.0.0.1:1234/media/${"a".repeat(64)}`, `http://127.0.0.1.evil:1234/media/${"a".repeat(64)}`]) assert.throws(() => assertLocalUrl(url));

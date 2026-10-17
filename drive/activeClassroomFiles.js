@@ -7,6 +7,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 const { getDriveContentDescriptor } = require("./fileContent");
 const { contentHash, driveChanged } = require("./activeClassroomUnit");
 const { googleErrorReason, processingError } = require("./activeClassroomDriveContent");
+const { createVideoDelivery } = require("./activeClassroomVideoDelivery");
 const { maxFileBytes: MAX_BYTES, uploadHighWaterMarkBytes, transferTimeoutSeconds } = require("./activeClassroomPublicationLimits.json");
 
 const ROOT = "active-classroom/publications";
@@ -73,7 +74,7 @@ function createPublicationFiles({ db, bucket, resolveFile, openDrive, now = () =
     if (actual.generation !== download.generation || actual.sizeBytes !== download.sizeBytes || actual.mimeType !== download.mimeType || actual.checksums.sha256 !== download.checksums.sha256) throw new HttpsError("data-loss", "La copia publicada no coincide con su tamaño, generación o SHA-256.");
     return download;
   }
-  async function prepareResource(profile, resource, { signal = AbortSignal.timeout(transferTimeoutSeconds * 1000), snapshotId, deliveryOverride } = {}) {
+  async function prepareOriginal(profile, resource, { signal = AbortSignal.timeout(transferTimeoutSeconds * 1000), snapshotId, deliveryOverride } = {}) {
     let source, delivery, open, expectedSize, sourceFile, sourceMetadata;
     if (resource.source === "drive") {
       const file = await resolveFile(profile, resource.driveFileId);
@@ -156,6 +157,11 @@ function createPublicationFiles({ db, bucket, resolveFile, openDrive, now = () =
         await staging.delete({ ignoreNotFound: true }).catch(() => {});
       }
     }
+  }
+  const prepareVideo = createVideoDelivery({ db, bucket, descriptor, verifyDownload, now });
+  async function prepareResource(profile, resource, options = {}) {
+    const signal = options.signal || AbortSignal.timeout(transferTimeoutSeconds * 1000);
+    return prepareVideo(await prepareOriginal(profile, resource, { ...options, signal }), signal);
   }
   return { prepareResource, verifyDownload };
 }

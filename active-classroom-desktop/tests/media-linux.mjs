@@ -24,7 +24,7 @@ try {
   if (process.env.ACTIVE_CLASSROOM_MEDIA_PERFORMANCE === "1") {
     const seed = join(directory, "performance-seed.mp4");
     command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-f", "lavfi", "-i", "sine=frequency=660", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-c:a", "aac", "-y", seed]);
-    command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-stream_loop", "119", "-i", seed, "-c", "copy", "-movflags", "+faststart", "-y", join(directory, "performance.mp4")]);
+    command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-stream_loop", "179", "-i", seed, "-c", "copy", "-movflags", "+faststart", "-y", join(directory, "performance.mp4")]);
     await rm(seed);
   }
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220", "-t", "8", "-y", join(directory, "music.wav")]);
@@ -52,6 +52,6 @@ try {
     await copyFile("src-tauri/target/release/examples/media_playback", join(destination, "media_playback"));
   } else {
     const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";
-    command("xvfb-run", ["-a", "dbus-run-session", "--", executable], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 300000 });
+    command("xvfb-run", ["-a", "dbus-run-session", "--", executable], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 510000 });
   }
 } finally { await rm(directory, { recursive: true, force: true }); }

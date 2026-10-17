@@ -16,6 +16,7 @@ export abstract class MediaRenderer extends BaseRenderer {
   private seekInFlight = false;
   private lastTimeUpdate = 0;
   private frameCallback?: number;
+  private diagnosticTimer?: ReturnType<typeof setInterval>;
   async mount(host: HTMLElement, source: RendererSource, options: RendererOptions): Promise<void> {
     this.options = options;
     const media = document.createElement(this.kind); this.media = media;
@@ -29,8 +30,12 @@ export abstract class MediaRenderer extends BaseRenderer {
     const canPlayH264Aac = media.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
     const canPlayCodec = source.codecMime ? media.canPlayType(source.codecMime) : canPlayH264Aac;
     const readableError = (message: string) => this.kind === "audio" ? message.replace("video", "audio") : message;
-    const diagnostic = (event: string) => mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
-    for (const name of ["loadstart", "loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "seeking", "error", "stalled", "suspend", "seeked", "progress"]) {
+    const diagnostic = (event: string) => {
+      const quality = media instanceof HTMLVideoElement ? media.getVideoPlaybackQuality?.() : undefined;
+      mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
+    };
+    this.diagnosticTimer = setInterval(() => { try { if (window.localStorage.getItem("active-classroom-media-diagnostics") === "true") diagnostic("playback-sample"); } catch { /* Diagnostics must never affect playback. */ } }, 1000);
+    for (const name of ["loadstart", "loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "seeking", "error", "stalled", "suspend", "seeked", "progress", "play", "pause", "ended"]) {
       const listener = () => diagnostic(name); media.addEventListener(name, listener); this.listeners.push([name, listener]);
     }
     diagnostic("source");
@@ -55,7 +60,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     }
     const ready = () => { clearTimeout(this.timeout); this.notify({ loading: false, buffering: false, error: "" }); update(); if (this.playback) void this.applyPlayback(this.playback); };
     const waiting = () => this.notify({ buffering: true });
-    const playing = () => this.notify({ buffering: false });
+    const playing = () => { clearTimeout(this.timeout); this.notify({ loading: false, buffering: false }); };
     const seeked = () => { this.seekInFlight = false; if (this.seekTarget !== undefined && !this.seekTimer) this.flushSeek(); update(); };
     for (const [name, listener] of [["waiting", waiting], ["playing", playing], ["seeked", seeked]] as [string, EventListener][]) { media.addEventListener(name, listener); this.listeners.push([name, listener]); }
     const error = () => {
@@ -65,10 +70,13 @@ export abstract class MediaRenderer extends BaseRenderer {
       void mediaTransportError(source.url).then((localError) => { if (!this.disposed && localError) this.notify({ error: readableError(mediaErrorMessage(code, canPlayMime, canPlayCodec, mime, localError, canPlayH264Aac)) }); });
     };
     this.reportFailure = () => { diagnostic("play-rejected"); error(); };
-    media.addEventListener("canplay", ready); this.listeners.push(["canplay", ready]);
+    for (const name of ["loadeddata", "canplay"]) { media.addEventListener(name, ready); this.listeners.push([name, ready]); }
     media.addEventListener("error", error); this.listeners.push(["error", error]);
     this.notify({ loading: true, volume: options.volume, muted: options.muted });
-    this.timeout = setTimeout(() => { diagnostic("timeout"); media.pause(); media.removeAttribute("src"); media.load(); this.notify({ loading: false, playing: false, error: readableError("No se pudo leer el video local") }); }, 20000);
+    // A slow decoder or remote seek is not a MediaError. WebKitGTK can play at
+    // HAVE_CURRENT_DATA without emitting canplay; never tear down that pipeline
+    // because a wall-clock deadline expired. Keep controls and retry/exit usable.
+    this.timeout = setTimeout(() => { diagnostic("preparing-slow"); }, 20000);
     const label = document.createElement("p"); label.textContent = source.name; label.className = "player-audio-title";
     host.replaceChildren(...(this.kind === "audio" ? [label, media] : [media]));
     media.src = source.url; media.load();
@@ -79,7 +87,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     switch (command) {
       case "PLAY_PAUSE":
         if (!media.paused) media.pause();
-        else try { this.requestPlay?.(); await media.play(); if (this.disposed) media.pause(); } catch { this.reportFailure?.(); }
+        else try { this.requestPlay?.(); await media.play(); if (this.disposed) media.pause(); } catch (error) { if (!this.disposed && (error as { name?: string })?.name !== "AbortError") this.reportFailure?.(); }
         break;
       case "STOP": media.pause(); this.seek(0); break;
       case "SEEK_FORWARD": this.seek((this.seekTarget ?? media.currentTime) + 10); break;
@@ -130,7 +138,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     }
   }
   destroy(): void {
-    super.destroy(); clearTimeout(this.timeout); clearTimeout(this.seekTimer);
+    super.destroy(); clearTimeout(this.timeout); clearTimeout(this.seekTimer); clearInterval(this.diagnosticTimer);
     const media = this.media;
     if (media) { if (media instanceof HTMLVideoElement && this.frameCallback !== undefined) media.cancelVideoFrameCallback?.(this.frameCallback); for (const [name, listener] of this.listeners) media.removeEventListener(name, listener); media.pause(); media.removeAttribute("src"); media.load(); media.remove(); }
     this.listeners = [];

@@ -2760,6 +2760,12 @@ service cloud.firestore {
     match /activeClassroomFileSnapshots/{snapshotId} {
       allow read, write: if false;
     }
+    match /activeClassroomVideoSnapshots/{snapshotId} {
+      allow read, write: if false;
+    }
+    match /activeClassroomDeviceHistory/{eventId} {
+      allow read, write: if false;
+    }
 
     match /activeClassroomPermissions/{uid} {
       allow get: if hasProfile() && (uid == request.auth.uid || canClassroom("managePermissions"));

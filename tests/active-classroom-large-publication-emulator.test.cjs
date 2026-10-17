@@ -13,18 +13,24 @@ const { processingFingerprint, PROCESSOR_VERSION } = require("../drive/activeCla
 if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) throw new Error("Requiere emuladores Firestore y Storage.");
 const MiB = 1024 * 1024;
 const block = Buffer.alloc(64 * 1024, 0x5a);
+// Synthetic MP4 container for transport tests (decoder acceptance uses encoded
+// H.264/AAC fixtures). Metadata already precedes mdat; size/hash remain real.
+const firstBlock = Buffer.from(block);
+firstBlock.writeUInt32BE(16, 0); firstBlock.write("ftypisom0000", 4);
+firstBlock.writeUInt32BE(8, 16); firstBlock.write("moov", 20);
+firstBlock.writeUInt32BE(0, 24); firstBlock.write("mdat", 28);
 function streamBytes(size, failAfter = Infinity, onChunk = () => {}) {
   return Readable.from((async function* () {
     for (let offset = 0; offset < size; offset += block.length) {
       if (offset >= failAfter) throw new Error("Transferencia interrumpida");
-      const chunk = block.subarray(0, Math.min(block.length, size - offset));
+      const chunk = (offset ? block : firstBlock).subarray(0, Math.min(block.length, size - offset));
       onChunk(chunk); yield chunk;
     }
   })());
 }
 function expectedHash(size) {
   const hash = createHash("sha256");
-  for (let offset = 0; offset < size; offset += block.length) hash.update(block.subarray(0, Math.min(block.length, size - offset)));
+  for (let offset = 0; offset < size; offset += block.length) hash.update((offset ? block : firstBlock).subarray(0, Math.min(block.length, size - offset)));
   return hash.digest("hex");
 }
 test("publicación 300 MiB: streaming, copia server-side, integridad, atomicidad y reintento", { timeout: 120000 }, async (t) => {

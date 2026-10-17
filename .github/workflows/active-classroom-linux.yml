@@ -1,12 +1,19 @@
-name: Active Classroom Desktop Linux
+name: Active Classroom Linux VALIDATION / RELEASE
 
 on:
   workflow_dispatch:
+    inputs:
+      validation_run:
+        description: "Solo RELEASE: ID de VALIDATION verde del commit exacto"
+        required: false
+        type: string
+      commit:
+        description: "Solo RELEASE: SHA completo del commit validado"
+        required: false
+        type: string
   push:
     branches:
       - "**"
-    tags:
-      - "active-classroom-v*"
     paths:
       - "active-classroom-desktop/**"
       - "docs/active-classroom-manifest.example.json"
@@ -31,11 +38,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: active-classroom-linux-${{ github.ref }}
-  cancel-in-progress: true
+  group: active-classroom-linux-${{ github.ref }}-${{ inputs.validation_run || 'validation' }}
+  cancel-in-progress: ${{ !inputs.validation_run }}
 
 jobs:
   permissions:
+    if: ${{ !inputs.validation_run }}
     name: Autorización de equipos y reglas Firebase
     runs-on: ubuntu-22.04
     timeout-minutes: 25
@@ -71,6 +79,7 @@ jobs:
           npx eslint drive/activeClassroomSlides.js drive/activeClassroomDriveContent.js tests/active-classroom-slides*.cjs
           npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
           npx eslint drive/activeClassroomInteraction.js drive/activeClassroomBuildPreview.js src/active-classroom/components/SlideInteractionEditor.jsx src/active-classroom/utils/slideInteraction.js tests/active-classroom-builds*.cjs
+          npx eslint drive/activeClassroomVideoDelivery.js drive/activeClassroomFiles.js tests/active-classroom-video-delivery.test.cjs
           npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
           npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
           npx eslint drive/activeClassroomLevels.js drive/activeClassroomPermissions.js drive/activeClassroomUploadCleanup.js src/active-classroom tests/active-classroom-admin* tests/active-classroom-permissions.test.cjs tests/active-classroom-console.test.mjs
@@ -85,8 +94,9 @@ jobs:
           fi
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
   office:
+    if: ${{ !inputs.validation_run }}
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -109,6 +119,7 @@ jobs:
       - name: PPT/PPTX/DOC/DOCX a PDF, páginas, integridad y fallos reales
         run: docker run --rm --network none --memory 2g --cpus 2 --entrypoint python active-classroom-office:test -m unittest discover -s tests -v
   linux:
+    if: ${{ !inputs.validation_run }}
     name: Tests, Cargo y paquete Debian
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -303,24 +314,6 @@ jobs:
       - name: Instalación limpia APT y Gdebi, Dpkg, ABI y AppImage offline
         run: bash tests/validate-linux-packages.sh '${{ steps.release.outputs.version }}' "$RUNNER_TEMP/package-validation"
 
-      - name: Firmar bytes validados y generar metadata compatible
-        env:
-          ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY: ${{ vars.ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          test -n "$TAURI_SIGNING_PRIVATE_KEY"
-          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-          mapfile -t packages < <(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb')
-          mapfile -t images < <(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage')
-          test "${#packages[@]}" -eq 1
-          test "${#images[@]}" -eq 1
-          for artifact in "${packages[0]}" "${images[0]}"; do
-            npm exec -- tauri signer sign --app-version '${{ steps.release.outputs.version }}' "$artifact"
-          done
-          node scripts/updater-release.mjs metadata "$RUNNER_TEMP/updater-assets"
-          node scripts/verify-updater-signature.mjs
-
       - name: Diagnóstico de empaquetado fallido (sin release)
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -367,34 +360,130 @@ jobs:
             printf 'Build y tests nativos completos. Reproducción, codecs y Firebase requieren aceptación en el equipo Linux destino.\n'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Subir Debian, AppImage, firmas y validación
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - name: Certificar bytes finales sin claves privadas
+        run: |
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example verify_updater
+          node scripts/validation-artifacts.mjs collect "$RUNNER_TEMP/validated-artifacts"
+
+      - name: Guardar artefactos exactos de VALIDATION
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: active-classroom-${{ steps.release.outputs.version }}-linux-amd64-${{ github.sha }}
+          name: active-classroom-validation-${{ github.sha }}
+          path: ${{ runner.temp }}/validated-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Guardar informes de aceptación
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: active-classroom-validation-reports-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/updater-assets/*
             ${{ runner.temp }}/updater-acceptance.json
             ${{ runner.temp }}/package-validation/*
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
-  release:
-    name: Publicar release estable verificado
-    if: startsWith(github.ref, 'refs/tags/active-classroom-v')
+  validation:
+    name: VALIDATION completa
+    if: ${{ !inputs.validation_run && always() }}
     needs: [permissions, office, linux]
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    steps:
+      - name: Exigir todos los controles verdes
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: node -e 'const values=Object.values(JSON.parse(process.env.RESULTS)); if(values.length!==3 || values.some(job=>job.result!=="success")) process.exit(1)'
+
+  release_gate:
+    name: Verificar VALIDATION del commit exacto
+    if: ${{ inputs.validation_run }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+      - name: Fallar cerrado si el run no validó exactamente este código
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VALIDATION_RUN: ${{ inputs.validation_run }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: node active-classroom-desktop/scripts/verify-validation-run.mjs
+
+  release:
+    name: Publicar release estable verificado
+    if: ${{ inputs.validation_run }}
+    needs: [release_gate]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
     permissions:
       contents: write
+      actions: read
     concurrency:
       group: active-classroom-stable-release
       cancel-in-progress: false
+    env:
+      VALIDATION_RUN: ${{ inputs.validation_run }}
+      RELEASE_COMMIT: ${{ inputs.commit }}
     steps:
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          pattern: active-classroom-*-linux-amd64-${{ github.sha }}
-          path: release-assets
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: active-classroom-desktop/package-lock.json
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          name: active-classroom-validation-${{ inputs.commit }}
+          run-id: ${{ inputs.validation_run }}
+          github-token: ${{ github.token }}
+          path: validated-artifacts
+      - name: Verificar certificado y SHA antes de exponer signing secrets
+        working-directory: active-classroom-desktop
+        env:
+          ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY: ${{ vars.ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY }}
+        run: |
+          npm ci
+          node scripts/validation-artifacts.mjs verify ../validated-artifacts
+          node scripts/updater-release.mjs build-config "$RUNNER_TEMP/release-config.json"
+          version="$(node -p 'require("./package.json").version')"
+          mkdir -p src-tauri/target/release/bundle/{deb,appimage}
+          cp "../validated-artifacts/Active.Classroom_${version}_amd64.deb" "src-tauri/target/release/bundle/deb/Active Classroom_${version}_amd64.deb"
+          cp "../validated-artifacts/Active-Classroom-${version}-x86_64.AppImage" "src-tauri/target/release/bundle/appimage/Active Classroom_${version}_amd64.AppImage"
+      - name: Firmar solo los instaladores ya validados
+        working-directory: active-classroom-desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          version="$(node -p 'require("./package.json").version')"
+          npm exec -- tauri signer sign --app-version "$version" "src-tauri/target/release/bundle/deb/Active Classroom_${version}_amd64.deb"
+          npm exec -- tauri signer sign --app-version "$version" "src-tauri/target/release/bundle/appimage/Active Classroom_${version}_amd64.AppImage"
+      - name: Verificar criptografía sin clave privada y preparar metadata
+        working-directory: active-classroom-desktop
+        env:
+          ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY: ${{ vars.ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3
+          chmod 755 ../validated-artifacts/verify_updater
+          version="$(node -p 'require("./package.json").version')"
+          for artifact in "src-tauri/target/release/bundle/deb/Active Classroom_${version}_amd64.deb" "src-tauri/target/release/bundle/appimage/Active Classroom_${version}_amd64.AppImage"; do
+            ../validated-artifacts/verify_updater "$artifact" "${artifact}.sig" "$version"
+          done
+          node scripts/updater-release.mjs metadata ../release-assets
       - name: Subir a draft y publicar solo después de completar todos los assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -411,7 +500,7 @@ jobs:
           test "${#manifests[@]}" -eq 1
           test "${#notes[@]}" -eq 1
           version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).version' "${manifests[0]}")"
-          test "$GITHUB_REF_NAME" = "active-classroom-v$version"
+          export GITHUB_REF_NAME="active-classroom-v$version"
           latest_tag="$(gh release view --json tagName --jq '.tagName' 2>/dev/null || true)"
           if [[ "$latest_tag" == active-classroom-v* ]]; then
             node -e 'const [old,next]=process.argv.slice(1).map(v=>v.replace(/^active-classroom-v/, "").split(".").map(Number)); const index=next.findIndex((v,i)=>v!==old[i]); if(index<0 || next[index]<old[index]) process.exit(1)' "$latest_tag" "$GITHUB_REF_NAME"
@@ -420,6 +509,13 @@ jobs:
           test -s "${images[0]}.sig"
           (cd "$(dirname "${images[0]}")" && sha256sum --check "$(basename "${images[0]}").sha256")
           (cd "$(dirname "${installers[0]}")" && sha256sum --check "$(basename "${installers[0]}").sha256")
+          # Create the only tag AFTER validation, artifact inspection and signature verification.
+          existing_tag="$(gh api "repos/$GH_REPO/git/ref/tags/$GITHUB_REF_NAME" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$existing_tag" ]]; then
+            test "$existing_tag" = "$RELEASE_COMMIT"
+          else
+            gh api "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$GITHUB_REF_NAME" -f "sha=$RELEASE_COMMIT" > /dev/null
+          fi
           # Never overwrite an already published installer or race stable versions.
           if gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft' > existing-release.txt 2>/dev/null; then
             test "$(cat existing-release.txt)" = true

@@ -140,3 +140,34 @@ test("listado y manifest transportan alias sin alterar contrato del contenido", 
   assert.deepEqual(await api.list(), [publication]); assert.deepEqual(await api.manifest(publication), manifest);
   assert.deepEqual(received, [label, label]);
 });
+
+
+test("revocado se reautoriza con nueva sesión y mismo owner sin reinstalar", async () => {
+  const f = setup(true); f.authorize("Aula Norte"); await f.session.start(true); const owner = f.session.owner;
+  f.revoke(); await f.session.connect(); assert.equal(f.session.state.lifecycle, "REVOKED");
+  f.authorize("Aula Norte"); await f.session.connect();
+  assert.equal(f.session.state.lifecycle, "AUTHORIZED"); assert.equal(f.session.owner, owner); assert.equal(f.session.state.identity.displayName, "Aula Norte"); assert.equal(f.signIns(), 2);
+});
+test("desvinculado genera identidad/código nuevos conservando namespace de contenido", async () => {
+  const f = setup(true); f.authorize(); await f.session.start(true); const cacheOwner = f.session.cacheOwner;
+  let resets = 0;
+  f.dependencies.resetBinding = async () => { resets++; Object.assign(f.stored, { cacheDeviceId: f.stored.cacheDeviceId || f.stored.deviceId, deviceId: "c".repeat(32), activated: false, revoked: false }); return { ...f.stored }; };
+  f.dependencies.exchange = async () => f.stored.deviceId === "c".repeat(32) ? { status: "pending", code: "999999ABCD", expiresAt: 900000 } : { status: "rebind_required", reason: "DEVICE_UNLINKED" };
+  await f.session.connect(); await f.session.resetBinding(true);
+  assert.equal(resets, 1); assert.equal(f.session.state.lifecycle, "PENDING_ACTIVATION"); assert.equal(f.session.state.code, "999999ABCD");
+  assert.equal(f.session.cacheOwner, cacheOwner); assert.notEqual(f.session.owner, cacheOwner);
+  f.authorize(); await f.session.connect(); assert.equal(f.session.state.phase, "activation");
+  f.dependencies.exchange = async () => ({ status: "authorized", customToken: "fresh" }); await f.session.connect();
+  assert.equal(f.session.state.lifecycle, "AUTHORIZED"); assert.equal(f.session.cacheOwner, cacheOwner);
+});
+test("reset offline no depende del backend y no solapa dos rotaciones", async () => {
+  const f = setup(true); await f.session.start(false); const owner = f.session.cacheOwner; let resets = 0;
+  f.dependencies.resetBinding = async () => { resets++; await new Promise(resolve => setTimeout(resolve, 5)); return { ...f.stored, deviceId: "d".repeat(32), cacheDeviceId: f.stored.deviceId, activated: false, revoked: false }; };
+  f.dependencies.detach = async () => { throw new Error("offline"); };
+  await Promise.all([f.session.resetBinding(false), f.session.resetBinding(false)]);
+  assert.equal(resets, 1); assert.equal(f.session.cacheOwner, owner); assert.equal(f.exchanges(), 0); assert.equal(f.session.state.lifecycle, "PENDING_ACTIVATION");
+});
+test("credencial rechazada no queda en error indefinido: ofrece revincular", async () => {
+  const f = setup(true); f.dependencies.exchange = async () => { throw new SyncError("INVALID_DEVICE_CREDENTIAL", "invalid"); };
+  await f.session.start(true); assert.equal(f.session.state.lifecycle, "REBIND_REQUIRED"); assert.equal(f.stored.activated, false);
+});
