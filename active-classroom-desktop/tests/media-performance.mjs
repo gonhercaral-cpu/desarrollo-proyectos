@@ -45,8 +45,9 @@ export async function mediaPerformance(fixture) {
     }
     check(progress.at(-1).time - progress[0].time > 115, "Video stalled during continuous 120 seconds");
     check(progress.every(sample => !sample.paused && sample.readyState >= 2), "Playback lost continuity");
-    if (progress.every(sample => Number.isFinite(sample.frames))) check(progress.slice(1).every((sample,index) => sample.frames - progress[index].frames >= 5), "Decoder reduced playback to isolated frames");
-    if (progress.every(sample => Number.isFinite(sample.audienceFrames))) check(progress.slice(1).every((sample,index) => sample.audienceFrames - progress[index].audienceFrames >= 5), "Projector decoder reduced playback to isolated frames");
+    check(progress.every(sample => Number.isFinite(sample.frames) && Number.isFinite(sample.audienceFrames)), "Decoded frame counters unavailable; playback cannot be validated");
+    check(progress.slice(1).every((sample,index) => sample.frames - progress[index].frames >= 5), "Decoder reduced playback to isolated frames");
+    check(progress.slice(1).every((sample,index) => sample.audienceFrames - progress[index].audienceFrames >= 5), "Projector decoder reduced playback to isolated frames");
     check(!events.some(event => event.event === "error" && event.mediaErrorCode), "Fatal MediaError during stress");
     const audience = await invoke("fixture_audience_state"); check(audience.videos === 1 && audience.audio === 0 && !audience.error, "Projection duplicated audio or failed");
     const after = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics") };

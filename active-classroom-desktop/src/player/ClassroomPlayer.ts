@@ -175,7 +175,7 @@ export class ClassroomPlayer {
   private updatePlaybackState(): void {
     if (this.disposed) return;
     const controller = this.controller;
-    const status = this.element("[data-status]"); const message = this.state.error || (this.state.loading ? this.renderer?.kind === "video" ? "Preparando video…" : "Abriendo archivo local…" : ""); if (status.textContent !== message) status.textContent = message; if (status.hidden !== !message) status.hidden = !message;
+    const status = this.element("[data-status]"); const message = this.state.error || (this.state.loading ? this.renderer?.kind === "video" ? "Preparando video…" : "Abriendo archivo local…" : this.state.buffering ? "Cargando…" : ""); if (status.textContent !== message) status.textContent = message; if (status.hidden !== !message) status.hidden = !message;
     status.setAttribute("role", this.state.error ? "alert" : "status");
     this.element("[data-media-error-actions]").hidden = !this.state.error;
     if (this.state.error && this.renderer?.kind === "video") status.textContent = `No se pudo reproducir este video. ${this.state.error}`;

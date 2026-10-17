@@ -40,6 +40,11 @@ test("play AbortError temporal permite reintento sin destruir sesión ni src", a
   await renderer.command("PLAY_PAUSE");
   assert.equal(renderer.state.error, ""); assert.equal(video.src, src); assert.equal(load.mock.callCount(), 1); assert.equal(pause.mock.callCount(), 0);
 });
+test("MEDIA_ERR_ABORTED no se convierte en fallo fatal ni desmonta video", async t => {
+  const { dom, renderer, video, load, pause } = await mediaFixture(t); const src = video.src;
+  Object.defineProperty(video, "error", { value: { code: 1, message: "Aborted" } }); video.dispatchEvent(new dom.window.Event("error"));
+  assert.equal(renderer.state.error, ""); assert.equal(video.src, src); assert.equal(load.mock.callCount(), 1); assert.equal(pause.mock.callCount(), 0);
+});
 
 test("ruta multimedia exige loopback, grant opaco y ninguna ruta libre", () => {
   assert.doesNotThrow(() => assertLocalUrl(`http://127.0.0.1:12345/media/${"a".repeat(64)}`));

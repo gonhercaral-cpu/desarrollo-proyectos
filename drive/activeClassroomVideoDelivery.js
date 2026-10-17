@@ -17,6 +17,7 @@ function boxHeader(bytes, start, limit) {
   return { start, size, type, header };
 }
 async function readRange(file, start, end, signal) {
+  signal?.throwIfAborted();
   const input = file.createReadStream({ start, end, decompress: false }); const chunks = []; let size = 0;
   const abort = () => input.destroy(signal.reason); signal?.addEventListener("abort", abort, { once: true });
   try { for await (const chunk of input) { signal?.throwIfAborted(); size += chunk.length; if (size > end - start + 1) fail(); chunks.push(chunk); } }

@@ -66,7 +66,7 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
   const base = `http://127.0.0.1:${server.address().port}`;
   const identity = { deviceId: randomBytes(16).toString("hex"), name: "active-test", activated: false, revoked: false };
   const cacheRoot = await mkdtemp(join(tmpdir(), "ac-auth-sync-"));
-  const credential = randomBytes(32).toString("hex"); const clients = [];
+  let credential = randomBytes(32).toString("hex"); const clients = [];
   const transport = async (url, init) => {
     if (!network) throw new TypeError("Network unavailable");
     return fetch(`${base}/${String(url).split("cloudfunctions.net/")[1]}`, init);
@@ -76,7 +76,9 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
     const auth = initializeAuth(client, { persistence: inMemoryPersistence });
     connectAuthEmulator(auth, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, { disableWarnings: true });
     const session = new DeviceSession({
-      load: async () => ({ ...identity }), proof: async () => ({ deviceId: identity.deviceId, name: identity.name, credential }),
+      load: async () => ({ ...identity }), proof: async () => ({ deviceId: identity.deviceId, name: identity.name, credential, registered: identity.activated || identity.revoked }),
+      resetBinding: async () => { identity.cacheDeviceId ||= identity.deviceId; identity.deviceId = randomBytes(16).toString("hex"); credential = randomBytes(32).toString("hex"); identity.activated = false; identity.revoked = false; return { ...identity }; },
+      detach: proof => handlers.detach({ data: proof }),
       mark: async (action) => { identity.activated = action === "activated"; identity.revoked = action === "revoked"; return { ...identity }; },
       exchange: async (proof) => {
         const response = await transport("https://test.cloudfunctions.net/activeClassroomDeviceSession", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: proof }) });
@@ -139,6 +141,26 @@ test("Auth real: activación, reinicio, Bearer ID token, nombre, renovación y r
       }
       await assert.rejects(reboot.api.list(), { code: "403" }); assert.equal(reboot.session.state.phase, "revoked");
       const revoked = createSession(); await revoked.session.start(false); assert.equal(revoked.session.state.phase, "revoked");
+    });
+    await t.test("reauthorizar renueva Auth real; desvincular/eliminar generan código nuevo conservando cache", async () => {
+      const firstId = identity.deviceId; const owner = reboot.session.cacheOwner;
+      await handlers.reauthorize({ auth: { uid: "test-admin" }, data: { deviceId: firstId } });
+      await reboot.session.connect(); assert.equal(reboot.session.state.phase, "ready");
+      const fresh = await adminAuth.verifyIdToken(await reboot.session.token()); assert.equal(fresh.deviceGeneration, 3);
+      await assert.rejects(handlers.authorizeDevice(decoded), { code: "permission-denied" });
+      assert.ok((await reboot.api.list()).some(item => item.unitId === manifest.unit.unitId));
+      const deadline = async predicate => { const end = Date.now() + 10000; while (!predicate() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 10)); assert.ok(predicate()); };
+      for (const action of ["unlink", "remove"]) {
+        const retired = identity.deviceId;
+        if (action === "unlink") await handlers.revoke({ auth: { uid: "test-admin" }, data: { deviceId: retired } });
+        await handlers[action]({ auth: { uid: "test-admin" }, data: { deviceId: retired } });
+        await reboot.session.connect(); await deadline(() => reboot.session.state.phase === "activation" && Boolean(reboot.session.state.code));
+        assert.notEqual(identity.deviceId, retired); assert.equal(reboot.session.cacheOwner, owner); assert.equal(reboot.session.state.identity.displayName, "Aula nueva");
+        const code = reboot.session.state.code; await handlers.approve({ auth: { uid: "test-admin" }, data: { code } }); await reboot.session.connect();
+        assert.equal(reboot.session.state.phase, "ready"); assert.equal((await adminAuth.verifyIdToken(await reboot.session.token())).deviceId, identity.deviceId);
+        assert.deepEqual((await cache.list()).map(item => item.version), [1]);
+        const local = await openLocalClass(new DiskCache(cacheRoot), manifest.unit.unitId, 1); assert.ok(local.resolveResource(manifest.resources[0].resourceId).path);
+      }
     });
   } finally {
     await Promise.all(clients.map(deleteApp)); await new Promise((resolve) => server.close(resolve));

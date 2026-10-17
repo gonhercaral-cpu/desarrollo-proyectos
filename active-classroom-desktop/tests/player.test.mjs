@@ -70,6 +70,16 @@ function rendererDouble(kind = "pdf") {
     async mount(host, source, options) { this.options = options; this.source = source; host.textContent = source.name; options.onState({ ...initialRendererState(), page: options.page, pages: 5 }); },
     setPage(page) { this.pages.push(page); }, command(command) { this.commands.push(command); }, seek() {}, setVolume() {}, destroy() { this.destroyed = true; } };
 }
+test("buffering conserva recurso/sesión y controles; vuelve a reproducir sin remontar", async t => {
+  const { root, cleanup } = dom(t); const manifest = fixture(); manifest.resources[0].download.mimeType = "video/mp4";
+  const renderer = rendererDouble("video"); let mounts = 0; const mount = renderer.mount.bind(renderer); renderer.mount = (...args) => { mounts++; return mount(...args); };
+  const player = new ClassroomPlayer(root, localClass(manifest), () => {}, { verifyResource: async () => true, createRenderer: async () => renderer, prepareMediaSource: async () => ({ url: `http://127.0.0.1:1234/media/${"a".repeat(64)}`, mimeType: "video/mp4", name: "Offline", sizeBytes: 100 }) }); cleanup(() => player.destroy());
+  await waitFor(() => renderer.options); const resource = player.controller.selectedResourceId; const session = player.controller.sessionId; const stage = root.querySelector("[data-renderer]");
+  renderer.options.onState({ ...initialRendererState(), playing: true, buffering: true, time: 10, duration: 300 });
+  assert.equal(root.querySelector("[data-status]").textContent, "Cargando…"); assert.equal(root.querySelector("[data-media-error-actions]").hidden, true);
+  renderer.options.onState({ ...initialRendererState(), playing: true, buffering: false, time: 11, duration: 300 }); await player.dispatch("PLAY_PAUSE");
+  assert.equal(root.querySelector("[data-status]").hidden, true); assert.equal(root.querySelector("[data-renderer]"), stage); assert.equal(player.controller.selectedResourceId, resource); assert.equal(player.controller.sessionId, session); assert.equal(mounts, 1); assert.equal(renderer.destroyed, false); assert.deepEqual(renderer.commands, ["PLAY_PAUSE"]);
+});
 
 test("renderer usa MIME descargado; formatos permitidos y Office desconocido seguro", () => {
   const cases = { "application/pdf": "pdf", "IMAGE/PNG; charset=utf-8": "image", "image/jpeg": "image", "image/webp": "image", "audio/mpeg": "audio", "audio/x-wav": "audio", "audio/mp4": "audio", "audio/ogg": "audio", "video/mp4": "video", "video/webm": "video", "text/html": "unsupported", "application/vnd.openxmlformats-officedocument.presentationml.presentation": "unsupported", "application/octet-stream": "unsupported" };

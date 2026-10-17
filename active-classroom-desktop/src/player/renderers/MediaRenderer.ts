@@ -64,8 +64,9 @@ export abstract class MediaRenderer extends BaseRenderer {
     const seeked = () => { this.seekInFlight = false; if (this.seekTarget !== undefined && !this.seekTimer) this.flushSeek(); update(); };
     for (const [name, listener] of [["waiting", waiting], ["playing", playing], ["seeked", seeked]] as [string, EventListener][]) { media.addEventListener(name, listener); this.listeners.push([name, listener]); }
     const error = () => {
-      clearTimeout(this.timeout); media.pause();
       const code = media.error?.code || 0;
+      if (code === 1) { clearTimeout(this.timeout); this.notify({ loading: false, buffering: false }); return; }
+      clearTimeout(this.timeout); media.pause();
       this.notify({ loading: false, playing: false, error: readableError(mediaErrorMessage(code, canPlayMime, canPlayCodec, mime, null, canPlayH264Aac)) });
       void mediaTransportError(source.url).then((localError) => { if (!this.disposed && localError) this.notify({ error: readableError(mediaErrorMessage(code, canPlayMime, canPlayCodec, mime, localError, canPlayH264Aac)) }); });
     };
