@@ -39,3 +39,7 @@ test("índice corrupto/rangos truncados y cancelación fallan sin emitir publica
   const { bytes } = fixture(); await assert.rejects(planFastStart({ createReadStream() { return Readable.from([Buffer.alloc(2)]); } }, bytes.length));
   await assert.rejects(planFastStart(source(bytes), bytes.length, AbortSignal.abort()));
 });
+test("índices auxiliares protegidos no se reubican sin corregir sus offsets", () => {
+  const moov = box("moov", box("trak", box("mdia", box("minf", box("stbl", box("saio", Buffer.alloc(16)))))));
+  const { rewriteMoov } = require("../drive/activeClassroomVideoDelivery"); assert.throws(() => rewriteMoov(moov), { code: "data-loss" });
+});

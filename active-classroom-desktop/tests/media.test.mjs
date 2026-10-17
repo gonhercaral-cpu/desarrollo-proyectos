@@ -5,12 +5,13 @@ import { assertLocalUrl } from "../src/player/local-source.ts";
 import { mediaErrorMessage, safeMediaUrl } from "../src/player/media-diagnostics.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
 
-async function mediaFixture(t) {
+async function mediaFixture(t, configure = () => {}) {
   const dom = new JSDOM("<div id='host'></div>", { url: "https://tauri.localhost" }); const previous = new Map();
-  for (const name of ["window", "document", "HTMLVideoElement"]) { previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom.window : dom.window[name] }); }
+  for (const name of ["window", "document", "HTMLVideoElement", "CustomEvent"]) { previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name)); Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom.window : dom.window[name] }); }
   const renderer = new VideoRenderer();
   t.after(() => { renderer.destroy(); dom.window.close(); for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   const prototype = dom.window.HTMLMediaElement.prototype;
+  configure(prototype, dom);
   const load = t.mock.method(prototype, "load", () => {}); const pause = t.mock.method(prototype, "pause", () => {});
   t.mock.method(prototype, "canPlayType", () => "probably");
   await renderer.mount(document.querySelector("#host"), { url: `http://127.0.0.1:1234/media/${"a".repeat(64)}`, name: "Local", mimeType: "video/mp4", sizeBytes: 100 }, { page: 1, volume: .8, muted: false, onPage() {}, onState() {} });
@@ -25,6 +26,22 @@ test("loadeddata/playing sin canplay no cierran video tras 20 segundos", async t
   t.mock.timers.tick(25000);
   assert.equal(video.src, src); assert.equal(load.mock.callCount(), 1); assert.equal(pause.mock.callCount(), 0);
   assert.equal(renderer.state.error, ""); assert.equal(renderer.state.loading, false); assert.equal(renderer.state.buffering, true);
+});
+test("diagnóstico observa compositor sin actualizar Player por frame; detiene y libera callbacks", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] }); t.mock.method(console, "info", () => {});
+  const queue = new Map(); let id = 0; let cancelled = 0;
+  const { dom, renderer } = await mediaFixture(t, (_prototype, instance) => {
+    instance.window.HTMLVideoElement.prototype.requestVideoFrameCallback = callback => { queue.set(++id, callback); return id; };
+    instance.window.HTMLVideoElement.prototype.cancelVideoFrameCallback = key => { queue.delete(key); cancelled++; };
+  });
+  const states = []; renderer.options.onState = state => states.push(state);
+  dom.window.localStorage.setItem("active-classroom-media-diagnostics", "true");
+  for (let index = 1; index <= 20; index++) { const [key, callback] = queue.entries().next().value; queue.delete(key); callback(0, { presentedFrames: index, mediaTime: index / 30 }); }
+  assert.equal(states.length, 0); assert.equal(queue.size, 1);
+  dom.window.localStorage.setItem("active-classroom-media-diagnostics", "false");
+  const [key, callback] = queue.entries().next().value; queue.delete(key); callback(0, { presentedFrames: 21, mediaTime: .7 }); assert.equal(queue.size, 0);
+  dom.window.localStorage.setItem("active-classroom-media-diagnostics", "true"); t.mock.timers.tick(1000); assert.equal(queue.size, 1);
+  renderer.destroy(); assert.equal(queue.size, 0); assert.equal(cancelled, 1);
 });
 test("preparación lenta mantiene reproductor; solo MediaError fatal lo detiene", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });

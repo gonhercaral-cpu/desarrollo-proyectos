@@ -11,15 +11,15 @@ const MAX_CONNECTIONS: usize = 8;
 #[derive(Clone)]
 pub(crate) struct MediaServer { pub port: u16, grants: Arc<Mutex<HashMap<String, Grant>>>, metrics: Arc<Metrics> }
 #[derive(Default)]
-struct Metrics { active: AtomicUsize, peak: AtomicUsize, opened: AtomicU64, completed: AtomicU64, cancelled: AtomicU64, read: AtomicU64, sent: AtomicU64 }
+struct Metrics { active: AtomicUsize, peak: AtomicUsize, opened: AtomicU64, completed: AtomicU64, cancelled: AtomicU64, read: AtomicU64, sent: AtomicU64, requests: AtomicU64 }
 #[derive(Clone)]
 struct Grant { path: PathBuf, mime: String, size: u64, signature: Signature, leases: usize, active: Arc<AtomicBool> }
-struct TransferLog { read: u64, sent: u64, expected: u64, metrics: Arc<Metrics> }
+struct TransferLog { request_id: u64, read: u64, sent: u64, expected: u64, metrics: Arc<Metrics> }
 impl Drop for TransferLog { fn drop(&mut self) {
-    self.metrics.active.fetch_sub(1, Ordering::SeqCst); self.metrics.read.fetch_add(self.read, Ordering::SeqCst); self.metrics.sent.fetch_add(self.sent, Ordering::SeqCst);
+    self.metrics.active.fetch_sub(1, Ordering::SeqCst);
     let complete = self.sent == self.expected;
     if complete { self.metrics.completed.fetch_add(1, Ordering::SeqCst); } else { self.metrics.cancelled.fetch_add(1, Ordering::SeqCst); }
-    crate::media_report::record(serde_json::json!({"event":if complete {"range-completed"} else {"range-cancelled"},"readBytes":self.read,"sentBytes":self.sent,"expected":self.expected,"activeStreams":self.metrics.active.load(Ordering::SeqCst)}));
+    crate::media_report::record(serde_json::json!({"event":if complete {"range-completed"} else {"range-cancelled"},"requestId":self.request_id,"readBytes":self.read,"sentBytes":self.sent,"expected":self.expected,"activeStreams":self.metrics.active.load(Ordering::SeqCst)}));
     if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event={} read_bytes={} sent_bytes={} block_bytes={BLOCK_BYTES}", if complete { "range-completed" } else { "range-cancelled" }, self.read, self.sent); }
 } }
 #[derive(Clone, PartialEq, Eq)]
@@ -176,20 +176,21 @@ impl MediaServer {
             Ok((start, count)) => (if range.is_some() { 206 } else { 200 }, start, count, range.map(|_| format!("bytes {start}-{}/{}", start + count - 1, grant.size))),
             Err(_) => return reply(socket, 416, &grant.mime, 0, Some(format!("bytes */{}", grant.size)), "range"),
         };
-        crate::media_report::record(serde_json::json!({"event":"range-open","status":status,"start":start,"length":count,"mime":grant.mime,"activeStreams":self.metrics.active.load(Ordering::SeqCst)}));
+        let request_id = self.metrics.requests.fetch_add(1, Ordering::SeqCst) + 1;
+        crate::media_report::record(serde_json::json!({"event":"range-open","requestId":request_id,"method":parts[0],"status":status,"start":start,"length":count,"mime":grant.mime,"activeStreams":self.metrics.active.load(Ordering::SeqCst)}));
         if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event=range-open status={status} start={start} bytes={count} mime={}", grant.mime); }
         reply(socket, status, &grant.mime, count, content_range, "")?;
         if parts[0] == "HEAD" { return Ok(()); }
         file.seek(SeekFrom::Start(start))?;
         socket.set_nonblocking(true)?;
         let active = self.metrics.active.fetch_add(1, Ordering::SeqCst) + 1; self.metrics.peak.fetch_max(active, Ordering::SeqCst); self.metrics.opened.fetch_add(1, Ordering::SeqCst);
-        let mut remaining = count; let mut block = [0u8; BLOCK_BYTES]; let mut transfer = TransferLog { read: 0, sent: 0, expected: count, metrics: self.metrics.clone() };
+        let mut remaining = count; let mut block = [0u8; BLOCK_BYTES]; let mut transfer = TransferLog { request_id, read: 0, sent: 0, expected: count, metrics: self.metrics.clone() };
         while remaining > 0 {
             if !grant.active.load(Ordering::SeqCst) { break; }
             let limit = remaining.min(BLOCK_BYTES as u64) as usize;
             let read = file.read(&mut block[..limit])?;
             if read == 0 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "cache object changed")); }
-            transfer.read += read as u64;
+            transfer.read += read as u64; self.metrics.read.fetch_add(read as u64, Ordering::SeqCst);
             let mut written = 0; let mut last_write = std::time::Instant::now();
             while written < read {
                 // Backpressure holds one 64 KiB block, never another disk read.
@@ -198,7 +199,7 @@ impl MediaServer {
                 if let Some(error) = socket.take_error()? { return Err(error); }
                 match socket.write(&block[written..read]) {
                     Ok(0) => return Err(std::io::Error::new(std::io::ErrorKind::WriteZero, "media disconnected")),
-                    Ok(count) => { written += count; transfer.sent += count as u64; last_write = std::time::Instant::now(); },
+                    Ok(count) => { written += count; transfer.sent += count as u64; self.metrics.sent.fetch_add(count as u64, Ordering::SeqCst); last_write = std::time::Instant::now(); },
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         if last_write.elapsed() >= Duration::from_secs(30) { return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "media backpressure timeout")); }
                         std::thread::sleep(Duration::from_millis(2));
@@ -312,7 +313,7 @@ pub(crate) fn classroom_release_media(window: tauri::WebviewWindow, server: taur
 pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, data: Value) -> Result<(), String> {
     if !["teacher", "audience"].contains(&window.label()) { return Err("media: Ventana inválida".into()); }
     // Client sends only this whitelist, with capability URLs and browser messages redacted.
-    let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength", "frames", "droppedFrames", "videos", "audio"];
+    let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength", "frames", "droppedFrames", "presentedFrames", "presentedMediaTime", "videos", "audio"];
     let mut safe = serde_json::Map::new(); safe.insert("window".into(),Value::String(window.label().into()));
     for key in keys {
         if let Some(value) = data.get(key).filter(|value| value.to_string().len() <= 512) {
@@ -445,7 +446,12 @@ mod tests {
         assert_eq!(server.metrics()["active"],0); assert!(server.metrics()["cancelled"].as_u64().unwrap() >= 4);
         // A client that stops reading is cancelled by grant release even while
         // the socket is backpressured, without waiting for its 30s idle timeout.
+        let before_sent = server.metrics()["sentBytes"].as_u64().unwrap();
         let mut stalled = TcpStream::connect(("127.0.0.1",server.port)).unwrap(); write!(stalled,"GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",server.port).unwrap(); stalled.read_exact(&mut [0u8;1024]).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while server.metrics()["sentBytes"].as_u64().unwrap() <= before_sent && std::time::Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }
+        assert_eq!(server.metrics()["active"], 1);
+        assert!(server.metrics()["sentBytes"].as_u64().unwrap() > before_sent, "diagnostics must expose live writes before completion or cancellation");
         server.release(&url);
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         while server.metrics()["active"].as_u64().unwrap() > 0 && std::time::Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }

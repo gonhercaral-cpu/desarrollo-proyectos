@@ -17,10 +17,14 @@ export abstract class MediaRenderer extends BaseRenderer {
   private lastTimeUpdate = 0;
   private frameCallback?: number;
   private diagnosticTimer?: ReturnType<typeof setInterval>;
+  private presentedFrames = 0;
+  private presentedMediaTime = 0;
   async mount(host: HTMLElement, source: RendererSource, options: RendererOptions): Promise<void> {
     this.options = options;
     const media = document.createElement(this.kind); this.media = media;
     const opened = performance.now(); let requested = 0;
+    const diagnosticsEnabled = () => { try { return window.localStorage.getItem("active-classroom-media-diagnostics") === "true"; } catch { return false; } };
+    let observeFrame: VideoFrameRequestCallback | undefined;
     const buffered = () => Array.from({ length: media.buffered.length }, (_, index) => [media.buffered.start(index), media.buffered.end(index)]);
     media.preload = "auto"; media.controls = false; media.autoplay = false;
     media.volume = options.silent ? 0 : options.volume; media.muted = options.silent || options.muted;
@@ -32,17 +36,31 @@ export abstract class MediaRenderer extends BaseRenderer {
     const readableError = (message: string) => this.kind === "audio" ? message.replace("video", "audio") : message;
     const diagnostic = (event: string) => {
       const quality = media instanceof HTMLVideoElement ? media.getVideoPlaybackQuality?.() : undefined;
-      mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
+      mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, presentedFrames: observeFrame ? this.presentedFrames : null, presentedMediaTime: observeFrame ? this.presentedMediaTime : null, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
     };
-    this.diagnosticTimer = setInterval(() => { try { if (window.localStorage.getItem("active-classroom-media-diagnostics") === "true") diagnostic("playback-sample"); } catch { /* Diagnostics must never affect playback. */ } }, 1000);
+    this.diagnosticTimer = setInterval(() => {
+      if (!diagnosticsEnabled()) return;
+      if (media instanceof HTMLVideoElement && observeFrame && this.frameCallback === undefined) this.frameCallback = media.requestVideoFrameCallback(observeFrame);
+      diagnostic("playback-sample");
+    }, 1000);
     for (const name of ["loadstart", "loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "seeking", "error", "stalled", "suspend", "seeked", "progress", "play", "pause", "ended"]) {
       const listener = () => diagnostic(name); media.addEventListener(name, listener); this.listeners.push([name, listener]);
     }
     diagnostic("source");
     this.requestPlay = () => { requested = performance.now(); diagnostic("play-requested"); };
     if (media instanceof HTMLVideoElement && media.requestVideoFrameCallback) {
-      const firstFrame = () => { if (!this.disposed) diagnostic("first-frame"); };
-      this.frameCallback = media.requestVideoFrameCallback(firstFrame);
+      let first = true;
+      const frame: VideoFrameRequestCallback = (_now, metadata) => {
+        if (this.disposed) return;
+        this.frameCallback = undefined;
+        this.presentedFrames = metadata.presentedFrames; this.presentedMediaTime = metadata.mediaTime;
+        if (first) { first = false; diagnostic("first-frame"); }
+        // Only opt-in diagnostics observes submitted compositor frames. No DOM
+        // or player state updates; distinguish decoder progress from repaint stalls.
+        if (diagnosticsEnabled()) this.frameCallback = media.requestVideoFrameCallback(frame);
+      };
+      observeFrame = frame;
+      this.frameCallback = media.requestVideoFrameCallback(frame);
     }
     if (media instanceof HTMLVideoElement) { media.playsInline = true; media.className = "player-video"; }
     const update = () => {
@@ -143,6 +161,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     const media = this.media;
     if (media) { if (media instanceof HTMLVideoElement && this.frameCallback !== undefined) media.cancelVideoFrameCallback?.(this.frameCallback); for (const [name, listener] of this.listeners) media.removeEventListener(name, listener); media.pause(); media.removeAttribute("src"); media.load(); media.remove(); }
     this.listeners = [];
+    this.frameCallback = undefined;
     this.media = undefined; this.playback = undefined;
     this.reportFailure = undefined; this.requestPlay = undefined; this.seekTarget = undefined; this.seekInFlight = false;
   }

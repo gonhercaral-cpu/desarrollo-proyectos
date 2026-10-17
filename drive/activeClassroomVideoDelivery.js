@@ -63,7 +63,7 @@ function rewriteMoov(bytes, mapOffset = value => value, depth = 0) {
         table.writeBigUInt64BE(BigInt(mapOffset(Number(original))), 8 + index * 8);
       }
       result.push(encodeBox("co64", table));
-    } else if (box.type === "cmov" || box.type === "mvex") fail();
+    } else if (["cmov", "mvex", "saio", "iloc"].includes(box.type)) fail();
     else result.push(bytes.subarray(offset, offset + box.size));
     offset += box.size;
   }
