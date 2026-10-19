@@ -17,13 +17,18 @@ export async function mediaPerformance(fixture) {
   const renderer = new VideoRenderer(); const originalMount = renderer.mount.bind(renderer); renderer.mount = (...args) => { mounts++; return originalMount(...args); };
   const player = new ClassroomPlayer(host, { manifest, resolveResource() { return { path: "/cache/fixture", mimeType: "video/mp4", name: "Performance video", kind: "video" }; } }, () => {}, { verifyResource: async () => true, prepareMediaSource: async () => fixture.performanceSource, createRenderer: async () => renderer, projectionBridge: bridge });
   let structuralMutations = 0;
+  let frameCallback; let observedMedia; let presentedFrames = 0; let frameTime = 0;
   const observer = new MutationObserver(records => { structuralMutations += records.filter(record => record.type === "childList" && !record.target.closest?.("[data-media],[data-time],[data-status]" )).length; });
   observer.observe(host, { subtree: true, childList: true });
   try {
     await until(() => host.querySelector("video")?.readyState >= 3 && !renderer.state.loading);
     const media = host.querySelector("video"); const original = media;
+    observedMedia = media;
+    const frame = (_now, metadata) => { presentedFrames = metadata.presentedFrames; frameTime = metadata.mediaTime; frameCallback = media.requestVideoFrameCallback(frame); };
+    check(typeof media.requestVideoFrameCallback === "function", "Presented frame observer unavailable; decoded frames alone cannot prove fluid playback");
+    frameCallback = media.requestVideoFrameCallback(frame);
     const measurementStarted = performance.now();
-    const before = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics") };
+    const before = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics"), audience: await invoke("fixture_audience_state") };
     const click = performance.now(); const playing = new Promise(resolve => media.addEventListener("playing", () => resolve(performance.now() - click), { once: true }));
     await player.dispatch("PLAY_PAUSE"); const firstPlayMs = await playing;
     await wait(30000); check(!media.paused && media.currentTime > 25, "Video did not play 30 seconds");
@@ -39,19 +44,24 @@ export async function mediaPerformance(fixture) {
     const progress = []; const start = performance.now();
     for (let index = 0; index < 120; index++) {
       await wait(1000); const audience = await invoke("fixture_audience_state"); const quality = media.getVideoPlaybackQuality?.();
-      progress.push({ time: media.currentTime, readyState: media.readyState, seeking: media.seeking, paused: media.paused, audienceTime: audience.time, audiencePaused: audience.paused, audienceFrames: audience.frames, audienceDroppedFrames: audience.droppedFrames, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames });
+      progress.push({ elapsedMs: performance.now() - start, time: media.currentTime, readyState: media.readyState, seeking: media.seeking, paused: media.paused, audienceTime: audience.time, audiencePaused: audience.paused, audienceFrames: audience.frames, audiencePresentedFrames: audience.presentedFrames, audienceFrameTime: audience.frameTime, audienceDroppedFrames: audience.droppedFrames, frames: quality?.totalVideoFrames, presentedFrames, frameTime, droppedFrames: quality?.droppedVideoFrames });
       check(host.querySelector("video") === original, "Video remounted during playback");
-      check(audience.videos === 1 && !audience.paused && Math.abs(audience.time - media.currentTime) < 1, `Projector stopped or lost playback synchronization: ${JSON.stringify({ audience, teacher: { time: media.currentTime, paused: media.paused, seeking: renderer.state.seeking, buffering: renderer.state.buffering } })}`);
+      check(audience.videos === 1 && !audience.paused && Math.abs(audience.time - media.currentTime) < .25 && Number.isFinite(audience.frameTime) && Math.abs(audience.frameTime - media.currentTime) < .25, `Projector stopped or lost picture/audio synchronization: ${JSON.stringify({ audience, teacher: { time: media.currentTime, frameTime, paused: media.paused, seeking: renderer.state.seeking, buffering: renderer.state.buffering } })}`);
     }
     check(progress.at(-1).time - progress[0].time > 115, "Video stalled during continuous 120 seconds");
     check(progress.every(sample => !sample.paused && sample.readyState >= 2), "Playback lost continuity");
-    check(progress.every(sample => Number.isFinite(sample.frames) && Number.isFinite(sample.audienceFrames)), "Decoded frame counters unavailable; playback cannot be validated");
-    check(progress.slice(1).every((sample,index) => sample.frames - progress[index].frames >= 5), "Decoder reduced playback to isolated frames");
-    check(progress.slice(1).every((sample,index) => sample.audienceFrames - progress[index].audienceFrames >= 5), "Projector decoder reduced playback to isolated frames");
+    check(progress.every(sample => Number.isFinite(sample.presentedFrames) && Number.isFinite(sample.audiencePresentedFrames)), "Presented frame counters unavailable; playback cannot be validated");
+    // The performance fixture is 30 fps. The physical regression delivered
+    // only 12–16 fps, which the old five-frame floor incorrectly accepted.
+    check(progress.slice(1).every((sample,index) => (sample.presentedFrames - progress[index].presentedFrames) * 1000 / (sample.elapsedMs - progress[index].elapsedMs) >= 20), "Teacher presented fewer than 20 fps during continuous playback");
+    check(progress.slice(1).every((sample,index) => (sample.audiencePresentedFrames - progress[index].audiencePresentedFrames) * 1000 / (sample.elapsedMs - progress[index].elapsedMs) >= 20), "Projector presented fewer than 20 fps during continuous playback");
     check(!events.some(event => event.event === "error" && event.mediaErrorCode), "Fatal MediaError during stress");
     const audience = await invoke("fixture_audience_state"); check(audience.videos === 1 && audience.audio === 0 && !audience.error, "Projection duplicated audio or failed");
+    const teacherSeeks = seeks.reduce((total, seek) => total + seek.seekingEvents, 0);
+    check(Number.isFinite(audience.seekEvents) && audience.seekEvents - (before.audience.seekEvents || 0) <= teacherSeeks + 4, "Projection chased clock updates with synthetic seeks");
     const after = { memory: await invoke("fixture_memory"), streams: await invoke("fixture_metrics") };
     const measurementMs = performance.now() - measurementStarted;
+    media.cancelVideoFrameCallback(frameCallback); frameCallback = undefined;
     player.destroy(); await wait(1000);
     const closed = await invoke("fixture_metrics");
     const updater = new ProgramUpdater({ async action() { return updater.status; }, async listen() { return () => {}; } }, () => {});
@@ -65,6 +75,6 @@ export async function mediaPerformance(fixture) {
     check(seeks.every(seek => seek.seekingEvents <= 3), "Keyboard burst queued uncoalesced seeks");
     check(closed.active === 0, "Closed playback left abandoned streams");
     check(after.streams.opened - before.streams.opened === (after.streams.completed - before.streams.completed) + (after.streams.cancelled - before.streams.cancelled) + after.streams.active - before.streams.active, "Range streams leaked");
-    return { firstPlayMs, events, seeks, mounts, structuralMutations, measurementMs, durationMs: performance.now() - start, continuousSamples: progress.length, playbackSamples: progress, before, after, closed, settings };
-  } finally { observer.disconnect(); player.destroy(); host.remove(); window.removeEventListener("classroom-media-diagnostic", diagnostic); }
+    return { firstPlayMs, events, seeks, teacherSeeks, audienceSeeks: audience.seekEvents - (before.audience.seekEvents || 0), mounts, structuralMutations, measurementMs, durationMs: performance.now() - start, continuousSamples: progress.length, playbackSamples: progress, before, after, closed, settings };
+  } finally { observer.disconnect(); if (frameCallback !== undefined) observedMedia?.cancelVideoFrameCallback?.(frameCallback); player.destroy(); host.remove(); window.removeEventListener("classroom-media-diagnostic", diagnostic); }
 }

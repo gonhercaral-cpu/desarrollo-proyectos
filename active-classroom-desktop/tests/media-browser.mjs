@@ -56,7 +56,9 @@ async function video(source) {
   renderer.seek(lateSeek); await until(() => !media.seeking && Math.abs(media.currentTime - lateSeek) < .3);
   renderer.seek(5); await until(() => !media.seeking && Math.abs(media.currentTime - 5) < .3);
   renderer.seek(1); await until(() => !media.seeking && Math.abs(media.currentTime - 1) < .3);
-  renderer.setVolume(.25); assert(media.volume === .25, "Volumen");
+  // PulseAudio quantizes its native gain (25% returns 0.249998316...), so
+  // verify the requested percentage rather than bit equality of sink doubles.
+  renderer.setVolume(.25); assert(Math.round(media.volume * 100) === 25, `Volumen esperado=25% observado=${media.volume * 100}%`);
   await renderer.command("MUTE"); assert(media.muted === false, "Mute toggle"); await renderer.command("MUTE");
   await invoke("fixture_fullscreen", { active: true }); await delay(200); await invoke("fixture_fullscreen", { active: false });
   const snapshot = { sessionId: "media-fixture", revision: ++projectionRevision, unitId: "u", version: 1, resourceId: "v", slideIndex: 0, page: 1, source, playback: { ...state, time: 1, playing: true, muted: false }, updatedAt: Date.now() };
@@ -229,10 +231,21 @@ try {
 }
 async function runAudience() {
   const projected = new ProjectionPlayer(document.querySelector("#audience"));
-  let revision = 0;
+  let revision = 0; let seekEvents = 0;
+  let observed; let frameCallback; let presentedFrames = 0; let frameTime = 0;
+  const frame = (_now, metadata) => { presentedFrames = metadata.presentedFrames; frameTime = metadata.mediaTime; frameCallback = observed.requestVideoFrameCallback(frame); };
+  document.addEventListener("seeking", event => { if (event.target instanceof HTMLVideoElement) seekEvents++; }, true);
   await listen("fixture-projection", event => { revision = event.payload?.revision || 0; void projected.receive(event.payload); });
   await invoke("fixture_audience_state", { report: { ready: true } });
-  setInterval(() => { const media = document.querySelector("video"); const quality = media?.getVideoPlaybackQuality?.(); void invoke("fixture_audience_state", { report: { ready: true, revision, time: media?.currentTime || 0, paused: media?.paused, seeking: media?.seeking, readyState: media?.readyState, muted: media?.muted, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } }); }, 80);
+  setInterval(() => {
+    const media = document.querySelector("video"); const quality = media?.getVideoPlaybackQuality?.();
+    if (media !== observed) {
+      if (frameCallback !== undefined) observed?.cancelVideoFrameCallback?.(frameCallback);
+      observed = media; presentedFrames = 0; frameTime = 0;
+      frameCallback = observed?.requestVideoFrameCallback?.(frame);
+    }
+    void invoke("fixture_audience_state", { report: { ready: true, revision, seekEvents, time: media?.currentTime || 0, paused: media?.paused, seeking: media?.seeking, readyState: media?.readyState, muted: media?.muted, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, presentedFrames: media?.requestVideoFrameCallback ? presentedFrames : null, frameTime: media?.requestVideoFrameCallback ? frameTime : null, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, error: media?.error?.code || 0 } });
+  }, 80);
 }
 if (location.pathname === "/projection-test.html") void runAudience();
 else if (!document.documentElement.hasAttribute("data-layout-only")) void run();

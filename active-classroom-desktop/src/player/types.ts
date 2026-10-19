@@ -12,6 +12,8 @@ export interface RendererState {
   loading: boolean; page: number; pages: number; playing: boolean;
   time: number; duration: number; volume: number; muted: boolean; error: string;
   seeking?: boolean; buffering?: boolean;
+  // Transport sequence, not a clock sample: survives coalesced projection events.
+  seekRevision?: number;
 }
 export interface RendererOptions {
   page: number; volume: number; muted: boolean;

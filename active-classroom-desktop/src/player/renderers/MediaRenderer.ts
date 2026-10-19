@@ -8,6 +8,10 @@ export abstract class MediaRenderer extends BaseRenderer {
   listeners: [string, EventListener][] = [];
   timeout?: ReturnType<typeof setTimeout>;
   private playback?: RendererState;
+  private playbackReceivedAt = 0;
+  private projectionSeekPending = false;
+  private projectionSeekExplicit = false;
+  private seekRevision = 0;
   private playPending = false;
   private reportFailure?: () => void;
   private requestPlay?: () => void;
@@ -36,7 +40,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     const readableError = (message: string) => this.kind === "audio" ? message.replace("video", "audio") : message;
     const diagnostic = (event: string) => {
       const quality = media instanceof HTMLVideoElement ? media.getVideoPlaybackQuality?.() : undefined;
-      mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, presentedFrames: observeFrame ? this.presentedFrames : null, presentedMediaTime: observeFrame ? this.presentedMediaTime : null, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
+      mediaDiagnostic({ event, elapsedMs: Math.round(performance.now() - opened), playElapsedMs: requested ? Math.round(performance.now() - requested) : null, currentTime: media.currentTime, seeking: media.seeking, seekRevision: this.seekRevision, buffered: buffered(), kind: this.kind, mime, codecMime: source.codecMime || "", url: source.url, frames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames, presentedFrames: observeFrame ? this.presentedFrames : null, presentedMediaTime: observeFrame ? this.presentedMediaTime : null, videos: document.querySelectorAll("video").length, audio: document.querySelectorAll("audio").length, mediaErrorCode: media.error?.code || 0, mediaErrorMessage: media.error?.message || "", networkState: media.networkState, readyState: media.readyState, canPlayMime, canPlayCodec, canPlayH264Aac });
     };
     this.diagnosticTimer = setInterval(() => {
       if (!diagnosticsEnabled()) return;
@@ -69,7 +73,7 @@ export abstract class MediaRenderer extends BaseRenderer {
       // canplay event (readyState can remain HAVE_CURRENT_DATA). Clock progress
       // clears a stale waiting flag so it cannot leave the projector paused.
       const resumed = !media.paused && !media.seeking && time > this.state.time + .01;
-      this.notify({ playing: !media.paused && !media.ended, buffering: resumed ? false : this.state.buffering, seeking: media.seeking || this.seekInFlight || this.seekTarget !== undefined, time, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted });
+      this.notify({ playing: !media.paused && !media.ended, buffering: resumed ? false : this.state.buffering, seeking: media.seeking || this.seekInFlight || this.seekTarget !== undefined, seekRevision: this.seekRevision, time, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted });
     };
     const timeUpdate = () => { const now = performance.now(); if (now - this.lastTimeUpdate >= 200) { this.lastTimeUpdate = now; update(); } };
     media.addEventListener("timeupdate", timeUpdate); this.listeners.push(["timeupdate", timeUpdate]);
@@ -121,8 +125,12 @@ export abstract class MediaRenderer extends BaseRenderer {
     if (!media || !Number.isFinite(seconds) || !Number.isFinite(media.duration)) return;
     this.seekTarget = Math.max(0, Math.min(media.duration, seconds));
     this.notify({ seeking: true });
-    // Fixed windows preserve responsiveness during held keys. Only the latest target
-    // enters the decoder; further requests wait for seeked instead of stacking seeks.
+    // The teacher already coalesces keyboard/slider input. Apply its committed
+    // destination synchronously in the follower: even a zero-delay timer waited
+    // behind WebKit tasks, adding measurable picture lag in the dual-view test.
+    // flushSeek keeps one operation in flight and only the latest pending target.
+    if (this.options?.silent) { this.flushSeek(); return; }
+    // Fixed windows preserve responsiveness during held keys in the teacher.
     if (!this.seekTimer) this.seekTimer = setTimeout(() => { this.seekTimer = undefined; this.flushSeek(); }, 90);
   }
   private flushSeek(): void {
@@ -130,21 +138,46 @@ export abstract class MediaRenderer extends BaseRenderer {
     if (!media || this.disposed || this.seekInFlight || media.seeking || this.seekTarget === undefined) return;
     const target = this.seekTarget; this.seekTarget = undefined;
     if (Math.abs(media.currentTime - target) < 0.05) { this.notify({ seeking: false }); return; }
-    try { this.seekInFlight = true; media.currentTime = target; this.notify({ time: target, seeking: true }); }
+    try { this.seekInFlight = true; ++this.seekRevision; media.currentTime = target; this.notify({ time: target, seeking: true, seekRevision: this.seekRevision }); }
     catch { this.seekInFlight = false; this.notify({ seeking: false }); }
   }
   setVolume(volume: number): void {
     if (this.media && Number.isFinite(volume)) { this.media.volume = this.options?.silent ? 0 : Math.max(0, Math.min(1, volume)); this.notify({ volume: this.media.volume }); }
   }
   async applyPlayback(state: RendererState): Promise<void> {
+    const previous = this.playback;
+    const now = performance.now();
+    const previousTime = previous ? previous.time + (previous.playing && !previous.seeking && !previous.buffering ? Math.max(0, now - this.playbackReceivedAt) / 1000 : 0) : state.time;
+    // Clock samples must not become decoder seeks. WebKit's muted video clock
+    // can lag the teacher by >350 ms: chasing that lag caused 73 seeks for 11
+    // teacher seeks on Zorin, continuously flushing the projection decoder.
+    // Remember explicit transports even when the bridge skips intermediate
+    // seeking=true snapshots. Older snapshots use edges/discontinuities only.
+    const explicitSeek = state.seekRevision !== undefined && (previous ? state.seekRevision !== previous.seekRevision : state.seekRevision > 0);
+    if (!previous || explicitSeek ||
+      (state.seekRevision === undefined && state.seeking && !previous.seeking) || (!previous.playing && state.playing) ||
+      (!state.playing && state.time !== previous.time) ||
+      (state.seekRevision === undefined && Math.abs(state.time - previousTime) > 1)) this.projectionSeekPending = true;
+    this.projectionSeekExplicit ||= explicitSeek;
     this.playback = state;
+    this.playbackReceivedAt = now;
     const media = this.media;
     if (!media || this.disposed || !this.options?.silent) return;
     media.muted = true; media.volume = 0;
     if (!Number.isFinite(media.duration)) return;
-    // Never repeatedly seek an already aligned paused projector, nor chase the
-    // teacher clock while its decoder is buffering/seeking.
-    if (!state.seeking && !state.buffering && !media.seeking && !this.seekInFlight && this.seekTarget === undefined && Math.abs(media.currentTime - state.time) > 0.35) this.seek(state.time);
+    // A revision is sent with the committed target, before the teacher's seek
+    // finishes. Preroll both decoders in parallel: waiting for teacher seeked
+    // added its latency to the audience latency (about 300 ms on physical Zorin).
+    // Legacy snapshots/entry still wait for a settled target. Neither seeked
+    // confirmations nor normal clock samples trigger an additional correction.
+    if (this.projectionSeekPending && (this.projectionSeekExplicit || (!state.seeking && !state.buffering))) {
+      this.projectionSeekPending = false;
+      this.projectionSeekExplicit = false;
+      if (Math.abs(media.currentTime - state.time) > 0.05) {
+        mediaDiagnostic({ event: "projection-seek", kind: this.kind, time: state.time, seekRevision: state.seekRevision ?? null, drift: state.time - media.currentTime });
+        this.seek(state.time);
+      }
+    }
     // A seek is not a transport pause. Repeated pause/play during a playing
     // teacher seek can leave WebKitGTK's muted decoder waiting indefinitely.
     // Keep it running; correct only to the settled teacher target above.
@@ -163,6 +196,8 @@ export abstract class MediaRenderer extends BaseRenderer {
     this.listeners = [];
     this.frameCallback = undefined;
     this.media = undefined; this.playback = undefined;
+    this.projectionSeekPending = false;
+    this.projectionSeekExplicit = false;
     this.reportFailure = undefined; this.requestPlay = undefined; this.seekTarget = undefined; this.seekInFlight = false;
   }
 }

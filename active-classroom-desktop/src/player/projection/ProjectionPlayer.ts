@@ -4,6 +4,10 @@ import { assertLocalUrl } from "../local-source.ts";
 import { isProjectionSnapshot, type ProjectionSnapshot } from "../ClassSessionController.ts";
 import { InteractionSurface } from "../InteractionSurface.ts";
 
+// Teacher timeupdate normally arrives every 200 ms. A frozen authority must not
+// become an independent projector clock, even if other UI changes emit snapshots.
+const MAX_CLOCK_SILENCE_MS = 1000;
+
 // Read-only follower. No shortcuts, session controller, auth or remote APIs.
 export class ProjectionPlayer {
   private renderer?: LocalRenderer;
@@ -13,6 +17,7 @@ export class ProjectionPlayer {
   private generation = 0;
   private disposed = false;
   private page = 0;
+  private playbackClockAt = 0;
   private tick: ReturnType<typeof setInterval>;
   private host: HTMLElement;
   private factory: typeof createRenderer;
@@ -22,6 +27,10 @@ export class ProjectionPlayer {
     if (!snapshot) { this.snapshot = undefined; this.clear(); return; }
     if (!isProjectionSnapshot(snapshot)) { this.clear(); return; }
     if (this.snapshot?.sessionId === snapshot.sessionId && snapshot.revision <= this.snapshot.revision) return;
+    const previous = this.snapshot;
+    if (!previous || previous.sessionId !== snapshot.sessionId || previous.resourceId !== snapshot.resourceId || previous.source?.url !== snapshot.source?.url ||
+      previous.playback.time !== snapshot.playback.time || previous.playback.playing !== snapshot.playback.playing ||
+      previous.playback.seeking !== snapshot.playback.seeking || previous.playback.buffering !== snapshot.playback.buffering) this.playbackClockAt = Date.now();
     this.snapshot = snapshot;
     if (!snapshot.source || snapshot.playback.error) { this.clear(); return; }
     const source = snapshot.source;
@@ -56,8 +65,9 @@ export class ProjectionPlayer {
   }
   private followPlayback(): void {
     const snapshot = this.snapshot; if (!snapshot || !this.renderer?.applyPlayback || this.disposed) return;
-    const time = snapshot.playback.time + (snapshot.playback.playing && !snapshot.playback.seeking && !snapshot.playback.buffering ? Math.max(0, Date.now() - snapshot.updatedAt) / 1000 : 0);
-    void Promise.resolve(this.renderer.applyPlayback({ ...snapshot.playback, time: Math.min(snapshot.playback.duration || time, time), muted: true, volume: 0 })).catch(() => this.clear());
+    const staleClock = snapshot.playback.playing && Date.now() - this.playbackClockAt > MAX_CLOCK_SILENCE_MS;
+    const time = snapshot.playback.time + (snapshot.playback.playing && !snapshot.playback.seeking && !snapshot.playback.buffering && !staleClock ? Math.min(MAX_CLOCK_SILENCE_MS, Math.max(0, Date.now() - snapshot.updatedAt)) / 1000 : 0);
+    void Promise.resolve(this.renderer.applyPlayback({ ...snapshot.playback, playing: snapshot.playback.playing && !staleClock, buffering: snapshot.playback.buffering || staleClock, time: Math.min(snapshot.playback.duration || time, time), muted: true, volume: 0 })).catch(() => this.clear());
   }
   private clear(): void { ++this.generation; this.surface?.destroy(); this.surface = undefined; this.renderer?.destroy(); this.renderer = undefined; this.key = ""; this.page = 0; this.host.replaceChildren(); }
   destroy(): void { this.disposed = true; clearInterval(this.tick); this.clear(); }

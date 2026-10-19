@@ -1,3 +1,11 @@
+## 1.0.17
+
+- El proyector sigue las operaciones de seek del profesor mediante revisión compartida; no vacía el decoder para perseguir cada muestra del reloj.
+- Conserva el último destino durante ráfagas J/L, sin cambiar src, recrear video ni duplicar audio.
+- Inicia los seeks del proyector en paralelo al profesor, sin sumar la espera del decoder ni otro debounce.
+- Recuperación de equipos revocados: reautorizar, desvincular y volver a vincular sin reinstalar ni borrar contenido.
+- Regresión de sincronización cubierta en tests; validación Linux exige al menos 20 cuadros presentados por segundo, comprueba desfase de imagen/audio y controla seeks sintéticos del proyector.
+
 ## 1.0.16
 
 - Recuperación de equipos: reautorizar, desvincular y generar código nuevo sin reinstalar; conserva contenido y preferencias.

@@ -79,8 +79,10 @@ test("J/L acumulan destino y coalescen; un seek en curso, src/elemento/load esta
   const video = renderer.media; const url = video.src; let position = 20; let seeking = false; const writes = [];
   Object.defineProperties(video, { duration: { value: 300 }, seeking: { get: () => seeking }, currentTime: { get: () => position, set: value => { position = value; seeking = true; writes.push(value); } } }); video.dispatchEvent(new dom.window.Event("canplay"));
   for (let index = 0; index < 10; index++) await renderer.command("SEEK_FORWARD"); await new Promise(resolve => setTimeout(resolve, 110)); assert.deepEqual(writes, [120]);
+  assert.equal(renderer.state.seekRevision, 1, "La ráfaga produce una operación de transporte compartida");
   for (let index = 0; index < 10; index++) await renderer.command("SEEK_BACKWARD"); await new Promise(resolve => setTimeout(resolve, 110)); assert.deepEqual(writes, [120]);
   seeking = false; video.dispatchEvent(new dom.window.Event("seeked")); assert.deepEqual(writes, [120, 20]); seeking = false; video.dispatchEvent(new dom.window.Event("seeked"));
+  assert.equal(renderer.state.seekRevision, 2, "El destino coalescente conserva su revisión después de seeked");
   assert.equal(video.src, url); assert.equal(document.querySelector("video"), video); assert.equal(load.mock.callCount(), 1); assert.equal(video.preload, "auto");
   Object.defineProperty(video,"paused",{value:false}); video.dispatchEvent(new dom.window.Event("waiting")); assert.equal(renderer.state.buffering,true);
   position = 20.5; video.dispatchEvent(new dom.window.Event("timeupdate")); assert.equal(renderer.state.buffering,false,"Reloj reanudado limpia waiting sin exigir otro playing");

@@ -71,6 +71,9 @@ fn valid_snapshot(data: &Value) -> bool {
     // text uses multibyte UTF-8. Keep the byte limit and per-layer validation.
     if data.to_string().len() > 700000 || data["revision"].as_u64().is_none() || data["sessionId"].as_str().map(|s| s.len() > 80).unwrap_or(true) { return false; }
     if !data["currentBuild"].is_null() && data["currentBuild"].as_u64().filter(|value| *value <= 50).is_none() { return false; }
+    if let Some(revision) = data.get("playback").and_then(|playback| playback.get("seekRevision")) {
+        if revision.as_u64().filter(|value| *value <= 9007199254740991).is_none() { return false; }
+    }
     let source = &data["source"];
     if !source["layers"].is_null() {
         let Some(layers) = source["layers"].as_array().filter(|layers| layers.len() <= 50) else { return false; };
@@ -240,6 +243,16 @@ mod tests {
         assert!(!state.accept(&first));
         assert!(!state.retire("first"));
         assert_eq!(state.snapshot, Some(second));
+    }
+    #[test] fn optional_seek_revision_is_a_bounded_transport_sequence() {
+        let mut snapshot = json!({"sessionId":"class", "revision":1, "source":null});
+        assert!(valid_snapshot(&snapshot));
+        snapshot["playback"] = json!({"seekRevision": 1});
+        assert!(valid_snapshot(&snapshot));
+        for invalid in [json!(-1), json!(1.5), json!("1"), json!(null), json!(9007199254740992u64)] {
+            snapshot["playback"]["seekRevision"] = invalid;
+            assert!(!valid_snapshot(&snapshot));
+        }
     }
     #[test] fn closed_class_cannot_activate_pending_window() {
         let mut state = ProjectionState::default();

@@ -178,6 +178,30 @@ test("imagen y video siguen selección/play/pause/seek; audio nunca crea segundo
   assert.equal(renderers[1].destroyed, true); assert.equal(renderers.length, 2); assert.equal(audience.textContent, "♪"); assert.equal(audience.querySelector("audio,video"), null);
 });
 
+test("reloj de profesor detenido no genera avance ni seeks sintéticos en proyector", async t => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 100000 });
+  const { audience, cleanup } = dom(t); const renderers = [];
+  const player = new ProjectionPlayer(audience, async kind => { const renderer = rendererDouble(kind); renderers.push(renderer); return renderer; });
+  cleanup(() => player.destroy());
+  const first = snapshot("video/mp4");
+  const frozen = { ...first, playback: { ...first.playback, playing: true, time: 37.362564, duration: 238.137 } };
+  await player.receive(frozen);
+  assert.equal(renderers[0].states.at(-1).playing, true);
+  t.mock.timers.tick(20000);
+  assert.equal(renderers[0].states.at(-1).time, frozen.playback.time, "No extrapolar un snapshot antiguo hasta EOF");
+  assert.equal(renderers[0].states.at(-1).playing, false);
+  for (let revision = 2; revision <= 42; revision++) {
+    t.mock.timers.tick(500);
+    await player.receive({ ...frozen, revision, updatedAt: Date.now() });
+  }
+  assert.equal(renderers[0].states.at(-1).time, frozen.playback.time, "No extrapolar veinte segundos de un reloj detenido");
+  assert.equal(renderers[0].states.at(-1).playing, false, "Esperar al reloj real del profesor sin ciclos de seek");
+  await player.receive({ ...frozen, revision: 43, updatedAt: Date.now(), playback: { ...frozen.playback, time: 38.4 } });
+  assert.equal(renderers[0].states.at(-1).playing, true);
+  assert.equal(renderers[0].states.at(-1).time, 38.4);
+  assert.equal(renderers.length, 1, "Recuperación conserva elemento/recurso");
+});
+
 test("snapshots inconsistentes/remotos y recurso ausente/corrupto dejan pantalla segura", async t => {
   const { audience, cleanup } = dom(t); const renderer = rendererDouble("pdf");
   const player = new ProjectionPlayer(audience, async () => renderer); cleanup(() => player.destroy());
@@ -218,6 +242,100 @@ test("video real de audiencia permanece silenciado al reproducir, buscar, volume
   await renderer.applyPlayback({ ...initialRendererState(), playing: false, time: 35, duration: 100 });
   await new Promise(resolve => setTimeout(resolve, 110)); video.dispatchEvent(new window.Event("seeked"));
   assert.equal(video.paused, true); assert.equal(video.currentTime, 35); renderer.destroy(); assert.equal(video.hasAttribute("src"), false);
+});
+
+test("proyector no convierte muestras de reloj en seeks; conserva operaciones aunque se omitan eventos intermedios", async t => {
+  const { audience, window, cleanup } = dom(t);
+  t.mock.method(window.HTMLMediaElement.prototype, "load", () => {});
+  t.mock.method(window.HTMLMediaElement.prototype, "pause", () => {});
+  const renderer = new VideoRenderer(); cleanup(() => renderer.destroy());
+  await renderer.mount(audience, source("video/mp4"), { page: 1, volume: 0, muted: true, silent: true, onState() {}, onPage() {} });
+  Object.defineProperties(renderer.media, { duration: { value: 300 }, paused: { value: false }, currentTime: { value: 0 } });
+  const requested = [];
+  t.mock.method(renderer, "seek", time => requested.push(time));
+  const state = { ...initialRendererState(), playing: true, time: 10, duration: 300, seekRevision: 0 };
+  await renderer.applyPlayback(state);
+  for (let index = 1; index <= 480; index++) await renderer.applyPlayback({ ...state, time: 10 + index / 4 });
+  assert.deepEqual(requested, [10], "Dos minutos de reloj no deben vaciar el decoder con seeks sintéticos");
+  await renderer.applyPlayback({ ...state, time: 70, seeking: true, seekRevision: 1 });
+  assert.deepEqual(requested, [10, 70], "La revisión transporta el destino explícito sin esperar al decoder del profesor");
+  await renderer.applyPlayback({ ...state, time: 70, seeking: false, seekRevision: 1 });
+  await renderer.applyPlayback({ ...state, time: 70.25, seekRevision: 1 });
+  assert.deepEqual(requested, [10, 70]);
+  await renderer.applyPlayback({ ...state, time: 30, seekRevision: 2 });
+  assert.deepEqual(requested, [10, 70, 30], "Un puente que omite seeking=true aún recibe el seek por revisión");
+  assert.equal(renderer.media.muted, true); assert.equal(renderer.media.volume, 0);
+});
+
+test("proyector inicia el seek en paralelo al profesor sin sumar su debounce ni repetir al terminar", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { audience, window, cleanup } = dom(t);
+  t.mock.method(window.HTMLMediaElement.prototype, "load", () => {});
+  t.mock.method(window.HTMLMediaElement.prototype, "pause", () => {});
+  const renderer = new VideoRenderer(); cleanup(() => renderer.destroy());
+  await renderer.mount(audience, source("video/mp4"), { page: 1, volume: 0, muted: true, silent: true, onState() {}, onPage() {} });
+  let position = 10; let seeking = false; const writes = [];
+  Object.defineProperties(renderer.media, {
+    duration: { value: 300 }, paused: { value: false }, seeking: { get: () => seeking },
+    currentTime: { get: () => position, set: value => { position = value; seeking = true; writes.push(value); } },
+  });
+  const state = { ...initialRendererState(), playing: true, time: 10, duration: 300, seekRevision: 0 };
+  await renderer.applyPlayback(state);
+  // The teacher announces a queued keypress before it actually commits a seek.
+  await renderer.applyPlayback({ ...state, seeking: true });
+  t.mock.timers.tick(0); assert.deepEqual(writes, [], "No buscar el tiempo viejo de la tecla en cola");
+  // Revision changes only when the teacher assigns its explicit target. Its
+  // decoder is still seeking/buffering; the follower must preroll in parallel.
+  await renderer.applyPlayback({ ...state, time: 80, seeking: true, buffering: true, seekRevision: 1 });
+  assert.deepEqual(writes, [80], "Aplicar el destino en el mismo turno, sin otro timer del event loop");
+  seeking = false; renderer.media.dispatchEvent(new window.Event("seeked"));
+  await renderer.applyPlayback({ ...state, time: 80.08, seekRevision: 1 });
+  t.mock.timers.tick(100);
+  assert.deepEqual(writes, [80], "La confirmación y el reloj no provocan otro seek");
+});
+
+test("seeks de proyección conservan únicamente el último destino y nunca cambian src ni load", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { audience, window, cleanup } = dom(t);
+  const load = t.mock.method(window.HTMLMediaElement.prototype, "load", () => {});
+  t.mock.method(window.HTMLMediaElement.prototype, "pause", () => {});
+  const renderer = new VideoRenderer(); cleanup(() => renderer.destroy());
+  await renderer.mount(audience, source("video/mp4"), { page: 1, volume: 0, muted: true, silent: true, onState() {}, onPage() {} });
+  const video = renderer.media; const url = video.src; let position = 0; const writes = [];
+  Object.defineProperties(video, { duration: { value: 300 }, paused: { value: false }, currentTime: { get: () => position, set: value => { position = value; writes.push(value); } } });
+  const state = { ...initialRendererState(), playing: true, time: 0, duration: 300, seekRevision: 0 };
+  await renderer.applyPlayback(state);
+  await renderer.applyPlayback({ ...state, time: 100, seekRevision: 1 });
+  await renderer.applyPlayback({ ...state, time: 200, seekRevision: 2 });
+  assert.deepEqual(writes, [100], "Un solo seek en curso; el destino nuevo queda pendiente");
+  video.dispatchEvent(new window.Event("seeked"));
+  assert.deepEqual(writes, [100, 200], "Al terminar aplica únicamente el destino pendiente más reciente");
+  video.dispatchEvent(new window.Event("seeked"));
+  for (let index = 1; index <= 20; index++) await renderer.applyPlayback({ ...state, time: 200 + index / 4, seekRevision: 2 });
+  t.mock.timers.tick(100); assert.deepEqual(writes, [100, 200]);
+  assert.equal(video.src, url); assert.equal(load.mock.callCount(), 1); assert.equal(audience.querySelector("video"), video);
+});
+
+test("snapshots anteriores sin revisión de seek siguen discontinuidades, no el retraso del decoder", async t => {
+  const { audience, window, cleanup } = dom(t);
+  t.mock.method(window.HTMLMediaElement.prototype, "load", () => {});
+  t.mock.method(window.HTMLMediaElement.prototype, "pause", () => {});
+  const renderer = new VideoRenderer(); cleanup(() => renderer.destroy());
+  await renderer.mount(audience, source("video/mp4"), { page: 1, volume: 0, muted: true, silent: true, onState() {}, onPage() {} });
+  Object.defineProperties(renderer.media, { duration: { value: 300 }, paused: { value: false }, currentTime: { value: 0 } });
+  const requested = []; t.mock.method(renderer, "seek", time => requested.push(time));
+  const state = { ...initialRendererState(), playing: true, time: 10, duration: 300 };
+  await renderer.applyPlayback(state);
+  for (let index = 1; index <= 80; index++) await renderer.applyPlayback({ ...state, time: 10 + index / 4 });
+  assert.deepEqual(requested, [10]);
+  await renderer.applyPlayback({ ...state, time: 60 });
+  assert.deepEqual(requested, [10, 60]);
+});
+
+test("revisión de seek opcional acepta snapshots anteriores y rechaza valores inválidos", () => {
+  const first = snapshot(); assert.equal(isProjectionSnapshot(first), true);
+  assert.equal(isProjectionSnapshot({ ...first, playback: { ...first.playback, seekRevision: 1 } }), true);
+  for (const seekRevision of [-1, null, "1", 1.5, Number.MAX_SAFE_INTEGER + 1]) assert.equal(isProjectionSnapshot({ ...first, playback: { ...first.playback, seekRevision } }), false);
 });
 
 test("shortcuts del profesor gobiernan proyector offline y mantienen notas privadas", async t => {
