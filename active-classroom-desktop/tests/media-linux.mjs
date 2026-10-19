@@ -43,6 +43,9 @@ try {
   const script = join(directory, "media.js"); await writeFile(script, `const fixtureStyle = document.createElement("style"); fixtureStyle.textContent = ${JSON.stringify(css)}; document.head.append(fixtureStyle);\n` + output.find(item => item.type === "chunk").code);
   command("cargo", ["build", "--release", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--example", "media_playback"]);
   // Cloud CI cannot create nested sandbox namespaces or use a hardware GPU.
+  // Keep composition enabled with Mesa software rendering: disabling it leaves
+  // requestVideoFrameCallback counters at zero even while decode/time advance,
+  // which cannot validate actual presented frames or picture/audio sync.
   // These settings apply only to this test process, never the installed app.
   if (process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT) {
     const destination = process.env.ACTIVE_CLASSROOM_MEDIA_EXPORT;
@@ -52,6 +55,8 @@ try {
     await copyFile("src-tauri/target/release/examples/media_playback", join(destination, "media_playback"));
   } else {
     const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";
-    command("xvfb-run", ["-a", "dbus-run-session", "--", executable], { env: { ...process.env, GDK_BACKEND: "x11", WEBKIT_DISABLE_COMPOSITING_MODE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script }, timeout: 510000 });
+    const env = { ...process.env, GDK_BACKEND: "x11", LIBGL_ALWAYS_SOFTWARE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script };
+    delete env.WEBKIT_DISABLE_COMPOSITING_MODE;
+    command("xvfb-run", ["-a", "-s", "-screen 0 1920x1200x24", "dbus-run-session", "--", executable], { env, timeout: 510000 });
   }
 } finally { await rm(directory, { recursive: true, force: true }); }
