@@ -61,18 +61,36 @@ async function video(source) {
   renderer.setVolume(.25); assert(Math.round(media.volume * 100) === 25, `Volumen esperado=25% observado=${media.volume * 100}%`);
   await renderer.command("MUTE"); assert(media.muted === false, "Mute toggle"); await renderer.command("MUTE");
   await invoke("fixture_fullscreen", { active: true }); await delay(200); await invoke("fixture_fullscreen", { active: false });
-  const snapshot = { sessionId: "media-fixture", revision: ++projectionRevision, unitId: "u", version: 1, resourceId: "v", slideIndex: 0, page: 1, source, playback: { ...state, time: 1, playing: true, muted: false }, updatedAt: Date.now() };
-  if (nativeProjection) {
-    await invoke("fixture_project", { snapshot });
+  // Feed the real, advancing teacher clock. A single fabricated playing=true
+  // snapshot from a paused teacher is a frozen authority: the projector must
+  // stop following it after one second. Slow native preroll on Ubuntu 26 exposed
+  // that invalid fixture, not a reason to weaken the production clock watchdog.
+  const snapshot = () => ({ sessionId: "media-fixture", revision: ++projectionRevision, unitId: "u", version: 1, resourceId: "v", slideIndex: 0, page: 1, source, playback: { ...state, time: media.currentTime, playing: !media.paused && !media.ended, seeking: media.seeking, muted: false }, updatedAt: Date.now() });
+  const firstRevision = projectionRevision + 1;
+  const projected = nativeProjection ? undefined : new ProjectionPlayer(document.querySelector("#audience"));
+  try {
+    await renderer.command("PLAY_PAUSE");
     let audience;
-    for (let count = 0; count < 100; count++) { audience = await invoke("fixture_audience_state"); if (audience?.time > 1 && audience.revision === snapshot.revision) break; await delay(80); }
-    assert(audience?.revision === snapshot.revision && audience?.time > 1 && audience.muted && audience.videos === 1 && audience.audio === 0 && !audience.error, `Video en segunda ventana falló: ${JSON.stringify(audience)}`);
-    assert(document.querySelectorAll("video").length === 1, "Profesor contiene decoders duplicados");
-    await invoke("fixture_project", { snapshot: null });
-  } else {
-    const projected = new ProjectionPlayer(document.querySelector("#audience"));
-    await projected.receive(snapshot); await until(() => document.querySelector("#audience video")?.currentTime > 1);
-    assert(document.querySelector("#audience video").muted, "Audiencia debe conservar silencio"); projected.destroy();
+    for (let count = 0; count < 100; count++) {
+      const current = snapshot();
+      if (nativeProjection) {
+        await invoke("fixture_project", { snapshot: current });
+        audience = await invoke("fixture_audience_state");
+      } else {
+        await projected.receive(current);
+        const video = document.querySelector("#audience video");
+        audience = video ? { revision: current.revision, time: video.currentTime, paused: video.paused, muted: video.muted, videos: document.querySelectorAll("#audience video").length, audio: document.querySelectorAll("#audience audio").length, error: video.error?.code || 0 } : undefined;
+      }
+      if (audience?.revision >= firstRevision && audience.time > 1 && !audience.paused) break;
+      await delay(80);
+    }
+    assert(audience?.revision >= firstRevision && audience.revision <= projectionRevision && audience.time > 1 && !audience.paused && audience.muted && audience.videos === 1 && audience.audio === 0 && !audience.error, `Video en segunda ventana falló: ${JSON.stringify(audience)}`);
+    assert(media.currentTime > 1 && !media.paused && !media.error, "Maestro debe reproducir realmente durante la prueba del proyector");
+    assert(document.querySelectorAll(nativeProjection ? "video" : "#media video").length === 1, "Profesor contiene decoders duplicados");
+  } finally {
+    if (!media.paused) await renderer.command("PLAY_PAUSE");
+    if (nativeProjection) await invoke("fixture_project", { snapshot: null });
+    projected?.destroy();
   }
   observations.push({ phase: "after-projection", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   observations.push({ transport: "loopback", size: source.sizeBytes, codecMime: source.codecMime, code: media.error?.code || 0, loaded: true, playPauseSeekVolumeMuteFullscreenProjection: true }); renderer.destroy();
