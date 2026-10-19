@@ -1,5 +1,10 @@
 # Claude Code — project context
 
+Lee primero `../AGENTS.md` y `../CLAUDE.md`. Codex es el líder; Claude solo atiende
+el contrato asignado. Este contexto local no autoriza MCP, delegación, push, merge,
+firma de instaladores ni despliegue. Las rutas históricas de la sección siguiente
+no configuran herramientas en GitHub Actions.
+
 
 
 

@@ -1,0 +1,79 @@
+name: Multiagent CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiagent-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: Agent security contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+      - run: node --test tests/multiagent-security.test.cjs
+      - run: git diff --check
+  application:
+    name: Application validation (no deploy)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+      - name: Dependencias bloqueadas, sin scripts de instalación
+        id: dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix functions --ignore-scripts --no-audit --no-fund
+          npm ci --prefix drive --ignore-scripts --no-audit --no-fund
+          npm ci --prefix active-classroom-desktop --ignore-scripts --no-audit --no-fund
+      - run: npm run lint
+      - name: Build y pruebas locales
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          npm run build
+          npm run test:production
+          npm run test:operations
+          npm run test:reports
+          npm run test:material-corrections
+          npm run test:active-classroom
+          node --check functions/index.js
+          node --check drive/index.js
+  firebase:
+    name: Firebase rules (emulators only)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+      - name: Dependencias y emuladores sin identidad de producción
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm install --prefix "$RUNNER_TEMP/firebase-cli" --ignore-scripts --no-audit --no-fund firebase-tools@15.27.0
+          test -x "$JAVA_HOME_21_X64/bin/java"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/firebase-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      - run: npm run test:rules

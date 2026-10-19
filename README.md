@@ -1,5 +1,12 @@
 # React + Vite
 
+## Colaboración multiagente
+
+Codex dirige a Claude Code y Gemini CLI mediante contratos explícitos en Issues/PRs.
+La delegación está deshabilitada por defecto y los auxiliares solo tienen lectura en GitHub.
+Consulta el [protocolo y configuración desde Codex Cloud](docs/multiagent-collaboration.md)
+y los [resultados de validación y pendientes de activación](docs/multiagent-validation.md).
+
 ## Entorno Firebase completamente local
 
 El frontend usa Auth, Firestore, Storage y Functions locales solamente cuando se

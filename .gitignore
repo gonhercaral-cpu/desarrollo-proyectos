@@ -23,6 +23,13 @@ dist-ssr
 .firebase/updater-*-metadata-repair/
 releases/active-classroom/
 
+# Estado efímero de auxiliares; nunca subir credenciales o transcripciones.
+.multiagent/
+.gemini/
+gemini-artifacts/
+gha-creds-*.json
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

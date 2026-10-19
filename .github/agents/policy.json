@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "agents": ["claude", "gemini"],
+  "maxFiles": 12,
+  "maxPatchBytes": 200000,
+  "maxReportBytes": 64000,
+  "allowedPrefixes": [
+    "src/", "tests/", "docs/", "public/", "functions/", "drive/",
+    "active-classroom-desktop/src/", "active-classroom-desktop/tests/",
+    "active-classroom-desktop/admin-web/src/"
+  ],
+  "protectedPrefixes": [
+    "src/context/", "src/services/firebase", "src/services/auth",
+    "docs/multiagent-"
+  ],
+  "protectedFiles": [
+    "functions/index.js", "functions/deviceAccess.js", "drive/index.js",
+    "tests/multiagent-security.test.cjs"
+  ],
+  "allowedExtensions": [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".css", ".html", ".md", ".json", ".txt", ".svg"]
+}
