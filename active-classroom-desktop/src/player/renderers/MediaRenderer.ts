@@ -151,11 +151,15 @@ export abstract class MediaRenderer extends BaseRenderer {
     // Clock samples must not become decoder seeks. WebKit's muted video clock
     // can lag the teacher by >350 ms: chasing that lag caused 73 seeks for 11
     // teacher seeks on Zorin, continuously flushing the projection decoder.
+    // Play/resume is not a position command. Extrapolating the initial clock
+    // into a 60-90 ms seek flushed an already prepared decoder on Zorin and
+    // introduced a new delay at every resume. Align entry/paused positions and
+    // explicit seek revisions, never the playing edge itself.
     // Remember explicit transports even when the bridge skips intermediate
     // seeking=true snapshots. Older snapshots use edges/discontinuities only.
     const explicitSeek = state.seekRevision !== undefined && (previous ? state.seekRevision !== previous.seekRevision : state.seekRevision > 0);
     if (!previous || explicitSeek ||
-      (state.seekRevision === undefined && state.seeking && !previous.seeking) || (!previous.playing && state.playing) ||
+      (state.seekRevision === undefined && state.seeking && !previous.seeking) ||
       (!state.playing && state.time !== previous.time) ||
       (state.seekRevision === undefined && Math.abs(state.time - previousTime) > 1)) this.projectionSeekPending = true;
     this.projectionSeekExplicit ||= explicitSeek;

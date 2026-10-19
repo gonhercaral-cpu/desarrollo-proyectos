@@ -267,6 +267,30 @@ test("proyector no convierte muestras de reloj en seeks; conserva operaciones au
   assert.equal(renderer.media.muted, true); assert.equal(renderer.media.volume, 0);
 });
 
+test("iniciar y reanudar proyección no busca tiempos extrapolados ni vacía el decoder", async t => {
+  const { audience, window, cleanup } = dom(t);
+  t.mock.method(window.HTMLMediaElement.prototype, "load", () => {});
+  t.mock.method(window.HTMLMediaElement.prototype, "pause", () => {});
+  t.mock.method(window.HTMLMediaElement.prototype, "play", async () => {});
+  const renderer = new VideoRenderer(); cleanup(() => renderer.destroy());
+  await renderer.mount(audience, source("video/mp4"), { page: 1, volume: 0, muted: true, silent: true, onState() {}, onPage() {} });
+  let time = 0;
+  Object.defineProperties(renderer.media, { duration: { value: 300 }, paused: { value: false }, currentTime: { get: () => time } });
+  const requested = []; t.mock.method(renderer, "seek", target => requested.push(target));
+  const state = { ...initialRendererState(), duration: 300, seekRevision: 0 };
+  await renderer.applyPlayback(state);
+  await renderer.applyPlayback({ ...state, playing: true, time: .09 });
+  assert.deepEqual(requested, [], "Play no es un seek: no buscar 90 ms extrapolados después de preparar el video");
+  time = 7.4;
+  await renderer.applyPlayback({ ...state, time: 7.668074 });
+  assert.deepEqual(requested, [7.668074], "Pausa alinea una vez el destino estable del profesor");
+  time = 7.668074;
+  await renderer.applyPlayback({ ...state, playing: true, time: 7.72863 });
+  assert.deepEqual(requested, [7.668074], "Reanudar no vacía otra vez el decoder con la extrapolación de 60 ms");
+  await renderer.applyPlayback({ ...state, playing: true, time: 80, seeking: true, seekRevision: 1 });
+  assert.deepEqual(requested, [7.668074, 80], "J/L conserva su destino explícito al avanzar la revisión");
+});
+
 test("proyector inicia el seek en paralelo al profesor sin sumar su debounce ni repetir al terminar", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { audience, window, cleanup } = dom(t);
