@@ -1,5 +1,8 @@
 # Editor Editorial
 
+La autoridad y límites del auxiliar se definen en `../../AGENTS.md` y `../../CLAUDE.md`.
+Estas convenciones locales no autorizan integración, despliegue ni ampliación del contrato de Codex.
+
 Lee primero:
 
 @../../docs/editorial-context.md

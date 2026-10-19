@@ -1,0 +1,17 @@
+# Confirmar que esta cuenta conserva write/admin antes de exigir revisión de CODEOWNERS.
+# El propietario humano revisa controles; Codex conserva la responsabilidad técnica.
+/.github/ @gonhercaral-cpu
+/AGENTS.md @gonhercaral-cpu
+/CLAUDE.md @gonhercaral-cpu
+/GEMINI.md @gonhercaral-cpu
+/eslint.config.js @gonhercaral-cpu
+/tests/multiagent-security.test.cjs @gonhercaral-cpu
+/docs/multiagent-* @gonhercaral-cpu
+/firestore.rules @gonhercaral-cpu
+/storage.rules @gonhercaral-cpu
+/firestore.indexes.json @gonhercaral-cpu
+/firebase*.json @gonhercaral-cpu
+/.firebaserc @gonhercaral-cpu
+/functions/ @gonhercaral-cpu
+/drive/ @gonhercaral-cpu
+/active-classroom-desktop/src-tauri/ @gonhercaral-cpu
