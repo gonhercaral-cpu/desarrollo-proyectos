@@ -18,6 +18,53 @@ async function mediaFixture(t, configure = () => {}) {
   return { dom, renderer, video: renderer.media, load, pause };
 }
 
+test("diez reaperturas reutilizan un único video vacío sin listeners del recurso anterior", async t => {
+  let active; t.after(() => active?.destroy());
+  const { renderer, video } = await mediaFixture(t);
+  let oldEvents = 0; renderer.options.onState = () => oldEvents++;
+  renderer.destroy();
+  assert.equal(video.isConnected, false); assert.equal(video.hasAttribute("src"), false);
+  const source = { url: `http://127.0.0.1:1234/media/${"b".repeat(64)}`, name: "Otro video", mimeType: "video/mp4", sizeBytes: 600 * 1024 * 1024 };
+  for (let index = 0; index < 10; index++) {
+    active = new VideoRenderer(); let events = 0;
+    await active.mount(document.querySelector("#host"), source, { page: 1, volume: .4, muted: true, onPage() {}, onState() { events++; } });
+    assert.equal(active.media, video, "El número de elementos nativos no crece con las reaperturas");
+    assert.equal(document.querySelectorAll("video").length, 1);
+    video.dispatchEvent(new window.Event("loadeddata"));
+    assert.ok(events > 0); assert.equal(oldEvents, 0);
+    active.destroy(); assert.equal(video.hasAttribute("src"), false); assert.equal(video.isConnected, false);
+  }
+});
+
+test("video activo nunca se presta a otro renderer simultáneo", async t => {
+  const second = new VideoRenderer(); const third = new VideoRenderer(); t.after(() => { second.destroy(); third.destroy(); });
+  const { renderer, video } = await mediaFixture(t);
+  const host = document.createElement("div"); document.body.append(host);
+  const source = { url: `http://127.0.0.1:1234/media/${"b".repeat(64)}`, name: "Proyector", mimeType: "video/mp4", sizeBytes: 100 };
+  const options = { page: 1, volume: 0, muted: true, silent: true, onPage() {}, onState() {} };
+  await second.mount(host, source, options);
+  assert.notEqual(second.media, video); assert.equal(document.querySelectorAll("video").length, 2);
+  renderer.destroy();
+  await third.mount(document.querySelector("#host"), source, options);
+  assert.equal(third.media, video); assert.notEqual(third.media, second.media);
+  assert.equal(document.querySelectorAll("video").length, 2);
+});
+
+test("promesas tardías del video anterior no pausan ni dañan el elemento reutilizado", async t => {
+  const next = new VideoRenderer(); t.after(() => next.destroy());
+  const { renderer, video } = await mediaFixture(t);
+  let paused = true; const pending = [];
+  Object.defineProperty(video, "paused", { get: () => paused });
+  const pause = t.mock.method(video, "pause", () => { paused = true; });
+  t.mock.method(video, "play", () => { paused = false; return new Promise((resolve, reject) => pending.push({ resolve, reject })); });
+  await renderer.command("PLAY_PAUSE"); await renderer.command("PLAY_PAUSE"); await renderer.command("PLAY_PAUSE"); renderer.destroy();
+  await next.mount(document.querySelector("#host"), { url: `http://127.0.0.1:1234/media/${"c".repeat(64)}`, name: "Nuevo", mimeType: "video/mp4", sizeBytes: 100 }, { page: 1, volume: .5, muted: false, onPage() {}, onState() {} });
+  assert.equal(next.media, video); await next.command("PLAY_PAUSE");
+  const pauses = pause.mock.callCount(); const url = video.src;
+  pending[0].resolve(); pending[1].reject(new Error("Old play")); await Promise.resolve(); await Promise.resolve();
+  assert.equal(paused, false); assert.equal(pause.mock.callCount(), pauses); assert.equal(video.src, url); assert.equal(next.state.error, "");
+});
+
 test("play pendiente en WebKit no bloquea comandos ni retiene un await del renderer", async t => {
   const { renderer, video, pause } = await mediaFixture(t);
   let nativeResolve;

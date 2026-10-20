@@ -3,6 +3,11 @@ import type { PlayerCommand, RendererOptions, RendererSource, RendererState } fr
 import { mediaDiagnostic, mediaErrorMessage, mediaTransportError } from "../media-diagnostics.ts";
 
 export abstract class MediaRenderer extends BaseRenderer {
+  // WebKit may defer collecting detached video elements and their native
+  // surfaces. Retain at most one fully unloaded spare per document instead of
+  // creating another native element for every resource. Checked-out elements
+  // are removed from the pool; simultaneous renderers always remain distinct.
+  private static retiredVideos = new WeakMap<Document, HTMLVideoElement>();
   abstract kind: "audio" | "video";
   media?: HTMLMediaElement;
   listeners: [string, EventListener][] = [];
@@ -26,7 +31,10 @@ export abstract class MediaRenderer extends BaseRenderer {
   private presentedMediaTime = 0;
   async mount(host: HTMLElement, source: RendererSource, options: RendererOptions): Promise<void> {
     this.options = options;
-    const media = document.createElement(this.kind); this.media = media;
+    const document = host.ownerDocument;
+    const spare = this.kind === "video" ? MediaRenderer.retiredVideos.get(document) : undefined;
+    if (spare) MediaRenderer.retiredVideos.delete(document);
+    const media = spare && !spare.isConnected && !spare.hasAttribute("src") ? spare : document.createElement(this.kind); this.media = media;
     const opened = performance.now(); let requested = 0;
     const diagnosticsEnabled = () => { try { return window.localStorage.getItem("active-classroom-media-diagnostics") === "true"; } catch { return false; } };
     let observeFrame: VideoFrameRequestCallback | undefined;
@@ -112,7 +120,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     return [
       () => {
         const renderer = owner.deref(); const media = element.deref();
-        if (!renderer || renderer.disposed || renderer.media !== media) { media?.pause(); return; }
+        if (!renderer || renderer.disposed || renderer.media !== media) return;
         if (generation !== renderer.playGeneration) return;
         renderer.playPending = false;
         if (renderer.options?.silent && !renderer.playback?.playing) media?.pause();
@@ -225,7 +233,12 @@ export abstract class MediaRenderer extends BaseRenderer {
   destroy(): void {
     super.destroy(); ++this.playGeneration; this.playPending = false; clearTimeout(this.timeout); clearTimeout(this.seekTimer); clearInterval(this.diagnosticTimer);
     const media = this.media;
-    if (media) { if (media instanceof HTMLVideoElement && this.frameCallback !== undefined) media.cancelVideoFrameCallback?.(this.frameCallback); for (const [name, listener] of this.listeners) media.removeEventListener(name, listener); media.pause(); media.removeAttribute("src"); media.load(); media.remove(); }
+    if (media) {
+      if (media instanceof HTMLVideoElement && this.frameCallback !== undefined) media.cancelVideoFrameCallback?.(this.frameCallback);
+      for (const [name, listener] of this.listeners) media.removeEventListener(name, listener);
+      media.pause(); media.removeAttribute("src"); media.load(); media.remove();
+      if (this.kind === "video" && !MediaRenderer.retiredVideos.has(media.ownerDocument)) MediaRenderer.retiredVideos.set(media.ownerDocument, media as HTMLVideoElement);
+    }
     this.listeners = [];
     this.frameCallback = undefined;
     this.media = undefined; this.playback = undefined;

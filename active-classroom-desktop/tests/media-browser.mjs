@@ -31,10 +31,14 @@ export const observations = [];
 let nativeProjection = false;
 let projectionRevision = 0;
 const disposedMedia = [];
-const disposedSummary = () => disposedMedia.map(record => {
-  const media = record.element.deref();
-  return { rendererAlive: !!record.renderer.deref(), elementAlive: !!media, ...(media ? { connected: media.isConnected, readyState: media.readyState, networkState: media.networkState, paused: media.paused, hasSrc: media.hasAttribute("src") } : {}) };
-});
+const disposedSummary = () => {
+  const elements = new Map();
+  return disposedMedia.map(record => {
+    const media = record.element.deref();
+    if (media && !elements.has(media)) elements.set(media, elements.size);
+    return { rendererAlive: !!record.renderer.deref(), elementAlive: !!media, elementOrdinal: media ? elements.get(media) : null, ...(media ? { connected: media.isConnected, readyState: media.readyState, networkState: media.networkState, paused: media.paused, hasSrc: media.hasAttribute("src") } : {}) };
+  });
+};
 const rendererOptions = { page: 1, volume: .5, muted: true, onPage() {}, onState() {} };
 async function oldAsset(source, path) {
   const renderer = new VideoRenderer(); let state = initialRendererState();

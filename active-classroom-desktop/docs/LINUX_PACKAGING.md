@@ -8,6 +8,11 @@ caso registra veinte seeks en cada pantalla, reproducción posterior continua,
 medianas de 29,91/29,88 cuadros presentados por segundo y ningún MediaError.
 El usuario confirma también otro MP4 de la Unit sin tirones ni desfase.
 
+La reapertura conserva como máximo un elemento de video vacío por documento,
+sin URL, listeners ni reproducción. Evita acumular elementos/superficies nativas
+pendientes del recolector de WebKit. Renderers simultáneos usan elementos
+distintos, y promesas del recurso cerrado no pueden pausar el elemento reutilizado.
+
 El runtime anterior rechaza los drivers VA del sistema con
 `__vaDriverInit_1_0` y selecciona `avdec_h264`. El nativo usa `vah264dec` en ambos
 procesos, sin forzar ranks ni GPU. OpenGL sí funcionaba en ambos casos: el plugin
