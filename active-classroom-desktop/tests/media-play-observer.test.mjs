@@ -13,7 +13,7 @@ function fixture({ promisePending = false, clock = true, frames = true, fatal = 
 test("reanudar exige reloj e imagen real aunque play() siga pendiente", async () => {
   const fixtureValue = fixture({ promisePending: true });
   const result = await playAndObserve(fixtureValue.renderer, fixtureValue.options);
-  assert.equal(result.playPromiseSettled, false); assert.ok(result.frameTime > 1.05); assert.equal(fixtureValue.cancelled(), true);
+  assert.equal(result.commandSettled, false); assert.ok(result.frameTime > 1.05); assert.equal(fixtureValue.cancelled(), true);
 });
 
 test("resolver play() sin reloj o sin imagen nunca aprueba reproducción", async () => {

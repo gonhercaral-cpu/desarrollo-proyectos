@@ -242,6 +242,7 @@ try {
   const baseline = await memory();
   for (let index = 0; index < 10; index++) await video(fixture.largeSource);
   const after = await memory();
+  observations.push({ phase: "repetitive-memory-before-assertions", baseline, after, streams: await invoke("fixture_metrics") });
   const rss = process => Number.parseInt(process.rss || "0", 10);
   for (const process of after) {
     const before = baseline.find(item => item.pid === process.pid);

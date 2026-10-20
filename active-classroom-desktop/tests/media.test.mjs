@@ -17,6 +17,41 @@ async function mediaFixture(t, configure = () => {}) {
   await renderer.mount(document.querySelector("#host"), { url: `http://127.0.0.1:1234/media/${"a".repeat(64)}`, name: "Local", mimeType: "video/mp4", sizeBytes: 100 }, { page: 1, volume: .8, muted: false, onPage() {}, onState() {} });
   return { dom, renderer, video: renderer.media, load, pause };
 }
+
+test("play pendiente en WebKit no bloquea comandos ni retiene un await del renderer", async t => {
+  const { renderer, video, pause } = await mediaFixture(t);
+  let nativeResolve;
+  t.mock.method(video, "play", () => new Promise(resolve => { nativeResolve = resolve; }));
+  let returned = false;
+  void renderer.command("PLAY_PAUSE").then(() => { returned = true; });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(returned, true, "La aceptación del comando no depende de la promesa nativa sin resolver");
+  await renderer.command("PLAY_PAUSE");
+  assert.equal(pause.mock.callCount(), 1, "Un segundo clic cancela incluso una solicitud que sigue pausada en el motor");
+  renderer.destroy(); nativeResolve(); await Promise.resolve();
+  assert.equal(renderer.media, undefined); assert.equal(renderer.state.error, "");
+});
+
+test("play pendiente del proyector no bloquea snapshots; rechazo antiguo no daña reproducción nueva", async t => {
+  const { renderer, video } = await mediaFixture(t);
+  renderer.options.silent = true;
+  let paused = true; const attempts = [];
+  Object.defineProperties(video, { paused: { get: () => paused }, duration: { value: 300 }, currentTime: { value: 0 } });
+  t.mock.method(video, "pause", () => { paused = true; });
+  const play = t.mock.method(video, "play", () => { paused = false; return new Promise((resolve, reject) => attempts.push({ resolve, reject })); });
+  const state = { ...renderer.state, playing: true, time: 0, duration: 300, seekRevision: 0 };
+  let returned = false;
+  void renderer.applyPlayback(state).then(() => { returned = true; });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(returned, true);
+  await renderer.applyPlayback({ ...state, time: .25 }); assert.equal(play.mock.callCount(), 1);
+  await renderer.applyPlayback({ ...state, playing: false });
+  await renderer.applyPlayback(state); assert.equal(play.mock.callCount(), 2);
+  attempts[0].reject(new Error("Old request")); await Promise.resolve(); await Promise.resolve();
+  assert.equal(renderer.state.error, ""); assert.equal(paused, false);
+  renderer.destroy(); attempts[1].resolve(); await Promise.resolve();
+  assert.equal(renderer.media, undefined);
+});
 test("loadeddata/playing sin canplay no cierran video tras 20 segundos", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { dom, renderer, video, load, pause } = await mediaFixture(t); const src = video.src;

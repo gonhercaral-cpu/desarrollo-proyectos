@@ -13,6 +13,7 @@ export abstract class MediaRenderer extends BaseRenderer {
   private projectionSeekExplicit = false;
   private seekRevision = 0;
   private playPending = false;
+  private playGeneration = 0;
   private reportFailure?: () => void;
   private requestPlay?: () => void;
   private seekTarget?: number;
@@ -73,6 +74,7 @@ export abstract class MediaRenderer extends BaseRenderer {
       // canplay event (readyState can remain HAVE_CURRENT_DATA). Clock progress
       // clears a stale waiting flag so it cannot leave the projector paused.
       const resumed = !media.paused && !media.seeking && time > this.state.time + .01;
+      if (resumed || media.paused) this.playPending = false;
       this.notify({ playing: !media.paused && !media.ended, buffering: resumed ? false : this.state.buffering, seeking: media.seeking || this.seekInFlight || this.seekTarget !== undefined, seekRevision: this.seekRevision, time, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted });
     };
     const timeUpdate = () => { const now = performance.now(); if (now - this.lastTimeUpdate >= 200) { this.lastTimeUpdate = now; update(); } };
@@ -82,7 +84,7 @@ export abstract class MediaRenderer extends BaseRenderer {
     }
     const ready = () => { clearTimeout(this.timeout); this.notify({ loading: false, buffering: false, error: "" }); update(); if (this.playback) void this.applyPlayback(this.playback); };
     const waiting = () => this.notify({ buffering: true });
-    const playing = () => { clearTimeout(this.timeout); this.notify({ loading: false, buffering: false }); };
+    const playing = () => { this.playPending = false; clearTimeout(this.timeout); this.notify({ loading: false, buffering: false }); };
     const seeked = () => { this.seekInFlight = false; if (this.seekTarget !== undefined && !this.seekTimer) this.flushSeek(); update(); };
     for (const [name, listener] of [["waiting", waiting], ["playing", playing], ["seeked", seeked]] as [string, EventListener][]) { media.addEventListener(name, listener); this.listeners.push([name, listener]); }
     const error = () => {
@@ -104,15 +106,47 @@ export abstract class MediaRenderer extends BaseRenderer {
     host.replaceChildren(...(this.kind === "audio" ? [label, media] : [media]));
     media.src = source.url; media.load();
   }
+  private static playCallbacks(owner: WeakRef<MediaRenderer>, element: WeakRef<HTMLMediaElement>, generation: number): [() => void, (error: unknown) => void] {
+    // Keep callbacks in a separate scope: a never-settling engine promise must
+    // not retain the renderer, its detached element or the decoder graph.
+    return [
+      () => {
+        const renderer = owner.deref(); const media = element.deref();
+        if (!renderer || renderer.disposed || renderer.media !== media) { media?.pause(); return; }
+        if (generation !== renderer.playGeneration) return;
+        renderer.playPending = false;
+        if (renderer.options?.silent && !renderer.playback?.playing) media?.pause();
+      },
+      error => {
+        const renderer = owner.deref();
+        if (!renderer || renderer.disposed || renderer.media !== element.deref() || generation !== renderer.playGeneration) return;
+        renderer.playPending = false;
+        if ((error as { name?: string })?.name === "AbortError") return;
+        if (renderer.options?.silent) renderer.notify({ playing: false, error: "No se pudo reproducir video en el proyector." });
+        else renderer.reportFailure?.();
+      },
+    ];
+  }
+  private startPlayback(): void {
+    const media = this.media;
+    if (!media || this.disposed || this.playPending) return;
+    this.playPending = true;
+    const callbacks = MediaRenderer.playCallbacks(new WeakRef(this), new WeakRef(media), ++this.playGeneration);
+    try { this.requestPlay?.(); void Promise.resolve(media.play()).then(...callbacks); }
+    catch (error) { callbacks[1](error); }
+  }
+  private pausePlayback(): void {
+    ++this.playGeneration; this.playPending = false; this.media?.pause();
+  }
   async command(command: PlayerCommand): Promise<void> {
     const media = this.media;
     if (!media || this.disposed) return;
     switch (command) {
       case "PLAY_PAUSE":
-        if (!media.paused) media.pause();
-        else try { this.requestPlay?.(); await media.play(); if (this.disposed) media.pause(); } catch (error) { if (!this.disposed && (error as { name?: string })?.name !== "AbortError") this.reportFailure?.(); }
+        if (!media.paused || this.playPending) this.pausePlayback();
+        else this.startPlayback();
         break;
-      case "STOP": media.pause(); this.seek(0); break;
+      case "STOP": this.pausePlayback(); this.seek(0); break;
       case "SEEK_FORWARD": this.seek((this.seekTarget ?? media.currentTime) + 10); break;
       case "SEEK_BACKWARD": this.seek((this.seekTarget ?? media.currentTime) - 10); break;
       case "VOLUME_UP": this.setVolume(media.volume + 0.1); break;
@@ -185,16 +219,11 @@ export abstract class MediaRenderer extends BaseRenderer {
     // A seek is not a transport pause. Repeated pause/play during a playing
     // teacher seek can leave WebKitGTK's muted decoder waiting indefinitely.
     // Keep it running; correct only to the settled teacher target above.
-    if (!state.playing) media.pause();
-    else if (media.paused && !this.playPending && !this.state.error) {
-      this.playPending = true;
-      try { this.requestPlay?.(); await media.play(); if (this.disposed || !this.playback?.playing) media.pause(); }
-      catch (error) { if (!this.disposed && this.playback?.playing && (error as { name?: string })?.name !== "AbortError") this.notify({ playing: false, error: "No se pudo reproducir video en el proyector." }); }
-      finally { this.playPending = false; }
-    }
+    if (!state.playing) { if (!media.paused || this.playPending) this.pausePlayback(); }
+    else if (media.paused && !this.state.error) this.startPlayback();
   }
   destroy(): void {
-    super.destroy(); clearTimeout(this.timeout); clearTimeout(this.seekTimer); clearInterval(this.diagnosticTimer);
+    super.destroy(); ++this.playGeneration; this.playPending = false; clearTimeout(this.timeout); clearTimeout(this.seekTimer); clearInterval(this.diagnosticTimer);
     const media = this.media;
     if (media) { if (media instanceof HTMLVideoElement && this.frameCallback !== undefined) media.cancelVideoFrameCallback?.(this.frameCallback); for (const [name, listener] of this.listeners) media.removeEventListener(name, listener); media.pause(); media.removeAttribute("src"); media.load(); media.remove(); }
     this.listeners = [];

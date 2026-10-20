@@ -17,8 +17,8 @@ export async function playAndObserve(renderer, { timeoutMs = 8000, now = () => p
     while (!moved() && !rejected && !media.error && !renderer.state?.error && now() < deadline) await wait(20);
     if (!moved() || rejected || media.error || renderer.state?.error) {
       const buffered = Array.from({ length: media.buffered?.length || 0 }, (_, index) => [media.buffered.start(index), media.buffered.end(index)]);
-      throw new Error(`Native playback did not present moving frames: ${JSON.stringify({ initialTime, time: media.currentTime, frameTime, paused: media.paused, seeking: media.seeking, readyState: media.readyState, networkState: media.networkState, code: media.error?.code || 0, buffered, playPromiseSettled: settled, rejected: rejected?.name, rendererError: renderer.state?.error || "" })}`);
+      throw new Error(`Native playback did not present moving frames: ${JSON.stringify({ initialTime, time: media.currentTime, frameTime, paused: media.paused, seeking: media.seeking, readyState: media.readyState, networkState: media.networkState, code: media.error?.code || 0, buffered, commandSettled: settled, rejected: rejected?.name, rendererError: renderer.state?.error || "" })}`);
     }
-    return { initialTime, time: media.currentTime, frameTime, playPromiseSettled: settled };
+    return { initialTime, time: media.currentTime, frameTime, commandSettled: settled };
   } finally { media.cancelVideoFrameCallback(callback); }
 }
