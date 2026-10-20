@@ -52,11 +52,7 @@
         ]
       },
       "appimage": {
-        "bundleMediaFramework": true,
-        "files": {
-          "usr/lib/active-classroom/packaging/system-glib.sh": "packaging/system-glib.sh",
-          "usr/lib/active-classroom/packaging/appimage-wayland.sh": "packaging/appimage-wayland.sh"
-        }
+        "bundleMediaFramework": false
       }
     },
     "active": true,

@@ -1,5 +1,7 @@
 ## 1.0.17
 
+- Corrige la regresión de video del runtime incluido: usa WebKit/GTK/GStreamer del sistema, como 1.0.12. Codecs opcionales corresponden a cada distribución; no sustituye sus bibliotecas principales.
+- Comparación física en Zorin 18.1 con el mismo ejecutable: arranque simultáneo, 20 seeks por pantalla y reproducción posterior fluida; sin errores multimedia. Se conservaron identidad, contenido y preferencias.
 - El proyector sigue las operaciones de seek del profesor mediante revisión compartida; no vacía el decoder para perseguir cada muestra del reloj.
 - Conserva el último destino durante ráfagas J/L, sin cambiar src, recrear video ni duplicar audio.
 - Inicia los seeks del proyector en paralelo al profesor, sin sumar la espera del decoder ni otro debounce.

@@ -1,4 +1,53 @@
-# Distribución Linux 1.0.13
+# Distribución Linux 1.0.17
+
+## Regresión demostrada y corrección
+
+Comparación física en Zorin 18.1/Wayland, mismo ELF `ec6a3e2a`, Player, servidor
+y MP4: framework empaquetado bloqueado; framework del sistema fluido. El segundo
+caso registra veinte seeks en cada pantalla, reproducción posterior continua,
+medianas de 29,91/29,88 cuadros presentados por segundo y ningún MediaError.
+El usuario confirma también otro MP4 de la Unit sin tirones ni desfase.
+
+El runtime anterior rechaza los drivers VA del sistema con
+`__vaDriverInit_1_0` y selecciona `avdec_h264`. El nativo usa `vah264dec` en ambos
+procesos, sin forzar ranks ni GPU. OpenGL sí funcionaba en ambos casos: el plugin
+que faltaba era un defecto real, pero incluirlo no resolvía esta regresión.
+La comparación demuestra el problema del runtime privado frente al del sistema;
+no atribuye todos sus efectos exclusivamente a una biblioteca individual.
+
+Debian/AppImage usan GLib/GTK/WebKit/GStreamer principal de la distribución, como
+el Debian 1.0.12. No incluyen otra copia del framework ni preloads de GLib.
+Los launchers limpian overrides heredados y conservan Wayland, identidad,
+formato de updater y ruta de autostart/relaunch. Si existen todos los plugins,
+no cambian ninguna ruta de bibliotecas/plugins: la ruta probada físicamente.
+
+## Codecs sin romper instalaciones existentes
+
+El updater oficial usa `dpkg` sin descargar dependencias: sus Depends se conservan.
+CI prepara codecs opcionales desde repositorios firmados de Ubuntu 22.04/24.04/
+26.04. Cada conjunto corresponde a su core GStreamer e incluye solo plugins y
+dependencias ausentes de esa distribución base; registra versiones, paquetes
+fuente, licencias, tamaños y SHA-256. No distribuye otro core GTK/WebKit/GStreamer.
+
+Cuando faltan plugins, se añaden exclusivamente los ausentes del conjunto de
+ese Ubuntu, comprobando versión mayor/menor GStreamer. Las bibliotecas nativas
+siempre tienen prioridad. No descarga/instala paquetes ni ejecuta comandos
+privilegiados al iniciar. APT/Gdebi/updater no requieren preparar codecs a mano.
+
+AppImage conserva su marcador, identidad y artefacto firmado. Requiere un sistema
+compatible con GTK/WebKitGTK 4.1 y Secret Service; su AppRun usa la misma selección
+nativa. CI reempaqueta con el plugin AppImage oficial de Tauri.
+
+## Validación y publicación
+
+Baseline Ubuntu 22.04 amd64. Se conservan instalación limpia APT/Gdebi/Dpkg en
+22.04/24.04/26.04, ABI/iconos, H.264/AAC Debian/AppImage X11/Wayland, memoria,
+threads/descriptores/streams, identidad y upgrade real 1.0.12 mediante dpkg.
+No se relajan umbrales. VALIDATION no tiene claves privadas. RELEASE solo firma
+los mismos bytes certificados del commit verde; firma y publicación requieren
+aprobación separada según las instrucciones actuales del propietario.
+
+# Distribución Linux 1.0.13 — historial
 
 Baseline de compilación: Ubuntu 22.04 x86_64. Validación real en contenedores
 Ubuntu 22.04, 24.04 y 26.04, antes de permitir firma/publicación.

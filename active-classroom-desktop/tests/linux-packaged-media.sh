@@ -8,15 +8,25 @@ export XDG_CACHE_HOME="$directory/cache" XDG_CONFIG_HOME="$directory/config" XDG
 mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 if [[ "$distribution" == deb ]]; then
   cp -a /usr/lib/active-classroom "$directory/runtime"
+  cp /fixtures/media_playback "$directory/runtime/active-classroom"
+  export CLASSROOM_TEST_NATIVE_ROOT="$directory/runtime"
+  cat > "$directory/launch" <<'SH'
+#!/bin/sh
+. "$CLASSROOM_TEST_NATIVE_ROOT/system-media.sh"
+classroom_system_media "$CLASSROOM_TEST_NATIVE_ROOT/codecs" || exit "$?"
+exec "$CLASSROOM_TEST_NATIVE_ROOT/active-classroom"
+SH
+  chmod 755 "$directory/launch" "$directory/runtime/active-classroom"
+  export CLASSROOM_TEST_RUNTIME="$directory/launch"
 else
   (cd "$directory" && "$image" --appimage-extract >/dev/null)
   mv "$directory/squashfs-root" "$directory/runtime"
+  cp /fixtures/media_playback "$directory/runtime/usr/bin/active-classroom"
+  chmod 755 "$directory/runtime/usr/bin/active-classroom"
+  export CLASSROOM_TEST_RUNTIME="$directory/runtime/AppRun"
 fi
 # Same production libraries/hooks/plugins, same production Rust server and TS
 # renderers. Replace only the entrypoint to exercise local media without auth.
-cp /fixtures/media_playback "$directory/runtime/usr/bin/active-classroom"
-chmod 755 "$directory/runtime/usr/bin/active-classroom"
-export CLASSROOM_TEST_RUNTIME="$directory/runtime/AppRun"
 export CLASSROOM_TEST_BACKEND="$backend"
 export ACTIVE_CLASSROOM_MEDIA_FIXTURE=/fixtures/h264-aac.mp4 ACTIVE_CLASSROOM_MEDIA_SCRIPT=/fixtures/media.js
 # CI-only: nested sandbox namespaces and a hardware GPU are unavailable.
@@ -39,4 +49,4 @@ else
 fi
 timeout 510s "$CLASSROOM_TEST_RUNTIME" </dev/null
 EOF
-echo "PACKAGED_MEDIA distribution=$distribution backend=$backend actual_h264_aac=true bounded_memory=true offline=true"
+echo "PACKAGED_MEDIA distribution=$distribution backend=$backend framework=system actual_h264_aac=true bounded_memory=true offline=true"

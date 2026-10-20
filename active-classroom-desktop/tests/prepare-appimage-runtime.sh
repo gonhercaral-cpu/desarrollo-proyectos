@@ -1,35 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 image="$(realpath "$1")"
+codecs="$(realpath "$2")"
 appdir="$(dirname "$image")/Active Classroom.AppDir"
 test -d "$appdir"
-mkdir -p "$appdir/apprun-hooks"
-# Tauri's AppImage bundler copies only data/usr into AppDir. Keep custom files
-# under usr in DebConfig-compatible mappings, then place runtime hooks at the
-# actual AppRun hook location before final AppImage packaging/signing.
-for hook in system-glib appimage-wayland; do
-  case "$hook" in
-    system-glib) name=zz-active-classroom-system-glib.sh ;;
-    appimage-wayland) name=zz-active-classroom-wayland.sh ;;
-  esac
-  cp "src-tauri/packaging/$hook.sh" "$appdir/usr/lib/active-classroom/packaging/$hook.sh"
-  cp "$appdir/usr/lib/active-classroom/packaging/$hook.sh" "$appdir/apprun-hooks/$name"
-done
-node scripts/patch-apprun.mjs "$appdir/AppRun"
-bash tests/prune-media-runtime.sh "$appdir"
-bash tests/build-coreelements.sh "$appdir"
-# Separate the packaged registry from host codecs and earlier package versions.
-cat >> "$appdir/apprun-hooks/linuxdeploy-plugin-gstreamer.sh" <<'EOF'
-
-export GST_REGISTRY_1_0="${XDG_CACHE_HOME:-$HOME/.cache}/active-classroom/packaged-gstreamer.bin"
-mkdir -p "$(dirname "$GST_REGISTRY_1_0")"
-EOF
+# Preserve the official AppImage ELF marker, desktop integration and resources.
+# Do not ship a second WebKit/GTK/GStreamer core or its library override hooks.
+native="$(mktemp -d)/Active Classroom.AppDir"
+mkdir -p "$native/usr/bin" "$native/usr/lib/active-classroom"
+cp "$appdir/usr/bin/active-classroom" "$native/usr/bin/active-classroom"
+cp -a "$appdir/usr/share" "$native/usr/share"
+while IFS= read -r -d '' file; do cp -a "$file" "$native/"; done < <(find "$appdir" -maxdepth 1 \( -name '*.desktop' -o -name '*.png' -o -name '*.svg' -o -name '.DirIcon' \) -print0)
+cp src-tauri/packaging/system-media.sh "$native/usr/lib/active-classroom/system-media.sh"
+cp -a "$codecs" "$native/usr/lib/active-classroom/codecs"
+cp src-tauri/packaging/appimage-launcher.sh "$native/AppRun"
+chmod 755 "$native/AppRun" "$native/usr/bin/active-classroom"
+test -z "$(find "$native" -name 'libwebkit*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
 tool="${XDG_CACHE_HOME:-$HOME/.cache}/tauri/linuxdeploy-plugin-appimage.AppImage"
 test -x "$tool"
 output="$(mktemp -d)/normalized.AppImage"
 # Reuse Tauri's already downloaded official output plugin; no separate runtime,
 # update server, signing key or Linux deployment infrastructure is introduced.
 ARCH=x86_64 LDAI_OUTPUT="$output" APPIMAGE_EXTRACT_AND_RUN=1 \
-  "$tool" --appimage-extract-and-run --appdir "$appdir"
+  "$tool" --appimage-extract-and-run --appdir "$native"
 test -s "$output"
 mv "$output" "$image"

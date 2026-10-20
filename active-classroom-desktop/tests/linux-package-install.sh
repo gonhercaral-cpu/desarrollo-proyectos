@@ -43,11 +43,12 @@ grep -qx 'Icon=active-classroom' "$desktop"
 grep -qx 'Categories=Education;' "$desktop"
 test -s /usr/share/icons/hicolor/512x512/apps/active-classroom.png
 test "$(file --brief --mime-type /usr/share/icons/hicolor/512x512/apps/active-classroom.png)" = image/png
-binary=/usr/lib/active-classroom/usr/bin/active-classroom
+binary=/usr/lib/active-classroom/active-classroom
 test -x "$binary"
 test "$(stat -c '%a:%U:%G' "$binary")" = '755:root:root'
 grep -a -q '__TAURI_BUNDLE_TYPE_VAR_DEB' "$binary"
-grep -qx 'exec /usr/lib/active-classroom/AppRun "$@"' /usr/bin/active-classroom
+grep -qx 'exec /usr/lib/active-classroom/active-classroom "$@"' /usr/bin/active-classroom
+test -z "$(find /usr/lib/active-classroom -name 'libwebkit*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
 ldd "$binary" | tee /tmp/classroom-ldd.txt
 ! grep -q 'not found' /tmp/classroom-ldd.txt
 # Loader smoke: resolves every DSO and symbol version without entering app main,
@@ -59,8 +60,13 @@ glibcxx="$( (grep -oE 'GLIBCXX_[0-9]+(\.[0-9]+)+' /tmp/classroom-abi.txt || true
 dpkg --compare-versions "$glibc" le 2.35
 if [[ -n "$glibcxx" ]]; then dpkg --compare-versions "$glibcxx" le 3.4.30; fi
 for command in secret-tool gdbus pkexec; do test -x "/usr/bin/$command"; done
+. /usr/lib/active-classroom/system-media.sh
+classroom_system_media /usr/lib/active-classroom/codecs
 for plugin in libgstplayback.so libgstisomp4.so libgstvideoparsersbad.so libgstlibav.so libgstopengl.so; do
-  test -s "$(find /usr/lib/active-classroom -name "$plugin" -print -quit)"
+  path="$(find /usr/lib/active-classroom/codecs/"$VERSION_ID" -name "$plugin" -print -quit)"
+  test -s "$path"
+  ldd "$path" > /tmp/classroom-codec-ldd.txt
+  ! grep -q 'not found' /tmp/classroom-codec-ldd.txt
 done
 mkdir -p /home/classroom-ci/.config/com.activeclassroom.desktop
 echo 'activation-and-settings-sentinel' > /home/classroom-ci/.config/com.activeclassroom.desktop/preserved

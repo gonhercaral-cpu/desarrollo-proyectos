@@ -308,11 +308,12 @@ jobs:
             test "$GITHUB_REF_NAME" = "active-classroom-v${{ steps.release.outputs.version }}"
           fi
           node scripts/updater-release.mjs build-config "$RUNNER_TEMP/updater-release.json"
+          bash tests/prepare-codec-runtimes.sh "$RUNNER_TEMP/classroom-codecs"
           npm run tauri:build -- --config "$RUNNER_TEMP/updater-release.json" --bundles deb,appimage -- --locked
           mapfile -t images < <(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage')
           test "${#images[@]}" -eq 1
-          bash tests/prepare-appimage-runtime.sh "${images[0]}"
-          bash tests/prepare-debian-runtime.sh "${images[0]}" "$RUNNER_TEMP/updater-release.json"
+          bash tests/prepare-appimage-runtime.sh "${images[0]}" "$RUNNER_TEMP/classroom-codecs"
+          bash tests/prepare-debian-runtime.sh "$RUNNER_TEMP/classroom-codecs" "$RUNNER_TEMP/updater-release.json"
           npm exec -- tauri bundle --config "$RUNNER_TEMP/updater-release.json" --bundles deb
           bash tests/compress-debian.sh
 

@@ -11,29 +11,18 @@ if [[ "${1:-}" != --session ]]; then
   extract="$(mktemp -d)"
   (cd "$extract" && /tmp/classroom-test.AppImage --appimage-extract >/dev/null)
   media_smoke() {
-  local appdir="$1" distribution="$2" plugins scanner LD_PRELOAD="${LD_PRELOAD:-}"
-  . "$appdir/apprun-hooks/zz-active-classroom-system-glib.sh"
-  test -s "$(find "$appdir" -name 'libwebkit2gtk-4.1.so*' -print -quit)"
-  test -s "$(find "$appdir" -name 'libgtk-3.so*' -print -quit)"
-  plugins="$(dirname "$(find "$appdir" -name libgstlibav.so -print -quit)")"
-  test -s "$plugins/libgstlibav.so"
-  test -s "$plugins/libgstisomp4.so"
-  test -s "$plugins/libgstvideoparsersbad.so"
-  test -s "$plugins/libgstopengl.so"
-  scanner="$(find "$appdir" -name gst-plugin-scanner -print -quit)"
-  test -x "$scanner"
-  # SDK-matched gst-launch from the Ubuntu 22.04 builder. Only plugins/libraries
-  # from this AppImage are allowed; host codecs cannot hide a broken bundle.
-  # Host GLib/Secret Service provides the system integration ABI, as in AppRun.
-  GST_PLUGIN_SYSTEM_PATH_1_0="$plugins" GST_PLUGIN_PATH_1_0="$plugins" \
-    GST_PLUGIN_SCANNER_1_0="$scanner" GST_REGISTRY="/tmp/classroom-bundled-$distribution-gst.bin" \
-    LD_LIBRARY_PATH="$appdir/usr/lib:$appdir/usr/lib/x86_64-linux-gnu" \
-    /fixtures/gst-launch -q filesrc location=/fixtures/h264-aac.mp4 ! qtdemux name=demux \
+  local root="$1" distribution="$2"
+  . "$root/system-media.sh"
+  classroom_system_media "$root/codecs"
+  test -z "${LD_PRELOAD:-}"
+  test -z "$(find "$root" -name 'libwebkit*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
+  # Same system framework and optional OS-matched codec selection as the product.
+  /fixtures/gst-launch -q filesrc location=/fixtures/h264-aac.mp4 ! qtdemux name=demux \
     demux.video_0 ! queue ! h264parse ! avdec_h264 ! fakesink \
     demux.audio_0 ! queue ! aacparse ! avdec_aac ! fakesink
-  echo "PACKAGE_MEDIA distribution=$distribution bundled_plugins_only=true h264=true aac=true"
+  echo "PACKAGE_MEDIA distribution=$distribution framework=system h264=true aac=true"
   }
-  media_smoke "$extract/squashfs-root" appimage
+  media_smoke "$extract/squashfs-root/usr/lib/active-classroom" appimage
   grep -a -q '__TAURI_BUNDLE_TYPE_VAR_APP' "$extract/squashfs-root/usr/bin/active-classroom"
   media_smoke /usr/lib/active-classroom deb
   # No FUSE device exists in Docker. This is the official runtime fallback;
@@ -124,7 +113,8 @@ mapfile -t applications < <(application_pids)
 echo "APPIMAGE_INSTANCE_COUNT backend=$backend count=${#applications[@]}"
 test "${#applications[@]}" -eq 1
 preload="$(tr '\0' '\n' < "/proc/${applications[0]}/environ" | sed -n 's/^LD_PRELOAD=//p')"
-[[ "$preload" == *'/usr/lib/x86_64-linux-gnu/libglib-2.0.so.0'* ]]
+test -z "$preload"
+grep -Eq '/(usr/)?lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so' "/proc/${applications[0]}/maps"
 if [[ "$distribution" == deb ]]; then
   # Check only these public packaging values, never print arbitrary environment.
   tr '\0' '\n' < "/proc/${applications[0]}/environ" | grep -qx 'APPIMAGE=/usr/bin/active-classroom'
