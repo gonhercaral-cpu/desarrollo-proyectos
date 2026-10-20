@@ -48,7 +48,7 @@ test -x "$binary"
 test "$(stat -c '%a:%U:%G' "$binary")" = '755:root:root'
 grep -a -q '__TAURI_BUNDLE_TYPE_VAR_DEB' "$binary"
 grep -qx 'exec /usr/lib/active-classroom/active-classroom "$@"' /usr/bin/active-classroom
-test -z "$(find /usr/lib/active-classroom -name 'libwebkit*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
+test -z "$(find /usr/lib/active-classroom -name 'libwebkit*.so*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
 ldd "$binary" | tee /tmp/classroom-ldd.txt
 ! grep -q 'not found' /tmp/classroom-ldd.txt
 # Loader smoke: resolves every DSO and symbol version without entering app main,

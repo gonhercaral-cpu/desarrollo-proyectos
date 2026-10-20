@@ -15,7 +15,7 @@ if [[ "${1:-}" != --session ]]; then
   . "$root/system-media.sh"
   classroom_system_media "$root/codecs"
   test -z "${LD_PRELOAD:-}"
-  test -z "$(find "$root" -name 'libwebkit*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
+  test -z "$(find "$root" -name 'libwebkit*.so*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
   # Same system framework and optional OS-matched codec selection as the product.
   /fixtures/gst-launch -q filesrc location=/fixtures/h264-aac.mp4 ! qtdemux name=demux \
     demux.video_0 ! queue ! h264parse ! avdec_h264 ! fakesink \

@@ -12,7 +12,7 @@ output = pathlib.Path(sys.argv[1])
 subprocess.run(['apt-get', 'update'], check=True)
 subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends', 'libwebkit2gtk-4.1-0'], check=True)
 roots = [pathlib.Path('/usr/lib/x86_64-linux-gnu'), pathlib.Path('/lib/x86_64-linux-gnu')]
-baseline = {path.name for root in roots for path in root.glob('*.so*')}
+baseline = {path.name for root in roots for path in root.rglob('*.so*')}
 subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends',
                 'gstreamer1.0-plugins-base', 'gstreamer1.0-plugins-good',
                 'gstreamer1.0-plugins-bad', 'gstreamer1.0-libav', 'gstreamer1.0-gl'], check=True)
@@ -48,6 +48,8 @@ for name in names:
     dependencies = subprocess.run(['ldd', str(path)], check=True, capture_output=True, text=True).stdout
     if 'not found' in dependencies:
         raise RuntimeError('Missing codec dependency: ' + path.name)
+    if 'libsoup-2.4' in dependencies:
+        raise RuntimeError('Codec cannot load libsoup2 into the WebKitGTK libsoup3 process')
     for soname, target in re.findall(r'^\s*(\S+)\s+=>\s+(/\S+)', dependencies, re.MULTILINE):
         if soname in baseline:
             continue

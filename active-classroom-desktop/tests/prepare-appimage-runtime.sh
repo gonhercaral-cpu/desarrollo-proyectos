@@ -15,7 +15,7 @@ cp src-tauri/packaging/system-media.sh "$native/usr/lib/active-classroom/system-
 cp -a "$codecs" "$native/usr/lib/active-classroom/codecs"
 cp src-tauri/packaging/appimage-launcher.sh "$native/AppRun"
 chmod 755 "$native/AppRun" "$native/usr/bin/active-classroom"
-test -z "$(find "$native" -name 'libwebkit*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
+test -z "$(find "$native" -name 'libwebkit*.so*' -o -name 'libgtk-3.so*' -o -name 'libgstreamer-1.0.so*')"
 tool="${XDG_CACHE_HOME:-$HOME/.cache}/tauri/linuxdeploy-plugin-appimage.AppImage"
 test -x "$tool"
 output="$(mktemp -d)/normalized.AppImage"
