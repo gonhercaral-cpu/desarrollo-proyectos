@@ -50,10 +50,10 @@ test("video activo nunca se presta a otro renderer simultáneo", async t => {
   assert.equal(document.querySelectorAll("video").length, 2);
 });
 
-test("decoder pendiente de emptied no se presta antes de confirmar liberación", async t => {
+for (const [readyState, networkState] of [[2, 2], [0, 2], [0, 1]]) test(`decoder pendiente de emptied no se presta antes de confirmar liberación (ready=${readyState}, network=${networkState})`, async t => {
   const second = new VideoRenderer(); const third = new VideoRenderer(); t.after(() => { second.destroy(); third.destroy(); });
   const { renderer, video } = await mediaFixture(t);
-  Object.defineProperty(video, "readyState", { value: 2 });
+  Object.defineProperties(video, { readyState: { value: readyState }, networkState: { value: networkState } });
   renderer.destroy();
   const source = { url: `http://127.0.0.1:1234/media/${"d".repeat(64)}`, name: "Otro", mimeType: "video/mp4", sizeBytes: 100 };
   const options = { page: 1, volume: .5, muted: true, onPage() {}, onState() {} };

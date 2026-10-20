@@ -242,7 +242,7 @@ export abstract class MediaRenderer extends BaseRenderer {
       // load() resets DOM state synchronously, but the native decoder releases
       // its resource asynchronously. Never hand it to a new owner before the
       // browser acknowledges that teardown with emptied.
-      const waitForEmpty = this.kind === "video" && media.readyState > 0;
+      const waitForEmpty = this.kind === "video" && media.networkState !== media.NETWORK_EMPTY;
       if (waitForEmpty) media.addEventListener("emptied", retire, { once: true });
       media.pause(); media.removeAttribute("src"); media.load(); media.remove();
       if (this.kind === "video" && !waitForEmpty) retire();
