@@ -15,6 +15,7 @@ import { createRenderer } from "../src/player/renderers/factory.ts";
 import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
 import { mediaPerformance } from "./media-performance.mjs";
 import { playAndObserve } from "./media-play-observer.mjs";
+import { probeMediaRanges } from "./media-range-probe.mjs";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -47,15 +48,7 @@ async function oldAsset(source, path) {
 async function video(source) {
   await checkpoint(`video-${source.sizeBytes}:range-probes`);
   observations.push({ phase: "before-video", size: source.sizeBytes, memory: await invoke("fixture_memory") });
-  const response = await fetch(source.url, { headers: { Range: "bytes=0-1" } });
-  assert(response.status === 206 && response.headers.get("Accept-Ranges") === "bytes" && response.headers.get("Content-Length") === "2" && response.headers.get("Content-Type") === "video/mp4", "Range probe del WebView falló");
-  await response.body?.cancel();
-  const full = await fetch(source.url);
-  assert(full.status === 200 && Number(full.headers.get("Content-Length")) === source.sizeBytes, "Respuesta sin Range inválida");
-  const reader = full.body.getReader(); const chunk = await reader.read();
-  assert(chunk.value.length > 0, "Streaming sin Range vacío"); await reader.cancel();
-  const invalid = await fetch(source.url, { headers: { Range: `bytes=${source.sizeBytes}-` } });
-  assert(invalid.status === 416, "Range inválido debe devolver 416"); await invalid.body?.cancel();
+  await probeMediaRanges(source);
   observations.push({ phase: "after-range-probes", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   const renderer = new VideoRenderer(); let state = initialRendererState();
   await checkpoint(`video-${source.sizeBytes}:mount`);
