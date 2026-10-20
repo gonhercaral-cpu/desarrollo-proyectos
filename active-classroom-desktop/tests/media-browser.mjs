@@ -244,9 +244,18 @@ export async function scroll(seed, slideCount = 80, changeProjectorStatus = fals
 }
 async function run() {
 const recentDiagnostics = [];
-const diagnostic = event => { if (recentDiagnostics.length === 120) recentDiagnostics.shift(); recentDiagnostics.push(event.detail); };
-localStorage.setItem("active-classroom-media-diagnostics", "true");
-window.addEventListener("classroom-media-diagnostic", diagnostic);
+// Observe native events passively. Reopening must exercise the production
+// default, without enabling the renderer's opt-in per-frame diagnostics.
+localStorage.removeItem("active-classroom-media-diagnostics");
+observations.push({ phase: "reopen-diagnostics", rendererFrameDiagnostics: false });
+const diagnosticTypes = ["loadstart", "loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "seeking", "seeked", "stalled", "suspend", "progress", "play", "pause", "ended", "error"];
+const diagnostic = event => {
+  const media = event.target;
+  if (!(media instanceof HTMLMediaElement)) return;
+  if (recentDiagnostics.length === 120) recentDiagnostics.shift();
+  recentDiagnostics.push({ event: event.type, atMs: performance.now(), currentTime: media.currentTime, paused: media.paused, seeking: media.seeking, readyState: media.readyState, networkState: media.networkState, errorCode: media.error?.code || 0, buffered: Array.from({ length: media.buffered.length }, (_, index) => [media.buffered.start(index), media.buffered.end(index)]) });
+};
+for (const type of diagnosticTypes) document.addEventListener(type, diagnostic, true);
 try {
   await checkpoint("startup");
   const fixture = await invoke("media_fixture");
@@ -301,7 +310,7 @@ try {
 } catch (error) {
   try { observations.push({ phase: "failure-diagnostics", events: recentDiagnostics, streams: await invoke("fixture_metrics"), memory: await invoke("fixture_memory"), audience: await invoke("fixture_audience_state") }); } catch { /* Preserve the original acceptance failure. */ }
   await invoke("fixture_report", { ok: false, result: { error: String(error), observations } });
-} finally { window.removeEventListener("classroom-media-diagnostic", diagnostic); }
+} finally { for (const type of diagnosticTypes) document.removeEventListener(type, diagnostic, true); }
 }
 async function runAudience() {
   const projected = new ProjectionPlayer(document.querySelector("#audience"));
