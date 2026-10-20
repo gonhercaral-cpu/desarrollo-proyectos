@@ -154,7 +154,10 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 \
             pkexec sudo libfuse2 squashfs-tools patchelf desktop-file-utils \
             python3-gi gir1.2-webkit2-4.1 xvfb xauth weston ffmpeg \
-            gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+            gstreamer1.0-tools gstreamer1.0-gl gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+          # libgstreamer-gl supplies the library, not the opengl plugin. WebKit
+          # needs both to avoid falling back to CPU repaint for every frame.
+          for element in glupload glcolorconvert; do gst-inspect-1.0 "$element" >/dev/null; done
 
       - name: Rust estable mediante rustup
         run: |

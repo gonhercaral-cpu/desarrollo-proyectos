@@ -53,6 +53,13 @@ real Debian/AppImage en X11/Wayland e identidad compartida. Instala además los
 bytes reales de 1.0.12 y actualiza usando `dpkg -i`, sin `apt --fix-broken`,
 comprobando que configuración/caché permanezcan intactas.
 
+El builder instala explícitamente `gstreamer1.0-gl`: `libgstreamer-gl1.0-0`
+solo proporciona la biblioteca y no incluye `libgstopengl.so`. WebKit necesita
+el plugin `opengl` (`glupload`/`glcolorconvert`) para su salida GL; sin él utiliza
+la ruta de repintado por CPU. CI comprueba esas fábricas antes del build y exige
+el plugin dentro de ambos instaladores. Esto habilita la ruta de renderizado;
+no fuerza un decoder de hardware ni cambia la configuración gráfica del equipo.
+
 ## AppImage
 
 AppImage adicional, con `bundleMediaFramework: true` y GStreamer incluido. Su hook

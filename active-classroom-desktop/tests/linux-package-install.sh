@@ -59,7 +59,7 @@ glibcxx="$( (grep -oE 'GLIBCXX_[0-9]+(\.[0-9]+)+' /tmp/classroom-abi.txt || true
 dpkg --compare-versions "$glibc" le 2.35
 if [[ -n "$glibcxx" ]]; then dpkg --compare-versions "$glibcxx" le 3.4.30; fi
 for command in secret-tool gdbus pkexec; do test -x "/usr/bin/$command"; done
-for plugin in libgstplayback.so libgstisomp4.so libgstvideoparsersbad.so libgstlibav.so; do
+for plugin in libgstplayback.so libgstisomp4.so libgstvideoparsersbad.so libgstlibav.so libgstopengl.so; do
   test -s "$(find /usr/lib/active-classroom -name "$plugin" -print -quit)"
 done
 mkdir -p /home/classroom-ci/.config/com.activeclassroom.desktop

@@ -15,4 +15,4 @@ while IFS= read -r -d '' plugin; do
   fi
 done < <(find "$plugins" -maxdepth 1 -type f -name '*.so' -print0)
 # Media stays on the packaged codec/decoder ABI. Never mix host plugin registries.
-for required in libgstplayback.so libgstisomp4.so libgstlibav.so libgstvideoparsersbad.so; do test -f "$plugins/$required"; done
+for required in libgstplayback.so libgstisomp4.so libgstlibav.so libgstvideoparsersbad.so libgstopengl.so; do test -f "$plugins/$required"; done

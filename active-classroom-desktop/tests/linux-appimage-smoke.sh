@@ -19,6 +19,7 @@ if [[ "${1:-}" != --session ]]; then
   test -s "$plugins/libgstlibav.so"
   test -s "$plugins/libgstisomp4.so"
   test -s "$plugins/libgstvideoparsersbad.so"
+  test -s "$plugins/libgstopengl.so"
   scanner="$(find "$appdir" -name gst-plugin-scanner -print -quit)"
   test -x "$scanner"
   # SDK-matched gst-launch from the Ubuntu 22.04 builder. Only plugins/libraries
