@@ -20,7 +20,8 @@ export CLASSROOM_TEST_RUNTIME="$directory/runtime/AppRun"
 export CLASSROOM_TEST_BACKEND="$backend"
 export ACTIVE_CLASSROOM_MEDIA_FIXTURE=/fixtures/h264-aac.mp4 ACTIVE_CLASSROOM_MEDIA_SCRIPT=/fixtures/media.js
 # CI-only: nested sandbox namespaces and a hardware GPU are unavailable.
-export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+unset WEBKIT_DISABLE_COMPOSITING_MODE
 xvfb-run -a -s '-screen 0 1920x1200x24' dbus-run-session -- bash -euo pipefail <<'EOF'
 export XDG_RUNTIME_DIR="$(mktemp -d)"
 chmod 700 "$XDG_RUNTIME_DIR"

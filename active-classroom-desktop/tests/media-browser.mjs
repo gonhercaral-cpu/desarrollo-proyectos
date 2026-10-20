@@ -14,6 +14,7 @@ import { validateManifest, canonical, sha256 } from "../src/offline/manifest.ts"
 import { createRenderer } from "../src/player/renderers/factory.ts";
 import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
 import { mediaPerformance } from "./media-performance.mjs";
+import { playAndObserve } from "./media-play-observer.mjs";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -61,7 +62,7 @@ async function video(source) {
   assert(media.canPlayType(source.codecMime), "Códecs reales no disponibles en runner");
   assert(media.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'), "H264/AAC no disponible en runner");
   await checkpoint(`video-${source.sizeBytes}:first-play`);
-  await bounded(renderer.command("PLAY_PAUSE"), "first-play"); await until(() => media.currentTime > .15); await renderer.command("PLAY_PAUSE"); assert(media.paused, "Pause");
+  observations.push({ phase: "first-play", ...await playAndObserve(renderer) }); await until(() => media.currentTime > .15); await renderer.command("PLAY_PAUSE"); assert(media.paused, "Pause");
   await checkpoint(`video-${source.sizeBytes}:seeks`);
   const lateSeek = media.duration * .75;
   renderer.seek(lateSeek); await until(() => !media.seeking && Math.abs(media.currentTime - lateSeek) < .3);
@@ -81,7 +82,7 @@ async function video(source) {
   const firstRevision = projectionRevision + 1;
   const projected = nativeProjection ? undefined : new ProjectionPlayer(document.querySelector("#audience"));
   try {
-    await bounded(renderer.command("PLAY_PAUSE"), "teacher-resume");
+    observations.push({ phase: "teacher-resume", ...await playAndObserve(renderer) });
     await checkpoint(`video-${source.sizeBytes}:projector-poll`);
     let audience;
     for (let count = 0; count < 100; count++) {

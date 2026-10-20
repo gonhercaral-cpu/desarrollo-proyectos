@@ -275,7 +275,9 @@ jobs:
       - name: MP4 H.264/AAC local, Range, controles, proyección y scroll largo en Tauri real
         env:
           ACTIVE_CLASSROOM_MEDIA_PERFORMANCE: '1'
-        run: npm run test:media:linux
+        run: |
+          node --test tests/media-play-observer.test.mjs
+          npm run test:media:linux
 
       - name: Fullscreen Tauri real en Wayland con dos monitores virtuales
         run: bash tests/wayland-projection.sh
