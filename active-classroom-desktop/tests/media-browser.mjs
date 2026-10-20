@@ -17,6 +17,13 @@ import { mediaPerformance } from "./media-performance.mjs";
 
 const assert = (value, message) => { if (!value) throw new Error(message); };
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+async function checkpoint(phase) { await invoke("fixture_checkpoint", { phase }); }
+async function bounded(operation, phase) {
+  let timer;
+  try {
+    return await Promise.race([operation, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Native operation timed out: ${phase}`)), 15000); })]);
+  } finally { clearTimeout(timer); }
+}
 async function until(check, seconds = 8) { const end = Date.now() + seconds * 1000; while (!check() && Date.now() < end) await delay(25); assert(check(), "Estado multimedia esperado no llegó"); }
 export const observations = [];
 let nativeProjection = false;
@@ -32,6 +39,7 @@ async function oldAsset(source, path) {
   renderer.destroy();
 }
 async function video(source) {
+  await checkpoint(`video-${source.sizeBytes}:range-probes`);
   observations.push({ phase: "before-video", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   const response = await fetch(source.url, { headers: { Range: "bytes=0-1" } });
   assert(response.status === 206 && response.headers.get("Accept-Ranges") === "bytes" && response.headers.get("Content-Length") === "2" && response.headers.get("Content-Type") === "video/mp4", "Range probe del WebView falló");
@@ -43,6 +51,7 @@ async function video(source) {
   const invalid = await fetch(source.url, { headers: { Range: `bytes=${source.sizeBytes}-` } });
   assert(invalid.status === 416, "Range inválido debe devolver 416"); await invalid.body?.cancel();
   const renderer = new VideoRenderer(); let state = initialRendererState();
+  await checkpoint(`video-${source.sizeBytes}:mount`);
   await renderer.mount(document.querySelector("#media"), source, { ...rendererOptions, onState(value) { state = value; } });
   const media = renderer.media;
   await until(() => media.readyState >= 2 || !!media.error);
@@ -51,7 +60,9 @@ async function video(source) {
   assert(source.codecMime?.includes("avc1.") && source.codecMime?.includes("mp4a.40.2"), "Códecs reales ausentes del diagnóstico");
   assert(media.canPlayType(source.codecMime), "Códecs reales no disponibles en runner");
   assert(media.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'), "H264/AAC no disponible en runner");
-  await renderer.command("PLAY_PAUSE"); await until(() => media.currentTime > .15); await renderer.command("PLAY_PAUSE"); assert(media.paused, "Pause");
+  await checkpoint(`video-${source.sizeBytes}:first-play`);
+  await bounded(renderer.command("PLAY_PAUSE"), "first-play"); await until(() => media.currentTime > .15); await renderer.command("PLAY_PAUSE"); assert(media.paused, "Pause");
+  await checkpoint(`video-${source.sizeBytes}:seeks`);
   const lateSeek = media.duration * .75;
   renderer.seek(lateSeek); await until(() => !media.seeking && Math.abs(media.currentTime - lateSeek) < .3);
   renderer.seek(5); await until(() => !media.seeking && Math.abs(media.currentTime - 5) < .3);
@@ -61,6 +72,7 @@ async function video(source) {
   renderer.setVolume(.25); assert(Math.round(media.volume * 100) === 25, `Volumen esperado=25% observado=${media.volume * 100}%`);
   await renderer.command("MUTE"); assert(media.muted === false, "Mute toggle"); await renderer.command("MUTE");
   await invoke("fixture_fullscreen", { active: true }); await delay(200); await invoke("fixture_fullscreen", { active: false });
+  await checkpoint(`video-${source.sizeBytes}:teacher-resume`);
   // Feed the real, advancing teacher clock. A single fabricated playing=true
   // snapshot from a paused teacher is a frozen authority: the projector must
   // stop following it after one second. Slow native preroll on Ubuntu 26 exposed
@@ -69,13 +81,14 @@ async function video(source) {
   const firstRevision = projectionRevision + 1;
   const projected = nativeProjection ? undefined : new ProjectionPlayer(document.querySelector("#audience"));
   try {
-    await renderer.command("PLAY_PAUSE");
+    await bounded(renderer.command("PLAY_PAUSE"), "teacher-resume");
+    await checkpoint(`video-${source.sizeBytes}:projector-poll`);
     let audience;
     for (let count = 0; count < 100; count++) {
       const current = snapshot();
       if (nativeProjection) {
-        await invoke("fixture_project", { snapshot: current });
-        audience = await invoke("fixture_audience_state");
+        await bounded(invoke("fixture_project", { snapshot: current }), "projector-publish");
+        audience = await bounded(invoke("fixture_audience_state"), "projector-state");
       } else {
         await projected.receive(current);
         const video = document.querySelector("#audience video");
@@ -88,6 +101,7 @@ async function video(source) {
     assert(media.currentTime > 1 && !media.paused && !media.error, "Maestro debe reproducir realmente durante la prueba del proyector");
     assert(document.querySelectorAll(nativeProjection ? "video" : "#media video").length === 1, "Profesor contiene decoders duplicados");
   } finally {
+    await checkpoint(`video-${source.sizeBytes}:projection-cleanup`);
     if (!media.paused) await renderer.command("PLAY_PAUSE");
     if (nativeProjection) await invoke("fixture_project", { snapshot: null });
     projected?.destroy();
@@ -97,6 +111,7 @@ async function video(source) {
   await delay(250);
   assert(document.querySelectorAll("video").length === 0, "Quedó un decoder huérfano");
   observations.push({ phase: "after-close", size: source.sizeBytes, memory: await invoke("fixture_memory") });
+  await checkpoint(`video-${source.sizeBytes}:closed`);
 }
 function emptyRenderer(kind) {
   return { kind, async mount(host, source, options) { host.textContent = source.name; options.onState({ ...initialRendererState(), pages: 80 }); }, command() {}, setPage() {}, seek() {}, setVolume() {}, destroy() {} };
@@ -214,11 +229,12 @@ export async function scroll(seed, slideCount = 80, changeProjectorStatus = fals
 }
 async function run() {
 try {
+  await checkpoint("startup");
   const fixture = await invoke("media_fixture");
   nativeProjection = fixture.nativeProjection;
   if (nativeProjection) { let ready; for (let count = 0; count < 100; count++) { ready = await invoke("fixture_audience_state"); if (ready?.ready) break; await delay(50); } assert(ready?.ready, "Ventana proyector no quedó lista"); }
   observations.push({ phase: "startup-memory", memory: await invoke("fixture_memory") });
-  await oldAsset(fixture.source, fixture.path);
+  await checkpoint("asset-protocol-control"); await oldAsset(fixture.source, fixture.path);
   await video(fixture.source); await video(fixture.source); // Reopen, fully local.
   for (const source of fixture.largeSources || [fixture.largeSource]) await video(source);
   const memory = () => invoke("fixture_memory");
@@ -237,11 +253,11 @@ try {
     if (process.name.startsWith("WebKitWeb")) assert(rss(process) < 768 * 1024, "WebKit almacena video completo en RAM");
   }
   observations.push({ repetitiveMemory: { baseline, after, opens: 10, bounded: true } });
-  observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
-  if (fixture.musicFixture) await backgroundMusic(fixture.musicFixture, fixture.source);
-  if (fixture.performance) observations.push({ performance: await mediaPerformance(fixture) });
+  await checkpoint("interactive-slides"); observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
+  if (fixture.musicFixture) { await checkpoint("background-music"); await backgroundMusic(fixture.musicFixture, fixture.source); }
+  if (fixture.performance) { await checkpoint("performance-stress"); observations.push({ performance: await mediaPerformance(fixture) }); }
   for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [920, 640]]) {
-    await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
+    await checkpoint(`layout-${width}-${height}`); await invoke("fixture_size", { width, height }); await delay(200); await scroll(fixture.manifest);
     for (const count of [10, 50, 120]) await scroll(fixture.manifest, count, true);
   }
   await invoke("fixture_report", { ok: true, result: observations });

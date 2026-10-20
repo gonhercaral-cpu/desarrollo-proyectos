@@ -8,6 +8,15 @@ use sha2::{Digest, Sha256};
 use std::{fs, io::{Read, Write}, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 struct Fixture(Value);
+#[derive(Clone, Default)]
+struct FixtureCheckpoint(Arc<std::sync::Mutex<String>>);
+#[tauri::command]
+fn fixture_checkpoint(state: tauri::State<'_, FixtureCheckpoint>, phase: String) {
+    if phase.len() <= 100 && phase.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"- :".contains(&byte)) {
+        eprintln!("MEDIA_FIXTURE_CHECKPOINT {phase}");
+        *state.0.lock().unwrap() = phase;
+    }
+}
 #[derive(Default)]
 struct Audience(std::sync::Mutex<Value>);
 #[tauri::command]
@@ -166,7 +175,8 @@ fn main() {
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap(); let csp = config["app"]["security"]["csp"].as_str().unwrap().to_string();
     let mut context = tauri::generate_context!(); context.config_mut().app.windows.clear();
     let passed = Arc::new(AtomicBool::new(false));
-    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "largeSources": large_sources, "path": path, "manifest": manifest, "buildFixture": build_fixture, "musicFixture":music_fixture,"nativeProjection": true,"performance":performance_mode,"performanceSource":performance_source}))).manage(Audience::default()).manage(server).manage(passed.clone())
+    let checkpoint = FixtureCheckpoint::default();
+    let app = tauri::Builder::default().manage(Fixture(json!({"source": source, "largeSource": large_source, "largeSources": large_sources, "path": path, "manifest": manifest, "buildFixture": build_fixture, "musicFixture":music_fixture,"nativeProjection": true,"performance":performance_mode,"performanceSource":performance_source}))).manage(Audience::default()).manage(checkpoint.clone()).manage(server).manage(passed.clone())
         .register_uri_scheme_protocol("tauri", move |_, request| {
             let (mime, body) = match request.uri().path() {
                 "/test.js" => ("text/javascript", script.clone()), "/style.css" => ("text/css", css.as_bytes().to_vec()),
@@ -174,7 +184,7 @@ fn main() {
             };
             tauri::http::Response::builder().header("Content-Type", mime).header("Content-Security-Policy", &csp).body(body).unwrap()
         })
-        .invoke_handler(tauri::generate_handler![media_fixture, fixture_report, fixture_fullscreen, fixture_size, fixture_memory, fixture_metrics, fixture_project, fixture_audience_state, local_media::classroom_media_diagnostic])
+        .invoke_handler(tauri::generate_handler![media_fixture, fixture_checkpoint, fixture_report, fixture_fullscreen, fixture_size, fixture_memory, fixture_metrics, fixture_project, fixture_audience_state, local_media::classroom_media_diagnostic])
         .setup(move |app| {
             app.asset_protocol_scope().allow_file(&path)?;
             for png_path in &allowed_paths { app.asset_protocol_scope().allow_file(png_path)?; }
@@ -186,6 +196,6 @@ fn main() {
             WebviewWindowBuilder::new(app, "audience", WebviewUrl::CustomProtocol("tauri://localhost/projection-test.html".parse().unwrap())).title("Media audience fixture").inner_size(800.0, 600.0).visible(false).build()?; Ok(())
         }).build(context).unwrap();
     let handle = app.handle().clone(); let success = passed.clone();
-    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(480)); if !success.load(Ordering::SeqCst) { eprintln!("MEDIA_NATIVE_TIMEOUT"); handle.exit(1); } });
+    std::thread::spawn(move || { std::thread::sleep(Duration::from_secs(480)); if !success.load(Ordering::SeqCst) { eprintln!("MEDIA_NATIVE_TIMEOUT phase={}", checkpoint.0.lock().unwrap()); handle.exit(1); } });
     app.run(|_, _| {}); fs::remove_dir_all(root).unwrap(); assert!(passed.load(Ordering::SeqCst), "Native media/scroll acceptance failed");
 }
