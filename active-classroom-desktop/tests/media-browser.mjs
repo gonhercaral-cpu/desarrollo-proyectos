@@ -45,11 +45,14 @@ async function oldAsset(source, path) {
   observations.push({ transport: "asset", loaded: media.readyState >= 1, code: media.error?.code || 0, message: media.error?.message || "", networkState: media.networkState, readyState: media.readyState });
   renderer.destroy();
 }
-async function video(source) {
+async function transport(source) {
   await checkpoint(`video-${source.sizeBytes}:range-probes`);
-  observations.push({ phase: "before-video", size: source.sizeBytes, memory: await invoke("fixture_memory") });
+  observations.push({ phase: "before-range-probes", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   await probeMediaRanges(source);
   observations.push({ phase: "after-range-probes", size: source.sizeBytes, memory: await invoke("fixture_memory") });
+}
+async function video(source) {
+  observations.push({ phase: "before-video", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   const renderer = new VideoRenderer(); let state = initialRendererState();
   await checkpoint(`video-${source.sizeBytes}:mount`);
   await renderer.mount(document.querySelector("#media"), source, { ...rendererOptions, onState(value) { state = value; } });
@@ -236,10 +239,14 @@ try {
   if (nativeProjection) { let ready; for (let count = 0; count < 100; count++) { ready = await invoke("fixture_audience_state"); if (ready?.ready) break; await delay(50); } assert(ready?.ready, "Ventana proyector no quedó lista"); }
   observations.push({ phase: "startup-memory", memory: await invoke("fixture_memory") });
   await checkpoint("asset-protocol-control"); await oldAsset(fixture.source, fixture.path);
+  await transport(fixture.source);
   await video(fixture.source); await video(fixture.source); // Reopen, fully local.
-  for (const source of fixture.largeSources || [fixture.largeSource]) await video(source);
+  for (const source of fixture.largeSources || [fixture.largeSource]) { await transport(source); await video(source); }
   const memory = () => invoke("fixture_memory");
   const baseline = await memory();
+  // Range/200/416 probes above cover every size, including the encoded >500 MiB
+  // and 1 GiB files. Measure reopening separately: Fetch buffers must not become
+  // ten extra consumers inside the renderer/decoder lifetime measurement.
   for (let index = 0; index < 10; index++) await video(fixture.largeSource);
   const after = await memory();
   observations.push({ phase: "repetitive-memory-before-assertions", baseline, after, streams: await invoke("fixture_metrics"), disposedMedia: disposedSummary() });
