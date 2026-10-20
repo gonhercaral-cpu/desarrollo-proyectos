@@ -27,6 +27,13 @@ async function bounded(operation, phase) {
   } finally { clearTimeout(timer); }
 }
 async function until(check, seconds = 8) { const end = Date.now() + seconds * 1000; while (!check() && Date.now() < end) await delay(25); assert(check(), "Estado multimedia esperado no llegó"); }
+function assertMemoryCeilings(sample) {
+  for (const process of sample) {
+    const rss = Number.parseInt(process.rss || "0", 10);
+    if (process.pid === sample[0].pid) assert(rss < 256 * 1024, "Proceso principal carga archivo completo");
+    if (process.name.startsWith("WebKitWeb")) assert(rss < 768 * 1024, "WebKit almacena video completo en RAM");
+  }
+}
 export const observations = [];
 let nativeProjection = false;
 let projectionRevision = 0;
@@ -251,14 +258,27 @@ try {
   await video(fixture.source); await video(fixture.source); // Reopen, fully local.
   for (const source of fixture.largeSources || [fixture.largeSource]) { await transport(source); await video(source); }
   const memory = () => invoke("fixture_memory");
+  const rss = process => Number.parseInt(process.rss || "0", 10);
+  // Compare the same warmed decoder workload. A single cold 720p opening does
+  // not populate the native allocator/compositor caches: the previous mixed
+  // sizes left a different baseline from the repeated encoded-file workload.
+  // These are additional real play/seek/project/close cycles, never a GC call,
+  // idle delay or relaxed limit; absolute ceilings apply to every warmup too.
+  const warmup = [];
+  for (let index = 0; index < 3; index++) {
+    await video(fixture.largeSource);
+    const sample = await memory();
+    assertMemoryCeilings(sample);
+    warmup.push(sample);
+  }
+  observations.push({ phase: "reopen-warmup", cycles: 3, memory: warmup });
   const baseline = await memory();
   // Range/200/416 probes above cover every size, including the encoded >500 MiB
   // and 1 GiB files. Measure reopening separately: Fetch buffers must not become
   // ten extra consumers inside the renderer/decoder lifetime measurement.
-  for (let index = 0; index < 10; index++) await video(fixture.largeSource);
+  for (let index = 0; index < 10; index++) { await video(fixture.largeSource); assertMemoryCeilings(await memory()); }
   const after = await memory();
   observations.push({ phase: "repetitive-memory-before-assertions", baseline, after, streams: await invoke("fixture_metrics"), disposedMedia: disposedSummary() });
-  const rss = process => Number.parseInt(process.rss || "0", 10);
   for (const process of after) {
     const before = baseline.find(item => item.pid === process.pid);
     if (before) {

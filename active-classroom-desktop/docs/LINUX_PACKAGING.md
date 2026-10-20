@@ -54,6 +54,13 @@ No se relajan umbrales. VALIDATION no tiene claves privadas. RELEASE solo firma
 los mismos bytes certificados del commit verde; firma y publicación requieren
 aprobación separada según las instrucciones actuales del propietario.
 
+La medición de diez reaperturas usa tres ciclos previos del mismo MP4 codificado
+para calentar el decoder/allocator, además de probar los otros tamaños. Todos
+reproducen, buscan, proyectan y cierran; el tope absoluto de memoria se comprueba
+en cada uno de los trece ciclos. Se conservan 160 MiB de crecimiento máximo durante
+las diez reaperturas, 768 MiB por WebKit, 256 MiB en Rust y 250 ms tras cada cierre;
+no se fuerza GC ni se añaden esperas para hacer pasar la medición.
+
 # Distribución Linux 1.0.13 — historial
 
 Baseline de compilación: Ubuntu 22.04 x86_64. Validación real en contenedores
