@@ -29,6 +29,7 @@ fi
 # renderers. Replace only the entrypoint to exercise local media without auth.
 export CLASSROOM_TEST_BACKEND="$backend"
 export ACTIVE_CLASSROOM_MEDIA_FIXTURE=/fixtures/h264-aac.mp4 ACTIVE_CLASSROOM_MEDIA_SCRIPT=/fixtures/media.js
+export ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1
 # CI-only: nested sandbox namespaces and a hardware GPU are unavailable.
 export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 unset WEBKIT_DISABLE_COMPOSITING_MODE

@@ -15,7 +15,7 @@ dpkg-deb --info "$deb" > "$report/deb-control.txt"
 dpkg-deb --contents "$deb" > "$report/deb-files.txt"
 previous="$(mktemp --suffix=.deb)"
 fixtures="$(mktemp -d)"
-ACTIVE_CLASSROOM_MEDIA_EXPORT="$fixtures" npm run test:media:linux
+ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$fixtures" npm run test:media:linux
 cp /usr/bin/gst-launch-1.0 "$fixtures/gst-launch"
 curl --fail --location --retry 3 -o "$previous" https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.12/Active.Classroom_1.0.12_amd64.deb
 echo "fb11b42dfddaedaf2f4b49902bf23da5f2d9b89edd14fd64e95a399d3a881572  $previous" | sha256sum --check
