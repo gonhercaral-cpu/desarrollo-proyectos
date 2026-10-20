@@ -45,7 +45,27 @@ fn fixture_memory() -> Value {
         let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default(); let ticks: Vec<_> = stat.rsplit_once(") ").map(|(_, value)| value.split_whitespace().collect()).unwrap_or_default();
         let cpu_ticks: u64 = [11usize,12].into_iter().filter_map(|index| ticks.get(index).and_then(|value| value.parse::<u64>().ok())).sum();
         let io = fs::read_to_string(format!("/proc/{pid}/io")).unwrap_or_default();
-        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"cpuTicks":cpu_ticks,"io":io,"stdinOpen":fs::metadata(format!("/proc/{pid}/fd/0")).is_ok(),"threads":field("Threads:"),"descriptors":fs::read_dir(format!("/proc/{pid}/fd")).map(|entries| entries.count()).unwrap_or(0)}));
+        let rollup = fs::read_to_string(format!("/proc/{pid}/smaps_rollup")).unwrap_or_default();
+        let memory_breakdown: serde_json::Map<String, Value> = rollup.lines().filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            if !["Rss", "Pss", "Private_Clean", "Private_Dirty", "Shared_Clean", "Shared_Dirty", "Anonymous", "Swap"].contains(&key) { return None; }
+            Some((key.to_string(), json!(value.trim())))
+        }).collect();
+        // Counts only: never expose a filesystem path, socket address or grant.
+        let mut descriptor_types = std::collections::BTreeMap::<&str, usize>::new();
+        for entry in fs::read_dir(format!("/proc/{pid}/fd")).into_iter().flatten().flatten() {
+            let Ok(target) = fs::read_link(entry.path()) else { continue; };
+            let target = target.to_string_lossy();
+            let kind = if target.starts_with("socket:") { "socket" }
+                else if target.starts_with("pipe:") { "pipe" }
+                else if target.contains("memfd:") { "memfd" }
+                else if target.starts_with("anon_inode:") { "anonymous" }
+                else if target.starts_with("/dev/") { "device" }
+                else if target.ends_with(" (deleted)") { "deleted-file" }
+                else { "file" };
+            *descriptor_types.entry(kind).or_default() += 1;
+        }
+        processes.push(json!({"pid":pid,"name":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"cpuTicks":cpu_ticks,"io":io,"memoryBreakdown":memory_breakdown,"descriptorTypes":descriptor_types,"stdinOpen":fs::metadata(format!("/proc/{pid}/fd/0")).is_ok(),"threads":field("Threads:"),"descriptors":fs::read_dir(format!("/proc/{pid}/fd")).map(|entries| entries.count()).unwrap_or(0)}));
         for entry in fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
             if let Ok(children) = fs::read_to_string(entry.path().join("children")) {
                 pending.extend(children.split_whitespace().filter_map(|child| child.parse::<u32>().ok()));

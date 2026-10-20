@@ -29,6 +29,11 @@ async function until(check, seconds = 8) { const end = Date.now() + seconds * 10
 export const observations = [];
 let nativeProjection = false;
 let projectionRevision = 0;
+const disposedMedia = [];
+const disposedSummary = () => disposedMedia.map(record => {
+  const media = record.element.deref();
+  return { rendererAlive: !!record.renderer.deref(), elementAlive: !!media, ...(media ? { connected: media.isConnected, readyState: media.readyState, networkState: media.networkState, paused: media.paused, hasSrc: media.hasAttribute("src") } : {}) };
+});
 const rendererOptions = { page: 1, volume: .5, muted: true, onPage() {}, onState() {} };
 async function oldAsset(source, path) {
   const renderer = new VideoRenderer(); let state = initialRendererState();
@@ -51,6 +56,7 @@ async function video(source) {
   assert(chunk.value.length > 0, "Streaming sin Range vacío"); await reader.cancel();
   const invalid = await fetch(source.url, { headers: { Range: `bytes=${source.sizeBytes}-` } });
   assert(invalid.status === 416, "Range inválido debe devolver 416"); await invalid.body?.cancel();
+  observations.push({ phase: "after-range-probes", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   const renderer = new VideoRenderer(); let state = initialRendererState();
   await checkpoint(`video-${source.sizeBytes}:mount`);
   await renderer.mount(document.querySelector("#media"), source, { ...rendererOptions, onState(value) { state = value; } });
@@ -109,6 +115,7 @@ async function video(source) {
   }
   observations.push({ phase: "after-projection", size: source.sizeBytes, memory: await invoke("fixture_memory") });
   observations.push({ transport: "loopback", size: source.sizeBytes, codecMime: source.codecMime, code: media.error?.code || 0, loaded: true, playPauseSeekVolumeMuteFullscreenProjection: true }); renderer.destroy();
+  disposedMedia.push({ renderer: new WeakRef(renderer), element: new WeakRef(media) });
   await delay(250);
   assert(document.querySelectorAll("video").length === 0, "Quedó un decoder huérfano");
   observations.push({ phase: "after-close", size: source.sizeBytes, memory: await invoke("fixture_memory") });
@@ -242,7 +249,7 @@ try {
   const baseline = await memory();
   for (let index = 0; index < 10; index++) await video(fixture.largeSource);
   const after = await memory();
-  observations.push({ phase: "repetitive-memory-before-assertions", baseline, after, streams: await invoke("fixture_metrics") });
+  observations.push({ phase: "repetitive-memory-before-assertions", baseline, after, streams: await invoke("fixture_metrics"), disposedMedia: disposedSummary() });
   const rss = process => Number.parseInt(process.rss || "0", 10);
   for (const process of after) {
     const before = baseline.find(item => item.pid === process.pid);
