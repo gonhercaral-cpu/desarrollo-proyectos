@@ -50,6 +50,21 @@ test("video activo nunca se presta a otro renderer simultáneo", async t => {
   assert.equal(document.querySelectorAll("video").length, 2);
 });
 
+test("decoder pendiente de emptied no se presta antes de confirmar liberación", async t => {
+  const second = new VideoRenderer(); const third = new VideoRenderer(); t.after(() => { second.destroy(); third.destroy(); });
+  const { renderer, video } = await mediaFixture(t);
+  Object.defineProperty(video, "readyState", { value: 2 });
+  renderer.destroy();
+  const source = { url: `http://127.0.0.1:1234/media/${"d".repeat(64)}`, name: "Otro", mimeType: "video/mp4", sizeBytes: 100 };
+  const options = { page: 1, volume: .5, muted: true, onPage() {}, onState() {} };
+  await second.mount(document.querySelector("#host"), source, options);
+  assert.notEqual(second.media, video, "Un src eliminado todavía no confirma la liberación del decoder");
+  video.dispatchEvent(new window.Event("emptied"));
+  const host = document.createElement("div"); document.body.append(host);
+  await third.mount(host, source, options);
+  assert.equal(third.media, video); assert.notEqual(third.media, second.media);
+});
+
 test("promesas tardías del video anterior no pausan ni dañan el elemento reutilizado", async t => {
   const next = new VideoRenderer(); t.after(() => next.destroy());
   const { renderer, video } = await mediaFixture(t);

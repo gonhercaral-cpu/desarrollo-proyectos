@@ -236,8 +236,16 @@ export abstract class MediaRenderer extends BaseRenderer {
     if (media) {
       if (media instanceof HTMLVideoElement && this.frameCallback !== undefined) media.cancelVideoFrameCallback?.(this.frameCallback);
       for (const [name, listener] of this.listeners) media.removeEventListener(name, listener);
+      const retire = () => {
+        if (!media.isConnected && !media.hasAttribute("src") && !MediaRenderer.retiredVideos.has(media.ownerDocument)) MediaRenderer.retiredVideos.set(media.ownerDocument, media as HTMLVideoElement);
+      };
+      // load() resets DOM state synchronously, but the native decoder releases
+      // its resource asynchronously. Never hand it to a new owner before the
+      // browser acknowledges that teardown with emptied.
+      const waitForEmpty = this.kind === "video" && media.readyState > 0;
+      if (waitForEmpty) media.addEventListener("emptied", retire, { once: true });
       media.pause(); media.removeAttribute("src"); media.load(); media.remove();
-      if (this.kind === "video" && !MediaRenderer.retiredVideos.has(media.ownerDocument)) MediaRenderer.retiredVideos.set(media.ownerDocument, media as HTMLVideoElement);
+      if (this.kind === "video" && !waitForEmpty) retire();
     }
     this.listeners = [];
     this.frameCallback = undefined;

@@ -319,7 +319,7 @@ jobs:
 
       - name: Instalación limpia APT y Gdebi, Dpkg, ABI y AppImage offline
         env:
-          CLASSROOM_PACKAGE_OS: '24.04 22.04 26.04'
+          CLASSROOM_PACKAGE_OS: '22.04 24.04 26.04'
         run: bash tests/validate-linux-packages.sh '${{ steps.release.outputs.version }}' "$RUNNER_TEMP/package-validation"
 
       - name: Diagnóstico de empaquetado fallido (sin release)

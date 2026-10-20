@@ -12,6 +12,8 @@ La reapertura conserva como máximo un elemento de video vacío por documento,
 sin URL, listeners ni reproducción. Evita acumular elementos/superficies nativas
 pendientes del recolector de WebKit. Renderers simultáneos usan elementos
 distintos, y promesas del recurso cerrado no pueden pausar el elemento reutilizado.
+Un elemento que tuvo contenido solo vuelve a estar disponible después de su evento
+`emptied`; quitar `src` no basta para confirmar la liberación del recurso nativo.
 
 El runtime anterior rechaza los drivers VA del sistema con
 `__vaDriverInit_1_0` y selecciona `avdec_h264`. El nativo usa `vah264dec` en ambos

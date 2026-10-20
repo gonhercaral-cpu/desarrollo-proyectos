@@ -236,6 +236,10 @@ export async function scroll(seed, slideCount = 80, changeProjectorStatus = fals
   } finally { player.destroy(); }
 }
 async function run() {
+const recentDiagnostics = [];
+const diagnostic = event => { if (recentDiagnostics.length === 120) recentDiagnostics.shift(); recentDiagnostics.push(event.detail); };
+localStorage.setItem("active-classroom-media-diagnostics", "true");
+window.addEventListener("classroom-media-diagnostic", diagnostic);
 try {
   await checkpoint("startup");
   const fixture = await invoke("media_fixture");
@@ -274,7 +278,10 @@ try {
     for (const count of [10, 50, 120]) await scroll(fixture.manifest, count, true);
   }
   await invoke("fixture_report", { ok: true, result: observations });
-} catch (error) { await invoke("fixture_report", { ok: false, result: { error: String(error), observations } }); }
+} catch (error) {
+  try { observations.push({ phase: "failure-diagnostics", events: recentDiagnostics, streams: await invoke("fixture_metrics"), memory: await invoke("fixture_memory"), audience: await invoke("fixture_audience_state") }); } catch { /* Preserve the original acceptance failure. */ }
+  await invoke("fixture_report", { ok: false, result: { error: String(error), observations } });
+} finally { window.removeEventListener("classroom-media-diagnostic", diagnostic); }
 }
 async function runAudience() {
   const projected = new ProjectionPlayer(document.querySelector("#audience"));
