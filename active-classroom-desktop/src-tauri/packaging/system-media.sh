@@ -2,6 +2,12 @@
 # Native GTK/WebKit/GStreamer stay together. Optional codecs are built by the
 # same Ubuntu release, never a second copy of the application framework.
 classroom_system_media() {
+  # Keep large decoder/compositor allocations individually releasable. glibc's
+  # adaptive mmap threshold can rise to 32 MiB after a large video allocation;
+  # subsequent freed frame buffers then remain in fragmented per-thread heaps.
+  # This is its documented startup default, held constant for media workloads.
+  # No forced collection, decoder/GPU override or change to streaming limits.
+  export MALLOC_MMAP_THRESHOLD_="${MALLOC_MMAP_THRESHOLD_:-131072}"
   classroom_codecs="$1"
   classroom_plugins="${2:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}"
   classroom_os="${3:-/etc/os-release}"

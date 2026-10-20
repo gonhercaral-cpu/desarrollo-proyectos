@@ -152,3 +152,7 @@ de metadata, ABI, launcher/icono; instalación limpia APT/Gdebi; loader smoke;
 instalación Dpkg/desinstalación; AppImage offline; upgrade real 1.0.12; firma con
 CLI oficial Tauri `signer sign --app-version`; verificación criptográfica; metadata;
 release estable. Las firmas cubren exactamente los bytes ya validados.
+
+### Large native allocation lifetime
+
+The launcher keeps glibc's documented 128 KiB mmap allocation threshold static (MALLOC_MMAP_THRESHOLD_=131072), unless an administrator explicitly sets it. This keeps freed multi-megabyte decoder/compositor allocations independently releasable instead of moving them into adaptive thread heaps. Reference: https://sourceware.org/glibc/manual/latest/html_node/Malloc-Tunable-Parameters.html . This does not force GC, trim live allocations, change codecs/GPU selection or change acceptance limits. The same ten-reopen and 120-second playback matrix must validate the candidate; local shell tests alone do not establish a memory improvement.

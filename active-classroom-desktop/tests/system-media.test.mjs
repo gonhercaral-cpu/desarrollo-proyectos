@@ -19,19 +19,19 @@ async function fixture(t, native = false, version = "1.24.2") {
   if (native) for (const name of required) await writeFile(join(root, "native", name), "native plugin");
   return root;
 }
-function run(root) {
+function run(root, extraEnv = {}) {
   return spawnSync(shell, ["-c", `
     export LD_LIBRARY_PATH=/obsolete/bundle LD_PRELOAD=/obsolete/bundle.so GST_PLUGIN_SYSTEM_PATH_1_0=/obsolete/plugins
     export GST_PLUGIN_SCANNER=/obsolete/scanner WEBKIT_EXEC_PATH=/obsolete/webkit
     . "$1"
     classroom_system_media "$2/codecs" "$2/native" "$2/os-release" || exit "$?"
-    printf '%s\\n' "ld=$LD_LIBRARY_PATH" "preload=$LD_PRELOAD" "plugins=$GST_PLUGIN_PATH_1_0" "scanner=$GST_PLUGIN_SCANNER" "webkit=$WEBKIT_EXEC_PATH" "backend=$GDK_BACKEND"
-  `, "probe", script, root], { encoding: "utf8", env: { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, XDG_CACHE_HOME: `${root}/cache`, WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland" } });
+    printf '%s\\n' "ld=$LD_LIBRARY_PATH" "preload=$LD_PRELOAD" "plugins=$GST_PLUGIN_PATH_1_0" "scanner=$GST_PLUGIN_SCANNER" "webkit=$WEBKIT_EXEC_PATH" "backend=$GDK_BACKEND" "mmap=$MALLOC_MMAP_THRESHOLD_"
+  `, "probe", script, root], { encoding: "utf8", env: { ...process.env, MALLOC_MMAP_THRESHOLD_: "", PATH: `${root}/bin:${process.env.PATH}`, XDG_CACHE_HOME: `${root}/cache`, WAYLAND_DISPLAY: "wayland-0", XDG_SESSION_TYPE: "wayland", ...extraEnv } });
 }
 test("runtime nativo completo conserva bibliotecas y plugins del sistema sin overrides antiguos", async t => {
   const result = run(await fixture(t, true));
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "ld=\npreload=\nplugins=\nscanner=\nwebkit=\nbackend=wayland\n");
+  assert.equal(result.stdout, "ld=\npreload=\nplugins=\nscanner=\nwebkit=\nbackend=wayland\nmmap=131072\n");
 });
 test("codecs ausentes usan únicamente fallback de la misma versión de distribución", async t => {
   const root = await fixture(t); const result = run(root);
@@ -40,6 +40,11 @@ test("codecs ausentes usan únicamente fallback de la misma versión de distribu
   assert.ok(result.stdout.includes(`plugins=${root}/codecs/24.04/plugins/libav`));
   assert.ok(result.stdout.includes("preload=\n"));
   assert.ok(!result.stdout.includes("obsolete"));
+});
+test("conserva una política de asignación explícita del administrador", async t => {
+  const result = run(await fixture(t, true), { MALLOC_MMAP_THRESHOLD_: "262144" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes("mmap=262144\n"));
 });
 test("rechaza mezclar plugins y core de diferentes versiones GStreamer", async t => {
   const result = run(await fixture(t, false, "1.20.3"));
