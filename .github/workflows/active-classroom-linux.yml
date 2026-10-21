@@ -243,7 +243,13 @@ jobs:
 
       - name: Versión única de la distribución
         id: release
-        run: echo "version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')" >> "$GITHUB_OUTPUT"
+          # Read-only API preflight before native build/signing. No tag mutation.
+          node scripts/release-tag.mjs --preflight
 
       - name: Siete tests Rust de caché offline y catálogo global
         run: |
@@ -509,7 +515,7 @@ jobs:
           test "${#notes[@]}" -eq 1
           version="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1])).version' "${manifests[0]}")"
           export GITHUB_REF_NAME="active-classroom-v$version"
-          latest_tag="$(gh release view --json tagName --jq '.tagName' 2>/dev/null || true)"
+          latest_tag="$(node active-classroom-desktop/scripts/release-tag.mjs --latest)"
           if [[ "$latest_tag" == active-classroom-v* ]]; then
             node -e 'const [old,next]=process.argv.slice(1).map(v=>v.replace(/^active-classroom-v/, "").split(".").map(Number)); const index=next.findIndex((v,i)=>v!==old[i]); if(index<0 || next[index]<old[index]) process.exit(1)' "$latest_tag" "$GITHUB_REF_NAME"
           fi
