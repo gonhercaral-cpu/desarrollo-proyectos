@@ -92,8 +92,8 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
         assert.equal(root.querySelectorAll("[data-unit-card]").length, 0);
         root.querySelector("[data-search]").value = "";
         root.querySelector("[data-search]").dispatchEvent(new dom.window.Event("input"));
-        root.querySelector("[data-my-classes]").click();
-        assert.equal(root.querySelectorAll("[data-unit-card]").length, 1);
+        assert.equal(root.querySelector("[data-my-classes]"), null);
+        assert.equal(root.querySelectorAll("[data-unit-card]").length, 2);
         assert.ok(root.querySelector('[data-unit-card="unit1"]'));
         root.querySelector("[data-library-nav]").click();
         root.querySelector('[data-view="list"]').click();
