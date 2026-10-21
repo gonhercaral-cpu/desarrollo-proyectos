@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
+import { desktopSettings } from "../src/settings/preferences.ts";
 import { DesktopSettingsPanel } from "../src/settings/panel.ts";
 import { ProgramUpdater } from "../src/updater/controller.ts";
 import { StartupPreferences } from "../src/startup/controller.ts";
@@ -34,7 +35,7 @@ export async function mediaPerformance(fixture) {
     await wait(30000); check(!media.paused && media.currentTime > 25, "Video did not play 30 seconds");
     const seeks = [];
     for (const command of ["SEEK_FORWARD", "SEEK_BACKWARD", "SEEK_FORWARD"]) {
-      const started = performance.now(); const target = Math.max(0, Math.min(media.duration, media.currentTime + (command === "SEEK_FORWARD" ? 100 : -100))); let seekEvents = 0; const seeking = () => seekEvents++; media.addEventListener("seeking", seeking);
+      const started = performance.now(); const target = Math.max(0, Math.min(media.duration, media.currentTime + (command === "SEEK_FORWARD" ? 1 : -1) * 10 * desktopSettings().seekIntervalSeconds)); let seekEvents = 0; const seeking = () => seekEvents++; media.addEventListener("seeking", seeking);
       for (let index = 0; index < 10; index++) { await player.dispatch(command); await wait(10); }
       await until(() => !renderer.state.seeking && !media.seeking); await until(() => !media.paused && media.readyState >= 2);
       check(Math.abs(media.currentTime - target) < 1, "Last coalesced seek missed its target");
