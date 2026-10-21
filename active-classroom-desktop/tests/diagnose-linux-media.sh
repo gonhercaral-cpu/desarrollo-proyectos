@@ -8,6 +8,9 @@ scripts="$(realpath tests)"
 deb="$runtime/Active.Classroom_1.0.17_amd64.deb"
 image="$runtime/Active-Classroom-1.0.17-x86_64.AppImage"
 test -f "$deb" && test -f "$image"
+# GitHub ZIP downloads preserve bytes, not executable mode. The workflow has
+# already verified the source certificate and hashes before entering this script.
+chmod 755 "$image"
 # The fixture compiles current public Rust/TS. Previously validated packages
 # supply only their unchanged native runtime. No certificate is issued here.
 ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$fixtures" npm run test:media:linux
