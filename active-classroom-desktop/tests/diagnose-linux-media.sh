@@ -26,10 +26,15 @@ docker rm "$name" >/dev/null
 for attempt in 1 2 3; do
   # Trace the engine independently of renderer opt-in frame diagnostics.
   # Public synthetic media only; no identity, tokens or classroom paths.
+  status=0
   docker run --rm --network none -v "$image:/package/classroom.AppImage:ro" \
     -v "$scripts:/tests:ro" -v "$fixtures:/fixtures:ro" -v "$report:/reports" \
     -e GST_DEBUG=webkitmediaplayer:5,webkitwebsrc:4,queue2:5,GST_STATES:4 \
-    -e "GST_DEBUG_FILE=/reports/gstreamer-$attempt.log" -e GST_DEBUG_NO_COLOR=1 \
+    -e "GST_DEBUG_FILE=/reports/gstreamer-$attempt-%p.log" -e GST_DEBUG_NO_COLOR=1 \
     "$tag" bash -c 'df -Pk /tmp /var/tmp; bash /tests/linux-packaged-media.sh /package/classroom.AppImage appimage x11; status=$?; df -Pk /tmp /var/tmp; exit "$status"' \
-    | tee "$report/native-$attempt.log"
+    | tee "$report/native-$attempt.log" || status=$?
+  # Keep per-process traces separate and redact short-lived local grants.
+  mapfile -t logs < <(find "$report" -maxdepth 1 -type f \( -name "gstreamer-$attempt-*.log" -o -name "native-$attempt.log" \))
+  if (( ${#logs[@]} )); then sed -E -i 's#http://127\.0\.0\.1:[0-9]+/media/[a-f0-9]{64}#LOCAL_MEDIA#g' "${logs[@]}"; fi
+  if (( status )); then exit "$status"; fi
 done
