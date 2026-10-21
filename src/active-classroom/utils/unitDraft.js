@@ -4,7 +4,7 @@ export function createUnitDraft(unit, resources) {
     status: unit.active === false ? "inactive" : "active",
     metadata: { code: "", language: "es", estimatedMinutes: 0, tags: [] },
     mainPresentationId: null,
-    generalResourceIds: resources.filter((resource) => resource.folderId === unit.id).map((resource) => resource.id),
+    generalResourceIds: resources.filter((resource) => resource.folderId === unit.id && !resource.archived).map((resource) => resource.id),
     slides: [],
   };
 }
@@ -18,4 +18,24 @@ export function reorderSlides(slides, slideId, direction) {
   if (index < 0 || target < 0 || target >= next.length) return slides;
   [next[index], next[target]] = [next[target], next[index]];
   return next.map((slide, position) => ({ ...slide, index: position }));
+}
+
+export function needsOfficeProcessing(resource) {
+  return /^(application\/(vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.(presentationml\.presentation|wordprocessingml\.document)|msword|vnd\.google-apps\.(presentation|document)))$/.test(resource?.mimeType || "")
+    || /\.(pptx?|docx?)$/i.test(resource?.sourceName || resource?.name || "");
+}
+export function documentProcessingLabel(resource) {
+  if (!needsOfficeProcessing(resource)) return "";
+  const processing = resource.processing;
+  if (documentProcessingReady(resource)) return `✓ Procesada · ${processing.pageCount} ${resource.kind === "presentation" ? "diapositivas" : "páginas"}`;
+  if (processing?.state === "failed") return "Error de procesamiento · Reintentar";
+  if (processing?.state === "processing" || processing?.leaseUntil) return "Procesando…";
+  return "Pendiente de procesar";
+}
+export function documentProcessingReady(resource) {
+  if (resource?.processing?.state !== "ready") return false;
+  const version = resource.processing.processorVersion;
+  if (resource.mimeType === "application/vnd.google-apps.presentation") return ["google-slides-png-v1", "google-slides-builds-png-v2"].includes(version);
+  if (/presentationml\.presentation/.test(resource.mimeType || "") || /\.pptx$/i.test(resource.sourceName || resource.name || "")) return ["pptx-builds-png-v1", "pptx-builds-png-v2", "office-pdf-v1"].includes(version);
+  return true;
 }

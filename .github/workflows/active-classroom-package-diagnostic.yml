@@ -1,0 +1,237 @@
+name: Diagnóstico paquete Linux publicado
+on:
+  workflow_dispatch:
+    inputs:
+      updater_check:
+        description: Comprobar endpoint público con updater oficial y versión instalada 1.0.14 (solo lectura)
+        required: false
+        type: boolean
+        default: false
+      source_run:
+        description: Run fallido con artefactos sin firmar (vacío para diagnosticar 1.0.12)
+        required: false
+        type: string
+      ubuntu:
+        description: Base del diagnóstico de artefactos (vacío para todas)
+        required: false
+        type: choice
+        options: ['', '22.04', '24.04', '26.04']
+      inspect_only:
+        description: Solo inspeccionar scripts de AppRun, sin ejecutar la aplicación
+        required: false
+        type: boolean
+        default: false
+      repair_launcher:
+        description: Probar parche de AppRun en copias temporales sin firma/publicación
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [codex/active-classroom-linux-packaging, codex/active-classroom-media-music]
+    paths:
+      - .github/workflows/active-classroom-package-diagnostic.yml
+      - active-classroom-desktop/tests/linux-package-audit.sh
+permissions:
+  contents: read
+  actions: read
+jobs:
+  updater:
+    if: inputs.updater_check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Dependencias de la comprobación Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11
+      - name: Updater real, misma configuración pública, identidad de versión 1.0.14
+        working-directory: active-classroom-desktop
+        env:
+          CI: 'true'
+        run: |
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example check_release
+          xvfb-run -a dbus-run-session -- src-tauri/target/release/examples/check_release
+  media:
+    if: (github.ref == 'refs/heads/codex/active-classroom-media-music' || github.ref == 'refs/heads/codex/active-classroom-ambient-performance') && !inputs.source_run && !inputs.updater_check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: active-classroom-desktop
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+      - name: Dependencias del diagnóstico nativo
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 ffmpeg gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav meson ninja-build bison flex patchelf
+          npm ci
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Reproducir usando librerías del paquete publicado 1.0.13
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/current.AppImage" https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.13/Active-Classroom-1.0.13-x86_64.AppImage
+          echo '2d37de8ebe3f34d7c339aaaa02de910bdf8b6acc1f11ee91b151c9d26029662f  current.AppImage' > "$RUNNER_TEMP/current.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum --check current.sha256 && chmod 755 current.AppImage && ./current.AppImage --appimage-extract >/dev/null)
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example media_playback
+          cp src-tauri/target/release/examples/media_playback "$RUNNER_TEMP/squashfs-root/usr/bin/active-classroom"
+          cat "$RUNNER_TEMP/squashfs-root/apprun-hooks/linuxdeploy-plugin-gstreamer.sh"
+          find "$RUNNER_TEMP/squashfs-root" -iname '*scanner*' -o -iname '*soup*'
+          scanner="$RUNNER_TEMP/squashfs-root/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+          file "$scanner" || true
+          LD_LIBRARY_PATH="$RUNNER_TEMP/squashfs-root/usr/lib" ldd "$scanner" || true
+          bash tests/prune-media-runtime.sh "$RUNNER_TEMP/squashfs-root"
+          bash tests/build-coreelements.sh "$RUNNER_TEMP/squashfs-root"
+          ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS=1 ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_RUNTIME="$RUNNER_TEMP/squashfs-root/AppRun" npm run test:media:linux 2>&1 | tee "$RUNNER_TEMP/packaged-media.log"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        if: always()
+        with:
+          name: classroom-media-regression-diagnostic
+          path: ${{ runner.temp }}/packaged-media.log
+          retention-days: 5
+      - name: Exportar harness público para aceptación privada Cloud Build
+        run: ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$RUNNER_TEMP/performance-fixture" npm run test:media:linux
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: classroom-performance-fixture-${{ github.sha }}
+          path: ${{ runner.temp }}/performance-fixture/*
+          retention-days: 2
+          compression-level: 0
+  audit:
+    if: ${{ !inputs.source_run && !inputs.updater_check && github.ref != 'refs/heads/codex/active-classroom-media-music' && github.ref != 'refs/heads/codex/active-classroom-ambient-performance' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ['22.04', '24.04', '26.04']
+        installer: [apt, gdebi]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Bytes exactos de 1.0.12 y sistema limpio
+        run: |
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/current.deb" https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/download/active-classroom-v1.0.12/Active.Classroom_1.0.12_amd64.deb
+          echo 'fb11b42dfddaedaf2f4b49902bf23da5f2d9b89edd14fd64e95a399d3a881572  current.deb' > "$RUNNER_TEMP/current.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum --check current.sha256)
+          docker run --rm -v "$RUNNER_TEMP/current.deb:/package/current.deb:ro" -v "$GITHUB_WORKSPACE/active-classroom-desktop/tests/linux-package-audit.sh:/audit.sh:ro" ubuntu:${{ matrix.ubuntu }} bash /audit.sh /package/current.deb '${{ matrix.installer }}'
+  packaging:
+    if: ${{ inputs.source_run }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          pattern: classroom-packaging-diagnostic-*
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+          path: unsigned-diagnostic
+          merge-multiple: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Instalar herramientas del harness
+        if: ${{ !inputs.inspect_only }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg gstreamer1.0-tools build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth dbus-x11 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav meson ninja-build bison flex patchelf
+          npm ci --prefix active-classroom-desktop
+      - name: Inspeccionar AppRun y hooks del artefacto real
+        run: |
+          set -euo pipefail
+          image="$(find unsigned-diagnostic -type f -name '*.AppImage' -print -quit)"
+          image="$(realpath "$image")"
+          chmod 755 "$image"
+          directory="$(mktemp -d)"
+          (cd "$directory" && "$image" --appimage-extract >/dev/null)
+          cat "$directory/squashfs-root/AppRun"
+          for name in linuxdeploy-plugin-gtk zz-active-classroom-system-glib zz-active-classroom-wayland; do
+            cat "$directory/squashfs-root/apprun-hooks/$name.sh"
+          done
+      - name: Preparar copias temporales con parche de launcher
+        if: ${{ inputs.repair_launcher }}
+        working-directory: active-classroom-desktop
+        run: |
+          set -euo pipefail
+          image="$(realpath "$(find ../unsigned-diagnostic -type f -name '*.AppImage' -print -quit)")"
+          deb="$(realpath "$(find ../unsigned-diagnostic -type f -name '*.deb' -print -quit)")"
+          directory="$(mktemp -d)"
+          (cd "$directory" && "$image" --appimage-extract >/dev/null)
+          cp -a "$directory/squashfs-root" "$(dirname "$image")/Active Classroom.AppDir"
+          mkdir -p "$HOME/.cache/tauri"
+          curl --fail --location --retry 3 -o "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage" https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod 755 "$HOME/.cache/tauri/linuxdeploy-plugin-appimage.AppImage"
+          bash tests/prepare-appimage-runtime.sh "$image"
+          dpkg-deb --raw-extract "$deb" "$directory/debian"
+          for hook in system-glib appimage-wayland; do
+            case "$hook" in
+              system-glib) name=zz-active-classroom-system-glib.sh ;;
+              appimage-wayland) name=zz-active-classroom-wayland.sh ;;
+            esac
+            cp "src-tauri/packaging/$hook.sh" "$directory/debian/usr/lib/active-classroom/apprun-hooks/$name"
+            cp "src-tauri/packaging/$hook.sh" "$directory/debian/usr/lib/active-classroom/usr/lib/active-classroom/packaging/$hook.sh"
+          done
+          node scripts/patch-apprun.mjs "$directory/debian/usr/lib/active-classroom/AppRun"
+          bash tests/build-coreelements.sh "$directory/debian/usr/lib/active-classroom"
+          (cd "$directory/debian" && find usr -type f -print0 | sort -z | xargs -0 md5sum > DEBIAN/md5sums)
+          dpkg-deb --root-owner-group --build "$directory/debian" "$directory/patched.deb"
+          mv "$directory/patched.deb" "$deb"
+          echo 'DIAGNOSTIC temporary_unsigned_copies=true release=false'
+      - name: Validar los mismos bytes sin recompilar ni firmar
+        if: ${{ !inputs.inspect_only }}
+        working-directory: active-classroom-desktop
+        env:
+          CLASSROOM_PACKAGE_OS: ${{ inputs.ubuntu }}
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/target/release/bundle/{deb,appimage}
+          mapfile -t debs < <(find ../unsigned-diagnostic -type f -name '*.deb')
+          mapfile -t images < <(find ../unsigned-diagnostic -type f -name '*.AppImage')
+          test "${#debs[@]}" -eq 1
+          test "${#images[@]}" -eq 1
+          cp "${debs[0]}" src-tauri/target/release/bundle/deb/
+          cp "${images[0]}" src-tauri/target/release/bundle/appimage/
+          chmod 755 src-tauri/target/release/bundle/appimage/*.AppImage
+          version="$(node -p 'require("./package.json").version')"
+          bash tests/validate-linux-packages.sh "$version" "$RUNNER_TEMP/package-validation"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: packaging-recheck-${{ github.run_id }}
+          path: ${{ runner.temp }}/package-validation/*
+          if-no-files-found: warn
+          retention-days: 3

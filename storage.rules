@@ -4,7 +4,9 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     function signedIn() {
-      return request.auth != null;
+      return request.auth != null
+        && !request.auth.uid.matches('ac-device-.*')
+        && request.auth.token.get('activeClassroomDevice', false) != true;
     }
 
     function userPath() {
@@ -69,17 +71,19 @@ service firebase.storage {
         );
     }
 
+    function canClassroom(action) {
+      let path = /databases/(default)/documents/activeClassroomPermissions/$(request.auth.uid);
+      return hasProfile() && (isAdmin() || (firestore.exists(path)
+        && firestore.get(path).data.get("permissions", {}).get("access", false) == true
+        && firestore.get(path).data.get("permissions", {}).get(action, false) == true));
+    }
+
     function activeClassroomResourcePath(resourceId) {
       return /databases/(default)/documents/activeClassroomResources/$(resourceId);
     }
 
     function canReadActiveClassroomResource(resourceId) {
-      return isAdmin()
-        || (
-          hasProfile()
-          && firestore.exists(activeClassroomResourcePath(resourceId))
-          && firestore.get(activeClassroomResourcePath(resourceId)).data.published == true
-        );
+      return canClassroom("access");
     }
 
     function validActiveClassroomFile(fileName) {
@@ -973,14 +977,20 @@ service firebase.storage {
     match /active-classroom/resources/{resourceId}/{fileName} {
       allow read: if canReadActiveClassroomResource(resourceId);
 
-      allow create: if isAdmin()
-        && validActiveClassroomFile(fileName);
+      allow create: if canClassroom("uploadMaterial")
+        && validActiveClassroomFile(fileName)
+        && (isAdmin() || request.resource.metadata.get("uploadedByUid", "") == request.auth.uid);
 
       allow update: if false;
 
       allow delete: if isAdmin()
         && (!firestore.exists(activeClassroomResourcePath(resourceId))
           || firestore.get(activeClassroomResourcePath(resourceId)).data.get("retainedByPublication", false) == false);
+    }
+
+    // Immutable publication snapshots are served only by the authenticated backend.
+    match /active-classroom/publications/{allPaths=**} {
+      allow read, write: if false;
     }
 
     match /{allPaths=**} {

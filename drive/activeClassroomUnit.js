@@ -1,8 +1,12 @@
+const { canClassroom, requireClassroom } = require("./activeClassroomPermissions");
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
+const { needsDocumentProcessing, isGoogleSlides, isRasterSlides, validPageObjectId, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
 
 const MAX_RESOURCES = 200;
+const { normalizeBackgroundMusic, validateMusicResources, freezeBackgroundMusic } = require("./activeClassroomBackgroundMusic");
+const { normalizeInteraction, interactionResourceIds } = require("./activeClassroomInteraction");
 const MAX_SLIDES = 200;
 function fail(message, code = "invalid-argument") { throw new HttpsError(code, message); }
 function text(value, max, required = false) {
@@ -23,10 +27,12 @@ function normalizeDraft(input) {
   if (!["active", "inactive"].includes(input.status)) fail("Estado inválido.");
   if (!Array.isArray(input.slides) || input.slides.length > MAX_SLIDES) fail(`Máximo ${MAX_SLIDES} diapositivas.`);
   const metadata = input.metadata || {};
+  const backgroundMusic = normalizeBackgroundMusic(input.backgroundMusic);
   const slides = input.slides.map((slide, index) => ({
     slideId: id(slide.slideId), index, title: text(slide.title || "", 160),
-    metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000) },
+    metadata: { pageNumber: slide.metadata?.pageNumber == null ? null : integer(slide.metadata.pageNumber, 1, MAX_SLIDES), notes: text(slide.metadata?.notes || "", 1000), ...(slide.metadata?.pageObjectId ? { pageObjectId: validPageObjectId(slide.metadata.pageObjectId) ? slide.metadata.pageObjectId : fail("Identificador Google Slides inválido."), presentationResourceId: id(slide.metadata.presentationResourceId) } : {}) },
     resourceIds: ids(slide.resourceIds || []),
+    ...normalizeInteraction(slide),
   }));
   ids(slides.map(({ slideId }) => slideId), MAX_SLIDES);
   const draft = {
@@ -35,18 +41,21 @@ function normalizeDraft(input) {
     metadata: {
       code: text(metadata.code || "", 80), language: text(metadata.language || "", 40),
       estimatedMinutes: integer(metadata.estimatedMinutes ?? 0, 0, 10000),
-      tags: (Array.isArray(metadata.tags) && metadata.tags.length <= 20 ? metadata.tags : fail("Máximo 20 etiquetas.")).map((tag) => text(tag, 60, true)),
+      tags: (Array.isArray(metadata.tags ?? []) && (metadata.tags || []).length <= 20 ? (metadata.tags || []) : fail("Máximo 20 etiquetas.")).map((tag) => text(tag, 60)).filter(Boolean),
     },
     mainPresentationId: input.mainPresentationId ? id(input.mainPresentationId) : null,
     generalResourceIds: ids(input.generalResourceIds || []), slides,
+    excludedResourceIds: ids(input.excludedResourceIds || []),
+    ...(backgroundMusic.length ? { backgroundMusic } : {}),
   };
   if (draft.generalResourceIds.includes(draft.mainPresentationId)) fail("La presentación principal debe estar separada de recursos generales.");
   if (resourceIds(draft).length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} recursos por Unit.`);
+  if (resourceIds(draft).some(resourceId => draft.excludedResourceIds.includes(resourceId))) fail("Un archivo quitado no puede seguir asociado al borrador.");
   return draft;
 }
 
 function resourceIds(draft) {
-  return [...new Set([draft.mainPresentationId, ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => slide.resourceIds)].filter(Boolean))];
+  return [...new Set([draft.mainPresentationId, ...(draft.backgroundMusic || []).map(track => track.resourceId), ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => [...slide.resourceIds, ...interactionResourceIds(slide)])].filter(Boolean))];
 }
 function isMainPresentation(resource) {
   return resource?.source === "drive" && (resource.kind === "presentation" || resource.mimeType === "application/pdf" || /\.pdf$/i.test(resource.name));
@@ -59,7 +68,15 @@ function fileReference(resource) {
   } : { provider: "storage", path: resource.storagePath, checksums: { md5: resource.storageMd5Hash || null } };
 }
 function snapshotResource(resourceId, resource) {
-  return { resourceId, name: resource.name, mimeType: resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource) };
+  const iso = (value) => value?.toDate ? value.toDate().toISOString() : typeof value === "string" ? value : null;
+  const processing = readyProcessing(resource) ? resource.processing : null;
+  return { resourceId, name: resource.name, mimeType: resource.mimeType, originalMime: resource.mimeType, deliveryMime: processing?.download.mimeType || resource.mimeType, kind: resource.kind, sizeBytes: resource.sizeBytes ?? null, file: fileReference(resource),
+    ...(isGoogleSlides(resource) ? { sourceType: "google-slides" } : {}),
+    ...(processing ? {
+      original: { ...fileReference(resource), name: resource.sourceName || resource.name, mimeType: resource.mimeType, ...(isGoogleSlides(resource) ? {} : { snapshot: processing.original }) },
+      derivative: { revision: processing.revision, processorVersion: processing.processorVersion, sourceFingerprint: processing.sourceFingerprint, pageCount: processing.pageCount, processedAt: processing.completedAt, textExtraction: null, file: processing.download, ...(isRasterSlides(resource) ? { pages: processing.pages } : {}) },
+    } : {}),
+    timestamps: { createdAt: iso(resource.createdAt), updatedAt: iso(resource.updatedAt), sourceCheckedAt: iso(resource.sourceCheckedAt) } };
 }
 function stableStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -74,11 +91,11 @@ function driveChanged(resource, file) {
     || (resource.sourceName || resource.name) !== file.name || resource.mimeType !== file.mimeType;
 }
 
-function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () => new Date().toISOString() }) {
-  async function authorize(request) {
+function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, timestamp, now = () => new Date().toISOString() }) {
+  async function authorize(request, action = "access") {
     if (!request.auth?.uid) fail("Debes iniciar sesión.", "unauthenticated");
     const profile = await getProfile(request.auth.uid);
-    if (profile.active !== true || profile.role !== "admin") fail("Solo administradores activos pueden editar Units.", "permission-denied");
+    requireClassroom(profile, action);
     return profile;
   }
   const unitRef = (unitId) => db.collection("activeClassroomUnits").doc(id(unitId));
@@ -95,31 +112,44 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
       if (!snapshot.exists || snapshot.data().folderId !== unitId || snapshot.data().archived) fail("Un recurso ya no pertenece a esta Unit o fue eliminado.", "failed-precondition");
       result.push({ id: resourceId, ...snapshot.data() });
     }
+    for (const assetId of draft.slides.flatMap(interactionResourceIds)) {
+      if (!["image/png", "image/jpeg", "image/webp"].includes(result.find(resource => resource.id === assetId)?.mimeType)) fail("Los assets de revelado deben ser imágenes PNG, JPEG o WebP.");
+    }
     if (draft.mainPresentationId && !isMainPresentation(result.find((resource) => resource.id === draft.mainPresentationId))) fail("Elige PPT/PPTX, Google Slides o PDF de Nube AES como presentación principal.");
+    validateMusicResources(draft.backgroundMusic, result);
     return result;
   }
   async function validateFolders(transaction, unitId, draft) {
     const folder = await transaction.get(folderRef(unitId));
     if (!folder.exists || folder.data().kind !== "unit") fail("Unit no encontrada.", "not-found");
     const level = await transaction.get(folderRef(draft.levelId));
-    if (!level.exists || level.data().kind !== "level" || level.data().active !== true) fail("Selecciona un Nivel activo.", "failed-precondition");
+    if (!level.exists || level.data().kind !== "level" || (level.data().active !== true && folder.data().parentId !== draft.levelId)) fail("Selecciona un Nivel activo.", "failed-precondition");
     return folder;
   }
 
   async function save(request) {
     const profile = await authorize(request);
+    if (!canClassroom(profile, "editUnits") && !canClassroom(profile, "orderMaterial")) fail("No tienes permiso para editar el borrador.", "permission-denied");
     const unitId = id(request.data?.unitId);
     const draft = normalizeDraft(request.data?.draft);
+    if (Buffer.byteLength(JSON.stringify(draft), "utf8") > 700000) fail("El borrador supera 700 KB.", "resource-exhausted");
     return db.runTransaction(async (transaction) => {
       const stored = (await transaction.get(unitRef(unitId))).data();
       revision(stored, request.data.expectedRevision);
+      const before = stored?.draft || {};
+      const different = keys => keys.some(key => contentHash(before[key] ?? null) !== contentHash(draft[key] ?? null));
+      if (!canClassroom(profile, "editUnits") && different(["name", "description", "levelId", "status", "metadata"])) fail("No tienes permiso para editar datos de la Unit.", "permission-denied");
+      if (!canClassroom(profile, "orderMaterial") && different(["mainPresentationId", "slides", "generalResourceIds", "excludedResourceIds", "backgroundMusic"])) fail("No tienes permiso para ordenar o asociar material.", "permission-denied");
+      if (stored?.draft?.mainPresentationId && stored.draft.mainPresentationId !== draft.mainPresentationId) draft.slides = [];
       await validateFolders(transaction, unitId, draft);
-      await readResources(transaction, draft, unitId);
+      const resources = await readResources(transaction, draft, unitId);
+      const main = resources.find((resource) => resource.id === draft.mainPresentationId);
+      if (needsDocumentProcessing(main) && readyProcessing(main)) draft.slides = pdfSlides(main, draft.slides);
       const draftRevision = (stored?.draftRevision || 0) + 1;
       transaction.set(unitRef(unitId), {
         schemaVersion: 1, draft, draftRevision, publishedVersion: stored?.publishedVersion || 0,
         publishedDraftRevision: stored?.publishedDraftRevision || 0,
-        updatedAt: timestamp(), updatedByUid: request.auth.uid,
+        updatedAt: timestamp(), updatedByUid: request.auth.uid, updatedByName: profile.name || profile.email || "",
       }, { merge: true });
       // Keep the existing library's IDs and catalog in sync without migrating resources.
       transaction.update(folderRef(unitId), {
@@ -130,35 +160,116 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
     });
   }
 
-  async function publish(request) {
-    await authorize(request);
+  async function preparePublish(request) {
+    await authorize(request, "publishVersions");
     const unitId = id(request.data?.unitId);
-    const publishedAt = now();
+    // Network/file IO must stay outside retriable Firestore transactions.
     return db.runTransaction(async (transaction) => {
       const stored = (await transaction.get(unitRef(unitId))).data();
       if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");
       revision(stored, request.data.expectedRevision);
       const draft = normalizeDraft(stored.draft);
       if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
+      const level = await transaction.get(folderRef(draft.levelId));
+      if (level.data()?.active !== true) fail("Activa el Nivel o reasigna la Unit antes de publicar.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
+      for (const resource of resources) requireReady(resource);
+      const main = resources.find((resource) => resource.id === draft.mainPresentationId);
+      if (needsDocumentProcessing(main) && contentHash(draft.slides) !== contentHash(pdfSlides(main, draft.slides))) fail("Aplica las diapositivas procesadas antes de publicar.", "failed-precondition");
+      return resources;
+    });
+  }
+
+  async function publish(request, { preparedFiles, expectedResources, jobId } = {}) {
+    const profile = await authorize(request, "publishVersions");
+    const unitId = id(request.data?.unitId);
+    const prepared = await preparePublish(request);
+    if (expectedResources && contentHash(prepared.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(expectedResources.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
+    const files = new Map();
+    for (const resource of prepared) {
+      const download = preparedFiles ? preparedFiles[resource.id] : await prepareResource(profile, resource);
+      if (!download) fail("Faltan archivos de la publicación.", "data-loss");
+      files.set(resource.id, download);
+    }
+    return db.runTransaction(async (transaction) => {
+      const stored = (await transaction.get(unitRef(unitId))).data();
+      if (jobId && stored?.publicationJob?.jobId !== jobId) fail("Publicación reemplazada.", "aborted");
+      if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");
+      revision(stored, request.data.expectedRevision);
+      const draft = normalizeDraft(stored.draft);
+      if (draft.status !== "active" || !draft.mainPresentationId || !draft.slides.length) fail("Publicar requiere Unit activa, presentación principal y diapositivas.", "failed-precondition");
+      const level = await transaction.get(folderRef(draft.levelId));
+      if (level.data()?.active !== true) fail("Activa el Nivel o reasigna la Unit antes de publicar.", "failed-precondition");
+      await validateFolders(transaction, unitId, draft);
+      const resources = await readResources(transaction, draft, unitId);
+      for (const resource of resources) requireReady(resource);
+      if (contentHash(resources.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(prepared.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
+      const deliveredIds = (references) => [...new Set(references.flatMap((resourceId) => {
+        const resource = resources.find((item) => item.id === resourceId);
+        return isRasterSlides(resource) ? resource.processing.pages.map((page, index) => index === 0 ? resourceId : slideResourceId(resourceId, page.pageObjectId)) : [resourceId];
+      }))];
       const content = {
-        schemaVersion: 1, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
-        mainPresentationId: draft.mainPresentationId, generalResourceIds: draft.generalResourceIds,
-        slides: draft.slides, resources: resources.map((resource) => snapshotResource(resource.id, resource)),
+        schemaVersion: 2, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
+        mainPresentationId: draft.mainPresentationId, generalResourceIds: deliveredIds(draft.generalResourceIds),
+        ...(draft.backgroundMusic?.length ? { backgroundMusic: freezeBackgroundMusic(draft.backgroundMusic, files) } : {}),
+        slides: draft.slides.map((draftSlide) => {
+          const slide = { ...draftSlide, resourceIds: deliveredIds(draftSlide.resourceIds) };
+          const main = resources.find((resource) => resource.id === draft.mainPresentationId);
+          const download = files.get(draft.mainPresentationId);
+          const page = isRasterSlides(main) ? main.processing.pages[slide.index] : null;
+          const staticFinal = page?.builds?.length && slide.interaction?.source === "manual" && slide.interaction.mode === "static" ? page.builds[page.builds.length - 1] : null;
+          const delivered = staticFinal?.download || page?.download || download;
+          return needsDocumentProcessing(main) ? { ...slide, metadata: { ...slide.metadata, ...(page ? { pageObjectId: page.pageObjectId, storagePath: delivered.path, size: delivered.sizeBytes, sha256: delivered.checksums.sha256, width: staticFinal?.width || page.width, height: staticFinal?.height || page.height } : {}), delivery: { resourceId: page ? slide.metadata.presentationResourceId : main.id, revision: main.processing.revision, generation: delivered.generation, mimeType: delivered.mimeType, sizeBytes: delivered.sizeBytes, checksum: delivered.checksums.sha256 } } } : slide;
+        }), resources: resources.flatMap((resource) => {
+          const snapshot = snapshotResource(resource.id, resource);
+          if (!isRasterSlides(resource)) return [{ ...snapshot, deliveryMime: files.get(resource.id).mimeType, download: files.get(resource.id) }];
+          const derivative = { ...snapshot.derivative };
+          delete derivative.pages;
+          return resource.processing.pages.flatMap((page, index) => [page, ...(page.builds || [])].map((state, stateIndex) => ({ ...snapshot, resourceId: stateIndex ? slideResourceId(resource.id, `${page.pageObjectId}-build-${stateIndex}`) : index === 0 ? resource.id : slideResourceId(resource.id, page.pageObjectId), name: `${resource.name} · ${index + 1}`, deliveryMime: "image/png", pageObjectId: page.pageObjectId, index, width: state.width, height: state.height, derivative: { ...derivative, file: state.download }, download: state.download })));
+        }),
       };
+      // Manual overrides do not ship unused automatic states. Every referenced
+      // base, step and image stays frozen; immutable processing objects stay intact.
+      const used = new Set([content.mainPresentationId, ...(content.backgroundMusic || []).map(track => track.resourceId), ...content.generalResourceIds, ...content.slides.flatMap(slide => [slide.metadata.presentationResourceId, ...slide.resourceIds, ...slide.builds.map(build => build.resourceId), ...interactionResourceIds(slide)])].filter(Boolean));
+      content.resources = content.resources.filter(resource => used.has(resource.resourceId));
+      for (const slide of content.slides) {
+        const initialId = slide.interaction?.initialResourceId;
+        if (initialId) {
+          const initial = content.resources.find(resource => resource.resourceId === initialId);
+          if (!initial) fail("Falta la imagen del estado inicial.", "data-loss");
+          slide.interaction.initialAsset = { resourceId: initialId, mimeType: initial.download.mimeType, sizeBytes: initial.download.sizeBytes, sha256: initial.download.checksums.sha256, storagePath: initial.download.path, generation: initial.download.generation };
+        }
+        slide.builds = slide.builds.map(build => {
+          const references = [...new Set([build.resourceId, ...(build.layers || []).map(layer => layer.resourceId)].filter(Boolean))];
+          const assets = references.map(resourceId => {
+            const resource = content.resources.find(item => item.resourceId === resourceId);
+            if (!resource) fail("Falta un asset del revelado.", "data-loss");
+            return { resourceId, mimeType: resource.download.mimeType, sizeBytes: resource.download.sizeBytes, sha256: resource.download.checksums.sha256, storagePath: resource.download.path, generation: resource.download.generation };
+          });
+          const frozen = { ...build, assets };
+          return { ...frozen, sizeBytes: assets.reduce((size, asset) => size + asset.sizeBytes, 0), checksums: { sha256: contentHash(frozen) } };
+        });
+      }
+      if (content.resources.length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} archivos por publicación, incluyendo diapositivas PNG.`, "resource-exhausted");
+      if (new Set(content.resources.map((resource) => resource.resourceId)).size !== content.resources.length) fail("Identificadores de archivos publicados duplicados.", "data-loss");
       const hash = contentHash(content);
       const previous = stored.publishedVersion
         ? await transaction.get(unitRef(unitId).collection("publications").doc(String(stored.publishedVersion))) : null;
-      if (previous?.data()?.contentHash === hash) return { version: stored.publishedVersion, unchanged: true };
+      if (previous?.data()?.contentHash === hash) {
+        transaction.update(unitRef(unitId), { publishedDraftRevision: stored.draftRevision, ...(jobId ? { publicationJob: { ...stored.publicationJob, state: "ready", version: stored.publishedVersion, unchanged: true } } : {}) });
+        if (jobId) transaction.update(db.collection("activeClassroomPublicationJobs").doc(jobId), { state: "ready", version: stored.publishedVersion, unchanged: true });
+        return { version: stored.publishedVersion, unchanged: true };
+      }
       const version = (stored.publishedVersion || 0) + 1;
-      const manifest = { ...content, version, publishedAt, integrity: { algorithm: "sha256", contentHash: hash } };
+      const manifest = { ...content, version, publishedAt: now(), integrity: { algorithm: "sha256", contentHash: hash } };
       if (Buffer.byteLength(JSON.stringify(manifest), "utf8") > 700000) fail("El manifest supera 700 KB. Reduce notas o asociaciones.", "resource-exhausted");
       transaction.create(unitRef(unitId).collection("publications").doc(String(version)), {
         version, manifest, contentHash: hash, draftRevision: stored.draftRevision,
         publishedAt: timestamp(), publishedByUid: request.auth.uid,
       });
-      transaction.update(unitRef(unitId), { publishedVersion: version, publishedDraftRevision: stored.draftRevision });
+      transaction.update(unitRef(unitId), { publishedVersion: version, publishedDraftRevision: stored.draftRevision, lastPublishedAt: manifest.publishedAt, lastPublishedByUid: request.auth.uid, lastPublishedByName: profile.name || profile.email || "", ...(jobId ? { publicationJob: { ...stored.publicationJob, state: "ready", version, unchanged: false } } : {}) });
+      if (jobId) transaction.update(db.collection("activeClassroomPublicationJobs").doc(jobId), { state: "ready", version, unchanged: false });
       // Retain originals referenced by immutable publications. Never alter their publication flags.
       for (const resource of resources) if (!resource.retainedByPublication) transaction.update(resourceRef(resource.id), { retainedByPublication: true });
       return { version, unchanged: false };
@@ -175,21 +286,29 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
         const resource = (await resourceRef(resourceId).get()).data();
         if (!resource || resource.folderId !== unitId || resource.source !== "drive") fail("Referencia Drive no válida.");
         const file = await resolveFile(profile, resource.driveFileId);
-        if (file.trashed) fail("Original eliminado de Drive.", "not-found");
+        if (file.trashed || file.capabilities?.canDownload === false) fail("El archivo original ya no está disponible en Nube AES", "not-found");
         results.push({ resourceId, status: driveChanged(resource, file) ? "changed" : "current", observedVersion: String(file.version || ""), modifiedTime: file.modifiedTime || "" });
-      } catch (error) { results.push({ resourceId, status: "unavailable", message: error instanceof HttpsError ? error.message : "No se pudo consultar el original en Nube AES." }); }
+      } catch (error) {
+        const missing = ["not-found", "permission-denied", 403, 404].includes(error.code) || [403, 404].includes(error.response?.status);
+        results.push({ resourceId, status: missing ? "unavailable" : "error", message: missing ? "El archivo original ya no está disponible en Nube AES" : "No se pudo comprobar este archivo. Reintenta." });
+      }
     }
     return { results, checkedAt: now() };
   }
 
   async function refreshDrive(request) {
-    const profile = await authorize(request);
+    const profile = await authorize(request, "importDrive");
     const unitId = id(request.data?.unitId);
     const ref = resourceRef(request.data?.resourceId);
     const before = (await ref.get()).data();
     if (!before || before.folderId !== unitId || before.source !== "drive") fail("Referencia Drive no válida.");
-    const file = await resolveFile(profile, before.driveFileId);
-    if (file.trashed || file.capabilities?.canDownload === false) fail("Original no disponible para descargar.", "failed-precondition");
+    let file;
+    try { file = await resolveFile(profile, before.driveFileId); }
+    catch (error) {
+      if (["not-found", "permission-denied", 403, 404].includes(error.code) || [403, 404].includes(error.response?.status)) fail("El archivo original ya no está disponible en Nube AES", "not-found");
+      fail("No se pudo consultar Nube AES. Reintenta cuando se restablezca la conexión.", "unavailable");
+    }
+    if (file.trashed || file.capabilities?.canDownload === false) fail("El archivo original ya no está disponible en Nube AES", "failed-precondition");
     const kind = resourceKind(file);
     if (!kind) fail("El nuevo formato del original no es compatible.");
     return db.runTransaction(async (transaction) => {
@@ -199,22 +318,47 @@ function createUnitHandlers({ db, getProfile, resolveFile, timestamp, now = () =
       const current = (await transaction.get(ref)).data();
       if (!current || current.folderId !== unitId || current.driveFileId !== before.driveFileId) fail("La referencia cambió. Recarga el borrador.", "aborted");
       if (current.driveVersion !== before.driveVersion || current.driveModifiedTime !== before.driveModifiedTime) fail("Otro administrador actualizó el original. Recarga.", "aborted");
+      if (!driveChanged(current, file)) return { draftRevision: stored.draftRevision, resource: { id: ref.id, ...current }, unchanged: true };
       const updated = {
         name: text(file.name, 160, true), sourceName: file.name, mimeType: file.mimeType, kind,
         sizeBytes: file.size == null || file.size === "" ? null : Number(file.size),
         driveModifiedTime: file.modifiedTime || "", driveVersion: String(file.version || ""),
         driveMd5Checksum: file.md5Checksum || "", driveParentIds: file.parents || [],
         sourceCheckedAt: timestamp(), version: (current.version || 1) + 1,
+        ...(current.processing ? { processing: { state: "pending", sourceFingerprint: null } } : {}),
         updatedAt: timestamp(), updatedByUid: request.auth.uid, updatedByName: profile.name || "Administrador",
       };
       if (stored.draft.mainPresentationId === ref.id && !isMainPresentation({ ...current, ...updated })) fail("El original ya no es una presentación compatible.");
       const draftRevision = stored.draftRevision + 1;
       transaction.update(ref, updated);
       transaction.update(unitRef(unitId), { draftRevision, updatedAt: timestamp(), updatedByUid: request.auth.uid });
-      return { draftRevision };
+      return { draftRevision, resource: { id: ref.id, ...current, ...updated, sourceCheckedAt: now(), updatedAt: now() } };
     });
   }
-  return { save, publish, checkDrive, refreshDrive };
+  async function validatePublication(request) {
+    await authorize(request, "publishVersions");
+    const stored = (await unitRef(request.data?.unitId).get()).data();
+    revision(stored, request.data?.expectedRevision);
+    if (!stored?.draft) fail("Guarda el borrador antes de publicar.", "failed-precondition");
+    const draft = normalizeDraft(stored.draft);
+    const issues = [];
+    if (!draft.mainPresentationId) issues.push("Selecciona una presentación principal.");
+    if (!draft.slides.length) issues.push("La presentación todavía no tiene diapositivas.");
+    if (draft.status !== "active") issues.push("Activa la Unit antes de publicar.");
+    const level = (await folderRef(draft.levelId).get()).data();
+    if (level?.active !== true) issues.push("Activa el Nivel o reasigna la Unit antes de publicar.");
+    const driveIds = [];
+    for (const resourceId of resourceIds(draft)) {
+      const resource = (await resourceRef(resourceId).get()).data();
+      if (!resource || resource.archived || resource.folderId !== request.data.unitId) { issues.push("Un archivo del borrador ya no está disponible. Selecciona un reemplazo o quítalo."); continue; }
+      if (needsDocumentProcessing(resource) && !readyProcessing(resource)) issues.push(`Completa el procesamiento de ${resource.name}.`);
+      if (resourceId === draft.mainPresentationId && needsDocumentProcessing(resource) && readyProcessing(resource) && contentHash(draft.slides) !== contentHash(pdfSlides({ ...resource, id: resourceId }, draft.slides))) issues.push("Aplica las diapositivas procesadas de la presentación antes de publicar.");
+      if (resource.source === "drive") driveIds.push(resourceId);
+    }
+    const checked = await checkDrive({ ...request, data: { ...request.data, resourceIds: driveIds } });
+    return { ...checked, issues, ready: issues.length === 0 && checked.results.every(result => result.status === "current"), canPublishCurrent: false };
+  }
+  return { save, publish, preparePublish, checkDrive, refreshDrive, validatePublication };
 }
 
 module.exports = { createUnitHandlers, normalizeDraft, resourceIds, isMainPresentation, snapshotResource, stableStringify, contentHash, driveChanged };

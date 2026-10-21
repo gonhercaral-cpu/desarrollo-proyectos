@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { getDriveRootSettings, listDriveFolder } from "../../services/driveService";
+import { listClassroomDriveFiles } from "../services/activeClassroomService";
 import { getDriveResourceKind } from "../utils/driveResources";
 import { formatResourceDate, getResourceKindLabel } from "../utils/resourceTypes";
+import { unitOperationMessage, activeDraftResourceIds } from "../utils/draftResources";
+import { loadUnitEditor } from "../services/unitEditorService";
 
-export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit }) {
+export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, draft, onDestinationChange, globalMusic = false }) {
   const dialogRef = useRef(null);
   const [path, setPath] = useState([]);
   const [items, setItems] = useState([]);
@@ -16,27 +18,36 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
   const [progress, setProgress] = useState(null);
   const [retry, setRetry] = useState(0);
   const [importedIds, setImportedIds] = useState([]);
+  const [savedDraft, setSavedDraft] = useState(null);
+  const associatedIds = new Set(activeDraftResourceIds(draft || savedDraft));
   const folderId = path.at(-1)?.id || "";
   const existingIds = new Set([
-    ...resources.filter((resource) => resource.folderId === unit.id).map((resource) => resource.driveFileId),
+    ...resources.filter((resource) => resource.folderId === unit.id && associatedIds.has(resource.id) && !resource.archived
+      && (!destination || (destination === "Presentación principal" ? resource.id === (draft || savedDraft)?.mainPresentationId : (draft || savedDraft)?.generalResourceIds?.includes(resource.id)))).map((resource) => resource.driveFileId),
     ...importedIds,
   ]);
 
   useEffect(() => {
     dialogRef.current.showModal();
   }, []);
+  useEffect(() => {
+    if (draft) return;
+    let active = true;
+    loadUnitEditor(unit.id).then(value => { if (active) setSavedDraft(value?.draft || null); }).catch(() => {});
+    return () => { active = false; };
+  }, [draft, unit.id]);
 
   useEffect(() => {
     let active = true;
     async function load() {
       try {
         if (!folderId) {
-          const settings = await getDriveRootSettings();
+          const settings = await listClassroomDriveFiles();
           if (!settings?.rootFolderId) throw new Error("Configura una carpeta raíz en Nube AES antes de importar.");
           if (active) setPath([{ id: settings.rootFolderId, name: "Nube AES" }]);
           return;
         }
-        const result = await listDriveFolder(folderId);
+        const result = await listClassroomDriveFiles(folderId);
         if (active) { setItems(result.files || []); setLoading(false); }
       } catch (loadError) {
         if (active) { setError(loadError.message || "No se pudo abrir la carpeta."); setLoading(false); }
@@ -72,10 +83,10 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
       setImportedIds((current) => [...current, ...selected.filter((file) => !failedIds.has(file.id)).map((file) => file.id)]);
       setSelected(result.failed.map(({ file }) => file));
       const repeated = result.imported.filter((resource) => resource.alreadyImported).length;
-      setNotice(`${result.imported.length - repeated} recurso(s) importado(s) a ${unit.name}.${repeated ? ` ${repeated} ya estaban importados.` : ""}`);
+      setNotice(globalMusic ? `${result.imported.length} pista(s) disponibles en la biblioteca global.` : `${result.imported.length - repeated} recurso(s) asociado(s) al borrador de ${unit.name}.${repeated ? ` ${repeated} ya están asociados al borrador actual.` : ""}`);
       setError(result.failed.map(({ file, message }) => `${file.name}: ${message}`).join("\n"));
     } catch (importError) {
-      setError(importError.message || "No se pudo importar la selección.");
+      setError(unitOperationMessage(importError));
     } finally {
       setSaving(false);
       setProgress(null);
@@ -91,6 +102,11 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
           <div><h2 id="ac-drive-import-title">Importar desde Nube AES</h2><p>Destino: {unit.name}. Selecciona recursos de una o varias carpetas.</p></div>
           <button type="button" className="ac-outline-button" onClick={onClose} disabled={saving} aria-label="Cerrar importador">×</button>
         </header>
+        {destination && (onDestinationChange ? <label>Importar como<select disabled={saving} value={destination === "Presentación principal" ? "main" : "general"} onChange={event => {
+          const mode = event.target.value;
+          if (mode === "main") setSelected(current => current.filter(file => getDriveResourceKind(file) === "presentation" || file.mimeType === "application/pdf" || /\.pdf$/i.test(file.name)).slice(0, 1));
+          onDestinationChange(mode);
+        }}><option value="main">Presentación principal</option><option value="general">Recurso general</option></select></label> : <p>Importar como: <strong>{destination}</strong></p>)}
         <nav className="ac-breadcrumb" aria-label="Carpetas de Nube AES">
           {path.map((folder, index) => <button key={folder.id} type="button" disabled={loading || saving || index === path.length - 1} onClick={() => navigate(path.slice(0, index + 1))}>{folder.name}</button>)}
         </nav>
@@ -104,7 +120,7 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
             const duplicate = existingIds.has(file.id);
             return <label key={file.id} className={`ac-drive-choice ${!compatible || duplicate ? "is-unavailable" : ""}`}>
               <input type="checkbox" checked={selected.some((item) => item.id === file.id)} disabled={saving || !compatible || duplicate} onChange={() => toggle(file)} />
-              <span><strong>{file.name}</strong><small>{duplicate ? "Ya importado en esta Unit" : compatible ? getResourceKindLabel(kind, file.name) : "Formato no compatible"} · {formatResourceDate(file.modifiedTime)}</small></span>
+              <span><strong>{file.name}</strong><small>{duplicate ? "Ya asociado al borrador actual" : compatible ? getResourceKindLabel(kind, file.name) : "Formato no compatible"} · {formatResourceDate(file.modifiedTime)}</small></span>
             </label>;
           })}
           {!loading && visible.length === 0 && <p>Sin elementos en esta carpeta.</p>}

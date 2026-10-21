@@ -1,6 +1,14 @@
 mod audience_window;
+mod offline_cache;
+mod device_identity;
+mod local_media;
+mod media_report;
+mod app_updater;
+mod startup;
+#[cfg(feature = "updater-acceptance")]
+mod updater_acceptance;
 
-use audience_window::{audience_status, show_audience_window};
+use audience_window::classroom_projection;
 use regex::Regex;
 use serde::Serialize;
 use std::{
@@ -102,8 +110,10 @@ struct Relationship {
 #[tauri::command]
 fn import_presentation(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     path: String,
 ) -> Result<InternalPresentation, String> {
+    if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }
     let source = PathBuf::from(&path);
     if source
         .extension()
@@ -934,25 +944,30 @@ mod tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(feature = "updater-acceptance")]
+    if std::env::var_os("ACTIVE_CLASSROOM_UPDATER_STAGE").is_some() { updater_acceptance::run(); return; }
     tauri::Builder::default()
+        .plugin(startup::single_instance_plugin())
+        .plugin(startup::autostart_plugin())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let audience = app
-                .get_webview_window("audience")
-                .ok_or_else(|| "No se encontró la ventana del alumnado".to_string())?;
-            if audience
-                .available_monitors()
-                .map_err(|error| error.to_string())?
-                .len()
-                > 1
-            {
-                show_audience_window(app.handle().clone())?;
-            }
-            Ok(())
-        })
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(app_updater::UpdateGate::default())
+        .manage(offline_cache::CacheGate::default())
+        .manage(device_identity::DeviceGate::default())
+        .manage(audience_window::ProjectionGate::default())
+        .setup(|app| { app.manage(startup::StartupGate::load(app.handle())); app.manage(local_media::MediaServer::start()?); Ok(()) })
+        .on_window_event(audience_window::window_event)
         .invoke_handler(tauri::generate_handler![
-            show_audience_window,
-            audience_status,
+            offline_cache::classroom_cache,
+            app_updater::classroom_app_update,
+            startup::classroom_startup,
+            local_media::classroom_media,
+            local_media::classroom_ambient_media,
+            local_media::classroom_media_diagnostic,
+            media_report::classroom_media_report,
+            local_media::classroom_release_media,
+            device_identity::classroom_device,
+            classroom_projection,
             import_presentation
         ])
         .run(tauri::generate_context!())

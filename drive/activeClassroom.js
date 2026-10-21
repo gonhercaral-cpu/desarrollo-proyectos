@@ -1,3 +1,4 @@
+const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 
@@ -8,7 +9,7 @@ const GOOGLE_TYPES = {
 const EXTENSION_TYPES = {
   ppt: "presentation", pptx: "presentation", pdf: "document",
   doc: "document", docx: "document", txt: "document",
-  mp3: "audio", wav: "audio", m4a: "audio",
+  mp3: "audio", wav: "audio", m4a: "audio", aac: "audio", ogg: "audio", flac: "audio",
   mp4: "video", webm: "video", jpg: "image", jpeg: "image", png: "image", webp: "image",
 };
 
@@ -25,13 +26,22 @@ function requireId(value) {
   return value;
 }
 
+function activeDraftResourceIds(draft) {
+  if (!draft) return [];
+  const excluded = new Set(draft.excludedResourceIds || []);
+  return [...new Set([draft.mainPresentationId, ...(draft.backgroundMusic || []).map(track => track.resourceId), ...(draft.generalResourceIds || []),
+    ...(draft.slides || []).flatMap(slide => [slide.interaction?.initialResourceId, ...(slide.resourceIds || []),
+      ...(slide.builds || []).flatMap(step => (step.layers || []).map(layer => layer.resourceId))])
+  ].filter(id => id && !excluded.has(id)))];
+}
+
 // Uses the existing Drive client and location/private/share authorization from index.js.
 function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) {
   return async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = await getProfile(request.auth.uid);
-    if (profile.active !== true || profile.role !== "admin") {
-      throw new HttpsError("permission-denied", "Solo administradores activos pueden importar.");
+    if (!canClassroom(profile, "importDrive")) {
+      throw new HttpsError("permission-denied", "No tienes permiso para importar desde Nube AES.");
     }
     const folderId = requireId(request.data?.folderId);
     const driveFileId = requireId(request.data?.driveFileId);
@@ -56,7 +66,13 @@ function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) 
         throw new HttpsError("failed-precondition", "El Nivel de la Unit no está activo.");
       }
       const existing = await transaction.get(resourceRef);
-      if (existing.exists) return { id, alreadyImported: true };
+      const draft = (await transaction.get(db.collection("activeClassroomUnits").doc(folderId))).data()?.draft;
+      if (existing.exists) {
+        const associated = activeDraftResourceIds(draft).includes(id);
+        // Reuse identity, not the historical association. Never touch frozen versions.
+        if (existing.data().archived) transaction.update(resourceRef, { archived: false, updatedAt: timestamp(), updatedByUid: request.auth.uid });
+        return { id, alreadyImported: associated, knownResource: true, reused: !associated };
+      }
       const now = timestamp();
       transaction.create(resourceRef, {
         schemaVersion: 2,
@@ -93,4 +109,4 @@ function createImportDriveReference({ db, getProfile, resolveFile, timestamp }) 
   };
 }
 
-module.exports = { createImportDriveReference, resourceKind };
+module.exports = { createImportDriveReference, resourceKind, activeDraftResourceIds };

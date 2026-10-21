@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function FolderDialog({ folder, saving, onClose, onSubmit }) {
+export default function FolderDialog({ folder, saving, onClose, onSubmit, levels = [], initialLevel = "" }) {
   const [name, setName] = useState(folder?.name || "");
+  const [level, setLevel] = useState(initialLevel || levels[0]?.id || "");
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -10,7 +11,7 @@ export default function FolderDialog({ folder, saving, onClose, onSubmit }) {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    await onSubmit(name);
+    await onSubmit(name, level);
   }
 
   return (
@@ -39,6 +40,7 @@ export default function FolderDialog({ folder, saving, onClose, onSubmit }) {
               placeholder="Ej. Unit 17"
             />
           </label>
+          {!folder && <label>Nivel<select required value={level} onChange={event => setLevel(event.target.value)}><option value="">Selecciona nivel</option>{levels.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
           <div className="ac-dialog-actions">
             <button type="button" className="ac-outline-button" disabled={saving} onClick={onClose}>
               Cancelar

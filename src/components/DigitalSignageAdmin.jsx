@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ModuleHeader from "./ModuleHeader";
 import { useAuth } from "../context/AuthContext";
 import {
   claimPairingCode,
@@ -2111,20 +2112,7 @@ export default function DigitalSignageAdmin() {
 
   return (
     <section className="printshop-page digital-signage-page signage-admin-shell">
-      <section className="printshop-topbar digital-signage-header">
-        <div className="printshop-topbar-main">
-          <span className="printshop-topbar-module-icon">
-            <SignageIcon name="screen" />
-          </span>
-          <div className="printshop-topbar-copy">
-            <p className="section-kicker printshop-kicker">Módulo operativo</p>
-            <h1>Digital Signage</h1>
-            <p>
-              Administra contenido, playlists y dispositivos para las pantallas institucionales.
-            </p>
-          </div>
-        </div>
-      </section>
+      <ModuleHeader icon={<SignageIcon name="screen" />} kicker="Módulo operativo" title="Digital Signage" subtitle="Administra contenido, playlists y dispositivos para las pantallas institucionales." />
 
       <section className="signage-kpi-grid">
         <KpiCard icon="file" title="Contenidos activos" value={activeAssets.length} helper="Publicados actualmente" tone="blue" />

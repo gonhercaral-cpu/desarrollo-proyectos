@@ -1,33 +1,3 @@
-export function TeamsPanel({ profile }) {
-  return (
-    <section className="ac-section-panel">
-      <header className="ac-section-heading">
-        <div>
-          <span>ACCESO INSTITUCIONAL</span>
-          <h2>Equipos</h2>
-          <p>Active Classroom usa usuarios, sesión y roles del Sistema de Desarrollo de Proyectos.</p>
-        </div>
-      </header>
-      <div className="ac-info-grid">
-        <article>
-          <span className="ac-info-icon">♙</span>
-          <h3>Administración centralizada</h3>
-          <p>Altas, bajas y perfiles se gestionan desde módulo Colaboradores. No existe directorio duplicado.</p>
-        </article>
-        <article>
-          <span className="ac-info-icon">▣</span>
-          <h3>Cuenta actual</h3>
-          <p><strong>{profile?.name || profile?.email || "Administrador"}</strong><br />Rol: Administrador</p>
-        </article>
-        <article>
-          <span className="ac-info-icon">◈</span>
-          <h3>Acceso docente</h3>
-          <p>Recursos publicados quedan preparados para lectura segura por perfiles activos.</p>
-        </article>
-      </div>
-    </section>
-  );
-}
 export function SettingsPanel() {
   return (
     <section className="ac-section-panel">

@@ -1,0 +1,92 @@
+const assert = require("node:assert/strict");
+const { test, after } = require("node:test");
+const { randomBytes } = require("node:crypto");
+const admin = require("../drive/node_modules/firebase-admin");
+const { createDeviceHandlers } = require("../drive/activeClassroomDevices");
+const { createDesktopHandlers } = require("../drive/activeClassroomDesktop");
+
+if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Requiere emulador Firestore.");
+const app = admin.initializeApp({ projectId: "active-classroom-device-tests" }, "device-tests");
+const db = app.firestore();
+const handlers = createDeviceHandlers({ db, auth: { createCustomToken: async (uid, claims) => ({ uid, claims }), revokeRefreshTokens: async () => {} }, assertAdmin: async () => ({ uid: "admin", role: "admin", active: true }) });
+after(() => app.delete());
+test("Firestore: revocar, reautorizar, desvincular, código nuevo y eliminar sin reinstalar", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Salón recuperación" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const pending = await handlers.session(request); await handlers.approve({ data: { code: pending.code, displayName: "Aula conservada" } });
+  const first = await handlers.session(request); const old = { uid: first.customToken.uid, token: first.customToken.claims };
+  await handlers.revoke({ data: { deviceId: data.deviceId } }); assert.equal((await handlers.session(request)).status, "revoked");
+  await handlers.reauthorize({ data: { deviceId: data.deviceId } });
+  await assert.rejects(handlers.authorizeDevice(old), { code: "permission-denied" });
+  const renewed = await handlers.session(request); assert.equal(renewed.displayName, "Aula conservada");
+  assert.equal((await handlers.authorizeDevice({ uid: renewed.customToken.uid, token: renewed.customToken.claims })).active, true);
+  await handlers.revoke({ data: { deviceId: data.deviceId } }); await handlers.unlink({ data: { deviceId: data.deviceId } });
+  assert.equal((await handlers.session({ ...request, data: { ...data, registered: true } })).reason, "DEVICE_UNLINKED");
+  const next = { ...data, deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), displayName: "Aula conservada" };
+  const code = await handlers.session({ ...request, data: next }); assert.notEqual(code.code, pending.code);
+  await handlers.approve({ data: { code: code.code } }); assert.equal((await handlers.session({ ...request, data: next })).status, "authorized");
+  await handlers.remove({ data: { deviceId: data.deviceId } });
+  assert.equal((await handlers.list({ data: {} })).devices.some(device => device.deviceId === data.deviceId), false);
+  await assert.rejects(handlers.revoke({ data: { deviceId: data.deviceId } }), { code: "not-found" });
+  await assert.rejects(handlers.reauthorize({ data: { deviceId: data.deviceId } }), { code: "not-found" });
+  assert.equal((await handlers.session(request)).reason, "DEVICE_NOT_FOUND");
+  const audit = await db.collection("activeClassroomDeviceHistory").where("deviceId", "==", data.deviceId).get(); assert.equal(audit.size, 3);
+});
+test("Firestore: dispositivo consulta última publicación v1, v2 y v10 sin conservar cursor", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Equipo refresh" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const pending = await handlers.session(request); await handlers.approve({ data: { code: pending.code } });
+  const session = await handlers.session(request);
+  const auth = { uid: session.customToken.uid, token: session.customToken.claims };
+  const desktop = createDesktopHandlers({ db, isDevice: () => true, authorizeDevice: handlers.authorizeDevice });
+  const unitId = `refresh-${randomBytes(8).toString("hex")}`;
+  for (const version of [1, 2, 10]) {
+    const manifest = { version, schemaVersion: 2, unit: { name: "Unit refresh", levelId: "level-1" }, publishedAt: new Date().toISOString(), integrity: { contentHash: "a".repeat(64) } };
+    const batch = db.batch();
+    batch.create(db.doc(`activeClassroomUnits/${unitId}/publications/${version}`), { manifest });
+    batch.set(db.doc(`activeClassroomUnits/${unitId}`), { publishedVersion: version }); await batch.commit();
+    const page = await desktop.list({ auth, data: { limit: 50 } });
+    assert.equal(page.publications.find((item) => item.unitId === unitId).version, version);
+    assert.equal((await desktop.get({ auth, data: { unitId } })).manifest.version, version);
+  }
+  assert.equal((await desktop.get({ auth, data: { unitId, version: 1 } })).manifest.version, 1);
+});
+test("Firestore: registro concurrente conserva un único código y aprobación atómica", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Salón test" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const results = await Promise.all([handlers.session(request), handlers.session(request)]);
+  assert.equal(results[0].code, results[1].code);
+  const approvals = await Promise.allSettled([handlers.approve({ data: { code: results[0].code } }), handlers.approve({ data: { code: results[0].code } })]);
+  assert.equal(approvals.filter((result) => result.status === "fulfilled").length, 1);
+  const session = await handlers.session(request);
+  assert.equal(session.status, "authorized");
+  const decoded = { uid: session.customToken.uid, token: session.customToken.claims };
+  assert.equal((await handlers.authorizeDevice(decoded)).active, true);
+  await handlers.revoke({ data: { deviceId: data.deviceId } });
+  await assert.rejects(handlers.authorizeDevice(decoded), { code: "permission-denied" });
+  assert.equal((await handlers.session(request)).status, "revoked");
+});
+
+test("Firestore: listado privado, renombrado, telemetría y rechazo usan registro existente", async () => {
+  const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Aula inicial" };
+  const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+  const pending = await handlers.session(request);
+  let result = await handlers.list({ data: {} });
+  assert.equal(result.devices.find((device) => device.deviceId === data.deviceId).code, pending.code);
+  assert.ok(result.devices.every((device) => !Object.hasOwn(device, "credentialHash")));
+  await handlers.rename({ data: { deviceId: data.deviceId, name: "Aula renombrada" } });
+  await handlers.approve({ data: { code: pending.code } });
+  const authorized = await handlers.session({ ...request, data: { ...data, appVersion: "0.1.0" } });
+  const auth = { uid: authorized.customToken.uid, token: authorized.customToken.claims };
+  const unitId = `test-${randomBytes(8).toString("hex")}`;
+  await db.doc(`activeClassroomUnits/${unitId}/publications/1`).set({ manifest: { version: 1 } });
+  await handlers.reportSync({ auth, data: { unitId, version: 1 } });
+  const device = (await handlers.list({ data: {} })).devices.find((item) => item.deviceId === data.deviceId);
+  assert.equal(device.name, "Aula renombrada"); assert.equal(device.displayName, "Aula renombrada"); assert.equal(device.deviceName, "Aula inicial"); assert.equal(device.appVersion, "0.1.0"); assert.ok(device.lastSyncAt > 0);
+  assert.equal((await db.doc(`activeClassroomDevices/${data.deviceId}`).get()).data().name, "Aula inicial");
+  assert.equal(device.lastSyncUnitId, unitId);
+  const rejected = { ...data, deviceId: randomBytes(16).toString("hex") };
+  await handlers.session({ ...request, data: rejected });
+  await handlers.reject({ data: { deviceId: rejected.deviceId } });
+  assert.equal((await handlers.session({ ...request, data: rejected })).status, "revoked");
+});

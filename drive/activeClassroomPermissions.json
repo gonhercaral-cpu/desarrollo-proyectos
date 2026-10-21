@@ -1,0 +1,12 @@
+{
+  "access": "Acceder al módulo",
+  "editUnits": "Crear/editar Units",
+  "uploadMaterial": "Subir material",
+  "orderMaterial": "Ordenar material",
+  "importDrive": "Importar desde Nube AES",
+  "processMaterial": "Procesar material",
+  "publishVersions": "Publicar versiones",
+  "manageLevels": "Gestionar niveles",
+  "manageDevices": "Gestionar equipos",
+  "managePermissions": "Gestionar permisos"
+}

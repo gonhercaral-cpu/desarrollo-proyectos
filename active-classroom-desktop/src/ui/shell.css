@@ -1,0 +1,83 @@
+.desktop-shell {
+  --ac-navy: #071b46; --ac-blue: #0756a1; --ac-blue-dark: #032b54;
+  --ac-coral: #ff2949; --ac-red: #ec092a; --ac-positive: #00a65a;
+  --ac-ink-muted: #6783aa; --ac-line: #d8e9fd; --ac-canvas: #eff7ff;
+  --ac-radius: 16px; --ac-shadow-soft: 0 6px 22px rgb(52 124 197 / 9%);
+  display: grid; grid-template-columns: clamp(248px, 20vw, 310px) minmax(0, 1fr);
+  width: 100%; height: 100dvh; min-height: 0; min-width: 0;
+  background: linear-gradient(145deg, #f8fcff 15%, #e4f2ff); color: var(--ac-navy);
+}
+.desktop-shell.is-classroom { grid-template-columns: clamp(205px, 16vw, 250px) minmax(0, 1fr); }
+.desktop-shell .ac-icon, .app-updater .ac-icon { width: 24px; height: 24px; flex: 0 0 auto; vertical-align: middle; }
+.desktop-shell .button, .app-update-card .button { display: inline-flex; justify-content: center; align-items: center; gap: 10px; border-radius: 11px; min-height: 44px; font-size: 14px; font-weight: 650; padding: 10px 15px; }
+.desktop-shell .button-primary, .app-update-card .button-primary { color: white; background: linear-gradient(135deg, var(--ac-coral, #ff2949), var(--ac-red, #ec092a)); box-shadow: 0 5px 12px #f5224030; }
+.desktop-shell .button-outline { border: 1px solid #bdd9fb; color: var(--ac-navy); background: #fafdff; box-shadow: none; }
+.desktop-shell button:disabled { opacity: .5; cursor: default; transform: none; }
+.desktop-shell button:focus-visible, .desktop-shell input:focus-visible, .desktop-shell summary:focus-visible { outline: 3px solid #1c8bf1; outline-offset: 3px; }
+.desktop-shell .ui-card { border-color: #e2efff; border-radius: var(--ac-radius); box-shadow: var(--ac-shadow-soft); }
+.classroom-sidebar {
+  position: relative; isolation: isolate; display: flex; flex-direction: column; gap: 24px;
+  min-height: 0; min-width: 0; height: 100%; padding: 28px 19px 12px; overflow-y: auto;
+  color: white; background: linear-gradient(115deg, #032a53 5%, #0754a0 80%, #073c78);
+  border-radius: 0 12px 12px 0; box-shadow: 5px 0 20px #09559b15;
+}
+.classroom-sidebar::before { content: ""; position: absolute; z-index: -1; inset: 38% 0 0; pointer-events: none; background: radial-gradient(ellipse 155% 40% at 10% 25%, transparent 62%, #0474cd32 63%, #00539c32 85%, transparent 86%), radial-gradient(ellipse 180% 55% at 120% 70%, #007cdb20 60%, transparent 61%); }
+.classroom-brand { display: flex; align-items: center; gap: 16px; padding: 4px 10px 0; flex: 0 0 auto; }
+.classroom-brand img { width: 55px; height: 55px; flex: 0 0 55px; filter: drop-shadow(0 5px 10px #ed002526); }
+.classroom-brand div { display: grid; gap: 4px; min-width: 0; }
+.classroom-brand strong { font-size: 20px; line-height: 1.25; letter-spacing: -.5px; }
+.classroom-brand span { color: #afd0ef; font-size: 12px; white-space: nowrap; }
+.is-classroom .classroom-brand { gap: 12px; padding-inline: 4px; }
+.is-classroom .classroom-brand strong { font-size: 18px; }
+.is-classroom .classroom-brand span { font-size: 10px; white-space: normal; }
+.classroom-navigation { flex: 1 1 0; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+.sidebar-link { display: flex; align-items: center; gap: 20px; width: 100%; padding: 15px 18px; min-height: 52px; border: 1px solid transparent; border-radius: 13px; font-size: 17px; text-align: left; color: white; background: transparent; cursor: pointer; }
+.sidebar-link .ac-icon { width: 26px; height: 26px; }
+.sidebar-link:hover, .sidebar-link.is-selected { background: #ffffff13; }
+.sidebar-link.is-active { background: linear-gradient(100deg, #fb4963e8, #ce476581); border-color: #ff758d90; box-shadow: inset 2px 0 #ff91a1; font-weight: 650; }
+.sidebar-levels { display: grid; gap: 6px; padding-top: 16px; margin-top: 5px; border-top: 1px solid #42a0dd42; }
+.classroom-sidebar-footer { flex: 0 0 auto; display: grid; gap: 14px; min-width: 0; margin-top: auto; }
+.sidebar-sync, .sidebar-settings { background: linear-gradient(110deg, #ffffff09, #2177c425); border: 1px solid #3c98d63d; border-radius: 15px; }
+.sidebar-sync { display: grid; grid-template-columns: 13px minmax(0, 1fr) 36px; align-items: start; gap: 10px; padding: 14px; }
+.sidebar-status-dot { display: block; width: 13px; height: 13px; border-radius: 50%; margin-top: 5px; background: #eaa146; }
+.sidebar-status-dot.is-positive { background: #18dc83; }
+.sidebar-status-dot.is-busy { background: #8acbff; }
+.sidebar-sync strong { font-size: 14px; font-weight: 600; }
+.sidebar-sync small { display: block; color: #b4d0eb; font-size: 12px; line-height: 1.45; margin-top: 4px; }
+.sidebar-sync .sidebar-device { font-size: 10px; overflow-wrap: anywhere; }
+.sidebar-refresh { width: 36px; height: 36px; margin-top: 12px; display: grid; place-items: center; border: 0; border-radius: 12px; color: white; background: #1273bc; cursor: pointer; }
+.sidebar-refresh .ac-icon { width: 22px; height: 22px; }
+.sidebar-settings { padding: 5px 12px; }
+.sidebar-settings button { width: 100%; display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; align-items: center; gap: 15px; border: 0; padding: 12px 5px; color: #edf7ff; background: transparent; text-align: left; font-size: 14px; cursor: pointer; }
+.sidebar-settings button + button { border-top: 1px solid #59b0e31a; }
+.sidebar-settings button > .ac-icon:last-child { width: 16px; height: 16px; }
+.sidebar-version { color: #a6c5e1; font-size: 12px; padding-left: 16px; }
+.program-badge { display: block; color: #ffd9df; font-style: normal; font-size: 10px; margin-top: 3px; }
+.program-badge[hidden] { display: none; }
+.is-spinning { animation: ac-spin 1.4s linear infinite; }
+@keyframes ac-spin { to { transform: rotate(360deg); } }
+body:has(.classroom-sidebar) .app-updater > .app-about { display: none; }
+.app-updater { z-index: 100; }
+.app-update-card { padding: 22px; color: #071b46; border: 1px solid #d8e9fd; border-radius: 16px; background: #fff; }
+@media (max-width: 1150px) {
+  .desktop-shell { grid-template-columns: 220px minmax(0, 1fr); }
+  .desktop-shell.is-classroom { grid-template-columns: 180px minmax(0, 1fr); }
+  .classroom-sidebar { padding: 20px 12px 10px; gap: 20px; }
+  .classroom-brand { gap: 10px; padding-inline: 4px; }
+  .classroom-brand img { width: 42px; height: 42px; flex-basis: 42px; }
+  .classroom-brand strong, .is-classroom .classroom-brand strong { font-size: 16px; }
+  .classroom-brand span, .is-classroom .classroom-brand span { font-size: 9px; }
+  .sidebar-link { padding: 12px; gap: 12px; font-size: 14px; }
+  .sidebar-sync { padding: 10px; gap: 7px; grid-template-columns: 10px minmax(0, 1fr) 30px; }
+  .sidebar-sync strong, .sidebar-settings button { font-size: 12px; }
+  .sidebar-sync small { font-size: 10px; }
+  .sidebar-refresh { width: 30px; height: 30px; }
+}
+@media (max-height: 720px) {
+  .classroom-sidebar { padding-top: 16px; gap: 14px; }
+  .classroom-brand img { width: 42px; height: 42px; flex-basis: 42px; }
+  .sidebar-link { min-height: 44px; padding-block: 10px; }
+  .classroom-sidebar-footer { gap: 10px; }
+  .sidebar-settings button { padding-block: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .desktop-shell *, .app-updater * { animation: none !important; transition: none !important; } }

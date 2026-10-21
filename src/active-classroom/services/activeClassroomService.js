@@ -1,3 +1,4 @@
+import { assertClassroom } from "../utils/permissions";
 import {
   collection,
   deleteDoc,
@@ -9,7 +10,6 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  writeBatch,
   where,
 } from "firebase/firestore";
 import {
@@ -32,7 +32,7 @@ const structureInitializationByUser = new Map();
 const importDriveReference = httpsCallable(functions, "importDriveFileToActiveClassroom");
 
 export function importActiveClassroomDriveResources(files, folderId, user, onProgress) {
-  assertAdmin(user);
+  assertClassroom(user, "importDrive");
   return runDriveImportBatch({
     files,
     onProgress,
@@ -43,13 +43,6 @@ export function importActiveClassroomDriveResources(files, folderId, user, onPro
   });
 }
 
-function assertAdmin(user) {
-  const normalizedRole = String(user?.role || "").trim().toLowerCase();
-
-  if (!user?.uid || normalizedRole !== "admin" || user?.active !== true) {
-    throw new Error("Solo administradores activos pueden modificar Active Classroom.");
-  }
-}
 
 function getUserName(user) {
   return String(user?.name || user?.email || "Administrador").trim();
@@ -100,12 +93,12 @@ export function getActiveClassroomResourceUrl(resource) {
 }
 
 export function ensureActiveClassroomStructure(user) {
-  assertAdmin(user);
+  assertClassroom(user);
 
   const pendingInitialization = structureInitializationByUser.get(user.uid);
   if (pendingInitialization) return pendingInitialization;
 
-  const initialization = initializeActiveClassroomStructure(user)
+  const initialization = initializeActiveClassroomStructure()
     .finally(() => {
       if (structureInitializationByUser.get(user.uid) === initialization) {
         structureInitializationByUser.delete(user.uid);
@@ -116,74 +109,20 @@ export function ensureActiveClassroomStructure(user) {
   return initialization;
 }
 
-async function initializeActiveClassroomStructure(user) {
-  const folderCollection = collection(db, ACTIVE_CLASSROOM_FOLDERS_COLLECTION);
-  const snapshot = await getDocs(folderCollection);
-  const existingFolderIds = new Set(snapshot.docs.map((folderDoc) => folderDoc.id));
-  let createdCount = 0;
-  const levelBatch = writeBatch(db);
+async function initializeActiveClassroomStructure() {
+  // Existing IDs and Units remain untouched. Levels are managed explicitly.
+  await getDocs(collection(db, ACTIVE_CLASSROOM_FOLDERS_COLLECTION));
+  return false;
+}
 
-  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
-    const levelId = `level-${levelNumber}`;
-    if (existingFolderIds.has(levelId)) continue;
-
-    const createdAt = serverTimestamp();
-    levelBatch.set(doc(folderCollection, levelId), {
-      name: `Nivel ${levelNumber}`,
-      parentId: null,
-      kind: "level",
-      position: levelNumber,
-      active: true,
-      createdAt,
-      createdByUid: user.uid,
-      updatedAt: createdAt,
-      updatedByUid: user.uid,
-    });
-    createdCount += 1;
-  }
-
-  if (createdCount > 0) {
-    await levelBatch.commit();
-  }
-
-  for (let levelNumber = 1; levelNumber <= 5; levelNumber += 1) {
-    const levelId = `level-${levelNumber}`;
-    const unitBatch = writeBatch(db);
-    let unitCount = 0;
-
-    for (let unitNumber = 1; unitNumber <= 16; unitNumber += 1) {
-      const unitSuffix = String(unitNumber).padStart(2, "0");
-      const unitId = `${levelId}-unit-${unitSuffix}`;
-      if (existingFolderIds.has(unitId)) continue;
-
-      const createdAt = serverTimestamp();
-      unitBatch.set(doc(folderCollection, unitId), {
-        name: `Unit ${unitSuffix}`,
-        parentId: levelId,
-        kind: "unit",
-        position: unitNumber,
-        active: true,
-        createdAt,
-        createdByUid: user.uid,
-        updatedAt: createdAt,
-        updatedByUid: user.uid,
-      });
-      unitCount += 1;
-      createdCount += 1;
-    }
-
-    // Cada lote usa como máximo 16 lecturas de padre en reglas; Firestore
-    // permite 20 accesos de documentos por solicitud de varias escrituras.
-    if (unitCount > 0) {
-      await unitBatch.commit();
-    }
-  }
-
-  return createdCount > 0;
+const manageLevel = httpsCallable(functions, "manageActiveClassroomLevel");
+export async function manageActiveClassroomLevel(data, user) {
+  assertClassroom(user, "manageLevels");
+  return (await manageLevel(data)).data;
 }
 
 export async function createActiveClassroomUnit({ parentId, name, position }, user) {
-  assertAdmin(user);
+  assertClassroom(user, "editUnits");
   const unitRef = doc(collection(db, ACTIVE_CLASSROOM_FOLDERS_COLLECTION));
   const timestamp = serverTimestamp();
   const payload = {
@@ -207,7 +146,7 @@ export async function createActiveClassroomUnit({ parentId, name, position }, us
 }
 
 export async function renameActiveClassroomUnit(folderId, name, user) {
-  assertAdmin(user);
+  assertClassroom(user, "editUnits");
   const cleanFolderName = cleanName(name).slice(0, 56);
 
   if (!cleanFolderName) throw new Error("Escribe un nombre para la Unit.");
@@ -220,7 +159,7 @@ export async function renameActiveClassroomUnit(folderId, name, user) {
 }
 
 export async function deleteActiveClassroomUnit(folderId, user) {
-  assertAdmin(user);
+  assertClassroom(user, "editUnits");
   const resourcesSnapshot = await getDocs(query(
     collection(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION),
     where("folderId", "==", folderId),
@@ -235,7 +174,7 @@ export async function deleteActiveClassroomUnit(folderId, user) {
 }
 
 export async function uploadActiveClassroomResources(files, folderId, user) {
-  assertAdmin(user);
+  assertClassroom(user, "uploadMaterial");
   const fileList = Array.from(files || []);
 
   if (!folderId || fileList.length === 0) return [];
@@ -254,6 +193,7 @@ export async function uploadActiveClassroomResources(files, folderId, user) {
       customMetadata: {
         folderId,
         originalName: file.name,
+        uploadedByUid: user.uid,
       },
     });
 
@@ -279,14 +219,14 @@ export async function uploadActiveClassroomResources(files, folderId, user) {
       await setDoc(resourceRef, payload);
       return { id: resourceRef.id, ...payload };
     } catch (error) {
-      await deleteObject(storageReference).catch(() => {});
+      await httpsCallable(functions, "discardActiveClassroomUpload")({ resourceId: resourceRef.id, fileName: cleanFileName(file.name) }).catch(() => {});
       throw error;
     }
   }));
 }
 
 export async function setActiveClassroomResourcePublished(resource, published, user) {
-  assertAdmin(user);
+  assertClassroom(user, "publishVersions");
   await updateDoc(doc(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION, resource.id), {
     published: published === true,
     ...(isDriveResource(resource) ? {
@@ -300,7 +240,7 @@ export async function setActiveClassroomResourcePublished(resource, published, u
 }
 
 export async function deleteActiveClassroomResource(resource, user) {
-  assertAdmin(user);
+  assertClassroom(user, "orderMaterial");
   if (resource?.retainedByPublication) throw new Error("Este recurso se conserva porque pertenece a una publicación de Unit.");
 
   if (!isDriveResource(resource) && resource?.storagePath) {
@@ -311,3 +251,5 @@ export async function deleteActiveClassroomResource(resource, user) {
 
   await deleteDoc(doc(db, ACTIVE_CLASSROOM_RESOURCES_COLLECTION, resource.id));
 }
+
+export async function listClassroomDriveFiles(folderId) { return (await httpsCallable(functions, "listActiveClassroomDriveFiles")({ folderId })).data; }

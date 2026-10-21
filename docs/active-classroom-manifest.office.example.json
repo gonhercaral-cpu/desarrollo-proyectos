@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 2,
+  "unit": {
+    "unitId": "level-1-unit-01",
+    "name": "Unit 01: Greetings",
+    "description": "Saludos y práctica de conversación.",
+    "levelId": "level-1",
+    "status": "active",
+    "metadata": {
+      "code": "A1-U01",
+      "language": "en",
+      "estimatedMinutes": 45,
+      "tags": [
+        "greetings"
+      ]
+    }
+  },
+  "mainPresentationId": "drive-presentation",
+  "generalResourceIds": [
+    "uploaded-guide"
+  ],
+  "slides": [
+    {
+      "slideId": "slide-intro",
+      "index": 0,
+      "title": "Welcome",
+      "metadata": {
+        "pageNumber": 1,
+        "notes": "Escuchar y repetir.",
+        "delivery": {
+          "resourceId": "drive-presentation",
+          "revision": "11111111-1111-4111-8111-111111111111",
+          "generation": "1790991000000000",
+          "mimeType": "application/pdf",
+          "sizeBytes": 8192,
+          "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "resourceIds": [
+        "drive-audio"
+      ]
+    },
+    {
+      "slideId": "slide-practice",
+      "index": 1,
+      "title": "Practice",
+      "metadata": {
+        "pageNumber": 2,
+        "notes": "",
+        "delivery": {
+          "resourceId": "drive-presentation",
+          "revision": "11111111-1111-4111-8111-111111111111",
+          "generation": "1790991000000000",
+          "mimeType": "application/pdf",
+          "sizeBytes": 8192,
+          "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "resourceIds": [
+        "uploaded-guide",
+        "drive-audio"
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "resourceId": "drive-presentation",
+      "name": "Greetings.pptx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "kind": "presentation",
+      "sizeBytes": null,
+      "file": {
+        "provider": "drive",
+        "fileId": "example-google-slides-id",
+        "modifiedTime": "2026-09-28T16:30:00.000Z",
+        "version": "17",
+        "checksums": {
+          "md5": null
+        },
+        "originalName": "Greetings.pptx"
+      },
+      "timestamps": {
+        "createdAt": "2026-09-27T09:00:00.000Z",
+        "updatedAt": "2026-09-28T18:00:00.000Z",
+        "sourceCheckedAt": "2026-09-28T18:00:00.000Z"
+      },
+      "download": {
+        "endpoint": "activeClassroomPublicationFile",
+        "provider": "storage",
+        "path": "active-classroom/publications/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "generation": "1790991000000000",
+        "name": "Greetings.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 8192,
+        "checksums": {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "capturedAt": "2026-09-28T18:00:00.000Z"
+      },
+      "originalMime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "deliveryMime": "application/pdf",
+      "original": {
+        "provider": "drive",
+        "fileId": "example-google-slides-id",
+        "modifiedTime": "2026-09-28T16:30:00.000Z",
+        "version": "17",
+        "checksums": {
+          "md5": null
+        },
+        "originalName": "Greetings.pptx",
+        "name": "Greetings.pptx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "snapshot": {
+          "endpoint": "activeClassroomPublicationFile",
+          "provider": "storage",
+          "path": "active-classroom/publications/files/1111111111111111111111111111111111111111111111111111111111111111",
+          "generation": "1790618400000000",
+          "name": "Greetings.pptx",
+          "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "sizeBytes": 8192,
+          "checksums": {
+            "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+            "md5Base64": null,
+            "crc32cBase64": null
+          },
+          "capturedAt": "2026-09-28T18:00:00.000Z"
+        }
+      },
+      "derivative": {
+        "revision": "11111111-1111-4111-8111-111111111111",
+        "processorVersion": "office-pdf-v1",
+        "sourceFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "pageCount": 2,
+        "processedAt": "2026-09-28T18:01:00.000Z",
+        "textExtraction": null,
+        "file": {
+          "endpoint": "activeClassroomPublicationFile",
+          "provider": "storage",
+          "path": "active-classroom/publications/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "generation": "1790991000000000",
+          "name": "Greetings.pdf",
+          "mimeType": "application/pdf",
+          "sizeBytes": 8192,
+          "checksums": {
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "capturedAt": "2026-09-28T18:00:00.000Z"
+        }
+      }
+    },
+    {
+      "resourceId": "uploaded-guide",
+      "name": "Guide.docx",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "kind": "document",
+      "sizeBytes": 2048,
+      "file": {
+        "provider": "storage",
+        "path": "active-classroom/resources/uploaded-guide/Guide.docx",
+        "checksums": {
+          "md5": null
+        }
+      },
+      "timestamps": {
+        "createdAt": "2026-09-27T09:00:00.000Z",
+        "updatedAt": "2026-09-28T18:00:00.000Z",
+        "sourceCheckedAt": null
+      },
+      "download": {
+        "endpoint": "activeClassroomPublicationFile",
+        "provider": "storage",
+        "path": "active-classroom/publications/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "generation": "1790991000000000",
+        "name": "Guide.pdf",
+        "mimeType": "application/pdf",
+        "sizeBytes": 2048,
+        "checksums": {
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "capturedAt": "2026-09-28T18:00:00.000Z"
+      },
+      "originalMime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "deliveryMime": "application/pdf",
+      "original": {
+        "provider": "storage",
+        "path": "active-classroom/resources/uploaded-guide/Guide.docx",
+        "checksums": {
+          "md5": null
+        },
+        "name": "Guide.docx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "snapshot": {
+          "endpoint": "activeClassroomPublicationFile",
+          "provider": "storage",
+          "path": "active-classroom/publications/files/2222222222222222222222222222222222222222222222222222222222222222",
+          "generation": "1790618400000001",
+          "name": "Guide.docx",
+          "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "sizeBytes": 2048,
+          "checksums": {
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+            "md5Base64": null,
+            "crc32cBase64": null
+          },
+          "capturedAt": "2026-09-28T18:00:00.000Z"
+        }
+      },
+      "derivative": {
+        "revision": "22222222-2222-4222-8222-222222222222",
+        "processorVersion": "office-pdf-v1",
+        "sourceFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "pageCount": 1,
+        "processedAt": "2026-09-28T18:01:00.000Z",
+        "textExtraction": null,
+        "file": {
+          "endpoint": "activeClassroomPublicationFile",
+          "provider": "storage",
+          "path": "active-classroom/publications/files/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "generation": "1790991000000000",
+          "name": "Guide.pdf",
+          "mimeType": "application/pdf",
+          "sizeBytes": 2048,
+          "checksums": {
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "capturedAt": "2026-09-28T18:00:00.000Z"
+        }
+      }
+    },
+    {
+      "resourceId": "drive-audio",
+      "name": "Greetings.mp3",
+      "mimeType": "audio/mpeg",
+      "kind": "audio",
+      "sizeBytes": 4096,
+      "file": {
+        "provider": "drive",
+        "fileId": "example-drive-audio-id",
+        "modifiedTime": "2026-09-27T10:00:00.000Z",
+        "version": "3",
+        "checksums": {
+          "md5": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "originalName": "Greetings.mp3"
+      },
+      "timestamps": {
+        "createdAt": "2026-09-27T09:00:00.000Z",
+        "updatedAt": "2026-09-28T18:00:00.000Z",
+        "sourceCheckedAt": "2026-09-28T18:00:00.000Z"
+      },
+      "download": {
+        "endpoint": "activeClassroomPublicationFile",
+        "provider": "storage",
+        "path": "active-classroom/publications/files/3333333333333333333333333333333333333333333333333333333333333333",
+        "generation": "1790618400000002",
+        "name": "Greetings.mp3",
+        "mimeType": "audio/mpeg",
+        "sizeBytes": 4096,
+        "checksums": {
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "md5Base64": null,
+          "crc32cBase64": null
+        },
+        "capturedAt": "2026-09-28T18:00:00.000Z"
+      }
+    }
+  ],
+  "version": 2,
+  "publishedAt": "2026-09-28T18:01:00.000Z",
+  "integrity": {
+    "algorithm": "sha256",
+    "contentHash": "1a75ac7e6560e6f93054a1f260d0d52442208b5ff0718fd0219577dd756a6c36"
+  }
+}
