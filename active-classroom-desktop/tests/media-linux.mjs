@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import { validateEncodedFixture } from "./media-fixture.mjs";
 const directory = await mkdtemp(join(tmpdir(), "classroom-media-ci-"));
 const command = (program, args, options = {}) => { const result = spawnSync(program, args, { stdio: "inherit", ...options }); assert.equal(result.status, 0, `${program} falló`); };
 try {
@@ -14,12 +15,14 @@ try {
   // Actual encoded samples, not sparse/container padding. Remux a noisy seed
   // to exercise seeks into a >500 MiB mdat without minutes of CI encoding.
   const seed = join(directory, "encoded-seed.mp4");
-  command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=24", "-f", "lavfi", "-i", "sine=frequency=660", "-vf", "noise=alls=40:allf=t", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-c:a", "aac", "-movflags", "+faststart", "-y", seed]);
+  command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=24", "-f", "lavfi", "-i", "sine=frequency=660", "-vf", "noise=alls=40:allf=t", "-t", "2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10", "-pix_fmt", "yuv420p", "-profile:v", "baseline", "-level:v", "5.1", "-c:a", "aac", "-movflags", "+faststart", "-y", seed]);
   const repeat = Math.ceil(550 * 1024 * 1024 / (await stat(seed)).size);
   const encoded = join(directory, "encoded-large.mp4");
   command("ffmpeg", ["-hide_banner", "-loglevel", "error", "-stream_loop", String(repeat - 1), "-i", seed, "-c", "copy", "-movflags", "+faststart", "-y", encoded]);
   assert.ok((await stat(encoded)).size > 500 * 1024 * 1024, "MP4 codificado debe superar 500 MiB");
-  command("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type", "-of", "json", encoded]);
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,codec_type,profile,level,pix_fmt,width,height,bit_rate:format=duration,size,bit_rate", "-of", "json", encoded], { encoding: "utf8" });
+  assert.equal(probe.status, 0, probe.stderr);
+  console.info(`MEDIA_ENCODED_FIXTURE ${JSON.stringify(validateEncodedFixture(JSON.parse(probe.stdout)))}`);
   await rm(seed);
   if (process.env.ACTIVE_CLASSROOM_MEDIA_PERFORMANCE === "1") {
     const seed = join(directory, "performance-seed.mp4");
