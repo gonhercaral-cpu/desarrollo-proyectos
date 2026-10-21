@@ -11,6 +11,11 @@ on:
         description: "Solo RELEASE: SHA completo del commit validado"
         required: false
         type: string
+      media_probe:
+        description: "Solo diagnóstico multimedia; nunca certifica ni publica"
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - "**"
@@ -38,12 +43,70 @@ permissions:
   contents: read
 
 concurrency:
-  group: active-classroom-linux-${{ github.ref }}-${{ inputs.validation_run || 'validation' }}
+  group: active-classroom-linux-${{ github.ref }}-${{ inputs.media_probe && 'media-probe' || inputs.validation_run || 'validation' }}
   cancel-in-progress: ${{ !inputs.validation_run }}
 
 jobs:
+  media-probe:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.media_probe && !inputs.validation_run }}
+    name: Diagnóstico aislado WebKit 2.50 / GStreamer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: active-classroom-desktop
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: active-classroom-desktop/package-lock.json
+      - name: Dependencias del mismo adaptador Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 xvfb xauth weston ffmpeg gstreamer1.0-tools gstreamer1.0-gl gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          npm ci
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Runtime conocido, solo para comparación y no para RELEASE
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          name: active-classroom-validation-b597ce1bb49f4a880fa4d190cd4d9f31295aa669
+          run-id: '39508982323'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/media-probe-runtime
+      - name: Verificar procedencia antes de ejecutar el runtime
+        env:
+          VALIDATION_RUN: '39508982323'
+          RELEASE_COMMIT: b597ce1bb49f4a880fa4d190cd4d9f31295aa669
+        run: node scripts/validation-artifacts.mjs verify "$RUNNER_TEMP/media-probe-runtime"
+      - name: Comparación nativa repetida con trazas, sin modificar Player
+        run: bash tests/diagnose-linux-media.sh "$RUNNER_TEMP/media-probe-runtime" "$RUNNER_TEMP/media-probe-report"
+      - name: Conservar únicamente informes del diagnóstico
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: classroom-media-probe-${{ github.sha }}
+          path: ${{ runner.temp }}/media-probe-report/*
+          if-no-files-found: warn
+          retention-days: 3
   permissions:
-    if: ${{ !inputs.validation_run }}
+    if: ${{ !inputs.validation_run && !inputs.media_probe }}
     name: Autorización de equipos y reglas Firebase
     runs-on: ubuntu-22.04
     timeout-minutes: 25
@@ -96,7 +159,7 @@ jobs:
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
             "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
   office:
-    if: ${{ !inputs.validation_run }}
+    if: ${{ !inputs.validation_run && !inputs.media_probe }}
     name: Conversión Office real en contenedor
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -119,7 +182,7 @@ jobs:
       - name: PPT/PPTX/DOC/DOCX a PDF, páginas, integridad y fallos reales
         run: docker run --rm --network none --memory 2g --cpus 2 --entrypoint python active-classroom-office:test -m unittest discover -s tests -v
   linux:
-    if: ${{ !inputs.validation_run }}
+    if: ${{ !inputs.validation_run && !inputs.media_probe }}
     name: Tests, Cargo y paquete Debian
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -401,7 +464,7 @@ jobs:
 
   validation:
     name: VALIDATION completa
-    if: ${{ !inputs.validation_run && always() }}
+    if: ${{ !inputs.validation_run && !inputs.media_probe && always() }}
     needs: [permissions, office, linux]
     runs-on: ubuntu-22.04
     steps:
@@ -412,7 +475,7 @@ jobs:
 
   release_gate:
     name: Verificar VALIDATION del commit exacto
-    if: ${{ inputs.validation_run }}
+    if: ${{ inputs.validation_run && !inputs.media_probe }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -433,7 +496,7 @@ jobs:
 
   release:
     name: Publicar release estable verificado
-    if: ${{ inputs.validation_run }}
+    if: ${{ inputs.validation_run && !inputs.media_probe }}
     needs: [release_gate]
     runs-on: ubuntu-22.04
     timeout-minutes: 20

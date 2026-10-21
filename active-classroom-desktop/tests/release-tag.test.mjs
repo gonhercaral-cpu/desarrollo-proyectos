@@ -66,3 +66,13 @@ test("bash real crea solo tag ausente y aborta antes de mutar ante error o SHA d
     else { assert.equal(result.status, 0, result.stderr); assert.equal(result.stdout, `created=${created}`); }
   }
 });
+
+test("diagnóstico aislado no certifica, firma ni publica una release", async () => {
+  const workflow = (await readFile(workflowFile, "utf8")).replace(/\r\n/g, "\n");
+  const probe = workflow.split("\n  media-probe:\n")[1]?.split("\n  permissions:\n")[0];
+  assert.ok(probe?.includes("contents: read") && probe.includes("actions: read"));
+  assert.ok(probe.includes("github.event_name == 'workflow_dispatch' && inputs.media_probe && !inputs.validation_run"));
+  assert.ok(!/secrets\.|contents: write|validation-artifacts\.mjs collect|gh release|git\/refs/.test(probe));
+  assert.equal((workflow.match(/if: \$\{\{ inputs.validation_run && !inputs.media_probe \}\}/g) || []).length, 2);
+  assert.ok(workflow.includes("if: ${{ !inputs.validation_run && !inputs.media_probe && always() }}"));
+});
