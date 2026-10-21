@@ -57,3 +57,29 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   assert.equal(draft.mainPresentationId, "replacement");
   assert.equal(published[0].mainPresentationId, "main");
 });
+
+test("panel de niveles permite cambiar y quitar ícono mediante servicio existente", async t => {
+  const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" });
+  const previous = { window: globalThis.window, document: globalThis.document, IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT };
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  const calls = [];
+  globalThis.__levelIconMock = async (...args) => { calls.push(args); };
+  const server = await createServer({ server: { middlewareMode: true, hmr: false }, plugins: [{ name: "level-icon-services", enforce: "pre", load(id) {
+    if (/activeClassroomService\.js$/.test(id)) return "export const manageActiveClassroomLevel = (...args) => globalThis.__levelIconMock(...args);";
+  } }] });
+  const root = createRoot(dom.window.document.querySelector("#root"));
+  t.after(async () => { await act(async () => root.unmount()); await server.close(); dom.window.close(); Object.assign(globalThis, previous); delete globalThis.__levelIconMock; });
+  const { default: LevelsPanel } = await server.ssrLoadModule("/src/active-classroom/components/LevelsPanel.jsx");
+  const profile = { uid: "admin", role: "admin", active: true };
+  const level = { id: "level-1", kind: "level", name: "Principiantes", active: true, icon: "📚" };
+  await act(async () => root.render(React.createElement(LevelsPanel, { folders: [level], profile, onOpen() {} })));
+  assert.match(dom.window.document.querySelector("h3").textContent, /📚.*Principiantes/);
+  const button = [...dom.window.document.querySelectorAll("button")].find(item => item.textContent === "Cambiar ícono");
+  for (const icon of ["🎓", "", null]) {
+    dom.window.prompt = () => icon;
+    await act(async () => button.click());
+  }
+  assert.deepEqual(calls, [[{ action: "update", levelId: "level-1", icon: "🎓" }, profile], [{ action: "update", levelId: "level-1", icon: "" }, profile]]);
+  assert.ok(dom.window.document.querySelector('input[maxlength="32"]'));
+  assert.ok([...dom.window.document.querySelectorAll("button")].some(item => item.textContent === "Abrir nivel"));
+});

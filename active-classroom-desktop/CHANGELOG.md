@@ -1,3 +1,10 @@
+## 1.0.18 — 2026-10-21
+
+- Retira “Mis clases” del menú lateral; conserva Biblioteca y navegación por niveles.
+- Íconos por nivel configurables desde Active Classroom web, disponibles offline y con ícono predeterminado.
+- Intervalo de salto configurable desde Ajustes > Atajos de teclado; 5 segundos por defecto en ambas direcciones.
+- Conserva asignaciones de teclas, reproducción multimedia, sincronización con proyector, identidad, caché y actualizador existentes.
+
 ## 1.0.17
 
 - Corrige la regresión de video del runtime incluido: usa WebKit/GTK/GStreamer del sistema, como 1.0.12. Codecs opcionales corresponden a cada distribución; no sustituye sus bibliotecas principales.

@@ -10,6 +10,7 @@ import { StartupPreferences } from "../src/startup/controller.ts";
 import { ProgramUpdater } from "../src/updater/controller.ts";
 import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
 import { initialRendererState } from "../src/player/types.ts";
+import { playerMarkup } from "../src/ui/player-view.ts";
 registerHooks({ load(url, context, next) { return url.endsWith(".css") ? { format: "module", source: "", shortCircuit: true } : next(url, context); } });
 const { DesktopSettingsPanel } = await import("../src/settings/panel.ts");
 function environment() {
@@ -18,6 +19,35 @@ function environment() {
   dom.restore = () => { dom.window.close(); for (const [key, value] of Object.entries(previous)) globalThis[key] = value; }; return dom;
 }
 const key = (dom, value, options = {}) => new dom.window.KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...options });
+
+test("intervalo persiste con ajustes existentes y conserva mapeo personalizado", async t => {
+  const dom = environment(); const updater = new ProgramUpdater({ action: async () => updater.status, listen: async () => () => {} }, () => {});
+  const startup = new StartupPreferences(async () => ({ autostart: true, kiosk: false, kioskActive: false, launchedAutomatically: false }), () => {});
+  const panel = new DesktopSettingsPanel(updater, startup); t.after(() => { panel.destroy(); dom.restore(); });
+  assignShortcut("SEEK_FORWARD", "Ctrl+l");
+  assert.equal(desktopSettings().seekIntervalSeconds, 5);
+  document.querySelector("#player").innerHTML = playerMarkup();
+  panel.open("shortcuts"); await new Promise(resolve => setImmediate(resolve));
+  const input = document.querySelector("[data-seek-interval]"); assert.equal(input.value, "5");
+  input.value = "13"; document.querySelector("[data-seek-settings]").dispatchEvent(new Event("submit", { cancelable: true }));
+  assert.equal(desktopSettings().seekIntervalSeconds, 13);
+  assert.match(document.querySelector("[data-seek-status]").textContent, /guardado/);
+  assert.equal(document.querySelector('[data-command="SEEK_FORWARD"]').textContent, "+13 s");
+  assert.equal(document.querySelector('[data-command="SEEK_BACKWARD"]').textContent, "−13 s");
+  panel.close(); panel.open("shortcuts");
+  assert.equal(document.querySelector("[data-seek-interval]").value, "13");
+  const restarted = await import("../src/settings/preferences.ts?seek-restart");
+  assert.equal(restarted.desktopSettings().seekIntervalSeconds, 13);
+  assert.deepEqual(readShortcuts().SEEK_FORWARD, ["Ctrl+l"]);
+  for (const invalid of ["0", "301", "1.5", ""]) {
+    document.querySelector("[data-seek-interval]").value = invalid;
+    document.querySelector("[data-seek-settings]").dispatchEvent(new Event("submit", { cancelable: true }));
+    assert.equal(desktopSettings().seekIntervalSeconds, 13);
+  }
+  for (const invalid of [null, "10", 0, 301, 1.5]) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: invalid })); assert.equal(desktopSettings().seekIntervalSeconds, 5);
+  }
+});
 test("settings versionados sobreviven reinicio/update sin tocar identidad, niveles ni caché", t => {
   const dom = environment(); t.after(dom.restore); localStorage.setItem("deviceId", "identity"); localStorage.setItem("active-classroom-projection-monitor", "previous"); contentOwner("test"); saveContentPreferences({ followedLevels: ["kids"], pendingUnits: ["unit"] });
   assert.equal(desktopSettings().autoAppUpdate, true); saveDesktopSettings({ autoAppUpdate: false, density: "compact" });

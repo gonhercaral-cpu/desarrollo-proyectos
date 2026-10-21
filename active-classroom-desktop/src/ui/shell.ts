@@ -3,7 +3,7 @@ import { icon } from "./icons.ts";
 import packageInfo from "../../package.json" with { type: "json" };
 import "./shell.css";
 
-import { levelName } from "../offline/levels.ts";
+import { levelName, levelIcon } from "../offline/levels.ts";
 export { levelName, libraryLevelIds } from "../offline/levels.ts";
 let updateAvailable = false;
 export function setProgramUpdateVisual(available: boolean): void {
@@ -22,9 +22,8 @@ export function sidebarMarkup(model: SidebarVisual): string {
     <div class="classroom-brand"><img src="/active-classroom-icon.png" alt=""/><div><strong>Active Classroom</strong><span>Enseña. Proyecta. Inspira.</span></div></div>
     <nav class="classroom-navigation" aria-label="Biblioteca y niveles">
       <button class="sidebar-link ${!model.localOnly && !model.inClass ? "is-active" : ""}" data-library-nav>${icon("library")}<span>Biblioteca</span></button>
-      <button class="sidebar-link ${model.localOnly ? "is-active" : ""}" data-my-classes>${icon("calendar")}<span>Mis clases</span></button>
       <div class="sidebar-levels"><button class="sidebar-link" data-level="" aria-pressed="${!model.selectedLevel}">${icon("levels")}<span>Todos los niveles</span></button>
-      ${model.levels.map(level => `<button class="sidebar-link ${level === model.selectedLevel ? "is-selected" : ""}" data-level="${escapeHtml(level)}" aria-pressed="${level === model.selectedLevel}">${icon("level")}<span>${escapeHtml(levelName(level))}</span></button>`).join("")}</div>
+      ${model.levels.map(level => `<button class="sidebar-link ${level === model.selectedLevel ? "is-selected" : ""}" data-level="${escapeHtml(level)}" aria-pressed="${level === model.selectedLevel}">${levelIcon(level) ? `<span class="ac-icon" aria-hidden="true">${escapeHtml(levelIcon(level))}</span>` : icon("level")}<span>${escapeHtml(levelName(level))}</span></button>`).join("")}</div>
     </nav>
     <footer class="classroom-sidebar-footer">
       <section class="sidebar-sync" aria-label="Estado de sincronización"><span class="sidebar-status-dot ${positive ? "is-positive" : model.busy ? "is-busy" : "is-offline"}"></span><div><strong>${escapeHtml(status)}</strong><small>Última actualización<br>${escapeHtml(date)}</small><small class="sidebar-device" title="${escapeHtml(model.deviceName)}">${escapeHtml(model.deviceName)}</small>${model.detail ? `<span class="visually-hidden">${escapeHtml(model.detail)}</span>` : ""}</div><button class="sidebar-refresh" data-sidebar-refresh aria-label="Actualizar biblioteca" ${model.inClass || model.busy ? "disabled" : ""}>${icon("refresh", model.busy ? "is-spinning" : "")}</button></section>
