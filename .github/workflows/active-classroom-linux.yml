@@ -518,7 +518,7 @@ jobs:
           (cd "$(dirname "${images[0]}")" && sha256sum --check "$(basename "${images[0]}").sha256")
           (cd "$(dirname "${installers[0]}")" && sha256sum --check "$(basename "${installers[0]}").sha256")
           # Create the only tag AFTER validation, artifact inspection and signature verification.
-          existing_tag="$(gh api "repos/$GH_REPO/git/ref/tags/$GITHUB_REF_NAME" --jq '.object.sha' 2>/dev/null || true)"
+          existing_tag="$(node active-classroom-desktop/scripts/release-tag.mjs "$GITHUB_REF_NAME")"
           if [[ -n "$existing_tag" ]]; then
             test "$existing_tag" = "$RELEASE_COMMIT"
           else
