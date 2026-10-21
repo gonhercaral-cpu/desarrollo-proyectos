@@ -59,6 +59,8 @@ jobs:
         working-directory: active-classroom-desktop
         env:
           CI: 'true'
+          CLASSROOM_CHECK_CURRENT: '1.0.17'
+          CLASSROOM_CHECK_EXPECTED: '1.0.18'
         run: |
           cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example check_release
           xvfb-run -a dbus-run-session -- src-tauri/target/release/examples/check_release
