@@ -7,7 +7,7 @@ function createLevelHandler({ db, getProfile, timestamp }) {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = await getProfile(request.auth.uid);
     if (!canClassroom(profile, "manageLevels")) throw new HttpsError("permission-denied", "No tienes permiso para gestionar niveles.");
-    const { action, levelId, name, active, position } = request.data || {};
+    const { action, levelId, name, active, position, icon } = request.data || {};
     if (action === "reorder") {
       const ids = request.data.levelIds;
       if (!Array.isArray(ids) || !ids.length || ids.length > 400 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(id))) throw new HttpsError("invalid-argument", "Orden de niveles inválido.");
@@ -46,6 +46,10 @@ function createLevelHandler({ db, getProfile, timestamp }) {
       if (position !== undefined && (!Number.isSafeInteger(position) || position < 0)) throw new HttpsError("invalid-argument", "Orden de nivel inválido.");
       if (active !== undefined) value.active = active;
       if (position !== undefined) value.position = position;
+      if (icon !== undefined) {
+        if (typeof icon !== "string" || icon.length > 32) throw new HttpsError("invalid-argument", "El ícono debe ser un emoji de hasta 32 caracteres.");
+        value.icon = icon.trim();
+      }
       if (action === "create") transaction.create(ref, { ...value, kind: "level", parentId: null, active: active ?? true, position: position ?? 999, createdAt: timestamp(), createdByUid: request.auth.uid });
       else transaction.update(ref, value);
       return { id: ref.id };

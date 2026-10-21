@@ -58,7 +58,7 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
     const page = await query.get();
     const scanned = page.docs.slice(0, limit);
     const catalog = await db.collection("activeClassroomFolders").where("kind", "==", "level").get();
-    const levels = catalog.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id, position: doc.data().position ?? 999, active: doc.data().active !== false })).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, "es"));
+    const levels = catalog.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id, position: doc.data().position ?? 999, active: doc.data().active !== false, icon: typeof doc.data().icon === "string" && doc.data().icon.length <= 32 ? doc.data().icon.trim() : "" })).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, "es"));
     const publications = [];
     for (const document of scanned) {
       if (!document.data().publishedVersion) continue;
