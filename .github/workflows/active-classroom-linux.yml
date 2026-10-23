@@ -33,6 +33,8 @@ on:
       - "firebase.rules-test.json"
       - "tests/active-classroom-device*"
       - "src/active-classroom/**"
+      - "tests/active-classroom-console*"
+      - "tests/active-classroom-redesign*"
       - "active-classroom-processor/**"
       - "tests/active-classroom-office*"
       - "tests/active-classroom-slides*"
