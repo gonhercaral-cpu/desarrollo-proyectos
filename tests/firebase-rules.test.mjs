@@ -791,6 +791,24 @@ describe("roles y perfiles", () => {
 });
 
 describe("Active Classroom", () => {
+  it("portadas de nivel respetan manageLevels, tamaño y creación inmutable", async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), "activeClassroomFolders", "cover-level"), validActiveClassroomFolder());
+      await setDoc(doc(context.firestore(), "activeClassroomPermissions", "collab"), { permissions: { access: true, manageLevels: true } });
+    });
+    const path = "active-classroom/level-covers/cover-level/one.png";
+    await assertSucceeds(storageAuth("collab").ref(path).putString("png-fixture", "raw", { contentType: "image/png" }));
+    await assertFails(storageAuth("requester").ref("active-classroom/level-covers/cover-level/forged.png").putString("image", "raw", { contentType: "image/png" }));
+    await assertFails(storageAuth("inactive").ref(path).getMetadata());
+    await assertFails(storageAuth("admin").ref("active-classroom/level-covers/cover-level/one.svg").putString("<svg/>", "raw", { contentType: "image/svg+xml" }));
+    await assertFails(storageAuth("admin").ref("active-classroom/level-covers/missing/one.png").putString("image", "raw", { contentType: "image/png" }));
+    await assertFails(storageAuth("admin").ref(path).putString("replace", "raw", { contentType: "image/png" }));
+    await assertFails(storageAuth("admin").ref("active-classroom/level-covers/cover-level/large.png").put(new Uint8Array(5 * 1024 * 1024 + 1), { contentType: "image/png" }));
+    await testEnv.withSecurityRulesDisabled(context => updateDoc(doc(context.firestore(), "activeClassroomFolders", "cover-level"), { cover: { storagePath: path } }));
+    await assertFails(storageAuth("admin").ref(path).delete());
+    await testEnv.withSecurityRulesDisabled(context => updateDoc(doc(context.firestore(), "activeClassroomFolders", "cover-level"), { cover: null }));
+    await assertSucceeds(storageAuth("admin").ref(path).delete());
+  });
   it("procesamiento y derivados solo backend; admin web no puede falsificar PDF listo", async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       await setDoc(doc(context.firestore(), "activeClassroomProcessingJobs", "office-job"), { state: "ready" });

@@ -33,6 +33,8 @@ on:
       - "firebase.rules-test.json"
       - "tests/active-classroom-device*"
       - "src/active-classroom/**"
+      - "tests/active-classroom-console*"
+      - "tests/active-classroom-redesign*"
       - "active-classroom-processor/**"
       - "tests/active-classroom-office*"
       - "tests/active-classroom-slides*"
@@ -157,7 +159,7 @@ jobs:
           fi
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-redesign-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
   office:
     if: ${{ !inputs.validation_run && !inputs.media_probe }}
     name: Conversión Office real en contenedor

@@ -1,0 +1,46 @@
+/* Editor de Unit por secciones. Todo scoped a .ac-unit-editor; sin alturas fijas ni scroll anidado. */
+.ac-unit-editor .ac-unit-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--ac-line); }
+.ac-unit-editor .ac-unit-tabs [role="tab"] { padding: 10px 16px; border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: transparent; color: var(--ac-muted); font: inherit; font-weight: 600; cursor: pointer; }
+.ac-unit-editor .ac-unit-tabs [role="tab"]:hover { color: var(--ac-ink); background: var(--ac-soft); }
+.ac-unit-editor .ac-unit-tabs [role="tab"][aria-selected="true"] { color: var(--ac-ink); border-bottom-color: var(--ac-blue); background: var(--ac-soft); }
+.ac-unit-editor .ac-unit-tabs [role="tab"]:focus-visible, .ac-unit-editor .ac-unit-panel:focus-visible { outline: 2px solid var(--ac-blue); outline-offset: 2px; }
+.ac-unit-editor .ac-unit-panel { display: grid; gap: 20px; min-width: 0; }
+.ac-unit-editor .ac-unit-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
+
+/* Workspace: lista paginada / editor con preview / recursos */
+.ac-unit-editor .ac-unit-workspace { grid-template-columns: minmax(200px, .6fr) minmax(320px, 1.4fr) minmax(280px, 1fr); }
+.ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(200px, .6fr) minmax(320px, 1.6fr); }
+.ac-unit-editor .ac-unit-workspace > * { min-width: 0; }
+.ac-unit-editor .ac-unit-side { display: grid; gap: 16px; min-width: 0; }
+.ac-unit-editor .ac-unit-slides ol { max-height: none; overflow: visible; }
+.ac-unit-editor .ac-unit-slides li button { grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px; }
+.ac-unit-editor .ac-unit-slides li button:focus-visible { outline: 2px solid var(--ac-blue); outline-offset: 2px; }
+.ac-unit-editor .ac-slide-thumb { display: grid; place-items: center; width: 72px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: var(--ac-panel); border: 1px solid var(--ac-line); }
+.ac-unit-editor .ac-slide-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.ac-unit-editor .ac-slide-thumb-number { font-weight: 700; color: var(--ac-muted); }
+.ac-unit-editor .ac-slide-label { display: grid; gap: 2px; min-width: 0; }
+.ac-unit-editor .ac-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.ac-unit-editor .ac-unit-resource-panel { max-height: none; overflow: visible; }
+
+/* Secundarios plegables: datos/notas, más acciones, música anterior */
+.ac-unit-editor .ac-slide-details, .ac-unit-editor .ac-unit-more, .ac-unit-editor .ac-legacy-music { min-width: 0; }
+.ac-unit-editor .ac-slide-details { display: grid; gap: 12px; padding: 10px 12px; border: 1px solid var(--ac-line); border-radius: 10px; background: var(--ac-soft); }
+.ac-unit-editor .ac-slide-details > summary, .ac-unit-editor .ac-legacy-music > summary, .ac-unit-editor .ac-unit-more > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ac-muted); }
+.ac-unit-editor .ac-slide-details[open] > summary { margin-bottom: 8px; color: var(--ac-ink); }
+.ac-unit-editor .ac-legacy-music { padding: 12px 16px; border: 1px solid var(--ac-line); border-radius: 14px; background: var(--ac-panel); }
+.ac-unit-editor .ac-legacy-music[open] > summary { margin-bottom: 12px; color: var(--ac-ink); }
+.ac-unit-editor .ac-legacy-music .ac-unit-card { padding: 0; border: 0; }
+.ac-unit-editor .ac-unit-more { margin-top: 8px; }
+.ac-unit-editor .ac-unit-more .ac-unit-actions { margin-top: 8px; }
+.ac-unit-editor summary:focus-visible { outline: 2px solid var(--ac-blue); outline-offset: 2px; border-radius: 4px; }
+.ac-unit-editor .ac-unit-manifest { max-height: none; }
+
+@media (max-width: 1100px) {
+  .ac-unit-editor .ac-unit-workspace, .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(200px, .7fr) minmax(260px, 1.3fr); }
+  .ac-unit-editor .ac-unit-side { grid-column: 1 / -1; }
+}
+@media (max-width: 650px) {
+  .ac-unit-editor .ac-unit-overview, .ac-unit-editor .ac-unit-workspace, .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: 1fr; }
+  .ac-unit-editor .ac-unit-tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .ac-unit-editor .ac-unit-tabs [role="tab"] { flex: 0 0 auto; white-space: nowrap; }
+}

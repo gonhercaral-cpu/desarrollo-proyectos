@@ -225,7 +225,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
             message = "Biblioteca local verificada."; render();
           }).catch((error) => { if (current === epoch) { message = String(error); render(); } });
         }, {
-          ...(music ? { ambientMusic: { tracks: music.tracks.filter(track => track.active).map(track => ({ ...track, resourceId: track.id })), prepare: async (id: string) => { const track = music.tracks.find(track => track.id === id); if (!track) throw new Error("Audio global no disponible"); return prepareAmbientMedia(currentCache.owner, music.ambientCatalogVersion, track); } } } : {}),
+          ...(music ? { ambientMusic: { tracks: music.tracks.filter(track => track.active).map(track => ({ ...track, resourceId: track.id })), defaultTrackIds: music.playlists.find(playlist => playlist.id === "module-default")?.trackIds, prepare: async (id: string) => { const track = music.tracks.find(track => track.id === id); if (!track) throw new Error("Audio global no disponible"); return prepareAmbientMedia(currentCache.owner, music.ambientCatalogVersion, track); } } } : {}),
           prepareMediaSource: (id) => prepareNativeMedia(currentCache.owner, classroom, id),
           releaseMediaSource: releaseNativeMedia,
           verifyResource: async (id) => {

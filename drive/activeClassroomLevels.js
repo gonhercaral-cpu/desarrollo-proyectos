@@ -2,12 +2,23 @@ const { canClassroom } = require("./activeClassroomPermissions");
 const { HttpsError } = require("firebase-functions/v2/https");
 
 // Keep stable IDs: renames/order/status never rewrite immutable manifests.
-function createLevelHandler({ db, getProfile, timestamp }) {
+function createLevelHandler({ db, getProfile, timestamp, bucket }) {
   return async (request) => {
     if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
     const profile = await getProfile(request.auth.uid);
     if (!canClassroom(profile, "manageLevels")) throw new HttpsError("permission-denied", "No tienes permiso para gestionar niveles.");
-    const { action, levelId, name, active, position, icon } = request.data || {};
+    const { action, levelId, name, active, position, icon, coverPath, expectedCoverPath } = request.data || {};
+    let cover;
+    if (coverPath !== undefined) {
+      if (action !== "update" || (expectedCoverPath !== null && typeof expectedCoverPath !== "string")) throw new HttpsError("invalid-argument", "Referencia de portada inválida.");
+      if (coverPath === null) cover = null;
+      else {
+        if (typeof coverPath !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(levelId || "") || !new RegExp(`^active-classroom/level-covers/${levelId}/[a-zA-Z0-9_-]{1,100}\\.(png|jpg|webp)$`).test(coverPath)) throw new HttpsError("invalid-argument", "Ruta de portada inválida.");
+        const [metadata] = await bucket.file(coverPath).getMetadata();
+        if (!["image/png", "image/jpeg", "image/webp"].includes(metadata.contentType) || Number(metadata.size) <= 0 || Number(metadata.size) > 5 * 1024 * 1024) throw new HttpsError("invalid-argument", "Portada inválida. Usa PNG, JPEG o WebP de hasta 5 MB.");
+        cover = { storagePath: coverPath, mimeType: metadata.contentType, sizeBytes: Number(metadata.size) };
+      }
+    }
     if (action === "reorder") {
       const ids = request.data.levelIds;
       if (!Array.isArray(ids) || !ids.length || ids.length > 400 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(id))) throw new HttpsError("invalid-argument", "Orden de niveles inválido.");
@@ -38,6 +49,10 @@ function createLevelHandler({ db, getProfile, timestamp }) {
         return { id: ref.id, deleted: true };
       }
       const value = { updatedAt: timestamp(), updatedByUid: request.auth.uid };
+      if (coverPath !== undefined) {
+        if ((existing.data().cover?.storagePath || null) !== expectedCoverPath) throw new HttpsError("aborted", "Otro administrador cambió la portada. Recarga antes de reemplazarla.");
+        value.cover = cover;
+      }
       if (action === "create" || name !== undefined) {
         if (typeof name !== "string" || !name.trim() || name.trim().length > 160) throw new HttpsError("invalid-argument", "Escribe un nombre de nivel de hasta 160 caracteres.");
         value.name = name.trim();

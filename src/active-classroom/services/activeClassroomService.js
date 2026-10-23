@@ -253,3 +253,19 @@ export async function deleteActiveClassroomResource(resource, user) {
 }
 
 export async function listClassroomDriveFiles(folderId) { return (await httpsCallable(functions, "listActiveClassroomDriveFiles")({ folderId })).data; }
+
+export async function setActiveClassroomLevelCover(level, file, user) {
+  assertClassroom(user, "manageLevels");
+  const previous = level.cover?.storagePath || null;
+  let storagePath = null;
+  if (file) {
+    const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[file.type];
+    if (!extension || !file.size || file.size > 5 * 1024 * 1024) throw new Error("Usa PNG, JPEG o WebP de hasta 5 MB.");
+    storagePath = `active-classroom/level-covers/${level.id}/${crypto.randomUUID()}.${extension}`;
+    await uploadBytes(ref(storage, storagePath), file, { contentType: file.type });
+  }
+  // On an uncertain acknowledgement retain the upload: the server may have saved it.
+  const result = await manageActiveClassroomLevel({ action: "update", levelId: level.id, coverPath: storagePath, expectedCoverPath: previous }, user);
+  if (previous) await deleteObject(ref(storage, previous)).catch(() => {});
+  return result;
+}

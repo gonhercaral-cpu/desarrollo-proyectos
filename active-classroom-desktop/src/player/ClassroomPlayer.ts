@@ -10,10 +10,11 @@ import { escapeHtml } from "../utils/dom.ts";
 import { InteractionSurface } from "./InteractionSurface.ts";
 import type { ResolvedLayer } from "./types.ts";
 import { BackgroundMusic } from "./BackgroundMusic.ts";
+import { selectUnitMusic } from "./unit-music.ts";
 import { desktopSettings } from "../settings/preferences.ts";
 
 export interface PlayerDependencies {
-  ambientMusic?: { tracks: NonNullable<import("../offline/manifest.ts").Manifest["backgroundMusic"]>; prepare(id: string): Promise<RendererSource> };
+  ambientMusic?: { tracks: NonNullable<import("../offline/manifest.ts").Manifest["backgroundMusic"]>; defaultTrackIds?: string[]; prepare(id: string): Promise<RendererSource> };
   verifyResource(id: string): Promise<boolean>;
   prepareMediaSource?(id: string): Promise<RendererSource>;
   releaseMediaSource?(source: RendererSource): void;
@@ -62,8 +63,9 @@ export class ClassroomPlayer {
     this.projection = new ProjectionCoordinator(() => this.updateProjection(), dependencies.projectionBridge, dependencies.projectionBridge ? true : undefined);
     this.root = root; this.classroom = classroom; this.onExit = onExit; this.dependencies = dependencies;
     this.layout();
-    this.music = new BackgroundMusic(this.element("[data-background-music]"), dependencies.ambientMusic?.tracks || classroom.manifest, async id => {
-      if (dependencies.ambientMusic) return dependencies.ambientMusic.prepare(id);
+    const music = selectUnitMusic(classroom.manifest, dependencies.ambientMusic);
+    this.music = new BackgroundMusic(this.element("[data-background-music]"), music.tracks, async id => {
+      if (music.global && dependencies.ambientMusic) return dependencies.ambientMusic.prepare(id);
       if (dependencies.prepareMediaSource) return dependencies.prepareMediaSource(id);
       if (!await dependencies.verifyResource(id)) throw new Error("Audio local ausente o dañado.");
       return localSource(classroom, id, dependencies.toUrl);

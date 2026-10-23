@@ -26,6 +26,7 @@ export interface Manifest {
   slides: PublishedSlide[];
   resources: PublishedResource[];
   backgroundMusic?: { id: string; resourceId: string; title: string; sourceType: "file"; order: number; mime: string; size: number; sha256: string; storagePath: string; generation: string }[];
+  unitMusic?: { mode: "inherit" | "custom" | "none"; trackId: string | null };
   integrity: { algorithm: string; contentHash: string };
 }
 export interface Publication {
@@ -55,6 +56,10 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
   const m = input as Manifest;
   require(new TextEncoder().encode(JSON.stringify(m)).length <= 700000);
   require(m.schemaVersion === 2 && validId(m.unit?.unitId) && validId(m.unit?.levelId));
+  if (m.unitMusic !== undefined) {
+    require(m.unitMusic && ["inherit", "custom", "none"].includes(m.unitMusic.mode));
+    require(m.unitMusic.mode === "custom" ? validHash(m.unitMusic.trackId) : m.unitMusic.trackId === null);
+  }
   require(typeof m.unit.name === "string" && m.unit.name.trim() && Number.isSafeInteger(m.version) && m.version > 0);
   require(typeof m.publishedAt === "string" && Number.isFinite(Date.parse(m.publishedAt)));
   require(Array.isArray(m.resources) && m.resources.length > 0 && m.resources.length <= 200);
@@ -81,6 +86,8 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
       musicIds.add(track.id);
     });
   }
+  if (m.unitMusic?.mode === "custom") require(m.backgroundMusic?.length === 1 && m.backgroundMusic[0].sha256 === m.unitMusic.trackId);
+  if (m.unitMusic?.mode === "none") require(!m.backgroundMusic?.length);
   require(Array.isArray(m.slides) && m.slides.length > 0 && m.slides.length <= 200);
   const slides = new Set<string>();
   m.slides.forEach((slide, index) => {
