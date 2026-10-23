@@ -1,0 +1,94 @@
+const assert = require("node:assert/strict");
+const { before, after, test } = require("node:test");
+const admin = require("../drive/node_modules/firebase-admin");
+const { createAmbientHandlers } = require("../drive/activeClassroomAmbient");
+const { createUnitHandlers, contentHash } = require("../drive/activeClassroomUnit");
+const { createLevelHandler } = require("../drive/activeClassroomLevels");
+const { createDesktopHandlers } = require("../drive/activeClassroomDesktop");
+if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) throw new Error("Requiere emuladores Firestore y Storage.");
+const app = admin.initializeApp({ projectId: "security-rules-audit", storageBucket: "security-rules-audit.appspot.com" }, "redesign-118");
+const db = app.firestore(), bucket = app.storage().bucket();
+const profiles = { admin: { role: "admin", active: true }, reader: { role: "collaborator", active: true, activeClassroomPermissions: { access: true } }, editor: { role: "collaborator", active: true, activeClassroomPermissions: { access: true, editUnits: true } }, organizer: { role: "collaborator", active: true, activeClassroomPermissions: { access: true, orderMaterial: true } }, levels: { role: "collaborator", active: true, activeClassroomPermissions: { access: true, manageLevels: true } } };
+const getProfile = async uid => profiles[uid] || { active: false };
+const request = (data, uid = "admin") => ({ auth: { uid }, data });
+const stamp = () => admin.firestore.FieldValue.serverTimestamp();
+const unitId = "redesign-unit", levelId = "redesign-level";
+const download = (id, mime = "audio/mpeg") => ({ endpoint: "activeClassroomPublicationFile", provider: "storage", path: `active-classroom/publications/files/${contentHash(id)}`, generation: "1", name: id, mimeType: mime, sizeBytes: 12, checksums: { sha256: contentHash(id) } });
+const ambient = createAmbientHandlers({ db, bucket, getProfile, authorize: async () => ({}), resolveFile: async (_profile, id) => ({ id, name: `${id}.mp3`, mimeType: "audio/mpeg", version: "1" }), prepareResource: async (_profile, resource) => download(resource.driveFileId), verifyDownload: async value => value });
+let prepared = [];
+const units = createUnitHandlers({ db, getProfile, timestamp: stamp, resolveFile: async () => ({ name: "Clase.pdf", mimeType: "application/pdf", version: "1" }), prepareResource: async (_profile, resource) => { prepared.push(resource.id); return resource.source === "ambient" ? resource.ambientDownload : download(resource.id, resource.mimeType); } });
+const levels = createLevelHandler({ db, bucket, getProfile, timestamp: stamp });
+const desktop = createDesktopHandlers({ db, getProfile });
+const draft = { name: "Unit", status: "active", levelId, mainPresentationId: "redesign-main", generalResourceIds: [], slides: [{ slideId: "slide-1", title: "Inicio", resourceIds: [], metadata: { pageNumber: 1 } }] };
+let catalog;
+before(async () => {
+  await db.recursiveDelete(db.doc("activeClassroomAmbientMusic/catalog"));
+  await db.doc(`activeClassroomFolders/${levelId}`).set({ kind: "level", active: true, name: "Nivel" });
+  await db.doc(`activeClassroomFolders/${unitId}`).set({ kind: "unit", active: true, name: "Unit", parentId: levelId });
+  await db.doc("activeClassroomResources/redesign-main").set({ folderId: unitId, source: "drive", driveFileId: "main", name: "Clase.pdf", kind: "document", mimeType: "application/pdf", driveVersion: "1" });
+  await ambient.imported(request({ driveFileId: "first" }));
+  catalog = (await ambient.imported(request({ driveFileId: "second" }))).catalog;
+});
+after(async () => {
+  await db.recursiveDelete(db.doc("activeClassroomAmbientMusic/catalog"));
+  await db.recursiveDelete(db.doc(`activeClassroomUnits/${unitId}`));
+  for (const id of [unitId, levelId]) await db.doc(`activeClassroomFolders/${id}`).delete();
+  await db.doc("activeClassroomResources/redesign-main").delete();
+  await bucket.deleteFiles({ prefix: `active-classroom/level-covers/${levelId}/` });
+  await app.delete();
+});
+
+test("predeterminada usa catálogo versionado, permisos actuales y control de concurrencia", async () => {
+  await assert.rejects(ambient.edit(request({ action: "set-default", id: catalog.tracks[0].id, expectedVersion: catalog.ambientCatalogVersion }, "reader")), { code: "permission-denied" });
+  await assert.rejects(ambient.edit(request({ action: "set-default", id: "missing", expectedVersion: catalog.ambientCatalogVersion })), { code: "failed-precondition" });
+  const before = (await db.doc(`activeClassroomAmbientMusic/catalog/versions/${catalog.ambientCatalogVersion}`).get()).data();
+  const previousVersion = catalog.ambientCatalogVersion;
+  catalog = (await ambient.edit(request({ action: "set-default", id: catalog.tracks[1].id, expectedVersion: previousVersion }, "organizer"))).catalog;
+  assert.equal(catalog.playlists.find(item => item.id === "module-default").trackIds[0], catalog.tracks[1].id);
+  assert.equal(catalog.tracks.length, 2, "seleccionar no duplica archivos");
+  assert.deepEqual((await db.doc(`activeClassroomAmbientMusic/catalog/versions/${previousVersion}`).get()).data(), before);
+  await assert.rejects(ambient.edit(request({ action: "set-default", id: null, expectedVersion: previousVersion })), { code: "aborted" });
+});
+
+test("música por Unit conserva permisos, lista anterior, snapshots y versiones publicadas", async () => {
+  let saved = await units.save(request({ unitId, draft, expectedRevision: 0 }));
+  await assert.rejects(units.save(request({ unitId, draft: { ...saved.draft, unitMusic: { mode: "inherit", trackId: null } }, expectedRevision: saved.draftRevision }, "editor")), { code: "permission-denied" });
+  saved = await units.save(request({ unitId, draft: { ...saved.draft, unitMusic: { mode: "inherit", trackId: null } }, expectedRevision: saved.draftRevision }, "organizer"));
+  const expectedResources = await units.preparePublish(request({ unitId, expectedRevision: saved.draftRevision }));
+  catalog = (await ambient.edit(request({ action: "set-default", id: catalog.tracks[0].id, expectedVersion: catalog.ambientCatalogVersion }))).catalog;
+  await assert.rejects(units.publish(request({ unitId, expectedRevision: saved.draftRevision }), { expectedResources }), { code: "aborted" });
+  catalog = (await ambient.edit(request({ action: "set-default", id: catalog.tracks[1].id, expectedVersion: catalog.ambientCatalogVersion }))).catalog;
+  prepared = [];
+  await units.publish(request({ unitId, expectedRevision: saved.draftRevision }));
+  const first = (await desktop.get(request({ unitId, version: 1 }, "reader"))).manifest;
+  assert.equal(first.schemaVersion, 2); assert.equal(first.unitMusic.mode, "inherit");
+  assert.equal(first.backgroundMusic[0].sha256, catalog.tracks[1].sha256);
+  assert.equal(first.resources.filter(resource => resource.resourceId.startsWith("ambient-")).length, 1);
+  assert.equal(prepared.filter(id => id.startsWith("ambient-")).length, 1);
+  catalog = (await ambient.edit(request({ action: "set-default", id: catalog.tracks[0].id, expectedVersion: catalog.ambientCatalogVersion }))).catalog;
+  assert.deepEqual((await desktop.get(request({ unitId, version: 1 }, "reader"))).manifest, first);
+  saved = await units.save(request({ unitId, draft: { ...saved.draft, unitMusic: { mode: "custom", trackId: catalog.tracks[1].id } }, expectedRevision: saved.draftRevision }));
+  await units.publish(request({ unitId, expectedRevision: saved.draftRevision }));
+  const custom = (await desktop.get(request({ unitId }, "reader"))).manifest;
+  assert.equal(custom.unitMusic.mode, "custom"); assert.equal(custom.backgroundMusic[0].sha256, catalog.tracks[1].sha256);
+  await ambient.edit(request({ action: "remove", id: catalog.tracks[1].id }));
+  assert.deepEqual((await desktop.get(request({ unitId, version: custom.version }, "reader"))).manifest, custom, "quitar pista global conserva snapshot individual publicado");
+  saved = await units.save(request({ unitId, draft: { ...saved.draft, unitMusic: { mode: "none", trackId: null } }, expectedRevision: saved.draftRevision }));
+  await units.publish(request({ unitId, expectedRevision: saved.draftRevision }));
+  const silent = (await desktop.get(request({ unitId }, "reader"))).manifest;
+  assert.deepEqual(silent.backgroundMusic, []); assert.equal(silent.resources.some(resource => resource.resourceId.startsWith("ambient-")), false);
+  await assert.rejects(units.save(request({ unitId, draft: { ...saved.draft, unitMusic: { mode: "custom", trackId: "e".repeat(64) } }, expectedRevision: saved.draftRevision })), { code: "failed-precondition" });
+});
+
+test("portadas se validan, reemplazan con revisión y siguen manageLevels sin ampliar roles", async () => {
+  const path = `active-classroom/level-covers/${levelId}/one.png`;
+  await bucket.file(path).save("fixture-png", { contentType: "image/png" });
+  await assert.rejects(levels(request({ action: "update", levelId, coverPath: path, expectedCoverPath: null }, "reader")), { code: "permission-denied" });
+  await levels(request({ action: "update", levelId, coverPath: path, expectedCoverPath: null, icon: "📚" }, "levels"));
+  assert.equal((await db.doc(`activeClassroomFolders/${levelId}`).get()).data().cover.storagePath, path);
+  await assert.rejects(levels(request({ action: "update", levelId, coverPath: null, expectedCoverPath: null })), { code: "aborted" });
+  for (const coverPath of ["https://external/cover.png", "active-classroom/level-covers/other/one.png", `${path}.svg`]) await assert.rejects(levels(request({ action: "update", levelId, coverPath, expectedCoverPath: path })), { code: "invalid-argument" });
+  await levels(request({ action: "update", levelId, coverPath: null, expectedCoverPath: path }, "levels"));
+  const level = (await db.doc(`activeClassroomFolders/${levelId}`).get()).data();
+  assert.equal(level.cover, null); assert.equal(level.icon, "📚");
+});

@@ -17,6 +17,8 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   let changed = new Set(["main", "audio"]);
   const refreshes = [], published = [];
   const mock = {
+    loadMusicCatalog: async () => ({ ambientCatalogVersion: 1, playlists: [], tracks: [{ id: "a".repeat(64), title: "Calma", active: true, size: 12 }] }),
+    previewMusicTrack: async () => ({ url: "data:audio/mpeg;base64," }),
     subscribeUnitPublication: () => () => {}, loadUnitPublications: async () => [],
     loadUnitEditor: async () => ({ draft, draftRevision: revision }), loadUnitResources: async () => resources,
     saveUnitDraft: async (_id, next, expected) => { assert.equal(expected, revision); draft = structuredClone(next); return { draft, draftRevision: ++revision }; },
@@ -29,8 +31,8 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
     getDriveRootSettings: async () => ({ rootFolderId: "drive-root" }), listDriveFolder: async () => ({ files: [{ id: "replacement", name: "Nueva.pdf", mimeType: "application/pdf" }] }),
   };
   globalThis.__classroomAdminMock = mock;
-  const server = await createServer({ server: { middlewareMode: true, hmr: false }, plugins: [{ name: "admin-test-services", enforce: "pre", load(id) {
-    if (/unitEditorService\.js$|services\/driveService\.js$|activeClassroomService\.js$/.test(id.replaceAll("\\", "/"))) return Object.keys(mock).map(name => `export const ${name} = (...args) => globalThis.__classroomAdminMock.${name}(...args);`).join("\n");
+  const server = await createServer({ optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false }, plugins: [{ name: "admin-test-services", enforce: "pre", load(id) {
+    if (/musicService\.js$|unitEditorService\.js$|services\/driveService\.js$|activeClassroomService\.js$/.test(id.replaceAll("\\", "/"))) return Object.keys(mock).map(name => `export const ${name} = (...args) => globalThis.__classroomAdminMock.${name}(...args);`).join("\n");
     if (/ResourceInspector\.jsx$|SlideInteractionEditor\.jsx$/.test(id)) return "export default function UnchangedPlayerComponent() { return null; }";
   } }] });
   const root = createRoot(dom.window.document.querySelector("#root"));
@@ -56,6 +58,20 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   await click("Importar (1)");
   assert.equal(draft.mainPresentationId, "replacement");
   assert.equal(published[0].mainPresentationId, "main");
+  assert.equal(dom.window.document.querySelectorAll('[role="tab"]').length, 6);
+  await click("Música");
+  assert.equal(dom.window.document.querySelector('.ac-unit-workspace'), null);
+  assert.ok(button("Guardar borrador")); assert.ok(button("Publicar versión"));
+  await act(async () => dom.window.document.querySelectorAll('.ac-music-options input[type="radio"]')[2].click());
+  await click("Guardar borrador");
+  assert.deepEqual(draft.unitMusic, { mode: "custom", trackId: "a".repeat(64) });
+  await act(async () => dom.window.document.querySelectorAll('.ac-music-options input[type="radio"]')[0].click());
+  await click("Guardar borrador");
+  assert.deepEqual(draft.unitMusic, { mode: "inherit", trackId: null });
+  const selectedTab = dom.window.document.querySelector('[role="tab"][aria-selected="true"]');
+  await act(async () => selectedTab.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  assert.equal(dom.window.document.activeElement.textContent, "Publicaciones");
+  assert.match(dom.window.document.querySelector('[role="tabpanel"]').textContent, /Publicaciones inmutables/);
 });
 
 test("panel de niveles permite cambiar y quitar ícono mediante servicio existente", async t => {
@@ -64,8 +80,8 @@ test("panel de niveles permite cambiar y quitar ícono mediante servicio existen
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
   const calls = [];
   globalThis.__levelIconMock = async (...args) => { calls.push(args); };
-  const server = await createServer({ server: { middlewareMode: true, hmr: false }, plugins: [{ name: "level-icon-services", enforce: "pre", load(id) {
-    if (/activeClassroomService\.js$/.test(id)) return "export const manageActiveClassroomLevel = (...args) => globalThis.__levelIconMock(...args);";
+  const server = await createServer({ optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false }, plugins: [{ name: "level-icon-services", enforce: "pre", load(id) {
+    if (/activeClassroomService\.js$/.test(id)) return "export const manageActiveClassroomLevel = (...args) => globalThis.__levelIconMock(...args); export const setActiveClassroomLevelCover = (...args) => globalThis.__levelIconMock('cover', ...args); export const getActiveClassroomResourceUrl = async () => '';";
   } }] });
   const root = createRoot(dom.window.document.querySelector("#root"));
   t.after(async () => { await act(async () => root.unmount()); await server.close(); dom.window.close(); Object.assign(globalThis, previous); delete globalThis.__levelIconMock; });
@@ -82,4 +98,15 @@ test("panel de niveles permite cambiar y quitar ícono mediante servicio existen
   assert.deepEqual(calls, [[{ action: "update", levelId: "level-1", icon: "🎓" }, profile], [{ action: "update", levelId: "level-1", icon: "" }, profile]]);
   assert.ok(dom.window.document.querySelector('input[maxlength="32"]'));
   assert.ok([...dom.window.document.querySelectorAll("button")].some(item => item.textContent === "Abrir nivel"));
+  let opened = "";
+  await act(async () => root.render(React.createElement(LevelsPanel, { folders: [level], profile, onOpen(id) { opened = id; } })));
+  await act(async () => dom.window.document.querySelector('[aria-label="Abrir Principiantes"]').click());
+  assert.equal(opened, level.id);
+  const coverInput = dom.window.document.querySelector('input[type="file"]');
+  const file = new dom.window.File(["png"], "cover.png", { type: "image/png" });
+  Object.defineProperty(coverInput, "files", { configurable: true, value: [file] });
+  const imageButton = [...dom.window.document.querySelectorAll("button")].find(item => item.textContent === "Cambiar imagen");
+  await act(async () => imageButton.click());
+  await act(async () => coverInput.dispatchEvent(new dom.window.Event("change", { bubbles: true })));
+  assert.equal(calls.at(-1)[0], "cover"); assert.equal(calls.at(-1)[1].id, level.id); assert.equal(calls.at(-1)[2], file);
 });

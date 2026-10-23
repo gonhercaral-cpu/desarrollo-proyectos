@@ -974,6 +974,21 @@ service firebase.storage {
       allow delete: if signedIn() && isAdmin();
     }
 
+    match /active-classroom/level-covers/{levelId}/{fileName} {
+      allow read: if canClassroom("access");
+      allow create: if canClassroom("manageLevels")
+        && resource == null
+        && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && fileName.matches('[a-zA-Z0-9_-]{1,100}\\.(png|jpg|webp)$')
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp']
+        && firestore.get(/databases/(default)/documents/activeClassroomFolders/$(levelId)).data.kind == 'level';
+      allow update: if false;
+      allow delete: if canClassroom("manageLevels")
+        && (!firestore.exists(/databases/(default)/documents/activeClassroomFolders/$(levelId))
+          || firestore.get(/databases/(default)/documents/activeClassroomFolders/$(levelId)).data.get('cover', null) == null
+          || firestore.get(/databases/(default)/documents/activeClassroomFolders/$(levelId)).data.cover.storagePath != 'active-classroom/level-covers/' + levelId + '/' + fileName);
+    }
+
     match /active-classroom/resources/{resourceId}/{fileName} {
       allow read: if canReadActiveClassroomResource(resourceId);
 

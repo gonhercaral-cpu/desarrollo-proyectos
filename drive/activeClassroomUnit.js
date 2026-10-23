@@ -5,6 +5,7 @@ const { resourceKind } = require("./activeClassroom");
 const { needsDocumentProcessing, isGoogleSlides, isRasterSlides, validPageObjectId, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
 
 const MAX_RESOURCES = 200;
+const { normalizeUnitMusic, selectedTrack, catalogResource } = require("./activeClassroomUnitMusic");
 const { normalizeBackgroundMusic, validateMusicResources, freezeBackgroundMusic } = require("./activeClassroomBackgroundMusic");
 const { normalizeInteraction, interactionResourceIds } = require("./activeClassroomInteraction");
 const MAX_SLIDES = 200;
@@ -47,6 +48,7 @@ function normalizeDraft(input) {
     generalResourceIds: ids(input.generalResourceIds || []), slides,
     excludedResourceIds: ids(input.excludedResourceIds || []),
     ...(backgroundMusic.length ? { backgroundMusic } : {}),
+    ...(input.unitMusic === undefined ? {} : { unitMusic: normalizeUnitMusic(input.unitMusic) }),
   };
   if (draft.generalResourceIds.includes(draft.mainPresentationId)) fail("La presentación principal debe estar separada de recursos generales.");
   if (resourceIds(draft).length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} recursos por Unit.`);
@@ -105,7 +107,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     integer(expected, 0, Number.MAX_SAFE_INTEGER);
     if ((data?.draftRevision || 0) !== expected) fail("Otro administrador modificó el borrador. Recarga antes de guardar.", "aborted");
   }
-  async function readResources(transaction, draft, unitId) {
+  async function readResources(transaction, draft, unitId, publishing = false) {
     const result = [];
     for (const resourceId of resourceIds(draft)) {
       const snapshot = await transaction.get(resourceRef(resourceId));
@@ -117,6 +119,12 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     }
     if (draft.mainPresentationId && !isMainPresentation(result.find((resource) => resource.id === draft.mainPresentationId))) fail("Elige PPT/PPTX, Google Slides o PDF de Nube AES como presentación principal.");
     validateMusicResources(draft.backgroundMusic, result);
+    if (draft.unitMusic) {
+      const catalog = (await transaction.get(db.doc("activeClassroomAmbientMusic/catalog"))).data();
+      const track = selectedTrack(catalog, draft.unitMusic);
+      if (track && publishing) result.push(catalogResource(track, unitId));
+    }
+    if (result.length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} recursos por Unit, incluida música.`, "resource-exhausted");
     return result;
   }
   async function validateFolders(transaction, unitId, draft) {
@@ -139,7 +147,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const before = stored?.draft || {};
       const different = keys => keys.some(key => contentHash(before[key] ?? null) !== contentHash(draft[key] ?? null));
       if (!canClassroom(profile, "editUnits") && different(["name", "description", "levelId", "status", "metadata"])) fail("No tienes permiso para editar datos de la Unit.", "permission-denied");
-      if (!canClassroom(profile, "orderMaterial") && different(["mainPresentationId", "slides", "generalResourceIds", "excludedResourceIds", "backgroundMusic"])) fail("No tienes permiso para ordenar o asociar material.", "permission-denied");
+      if (!canClassroom(profile, "orderMaterial") && different(["mainPresentationId", "slides", "generalResourceIds", "excludedResourceIds", "backgroundMusic", "unitMusic"])) fail("No tienes permiso para ordenar o asociar material.", "permission-denied");
       if (stored?.draft?.mainPresentationId && stored.draft.mainPresentationId !== draft.mainPresentationId) draft.slides = [];
       await validateFolders(transaction, unitId, draft);
       const resources = await readResources(transaction, draft, unitId);
@@ -173,7 +181,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const level = await transaction.get(folderRef(draft.levelId));
       if (level.data()?.active !== true) fail("Activa el Nivel o reasigna la Unit antes de publicar.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
-      const resources = await readResources(transaction, draft, unitId);
+      const resources = await readResources(transaction, draft, unitId, true);
       for (const resource of resources) requireReady(resource);
       const main = resources.find((resource) => resource.id === draft.mainPresentationId);
       if (needsDocumentProcessing(main) && contentHash(draft.slides) !== contentHash(pdfSlides(main, draft.slides))) fail("Aplica las diapositivas procesadas antes de publicar.", "failed-precondition");
@@ -202,7 +210,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const level = await transaction.get(folderRef(draft.levelId));
       if (level.data()?.active !== true) fail("Activa el Nivel o reasigna la Unit antes de publicar.", "failed-precondition");
       await validateFolders(transaction, unitId, draft);
-      const resources = await readResources(transaction, draft, unitId);
+      const resources = await readResources(transaction, draft, unitId, true);
       for (const resource of resources) requireReady(resource);
       if (contentHash(resources.map((resource) => snapshotResource(resource.id, resource))) !== contentHash(prepared.map((resource) => snapshotResource(resource.id, resource)))) fail("Los recursos cambiaron durante la publicación. Reintenta.", "aborted");
       const deliveredIds = (references) => [...new Set(references.flatMap((resourceId) => {
@@ -212,7 +220,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       const content = {
         schemaVersion: 2, unit: { unitId, name: draft.name, description: draft.description, levelId: draft.levelId, status: draft.status, metadata: draft.metadata },
         mainPresentationId: draft.mainPresentationId, generalResourceIds: deliveredIds(draft.generalResourceIds),
-        ...(draft.backgroundMusic?.length ? { backgroundMusic: freezeBackgroundMusic(draft.backgroundMusic, files) } : {}),
+        ...(draft.unitMusic ? { unitMusic: draft.unitMusic, backgroundMusic: freezeBackgroundMusic(resources.filter(resource => resource.source === "ambient").map(resource => ({ id: resource.id, resourceId: resource.id, title: resource.name, sourceType: "file", order: 0 })), files) } : draft.backgroundMusic?.length ? { backgroundMusic: freezeBackgroundMusic(draft.backgroundMusic, files) } : {}),
         slides: draft.slides.map((draftSlide) => {
           const slide = { ...draftSlide, resourceIds: deliveredIds(draftSlide.resourceIds) };
           const main = resources.find((resource) => resource.id === draft.mainPresentationId);
@@ -271,7 +279,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       transaction.update(unitRef(unitId), { publishedVersion: version, publishedDraftRevision: stored.draftRevision, lastPublishedAt: manifest.publishedAt, lastPublishedByUid: request.auth.uid, lastPublishedByName: profile.name || profile.email || "", ...(jobId ? { publicationJob: { ...stored.publicationJob, state: "ready", version, unchanged: false } } : {}) });
       if (jobId) transaction.update(db.collection("activeClassroomPublicationJobs").doc(jobId), { state: "ready", version, unchanged: false });
       // Retain originals referenced by immutable publications. Never alter their publication flags.
-      for (const resource of resources) if (!resource.retainedByPublication) transaction.update(resourceRef(resource.id), { retainedByPublication: true });
+      for (const resource of resources) if (resource.source !== "ambient" && !resource.retainedByPublication) transaction.update(resourceRef(resource.id), { retainedByPublication: true });
       return { version, unchanged: false };
     });
   }

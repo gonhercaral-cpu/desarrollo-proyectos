@@ -1423,18 +1423,19 @@ exports.processActiveClassroomDocument = onCall({ timeoutSeconds: 540, memory: "
 exports.getActiveClassroomBuildPreview = onCall({ timeoutSeconds: 120, memory: "1GiB" }, require("./activeClassroomBuildPreview").createBuildPreview({
   db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile, prepareResource: classroomProcessing.prepareDelivery,
 }));
+const prepareUnitResource = (profile, resource, options) => resource.source === "ambient" ? classroomFiles.verifyDownload(resource.ambientDownload) : classroomProcessing.prepareDelivery(profile, resource, options);
 const classroomUnits = createUnitHandlers({
   db: admin.firestore(), getProfile: getClassroomProfile,
   resolveFile: resolveActiveClassroomDriveFile,
-  prepareResource: classroomProcessing.prepareDelivery,
+  prepareResource: prepareUnitResource,
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
-exports.manageActiveClassroomLevel = onCall(require("./activeClassroomLevels").createLevelHandler({ db: admin.firestore(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
+exports.manageActiveClassroomLevel = onCall(require("./activeClassroomLevels").createLevelHandler({ db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
 exports.validateActiveClassroomPublication = onCall({ timeoutSeconds: 540 }, classroomUnits.validatePublication);
 const classroomPublicationJobs = createPublicationJobs({
   db: admin.firestore(), units: classroomUnits, getProfile: getClassroomProfile,
-  prepareResource: classroomProcessing.prepareDelivery, verifyDownload: classroomFiles.verifyDownload,
+  prepareResource: prepareUnitResource, verifyDownload: classroomFiles.verifyDownload,
   enqueue: (data) => getFunctions().taskQueue("locations/us-central1/functions/publishActiveClassroomUnitResources").enqueue(data, { dispatchDeadlineSeconds: taskTimeoutSeconds }),
 });
 exports.publishActiveClassroomUnit = onCall({ timeoutSeconds: 60 }, classroomPublicationJobs.start);

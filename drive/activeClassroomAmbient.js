@@ -6,6 +6,7 @@ const { resourceKind } = require("./activeClassroom");
 const { contentHash } = require("./activeClassroomUnit");
 const { downloadRange } = require("./activeClassroomDesktop");
 const { validateMusicResources } = require("./activeClassroomBackgroundMusic");
+const { DEFAULT_PLAYLIST_ID } = require("./activeClassroomUnitMusic");
 const identifier = value => { if (typeof value !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(value)) throw new HttpsError("invalid-argument", "Identificador de música inválido."); return value; };
 const title = value => { if (typeof value !== "string" || !value.trim() || value.length > 160) throw new HttpsError("invalid-argument", "Título de música inválido."); return value.trim(); };
 function emptyCatalog() { return { schemaVersion: 1, ambientCatalogVersion: 0, tracks: [], playlists: [], integrity: { algorithm: "sha256", contentHash: contentHash({ schemaVersion: 1, tracks: [], playlists: [] }) } }; }
@@ -20,9 +21,10 @@ function createAmbientHandlers({ db, bucket, getProfile, authorize, getRequestPr
   const resources = db.collection("activeClassroomResources");
   const read = async () => (await current.get()).data() || emptyCatalog();
   async function editor(request, permission) { if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión."); return requireClassroom(await getProfile(request.auth.uid), permission); }
-  async function change(operation) {
+  async function change(operation, expectedVersion) {
     return db.runTransaction(async transaction => {
       const previous = (await transaction.get(current)).data() || emptyCatalog();
+      if (expectedVersion !== undefined && previous.ambientCatalogVersion !== expectedVersion) throw new HttpsError("aborted", "El catálogo cambió. Recarga antes de guardar la música predeterminada.");
       const next = operation(structuredClone(previous));
       next.tracks = next.tracks.map((track, order) => ({ ...track, order }));
       if (next.tracks.length > 200) throw new HttpsError("resource-exhausted", "La biblioteca admite hasta 200 pistas.");
@@ -38,6 +40,7 @@ function createAmbientHandlers({ db, bucket, getProfile, authorize, getRequestPr
     if (replaced === track.id) return catalog;
     if (replaced) catalog.tracks = catalog.tracks.filter(item => item.id !== replaced);
     if (!catalog.tracks.some(item => item.sha256 === track.sha256)) catalog.tracks.splice(position, 0, track);
+    if (replaced) catalog.playlists = catalog.playlists.map(list => ({ ...list, trackIds: [...new Set(list.trackIds.map(id => id === replaced ? track.id : id))] }));
     return catalog;
   });
   async function imported(request) {
@@ -74,9 +77,14 @@ function createAmbientHandlers({ db, bucket, getProfile, authorize, getRequestPr
       else if (data.action === "order") {
         if (!Array.isArray(data.ids) || data.ids.length !== catalog.tracks.length || new Set(data.ids).size !== data.ids.length || data.ids.some(id => !catalog.tracks.some(track => track.id === id))) throw new HttpsError("invalid-argument", "Orden de música inválido.");
         catalog.tracks = data.ids.map(id => catalog.tracks.find(track => track.id === id));
+      } else if (data.action === "set-default") {
+        if (!Number.isSafeInteger(data.expectedVersion) || data.expectedVersion < 0) throw new HttpsError("invalid-argument", "Versión de catálogo inválida.");
+        if (data.id !== null && !catalog.tracks.some(track => track.id === data.id && track.active)) throw new HttpsError("failed-precondition", "La pista ya no está disponible.");
+        catalog.playlists = catalog.playlists.filter(playlist => playlist.id !== DEFAULT_PLAYLIST_ID);
+        catalog.playlists.push({ id: DEFAULT_PLAYLIST_ID, title: "Música predeterminada del módulo", trackIds: data.id ? [data.id] : [] });
       } else throw new HttpsError("invalid-argument", "Acción de música inválida.");
       return catalog;
-    }) };
+    }, data.action === "set-default" ? data.expectedVersion : undefined) };
   }
   async function migrate(request) {
     const profile = await editor(request, "orderMaterial"); if ((await read()).migrated) return { catalog: await read(), migrated: 0, failures: [] };

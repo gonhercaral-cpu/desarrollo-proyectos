@@ -8,10 +8,13 @@ import DriveResourceImportDialog from "./DriveResourceImportDialog";
 const call = async (name, data = {}) => (await httpsCallable(functions, name, { timeout: 540000 })(data)).data;
 export default function AmbientMusicLibrary({ profile }) {
   const [catalog, setCatalog] = useState({ ambientCatalogVersion: 0, tracks: [] });
+  const [defaultSelection, setDefaultSelection] = useState(null);
   const [busy, setBusy] = useState(""); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const [importing, setImporting] = useState(false); const [replacement, setReplacement] = useState(""); const [preview, setPreview] = useState("");
   const audio = useRef(null); const uploadInput = useRef(null); const live = useRef(true);
   const allowed = key => canClassroom(profile, key); const canOrder = allowed("orderMaterial");
+  const defaults = catalog.playlists?.find(playlist => playlist.id === "module-default");
+  const defaultId = defaultSelection ?? (defaults ? defaults.trackIds[0] || "" : catalog.tracks.find(track => track.active)?.id || "");
   async function run(label, operation) {
     if (busy) return; setBusy(label); setError("");
     try { const result = await operation(); if (live.current && result?.catalog) setCatalog(result.catalog); return result; }
@@ -44,6 +47,7 @@ export default function AmbientMusicLibrary({ profile }) {
   function move(index, delta) { const ids = catalog.tracks.map(track => track.id); [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]]; void edit({ action: "order", ids }).catch(() => {}); }
   return <section className="ac-console-panel ac-ambient-library">
     <header className="ac-panel-title"><div><h2>Música ambiente</h2><p>Biblioteca de música para todas las Units y niveles. Disponible offline después de sincronizar Desktop.</p></div><span>Catálogo v{catalog.ambientCatalogVersion}</span></header>
+    <div className="ac-unit-actions ac-default-music"><label>Pista predeterminada del módulo<select aria-label="Pista predeterminada del módulo" disabled={Boolean(busy) || !canOrder} value={defaultId} onChange={event => setDefaultSelection(event.target.value)}><option value="">Sin música predeterminada</option>{catalog.tracks.filter(track => track.active).map(track => <option key={track.id} value={track.id}>{track.title}</option>)}</select></label><button type="button" className="ac-outline-button" disabled={Boolean(busy) || !canOrder} onClick={() => { void run("Guardando predeterminada…", () => call("editActiveClassroomAmbient", { action: "set-default", id: defaultId || null, expectedVersion: catalog.ambientCatalogVersion })).then(() => { setDefaultSelection(null); setMessage("Predeterminada guardada. Units heredadas la usarán tras sincronizar Desktop."); }).catch(() => {}); }}>Guardar predeterminada</button></div>
     <div className="ac-unit-actions"><button className="ac-outline-button" disabled={Boolean(busy) || !allowed("importDrive")} onClick={() => { setReplacement(""); setImporting(true); }}>+ Importar desde Nube AES</button><button className="ac-primary-button" disabled={Boolean(busy) || !allowed("uploadMaterial")} onClick={() => { setReplacement(""); uploadInput.current.click(); }}>+ Agregar archivo</button><input hidden ref={uploadInput} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.wav,.flac" onChange={event => { const file = event.target.files[0]; event.target.value = ""; void upload(file).catch(() => {}); }}/></div>
     {busy && <p role="status">{busy}</p>}{message && <p role="status">{message}</p>}{error && <p role="alert" className="ac-error-banner">{error}</p>}
     {preview && <audio ref={audio} controls aria-label="Preview de música ambiente"/>}
