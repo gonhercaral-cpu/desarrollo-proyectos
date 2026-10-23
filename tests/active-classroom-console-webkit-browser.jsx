@@ -39,7 +39,11 @@ async function run() {
   card.querySelector(".ac-card-select").click();
   await wait(() => document.querySelector(".ac-unit-editor"));
   if (!document.querySelector(".ac-unit-editor h1").textContent.includes("Unit")) throw new Error("Clic principal no abrió Unit");
-  if (!document.querySelector(".ac-unit-editor").textContent.includes("Música ambiente")) throw new Error("Editor de música faltante");
+  const tabs = [...document.querySelectorAll('.ac-unit-editor [role="tab"]')];
+  if (tabs.length !== 6) throw new Error("Secciones del editor faltantes");
+  tabs.find(tab => tab.textContent === "Música").click();
+  await wait(() => document.querySelector(".ac-unit-music"));
+  if (!document.querySelector(".ac-unit-music").textContent.includes("Música ambiente de esta Unit")) throw new Error("Editor de música faltante");
   observations.push({ singleClickOpens: true, menuDoesNotOpen: true, musicEditor: true });
   return { ok: true, observations };
 }
