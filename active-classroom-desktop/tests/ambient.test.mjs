@@ -33,3 +33,19 @@ test("catálogo rechaza hash, MIME, paths y duplicados; cierre cancela antes de 
   let committed = false; const library = new AmbientLibrary({ call: async action => { if (action === "ambient-read") return null; committed = true; }, has: async () => true }, { call: async () => ({ catalog: remote.value }) });
   library.close(); await assert.rejects(library.sync()); assert.equal(committed, false);
 });
+
+test("cambiar predeterminada usa playlist compatible 1.0.18 y restaura offline sin descargar audio repetido", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "ambient-default-")); t.after(() => rm(directory, { recursive: true, force: true }));
+  const cache = new DiskCache(directory); let remote = await catalog(1, ["Calma", "Writing"]); let downloads = 0;
+  async function setDefault(index, version) {
+    remote.value.ambientCatalogVersion = version;
+    remote.value.playlists = [{ id: "module-default", title: "Predeterminada", trackIds: [remote.value.tracks[index].id] }];
+    remote.value.integrity.contentHash = await sha256(new TextEncoder().encode(canonical({ schemaVersion: 1, tracks: remote.value.tracks, playlists: remote.value.playlists })));
+  }
+  await setDefault(1, 1);
+  const api = { async call() { return { catalog: remote.value }; }, async downloadAmbient(_version, track, write) { downloads++; await write(remote.bytes.get(track.id)); } };
+  const library = new AmbientLibrary(cache, api); await library.sync(); assert.equal(downloads, 2);
+  await setDefault(0, 2); await library.sync(); assert.equal(downloads, 2);
+  const offline = new AmbientLibrary(new DiskCache(directory), { call() { throw new Error("Sin red"); } });
+  const restored = await offline.restore(); assert.equal(restored.playlists[0].trackIds[0], remote.value.tracks[0].id);
+});
