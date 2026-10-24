@@ -1,32 +1,93 @@
-/* Editor de Unit por secciones. Todo scoped a .ac-unit-editor; sin alturas fijas ni scroll anidado. */
+/* Editor de Unit por secciones. Todo scoped a .ac-unit-editor.
+   El layout responde al ancho del panel (container query), no al viewport: así funciona con sidebar expandido o contraído. */
+.ac-module .ac-unit-editor { width: 100%; min-width: 0; box-sizing: border-box; padding: 0; }
+
+/* Encabezado */
+.ac-unit-editor .ac-unit-heading { align-items: flex-start; }
+.ac-unit-editor .ac-unit-title { display: grid; gap: 2px; min-width: 0; }
+.ac-unit-editor .ac-unit-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.ac-unit-editor .ac-unit-title h1 { margin: 4px 0; overflow-wrap: anywhere; }
+.ac-unit-editor .ac-unit-title > .ac-clear-filters { min-height: 28px; padding: 4px 8px; font-size: 12px; justify-self: start; }
+.ac-unit-editor .ac-unit-title h1 { margin: 2px 0; font-size: 26px; }
+.ac-unit-editor .ac-unit-status { display: inline-flex; align-items: center; padding: 3px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.ac-unit-editor .ac-unit-status.is-active { color: #138651; background: #e3f7ee; border: 1px solid #b7e6d0; }
+.ac-unit-editor .ac-unit-status.is-inactive { color: #6b778a; background: #eef1f5; border: 1px solid var(--ac-line); }
+.ac-unit-editor .ac-unit-header-actions { justify-content: flex-end; }
+[data-theme="dark"] .ac-unit-editor .ac-unit-status.is-active { color: #8ee3bb; background: #193d34; border-color: #2b6d5c; }
+
+/* Pestañas con icono */
+.ac-unit-editor .ac-unit-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: transparent; color: var(--ac-muted); font: inherit; font-weight: 600; cursor: pointer; }
 .ac-unit-editor .ac-unit-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--ac-line); }
-.ac-unit-editor .ac-unit-tabs [role="tab"] { padding: 10px 16px; border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: transparent; color: var(--ac-muted); font: inherit; font-weight: 600; cursor: pointer; }
 .ac-unit-editor .ac-unit-tabs [role="tab"]:hover { color: var(--ac-ink); background: var(--ac-soft); }
 .ac-unit-editor .ac-unit-tabs [role="tab"][aria-selected="true"] { color: var(--ac-ink); border-bottom-color: var(--ac-blue); background: var(--ac-soft); }
+.ac-unit-editor .ac-unit-tabs [role="tab"] svg { flex: 0 0 auto; }
 .ac-unit-editor .ac-unit-tabs [role="tab"]:focus-visible, .ac-unit-editor .ac-unit-panel:focus-visible { outline: 2px solid var(--ac-blue); outline-offset: 2px; }
-.ac-unit-editor .ac-unit-panel { display: grid; gap: 20px; min-width: 0; }
-.ac-unit-editor .ac-unit-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
 
-/* Workspace: lista paginada / editor con preview / recursos */
-.ac-unit-editor .ac-unit-workspace { grid-template-columns: minmax(200px, .6fr) minmax(320px, 1.4fr) minmax(280px, 1fr); }
-.ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(200px, .6fr) minmax(320px, 1.6fr); }
+/* Panel: contenedor de consultas */
+.ac-unit-editor .ac-unit-panel { display: grid; gap: 12px; min-width: 0; container: unit-panel / inline-size; }
+
+/* Datos: campos + miniatura real de la presentación */
+.ac-unit-editor .ac-unit-data { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 280px); align-items: start; gap: 16px 20px; }
+.ac-unit-editor .ac-unit-data > .ac-unit-fields { grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); align-content: start; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.ac-unit-editor .ac-unit-data > .ac-unit-fields legend { grid-column: 1 / -1; padding: 0; margin-bottom: 10px; font-size: 16px; }
+.ac-unit-editor .ac-unit-cover { display: grid; gap: 6px; min-width: 0; margin: 0; }
+.ac-unit-editor .ac-unit-cover figcaption { font-size: 12px; font-weight: 700; }
+.ac-unit-editor .ac-unit-cover small { color: var(--ac-muted); font-size: 11px; }
+.ac-unit-editor .ac-unit-cover .ac-slide-thumb { width: 100%; }
+.ac-unit-editor .ac-unit-cover .ac-slide-thumb { aspect-ratio: 16 / 7; max-height: 80px; }
+.ac-unit-editor .ac-unit-presentation .ac-unit-actions { gap: 6px; }
+.ac-unit-editor .ac-unit-presentation :is(.ac-outline-button, .ac-clear-filters) { font-size: 11px; padding: 6px 8px; min-height: 32px; }
+.ac-console .ac-unit-editor .ac-unit-presentation > p { margin: 3px 0 5px; }
+.ac-unit-editor .ac-unit-processing-help { margin-top: 5px; font-size: 11px; color: var(--ac-muted); }
+.ac-unit-editor .ac-unit-processing-help > summary { cursor: pointer; }
+
+/* Presentación y música */
+.ac-unit-editor .ac-unit-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+.ac-unit-editor .ac-unit-presentation select { flex: 1 1 220px; min-width: 0; }
+
+/* Workspace: lista de miniaturas / vista previa amplia. Recursos y publicaciones van debajo a todo ancho */
+.ac-unit-editor .ac-unit-workspace { display: grid; grid-template-columns: minmax(180px, 230px) minmax(0, 1fr); align-items: start; gap: 12px; }
 .ac-unit-editor .ac-unit-workspace > * { min-width: 0; }
-.ac-unit-editor .ac-unit-side { display: grid; gap: 16px; min-width: 0; }
-.ac-unit-editor .ac-unit-slides ol { max-height: none; overflow: visible; }
-.ac-unit-editor .ac-unit-slides li button { grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px; }
+.ac-unit-editor .ac-unit-resources-full, .ac-unit-editor .ac-unit-resources-full > * { min-width: 0; }
+
+/* Lista de miniaturas: ya paginada, fluye con la página */
+.ac-unit-editor .ac-unit-slides ol { margin: 8px 0 0; padding: 2px; max-height: none; overflow: visible; }
+.ac-unit-editor .ac-unit-slides li button { grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px; font-size: 12px; }
 .ac-unit-editor .ac-unit-slides li button:focus-visible { outline: 2px solid var(--ac-blue); outline-offset: 2px; }
-.ac-unit-editor .ac-slide-thumb { display: grid; place-items: center; width: 72px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: var(--ac-panel); border: 1px solid var(--ac-line); }
+.ac-unit-editor .ac-unit-slides li button[aria-pressed="true"] { border-color: var(--ac-blue); box-shadow: 0 0 0 1px var(--ac-blue); }
+.ac-unit-editor .ac-slide-thumb { display: grid; place-items: center; width: 64px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: var(--ac-panel); border: 1px solid var(--ac-line); }
 .ac-unit-editor .ac-slide-thumb img { width: 100%; height: 100%; object-fit: contain; }
-.ac-unit-editor .ac-slide-thumb-number { font-weight: 700; color: var(--ac-muted); }
+.ac-unit-editor .ac-slide-thumb-number { font-weight: 700; color: var(--ac-muted); font-size: 12px; text-align: center; }
 .ac-unit-editor .ac-slide-label { display: grid; gap: 2px; min-width: 0; }
-.ac-unit-editor .ac-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
-.ac-unit-editor .ac-unit-resource-panel { max-height: none; overflow: visible; }
+.ac-unit-editor .ac-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+
+/* Editor de diapositiva y vista previa */
+.ac-unit-editor .ac-unit-slide-editor .ac-build-preview { margin: 4px 0 8px; border: 1px solid var(--ac-line); box-shadow: 0 1px 4px rgba(10, 35, 81, .08); }
+.ac-unit-editor .ac-unit-slide-editor .ac-interaction-editor { border-top: 0; padding-top: 0; margin-top: 0; }
+.ac-unit-editor .ac-unit-slide-editor .ac-interaction-editor > h3 { margin: 0 0 8px; font-size: 14px; }
+.ac-unit-editor .ac-unit-slide-editor .ac-interaction-editor > label { margin-bottom: 8px; }
+.ac-unit-editor .ac-unit-slide-editor .ac-build-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; min-width: 0; margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--ac-line); border-radius: 10px; }
+.ac-unit-editor .ac-unit-slide-editor .ac-build-fields > legend { padding: 0 6px; font-weight: 700; font-size: 13px; }
+.ac-unit-editor .ac-unit-slide-editor .ac-build-fields > :is(.ac-unit-actions, label:has(textarea)) { grid-column: 1 / -1; }
+.ac-unit-editor .ac-unit-slide-resources { display: grid; gap: 8px; min-width: 0; }
+.ac-unit-editor .ac-unit-slide-resources { padding: 4px; }
+.ac-unit-editor .ac-unit-slide-resources > .ac-unit-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.ac-unit-editor .ac-unit-slide-resources :is(.ac-outline-button, .ac-clear-filters) { font-size: 11px; min-height: 30px; padding: 5px 7px; }
+.ac-unit-editor .ac-interaction-settings { margin-top: 8px; border: 1px solid var(--ac-line); border-radius: 9px; padding: 10px; }
+.ac-unit-editor .ac-interaction-settings > summary { color: var(--ac-blue); cursor: pointer; font-size: 12px; font-weight: 600; }
+.ac-unit-editor .ac-interaction-settings[open] > summary { margin-bottom: 12px; }
+.ac-console .ac-unit-editor .ac-interaction-editor-compact .ac-build-preview { order: 0; }
+.ac-unit-editor .ac-interaction-editor-compact > p { margin: 0 0 6px; font-size: 11px; }
+.ac-unit-editor .ac-unit-slide-resources h3 { margin: 0; font-size: 14px; }
+.ac-unit-editor .ac-unit-slide-resources p { margin: 0; }
 
 /* Secundarios plegables: datos/notas, más acciones, música anterior */
 .ac-unit-editor .ac-slide-details, .ac-unit-editor .ac-unit-more, .ac-unit-editor .ac-legacy-music { min-width: 0; }
-.ac-unit-editor .ac-slide-details { display: grid; gap: 12px; padding: 10px 12px; border: 1px solid var(--ac-line); border-radius: 10px; background: var(--ac-soft); }
+.ac-unit-editor .ac-slide-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding: 10px 12px; border: 1px solid var(--ac-line); border-radius: 10px; background: var(--ac-soft); }
+.ac-unit-editor .ac-slide-details > summary { grid-column: 1 / -1; }
+.ac-unit-editor .ac-slide-details > .ac-unit-wide { grid-column: 1 / -1; }
 .ac-unit-editor .ac-slide-details > summary, .ac-unit-editor .ac-legacy-music > summary, .ac-unit-editor .ac-unit-more > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--ac-muted); }
-.ac-unit-editor .ac-slide-details[open] > summary { margin-bottom: 8px; color: var(--ac-ink); }
+.ac-unit-editor .ac-slide-details[open] > summary { color: var(--ac-ink); }
 .ac-unit-editor .ac-legacy-music { padding: 12px 16px; border: 1px solid var(--ac-line); border-radius: 14px; background: var(--ac-panel); }
 .ac-unit-editor .ac-legacy-music[open] > summary { margin-bottom: 12px; color: var(--ac-ink); }
 .ac-unit-editor .ac-legacy-music .ac-unit-card { padding: 0; border: 0; }
@@ -35,12 +96,20 @@
 .ac-unit-editor summary:focus-visible { outline: 2px solid var(--ac-blue); outline-offset: 2px; border-radius: 4px; }
 .ac-unit-editor .ac-unit-manifest { max-height: none; }
 
-@media (max-width: 1100px) {
-  .ac-unit-editor .ac-unit-workspace, .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(200px, .7fr) minmax(260px, 1.3fr); }
-  .ac-unit-editor .ac-unit-side { grid-column: 1 / -1; }
+@container unit-panel (max-width: 720px) {
+  .ac-unit-editor .ac-unit-overview { grid-template-columns: minmax(0, 1fr); }
+  .ac-unit-editor .ac-unit-data { grid-template-columns: minmax(0, 1fr); }
+  .ac-unit-editor .ac-unit-cover { grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); align-items: center; }
+  .ac-unit-editor .ac-unit-cover figcaption { grid-column: 1 / -1; }
+}
+/* Ancho mínimo: todo en una columna */
+@container unit-panel (max-width: 560px) {
+  .ac-unit-editor .ac-unit-workspace, .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(0, 1fr); }
+  .ac-unit-editor .ac-unit-data > .ac-unit-fields { grid-template-columns: minmax(0, 1fr); }
+  .ac-unit-editor .ac-unit-cover { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 650px) {
-  .ac-unit-editor .ac-unit-overview, .ac-unit-editor .ac-unit-workspace, .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: 1fr; }
   .ac-unit-editor .ac-unit-tabs { flex-wrap: nowrap; overflow-x: auto; }
   .ac-unit-editor .ac-unit-tabs [role="tab"] { flex: 0 0 auto; white-space: nowrap; }
+  .ac-unit-editor .ac-unit-header-actions { justify-content: flex-start; }
 }

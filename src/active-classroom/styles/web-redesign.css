@@ -53,8 +53,8 @@
 .ac-miniature-sample h3 { margin: 0; font-size: 12px; }.ac-miniature-sample small { color: #7088ad; }
 .ac-default-music { margin: 12px 0; }.ac-default-music label { display: grid; gap: 6px; font-size: 12px; }
 .ac-default-music select { padding: 9px 12px; max-width: 100%; border: 1px solid var(--ac-line); border-radius: 8px; color: var(--ac-ink); background: var(--ac-panel); }
-.ac-console .ac-unit-editor { order: 2; padding: 0; gap: 10px; }
-.ac-console .ac-unit-heading { gap: 12px; }.ac-console .ac-unit-heading p { margin: 6px 0; font-size: 12px; }
+.ac-console .ac-unit-editor { order: 2; padding: 0 clamp(12px, 1.2vw, 20px) 16px; gap: 12px; width: 100%; min-width: 0; box-sizing: border-box; }
+.ac-console .ac-unit-heading { gap: 12px; }.ac-console .ac-unit-heading p { margin: 4px 0 0; font-size: 12px; }
 .ac-console .ac-unit-editor .ac-unit-tabs { border: 1px solid var(--ac-line); border-radius: 10px; background: var(--ac-panel); }
 .ac-console .ac-unit-editor .ac-unit-tabs [role="tab"] { padding: 12px 15px; font-size: 12px; }
 .ac-console .ac-unit-editor .ac-unit-tabs [role="tab"][aria-selected="true"] { border-bottom-color: #ff0038; color: #ff0038; }
@@ -64,11 +64,7 @@
 .ac-console .ac-unit-card p { font-size: 12px; margin: 6px 0 10px; }
 .ac-console .ac-unit-presentation > p[role="status"] { display: inline; margin-right: 8px; }
 .ac-console .ac-unit-presentation > p:last-child { font-size: 10px; margin-bottom: 0; }
-.ac-console .ac-unit-editor .ac-unit-workspace { display: grid; grid-template-columns: minmax(160px,.65fr) minmax(270px,1.5fr) minmax(230px,1fr); gap: 12px; align-items: start; }
-.ac-console .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(180px,.6fr) minmax(0,1.8fr); }
-.ac-console .ac-unit-editor .ac-unit-slides ol,.ac-console .ac-unit-editor .ac-unit-resource-panel { max-height: none; overflow: visible; }
-.ac-console .ac-unit-editor .ac-unit-slides li button { font-size: 12px; grid-template-columns: 60px minmax(0,1fr); }
-.ac-console .ac-unit-editor .ac-slide-thumb { width: 60px; }
+/* Workspace, miniaturas y recursos del editor: layout por container query en unit-editor.css. */
 .ac-console .ac-unit-slide-editor .ac-interaction-editor { display: flex; flex-direction: column; }
 .ac-console .ac-unit-slide-editor .ac-build-preview { order: -1; }
 .ac-console .ac-unit-resource .ac-outline-button { font-size: 10px; min-height: 28px; padding: 5px 7px; }
@@ -83,17 +79,13 @@
 .ac-music-active strong { color: #138651; }.ac-music-active audio { width: min(100%,520px); }
 .ac-music-note { margin-top: 14px !important; padding: 12px; border-radius: 8px; background: #fff6e5; color: #825317 !important; }
 .ac-music-select { display: grid; gap: 8px; margin: 15px 0; font-size: 12px; }
-@media (max-width: 1250px) {
- .ac-console .ac-unit-editor .ac-unit-workspace,.ac-console .ac-unit-editor .ac-unit-workspace.is-slides { grid-template-columns: minmax(180px,.7fr) minmax(0,1.3fr); }
- .ac-console .ac-unit-editor .ac-unit-side { grid-column: 1 / -1; }
-}
 @media (max-width: 950px) {
  .ac-console .ac-console-layout { grid-template-columns: minmax(0,1fr); }
  .ac-console .ac-thumbnail-preferences { grid-template-columns: minmax(0,1fr); }
  .ac-console .ac-console-inspector { position: static; }
 }
 @media (max-width: 650px) {
- .ac-console .ac-unit-editor .ac-unit-workspace,.ac-console .ac-unit-editor .ac-unit-workspace.is-slides,.ac-console .ac-unit-overview,.ac-music-options { grid-template-columns: minmax(0,1fr); }
+ .ac-music-options { grid-template-columns: minmax(0,1fr); }
  .ac-console .ac-unit-actions { flex-wrap: wrap; }
  .ac-console .ac-console-toolbar label { min-width: 0; flex-basis: 100%; }
 }

@@ -11,12 +11,15 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
   dom.window.confirm = () => true;
   dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
   let draft = { name: "Unit real", levelId: "level-1", status: "active", description: "Legado", metadata: { code: "OLD", language: "es", estimatedMinutes: 10, tags: ["tag"] }, mainPresentationId: "main", generalResourceIds: ["audio"], slides: [{ slideId: "slide", index: 0, title: "Slide anterior", metadata: { pageNumber: 1, notes: "" }, resourceIds: [] }] };
   const resources = [{ id: "main", folderId: "unit", name: "Clase.pdf", source: "drive", mimeType: "application/pdf", kind: "document" }, { id: "audio", folderId: "unit", name: "Audio.mp3", source: "drive", mimeType: "audio/mpeg", kind: "audio" }];
   let revision = 1;
   let changed = new Set(["main", "audio"]);
   const refreshes = [], published = [];
   const mock = {
+    getCloudFileContent: async () => { throw new Error("Descarga explícita no solicitada por esta prueba"); },
+    getActiveClassroomResourceUrl: async () => "",
     loadMusicCatalog: async () => ({ ambientCatalogVersion: 1, playlists: [], tracks: [{ id: "a".repeat(64), title: "Calma", active: true, size: 12 }] }),
     previewMusicTrack: async () => ({ url: "data:audio/mpeg;base64," }),
     subscribeUnitPublication: () => () => {}, loadUnitPublications: async () => [],
@@ -39,15 +42,28 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   t.after(async () => { await act(async () => root.unmount()); await server.close(); dom.window.close(); Object.assign(globalThis, previous); delete globalThis.__classroomAdminMock; });
   const { UnitEditorForm } = await server.ssrLoadModule("/src/active-classroom/components/UnitEditor.jsx");
   await act(async () => root.render(React.createElement(UnitEditorForm, { profile: { uid: "admin", active: true, role: "admin" }, unit: { id: "unit", name: draft.name }, folders: [{ id: "level-1", kind: "level", name: "Nivel actual", active: true }], resources, initial: { editor: { draft, draftRevision: revision }, publications: [] }, onDirtyChange() {}, onBack() {}, onUpload: async () => [], onImport: async () => { resources.push({ id: "replacement", folderId: "unit", source: "drive", name: "Nueva.pdf", mimeType: "application/pdf", kind: "document" }); return { imported: [{ id: "replacement" }], failed: [] }; } })));
-  const button = text => [...dom.window.document.querySelectorAll("button")].find(item => item.textContent.trim() === text);
+  const button = text => [...dom.window.document.querySelectorAll("button")].find(item => item.getAttribute("aria-label") === text || item.textContent.trim() === text);
   const click = async text => { assert.ok(button(text), text); await act(async () => button(text).click()); };
   const fields = dom.window.document.querySelector(".ac-unit-fields").textContent;
   for (const field of ["Código", "Idioma", "Duración", "Descripción", "Etiquetas"]) assert.equal(fields.includes(field), false);
+  const workspace = dom.window.document.querySelector(".ac-unit-workspace");
+  const resourcesBelow = dom.window.document.querySelector(".ac-unit-resources-full");
+  assert.equal(workspace.contains(resourcesBelow), false, "recursos fuera de columnas de diapositivas y preview");
+  assert.ok(workspace.compareDocumentPosition(resourcesBelow) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, "recursos después del preview");
+  assert.equal(Boolean(dom.window.document.querySelector(".ac-unit-side")), false);
+  await click("Gestionar recursos");
+  assert.equal(Boolean(dom.window.document.querySelector(".ac-unit-workspace")), false);
+  const audioRow = [...dom.window.document.querySelectorAll('.ac-unit-resource')].find(row => row.textContent.includes("Audio.mp3"));
+  await act(async () => audioRow.querySelector('.ac-rm-menu summary').click());
+  await act(async () => audioRow.querySelectorAll('.ac-rm-menu-content input[type="checkbox"]')[1].click());
+  await click("Resumen");
+  assert.match(dom.window.document.querySelector('.ac-unit-slide-resources').textContent, /1 recurso\(s\) asociado/);
   await click("Publicar versión");
   assert.match(dom.window.document.body.textContent, /Hay 2 archivos con una versión más reciente/);
   assert.equal(published.length, 0);
   await click("Actualizar y continuar");
   assert.deepEqual(refreshes, ["main", "audio"]); assert.equal(published.length, 1); assert.equal(published[0].metadata.code, "OLD");
+  assert.deepEqual(published[0].slides[0].resourceIds, ["audio"], "asociación desde recursos se conserva al publicar");
   await click("Quitar presentación");
   assert.equal(draft.mainPresentationId, null); assert.deepEqual(draft.slides, []);
   await click("Importar presentación desde Nube AES");
@@ -59,8 +75,16 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   assert.equal(draft.mainPresentationId, "replacement");
   assert.equal(published[0].mainPresentationId, "main");
   assert.equal(dom.window.document.querySelectorAll('[role="tab"]').length, 6);
+  const inspectButton = button("Audio.mp3");
+  inspectButton.focus();
+  await act(async () => inspectButton.click());
+  assert.ok(dom.window.document.querySelector('.ac-rm-inspector'));
+  assert.equal(Boolean(dom.window.document.querySelector('.ac-unit-resource-dialog')), false, "inspector integrado en Recursos sin modal");
+  await click("Cerrar detalles");
+  assert.equal(Boolean(dom.window.document.querySelector('.ac-rm-inspector')), false);
+  assert.ok(dom.window.document.activeElement === inspectButton, "cerrar detalles devuelve foco al recurso");
   await click("Música");
-  assert.equal(dom.window.document.querySelector('.ac-unit-workspace'), null);
+  assert.equal(Boolean(dom.window.document.querySelector('.ac-unit-workspace')), false);
   assert.ok(button("Guardar borrador")); assert.ok(button("Publicar versión"));
   await act(async () => dom.window.document.querySelectorAll('.ac-music-options input[type="radio"]')[2].click());
   await click("Guardar borrador");
