@@ -15,13 +15,22 @@ function createBuildPreview({ db, bucket, getProfile, prepareResource, clock = D
     // Includes Drive ACL/original version checks and immutable generation checks.
     const base = await prepareResource(profile, resource);
     let download = base;
+    let animation;
     if (isRasterSlides(resource)) {
       const page = resource.processing.pages.find(item => item.pageObjectId === pageObjectId);
       download = buildIndex ? page?.builds?.[buildIndex - 1]?.download : page?.download;
       if (!download) throw new HttpsError("not-found", "Estado no encontrado.");
+      if (!buildIndex && page.animation) animation = page.animation;
     } else if (buildIndex || !["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(download.mimeType)) throw new HttpsError("invalid-argument", "Formato sin vista previa.");
     const [url] = await bucket.file(download.path).getSignedUrl({ version: "v4", action: "read", expires: clock() + 15 * 60 * 1000, queryParams: { generation: download.generation } });
-    return { url, mimeType: download.mimeType, sizeBytes: download.sizeBytes, sha256: download.checksums.sha256 };
+    let animated;
+    if (animation) {
+      const sign = async (asset) => ({ url: (await bucket.file(asset.path).getSignedUrl({ version: "v4", action: "read", expires: clock() + 15 * 60 * 1000, queryParams: { generation: asset.generation } }))[0], mimeType: asset.mimeType });
+      try {
+        animated = { background: await sign(animation.background.download), images: await Promise.all(animation.images.map(async image => ({ ...await sign(image.download), x: image.x, y: image.y, width: image.width, height: image.height }))) };
+      } catch { /* Preview keeps the complete static slide if optional assets cannot be signed. */ }
+    }
+    return { url, mimeType: download.mimeType, sizeBytes: download.sizeBytes, sha256: download.checksums.sha256, ...(animated ? { animation: animated } : {}) };
   };
 }
 module.exports = { createBuildPreview };

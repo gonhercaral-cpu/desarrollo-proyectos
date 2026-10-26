@@ -41,7 +41,8 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     if (resource.source !== "drive" || file.mimeType !== "application/vnd.google-apps.presentation" || (!file.version && !file.modifiedTime)) throw new HttpsError("failed-precondition", "Referencia Google Slides inválida.");
     return { provider: "drive", fileId: file.id, name: file.name, mimeType: file.mimeType, version: String(file.version || ""), modifiedTime: file.modifiedTime || "" };
   }
-  async function render({ profile, resource, revision }) {
+  async function render({ profile, resource, revision, onStage = async () => {} }) {
+    await onStage("planning");
     await original(profile, resource); // Existing Nube AES ACL, no new auth system.
     const slides = await getSlides(); const presentationId = resource.driveFileId;
     const uploaded = []; const pages = []; let bytesTotal = 0;
@@ -59,6 +60,7 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     const read = async () => (await retry(() => slides.presentations.get({ presentationId, fields: "presentationId,revisionId,slides(objectId)" }, { timeout: 20000 }))).data;
     try {
       const presentation = await read();
+      await onStage("converting");
       if (!Array.isArray(presentation.slides) || !presentation.slides.length || presentation.slides.length > 200 || new Set(presentation.slides.map((page) => page.objectId)).size !== presentation.slides.length) throw new HttpsError("resource-exhausted", "Google Slides requiere entre 1 y 200 diapositivas únicas.");
       if (rasterize) {
         let result;

@@ -3,6 +3,7 @@ const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
 const { needsDocumentProcessing, isGoogleSlides, isRasterSlides, validPageObjectId, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
+const { addPublishedAnimations } = require("./activeClassroomAnimations");
 
 const MAX_RESOURCES = 200;
 const { normalizeUnitMusic, selectedTrack, catalogResource } = require("./activeClassroomUnitMusic");
@@ -241,6 +242,8 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       // base, step and image stays frozen; immutable processing objects stay intact.
       const used = new Set([content.mainPresentationId, ...(content.backgroundMusic || []).map(track => track.resourceId), ...content.generalResourceIds, ...content.slides.flatMap(slide => [slide.metadata.presentationResourceId, ...slide.resourceIds, ...slide.builds.map(build => build.resourceId), ...interactionResourceIds(slide)])].filter(Boolean));
       content.resources = content.resources.filter(resource => used.has(resource.resourceId));
+      const animationCandidates = resources.flatMap(resource => isRasterSlides(resource) ? resource.processing.pages.flatMap((page, index) => page.animation ? [{ resourceId: index === 0 ? resource.id : slideResourceId(resource.id, page.pageObjectId), animation: page.animation }] : []) : []);
+      content.resources = addPublishedAnimations(content.resources, animationCandidates, MAX_RESOURCES);
       for (const slide of content.slides) {
         const initialId = slide.interaction?.initialResourceId;
         if (initialId) {

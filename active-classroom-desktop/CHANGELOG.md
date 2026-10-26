@@ -1,3 +1,12 @@
+## 1.0.19 — 2026-10-26
+
+- Audio de clase independiente: mantiene diapositivas visibles en maestro y proyector, también al avanzar o retroceder.
+- Minirreproductor del maestro con pausa, detener, posición, duración, volumen y minimización sin interrumpir audio.
+- Evita superposición con videos y respeta configuración de música ambiente; documentos conservan comportamiento visual.
+- GIF compatibles se animan mediante fondo separado y archivos originales locales; composición compleja conserva imagen estática.
+- Importación PPTX limita coste de GIF, procesa estados por lotes y conserva diapositivas cuando revelados superan el límite.
+- Conserva caché, publicaciones anteriores, atajos, reproducción de video y actualizador firmado existentes.
+
 ## 1.0.18 — 2026-10-21
 
 - Retira “Mis clases” del menú lateral; conserva Biblioteca y navegación por niveles.

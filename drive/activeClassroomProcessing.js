@@ -3,6 +3,7 @@ const { createHash, randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, processingTargetPath, officeExtension, isGoogleSlides, processorVersion, needsDocumentProcessing, processingFingerprint, requireReady, readyProcessing, pdfSlides } = require("./activeClassroomProcessingModel");
 const { processingError, googleErrorReason } = require("./activeClassroomDriveContent");
+const { discardAnimation, verifyAnimation } = require("./activeClassroomAnimations");
 
 const MAX_BYTES = 250 * 1024 * 1024;
 const validId = (value) => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
@@ -38,6 +39,13 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
           hash.update(chunk);
         }
         if (size !== download.sizeBytes || hash.digest("hex") !== download.checksums.sha256 || header.length < 24 || header.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || header.readUInt32BE(16) !== state.width || header.readUInt32BE(20) !== state.height) fail("Estado PNG dañado.", "data-loss");
+      }
+      for (const [index, page] of result.pages.entries()) if (page.animation) {
+        try { await verifyAnimation(bucket, page.animation, attemptId, index, page, true); }
+        catch {
+          await discardAnimation(bucket, page.animation, attemptId, index);
+          delete page.animation; page.warnings = [...(page.warnings || []), "gif-static-fallback"];
+        }
       }
       return result.pages[0].download;
     }
@@ -88,6 +96,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
     const resourceRef = resources.doc(resourceId);
     const resource = { id: resourceId, ...(await resourceRef.get()).data() };
     if (resource.folderId !== unitId || resource.archived || !needsDocumentProcessing(resource)) fail("El documento no pertenece a esta Unit.");
+    if (["pending", "processing"].includes(resource.processing?.state) && resource.processing.leaseUntil > clock()) return { state: "processing" };
     // Existing snapshot infrastructure checks Drive ACL/version before and after reading.
     const nativeSlides = isGoogleSlides(resource);
     let original;
@@ -110,7 +119,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       if (!unit?.draft || unit.draftRevision !== expectedRevision) fail("El borrador cambió. Recarga antes de procesar.", "aborted");
       if (!current || current.folderId !== unitId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante la solicitud.", "aborted");
       if (["pending", "processing"].includes(current.processing?.state) && current.processing.leaseUntil > clock()) return false;
-      const processing = { state: "pending", jobId: attemptId, revision: attemptId, processorVersion: processorVersion(resource), sourceFingerprint: fingerprint, original, requestedAt: new Date(clock()).toISOString(), leaseUntil: clock() + 540000, requestedByUid: request.auth.uid };
+      const processing = { state: "pending", stage: "planning", jobId: attemptId, revision: attemptId, processorVersion: processorVersion(resource), sourceFingerprint: fingerprint, original, requestedAt: new Date(clock()).toISOString(), leaseUntil: clock() + 540000, requestedByUid: request.auth.uid };
       transaction.create(jobRef, { ...processing, unitId, resourceId });
       transaction.update(resourceRef, { processing });
       return true;
@@ -124,14 +133,26 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         transaction.update(jobRef, { state: "processing", startedAt: timestamp() });
         transaction.update(resourceRef, { "processing.state": "processing" });
       });
-      const result = nativeSlides ? await googleSlides.render({ profile, resource, revision: attemptId }) : await convert({ revision: attemptId, processorVersion: processorVersion(resource), extension: officeExtension(resource), original });
+      let lastStage = "planning";
+      const onStage = async (stage) => {
+        if (!["planning", "converting", "verifying"].includes(stage) || stage === lastStage) return;
+        await db.runTransaction(async transaction => {
+          const current = (await transaction.get(resourceRef)).data();
+          if (current?.processing?.jobId !== attemptId) fail("Solicitud reemplazada.", "aborted");
+          transaction.update(resourceRef, { "processing.stage": stage });
+          transaction.update(jobRef, { stage });
+        });
+        lastStage = stage;
+      };
+      const result = nativeSlides ? await googleSlides.render({ profile, resource, revision: attemptId, onStage }) : await convert({ revision: attemptId, processorVersion: processorVersion(resource), extension: officeExtension(resource), original }, { onStage });
+      await onStage("verifying");
       rendered = result;
       if (result?.processorVersion !== processorVersion(resource)) fail("Versión del procesador incompatible.", "data-loss");
       const download = nativeSlides ? await googleSlides.verify(result) : await verifyDerivative(result, attemptId);
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
         if (current?.processing?.jobId !== attemptId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante el procesamiento. Reintenta desde el borrador actual.", "aborted");
-        const processing = { ...current.processing, state: "ready", download, pageCount: result.pageCount, completedAt: new Date(clock()).toISOString(), textExtraction: null, ...(result.pages ? { sourceType: nativeSlides ? "google-slides" : "pptx", pages: result.pages } : {}) };
+        const processing = { ...current.processing, state: "ready", stage: "ready", download, pageCount: result.pageCount, completedAt: new Date(clock()).toISOString(), textExtraction: null, ...(result.pages ? { sourceType: nativeSlides ? "google-slides" : "pptx", pages: result.pages } : {}) };
         transaction.update(resourceRef, { processing });
         transaction.update(jobRef, { state: "ready", download, pageCount: result.pageCount, completedAt: timestamp() });
       });
@@ -148,6 +169,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       const current = (await resourceRef.get()).data();
       if (rendered?.pages?.[0]?.download?.path === rasterTargetPath(attemptId, 0) && current?.processing?.jobId === attemptId && current.processing.state === "failed") {
         await Promise.allSettled((rendered.pages || []).flatMap(page => [page, ...(page.builds || [])]).map((state, index) => state.download?.path === rasterTargetPath(attemptId, index) ? bucket.file(state.download.path).delete({ ignoreNotFound: true }) : Promise.resolve()));
+        await Promise.allSettled((rendered.pages || []).map((page, index) => discardAnimation(bucket, page.animation, attemptId, index)));
       }
       if (nativeSlides && safeError.code !== "aborted" && safeError.code !== "resource-exhausted") fail("No se pudo procesar la presentación de Google Slides", safeError.code);
       throw safeError;
@@ -170,6 +192,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         const [metadata] = await bucket.file(state.download.path, { generation: state.download.generation }).getMetadata();
         if (String(metadata.generation) !== state.download.generation || Number(metadata.size) !== state.download.sizeBytes || metadata.metadata?.sha256 !== state.download.checksums.sha256 || metadata.contentType !== "image/png") fail("Un estado de revelado no está disponible.", "data-loss");
       }
+      for (const [index, page] of processing.pages.entries()) if (page.animation) await verifyAnimation(bucket, page.animation, processing.revision, index, page);
       return processing.download;
     }
     // Generation is immutable. Full bytes/hash were verified when the processor completed.

@@ -11,6 +11,7 @@ export interface PublishedResource {
   derivative?: { revision: string; processorVersion: string; sourceFingerprint: string; pageCount: number; processedAt: string; textExtraction: null; file: Record<string, unknown> };
   kind: string;
   file: Record<string, unknown>;
+  animation?: { backgroundResourceId: string; images: { resourceId: string; x: number; y: number; width: number; height: number }[] };
   download: { endpoint: string; name: string; mimeType: string; sizeBytes: number; checksums: { sha256: string }; [key: string]: unknown };
 }
 export interface BuildLayer { type: "text" | "answer" | "image"; x: number; y: number; width: number; height: number; text?: string; color?: string; fontSize?: number; resourceId?: string }
@@ -75,6 +76,21 @@ export async function validateManifest(input: unknown): Promise<Manifest> {
     require(!sizes.has(hash) || sizes.get(hash) === r.download.sizeBytes); sizes.set(hash, r.download.sizeBytes);
   }
   const associations = (references: unknown): references is string[] => Array.isArray(references) && references.every((id) => ids.has(id)) && new Set(references).size === references.length;
+  let animatedImages = 0; let animatedBytes = 0;
+  for (const resource of m.resources) {
+    const animation = resource.animation;
+    if (!animation) continue;
+    const background = m.resources.find(item => item.resourceId === animation.backgroundResourceId);
+    require(resource.download.mimeType === "image/png" && background?.download.mimeType === "image/png" && !background.animation && background.resourceId !== resource.resourceId);
+    require(Array.isArray(animation.images) && animation.images.length > 0 && animation.images.length <= 8);
+    for (const image of animation.images) {
+      const asset = m.resources.find(item => item.resourceId === image.resourceId);
+      require(asset?.download.mimeType === "image/gif" && !asset.animation && asset.download.sizeBytes <= 15 * 1024 * 1024);
+      require([image.x, image.y, image.width, image.height].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && image.width > 0 && image.height > 0 && image.x + image.width <= 100 && image.y + image.height <= 100);
+      animatedImages++; animatedBytes += asset.download.sizeBytes;
+    }
+  }
+  require(animatedImages <= 32 && animatedBytes <= 64 * 1024 * 1024);
   require(ids.has(m.mainPresentationId) && associations(m.generalResourceIds) && !m.generalResourceIds.includes(m.mainPresentationId));
   if (m.backgroundMusic !== undefined) {
     require(Array.isArray(m.backgroundMusic) && m.backgroundMusic.length <= 30);
