@@ -1,7 +1,7 @@
 {
   "name": "active-classroom",
   "private": true,
-  "version": "1.0.18",
+  "version": "1.0.19",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,7 +21,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "test:player": "node --test tests/player.test.mjs tests/media.test.mjs tests/background-music.test.mjs tests/media-fixture.test.mjs tests/unit-music.test.mjs",
+    "test:player": "node --test tests/player.test.mjs tests/media.test.mjs tests/background-music.test.mjs tests/media-fixture.test.mjs tests/unit-music.test.mjs tests/audio-channel.test.mjs tests/animated-slides.test.mjs",
     "test:projection": "node --test tests/projection.test.mjs",
     "test:release": "node --test tests/release.test.mjs tests/validation-release.test.mjs tests/system-media.test.mjs tests/release-tag.test.mjs",
     "lint:player": "eslint src/player src/offline src/app.ts tests/release.test.mjs src/updater src/ui src/startup src/settings",
