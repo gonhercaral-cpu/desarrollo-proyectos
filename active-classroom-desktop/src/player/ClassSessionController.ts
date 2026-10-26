@@ -34,6 +34,7 @@ export function isProjectionSnapshot(value: unknown): value is ProjectionSnapsho
     if (source.layers != null) {
       if (!Array.isArray(source.layers) || source.layers.length > 50) return false;
       for (const layer of source.layers) {
+        if (layer.fit != null && layer.fit !== "fill") return false;
         if (!["text", "answer", "image"].includes(layer.type) || [layer.x, layer.y, layer.width, layer.height].some(value => !Number.isFinite(value) || value < 0 || value > 100) || layer.width <= 0 || layer.height <= 0 || layer.x + layer.width > 100 || layer.y + layer.height > 100) return false;
         if (layer.type === "image") { assertLocalUrl(layer.url || ""); }
         else if (typeof layer.text !== "string" || layer.text.length > 2000 || !/^#[a-fA-F0-9]{6}$/.test(layer.color || "") || !Number.isFinite(layer.fontSize) || Number(layer.fontSize) < 0.5 || Number(layer.fontSize) > 20) return false;

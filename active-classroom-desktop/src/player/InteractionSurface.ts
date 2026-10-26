@@ -23,7 +23,7 @@ export class InteractionSurface {
         if (node.tagName === "IMG") { (node as HTMLImageElement).src = layer.url!; (node as HTMLImageElement).alt = ""; }
         else node.textContent = layer.text || "";
       }
-      Object.assign(node.style, { position: "absolute", left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, color: layer.color || "#102954", whiteSpace: "pre-wrap", overflowWrap: "anywhere", objectFit: "contain" });
+      Object.assign(node.style, { position: "absolute", left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, color: layer.color || "#102954", whiteSpace: "pre-wrap", overflowWrap: "anywhere", objectFit: layer.fit || "contain" });
       this.overlay.append(node);
       retained.set(key, node);
     }

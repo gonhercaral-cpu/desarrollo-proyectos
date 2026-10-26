@@ -2,14 +2,31 @@
 import hashlib
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import signal
 import zipfile
 from pypdf import PdfReader
+from gifs import freeze_pptx_gifs
 
 PROCESSOR_VERSION = "office-pdf-v1"
 MAX_BYTES = 250 * 1024 * 1024
 MAX_PAGES = 200
+
+
+def validate_zip_names(items):
+    """Reject duplicate (OPC names are case-insensitive) and escaping entry names.
+
+    Duplicates let validation read a different part than the converter does.
+    """
+    seen = set()
+    for item in items:
+        name = item.filename.replace("\\", "/")
+        key = name.casefold()
+        if key in seen or "\x00" in name or name.startswith("/") or re.match(r"[A-Za-z]:", name) or ".." in name.split("/"):
+            raise ValueError("invalid-office-archive")
+        seen.add(key)
 
 
 def file_integrity(path):
@@ -34,6 +51,7 @@ def validate_office(path, extension):
             raise ValueError("invalid-office-file")
         with zipfile.ZipFile(path) as archive:
             items = archive.infolist()
+            validate_zip_names(items)
             required = "ppt/presentation.xml" if extension == "pptx" else "word/document.xml"
             if required not in archive.namelist() or len(items) > 10000 or sum(item.file_size for item in items) > 512 * 1024 * 1024:
                 raise ValueError("invalid-office-archive")
@@ -44,7 +62,11 @@ def validate_office(path, extension):
                 if item.filename.endswith(".rels"):
                     if item.file_size > 1024 * 1024:
                         raise ValueError("invalid-office-relationships")
-                    root = ElementTree.fromstring(archive.read(item))
+                    with archive.open(item) as stream:
+                        data = stream.read(1024 * 1024 + 1)
+                    if len(data) > 1024 * 1024:
+                        raise ValueError("invalid-office-relationships")
+                    root = ElementTree.fromstring(data)
                     for relationship in root:
                         if relationship.get("TargetMode") == "External" and not relationship.get("Type", "").endswith("/hyperlink"):
                             raise ValueError("external-document-reference")
@@ -68,23 +90,39 @@ def convert_office(source, extension, working_directory, timeout=180):
         '<item oor:path="/org.openoffice.Office.Common/Security"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>'
         '</oor:items>', encoding="utf-8")
     export = "impress_pdf_Export" if extension.startswith("ppt") else "writer_pdf_Export"
-    # No shell, no original filename, no service credentials in child environment.
-    command = [
-        "soffice", f"-env:UserInstallation={profile.as_uri()}", "--headless", "--nologo",
-        "--nodefault", "--nolockcheck", "--nofirststartwizard", "--convert-to",
-        f"pdf:{export}", "--outdir", str(output), str(source),
-    ]
-    with subprocess.Popen(command, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8", "SAL_USE_VCLPLUGIN": "svp"}) as process:
-        try:
-            process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
-            raise
-        if process.returncode:
-            raise subprocess.CalledProcessError(process.returncode, command)
-    pdf = output / f"{Path(source).stem}.pdf"
+    # Embedded GIFs are reduced to their first frame in a temporary copy before
+    # LibreOffice sees them; the original is never modified. Validation above
+    # and below is unchanged (OOXML structure and external relationships).
+    frozen = workspace / "frozen"
+    convert_source = Path(source)
+    gif_warnings = []
+    try:
+        if extension == "pptx":
+            frozen.mkdir(exist_ok=True)
+            report = freeze_pptx_gifs(source, frozen / convert_source.name)
+            gif_warnings = report["warnings"]
+            if report["changed"]:
+                convert_source = frozen / convert_source.name
+                validate_office(convert_source, extension)
+        # No shell, no original filename, no service credentials in child environment.
+        command = [
+            "soffice", f"-env:UserInstallation={profile.as_uri()}", "--headless", "--nologo",
+            "--nodefault", "--nolockcheck", "--nofirststartwizard", "--convert-to",
+            f"pdf:{export}", "--outdir", str(output), str(convert_source),
+        ]
+        with subprocess.Popen(command, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8", "SAL_USE_VCLPLUGIN": "svp"}) as process:
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                raise
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, command)
+    finally:
+        shutil.rmtree(frozen, ignore_errors=True)
+    pdf = output / f"{convert_source.stem}.pdf"
     size, checksum = file_integrity(pdf)
     with pdf.open("rb") as stream:
         if stream.read(5) != b"%PDF-":
@@ -95,4 +133,4 @@ def convert_office(source, extension, working_directory, timeout=180):
     pages = len(reader.pages)
     if pages < 1 or pages > MAX_PAGES:
         raise ValueError("invalid-page-count")
-    return {"path": pdf, "sizeBytes": size, "sha256": checksum, "pageCount": pages}
+    return {"path": pdf, "sizeBytes": size, "sha256": checksum, "pageCount": pages, "gifWarnings": gif_warnings}

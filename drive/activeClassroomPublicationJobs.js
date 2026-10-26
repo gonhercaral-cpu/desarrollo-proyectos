@@ -92,6 +92,10 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
           for (const page of resource.processing?.pages || []) {
             await verifyDownload(page.download);
             for (const build of page.builds || []) await verifyDownload(build.download);
+            if (page.animation) {
+              await verifyDownload(page.animation.background.download);
+              for (const image of page.animation.images) await verifyDownload(image.download);
+            }
           }
         }
         await units.publish(request, { preparedFiles: job.downloads, expectedResources: job.resources, jobId: job.jobId });

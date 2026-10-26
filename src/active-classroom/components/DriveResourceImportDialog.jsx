@@ -4,9 +4,12 @@ import { getDriveResourceKind } from "../utils/driveResources";
 import { formatResourceDate, getResourceKindLabel } from "../utils/resourceTypes";
 import { unitOperationMessage, activeDraftResourceIds } from "../utils/draftResources";
 import { loadUnitEditor } from "../services/unitEditorService";
+import { createSingleFlightGuard, importProgressLabel } from "../utils/processingProgress";
 
-export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, draft, onDestinationChange, globalMusic = false }) {
+export default function DriveResourceImportDialog({ unit, resources, onImport, onClose, acceptFile, selectionLimit, destination, draft, onDestinationChange, globalMusic = false, processingMessage = "" }) {
   const dialogRef = useRef(null);
+  const submitGuard = useRef(null);
+  submitGuard.current ||= createSingleFlightGuard();
   const [path, setPath] = useState([]);
   const [items, setItems] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -73,24 +76,27 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
 
   async function submit(event) {
     event.preventDefault();
-    if (saving || selected.length === 0) return;
-    setSaving(true);
-    setError("");
-    setNotice("");
+    // Synchronous guard: a second submit in the same tick sees stale `saving` state.
+    if (selected.length === 0 || !submitGuard.current.tryAcquire()) return;
     try {
-      const result = await onImport(selected, unit.id, setProgress);
-      const failedIds = new Set(result.failed.map(({ file }) => file.id));
-      setImportedIds((current) => [...current, ...selected.filter((file) => !failedIds.has(file.id)).map((file) => file.id)]);
-      setSelected(result.failed.map(({ file }) => file));
-      const repeated = result.imported.filter((resource) => resource.alreadyImported).length;
-      setNotice(globalMusic ? `${result.imported.length} pista(s) disponibles en la biblioteca global.` : `${result.imported.length - repeated} recurso(s) asociado(s) al borrador de ${unit.name}.${repeated ? ` ${repeated} ya están asociados al borrador actual.` : ""}`);
-      setError(result.failed.map(({ file, message }) => `${file.name}: ${message}`).join("\n"));
-    } catch (importError) {
-      setError(unitOperationMessage(importError));
-    } finally {
-      setSaving(false);
-      setProgress(null);
-    }
+      setSaving(true);
+      setError("");
+      setNotice("");
+      try {
+        const result = await onImport(selected, unit.id, setProgress);
+        const failedIds = new Set(result.failed.map(({ file }) => file.id));
+        setImportedIds((current) => [...current, ...selected.filter((file) => !failedIds.has(file.id)).map((file) => file.id)]);
+        setSelected(result.failed.map(({ file }) => file));
+        const repeated = result.imported.filter((resource) => resource.alreadyImported).length;
+        setNotice(globalMusic ? `${result.imported.length} pista(s) disponibles en la biblioteca global.` : `${result.imported.length - repeated} recurso(s) asociado(s) al borrador de ${unit.name}.${repeated ? ` ${repeated} ya están asociados al borrador actual.` : ""}`);
+        setError(result.failed.map(({ file, message }) => `${file.name}: ${message}`).join("\n"));
+      } catch (importError) {
+        setError(unitOperationMessage(importError));
+      } finally {
+        setSaving(false);
+        setProgress(null);
+      }
+    } finally { submitGuard.current.release(); }
   }
 
   const visible = items.filter((item) => String(item.name).toLocaleLowerCase("es").includes(search.toLocaleLowerCase("es")));
@@ -128,7 +134,7 @@ export default function DriveResourceImportDialog({ unit, resources, onImport, o
         {selected.length > 0 && <div className="ac-drive-selection"><strong>{selected.length} seleccionado(s)</strong>{selected.map((file) => <button key={file.id} type="button" disabled={saving} onClick={() => toggle(file)} aria-label={`Quitar ${file.name}`}>{file.name} ×</button>)}</div>}
         {error && <div className="ac-error-banner ac-drive-error" role="alert">{error}<button type="button" disabled={saving || loading} onClick={() => { setError(""); setLoading(true); setRetry((value) => value + 1); }}>Recargar carpeta</button></div>}
         {notice && <p role="status">{notice}</p>}
-        {progress && <p role="status">Importando {progress.completed} de {progress.total}: {progress.file.name}</p>}
+        {saving && (processingMessage || progress) && <p role="status">{importProgressLabel(progress, processingMessage)}<progress /></p>}
         <footer className="ac-dialog-actions">
           <button type="button" className="ac-outline-button" onClick={onClose} disabled={saving}>Cerrar</button>
           <button className="ac-primary-button" disabled={saving || selected.length === 0}>{saving ? "Importando..." : `Importar${selected.length ? ` (${selected.length})` : ""}`}</button>
