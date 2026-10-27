@@ -12,6 +12,7 @@ import { addMusicTracks, isMusicFile } from "../utils/backgroundMusic";
 import { ACTIVE_CLASSROOM_ACCEPTED_FILES } from "../constants";
 import { canBeMainPresentation, createUnitDraft, reorderSlides, needsOfficeProcessing, documentProcessingLabel, documentProcessingReady } from "../utils/unitDraft";
 import { getResourceStatus } from "../utils/unitResourceView";
+import { staticAnimationResources } from "../utils/staticAnimationWarnings";
 import { replaceDraftResource, unitOperationMessage, DRIVE_NEW_VERSION, DRIVE_UNAVAILABLE } from "../utils/draftResources";
 import { getDriveResourceKind } from "../utils/driveResources";
 import { checkUnitDriveChanges, validateUnitPublication, loadUnitResources, loadUnitEditor, loadUnitPublications, publishUnit, refreshUnitDriveResource, saveUnitDraft, processUnitDocument, subscribeUnitProcessing, subscribeUnitPublication } from "../services/unitEditorService";
@@ -72,6 +73,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     return () => { for (const close of subscriptions) close(); subscriptions.clear(); };
   }, [unit.id]);
   const unitResources = Object.values({ ...Object.fromEntries(resources.filter(resource => resource.folderId === unit.id).map(resource => [resource.id, resource])), ...resourceOverrides }).filter(resource => !resource.archived && !(draft.excludedResourceIds || []).includes(resource.id));
+  const staticNotice = staticAnimationResources(unitResources, unit.id);
   const main = unitResources.find((resource) => resource.id === draft.mainPresentationId);
   const automaticSlides = needsOfficeProcessing(main);
   const nativeSlides = main?.mimeType === "application/vnd.google-apps.presentation";
@@ -472,6 +474,11 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
         {publishValidation.results.filter(entry => !["current", "changed"].includes(entry.status)).map(entry => <p key={entry.resourceId}>{unitResources.find(resource => resource.id === entry.resourceId)?.name}: {entry.message}</p>)}
       </section>}
       {notice && <div className="ac-unit-feedback" role="status">{notice}</div>}
+      {staticNotice.length > 0 && (
+        <div className="ac-error-banner ac-static-animation-notice" role="status">
+          <span>{staticNotice.length === 1 ? `"${staticNotice[0]}" contiene animaciones estáticas` : `${staticNotice.length} recursos contienen animaciones estáticas`}: se conserva la composición de las diapositivas, pero los GIF o revelados no compatibles no se animarán.</span>
+        </div>
+      )}
       {publishing && <div className="ac-unit-feedback" role="status">Publicando recursos… {publicationJob.completedResources} / {publicationJob.totalResources}<progress value={publicationJob.completedResources} max={publicationJob.totalResources || 1} /></div>}
       <div className="ac-unit-tabs" role="tablist" aria-label="Secciones del editor de Unit">
         {tabs.map((item, index) => <button key={item.key} type="button" role="tab" id={`${idBase}-tab-${item.key}`} aria-selected={tab === item.key} aria-controls={`${idBase}-panel-${item.key}`} tabIndex={tab === item.key ? 0 : -1} ref={(node) => { tabRefs.current[item.key] = node; }} className={tab === item.key ? "is-active" : ""} onClick={() => setTab(item.key)} onKeyDown={(event) => onTabKeyDown(event, index)}><ActiveClassroomIcon name={TAB_ICONS[item.key]} size={16} />{item.label}</button>)}
