@@ -11,7 +11,6 @@ import LevelsPanel from "./components/LevelsPanel";
 import ActiveClassroomIcon from "./components/ActiveClassroomIcon";
 import useActiveClassroomLibrary from "./hooks/useActiveClassroomLibrary";
 import { canClassroom } from "./utils/permissions";
-import { staticAnimationResources } from "./utils/staticAnimationWarnings";
 import { unitCatalog, catalogMetrics, filterCatalog } from "./utils/catalog";
 import useUnitCatalog from "./hooks/useUnitCatalog";
 import { UnitCard, UnitInspector, PublicationTable } from "./components/UnitCatalog";
@@ -62,7 +61,6 @@ export default function ActiveClassroomModule({ profile }) {
   function preference(update) { setPreferences(writeWebPreferences({ ...preferences, ...update }, profile?.uid)); setPage(1); }
   function openUnit(id, section = "summary") { if (unitDirty && !window.confirm("Salir sin guardar cambios del borrador?")) return; setEditorSection(section); setInitialImport(false); library.openFolder(id); setActiveSection("library"); window.requestAnimationFrame?.(() => moduleRef.current?.scrollIntoView({ block: "start" })); }
   const inspected = catalog.find(unit => unit.id === selectedUnit) || visibleUnits[0];
-  const staticNotice = activeSection === "library" && library.selectedFolder?.kind === "unit" ? staticAnimationResources(library.resources, library.selectedFolder.id) : [];
 
   function showToast(message) {
     setToast(message);
@@ -162,11 +160,6 @@ export default function ActiveClassroomModule({ profile }) {
           <div className="ac-error-banner" role="alert">
             <span>{library.error || versions.error}</span>
             <button type="button" onClick={() => library.setError("")} aria-label="Cerrar aviso">×</button>
-          </div>
-        )}
-        {staticNotice.length > 0 && (
-          <div className="ac-error-banner ac-static-animation-notice" role="status">
-            <span>{staticNotice.length === 1 ? `"${staticNotice[0]}" contiene animaciones estáticas` : `${staticNotice.length} recursos contienen animaciones estáticas`}: se conserva la composición de las diapositivas, pero los GIF o revelados no compatibles no se animarán.</span>
           </div>
         )}
         {renderSection()}
