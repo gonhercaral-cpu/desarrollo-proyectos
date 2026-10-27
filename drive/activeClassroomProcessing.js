@@ -1,17 +1,51 @@
 const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash, randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
-const { PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, processingTargetPath, officeExtension, isGoogleSlides, processorVersion, needsDocumentProcessing, processingFingerprint, requireReady, readyProcessing, pdfSlides } = require("./activeClassroomProcessingModel");
-const { processingError, googleErrorReason } = require("./activeClassroomDriveContent");
+const { PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, processingTargetPath, officeExtension, isGoogleSlides, processorVersion, needsDocumentProcessing, processingFingerprint, requireReady, readyProcessing, pdfSlides, validPageObjectId } = require("./activeClassroomProcessingModel");
+const { processingError, googleErrorReason, safeProcessorError } = require("./activeClassroomDriveContent");
 const { discardAnimation, verifyAnimation } = require("./activeClassroomAnimations");
 
 const MAX_BYTES = 250 * 1024 * 1024;
+const PERSISTED_STAGES = ["planning", "converting", "verifying"];
 const validId = (value) => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
 const fail = (message, code = "failed-precondition") => { throw new HttpsError(code, message); };
-function logFailure(error, nativeSlides, stage) {
+// Every diagnostic value is chosen from a fixed list or validated against its real format; remote text
+// (reasons, bodies, messages) is never echoed, even when it looks harmless.
+const FAILURE_STAGES = new Set([
+  "planning", "converting", "verifying", "original", "original-check", "presentation-read", "presentation-recheck",
+  "export-download", "export-processor-auth", "export-storage-sign", "export-planning", "export-converting", "export-verifying",
+  "processor-auth", "storage-sign", "thumbnail-fallback", "thumbnail-fetch", "thumbnail-storage", "verify-derivative", "commit",
+]);
+const FAILURE_REASONS = new Set([
+  "exportSizeLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "downloadQuotaExceeded", "notFound", "forbidden",
+  "insufficientPermissions", "insufficientFilePermissions", "backendError", "providerSizeLimitExceeded", "processorSourceSizeLimit", "processorRasterStateBudget",
+]);
+const knownValue = (allowed, value) => typeof value === "string" && allowed.has(value) ? value : "";
+const safeId = (value) => validId(value) ? value : null;
+const httpStatus = (value) => Number.isInteger(value) && value >= 100 && value <= 599 ? value : null;
+// Per-thumbnail position; kept in memory and written once, with the failure, never per slide.
+function fineContext(context) {
+  const slideIndex = Number.isInteger(context?.slideIndex) && context.slideIndex >= 0 && context.slideIndex <= 199 ? context.slideIndex : null;
+  const pageObjectId = validPageObjectId(context?.pageObjectId) ? context.pageObjectId : null;
+  return { slideIndex, pageObjectId };
+}
+// Fixed-shape diagnostics only: ids, stage, status and allow-listed codes. Never tokens, signed URLs,
+// remote bodies, paths or educational content (error messages are not copied).
+function failureDetails(error, nativeSlides, stage, attempt = {}, fine = null) {
   const safeError = processingError(error, nativeSlides);
-  const reason = googleErrorReason(error).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
-  console.error("Active Classroom document processing failed", { stage, code: safeError.code, sourceType: nativeSlides ? "google-slides" : "office", upstreamStatus: Number(error?.response?.status || error.status) || null, reason });
+  const position = fineContext(fine);
+  const details = {
+    jobId: safeId(attempt.jobId), resourceId: safeId(attempt.resourceId), unitId: safeId(attempt.unitId), fileId: safeId(attempt.fileId), processorVersion: attempt.processorVersion || null,
+    stage: knownValue(FAILURE_STAGES, stage), code: safeError.code, sourceType: nativeSlides ? "google-slides" : "office",
+    upstreamStatus: httpStatus(error?.response?.status ?? error?.status),
+    reason: [googleErrorReason(error), error?.details?.reason].map(reason => knownValue(FAILURE_REASONS, reason)).find(Boolean) || "", processorError: safeProcessorError(error),
+    slideIndex: position.slideIndex, pageObjectId: position.pageObjectId,
+  };
+  return { safeError, details };
+}
+function logFailure(error, nativeSlides, stage, attempt) {
+  const { safeError, details } = failureDetails(error, nativeSlides, stage, attempt);
+  console.error("Active Classroom document processing failed", details);
   return safeError;
 }
 
@@ -101,7 +135,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
     const nativeSlides = isGoogleSlides(resource);
     let original;
     try { original = nativeSlides ? await googleSlides.original(profile, resource) : await prepareResource(profile, resource); }
-    catch (error) { throw logFailure(error, nativeSlides, "original"); }
+    catch (error) { throw logFailure(error, nativeSlides, "original", { resourceId, unitId, fileId: resource.driveFileId, processorVersion: processorVersion(resource) }); }
     const fingerprint = processingFingerprint(resource);
     if (readyProcessing(resource) && resource.processing.processorVersion === processorVersion(resource)) {
       const saved = resource.processing.original;
@@ -125,7 +159,8 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       return true;
     });
     if (!accepted) return { state: "processing" };
-    let rendered;
+    let rendered; let phase = "planning"; let fine = null;
+    const attempt = { jobId: attemptId, resourceId, unitId, fileId: resource.driveFileId, processorVersion: processorVersion(resource) };
     try {
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
@@ -134,8 +169,10 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         transaction.update(resourceRef, { "processing.state": "processing" });
       });
       let lastStage = "planning";
-      const onStage = async (stage) => {
-        if (!["planning", "converting", "verifying"].includes(stage) || stage === lastStage) return;
+      const onStage = async (stage, context) => {
+        phase = stage; // Finer labels (download, thumbnail, storage...) only reach diagnostics.
+        fine = context ? fineContext(context) : null; // Memory only: no extra job writes per thumbnail.
+        if (!PERSISTED_STAGES.includes(stage) || stage === lastStage) return;
         await db.runTransaction(async transaction => {
           const current = (await transaction.get(resourceRef)).data();
           if (current?.processing?.jobId !== attemptId) fail("Solicitud reemplazada.", "aborted");
@@ -148,7 +185,9 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       await onStage("verifying");
       rendered = result;
       if (result?.processorVersion !== processorVersion(resource)) fail("Versión del procesador incompatible.", "data-loss");
+      await onStage("verify-derivative");
       const download = nativeSlides ? await googleSlides.verify(result) : await verifyDerivative(result, attemptId);
+      await onStage("commit");
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
         if (current?.processing?.jobId !== attemptId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante el procesamiento. Reintenta desde el borrador actual.", "aborted");
@@ -158,12 +197,15 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       });
     } catch (error) {
       // Keep diagnostics fixed; converter stdout/paths and upstream credentials are never exposed.
-      const safeError = logFailure(error, nativeSlides, "derivative");
+      const { safeError, details } = failureDetails(error, nativeSlides, phase, attempt, fine);
+      console.error("Active Classroom document processing failed", details);
+      // Persist the real stage/code; processingError already yields the generic Slides message when unclassified.
+      const diagnostics = { errorCode: safeError.code, errorStage: details.stage, errorReason: details.reason || details.processorError, upstreamStatus: details.upstreamStatus, errorSlideIndex: details.slideIndex, errorPageObjectId: details.pageObjectId };
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
         if (current?.processing?.jobId === attemptId && current.processing.state === "ready") return;
-        transaction.update(jobRef, { state: "failed", errorCode: safeError.code, failedAt: timestamp() });
-        if (current?.processing?.jobId === attemptId) transaction.update(resourceRef, { "processing.state": "failed", "processing.error": nativeSlides ? "No se pudo procesar la presentación de Google Slides" : safeError.message });
+        transaction.update(jobRef, { state: "failed", ...diagnostics, failedAt: timestamp() });
+        if (current?.processing?.jobId === attemptId) transaction.update(resourceRef, { "processing.state": "failed", "processing.error": safeError.message, "processing.errorCode": diagnostics.errorCode, "processing.errorStage": diagnostics.errorStage, "processing.errorReason": diagnostics.errorReason, "processing.errorSlideIndex": diagnostics.errorSlideIndex, "processing.errorPageObjectId": diagnostics.errorPageObjectId });
       });
       // An uncertain commit may already be ready. Never delete a committed revision.
       const current = (await resourceRef.get()).data();
@@ -171,7 +213,6 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         await Promise.allSettled((rendered.pages || []).flatMap(page => [page, ...(page.builds || [])]).map((state, index) => state.download?.path === rasterTargetPath(attemptId, index) ? bucket.file(state.download.path).delete({ ignoreNotFound: true }) : Promise.resolve()));
         await Promise.allSettled((rendered.pages || []).map((page, index) => discardAnimation(bucket, page.animation, attemptId, index)));
       }
-      if (nativeSlides && safeError.code !== "aborted" && safeError.code !== "resource-exhausted") fail("No se pudo procesar la presentación de Google Slides", safeError.code);
       throw safeError;
     }
     return applyReady(unitId, resourceId, expectedRevision);
@@ -202,4 +243,4 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
   }
   return { process, prepareDelivery, verifyDerivative };
 }
-module.exports = { createDocumentProcessing };
+module.exports = { createDocumentProcessing, failureDetails };

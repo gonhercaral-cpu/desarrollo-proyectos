@@ -8,17 +8,21 @@ function googleErrorReason(error) {
   if (error?.details?.reason === "exportSizeLimitExceeded" || reasons.some((entry) => entry?.reason === "exportSizeLimitExceeded")) return "exportSizeLimitExceeded";
   return reasons.map((entry) => entry?.reason).find((reason) => typeof reason === "string") || "";
 }
+const processorMessages = {
+  "conversion-timeout": ["deadline-exceeded", "La conversión agotó el tiempo. Reintenta; si persiste, divide la presentación."],
+  "invalid-office-file": ["failed-precondition", "La presentación está dañada o tiene un formato incorrecto. Revisa el archivo original."],
+  "invalid-office-archive": ["resource-exhausted", "La presentación contiene recursos descomprimidos fuera de los límites permitidos o un archivo inválido."],
+  "external-document-reference": ["failed-precondition", "La presentación contiene recursos vinculados externamente. Incrústalos antes de importar."],
+  "file-too-large": ["resource-exhausted", "La presentación supera el tamaño permitido para conversión."],
+  "too-many-slides": ["resource-exhausted", "La presentación supera 200 diapositivas. Divídela antes de importar."],
+  "invalid-page-count": ["resource-exhausted", "La presentación convertida requiere entre 1 y 200 páginas."],
+  "source-size-mismatch": ["data-loss", "El procesador recibió un tamaño distinto al del original. Reintenta."],
+  "source-integrity-mismatch": ["data-loss", "El procesador recibió un original con checksum distinto. Reintenta."],
+};
+// Only fixed processor codes are loggable/persistable; anything else is dropped, never echoed.
+const safeProcessorError = (error) => { const code = error?.response?.data?.error; return typeof code === "string" && Object.hasOwn(processorMessages, code) ? code : ""; };
 function processingError(error, slides = false) {
   const processorError = error?.response?.data?.error;
-  const processorMessages = {
-    "conversion-timeout": ["deadline-exceeded", "La conversión agotó el tiempo. Reintenta; si persiste, divide la presentación."],
-    "invalid-office-file": ["failed-precondition", "La presentación está dañada o tiene un formato incorrecto. Revisa el archivo original."],
-    "invalid-office-archive": ["resource-exhausted", "La presentación contiene recursos descomprimidos fuera de los límites permitidos o un archivo inválido."],
-    "external-document-reference": ["failed-precondition", "La presentación contiene recursos vinculados externamente. Incrústalos antes de importar."],
-    "file-too-large": ["resource-exhausted", "La presentación supera el tamaño permitido para conversión."],
-    "too-many-slides": ["resource-exhausted", "La presentación supera 200 diapositivas. Divídela antes de importar."],
-    "invalid-page-count": ["resource-exhausted", "La presentación convertida requiere entre 1 y 200 páginas."],
-  };
   if (typeof processorError === "string" && Object.hasOwn(processorMessages, processorError)) {
     const [code, message] = processorMessages[processorError];
     return new HttpsError(code, message);
@@ -76,4 +80,4 @@ async function openActiveClassroomDrive(drive, file, descriptor) {
     return response.data;
   } catch (error) { throw processingError(error); }
 }
-module.exports = { openSlidesExport, PPTX_MIME, openActiveClassroomDrive, googleErrorReason, processingError };
+module.exports = { openSlidesExport, PPTX_MIME, openActiveClassroomDrive, googleErrorReason, processingError, safeProcessorError };

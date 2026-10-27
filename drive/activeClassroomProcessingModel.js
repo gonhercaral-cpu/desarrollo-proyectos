@@ -6,6 +6,25 @@ const LEGACY_PPTX_PROCESSOR_VERSION = "pptx-builds-png-v1";
 const PPTX_PROCESSOR_VERSION = "pptx-builds-png-v2";
 const LEGACY_SLIDES_PROCESSOR_VERSION = "google-slides-png-v1";
 const SLIDES_PROCESSOR_VERSION = "google-slides-builds-png-v2";
+// Same cap the private processor enforces in validate_request (MAX_BYTES). Reject locally first.
+const PROCESSOR_MAX_SOURCE_BYTES = 250 * 1024 * 1024;
+const SOURCE_TOO_LARGE_REASON = "processorSourceSizeLimit";
+function sourceTooLargeError(sizeBytes) {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= PROCESSOR_MAX_SOURCE_BYTES) return null;
+  return new HttpsError("resource-exhausted", "El archivo exportado supera el límite de 250 MiB del procesador de documentos.", { reason: SOURCE_TOO_LARGE_REASON, sizeBytes, limitBytes: PROCESSOR_MAX_SOURCE_BYTES });
+}
+const isSourceTooLarge = (error) => error?.code === "resource-exhausted" && error.details?.reason === SOURCE_TOO_LARGE_REASON
+  && Number.isSafeInteger(error.details.sizeBytes) && error.details.sizeBytes > PROCESSOR_MAX_SOURCE_BYTES && error.details.limitBytes === PROCESSOR_MAX_SOURCE_BYTES;
+// Conservative preflight for native Google Slides only (opt-in). Measured: 104/155/156 states time out at 240 s,
+// 65 succeeds; this is an empirical threshold, not a universal prediction. Uploaded PPTX keeps the full 200 limit.
+const NATIVE_MAX_RASTER_STATES = 100;
+const RASTER_BUDGET_REASON = "processorRasterStateBudget";
+function nativeRasterBudgetError(stateCount) {
+  if (!Number.isSafeInteger(stateCount) || stateCount <= NATIVE_MAX_RASTER_STATES) return null;
+  return new HttpsError("resource-exhausted", `La presentación de Google Slides requiere ${stateCount} estados de animación y el procesamiento admite hasta ${NATIVE_MAX_RASTER_STATES}.`, { reason: RASTER_BUDGET_REASON, stateCount, limit: NATIVE_MAX_RASTER_STATES });
+}
+const isNativeRasterBudget = (error) => error?.code === "resource-exhausted" && error.details?.reason === RASTER_BUDGET_REASON
+  && Number.isSafeInteger(error.details.stateCount) && error.details.stateCount > NATIVE_MAX_RASTER_STATES && error.details.stateCount <= 200 && error.details.limit === NATIVE_MAX_RASTER_STATES;
 const isGoogleSlides = (resource) => resource?.mimeType === "application/vnd.google-apps.presentation";
 const validPageObjectId = (value) => typeof value === "string" && /^[a-zA-Z0-9_][a-zA-Z0-9_:-]{0,199}$/.test(value);
 const processorVersion = (resource) => isGoogleSlides(resource) ? SLIDES_PROCESSOR_VERSION : officeExtension(resource) === "pptx" ? PPTX_PROCESSOR_VERSION : PROCESSOR_VERSION;
@@ -59,4 +78,4 @@ function pdfSlides(resource, previous = []) {
     return { slideId: old?.slideId || `pdf-${createHash("sha256").update(resource.id).digest("hex").slice(0, 16)}-${pageNumber}`, index, title: old?.title || "", resourceIds: old?.resourceIds || [], ...normalizeInteraction(old?.interaction?.source === "pptx" ? {} : old || {}), metadata: { pageNumber, notes: old?.metadata?.notes || "" } };
   });
 }
-module.exports = { LEGACY_PPTX_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION, PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, SLIDES_PROCESSOR_VERSION, isGoogleSlides, validPageObjectId, processorVersion, needsDocumentProcessing, slideResourceId, slidesTargetPath, processingTargetPath, OFFICE_MIMES, officeExtension, processingFingerprint, readyProcessing, requireReady, pdfSlides };
+module.exports = { PROCESSOR_MAX_SOURCE_BYTES, SOURCE_TOO_LARGE_REASON, sourceTooLargeError, isSourceTooLarge, NATIVE_MAX_RASTER_STATES, RASTER_BUDGET_REASON, nativeRasterBudgetError, isNativeRasterBudget, LEGACY_PPTX_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION, PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, isRasterSlides, rasterTargetPath, SLIDES_PROCESSOR_VERSION, isGoogleSlides, validPageObjectId, processorVersion, needsDocumentProcessing, slideResourceId, slidesTargetPath, processingTargetPath, OFFICE_MIMES, officeExtension, processingFingerprint, readyProcessing, requireReady, pdfSlides };

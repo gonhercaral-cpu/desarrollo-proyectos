@@ -175,3 +175,113 @@ test("LRO ya listo no se sondea; conserva resource key y autenticación solo hac
   let value = ""; for await (const chunk of stream) value += chunk;
   assert.equal(value, "export");
 });
+
+test("export PPTX medido sobre el límite usa miniaturas de TODAS las páginas con advertencia; boundary exacto no", async () => {
+  const { sourceTooLargeError, PROCESSOR_MAX_SOURCE_BYTES } = require("../drive/activeClassroomProcessingModel");
+  assert.equal(PROCESSOR_MAX_SOURCE_BYTES, 250 * 1024 * 1024);
+  assert.equal(sourceTooLargeError(PROCESSOR_MAX_SOURCE_BYTES), null);
+  assert.equal(sourceTooLargeError(undefined), null);
+  assert.equal(sourceTooLargeError(PROCESSOR_MAX_SOURCE_BYTES + 1).details.reason, "processorSourceSizeLimit");
+  const ids = ["page_z", "page_a", "page_m", "page_b"]; const stages = []; let rasterizeArgs;
+  const f = fixture(ids, { rasterize: async (args) => { rasterizeArgs = args; throw sourceTooLargeError(397967772); } });
+  const rendered = await f.processor.render({ profile: {}, resource, revision: "big-export", onStage: async (stage) => { stages.push(stage); } });
+  assert.equal(typeof rasterizeArgs.onStage, "function");
+  assert.deepEqual(rendered.pages.map((page) => page.pageObjectId), ids);
+  assert.deepEqual(rendered.pages.map((page) => page.index), [0, 1, 2, 3]);
+  assert.equal(rendered.pageCount, ids.length); assert.equal(f.calls.length, ids.length);
+  for (const page of rendered.pages) assert.deepEqual(page.warnings, ["animation-export-unavailable-manual", "animation-export-too-large-manual"]);
+  assert.equal(await f.processor.verify(rendered), rendered.download);
+  assert.ok(stages.indexOf("export-download") < stages.indexOf("thumbnail-fallback") && stages.includes("thumbnail-fetch") && stages.includes("thumbnail-storage") && stages.includes("presentation-recheck"));
+});
+
+test("presupuesto raster nativo usa miniaturas completas con advertencia de complejidad, idempotente", async () => {
+  const { nativeRasterBudgetError } = require("../drive/activeClassroomProcessingModel");
+  const ids = ["page_z", "page:a", "page_m"]; const warnings = ["animation-export-unavailable-manual", "animation-export-complexity-manual"];
+  for (const states of [104, 155, 156]) {
+    const stages = []; const f = fixture(ids, { rasterize: async () => { throw nativeRasterBudgetError(states); } });
+    const first = await f.processor.render({ profile: {}, resource, revision: `budget-${states}-a`, onStage: async (stage) => { stages.push(stage); } });
+    assert.deepEqual(first.pages.map((page) => page.pageObjectId), ids); assert.deepEqual(first.pages.map((page) => page.index), [0, 1, 2]);
+    assert.equal(first.pageCount, ids.length); assert.equal(f.calls.length, ids.length);
+    for (const page of first.pages) { assert.deepEqual(page.warnings, warnings); assert.equal(page.builds, undefined); }
+    assert.equal(await f.processor.verify(first), first.download);
+    assert.ok(stages.indexOf("export-download") < stages.indexOf("thumbnail-fallback") && stages.includes("presentation-recheck"));
+    const second = await f.processor.render({ profile: {}, resource, revision: `budget-${states}-b` });
+    assert.deepEqual(second.pages.map((page) => [page.pageObjectId, page.index, page.warnings]), first.pages.map((page) => [page.pageObjectId, page.index, page.warnings]));
+  }
+});
+
+test("sin fallback para resource-exhausted falsificado que no es el presupuesto raster tipado", async () => {
+  const { HttpsError } = require("node:module").createRequire(require.resolve("../drive/package.json"))("firebase-functions/v2/https");
+  for (const details of [undefined, { reason: "processorRasterStateBudget" }, { reason: "processorRasterStateBudget", stateCount: 0, limit: 100 }, { reason: "processorRasterStateBudget", stateCount: 100, limit: 100 }, { reason: "processorRasterStateBudget", stateCount: 201, limit: 100 }, { reason: "processorRasterStateBudget", stateCount: 150, limit: 200 }, { reason: "other", stateCount: 150, limit: 100 }, { reason: "processorSourceSizeLimit" }]) {
+    const failure = new HttpsError("resource-exhausted", "timeout", details);
+    const f = fixture(["page_a"], { rasterize: async () => { throw failure; } });
+    await assert.rejects(f.processor.render({ profile: {}, resource, revision: "forged" }), (error) => error === failure);
+    assert.equal(f.calls.length, 0); assert.equal(f.bucket.objects.size, 0);
+  }
+});
+
+test("sin fallback para 401/403/404, indisponibilidad, corrupción ni errores de tamaño ajenos al límite medido", async () => {
+  const { HttpsError } = require("node:module").createRequire(require.resolve("../drive/package.json"))("firebase-functions/v2/https");
+  const failures = [
+    ...[401, 403, 404, 503].map((status) => Object.assign(new Error("remote"), { response: { status } })),
+    new HttpsError("resource-exhausted", "PNG demasiado grande"), new HttpsError("data-loss", "corrupto"), new HttpsError("unavailable", "caída"),
+    Object.assign(new Error("remote"), { code: "unimplemented-ish" }),
+  ];
+  for (const failure of failures) {
+    const f = fixture(["page_a", "page_b"], { rasterize: async () => { throw failure; } });
+    await assert.rejects(f.processor.render({ profile: {}, resource, revision: "no-fallback" }), (error) => error === failure);
+    assert.equal(f.calls.length, 0); assert.equal(f.bucket.objects.size, 0);
+  }
+  const small = fixture(["page_a"], { rasterize: async () => { const error = new Error("x"); error.code = "unimplemented"; throw error; } });
+  const rendered = await small.processor.render({ profile: {}, resource, revision: "unsupported" });
+  assert.deepEqual(rendered.pages[0].warnings, ["animation-export-unavailable-manual"]);
+});
+
+function fakeDb(seed) {
+  const store = new Map(Object.entries(seed).map(([path, value]) => [path, structuredClone(value)]));
+  const ref = (path) => ({ path, async get() { return { data: () => store.has(path) ? structuredClone(store.get(path)) : undefined }; } });
+  const write = (path, patch) => {
+    const doc = store.get(path) || {};
+    for (const [key, value] of Object.entries(patch)) { const parts = key.split("."); let target = doc; for (const part of parts.slice(0, -1)) target = target[part] ??= {}; target[parts.at(-1)] = value; }
+    store.set(path, doc);
+  };
+  return { store, collection: (name) => ({ doc: (id) => ref(`${name}/${id}`) }), runTransaction: async (work) => work({ get: (item) => item.get(), update: (item, patch) => write(item.path, patch), create: (item, value) => { assert.equal(store.has(item.path), false); store.set(item.path, structuredClone(value)); } }) };
+}
+async function failedProcessing(failure) {
+  const { createDocumentProcessing } = require("../drive/activeClassroomProcessing");
+  const db = fakeDb({
+    "activeClassroomUnits/unit-7": { draft: { slides: [], generalResourceIds: [], mainPresentationId: "main" }, draftRevision: 1 },
+    "activeClassroomResources/main": { folderId: "unit-7", source: "drive", name: source.name, mimeType: source.mimeType, driveFileId: "file-A", driveVersion: "1", driveModifiedTime: source.modifiedTime },
+  });
+  const googleSlides = { original: async () => ({ fileId: "file-A", name: source.name, mimeType: source.mimeType, version: "1", modifiedTime: source.modifiedTime }),
+    render: async ({ onStage }) => { await onStage("converting"); await onStage("export-download"); throw failure; }, verify: async () => assert.fail("no verify") };
+  const processing = createDocumentProcessing({ db, bucket: {}, getProfile: async () => ({ active: true, role: "admin" }), prepareResource: async () => assert.fail("no original"), convert: async () => assert.fail("no convert"), googleSlides, timestamp: () => "ts" });
+  const logs = []; const original = console.error; console.error = (...args) => logs.push(args);
+  let thrown;
+  try { await processing.process({ auth: { uid: "admin" }, data: { unitId: "unit-7", resourceId: "main", expectedRevision: 1 } }); } catch (error) { thrown = error; } finally { console.error = original; }
+  const job = [...db.store].find(([path]) => path.startsWith("activeClassroomProcessingJobs/"));
+  return { thrown, logs, job: job[1], jobId: job[0].split("/")[1], resource: db.store.get("activeClassroomResources/main") };
+}
+
+test("fallo persiste etapa/código reales del procesador y registra contexto seguro sin remapear a mensaje genérico", async () => {
+  const failure = Object.assign(new Error("https://storage.googleapis.com/b/o?X-Goog-Signature=secret-signature"), { response: { status: 422, data: { error: "file-too-large", body: "secret-remote-body" } } });
+  const { thrown, logs, job, jobId, resource } = await failedProcessing(failure);
+  assert.equal(thrown.code, "resource-exhausted"); assert.equal(thrown.message, "La presentación supera el tamaño permitido para conversión.");
+  assert.equal(resource.processing.state, "failed"); assert.equal(resource.processing.error, thrown.message);
+  assert.deepEqual([resource.processing.errorCode, resource.processing.errorStage, resource.processing.errorReason], ["resource-exhausted", "export-download", "file-too-large"]);
+  assert.equal(resource.processing.stage, "converting");
+  assert.deepEqual([job.state, job.errorCode, job.errorStage, job.errorReason, job.upstreamStatus], ["failed", "resource-exhausted", "export-download", "file-too-large", 422]);
+  const [message, details] = logs[0];
+  assert.equal(message, "Active Classroom document processing failed");
+  assert.deepEqual(details, { jobId, resourceId: "main", unitId: "unit-7", fileId: "file-A", processorVersion: SLIDES_PROCESSOR_VERSION, stage: "export-download", code: "resource-exhausted", sourceType: "google-slides", upstreamStatus: 422, reason: "", processorError: "file-too-large", slideIndex: null, pageObjectId: null });
+  assert.doesNotMatch(JSON.stringify([logs, resource, job]), /secret|X-Goog|googleapis\.com/);
+});
+
+test("error sin clasificar conserva mensaje genérico de Slides pero guarda etapa y estado upstream", async () => {
+  const failure = Object.assign(new Error("https://private.example?token=secret-token"), { response: { status: 403, data: { error: { errors: [{ reason: "insufficientFilePermissions" }] } } } });
+  const { thrown, logs, job, resource } = await failedProcessing(failure);
+  assert.equal(thrown.code, "failed-precondition"); assert.equal(thrown.message, "No se pudo procesar la presentación de Google Slides");
+  assert.deepEqual([resource.processing.errorStage, resource.processing.errorReason, job.upstreamStatus], ["export-download", "insufficientFilePermissions", 403]);
+  assert.equal(logs[0][1].reason, "insufficientFilePermissions");
+  assert.doesNotMatch(JSON.stringify([logs, resource, job]), /secret|private\.example/);
+});

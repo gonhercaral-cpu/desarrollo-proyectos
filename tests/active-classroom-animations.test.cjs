@@ -75,7 +75,7 @@ for (const broken of [false, true]) test(`cliente integra GIF opcional o conserv
     return { data: { revision, processorVersion: PPTX_PROCESSOR_VERSION, pageCount: 1, slides, states: [converted[0].background], animations } };
   } }) });
   const result = await convert({ revision, processorVersion: PPTX_PROCESSOR_VERSION, extension: "pptx", original: { path: "original", generation: "1", name: "Class.pptx" } }, { onStage: async stage => stages.push(stage) });
-  assert.deepEqual(stages, ["planning", "converting", "verifying"]);
+  assert.deepEqual(stages, ["processor-auth", "storage-sign", "planning", "converting", "verifying"]);
   assert.equal(result.pages[0].download.mimeType, "image/png");
   assert.equal(!!result.pages[0].animation, !broken);
   assert.equal(deleted.length, broken ? 2 : 0);

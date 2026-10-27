@@ -3,7 +3,7 @@ const { setTimeout: sleep } = require("node:timers/promises");
 const { crc32 } = require("node:zlib");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { checkOriginal, descriptor } = require("./activeClassroomFiles");
-const { SLIDES_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, rasterTargetPath, slidesTargetPath, validPageObjectId } = require("./activeClassroomProcessingModel");
+const { SLIDES_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION, PPTX_PROCESSOR_VERSION, rasterTargetPath, slidesTargetPath, validPageObjectId, isSourceTooLarge, isNativeRasterBudget } = require("./activeClassroomProcessingModel");
 
 const MAX_PNG_BYTES = 20 * 1024 * 1024;
 function pngDimensions(bytes) {
@@ -43,10 +43,12 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
   }
   async function render({ profile, resource, revision, onStage = async () => {} }) {
     await onStage("planning");
+    await onStage("original-check");
     await original(profile, resource); // Existing Nube AES ACL, no new auth system.
+    await onStage("presentation-read");
     const slides = await getSlides(); const presentationId = resource.driveFileId;
     const uploaded = []; const pages = []; let bytesTotal = 0;
-    const deadline = clock() + 450000;
+    const deadline = clock() + 450000; let oversize = false; let complexity = false;
     async function retry(operation) {
       for (let attempt = 0; ; attempt++) {
         if (clock() > deadline) throw new HttpsError("deadline-exceeded", "Procesamiento Google Slides agotó el tiempo.");
@@ -64,15 +66,21 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
       if (!Array.isArray(presentation.slides) || !presentation.slides.length || presentation.slides.length > 200 || new Set(presentation.slides.map((page) => page.objectId)).size !== presentation.slides.length) throw new HttpsError("resource-exhausted", "Google Slides requiere entre 1 y 200 diapositivas únicas.");
       if (rasterize) {
         let result;
-        try { result = await rasterize({ profile, resource, revision }); }
+        await onStage("export-download");
+        try { result = await rasterize({ profile, resource, revision, onStage }); }
         catch (error) {
-          // Only an explicitly unsupported export may use static thumbnails.
-          // Transfer/conversion/integrity errors must fail, never silently lose builds.
-          if (error.code !== "unimplemented") throw error;
+          // Only an unsupported export, an export measured above the processor cap or a typed raster-state
+          // preflight budget may use static thumbnails. 401/403/404, outages, transfer/conversion/integrity errors must fail, never
+          // silently lose builds.
+          if (error.code === "unimplemented") await onStage("thumbnail-fallback");
+          else if (isSourceTooLarge(error)) { await onStage("thumbnail-fallback"); oversize = true; }
+          else if (isNativeRasterBudget(error)) { await onStage("thumbnail-fallback"); complexity = true; }
+          else throw error;
         }
         if (result) {
           uploaded.push(...result.pages.flatMap(page => [page, ...(page.builds || [])]).map(state => state.download.path));
           if (result.pageCount !== presentation.slides.length) throw new HttpsError("data-loss", "La exportación no conserva todas las diapositivas.");
+          await onStage("presentation-recheck");
           const after = await read();
           if ((presentation.revisionId && after.revisionId !== presentation.revisionId) || JSON.stringify(after.slides) !== JSON.stringify(presentation.slides)) throw new HttpsError("aborted", "La presentación cambió durante el procesamiento. Actualiza el borrador.");
           await original(profile, resource);
@@ -82,6 +90,8 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
       for (const [index, slide] of presentation.slides.entries()) {
         if (!validPageObjectId(slide.objectId)) throw new HttpsError("data-loss", "Identificador de slide inválido.");
         if (index) await wait(1100); // Stay below the documented 60 expensive reads/user/minute.
+        const position = { slideIndex: index, pageObjectId: slide.objectId }; // Diagnostics only; never persisted per slide.
+        await onStage("thumbnail-fetch", position);
         const thumbnail = (await retry(() => slides.presentations.pages.getThumbnail({ presentationId, pageObjectId: slide.objectId, "thumbnailProperties.mimeType": "PNG", "thumbnailProperties.thumbnailSize": "LARGE" }, { timeout: 20000 }))).data;
         // Fetch immediately; this access-bearing URL never enters persisted metadata or logs.
         const bytes = await retry(() => download(thumbnail.contentUrl));
@@ -90,14 +100,16 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
         if (dimensions.width !== thumbnail.width || dimensions.height !== thumbnail.height) throw new HttpsError("data-loss", "Dimensiones thumbnail inconsistentes.");
         bytesTotal += bytes.length;
         if (bytesTotal > 250 * 1024 * 1024) throw new HttpsError("resource-exhausted", "Máximo 250 MiB de imágenes por presentación.");
+        await onStage("thumbnail-storage", position);
         const path = slidesTargetPath(revision, slide.objectId); const sha256 = createHash("sha256").update(bytes).digest("hex");
         const file = bucket.file(path); uploaded.push(path);
         await file.save(bytes, { resumable: false, preconditionOpts: { ifGenerationMatch: 0 }, metadata: { contentType: "image/png", cacheControl: "private, no-store", metadata: { sha256, deliveredName: `slide-${index + 1}.png`, capturedAt: new Date(clock()).toISOString(), processingRevision: revision, pageObjectId: slide.objectId, width: String(dimensions.width), height: String(dimensions.height) } } });
         const [metadata] = await file.getMetadata(); const frozen = descriptor(path, metadata);
         const [stored] = await bucket.file(path, { generation: frozen.generation }).download();
         if (stored.length !== bytes.length || frozen.sizeBytes !== bytes.length || createHash("sha256").update(stored).digest("hex") !== sha256) throw new HttpsError("data-loss", "PNG almacenada corrupta.");
-        pages.push({ warnings: ["animation-export-unavailable-manual"], pageObjectId: slide.objectId, index, storagePath: path, size: bytes.length, sha256, ...dimensions, download: frozen });
+        pages.push({ warnings: ["animation-export-unavailable-manual", ...(oversize ? ["animation-export-too-large-manual"] : []), ...(complexity ? ["animation-export-complexity-manual"] : [])], pageObjectId: slide.objectId, index, storagePath: path, size: bytes.length, sha256, ...dimensions, download: frozen });
       }
+      await onStage("presentation-recheck");
       const after = await read();
       if ((presentation.revisionId && after.revisionId !== presentation.revisionId) || JSON.stringify(after.slides) !== JSON.stringify(presentation.slides)) throw new HttpsError("aborted", "Google Slides cambió durante el procesamiento. Actualiza el borrador.");
       await original(profile, resource);

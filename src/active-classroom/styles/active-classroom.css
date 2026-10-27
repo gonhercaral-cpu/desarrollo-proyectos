@@ -1269,6 +1269,12 @@
   font-size: 11px;
 }
 
+.ac-static-animation-notice {
+  color: #244b70;
+  background: #eef6ff;
+  border-bottom-color: #c9ddf2;
+}
+
 .ac-error-banner button {
   width: 32px;
   height: 32px;
