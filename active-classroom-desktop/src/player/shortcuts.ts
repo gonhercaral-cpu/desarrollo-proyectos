@@ -11,8 +11,8 @@ export const SHORTCUT_ACTIONS: Record<ShortcutCommand, { label: string; context:
   PREVIOUS: { label: "Página anterior", context: "media", keys: ["ArrowLeft"] },
   PLAY_PAUSE: { label: "Play / Pausa", context: "media", keys: ["Space"] },
   STOP: { label: "Detener reproducción", context: "media", keys: ["s"] },
-  SEEK_FORWARD: { label: "Adelantar video", context: "media", keys: ["l"] },
-  SEEK_BACKWARD: { label: "Retroceder video", context: "media", keys: ["j"] },
+  SEEK_FORWARD: { label: "Adelantar audio o video", context: "media", keys: ["l"] },
+  SEEK_BACKWARD: { label: "Retroceder audio o video", context: "media", keys: ["j"] },
   VOLUME_UP: { label: "Subir volumen", context: "all", keys: ["ArrowUp"] },
   VOLUME_DOWN: { label: "Bajar volumen", context: "all", keys: ["ArrowDown"] },
   MUTE: { label: "Silenciar", context: "all", keys: ["m"] },
@@ -33,9 +33,21 @@ export function combination(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "altK
   return [event.ctrlKey ? "Ctrl" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", key].filter(Boolean).join("+");
 }
 function validKey(key: unknown): key is string { return typeof key === "string" && /^(Ctrl\+)?(Alt\+)?(Shift\+)?([a-z0-9]|Space|Escape|Enter|Page(Up|Down)|Arrow(Left|Right|Up|Down)|F([1-9]|10)|[+\-.,/;])$/.test(key) && !reservedShortcut(key); }
-export function shortcutConflict(map: ShortcutMap, command: ShortcutCommand, key: string): ShortcutCommand | undefined {
-  const context = SHORTCUT_ACTIONS[command].context;
-  return (Object.keys(SHORTCUT_ACTIONS) as ShortcutCommand[]).find(other => other !== command && map[other].includes(key) && (context === "all" || SHORTCUT_ACTIONS[other].context === "all" || context === SHORTCUT_ACTIONS[other].context));
+// SEEK_* stay in the "media" context so stored maps keep validating; while a presentation is open they also drive the independent audio,
+// so a new assignment must not share a key with slide navigation. Stored maps are not re-checked for this (see audioSeekCollisions).
+export const AUDIO_SEEK_COMMANDS: ShortcutCommand[] = ["SEEK_BACKWARD", "SEEK_FORWARD"];
+const SLIDE_NAVIGATION: ShortcutCommand[] = ["ADVANCE", "BACK", "OPEN_RESOURCE"];
+const audioSeekOverlap = (a: ShortcutCommand, b: ShortcutCommand) => AUDIO_SEEK_COMMANDS.includes(a) && SLIDE_NAVIGATION.includes(b) || AUDIO_SEEK_COMMANDS.includes(b) && SLIDE_NAVIGATION.includes(a);
+const contextsOverlap = (a: ShortcutCommand, b: ShortcutCommand, forAssignment: boolean) => { const x = SHORTCUT_ACTIONS[a].context, y = SHORTCUT_ACTIONS[b].context; return x === "all" || y === "all" || x === y || forAssignment && audioSeekOverlap(a, b); };
+export function shortcutConflict(map: ShortcutMap, command: ShortcutCommand, key: string, forAssignment = false): ShortcutCommand | undefined {
+  return (Object.keys(SHORTCUT_ACTIONS) as ShortcutCommand[]).find(other => other !== command && map[other].includes(key) && contextsOverlap(command, other, forAssignment));
+}
+export interface AudioSeekCollision { key: string; seek: ShortcutCommand; navigation: ShortcutCommand }
+// Legacy maps may already bind a seek key to slide navigation: navigation keeps priority at runtime and Settings shows the pair to resolve.
+export function audioSeekCollisions(map: ShortcutMap = readShortcuts()): AudioSeekCollision[] {
+  const found: AudioSeekCollision[] = [];
+  for (const seek of AUDIO_SEEK_COMMANDS) for (const navigation of SLIDE_NAVIGATION) for (const key of map[seek]) if (map[navigation].includes(key)) found.push({ key, seek, navigation });
+  return found;
 }
 export function readShortcuts(storage = globalThis.window?.localStorage || globalThis.localStorage): ShortcutMap {
   try {
@@ -49,15 +61,15 @@ export function readShortcuts(storage = globalThis.window?.localStorage || globa
 }
 export function assignShortcut(command: ShortcutCommand, key: string, replace = false, storage = globalThis.window?.localStorage || globalThis.localStorage): { conflict?: ShortcutCommand; reserved?: boolean } {
   if (!validKey(key)) return { reserved: true };
-  const map = readShortcuts(storage); const conflict = shortcutConflict(map, command, key);
+  const map = readShortcuts(storage); const conflict = shortcutConflict(map, command, key, true);
   if (conflict && !replace) return { conflict };
   // Remove every overlapping binding, including all-context conflicts.
-  if (replace) for (const other of Object.keys(map) as ShortcutCommand[]) { const a = SHORTCUT_ACTIONS[command].context; const b = SHORTCUT_ACTIONS[other].context; if (other !== command && (a === "all" || b === "all" || a === b)) map[other] = map[other].filter(item => item !== key); }
+  if (replace) for (const other of Object.keys(map) as ShortcutCommand[]) if (other !== command && contextsOverlap(command, other, true)) map[other] = map[other].filter(item => item !== key);
   map[command] = [key]; storage.setItem(SHORTCUTS_KEY, JSON.stringify({ version: 1, bindings: map }));
   globalThis.window?.dispatchEvent(new window.Event("classroom-shortcuts-changed")); return {};
 }
 export function restoreShortcuts(storage = globalThis.window?.localStorage || globalThis.localStorage): void { storage.removeItem(SHORTCUTS_KEY); globalThis.window?.dispatchEvent(new window.Event("classroom-shortcuts-changed")); }
-export function shortcutFor(event: Pick<KeyboardEvent, "key" | "target" | "ctrlKey" | "altKey" | "metaKey" | "defaultPrevented" | "isComposing"> & { shiftKey?: boolean }, presentation = false): ShortcutCommand | null {
+export function shortcutFor(event: Pick<KeyboardEvent, "key" | "target" | "ctrlKey" | "altKey" | "metaKey" | "defaultPrevented" | "isComposing"> & { shiftKey?: boolean }, presentation = false, audioSeek = false): ShortcutCommand | null {
   if (globalThis.document?.querySelector("[data-settings-dialog]")) return null;
   if (event.defaultPrevented || event.isComposing || event.metaKey) return null;
   const target = event.target as HTMLElement | null;
@@ -65,5 +77,8 @@ export function shortcutFor(event: Pick<KeyboardEvent, "key" | "target" | "ctrlK
   if (event.key === " " && target?.closest?.("button, a")) return null;
   const key = combination({ key: event.key, ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey, shiftKey: event.shiftKey === true }); if (!key || reservedShortcut(key)) return null;
   const map = readShortcuts();
-  return (Object.keys(map) as ShortcutCommand[]).find(command => map[command].includes(key) && (SHORTCUT_ACTIONS[command].context === "all" || SHORTCUT_ACTIONS[command].context === (presentation ? "presentation" : "media"))) || null;
+  const scoped = (Object.keys(map) as ShortcutCommand[]).find(command => map[command].includes(key) && (SHORTCUT_ACTIONS[command].context === "all" || SHORTCUT_ACTIONS[command].context === (presentation ? "presentation" : "media")));
+  // Presentation navigation and global commands win; seek only fills the keys they leave free, and only when the audio can use it.
+  if (scoped || !presentation || !audioSeek) return scoped || null;
+  return AUDIO_SEEK_COMMANDS.find(command => map[command].includes(key)) || null;
 }

@@ -4,7 +4,7 @@ import { registerHooks } from "node:module";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { desktopSettings, saveDesktopSettings, SETTINGS_KEY } from "../src/settings/preferences.ts";
-import { readShortcuts, defaultShortcuts, assignShortcut, restoreShortcuts, shortcutFor, combination, reservedShortcut, SHORTCUTS_KEY } from "../src/player/shortcuts.ts";
+import { readShortcuts, defaultShortcuts, assignShortcut, restoreShortcuts, shortcutFor, combination, reservedShortcut, audioSeekCollisions, SHORTCUTS_KEY } from "../src/player/shortcuts.ts";
 import { contentOwner, saveContentPreferences, contentPreferences } from "../src/offline/content-preferences.ts";
 import { StartupPreferences } from "../src/startup/controller.ts";
 import { ProgramUpdater } from "../src/updater/controller.ts";
@@ -47,6 +47,62 @@ test("intervalo persiste con ajustes existentes y conserva mapeo personalizado",
   for (const invalid of [null, "10", 0, 301, 1.5]) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: invalid })); assert.equal(desktopSettings().seekIntervalSeconds, 5);
   }
+});
+test("intervalos de audio: heredan el de video si faltan, son independientes por campo y sobreviven reinicio", async t => {
+  const dom = environment(); t.after(dom.restore);
+  assert.deepEqual([desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds], [5, 5]);
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: 9, density: "compact" }));
+  assert.deepEqual([desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds], [9, 9]);
+  saveDesktopSettings({ autoAppUpdate: false });
+  assert.equal("audioSeekForwardSeconds" in JSON.parse(localStorage.getItem(SETTINGS_KEY)), false, "guardar otro ajuste no congela la herencia");
+  saveDesktopSettings({ seekIntervalSeconds: 20 });
+  assert.deepEqual([desktopSettings().seekIntervalSeconds, desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds], [20, 9, 9], "cambiar el video conserva el valor previo del audio");
+  saveDesktopSettings({ audioSeekBackwardSeconds: 5, audioSeekForwardSeconds: 15 });
+  const restarted = await import("../src/settings/preferences.ts?audio-seek-restart");
+  assert.deepEqual([restarted.desktopSettings().audioSeekBackwardSeconds, restarted.desktopSettings().audioSeekForwardSeconds, restarted.desktopSettings().seekIntervalSeconds], [5, 15, 20]);
+  for (const invalid of [null, "10", 0, 301, 1.5, Number.NaN]) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: 8, audioSeekBackwardSeconds: invalid, audioSeekForwardSeconds: 15, autoAppUpdate: false }));
+    assert.deepEqual([desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds, desktopSettings().seekIntervalSeconds], [8, 15, 8]);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: 8, audioSeekBackwardSeconds: 4, audioSeekForwardSeconds: invalid }));
+    assert.deepEqual([desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds], [4, 8]);
+  }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: 8, audioSeekBackwardSeconds: 0, audioSeekForwardSeconds: 15, autoAppUpdate: false }));
+  saveDesktopSettings({ density: "compact" });
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+  assert.equal(saved.audioSeekForwardSeconds, 15); assert.equal(saved.seekIntervalSeconds, 8); assert.equal(saved.autoAppUpdate, false);
+});
+test("Ajustes: los intervalos de audio viven en la misma sección, validan juntos y los atajos legacy en colisión se avisan sin borrarse", async t => {
+  const dom = environment(); const updater = new ProgramUpdater({ action: async () => updater.status, listen: async () => () => {} }, () => {});
+  const startup = new StartupPreferences(async () => ({ autostart: true, kiosk: false, kioskActive: false, launchedAutomatically: false }), () => {});
+  const panel = new DesktopSettingsPanel(updater, startup); t.after(() => { panel.destroy(); dom.restore(); });
+  const submit = () => document.querySelector("[data-seek-settings]").dispatchEvent(new Event("submit", { cancelable: true }));
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ seekIntervalSeconds: 9 }));
+  panel.open("shortcuts"); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(document.querySelectorAll("[data-seek-settings]").length, 1);
+  assert.equal(document.querySelector("[data-audio-seek-backward]").value, "9"); assert.equal(document.querySelector("[data-audio-seek-forward]").value, "9");
+  assert.equal(document.querySelector("[data-shortcut-collision]"), null, "NEXT/PREVIOUS y ADVANCE/BACK comparten flechas sin advertencia");
+  document.querySelector("[data-audio-seek-backward]").value = "5"; document.querySelector("[data-audio-seek-forward]").value = "15"; submit();
+  assert.deepEqual([desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds, desktopSettings().seekIntervalSeconds], [5, 15, 9]);
+  for (const invalid of ["0", "301", "1.5", ""]) {
+    document.querySelector("[data-audio-seek-forward]").value = invalid; submit();
+    assert.deepEqual([desktopSettings().audioSeekBackwardSeconds, desktopSettings().audioSeekForwardSeconds], [5, 15]);
+  }
+  panel.close(); panel.open("shortcuts");
+  assert.equal(document.querySelector("[data-audio-seek-backward]").value, "5"); assert.equal(document.querySelector("[data-audio-seek-forward]").value, "15");
+  // Asignación nueva: advertencia con reemplazo explícito.
+  document.querySelector('[data-shortcut="SEEK_FORWARD"]').click(); window.dispatchEvent(key(dom, "PageDown"));
+  assert.match(document.body.textContent, /ya está asignado a Avanzar diapositiva o revelado/); assert.ok(readShortcuts().ADVANCE.includes("PageDown"));
+  document.querySelector("[data-replace-shortcut]").click();
+  assert.deepEqual(readShortcuts().SEEK_FORWARD, ["PageDown"]); assert.equal(readShortcuts().ADVANCE.includes("PageDown"), false);
+  assert.equal(document.querySelector("[data-shortcut-collision]"), null);
+  // Colisión legacy: el storage queda intacto y Ajustes muestra el par.
+  localStorage.setItem(SHORTCUTS_KEY, JSON.stringify({ version: 1, bindings: { SEEK_FORWARD: ["PageDown"] } }));
+  panel.close(); panel.open("shortcuts");
+  const warning = document.querySelector("[data-shortcut-collision]"); assert.ok(warning);
+  assert.match(warning.textContent, /PageDown.*Adelantar audio o video.*Avanzar diapositiva o revelado/);
+  assert.deepEqual(audioSeekCollisions(readShortcuts()).map(item => item.navigation), ["ADVANCE"]);
+  assert.deepEqual(readShortcuts().SEEK_FORWARD, ["PageDown"]); assert.ok(readShortcuts().ADVANCE.includes("PageDown"));
+  assert.equal(desktopSettings().audioSeekForwardSeconds, 15);
 });
 test("settings versionados sobreviven reinicio/update sin tocar identidad, niveles ni caché", t => {
   const dom = environment(); t.after(dom.restore); localStorage.setItem("deviceId", "identity"); localStorage.setItem("active-classroom-projection-monitor", "previous"); contentOwner("test"); saveContentPreferences({ followedLevels: ["kids"], pendingUnits: ["unit"] });

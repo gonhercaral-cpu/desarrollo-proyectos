@@ -160,6 +160,21 @@ test("el audio persiste al navegar adelante y atrás, con el teclado de presenta
   assert.equal(h.audios.length, 1); assert.equal(audio.destroyed, false); assert.equal(audio.state.playing, true); assert.equal(h.query("[data-audio-dock]").hidden, false);
 });
 
+test("J/L mueven solo el audio listo: minirreproductor al día, proyector y visual intactos; las flechas no tocan el tiempo", async t => {
+  const h = harness(t); await settle();
+  window.localStorage.setItem("active-classroom-settings:v1", JSON.stringify({ audioSeekBackwardSeconds: 5, audioSeekForwardSeconds: 15 }));
+  h.query("[data-renderer]").click(); await settle();
+  await h.open("audio-a"); await h.play(); const [audio] = h.audios; audio.emit({ time: 40 });
+  const before = visualState(h), commands = audio.commands.length;
+  key("l"); await settle(); key("l"); await settle(); key("j"); await settle();
+  assert.equal(audio.state.time, 65); assert.equal(h.query("[data-audio-time]").textContent, "1:05 / 1:40"); assert.equal(h.query("[data-audio-seek]").value, "65");
+  assert.equal(audio.state.playing, true); assert.equal(audio.commands.length, commands); assert.match(h.query("[data-audio-cmd='PLAY_PAUSE']").textContent, /Pausar/);
+  assert.deepEqual(visualState(h), before);
+  key("ArrowRight"); await settle(); assert.equal(h.player.controller.currentBuild, before.build + 1);
+  key("ArrowLeft"); await settle(); assert.equal(h.player.controller.currentBuild, before.build);
+  assert.equal(audio.state.time, 65); assert.equal(audio.state.playing, true); assert.equal(audio.commands.length, commands);
+});
+
 test("un segundo audio destruye el anterior antes de prepararse; el mismo audio reabre el dock sin alternar", async t => {
   const h = harness(t); await settle(); await h.open("audio-a");
   const [a] = h.audios; await h.play(); a.emit({ time: 12 });
