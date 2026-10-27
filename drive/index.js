@@ -1409,10 +1409,12 @@ const classroomProcessing = createDocumentProcessing({
   db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile,
   prepareResource: classroomFiles.prepareResource,
   googleSlides: createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }),
-    rasterize: async ({ profile, resource, revision }) => {
+    rasterize: async ({ profile, resource, revision, onStage = async () => {} }) => {
       const deliveredMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
       const original = await classroomFiles.prepareResource(profile, resource, { deliveryOverride: { exported: true, deliveredMimeType, deliveredName: `${resource.name.replace(/\.pptx$/i, "")}.pptx` } });
-      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx" });
+      // Prefixed so processor stages only label diagnostics; they never rewind the persisted job stage.
+      // Oversized snapshots throw processorSourceSizeLimit here, before any signing or processor call.
+      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx" }, { onStage: (stage) => onStage(`export-${stage}`), nativeSlidesFallback: true });
     },
     verifyRaster: (result, revision) => classroomProcessing.verifyDerivative(result, revision),
   }),

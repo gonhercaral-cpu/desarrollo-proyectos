@@ -67,13 +67,17 @@ export class ClassroomPlayer {
   private audioMarkedId?: string;
   private audioPlayShown?: boolean;
   private audioMuteShown?: boolean;
+  // Absolute destination of the last keyboard seek, so held keys accumulate before the renderer reports the new time.
+  private audioSeekPending?: { target: number; at: number };
+  // True once the teacher explicitly plays the audio while a video is open; a video that is opened or plays takes the seek back.
+  private audioOverVideo = false;
   private refreshShortcuts = () => {
     const host = this.root?.querySelector(".player-shortcuts"); if (!host) return;
     const map = readShortcuts();
     host.innerHTML = '<strong>Atajos de teclado:</strong>' + (["BACK", "ADVANCE", "PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"] as ShortcutCommand[]).map(command => `<span><kbd>${escapeHtml(map[command].map(shortcutLabel).join(" / ") || "Sin asignar")}</kbd><small>${escapeHtml(SHORTCUT_ACTIONS[command].label)}</small></span>`).join("");
   };
   private keyListener = (event: KeyboardEvent) => {
-    const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""));
+    const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""), this.audioOwnsSeek());
     if (!command || (event.repeat && ["PLAY_PAUSE", "BACKGROUND_MUSIC_PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
     event.preventDefault(); void this.dispatch(command);
   };
@@ -117,7 +121,7 @@ export class ClassroomPlayer {
     this.element("[data-project]").onclick = () => { void this.dispatch("PROJECT"); };
     this.root.querySelectorAll<HTMLButtonElement>("[data-audio-cmd]").forEach((button) => { button.onclick = () => { void this.audioControl(button.dataset.audioCmd as "PLAY_PAUSE" | "STOP" | "MUTE" | "CLOSE"); }; });
     this.element("[data-audio-toggle]").onclick = () => { this.audioMinimized = !this.audioMinimized; this.updateAudioControls(); };
-    this.element<HTMLInputElement>("[data-audio-seek]").oninput = (event) => { if (this.audioReady) this.audioRenderer?.seek(Number((event.target as HTMLInputElement).value)); };
+    this.element<HTMLInputElement>("[data-audio-seek]").oninput = (event) => { if (this.audioReady) { this.audioSeekPending = undefined; this.audioRenderer?.seek(Number((event.target as HTMLInputElement).value)); } };
     this.element<HTMLInputElement>("[data-audio-volume]").oninput = (event) => {
       const value = Number((event.target as HTMLInputElement).value);
       if (!Number.isFinite(value)) return;
@@ -267,7 +271,7 @@ export class ClassroomPlayer {
           if (renderer.kind === "audio" || renderer.kind === "video") { this.volume = state.volume; this.muted = state.muted; }
           if (["audio", "video"].includes(renderer.kind)) this.updatePlaybackState(); else this.updateState();
           // A video whose play() resolved late still wins over the audio channel.
-          if (started && renderer.kind === "video") void this.pauseAudio();
+          if (started && renderer.kind === "video") { this.audioOverVideo = false; void this.pauseAudio(); }
         },
         onPage: (page: number) => { if (sequence === this.sequence && !this.disposed) { this.controller.pageChanged(page); this.updateLists(); } },
       });
@@ -286,7 +290,7 @@ export class ClassroomPlayer {
     const kind = resource ? rendererKind(resource.download.mimeType) : "unsupported";
     if (kind === "audio") return this.openAudio(id);
     this.controller.selectResource(id);
-    if (kind === "video") void this.pauseAudio();
+    if (kind === "video") { this.audioOverVideo = false; void this.pauseAudio(); }
     return this.showResource();
   }
   private async openAudio(id: string): Promise<void> {
@@ -317,6 +321,7 @@ export class ClassroomPlayer {
           if (sequence !== this.audioSequence || this.disposed) return;
           const wasPlaying = this.audioState.playing, started = state.playing && !wasPlaying;
           this.audioState = state; this.audioVolume = state.volume; this.audioMuted = state.muted;
+          if (!state.seeking) this.audioSeekPending = undefined;
           // A pause, the end of the track or an error cancels the intent, so the ambient music is never blocked forever.
           if (state.error || (wasPlaying && !state.playing)) this.audioPlayRequested = false;
           if (state.playing && this.audioPlayRequested) this.pauseAmbient();
@@ -338,7 +343,7 @@ export class ClassroomPlayer {
   }
   // Stops the channel without touching the sequence: the renderer goes first, then its grant is returned once.
   private discardAudio(): void {
-    this.audioRenderer?.destroy(); this.audioRenderer = undefined; this.audioReady = false; this.audioPlayRequested = false; this.audioPlayPending = false;
+    this.audioRenderer?.destroy(); this.audioRenderer = undefined; this.audioReady = false; this.audioPlayRequested = false; this.audioPlayPending = false; this.audioSeekPending = undefined; this.audioOverVideo = false;
     const source = this.audioSource; this.audioSource = undefined;
     if (source) this.dependencies.releaseMediaSource?.(source);
   }
@@ -364,13 +369,31 @@ export class ClassroomPlayer {
       // PLAY_PAUSE is a toggle: only send it when the reported state differs from the wanted one.
       if (this.audioState.playing) { this.audioPlayRequested = false; await this.audioCommand("PLAY_PAUSE"); return; }
       const sequence = this.audioSequence;
-      this.audioPlayPending = true; this.audioPlayRequested = true; this.pauseVideo(); this.pauseAmbient(); this.updateAudioControls();
+      this.audioPlayPending = true; this.audioPlayRequested = true; this.audioOverVideo = true; this.pauseVideo(); this.pauseAmbient(); this.updateAudioControls();
       try { await this.audioCommand("PLAY_PAUSE"); }
       finally { if (sequence === this.audioSequence && !this.disposed) { this.audioPlayPending = false; this.updateAudioControls(); } }
       return;
     }
     if (command === "STOP") this.audioPlayRequested = false;
     await this.audioCommand(command);
+  }
+  // The independent audio can take a keyboard seek only when it is loaded and usable.
+  private audioSeekReady(): boolean {
+    const state = this.audioState;
+    return !this.disposed && !!this.audioRenderer && this.audioReady && !state.loading && !state.error && Number.isFinite(state.duration) && state.duration > 0;
+  }
+  // Presentation, PDF or image: the audio owns the seek. An open video keeps it unless the audio was explicitly played over it.
+  private audioOwnsSeek(): boolean { return this.audioSeekReady() && (this.renderer?.kind !== "video" || this.audioOverVideo); }
+  // Relative seek by the audio's own interval; never changes play/pause, slide, build or projection. Destination is clamped to 0..duration.
+  private audioSeek(command: "SEEK_FORWARD" | "SEEK_BACKWARD"): void {
+    const renderer = this.audioRenderer, sequence = this.audioSequence;
+    if (!renderer || !this.audioSeekReady()) return;
+    const settings = desktopSettings(), pending = this.audioSeekPending;
+    const base = pending && performance.now() - pending.at < 1000 ? pending.target : this.audioState.time;
+    const target = Math.max(0, Math.min(this.audioState.duration, base + (command === "SEEK_FORWARD" ? settings.audioSeekForwardSeconds : -settings.audioSeekBackwardSeconds)));
+    this.audioSeekPending = { target, at: performance.now() };
+    try { renderer.seek(target); }
+    catch { if (sequence === this.audioSequence && !this.disposed) { this.audioSeekPending = undefined; this.audioState = { ...this.audioState, error: "Este control de audio no está disponible." }; this.updateAudioControls(); } }
   }
   private async pauseAudio(): Promise<void> {
     this.audioPlayRequested = false;
@@ -463,6 +486,8 @@ export class ClassroomPlayer {
     if (command === "BACKGROUND_MUSIC_NEXT") { await this.music.move(1); return; }
     if (command === "BACKGROUND_MUSIC_PREVIOUS") { await this.music.move(-1); return; }
     if (command === "PROJECT") { await this.projection.toggle(); return; }
+    // One action per event: either the audio or the visual renderer handles the seek, never both.
+    if ((command === "SEEK_FORWARD" || command === "SEEK_BACKWARD") && this.audioOwnsSeek()) { this.audioSeek(command); return; }
     if (command === "OPEN_RESOURCE") { const id = this.classroom.manifest.slides[this.controller.slideIndex ?? 0]?.resourceIds[0]; if (id) await this.openResource(id); return; }
     if (this.disposed) return;
     try {

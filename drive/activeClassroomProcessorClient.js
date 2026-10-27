@@ -1,15 +1,22 @@
 const { HttpsError } = require("firebase-functions/v2/https");
 const { descriptor } = require("./activeClassroomFiles");
-const { processingTargetPath, rasterTargetPath, PPTX_PROCESSOR_VERSION } = require("./activeClassroomProcessingModel");
+const { processingTargetPath, rasterTargetPath, PPTX_PROCESSOR_VERSION, sourceTooLargeError, nativeRasterBudgetError } = require("./activeClassroomProcessingModel");
 const { validateAnimationPlan, prepareAnimationUploads, attachConvertedAnimations } = require("./activeClassroomAnimations");
 
 function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) {
-  return async (data, { onStage = async () => {} } = {}) => {
+  return async (data, { onStage = async () => {}, nativeSlidesFallback = false } = {}) => {
+    // The processor's request validation rejects originals above its cap (HTTP 422) before it downloads anything;
+    // the snapshot itself was already downloaded upstream by Functions. Check the measured size first so
+    // no capability is signed and no processor call is made.
+    const tooLarge = sourceTooLargeError(data.original?.sizeBytes);
+    if (tooLarge) throw tooLarge;
     const url = getUrl();
     if (!/^https:\/\/[a-zA-Z0-9-]+\.(?:[a-z0-9-]+\.)?run\.app$/.test(url)) throw new HttpsError("failed-precondition", "Configura el procesador privado de documentos antes de continuar.");
+    await onStage("processor-auth");
     const client = await getClient(url);
     const path = processingTargetPath(data.revision); const target = bucket.file(path);
     const expires = clock() + 10 * 60 * 1000;
+    await onStage("storage-sign");
     // Capabilities stay inside the private backend. Converter has no cloud data roles.
     const [sourceUrl] = await bucket.file(data.original.path).getSignedUrl({ version: "v4", action: "read", expires, queryParams: { generation: data.original.generation } });
     const [uploadUrl] = await target.getSignedUrl({ version: "v4", action: "write", expires, contentType: "application/pdf", extensionHeaders: { "x-goog-if-generation-match": "0" } });
@@ -18,6 +25,9 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
       await onStage("planning");
       const plan = (await client.request({ url: `${url}/plan`, method: "POST", data: request, timeout: 90000 })).data;
       if (!Array.isArray(plan?.slides) || !plan.slides.length || plan.slides.length > 200 || !Number.isInteger(plan.stateCount) || plan.stateCount > 200 || plan.stateCount !== plan.slides.reduce((count, slide, index) => count + (slide.index === index && Array.isArray(slide.steps) && slide.steps.length <= 50 ? slide.steps.length + 1 : NaN), 0)) throw new HttpsError("data-loss", "Plan PPTX inválido.");
+      // Opt-in (native Google Slides only): reject a validated plan above the measured budget before any PNG capability or /convert.
+      const overBudget = nativeSlidesFallback === true ? nativeRasterBudgetError(plan.stateCount) : null;
+      if (overBudget) throw overBudget;
       const targets = Array.from({ length: plan.stateCount }, (_value, index) => bucket.file(rasterTargetPath(data.revision, index)));
       let animationPlan = [];
       try {

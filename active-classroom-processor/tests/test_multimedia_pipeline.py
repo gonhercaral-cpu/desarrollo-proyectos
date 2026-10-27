@@ -107,6 +107,36 @@ class PipelineTests(unittest.TestCase):
     def test_public_errors_never_echo_document_details(self):
         self.assertEqual(processor.public_conversion_error(ValueError("https://private.test/token")), "conversion-failed")
         self.assertEqual(processor.public_conversion_error(TimeoutError()), "conversion-timeout")
+        self.assertEqual(processor.public_conversion_error(ValueError("source-integrity-mismatch")), "source-integrity-mismatch")
+
+    def oversize_request(self, size):
+        path = "active-classroom/publications/files/" + "a" * 64
+        target = "active-classroom/publications/files/" + hashlib.sha256(f"{REVISION}:pdf".encode()).hexdigest()
+        return {"processorVersion": "pptx-builds-png-v2", "revision": REVISION, "extension": "pptx",
+                "original": {"path": path, "generation": "1", "sizeBytes": size, "checksums": {"sha256": "b" * 64}},
+                "sourceUrl": f"https://storage.googleapis.com/local-test/{path}?generation=1&X-Goog-Signature=test",
+                "uploadUrl": f"https://storage.googleapis.com/local-test/{target}?X-Goog-Signature=test"}
+
+    def test_real_a_and_b_export_sizes_are_rejected_as_file_too_large_before_download(self):
+        # sizeBytes measured on the stored Nube AES snapshots of the real A and B presentations.
+        for size in (397967772, 314467031):
+            self.assertGreater(size, processor.MAX_BYTES)
+            with self.assertRaisesRegex(ValueError, "^file-too-large$"):
+                processor.validate_request(self.oversize_request(size))
+            with patch("app.urlopen") as download, processor.app.test_client() as client:
+                for route in ("/plan", "/convert"):
+                    response = client.post(route, json=self.oversize_request(size))
+                    self.assertEqual((response.status_code, response.get_json()), (422, {"error": "file-too-large"}))
+                download.assert_not_called()
+
+    def test_size_boundary_and_invalid_sizes_keep_their_previous_behavior(self):
+        self.assertEqual(processor.validate_request(self.oversize_request(processor.MAX_BYTES))["sizeBytes"], processor.MAX_BYTES)
+        for size in (0, -1, "10", True):
+            with self.assertRaisesRegex(ValueError, "^invalid-source-integrity$"):
+                processor.validate_request(self.oversize_request(size))
+        with processor.app.test_client() as client:
+            response = client.post("/convert", json={**self.oversize_request(10), "revision": "bad"})
+        self.assertEqual((response.status_code, response.get_json()), (400, {"error": "invalid-request"}))
 
 
 if __name__ == "__main__":

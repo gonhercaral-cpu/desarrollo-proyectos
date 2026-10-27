@@ -24,7 +24,7 @@ def public_conversion_error(error):
     if isinstance(error, zipfile.BadZipFile):
         return "invalid-office-file"
     code = str(error) if isinstance(error, ValueError) else ""
-    return code if code in {"invalid-office-file", "invalid-office-archive", "external-document-reference", "file-too-large", "too-many-slides", "invalid-page-count"} else "conversion-failed"
+    return code if code in {"invalid-office-file", "invalid-office-archive", "external-document-reference", "file-too-large", "too-many-slides", "invalid-page-count", "source-size-mismatch", "source-integrity-mismatch"} else "conversion-failed"
 
 
 def animation_path(revision, slide_index, asset):
@@ -67,7 +67,10 @@ def validate_request(data):
     if not re.fullmatch(r"active-classroom/publications/files/[a-f0-9]{64}", original.get("path", "")) or not re.fullmatch(r"\d+", original.get("generation", "")):
         raise ValueError("invalid-source")
     size = original.get("sizeBytes")
-    if type(size) is not int or size < 1 or size > MAX_BYTES or not re.fullmatch(r"[a-f0-9]{64}", original.get("checksums", {}).get("sha256", "")):
+    if type(size) is int and size > MAX_BYTES:
+        # Unambiguous and safe: lets the caller report the real size limit instead of a generic failure.
+        raise ValueError("file-too-large")
+    if type(size) is not int or size < 1 or not re.fullmatch(r"[a-f0-9]{64}", original.get("checksums", {}).get("sha256", "")):
         raise ValueError("invalid-source-integrity")
     bucket = os.environ["STORAGE_BUCKET"]
     target_path = "active-classroom/publications/files/" + hashlib.sha256(f"{revision}:pdf".encode()).hexdigest()
@@ -107,8 +110,9 @@ def plan():
             result = pptx_plan(download_source(data, original, workspace))
         return jsonify(result)
     except Exception as error:
-        app.logger.error("PPTX planning failed: %s", type(error).__name__)
-        return jsonify({"error": public_conversion_error(error)}), 422
+        code = public_conversion_error(error)
+        app.logger.error("PPTX planning failed: stage=plan error=%s code=%s", type(error).__name__, code)
+        return jsonify({"error": code}), 422
 
 
 def valid_animation_upload(url_value, path):
@@ -231,7 +235,9 @@ def convert():
     try:
         data = request.get_json()
         original = validate_request(data)
-    except (ValueError, TypeError, AttributeError):
+    except (ValueError, TypeError, AttributeError) as error:
+        if isinstance(error, ValueError) and str(error) == "file-too-large":
+            return jsonify({"error": "file-too-large"}), 422
         return jsonify({"error": "invalid-request"}), 400
     try:
         with tempfile.TemporaryDirectory(prefix="classroom-office-") as workspace:
@@ -250,5 +256,6 @@ def convert():
             return jsonify({"processorVersion": PROCESSOR_VERSION, "revision": data["revision"], "pageCount": result["pageCount"], "sha256": result["sha256"], "sizeBytes": result["sizeBytes"], "processedAt": datetime.now(timezone.utc).isoformat()})
     except Exception as error:
         # Only error class; no source names, URLs, tokens, converter stdout or paths.
-        app.logger.error("Office conversion failed: %s", type(error).__name__)
-        return jsonify({"error": public_conversion_error(error)}), 422
+        code = public_conversion_error(error)
+        app.logger.error("Office conversion failed: error=%s code=%s", type(error).__name__, code)
+        return jsonify({"error": code}), 422

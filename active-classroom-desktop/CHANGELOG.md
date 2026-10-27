@@ -1,3 +1,10 @@
+## 1.0.20 — 2026-10-27
+
+- Audio: J/L adelantan y retroceden sin ocultar diapositivas ni interrumpir su navegación; teclas reasignables desde Ajustes > Atajos de teclado.
+- Saltos hacia adelante y atrás del audio configurables por separado, conservando el intervalo de video.
+- Google Slides grandes o con demasiados estados usan imágenes nativas completas para evitar límites de conversión; GIF y revelados no compatibles quedan estáticos con aviso.
+- Conserva asignaciones de teclas, reproducción multimedia, sincronización con proyector, caché y actualizador existentes.
+
 ## 1.0.19 — 2026-10-26
 
 - Audio de clase independiente: mantiene diapositivas visibles en maestro y proyector, también al avanzar o retroceder.
