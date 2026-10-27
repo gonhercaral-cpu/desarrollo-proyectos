@@ -212,6 +212,10 @@ jobs:
 
       - name: Dependencias nativas Tauri 2 / WebKitGTK 4.1
         run: |
+          # El mirror Azure del runner es muy lento; usa el archivo primario de Ubuntu.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          fi
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
             build-essential pkg-config curl wget file meson ninja-build bison flex \
@@ -555,6 +559,10 @@ jobs:
         env:
           ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY: ${{ vars.ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY }}
         run: |
+          # El mirror Azure del runner es muy lento; usa el archivo primario de Ubuntu.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          fi
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3
           chmod 755 ../validated-artifacts/verify_updater
