@@ -1,107 +1,113 @@
-# Identidad Linux: corrección de preservación y estado de aceptación
+# Identidad Linux de Active Classroom Desktop 1.0.21
 
 Issue: https://github.com/gonhercaral-cpu/desarrollo-proyectos/issues/17
-Base revisada: `0a6d55c585e1375a434cea3feea0fff9976088f1`, Desktop 1.0.20.
+PR: https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/18
 
-## Estado
+## Comportamiento
 
-Trabajo parcial de preservación, pendiente de validación nativa. No constituye una
-solución definitiva de instalación nueva/autologin sin llavero. No habilita un nuevo
-almacén, no publica versiones y no modifica datos de producción.
+La identidad se conserva en un almacén nativo cifrado, independiente de GNOME
+Keyring/Secret Service después de la instalación o migración. No se necesita crear
+Login en Seahorse. Los reinicios, el login automático y los cambios de llavero
+predeterminado no seleccionan otra identidad.
 
-El propietario confirmó un parque mixto, sin TPM ni cifrado de disco garantizados.
-Se mantiene la prohibición de degradar la protección de credenciales.
+El contrato de `load`, `proof`, `activated`, `revoked`, `reset-binding`,
+`registered` y `cacheDeviceId` se mantiene. Solo una desvinculación autorizada
+rota identificador y credencial. El namespace de las clases descargadas se conserva.
 
-## Diagnóstico revisado por ambos auxiliares
+## Protección de credenciales y desbloqueo
 
-El código anterior consultaba `Locked` en el alias `default` antes de buscar la
-identidad. La ausencia o bloqueo de ese alias impedía incluso buscar una identidad
-en otra colección. La búsqueda seleccionaba la primera coincidencia, mientras que
-la escritura usaba la colección predeterminada: un cambio de alias podía bifurcar
-la identidad. Además, una respuesta vacía se trataba como primera instalación sin
-una referencia pública persistente que detectara una identidad anterior ausente.
-Estas son causas confirmadas en código; no se reprodujo el reinicio físico del
-hardware afectado en esta sesión.
+El propietario confirmó que el aislamiento requerido es frente a otros usuarios
+del SO. La copia física del disco apagado, root y procesos con el mismo UID quedan
+fuera de ese modelo. No se presenta este almacén como protección de hardware.
 
-En la sesión TypeScript, el manejo de `DEVICE_*` no comprobaba si el error provenía
-del intercambio con el servidor o del acceso nativo. El estado de error tampoco
-participaba en el reintento periódico y ofrecía una nueva vinculación.
+- Cifrado: AES-256-GCM de `ring` 0.17.14, ya incluido transitivamente y fijado ahora
+  como dependencia directa. Nonce aleatorio de 12 bytes por escritura y AAD que
+  identifica el formato de Active Classroom.
+- Clave: 32 bytes generados por el CSPRNG del SO una sola vez por instalación. Se
+  guarda como material binario en `$XDG_CONFIG_HOME/active-classroom-identity/vault-v1.key`
+  (alternativa `$HOME/.config`), propietario del UID actual y modo 0600, en un
+  directorio 0700. No se deriva del machine-id ni existe una clave fija en código.
+- Identidad: JSON únicamente en memoria; en disco se guarda cifrado en
+  `$XDG_STATE_HOME/active-classroom-identity/vault-v1.enc` (alternativa
+  `$HOME/.local/state`), con modo 0600 y directorio 0700.
+- Desbloqueo: la aplicación abre la clave mediante los permisos de la sesión del
+  mismo UID. Funciona con inicio manual o automático, sin pedir crear un llavero.
+  La clave no está cifrada otra vez con una contraseña: la frontera de protección
+  es el control de acceso del SO confirmado por el propietario.
+- Los directorios se verifican por propietario, permisos, archivo regular y
+  ausencia de enlaces. Se rechaza ubicarlos dentro del alcance `$APPDATA` del
+  protocolo de assets del WebView, incluso mediante rutas relativas o enlaces.
+- No se persisten credenciales en localStorage, WebView, caché, logs ni archivos de
+  texto. El marcador público contiene solo versión, identificadores y journal.
 
-## Frontera de seguridad y desbloqueo automático
+## Persistencia y recuperación
 
-Se conserva el cifrado del Secret Service. No se introduce una clave fija, una
-clave derivada del machine-id, una colección sin contraseña ni una copia de la
-credencial en texto plano, localStorage o un archivo de usuario.
+Los archivos se escriben mediante un temporal exclusivo, fsync, rename y fsync del
+directorio. La primera clave empieza pendiente y se marca lista solo después de
+que la identidad cifrada esté guardada y verificada. Si se interrumpe ese paso,
+la próxima carga completa la misma identidad.
 
-Guardar una clave aleatoria junto al archivo cifrado, incluso con permisos 0600,
-no mantiene la protección de un llavero cifrado con contraseña frente al robo del
-disco. Mover esa clave a un archivo de root tampoco resuelve el ataque offline.
-La propuesta inicial de helper con identidad en texto plano fue rechazada.
+Una clave lista sin cifrado, un cifrado sin clave, un tag inválido, un marcador
+incompatible o permisos inseguros fallan de forma explícita. Nunca se borra la
+clave ni se genera otra para ocultar el error. Hay mutex y flock para serializar
+la creación, la migración y los cambios de autorización entre procesos.
 
-En una sesión con autologin, sin secreto entregado por PAM, sin TPM y sin disco
-cifrado, no se dispone de una fuente secreta de desbloqueo automático que preserve
-esa protección offline. El código no puede fabricar esa fuente. Un vault con TPM
-requiere instalación, recuperación y pruebas propias; no se incluyó una versión
-incompleta ni se asumió que todo el parque dispone de ese hardware.
+`reset-binding` conserva un journal público anterior/siguiente antes de guardar la
+rotación. La carga siguiente finaliza o aborta ese journal contra la identidad que
+realmente está guardada. Si la operación nativa terminó parcialmente, la sesión
+JS descarta el owner antiguo y el reintento relee el estado real sin otra rotación.
 
-Referencias primarias:
-- [GNOME Keyring y PAM](https://wiki.gnome.org/Projects/GnomeKeyring/Pam).
-- [Protección y límites de GNOME Keyring](https://wiki.gnome.org/Projects/GnomeKeyring/SecurityFAQ).
-- [Especificación de Secret Service](https://specifications.freedesktop.org/secret-service/latest/).
-- [Clave host de systemd-creds](https://www.freedesktop.org/software/systemd/man/256/systemd-creds.html).
+## Migración no destructiva
 
-## Contratos que deben conservarse
+Sin almacén nativo se sondea Secret Service en todas las colecciones, incluyendo
+coincidencias bloqueadas. Una identidad accesible y única se copia cifrada,
+se relee comparando todos los campos y después se registra el marcador nativo v2.
+El elemento original del llavero no se elimina ni se modifica.
 
-`load`, `proof`, `activated`, `revoked`, `reset-binding`, `registered` y
-`cacheDeviceId` mantienen su significado. Solo la desvinculación autorizada puede
-rotar las credenciales. La migración no debe borrar elementos legacy ni cambiar el
-namespace de las clases descargadas. Un error de acceso nunca prueba revocación.
-Los mensajes de diagnóstico usan códigos fijos sin errores crudos ni credenciales.
+Bloqueo, conflicto, corrupción, rastros de keyrings no verificables o un marcador
+anterior sin identidad impiden crear otra. Un equipo realmente nuevo puede crear
+su identidad nativa sin Login ni servicio de llavero. Si la migración ya guardó un
+cifrado válido pero se interrumpió antes del marcador, se recupera esa misma copia
+sin volver a depender del llavero. Después de migrar no se consulta Secret Service.
 
-## Aceptación pendiente de publicación
+Una identidad antigua cifrada que siga bloqueada no se puede recuperar sin que su
+proveedor permita leerla. La aplicación mantiene ese error de almacenamiento y no
+lo convierte en revocación ni sustituye la vinculación. Tampoco es posible probar
+la ausencia de una identidad en un backend completamente oculto y no detectable.
 
-| Escenario solicitado | Evidencia / estado |
-| --- | --- |
-| 1. Instalación sin llavero | No resuelto de forma universal para parque mixto/autologin. |
-| 2. Código inicial | Contrato probado con dependencias simuladas; pendiente instalación Linux. |
-| 3. Aprobación Web | Contrato de sesión probado; no se autorizó un equipo real de producción como prueba. |
-| 4-5. Reinicios y varios reinicios | Pendientes pruebas físicas Ubuntu y Zorin. Reiniciar objetos de prueba no equivale a reiniciar el SO. |
-| 6. Login automático y manual | Pendiente hardware; no se promete desbloqueo del llavero sin fuente secreta. |
-| 7. Almacén bloqueado | Pruebas JS de fallo seguro y recuperación sin reset; validación nativa pendiente. |
-| 8. Varios Login | Requiere prueba nativa de todas las colecciones y conflictos. |
-| 9-10. Actualización y migración | No publicar hasta verificar identidad/credencial/cacheDeviceId antes y después e interrupciones. |
-| 11. Clases descargadas | Pruebas de namespace y regresión offline; no se modifica la caché. |
-| 12. Revocación | Pruebas JS conservan revocación real y cierre de sesión aun si falla guardar el marcador. |
-| 13. Desvincular y vincular | Pruebas existentes conservadas; no se cambia el contrato servidor. |
-| 14. Offline | Pruebas locales existentes; pendiente aceptación nativa en el equipo destino. |
-| 15. Regresiones | Lint, build y pruebas desktop pertinentes; completar informe con resultados finales. |
+## Validación
 
-## Trabajo y revisión
+Las pruebas distinguen unitarias, procesos Linux y hardware físico:
 
-- Antigravity: diagnóstico recibido correctamente. La invocación principal de implementación
-  se detuvo tras superar 600 segundos sin respuesta, salida -1; no se recibió ni se
-  atribuye esa implementación a este agente. Una consulta posterior acotada sí
-  entregó la corrección `C.UTF-8` para los argumentos UTF-8 de libsecret, revisada e
-  integrada por Codex; pendiente de confirmar en la repetición del llavero real.
-- Claude Code: auditoría independiente, errores de identidad/sesión, recuperación y
-  pruebas JS/UI. La implementación nativa se reasignó a Claude tras ese fallo.
-- Codex: aislamiento desde la versión publicada, contratos, rechazo de almacenamiento inseguro, revisión de diferencias, integración y validación. Conserva intacto el trabajo pendiente del checkout original.
+- AES/integridad, pérdida de clave, escritura interrumpida, permisos, enlaces y
+  ausencia de credenciales en claro.
+- Migración exacta de campos y caché, estados revocado/activado, conflictos,
+  concurrencia y ausencia de consultas al llavero después de migrar.
+- Linux aislado: instalación sin Login, reapertura en otro proceso sin D-Bus,
+  migración desde Secret Service real y rechazo de lectura por otro UID.
+- Sesión/interfaz: red y almacenamiento distintos de revocación, recuperación sin
+  nuevas rotaciones y contratos de autorización/desvinculación conservados.
+- Lint y build de escritorio y regresiones del flujo Linux existente.
 
-No se cambian reproductores, teclado, proyección, diseño, niveles, contenidos,
-implementación de caché, backend ni reglas Firebase. En `library.ts` el alcance se
-limita a reintentar la lectura de identidad y no ofrecer otra vinculación ante un
-error local.
+No hay Ubuntu/Zorin físico ni WSL en el host Windows de coordinación. Abrir otro
+proceso o reiniciar una sesión D-Bus no equivale a reiniciar el sistema operativo.
+Los reinicios físicos, apagados repetidos y pruebas manuales de login en los
+salones deben registrarse aparte. No se afirmarán realizados a partir de mocks.
 
-## Validación local de la parte TypeScript
+El lint global de la base contiene 137 errores y 37 advertencias en 19 archivos
+fuera de este cambio; se verificó por Git que son idénticos a la base publicada.
+No se corrigen dentro de esta intervención. El resultado final de CI, instaladores,
+firma y publicación se registra en el PR y el informe de entrega.
 
-Sobre la worktree de integración: `npm run lint:player`, lint de los dos archivos
-de pruebas modificados y `npm run build` terminan con código 0. Las suites
-ejecutadas suman 246 pruebas: identidad/UI/publication-refresh 45, offline 44,
-player 91, projection 25, startup 8, updater 11, release 20 y assets del bundle 2.
-No se suman otra vez las ejecuciones de la base o las repeticiones de una suite.
-Estos resultados no incluyen las pruebas nativas pendientes ni constituyen una
-prueba de reinstalación o reinicio del sistema operativo.
+## Alcance
 
-La recuperación de `reset-binding` también descarta una identidad antigua en
-memoria cuando el guardado nativo puede haber terminado parcialmente. El siguiente
-reintento relee el almacén y autentica el identificador real, sin otra rotación.
+Antigravity entregó diagnóstico, corrección de locale y módulo inicial de cifrado.
+Claude implementó migración/sesión y auditó y complementó el módulo, con pruebas.
+Codex coordinó, revisó e integró los parches, dependencias indispensables, fixtures,
+versionado y validaciones. Las invocaciones fallidas no se cuentan como entregas.
+
+No cambian reproductores, teclado, saltos, proyección, diseño, biblioteca de
+contenidos, niveles/unidades, implementación de caché, backend ni reglas Firebase.
+En `library.ts` solo se ajusta el reintento de identidad y se retira la acción de
+revincular ante un error local de almacenamiento. No se incluyen cambios pendientes
+del checkout original.

@@ -1,3 +1,10 @@
+## 1.0.21 — 2026-10-30
+
+- Identidad local cifrada y persistente del equipo, independiente del llavero Login para su uso diario y después de reiniciar o iniciar sesión automáticamente.
+- Migra las identidades existentes sin cambiar el código del equipo, la credencial ni el acceso a las clases descargadas; conserva el original del llavero.
+- Una identidad anterior bloqueada o no verificable detiene la migración sin generar otra vinculación; los fallos locales se distinguen de una revocación del servidor.
+- Recupera escrituras interrumpidas sin volver a rotar la identidad y conserva el mecanismo de actualización firmado existente.
+
 ## 1.0.20 — 2026-10-27
 
 - Audio: J/L adelantan y retroceden sin ocultar diapositivas ni interrumpir su navegación; teclas reasignables desde Ajustes > Atajos de teclado.
