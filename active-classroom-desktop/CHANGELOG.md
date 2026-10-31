@@ -1,3 +1,10 @@
+## 1.0.22 — pendiente de publicación
+
+- Muestra las clases descargadas al iniciar sin esperar la verificación completa de todos los archivos de la biblioteca.
+- Espera a recuperar el inventario local antes de programar descargas, evitando nuevas colas para versiones que ya están disponibles.
+- Conserva la comprobación SHA-256 al abrir, descargar y activar clases; los fallos de almacenamiento permiten reintentar sin borrar el contenido existente.
+- Conserva la identidad persistente y el formato de las clases descargadas de versiones anteriores.
+
 ## 1.0.21 — 2026-10-30
 
 - Identidad local cifrada y persistente del equipo, independiente del llavero Login para su uso diario y después de reiniciar o iniciar sesión automáticamente.

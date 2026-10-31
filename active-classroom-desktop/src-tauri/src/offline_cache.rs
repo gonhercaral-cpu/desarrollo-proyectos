@@ -51,9 +51,14 @@ fn checked_manifest(manifest: &Value) -> Result<(), String> {
     if digest(canonical(&content).as_bytes()) != expected { return Err("integrity: El manifest no coincide con su SHA-256".into()); }
     Ok(())
 }
+// Per-thread so concurrent tests cannot disturb each other's count of hashed objects.
+#[cfg(test)]
+thread_local! { static HASHED_OBJECTS: std::cell::Cell<usize> = std::cell::Cell::new(0); }
 fn verified(path: &Path, hash: &str, size: u64) -> Result<bool, String> {
     let mut file = match File::open(path) { Ok(file) => file, Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false), Err(error) => return Err(io_error(error)) };
     if file.metadata().map_err(io_error)?.len() != size { return Ok(false); }
+    #[cfg(test)]
+    HASHED_OBJECTS.with(|count| count.set(count.get() + 1));
     let mut digest = Sha256::new();
     let mut chunk = [0u8; 65536];
     loop { let read = file.read(&mut chunk).map_err(io_error)?; if read == 0 { break; } digest.update(&chunk[..read]); }
@@ -74,9 +79,14 @@ fn write_synced(path: &Path, bytes: &[u8]) -> Result<(), String> {
 pub(crate) fn load(path: &Path) -> Result<Value, String> {
     let file = File::open(path).map_err(io_error)?;
     if file.metadata().map_err(io_error)?.len() > 700000 { return Err("manifest: Manifest demasiado grande".into()); }
-    let manifest = serde_json::from_reader(file).map_err(|_| "manifest: JSON local dañado")?;
+    let manifest = parse_manifest(file)?;
     checked_manifest(&manifest)?;
     Ok(manifest)
+}
+// A failing read is a storage error (cache:/disk-full:), not a damaged manifest;
+// only syntax/EOF/data errors mean the local JSON is corrupt.
+fn parse_manifest<R: Read>(reader: R) -> Result<Value, String> {
+    serde_json::from_reader(reader).map_err(|error| if error.is_io() { io_error(error.into()) } else { "manifest: JSON local dañado".into() })
 }
 fn paths(root: &Path, manifest: &Value) -> Result<Value, String> {
     cached_paths(root, manifest, &mut BTreeMap::new())
@@ -132,7 +142,7 @@ fn ambient_paths(root: &Path, catalog: &Value) -> Result<(), String> {
         if !verified(&root.join("objects").join(hash), hash, track["size"].as_u64().unwrap())? { return Err("integrity: Audio global ausente o dañado".into()); }
     } Ok(())
 }
-fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
+fn prepare(root: &Path) -> Result<(), String> {
     fs::create_dir_all(root).map_err(io_error)?;
     #[cfg(unix)]
     {
@@ -141,7 +151,72 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
     }
     fs::create_dir_all(root.join("objects")).map_err(io_error)?;
     fs::create_dir_all(root.join("temporary")).map_err(io_error)?;
+    Ok(())
+}
+// Startup inventory: committed manifests whose objects exist with the declared
+// size. It never reads object bytes, so it is availability for the UI and NOT
+// integrity: list/open/has/finish keep hashing the real bytes.
+fn structurally_available(root: &Path, manifest: &Value, checked: &mut BTreeMap<(String, u64), bool>) -> Result<bool, String> {
+    for resource in manifest["resources"].as_array().ok_or("manifest: Recursos inválidos")? {
+        let hash = text(&resource["download"]["checksums"], "sha256")?;
+        let size = resource["download"]["sizeBytes"].as_u64().ok_or("manifest: Tamaño inválido")?;
+        let key = (hash.to_string(), size);
+        let present = match checked.get(&key) {
+            Some(present) => *present,
+            None => {
+                let present = match fs::metadata(root.join("objects").join(hash)) { Ok(meta) => meta.is_file() && meta.len() == size, Err(error) if error.kind() == std::io::ErrorKind::NotFound => false, Err(error) => return Err(io_error(error)) };
+                checked.insert(key, present); present
+            }
+        };
+        if !present { return Ok(false); }
+    }
+    Ok(true)
+}
+// Only NotFound means "absent"; any other directory failure is a storage error.
+fn directory_entries(path: &Path) -> Result<Vec<fs::DirEntry>, String> {
+    let entries = match fs::read_dir(path) { Ok(entries) => entries, Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()), Err(error) => return Err(io_error(error)) };
+    let mut directories = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(io_error)?;
+        if entry.file_type().map_err(io_error)?.is_dir() { directories.push(entry); }
+    }
+    Ok(directories)
+}
+// Ok(None): no usable committed manifest (absent, not a file, or this unit's own
+// JSON/integrity is invalid). Err: storage failure, so an unreadable catalog is
+// never reported as an empty one.
+fn committed_manifest(path: &Path) -> Result<Option<Value>, String> {
+    match fs::metadata(path) {
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(io_error(error)),
+    }
+    match load(path) {
+        Ok(manifest) => Ok(Some(manifest)),
+        Err(error) if error.starts_with("manifest:") || error.starts_with("integrity:") => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+fn inventory(root: &Path) -> Result<Value, String> {
+    let mut units = BTreeMap::<String, Value>::new();
+    let mut checked = BTreeMap::new();
+    for unit in directory_entries(&root.join("units"))? {
+        for version in directory_entries(&unit.path().join("versions"))? {
+            // Only the atomically renamed manifest.json; staged versions stay invisible.
+            let Some(manifest) = committed_manifest(&version.path().join("manifest.json"))? else { continue };
+            let id = manifest["unit"]["unitId"].as_str().ok_or("manifest: Falta unitId")?.to_string();
+            if unit.file_name().to_string_lossy() != id || version.file_name().to_string_lossy() != manifest["version"].to_string() { continue; }
+            if units.get(&id).map(|old| old["version"].as_u64() >= manifest["version"].as_u64()).unwrap_or(false) { continue; }
+            if structurally_available(root, &manifest, &mut checked)? { units.insert(id, manifest); }
+        }
+    }
+    Ok(json!(units.into_values().collect::<Vec<_>>()))
+}
+fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
+    prepare(root)?;
     match action {
+        "inventory" => inventory(root),
         "ambient-read" => {
             let mut versions = fs::read_dir(root.join("ambient/versions")).into_iter().flatten().flatten().filter_map(|entry| entry.file_name().to_str()?.parse::<u64>().ok()).collect::<Vec<_>>(); versions.sort_unstable();
             for version in versions.into_iter().rev() { if let Ok(catalog) = ambient_catalog(root, version) { if ambient_paths(root, &catalog).is_ok() { return Ok(catalog); } } } Ok(Value::Null)
@@ -239,9 +314,11 @@ fn execute(root: &Path, action: &str, data: Value) -> Result<Value, String> {
 // Adopt verified publications from the previous email-based cache without
 // deleting originals or downloading the same objects again. The format stays v1.
 fn adopt_legacy(root: &Path) -> Result<Value, String> {
-    execute(root, "list", Value::Null)?;
+    // An already adopted cache must not be scanned (and hashed) on every launch.
     let marker = root.join("legacy-adopted");
     if marker.exists() { return Ok(Value::Null); }
+    // The discarded full "list" only ever created the cache layout; do that without hashing.
+    prepare(root)?;
     let users = root.parent().ok_or("cache: Ruta inválida")?;
     for entry in fs::read_dir(users).map_err(io_error)?.flatten() {
         let source = entry.path();
@@ -279,9 +356,14 @@ pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow
     let root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("offline-v1").join("users").join(digest(owner.as_bytes()));
     let lock = gate.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // Immutable catalogs and atomically renamed SHA objects permit this
-        // read-only scan without holding the write gate or delaying Unit opens.
-        if action == "ambient-read" { return execute(&root,&action,data); }
+        // Immutable catalogs and atomically renamed SHA objects permit these
+        // reads without holding the write gate or delaying Unit opens.
+        // "inventory" only reads atomically renamed manifests and file metadata; "open"
+        // verifies the SHA of immutable objects. execute() first runs prepare(), which
+        // only idempotently creates/chmods the cache layout directories (no manifest or
+        // object is written), so a long adoption or activation holding the gate must
+        // not delay showing or opening a visible Unit.
+        if matches!(action.as_str(), "ambient-read" | "inventory" | "open") { return execute(&root,&action,data); }
         let _guard = lock.lock().map_err(|_| "cache: Caché ocupado")?;
         if action == "adopt" {
             if !crate::device_identity::authorized_owner(&owner)? { return Err("cache: Equipo no activado".into()); }
@@ -425,5 +507,193 @@ mod tests {
         assert!(execute(&root, "open", json!({"unitId": manifest["unit"]["unitId"], "version": 1})).is_err());
         // This directory is created exclusively by this test under temp_dir.
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// Separate from `tests` on purpose: CI expects exactly seven tests there.
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Exclusive temporary directory; Drop only removes the directory this fixture created.
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new(label: &str) -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            loop {
+                let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+                let path = std::env::temp_dir().join(format!("ac-startup-{label}-{}-{}-{nanos}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)));
+                match fs::create_dir(&path) { Ok(()) => return Fixture(path), Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue, Err(error) => panic!("fixture: {error}") }
+            }
+        }
+        fn cache(&self) -> PathBuf { self.0.join("cache") }
+    }
+    impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+
+    fn hashed() -> usize { HASHED_OBJECTS.with(|count| count.get()) }
+    fn reset_hashed() { HASHED_OBJECTS.with(|count| count.set(0)); }
+    fn manifest_for(unit: &str, version: u64, payload: &[u8]) -> Value {
+        let mut manifest: Value = serde_json::from_str(include_str!("../../../docs/active-classroom-manifest.example.json")).unwrap();
+        manifest["unit"]["unitId"] = json!(unit);
+        manifest["version"] = json!(version);
+        for resource in manifest["resources"].as_array_mut().unwrap() { resource["download"]["sizeBytes"] = json!(payload.len()); resource["download"]["checksums"]["sha256"] = json!(digest(payload)); }
+        let mut content = manifest.clone();
+        for key in ["version", "publishedAt", "integrity"] { content.as_object_mut().unwrap().remove(key); }
+        manifest["integrity"]["contentHash"] = json!(digest(canonical(&content).as_bytes()));
+        manifest
+    }
+    fn put_object(root: &Path, payload: &[u8]) {
+        let hash = digest(payload);
+        execute(root, "begin", json!({"hash": hash})).unwrap();
+        execute(root, "append", json!({"hash": hash, "offset": 0, "chunk": payload.to_vec()})).unwrap();
+        execute(root, "finish", json!({"hash": hash, "size": payload.len()})).unwrap();
+    }
+    fn publish(root: &Path, action: &str, unit: &str, version: u64, payload: &[u8]) -> Value {
+        put_object(root, payload);
+        let manifest = manifest_for(unit, version, payload);
+        execute(root, action, manifest.clone()).unwrap();
+        manifest
+    }
+    fn object(root: &Path, payload: &[u8]) -> PathBuf { root.join("objects").join(digest(payload)) }
+    fn manifest_path(root: &Path, unit: &str, version: u64) -> PathBuf { version_dir(root, unit, version).unwrap().join("manifest.json") }
+    fn listed(root: &Path) -> Vec<(String, u64)> {
+        execute(root, "inventory", Value::Null).unwrap().as_array().unwrap().iter().map(|m| (m["unit"]["unitId"].as_str().unwrap().to_string(), m["version"].as_u64().unwrap())).collect()
+    }
+
+    #[test]
+    fn inventario_de_60_clases_no_lee_bytes_de_objetos() {
+        let fixture = Fixture::new("sixty");
+        let root = fixture.cache();
+        for index in 0..60 { publish(&root, "commit", &format!("clase{index}"), 1, format!("audio {index}").as_bytes()); }
+        reset_hashed();
+        let inventory = execute(&root, "inventory", Value::Null).unwrap();
+        assert_eq!(inventory.as_array().unwrap().len(), 60);
+        assert_eq!(hashed(), 0, "el inventario no debe calcular SHA de objetos");
+        assert_eq!(execute(&root, "list", Value::Null).unwrap().as_array().unwrap().len(), 60);
+        assert!(hashed() > 0, "list sí debe verificar los bytes reales");
+    }
+
+    #[test]
+    fn objeto_corrupto_del_mismo_tamano_es_provisional_y_la_verificacion_lo_rechaza() {
+        let fixture = Fixture::new("corrupt");
+        let root = fixture.cache();
+        let manifest = publish(&root, "commit", "u", 1, b"offline");
+        fs::write(object(&root, b"offline"), b"offlinX").unwrap();
+        reset_hashed();
+        assert_eq!(listed(&root), vec![("u".to_string(), 1)]);
+        assert_eq!(hashed(), 0);
+        assert_eq!(execute(&root, "list", Value::Null).unwrap(), json!([]));
+        assert!(hashed() > 0);
+        assert!(execute(&root, "open", json!({"unitId": "u", "version": 1})).unwrap_err().starts_with("integrity:"));
+        assert_eq!(execute(&root, "has", json!({"hash": digest(b"offline"), "size": 7})).unwrap(), json!(false));
+        let mut next = manifest.clone(); next["version"] = json!(2);
+        assert!(execute(&root, "commit", next).is_err());
+        assert!(!manifest_path(&root, "u", 2).exists());
+        let hash = digest(b"offline");
+        execute(&root, "begin", json!({"hash": hash})).unwrap();
+        execute(&root, "append", json!({"hash": hash, "offset": 0, "chunk": b"offlinX".to_vec()})).unwrap();
+        assert!(execute(&root, "finish", json!({"hash": hash, "size": 7})).unwrap_err().starts_with("integrity:"));
+    }
+
+    #[test]
+    fn inventario_omite_unidades_no_disponibles_y_nunca_muestra_preparadas() {
+        let fixture = Fixture::new("omit");
+        let root = fixture.cache();
+        publish(&root, "commit", "ok", 1, b"ok bytes");
+        publish(&root, "commit", "gone", 1, b"gone bytes");
+        fs::remove_file(object(&root, b"gone bytes")).unwrap();
+        publish(&root, "commit", "short", 1, b"short bytes");
+        fs::write(object(&root, b"short bytes"), b"x").unwrap();
+        publish(&root, "commit", "isdir", 1, b"isdir bytes");
+        fs::remove_file(object(&root, b"isdir bytes")).unwrap();
+        fs::create_dir(object(&root, b"isdir bytes")).unwrap();
+        publish(&root, "commit", "badjson", 1, b"badjson bytes");
+        fs::write(manifest_path(&root, "badjson", 1), b"{no es json").unwrap();
+        publish(&root, "commit", "badhash", 1, b"badhash bytes");
+        let mut tampered: Value = serde_json::from_slice(&fs::read(manifest_path(&root, "badhash", 1)).unwrap()).unwrap();
+        tampered["unit"]["levelId"] = json!("otro");
+        fs::write(manifest_path(&root, "badhash", 1), tampered.to_string()).unwrap();
+        publish(&root, "commit", "mandir", 1, b"mandir bytes");
+        fs::remove_file(manifest_path(&root, "mandir", 1)).unwrap();
+        fs::create_dir(manifest_path(&root, "mandir", 1)).unwrap();
+        publish(&root, "stage", "soloprep", 1, b"staged only");
+        publish(&root, "commit", "mixed", 1, b"mixed v1");
+        publish(&root, "stage", "mixed", 2, b"mixed v2");
+        assert_eq!(listed(&root), vec![("mixed".to_string(), 1), ("ok".to_string(), 1)]);
+    }
+
+    #[test]
+    fn inventario_elige_la_version_mas_alta_disponible() {
+        let fixture = Fixture::new("versions");
+        let root = fixture.cache();
+        for (version, payload) in [(1, "v1"), (2, "v2"), (3, "v3")] { publish(&root, "commit", "u", version, payload.as_bytes()); }
+        assert_eq!(listed(&root), vec![("u".to_string(), 3)]);
+        fs::write(object(&root, b"v3"), b"?").unwrap();
+        assert_eq!(listed(&root), vec![("u".to_string(), 2)]);
+        fs::remove_file(object(&root, b"v2")).unwrap();
+        assert_eq!(listed(&root), vec![("u".to_string(), 1)]);
+    }
+
+    #[test]
+    fn marcador_legacy_existente_no_recorre_ni_calcula_hashes() {
+        let fixture = Fixture::new("legacy");
+        let users = fixture.0.join("users");
+        let root = users.join("actual");
+        publish(&users.join("anterior"), "commit", "u", 1, b"legacy bytes");
+        prepare(&root).unwrap();
+        write_synced(&root.join("legacy-adopted"), b"1").unwrap();
+        reset_hashed();
+        adopt_legacy(&root).unwrap();
+        assert_eq!(hashed(), 0);
+        assert!(!root.join("units").exists());
+    }
+
+    #[test]
+    fn fallos_de_almacenamiento_no_se_confunden_con_catalogo_vacio() {
+        let fixture = Fixture::new("io");
+        let root = fixture.cache();
+        // Absent catalog is a legitimately empty inventory.
+        assert_eq!(inventory(&root).unwrap(), json!([]));
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(inventory(&root).unwrap(), json!([]));
+        assert!(directory_entries(&root.join("nada")).unwrap().is_empty());
+        // `units` that is a file: read_dir fails with a non-NotFound error.
+        fs::write(root.join("units"), b"no es directorio").unwrap();
+        assert!(inventory(&root).unwrap_err().starts_with("cache:"));
+        fs::remove_file(root.join("units")).unwrap();
+        // `versions` that is a file under a real unit directory fails the same way.
+        fs::create_dir_all(root.join("units").join("u")).unwrap();
+        fs::write(root.join("units").join("u").join("versions"), b"x").unwrap();
+        assert!(inventory(&root).unwrap_err().starts_with("cache:"));
+        // Stray plain files next to unit directories are ignored, not errors.
+        fs::remove_file(root.join("units").join("u").join("versions")).unwrap();
+        fs::write(root.join("units").join("suelto"), b"x").unwrap();
+        assert_eq!(inventory(&root).unwrap(), json!([]));
+    }
+
+    // Delivers a JSON prefix and then fails, like a disk that dies mid-read.
+    struct FailingReader { prefix: &'static [u8], code: i32 }
+    impl Read for FailingReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.prefix.is_empty() { return Err(std::io::Error::from_raw_os_error(self.code)); }
+            let len = self.prefix.len().min(buf.len());
+            buf[..len].copy_from_slice(&self.prefix[..len]);
+            self.prefix = &self.prefix[len..];
+            Ok(len)
+        }
+    }
+
+    #[test]
+    fn error_de_lectura_no_se_confunde_con_json_corrupto() {
+        let partial: &'static [u8] = br#"{"schemaVersion": 2, "resources": ["#;
+        let io = parse_manifest(FailingReader { prefix: partial, code: 5 }).unwrap_err();
+        assert!(io.starts_with("cache:"), "{io}");
+        assert!(!io.starts_with("manifest:"), "{io}");
+        // Same JSON prefix ending for real (EOF) or with bad syntax is a corrupt manifest.
+        assert!(parse_manifest(partial).unwrap_err().starts_with("manifest:"));
+        assert!(parse_manifest(&b"{no es json}"[..]).unwrap_err().starts_with("manifest:"));
+        // inventory would skip "manifest:" errors; the IO error must not match that filter.
+        assert!(!(io.starts_with("manifest:") || io.starts_with("integrity:")));
     }
 }

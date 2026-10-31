@@ -29,7 +29,15 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   let owner = "";
   let retryPublication: Publication | undefined;
   let cache: NativeCache | undefined;
+  // cacheReady: el inventario local se leyó con éxito (nunca un error de E/S como lista vacía).
+  // recovered: adopción/pending resueltos; hasta entonces no se encolan descargas.
   let cacheReady = false;
+  let recovered = false;
+  let recovering: Promise<void> | undefined;
+  let recoveryMessage = "";
+  let initialization: Promise<boolean> | undefined;
+  let hydrateError = "";
+  const deferredSync = new Map<string, Publication>();
   let api: PublicationApi | undefined;
   let queue: DownloadQueue | undefined;
   let ambient: AmbientLibrary | undefined;
@@ -111,12 +119,12 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const fraction = tasks.reduce((sum, task) => sum + (task?.state === "downloading" && task.progress?.total ? task.progress.bytes / task.progress.total : 0), 0);
       const percent = available.length ? Math.min(100, Math.floor(100 * (completed + fraction) / available.length)) : 0;
       const state = active ? completed ? "Actualizando" : "Descargando" : failed ? "Error" : completed && completed === available.length ? device.online ? "Actualizado" : "Disponible offline" : locals.some(item => item.unit.levelId === level) ? !device.online || !available.length ? "Disponible offline" : "Disponible offline · parcial" : "No descargado";
-      return `<section class="level-download ui-card" data-level-download="${escape(level)}"><strong>${escape(levelName(level))}</strong><span role="status">${state}${active ? ` ${completed} de ${available.length} Units · ${percent}%` : ""}</span>${active ? `<progress max="100" value="${percent}" aria-label="Descarga de ${escape(levelName(level))}"></progress>` : ""}<button class="button button-outline" data-download-level="${escape(level)}" ${!available.length || active ? "disabled" : ""}>${icon("download")}Descargar nivel completo</button><label><input type="checkbox" data-follow-level="${escape(level)}" ${contentPreferences().followedLevels.includes(level) ? "checked" : ""}/> Mantener este nivel disponible sin conexión</label></section>`;
+      return `<section class="level-download ui-card" data-level-download="${escape(level)}"><strong>${escape(levelName(level))}</strong><span role="status">${state}${active ? ` ${completed} de ${available.length} Units · ${percent}%` : ""}</span>${active ? `<progress max="100" value="${percent}" aria-label="Descarga de ${escape(levelName(level))}"></progress>` : ""}<button class="button button-outline" data-download-level="${escape(level)}" ${!available.length || active || !cacheReady ? "disabled" : ""}>${icon("download")}Descargar nivel completo</button><label><input type="checkbox" data-follow-level="${escape(level)}" ${contentPreferences().followedLevels.includes(level) ? "checked" : ""}/> Mantener este nivel disponible sin conexión</label></section>`;
     }).join("");
     reconcileLibrary(root, `<div class="desktop-shell offline-shell">${sidebar().replace("</nav>", `<div class="sidebar-level-download">${levelControls}</div></nav>`)}<section class="library-workspace">
       <header class="library-header"><div class="library-heading"><span class="library-heading-icon">${icon("library")}</span><div><h1>${localOnly ? "Mis clases" : "Biblioteca"}</h1><p>Gestiona y abre tus clases</p></div></div><button class="button button-primary" data-refresh ${refreshing ? "disabled" : ""}>${icon("refresh", refreshing ? "is-spinning" : "")}${refreshing ? "Consultando…" : "Actualizar biblioteca"}</button></header>
       <section class="library-controls" aria-label="Filtros de Biblioteca"><nav class="library-filters" aria-label="Filtrar por nivel"><button class="button ${!selectedLevel ? "button-primary" : "button-level"}" data-level="" aria-pressed="${!selectedLevel}">${icon("levels")}Todos los niveles</button>${levels.map(level => `<button class="button button-level ${selectedLevel === level ? "is-active" : ""}" data-level="${escape(level)}" aria-pressed="${selectedLevel === level}">${escape(levelName(level))}</button>`).join("")}</nav><label class="library-search">${icon("search")}<input data-search type="search" placeholder="Buscar unidades..." aria-label="Buscar unidades" value="${escape(search)}"/></label><div class="library-view-toggle" aria-label="Vista de unidades"><button data-view="grid" aria-label="Vista de cuadrícula" aria-pressed="${view === "grid"}">${icon("grid")}</button><button data-view="list" aria-label="Vista de lista" aria-pressed="${view === "list"}">${icon("list")}</button></div></section>
-      <main class="offline-content">${feedback()}<div class="unit-grid ${view === "list" ? "is-list" : ""}">${cards}</div>${!matches.length ? `<p class="library-empty">${combined.size ? "No hay unidades que coincidan con los filtros." : device.online ? "No hay clases publicadas." : "No hay clases locales. Actualiza la biblioteca cuando puedas conectar con el servidor."}</p>` : ""}</main></section></div>`);
+      <main class="offline-content">${feedback()}<div class="unit-grid ${view === "list" ? "is-list" : ""}">${cards}</div>${!matches.length ? `<p class="library-empty">${combined.size ? "No hay unidades que coincidan con los filtros." : !cacheReady ? escape(hydrateError || "Restaurando biblioteca local…") : !recovered ? "Recuperando clases anteriores…" : device.online ? "No hay clases publicadas." : "No hay clases locales. Actualiza la biblioteca cuando puedas conectar con el servidor."}</p>` : ""}</main></section></div>`);
     bindSidebar();
     root.querySelectorAll<HTMLButtonElement>(".library-filters [data-level]").forEach(button => { button.onclick = () => { selectedLevel = button.dataset.level!; render(); }; });
     root.querySelectorAll<HTMLButtonElement>("[data-view]").forEach(button => { button.onclick = () => { view = button.dataset.view as "grid" | "list"; render(); }; });
@@ -143,9 +151,85 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     const signature = matches.map(([id, entry]) => `${id}:${entry.local?.version || 0}`).join("|");
     if (signature !== thumbnailSignature) { thumbnailSignature = signature; thumbnails.pause(); void thumbnails.mount(root, owner, locals); }
   }
+  // Lee el inventario local propio (rápido, sin SHA de multimedia) una sola vez por owner/época.
+  // Un error de E/S deja cacheReady=false y se reintenta en el siguiente disparador.
+  function hydrate(): Promise<boolean> {
+    if (cacheReady) return Promise.resolve(true);
+    if (!cache || !queue) return Promise.resolve(false);
+    if (initialization) return initialization;
+    const current = epoch; const currentCache = cache; const currentQueue = queue; const currentAmbient = ambient;
+    const attempt = (async (): Promise<boolean> => {
+      try {
+        const inventory = await currentCache.inventory();
+        if (current !== epoch) return false;
+        locals = inventory; cacheReady = true;
+        if (message === hydrateError) message = "";
+        hydrateError = "";
+      } catch (error) {
+        if (current === epoch) { hydrateError = error instanceof Error ? error.message : String(error); message = hydrateError; render(); }
+        return false;
+      }
+      // Un fallo de render no debe impedir la recuperación ni dejar un rechazo sin manejar.
+      try { render(); } catch (error) { console.error("[Active Classroom] render-failed", error); }
+      void currentAmbient?.restore();
+      void recover(current, currentCache, currentQueue);
+      if (device.online) void refresh();
+      return true;
+    })();
+    initialization = attempt;
+    const clear = () => { if (initialization === attempt) initialization = undefined; };
+    void attempt.then(clear, clear);
+    return attempt;
+  }
+  // Adopción/pending en segundo plano: las clases propias ya son visibles. Hasta terminar no se encola nada.
+  // Una sola ejecución por época (deduplicada por promesa); si queda incompleta se reintenta en el siguiente
+  // disparador (refresh/online/polling/sesión lista), nunca en bucle inmediato.
+  function recover(current: number, currentCache: NativeCache, currentQueue: DownloadQueue): Promise<void> {
+    if (recovered || current !== epoch) return Promise.resolve();
+    if (recovering) return recovering;
+    const attempt = runRecovery(current, currentCache, currentQueue);
+    recovering = attempt;
+    void attempt.then(() => { if (recovering === attempt) recovering = undefined; });
+    return attempt;
+  }
+  function retryRecovery(): void { if (cache && queue && cacheReady && !recovered) void recover(epoch, cache, queue); }
+  async function runRecovery(current: number, currentCache: NativeCache, currentQueue: DownloadQueue): Promise<void> {
+    const failures: string[] = [];
+    const fail = (error: unknown, fallback?: string) => { failures.push(fallback || (error instanceof Error ? error.message : String(error))); };
+    try { await currentCache.adoptLegacy(); } catch (error) { fail(error, "No se pudo recuperar alguna clase anterior. Las clases locales existentes se conservan."); }
+    if (current !== epoch) return;
+    try { await currentQueue.activatePending(); } catch (error) { fail(error); }
+    if (current !== epoch) return;
+    // El inventario final se intenta siempre: muestra lo ya adoptado aunque adopción/pending fallen.
+    let saved: Manifest[] | undefined;
+    try { saved = await currentCache.inventory(); } catch (error) { fail(error); }
+    if (current !== epoch) return;
+    if (saved) locals = saved;
+    try {
+      // Solo una recuperación completa con inventario fiable habilita descargas; nunca un estado desconocido.
+      if (!failures.length && saved) {
+        recovered = true;
+        if (message === recoveryMessage) message = "";
+        recoveryMessage = "";
+        const waiting = [...deferredSync.values()]; deferredSync.clear();
+        render();
+        reconcileContent();
+        waiting.forEach(synchronize);
+      } else {
+        recoveryMessage = message = failures[0];
+        render();
+      }
+    } catch (error) { console.error("[Active Classroom] recovery-failed", error); }
+  }
   async function refresh(): Promise<void> {
-    if (!api || refreshing) return;
-    const current = epoch;
+    if (!api) return;
+    retryRecovery();
+    if (refreshing) return;
+    const current = epoch; const currentApi = api;
+    if (!cacheReady) {
+      // Primero el estado local; el disparador (online/botón/polling) no se pierde, solo espera.
+      if (!(await hydrate()) || current !== epoch || refreshing) return;
+    }
     syncDiagnostic("REFRESH_START");
     refreshing = true; render();
     refreshController = new AbortController();
@@ -153,7 +237,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     // Unit publication response (nor on the automatic Unit-update preference).
     void ambient?.sync().catch(() => { console.warn("[Active Classroom Ambient] sync-failed; verified local catalog preserved"); });
     try {
-      const available = await api.list(refreshController.signal);
+      const available = await currentApi.list(refreshController.signal);
       if (current !== epoch) return;
       publications = available;
       reconcileContent(true);
@@ -170,14 +254,15 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     finally { if (current === epoch) { refreshing = false; render(); } }
   }
   function reconcileContent(retryFailed = false): void {
-    if (!queue || !device.online) return;
+    if (!queue || !device.online || !cacheReady || !recovered) return;
     for (const publication of requiredContent(locals, publications, contentPreferences())) {
       const task = queue.tasks.get(publication.unitId);
       if (!task || task.publication.version < publication.version || (retryFailed && task.state === "failed")) synchronize(publication);
     }
   }
   function synchronize(publication: Publication): void {
-    if (!queue || !cache || !api) return;
+    if (!queue || !cache || !api || !cacheReady) return;
+    if (!recovered) { deferredSync.set(publication.unitId, publication); return; }
     if (locals.some(local => local.unit.unitId === publication.unitId && local.version >= publication.version) && !errors.has(publication.unitId)) return;
     const pending = new Set(contentPreferences().pendingUnits); pending.add(publication.unitId);
     const repair = errors.has(publication.unitId);
@@ -251,13 +336,14 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     void (async () => {
       if (state.phase === "ready" && owner === session.cacheOwner && cache) {
         render();
-        if (becameOnline && cacheReady) void refresh();
+        if (!cacheReady) void hydrate(); else retryRecovery();
+        if (becameOnline) void refresh();
         return;
       }
       epoch++; const current = epoch;
       refreshController?.abort(); queue?.close(); ambient?.close(); ambient = undefined;
       locals = []; publications = []; errors.clear(); unitOrder.clear(); player?.destroy(); player = undefined; thumbnailSignature = ""; refreshing = false; opening = false; message = ""; retryPublication = undefined;
-      cache = undefined; cacheReady = false; api = undefined; queue = undefined;
+      cache = undefined; cacheReady = false; recovered = false; recovering = undefined; recoveryMessage = ""; initialization = undefined; hydrateError = ""; deferredSync.clear(); api = undefined; queue = undefined;
       if (state.phase !== "ready") { owner = ""; contentOwner(""); render(); return; }
       owner = session.cacheOwner; contentOwner(owner);
       cache = new NativeCache(owner);
@@ -267,17 +353,8 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
       const transfers = new BlobTransfers();
       queue = new DownloadQueue(cache, api, task => downloadChanged(task, current), 2, transfers);
       ambient = new AmbientLibrary(cache, api, transfers);
-      try {
-        await cache.adoptLegacy().catch(() => { if (current === epoch) message = "No se pudo recuperar alguna clase anterior. Las clases locales existentes se conservan."; });
-        await queue.activatePending();
-        const saved = await cache.list(); if (current === epoch) locals = saved;
-      }
-      catch (error) { if (current === epoch) message = error instanceof Error ? error.message : String(error); }
-      if (current !== epoch) return;
-      cacheReady = true;
       render();
-      void ambient?.restore();
-      if (device.online) void refresh();
+      void hydrate();
     })();
   });
   async function reconnect(): Promise<void> {
@@ -303,5 +380,5 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   window.addEventListener("online", () => { void reconnect(); });
   window.addEventListener("offline", () => { session.offline(); message = "Modo offline. Puedes abrir tus clases descargadas."; render(); });
   // Retry actual connectivity failures even when the OS reports an active network.
-  window.setInterval(() => { if (navigator.onLine && (device.phase !== "error" || isTransientIdentityCode(device.issue)) && (device.phase === "activation" || device.phase === "revoked" || device.phase === "rebind" || !device.online || retryPublication)) void reconnect(); }, 30000);
+  window.setInterval(() => { if (device.phase === "ready" && cache && !cacheReady) void hydrate(); else if (device.phase === "ready") retryRecovery(); if (navigator.onLine && (device.phase !== "error" || isTransientIdentityCode(device.issue)) && (device.phase === "activation" || device.phase === "revoked" || device.phase === "rebind" || !device.online || retryPublication)) void reconnect(); }, 30000);
 }
