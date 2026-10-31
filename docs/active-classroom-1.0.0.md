@@ -1,5 +1,7 @@
 # Active Classroom 1.0.0 — operación en salones
 
+> Documento histórico de 1.0.0. Para la persistencia y migración de identidad desde 1.0.21, consulta [identidad Linux](active-classroom-linux-identity.md). Las indicaciones de configuración de llavero de esta versión anterior no se aplican a una instalación nueva con el almacén nativo.
+
 Aplicación Linux amd64, Tauri 2.12.1. El usuario confirmó piloto real en Zorin con activación, sincronización, clases offline, Player y proyector operativos. CI valida de nuevo el código de 1.0.0; una prueba virtual no sustituye comprobar monitor/audio en cada salón.
 
 ## Instalación y actualización del Desktop
