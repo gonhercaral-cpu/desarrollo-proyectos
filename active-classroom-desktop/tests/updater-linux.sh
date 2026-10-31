@@ -3,6 +3,7 @@ set -euo pipefail
 # Isolated homes and unlocked Secret Service; no host/user classroom data.
 export XDG_DATA_HOME="$(mktemp -d)"
 export XDG_CONFIG_HOME="$(mktemp -d)"
+export XDG_STATE_HOME="$(mktemp -d)"
 export XDG_RUNTIME_DIR="$(mktemp -d)"
 chmod 700 "$XDG_RUNTIME_DIR"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1

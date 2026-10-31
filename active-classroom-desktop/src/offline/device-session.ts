@@ -25,6 +25,7 @@ export class DeviceSession {
   private notify: (state: DeviceState) => void;
   private pending?: Promise<void>;
   private resetting?: Promise<void>;
+  private starting?: Promise<void>;
   private automaticRebind = false;
   private signedIn = false;
   private failure?: SyncError;
@@ -50,8 +51,14 @@ export class DeviceSession {
     // Best effort remote retirement; offline recovery must remain possible.
     if (online && this.dependencies.detach) try { await this.dependencies.detach(await this.dependencies.proof()); } catch { diagnose("activation", "failed", "backend"); }
     await this.dependencies.signOut().catch(() => {});
+    let rotated: DeviceIdentity;
+    try { rotated = await this.dependencies.resetBinding(); }
+    catch (error) {
+      // Native may have saved the new identity before failing: the in-memory one is no longer authoritative, so retry must reload it.
+      this.reportFailure(error, "identity"); this.update({ phase: "error", identity: undefined, code: undefined }); return;
+    }
     try {
-      const identity = await this.dependencies.resetBinding();
+      const identity = rotated;
       this.update({ identity: { ...identity, displayName: label }, phase: "activation", online: false, issue: undefined, message: "Conecta Internet para obtener un nuevo código de vinculación." });
       if (label !== undefined) await this.dependencies.saveLabel({ deviceId: identity.deviceId, displayName: label }).catch(() => {});
       if (online) await this.exchange();
@@ -66,10 +73,13 @@ export class DeviceSession {
     await this.dependencies.saveLabel({ deviceId: label.deviceId, displayName }).catch(() => {});
     this.update({ identity: { ...this.state.identity, displayName } });
   }
-  async start(online: boolean): Promise<void> {
+  start(online: boolean): Promise<void> {
+    return this.starting ||= this.performStart(online).finally(() => { this.starting = undefined; });
+  }
+  private async performStart(online: boolean): Promise<void> {
     try {
       const identity = await this.dependencies.load();
-      this.update({ identity, phase: identity.revoked ? "revoked" : identity.activated ? "ready" : "activation", online: false });
+      this.update({ identity, phase: identity.revoked ? "revoked" : identity.activated ? "ready" : "activation", online: false, issue: undefined, message: "" });
       if (online) await this.connect();
     } catch (error) { this.reportFailure(error, "identity"); this.update({ phase: "error" }); }
   }
@@ -97,10 +107,14 @@ export class DeviceSession {
   private async exchange(): Promise<void> {
     if (!this.state.identity) return;
     let stage: ConnectionStage = "identity";
+    // Only a rejection coming from the server exchange may mean "revoked/unlinked"; local storage errors never do.
+    let serverExchange = false;
     try {
       const proof = await this.dependencies.proof();
       stage = "activation";
+      serverExchange = true;
       const response = await this.dependencies.exchange({ ...proof, ...(this.state.identity.displayName !== undefined ? { displayName: this.state.identity.displayName } : {}) });
+      serverExchange = false;
       if (response.displayName !== undefined) await this.receiveLabel({ deviceId: this.state.identity.deviceId, displayName: response.displayName });
       if (response.status === "rebind_required") {
         await this.requireRebind();
@@ -111,12 +125,15 @@ export class DeviceSession {
         this.failure = new SyncError("403", "La autorización de este equipo fue revocada.");
         diagnose(stage, "revoked", "403");
         this.update({ phase: "revoked", online: true, issue: "403", code: undefined, identity: { ...this.state.identity, activated: false, revoked: true }, message: "Este equipo necesita activarse. Su autorización fue revocada." });
-        await this.dependencies.mark("revoked");
-        await this.dependencies.signOut();
+        // A failed persistence must neither lose the revoked phase nor skip the sign-out.
+        try { await this.dependencies.mark("revoked"); }
+        catch { diagnose("identity", "failed", "credential"); }
+        finally { await this.dependencies.signOut(); }
       } else if (response.status === "pending") {
         this.signedIn = false;
         diagnose(stage, "pending", "not-activated");
         this.update({ phase: "activation", online: true, issue: "not-activated", code: response.code, message: "Solicita al administrador autorizar este código." });
+        stage = "identity";
         if (this.state.identity?.activated) await this.dependencies.mark("revoked");
       } else {
         this.signedIn = false;
@@ -133,7 +150,7 @@ export class DeviceSession {
         this.update({ phase: "ready", identity, online: true, issue: undefined, code: undefined, message: "" });
       }
     } catch (error) {
-      if (error instanceof SyncError && ["DEVICE_REVOKED", "DEVICE_NOT_FOUND", "DEVICE_UNLINKED", "INVALID_DEVICE_CREDENTIAL"].includes(error.code)) { await this.requireRebind(); return; }
+      if (serverExchange && error instanceof SyncError && ["DEVICE_REVOKED", "DEVICE_NOT_FOUND", "DEVICE_UNLINKED", "INVALID_DEVICE_CREDENTIAL"].includes(error.code)) { await this.requireRebind(); return; }
       this.reportFailure(error, stage);
     }
   }
