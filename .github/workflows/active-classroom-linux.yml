@@ -334,14 +334,20 @@ jobs:
 
       - name: Persistencia real en llavero Linux aislado
         run: |
-          export XDG_DATA_HOME="$(mktemp -d)"
-          export XDG_CONFIG_HOME="$(mktemp -d)"
-          export ACTIVE_CLASSROOM_TEST_KEYRING=1
-          dbus-run-session -- bash -euo pipefail -c '
-            openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
-            openssl rand -hex 32 | secret-tool store --label CI-fixture application com.activeclassroom.desktop credential device-v1
-            cargo test --locked --manifest-path src-tauri/Cargo.toml --lib device_identity::tests::linux_keyring_round_trip -- --ignored --nocapture
-          '
+          for scenario in invalid_legacy_credential_is_preserved keyring_round_trip; do
+            XDG_DATA_HOME="$(mktemp -d)" XDG_CONFIG_HOME="$(mktemp -d)" \
+              XDG_STATE_HOME="$(mktemp -d)" ACTIVE_CLASSROOM_TEST_KEYRING=1 \
+              SCENARIO="$scenario" dbus-run-session -- bash -euo pipefail -c '
+                openssl rand -hex 32 | gnome-keyring-daemon --unlock --components=secrets
+                if [[ "$SCENARIO" == invalid_legacy_credential_is_preserved ]]; then
+                  openssl rand -hex 32 | secret-tool store --label CI-fixture application com.activeclassroom.desktop credential device-v1
+                fi
+                native_test="device_identity::tests::linux::linux_$SCENARIO"
+                cargo test --locked --manifest-path src-tauri/Cargo.toml --lib -- --list \
+                  | grep -Fx "$native_test: test"
+                cargo test --locked --manifest-path src-tauri/Cargo.toml --lib "$native_test" -- --ignored --exact --nocapture
+              '
+          done
 
       - name: Cargo check y validación nativa de configuración/capabilities
         # build.rs ejecuta tauri_build::build(); no se usa un mock de Tauri.
