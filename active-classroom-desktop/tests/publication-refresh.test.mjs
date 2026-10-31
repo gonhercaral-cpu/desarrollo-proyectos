@@ -27,6 +27,9 @@ async function fixture(version) {
   return { manifest, bytes, publication: { unitId: manifest.unit.unitId, name: manifest.unit.name, levelId: manifest.unit.levelId, version, contentHash: manifest.integrity.contentHash, publishedAt: manifest.publishedAt, schemaVersion: 2 } };
 }
 
+// Frontera nativa de prueba: inventory() (disponibilidad local) enlazado a list() de DiskCache; DiskCache compartido no cambia.
+const bootCache = (disk) => { disk.adoptLegacy = async () => {}; disk.inventory = () => DiskCache.prototype.list.call(disk); return disk; };
+
 test("merge separa versiones numéricas: v1/v2, v2/v10, iguales y sin copia local", async () => {
   for (const [localVersion, remoteVersion, expected] of [[1, 2, "Actualización disponible"], [2, 10, "Actualización disponible"], [10, 10, "Actualizada"], [undefined, 2, "No descargada"]]) {
     const local = localVersion ? (await fixture(localVersion)).manifest : undefined;
@@ -56,7 +59,7 @@ test("cada consulta comienza sin cursor/cache y una página antigua no reemplaza
 
 test("botón real: refresca v2 sobre local v1, verifica/activa y reinicia offline con v2", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "classroom-refresh-"));
-  const disk = new DiskCache(directory); disk.adoptLegacy = async () => {};
+  const disk = bootCache(new DiskCache(directory));
   const versions = new Map(await Promise.all([1, 2, 10].map(async (version) => [version, await fixture(version)])));
   const first = versions.get(1);
   await new SyncEngine(disk, { manifest: async () => first.manifest, download: async (_manifest, resource, write) => write(first.bytes.get(resource.resourceId)) }).sync(first.publication);
@@ -116,7 +119,7 @@ test("botón real: refresca v2 sobre local v1, verifica/activa y reinicia offlin
   assert.ok(logs.some((entry) => entry[1]?.event === "UPDATE_AVAILABLE" && entry[1].version === 2 && entry[1].localVersion === 1));
   remoteVersion = 10; root.querySelector("[data-refresh]").click();
   await settle(() => root.textContent.includes("Publicada: v10 · Local: v2")); assert.match(root.textContent, /Actualización disponible/);
-  dom.window.close(); online = false; globalThis.refreshHarness.cache = new DiskCache(directory); globalThis.refreshHarness.cache.adoptLegacy = async () => {};
+  dom.window.close(); online = false; globalThis.refreshHarness.cache = bootCache(new DiskCache(directory));
   const previousCalls = calls; root = mount(); await settle(() => root.textContent.includes("Local: v2"));
   assert.match(root.textContent, /Equipo Prueba/); assert.equal(calls, previousCalls);
   globalThis.refreshHarness.opened = undefined; root.querySelector("[data-open]").click(); await settle(() => globalThis.refreshHarness.opened === 2);
@@ -124,7 +127,7 @@ test("botón real: refresca v2 sobre local v1, verifica/activa y reinicia offlin
 
 test("Biblioteca real: auto-update preparado durante clase, nivel completo y Unit nueva seguida", async t => {
   const directory = await mkdtemp(join(tmpdir(), "classroom-auto-content-"));
-  const disk = new DiskCache(directory); disk.adoptLegacy = async () => {};
+  const disk = bootCache(new DiskCache(directory));
   const old = await fixture(1); const next = await fixture(2);
   async function another(id, levelId) {
     const data = await fixture(1); data.manifest.unit.unitId = id; data.manifest.unit.levelId = levelId;
