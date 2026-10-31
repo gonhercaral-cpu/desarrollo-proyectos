@@ -221,3 +221,41 @@ test("credencial rechazada no queda en error indefinido: ofrece revincular", asy
   const f = setup(true); f.dependencies.exchange = async () => { throw new SyncError("INVALID_DEVICE_CREDENTIAL", "invalid"); };
   await f.session.start(true); assert.equal(f.session.state.lifecycle, "REBIND_REQUIRED"); assert.equal(f.stored.activated, false);
 });
+test("reset nativo guarda identidad nueva y falla: el reintento relee la identidad real sin nuevo reset ni detach", async () => {
+  const f = setup(true); f.authorize(); await f.session.start(true); const cacheOwner = f.session.cacheOwner;
+  let resets = 0, detaches = 0, proofs = 0;
+  f.dependencies.detach = async () => { detaches++; };
+  f.dependencies.resetBinding = async () => { resets++; Object.assign(f.stored, { cacheDeviceId: f.stored.deviceId, deviceId: "e".repeat(32), activated: false, revoked: false }); throw new Error("device:storage"); };
+  const proof = f.dependencies.proof; f.dependencies.proof = async () => { proofs++; return proof(); };
+  await f.session.resetBinding(false);
+  assert.equal(f.session.state.phase, "error"); assert.equal(f.session.state.identity, undefined); assert.equal(f.session.state.issue, "identity-storage");
+  assert.doesNotMatch(f.session.state.message, /device:storage/);
+  // Sin identidad en memoria, un connect automático no emite prueba ni intercambio con el estado viejo.
+  const exchanges = f.exchanges(); await f.session.connect(); assert.equal(proofs, 0); assert.equal(f.exchanges(), exchanges);
+  f.dependencies.exchange = async (p) => { assert.equal(p.deviceId, "e".repeat(32)); return { status: "authorized", customToken: "fresh" }; };
+  f.dependencies.signIn = async (_t, owner) => { assert.equal(owner, `ac-device-${"e".repeat(32)}`); };
+  await f.session.start(true);
+  assert.equal(f.session.state.phase, "ready"); assert.equal(f.session.state.identity.deviceId, "e".repeat(32));
+  assert.equal(f.session.cacheOwner, cacheOwner); assert.equal(resets, 1); assert.equal(detaches, 0);
+});
+test("reset nativo falla antes de escribir: el reintento conserva identidad anterior sin marcar revocado", async () => {
+  const f = setup(true); f.authorize(); await f.session.start(true);
+  let marks = 0; const mark = f.dependencies.mark; f.dependencies.mark = async (a) => { marks++; return mark(a); };
+  f.dependencies.resetBinding = async () => { throw new Error("device:storage"); };
+  await f.session.resetBinding(false);
+  assert.equal(f.session.state.phase, "error");
+  await f.session.start(true);
+  assert.equal(f.session.state.phase, "ready"); assert.equal(f.session.state.identity.deviceId, "a".repeat(32));
+  assert.equal(f.stored.revoked, false); assert.equal(f.stored.activated, true); assert.equal(marks, 1);
+});
+test("reset falla y la relectura también: sin proof/exchange viejo y sin sugerir nuevo código", async () => {
+  const f = setup(true); f.authorize(); await f.session.start(true);
+  f.dependencies.resetBinding = async () => { Object.assign(f.stored, { deviceId: "e".repeat(32) }); throw new Error("device:storage"); };
+  await f.session.resetBinding(false);
+  let proofs = 0; f.dependencies.proof = async () => { proofs++; throw new Error("no debe usarse"); };
+  f.dependencies.load = async () => { throw new Error("device:storage"); };
+  const exchanges = f.exchanges(); await f.session.start(true); await f.session.connect();
+  assert.equal(proofs, 0); assert.equal(f.exchanges(), exchanges);
+  assert.equal(f.session.state.phase, "error"); assert.equal(f.session.state.identity, undefined);
+  assert.equal(f.session.state.issue, "identity-storage"); assert.doesNotMatch(f.session.state.message, /device:storage|código/i);
+});

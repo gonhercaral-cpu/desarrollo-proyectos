@@ -236,10 +236,11 @@ fn drain<R: Read + Send + 'static>(mut pipe: R) -> JoinHandle<(Vec<u8>, bool)> {
         (kept, overflow)
     })
 }
-/// Absolute program, `LC_ALL=C`, hard timeout, pipes drained concurrently and capped.
+/// Absolute program, `LC_ALL=C.UTF-8`, hard timeout, pipes drained concurrently and capped.
 /// Never logs or returns raw output beyond what the caller parses.
 fn run(program: &str, args: &[&str], input: Option<&str>, timeout: Duration) -> Res<Output> {
-    let mut child = Command::new(program).args(args).env("LC_ALL", "C").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+    // GLib converts argv from the locale charset: C would reject the Spanish label before storing.
+    let mut child = Command::new(program).args(args).env("LC_ALL", "C.UTF-8").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
         .map_err(|error| if error.kind() == std::io::ErrorKind::NotFound { Kind::Unsupported } else { Kind::Unavailable })?;
     let stdout = drain(child.stdout.take().ok_or(Kind::Unavailable)?);
     let stderr = drain(child.stderr.take().ok_or(Kind::Unavailable)?);

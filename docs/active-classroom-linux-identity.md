@@ -78,9 +78,11 @@ Los mensajes de diagnóstico usan códigos fijos sin errores crudos ni credencia
 
 ## Trabajo y revisión
 
-- Antigravity: diagnóstico recibido correctamente. La invocación de implementación
+- Antigravity: diagnóstico recibido correctamente. La invocación principal de implementación
   se detuvo tras superar 600 segundos sin respuesta, salida -1; no se recibió ni se
-  atribuye un parche de implementación a este agente.
+  atribuye esa implementación a este agente. Una consulta posterior acotada sí
+  entregó la corrección `C.UTF-8` para los argumentos UTF-8 de libsecret, revisada e
+  integrada por Codex; pendiente de confirmar en la repetición del llavero real.
 - Claude Code: auditoría independiente, errores de identidad/sesión, recuperación y
   pruebas JS/UI. La implementación nativa se reasignó a Claude tras ese fallo.
 - Codex: aislamiento desde la versión publicada, contratos, rechazo de almacenamiento inseguro, revisión de diferencias, integración y validación. Conserva intacto el trabajo pendiente del checkout original.
@@ -94,8 +96,12 @@ error local.
 
 Sobre la worktree de integración: `npm run lint:player`, lint de los dos archivos
 de pruebas modificados y `npm run build` terminan con código 0. Las suites
-ejecutadas suman 243 pruebas: identidad/UI/publication-refresh 42, offline 44,
+ejecutadas suman 246 pruebas: identidad/UI/publication-refresh 45, offline 44,
 player 91, projection 25, startup 8, updater 11, release 20 y assets del bundle 2.
 No se suman otra vez las ejecuciones de la base o las repeticiones de una suite.
 Estos resultados no incluyen las pruebas nativas pendientes ni constituyen una
 prueba de reinstalación o reinicio del sistema operativo.
+
+La recuperación de `reset-binding` también descarta una identidad antigua en
+memoria cuando el guardado nativo puede haber terminado parcialmente. El siguiente
+reintento relee el almacén y autentica el identificador real, sin otra rotación.

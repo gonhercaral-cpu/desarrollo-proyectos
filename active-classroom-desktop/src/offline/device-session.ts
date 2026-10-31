@@ -51,8 +51,14 @@ export class DeviceSession {
     // Best effort remote retirement; offline recovery must remain possible.
     if (online && this.dependencies.detach) try { await this.dependencies.detach(await this.dependencies.proof()); } catch { diagnose("activation", "failed", "backend"); }
     await this.dependencies.signOut().catch(() => {});
+    let rotated: DeviceIdentity;
+    try { rotated = await this.dependencies.resetBinding(); }
+    catch (error) {
+      // Native may have saved the new identity before failing: the in-memory one is no longer authoritative, so retry must reload it.
+      this.reportFailure(error, "identity"); this.update({ phase: "error", identity: undefined, code: undefined }); return;
+    }
     try {
-      const identity = await this.dependencies.resetBinding();
+      const identity = rotated;
       this.update({ identity: { ...identity, displayName: label }, phase: "activation", online: false, issue: undefined, message: "Conecta Internet para obtener un nuevo código de vinculación." });
       if (label !== undefined) await this.dependencies.saveLabel({ deviceId: identity.deviceId, displayName: label }).catch(() => {});
       if (online) await this.exchange();
