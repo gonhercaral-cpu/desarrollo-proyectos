@@ -133,3 +133,90 @@ test("diagnóstico separa red, credencial, token, permisos y backend sin divulga
   try { diagnose("token", "failed", "secret-credential"); } finally { console.info = previous; }
   assert.doesNotMatch(JSON.stringify(logs), /secret-credential/); assert.match(JSON.stringify(logs), /unknown/);
 });
+
+test("Biblioteca real: error de identidad no ofrece re-vinculación; solo locked/unavailable reintentan por polling", async (t) => {
+  const server = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true, include: [] }, plugins: [{
+    name: "identity-error-test", enforce: "pre",
+    resolveId(source) {
+      if (source.endsWith("./device-auth")) return "\0session-identity";
+      if (source.endsWith("./native-cache")) return "\0cache-identity";
+      if (source.endsWith("/ClassroomPlayer")) return "\0player-identity";
+    },
+    load(id) {
+      if (id === "\0session-identity") return "export const createDeviceSession = (notify) => globalThis.identityHarness.createSession(notify);";
+      if (id === "\0cache-identity") return "export class NativeCache { constructor(owner) { this.owner = owner; } call() { return Promise.resolve(null); } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } list() { return Promise.resolve([]); } }";
+      if (id === "\0player-identity") return "export class ClassroomPlayer {}";
+    },
+  }] });
+  const { mountOfflineLibrary } = await server.ssrLoadModule("/src/offline/library.ts");
+  const descriptors = Object.fromEntries(["window", "document", "navigator", "fetch", "identityHarness"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  const settle = async (predicate) => { for (let count = 0; count < 100; count++) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 5)); } assert.fail("La biblioteca no alcanzó el estado esperado"); };
+  const identity = { deviceId: "e".repeat(32), cacheDeviceId: "f".repeat(32), name: "active-T4-PRO", activated: true, revoked: false };
+  const originalInfo = console.info;
+  try {
+    for (const [kind, code, transient] of [["locked", "identity-locked", true], ["unavailable", "identity-unavailable", true], ["ambiguous", "identity-conflict", false], ["corrupt", "identity-corrupt", false], ["unsupported", "identity-unsupported", false]]) await t.test(`${code}: ${transient ? "polling y botón reintentan" : "solo el botón reintenta"}`, async () => {
+      const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+      const root = dom.window.document.querySelector("#root");
+      const logs = []; console.info = (...args) => logs.push(args);
+      let interval; let loads = 0; let failing = true; let session; const forbidden = [];
+      Object.defineProperty(globalThis, "window", { value: dom.window, configurable: true });
+      Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
+      Object.defineProperty(globalThis, "navigator", { value: { onLine: true }, configurable: true });
+      dom.window.setInterval = (callback) => { interval = callback; return 1; };
+      Object.defineProperty(globalThis, "fetch", { configurable: true, value: async () => new Response(JSON.stringify({ result: { publications: [], nextCursor: null, device: { deviceId: identity.deviceId } } })) });
+      globalThis.identityHarness = { createSession: (notify) => (session = new DeviceSession({
+        load: async () => { loads++; if (failing) throw new Error(`device:${kind} /home/usuario/secret-path`); return { ...identity }; },
+        proof: async () => ({ ...identity, credential: "secret-credential" }),
+        exchange: async () => ({ status: "authorized", customToken: "secret-custom" }),
+        signIn: async () => {}, token: async () => "secret-id-token", mark: async () => identity, saveLabel: async () => {},
+        signOut: async () => { forbidden.push("signOut"); },
+        resetBinding: async () => { forbidden.push("resetBinding"); return identity; },
+        detach: async () => { forbidden.push("detach"); },
+      }, notify)) };
+      try {
+        mountOfflineLibrary(root);
+        await settle(() => session?.state.phase === "error" && session.state.issue === code);
+        assert.equal(root.querySelector("[data-rebind]"), null);
+        assert.match(root.textContent, /Reintentar conexión/);
+        const before = loads;
+        interval(); await new Promise((resolve) => setTimeout(resolve, 30));
+        if (transient) assert.equal(loads, before + 1, "El polling vuelve a cargar la identidad");
+        else assert.equal(loads, before, "Un error que requiere intervención no se reintenta en bucle");
+        const afterPolling = loads;
+        root.querySelector("[data-activate]").click(); await settle(() => loads === afterPolling + 1);
+        assert.equal(session.state.phase, "error"); assert.equal(root.querySelector("[data-rebind]"), null);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        failing = false; root.querySelector("[data-activate]").click();
+        await settle(() => session.state.phase === "ready" && session.state.online);
+        assert.equal(session.state.identity.deviceId, identity.deviceId);
+        assert.equal(session.owner, `ac-device-${identity.deviceId}`); assert.equal(session.cacheOwner, `ac-device-${identity.cacheDeviceId}`);
+        assert.deepEqual(forbidden, [], "Ni reset, ni detach, ni signOut durante errores de almacén");
+        const serialized = JSON.stringify(logs);
+        assert.match(serialized, new RegExp(code)); assert.doesNotMatch(serialized, /secret|\/home\/usuario/);
+      } finally { console.info = originalInfo; dom.window.close(); }
+    });
+  } finally {
+    console.info = originalInfo; await server.close();
+    for (const [key, descriptor] of Object.entries(descriptors)) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
+  }
+});
+
+test("exchange: almacén bloqueado tras identidad cargada conserva deviceId/cacheOwner, sin reset/detach/rebind, y el reintento llega a ready", async () => {
+  const identity = { deviceId: "a".repeat(32), cacheDeviceId: "b".repeat(32), name: "host", activated: true, revoked: false };
+  const calls = []; let locked = true;
+  const session = new DeviceSession({
+    load: async () => ({ ...identity }),
+    proof: async () => { if (locked) throw new SyncError("DEVICE_NOT_FOUND", "device:locked"); return { ...identity, credential: "secret-credential" }; },
+    exchange: async () => ({ status: "authorized", customToken: "secret-custom" }),
+    signIn: async () => {}, token: async () => "secret-id-token", mark: async () => identity, saveLabel: async () => {},
+    signOut: async () => { calls.push("signOut"); }, resetBinding: async () => { calls.push("resetBinding"); return identity; }, detach: async () => { calls.push("detach"); },
+  }, () => {});
+  await session.start(true);
+  assert.equal(session.state.phase, "ready"); assert.equal(session.state.online, false);
+  assert.equal(session.state.identity.deviceId, identity.deviceId); assert.equal(session.cacheOwner, `ac-device-${identity.cacheDeviceId}`);
+  assert.deepEqual(calls, []);
+  locked = false; await session.connect();
+  assert.equal(session.state.phase, "ready"); assert.equal(session.state.online, true); assert.equal(session.state.issue, undefined);
+  assert.equal(session.state.identity.deviceId, identity.deviceId); assert.equal(session.cacheOwner, `ac-device-${identity.cacheDeviceId}`);
+  assert.deepEqual(calls, []);
+});

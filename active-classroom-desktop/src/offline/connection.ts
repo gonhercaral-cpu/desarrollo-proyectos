@@ -1,10 +1,17 @@
 import { SyncError } from "./manifest.ts";
 
 export type ConnectionStage = "identity" | "activation" | "sign-in" | "token" | "publications";
-export type ConnectionCode = "offline" | "credential" | "not-activated" | "expired" | "auth" | "401" | "403" | "404" | "timeout" | "backend" | "server" | "response" | "client";
+export type IdentityCode = "identity-locked" | "identity-conflict" | "identity-corrupt" | "identity-unavailable" | "identity-unsupported" | "identity-storage";
+export type ConnectionCode = "offline" | "credential" | IdentityCode | "not-activated" | "expired" | "auth" | "401" | "403" | "404" | "timeout" | "backend" | "server" | "response" | "client";
 const messages: Record<ConnectionCode, string> = {
   offline: "Modo offline. Tus clases descargadas siguen disponibles.",
   credential: "No se pudo leer la credencial segura del equipo. Solicita asistencia técnica.",
+  "identity-locked": "El almacén seguro del equipo está bloqueado. Desbloquéalo y reintenta; la identidad y las clases se conservan.",
+  "identity-conflict": "La identidad del equipo no coincide o está duplicada en el almacén seguro. Solicita asistencia técnica antes de continuar.",
+  "identity-corrupt": "La identidad guardada del equipo no es legible o no pudo verificarse. Solicita asistencia técnica antes de continuar.",
+  "identity-unavailable": "El almacén seguro del equipo no está disponible por ahora. Reintenta; la identidad y las clases se conservan.",
+  "identity-unsupported": "Este sistema no ofrece un almacén seguro compatible. Solicita asistencia técnica.",
+  "identity-storage": "No se pudo verificar el almacén seguro del equipo. Reintenta la recuperación; si persiste, solicita asistencia técnica.",
   "not-activated": "Este equipo necesita activarse.",
   expired: "La sesión del equipo venció. Reintentando conexión automáticamente.",
   auth: "No se pudo autenticar el equipo. Reintenta; tus clases locales se conservan.",
@@ -17,10 +24,19 @@ const messages: Record<ConnectionCode, string> = {
   response: "No se pudo leer la biblioteca recibida. Solicita asistencia técnica.",
   client: "La aplicación no pudo consultar la biblioteca. Actualiza Active Classroom o solicita asistencia.",
 };
+const identityKinds: Record<string, IdentityCode> = { locked: "identity-locked", ambiguous: "identity-conflict", conflict: "identity-conflict", corrupt: "identity-corrupt", unavailable: "identity-unavailable", unsupported: "identity-unsupported", storage: "identity-storage" };
+// Tauri rejects with a plain string (or an Error carrying it); only the fixed kind is read, never the rest of the text.
+function identityCode(error: unknown): ConnectionCode {
+  const text = typeof error === "string" ? error : error instanceof Error ? error.message : "";
+  const kind = /^device:([a-z]+)(?![a-z])/.exec(text.trim())?.[1];
+  return (kind && identityKinds[kind]) || "credential";
+}
+// Temporary storage states worth re-reading automatically; the rest need intervention and must not be retried in a loop.
+export function isTransientIdentityCode(code?: string): boolean { return code === "identity-locked" || code === "identity-unavailable"; }
 export function connectionError(error: unknown, stage: ConnectionStage, online = globalThis.navigator?.onLine !== false): SyncError {
   if (error instanceof SyncError && ["cancelled", "integrity"].includes(error.code)) return error;
   const raw = error && typeof error === "object" && "code" in error ? String(error.code) : "";
-  const code: ConnectionCode = stage === "identity" ? "credential"
+  const code: ConnectionCode = stage === "identity" ? identityCode(error)
     : raw === "401" || raw === "403" || raw === "404" ? raw
     : raw === "auth/user-token-expired" || raw === "auth/id-token-expired" ? "expired"
     : raw === "timeout" || (error instanceof Error && error.name === "TimeoutError") ? "timeout"
@@ -45,7 +61,7 @@ export function connectionLabel(code?: string): string {
     : code === "404" ? "Contenido no disponible"
     : code === "server" || /^5\d\d$/.test(code || "") ? "Error del servidor"
     : code === "response" || code === "client" ? "Error de sincronización"
-    : code === "credential" ? "Credencial no disponible"
+    : code === "credential" || code?.startsWith("identity-") ? "Credencial no disponible"
     : code === "timeout" ? "Tiempo agotado"
     : code === "backend" ? "Servidor inaccesible" : "Modo offline";
 }
