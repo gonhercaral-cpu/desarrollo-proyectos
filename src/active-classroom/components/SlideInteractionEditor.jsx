@@ -15,7 +15,7 @@ function PreviewAsset({ unitId, resourceId, pageObjectId, buildIndex = 0, pageNu
   return asset.mimeType === "application/pdf" ? <iframe src={`${asset.url}#page=${pageNumber}&toolbar=0&view=Fit`} title="Diapositiva base" referrerPolicy="no-referrer" /> : <img src={asset.url} alt="Estado de la diapositiva" onLoad={event => onRatio?.(event.target.naturalWidth / event.target.naturalHeight)} />;
 }
 
-export default function SlideInteractionEditor({ unitId, slide, main, resources, onChange }) {
+export default function SlideInteractionEditor({ unitId, slide, main, resources, onChange, compact = false }) {
   const [state, setState] = useState(0);
   const [ratio, setRatio] = useState(16 / 9);
   const steps = slide.builds || [];
@@ -33,21 +33,19 @@ export default function SlideInteractionEditor({ unitId, slide, main, resources,
     const layer = { type, x: 10, y: 20, width: 40, height: 15, ...(type === "image" ? { resourceId: image.id } : { text: "Respuesta", color: "#102954", fontSize: 3 }) };
     update([...steps, { order: steps.length + 1, layers: [layer] }]); setState(steps.length + 1);
   }
-  return <section className="ac-interaction-editor" aria-label="Interactividad de la diapositiva">
-    <h3>Interactividad de la diapositiva</h3>
-    <label>Modo<select value={mode} onChange={event => {
+  const modeControl = <label>Modo<select value={mode} onChange={event => {
       if (event.target.value === "static") { onChange(manualInteraction([], "static", initialResourceId)); setState(0); }
       else if (!steps.length) add("answer");
-    }}><option value="static">Sin interactividad</option><option value="builds">Revelado progresivo</option></select></label>
-    <p>{steps.length} pasos{automatic ? " · Detectados en la presentación" : ""}</p>
-    {!!page?.warnings?.length && <p role="status">No se pudieron recuperar los revelados de esta diapositiva. Puedes crear pasos manuales.</p>}
-    <div className="ac-unit-actions"><button type="button" className="ac-outline-button" aria-pressed={current === 0} onClick={() => setState(0)}>Estado inicial</button>{steps.map((step, index) => <button type="button" className="ac-outline-button" key={step.order} aria-pressed={current === index + 1} onClick={() => setState(index + 1)}>Paso {index + 1}</button>)}</div>
-    <div className="ac-build-preview" style={{ aspectRatio: ratio }}>
+    }}><option value="static">Sin interactividad</option><option value="builds">Revelado progresivo</option></select></label>;
+  const countText = <p>{steps.length} pasos{automatic ? " · Detectados en la presentación" : ""}</p>;
+  const warning = !!page?.warnings?.length && <p role="status">No se pudieron recuperar los revelados de esta diapositiva. Puedes crear pasos manuales.</p>;
+  const navigation = <div className="ac-unit-actions"><button type="button" className="ac-outline-button" aria-pressed={current === 0} onClick={() => setState(0)}>Estado inicial</button>{steps.map((step, index) => <button type="button" className="ac-outline-button" key={step.order} aria-pressed={current === index + 1} onClick={() => setState(index + 1)}>Paso {index + 1}</button>)}</div>;
+  const preview = <div className="ac-build-preview" style={{ aspectRatio: ratio }}>
       {initialResourceId ? <PreviewAsset unitId={unitId} resourceId={initialResourceId} onRatio={setRatio} /> : main && <PreviewAsset unitId={unitId} resourceId={main.id} pageObjectId={slide.metadata.pageObjectId} buildIndex={automatic ? current : mode === "static" ? page?.builds?.length || 0 : 0} pageNumber={slide.metadata.pageNumber || slide.index + 1} onRatio={setRatio} />}
       {!automatic && visibleBuildLayers(steps, current).map((layer, index) => <div key={index} className="ac-build-layer" style={{ left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, color: layer.color, fontSize: `${layer.fontSize || 3}cqw` }}>{layer.type === "image" ? <PreviewAsset unitId={unitId} resourceId={layer.resourceId} /> : layer.text}</div>)}
-    </div>
-    {!automatic && <><label>Imagen del estado inicial<select value={initialResourceId} onChange={event => onChange(manualInteraction(steps, mode, event.target.value))}><option value="">Usar diapositiva procesada</option>{resources.filter(resource => resource.kind === "image").map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select></label><p>Si la imagen original ya muestra respuestas, importa una imagen sin respuestas y selecciónala como estado inicial.</p></>}
-    {automatic ? <p>Estados rasterizados: orden y diseño conservados. <button type="button" className="ac-clear-filters" onClick={() => { onChange(manualInteraction([], "static", initialResourceId)); setState(0); }}>Crear pasos manuales</button></p> : <>
+    </div>;
+  const initialImage = !automatic && <><label>Imagen del estado inicial<select value={initialResourceId} onChange={event => onChange(manualInteraction(steps, mode, event.target.value))}><option value="">Usar diapositiva procesada</option>{resources.filter(resource => resource.kind === "image").map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}</select></label><p>Si la imagen original ya muestra respuestas, importa una imagen sin respuestas y selecciónala como estado inicial.</p></>;
+  const editing = automatic ? <p>Estados rasterizados: orden y diseño conservados. <button type="button" className="ac-clear-filters" onClick={() => { onChange(manualInteraction([], "static", initialResourceId)); setState(0); }}>Crear pasos manuales</button></p> : <>
       <div className="ac-unit-actions"><button type="button" className="ac-outline-button" disabled={steps.length >= 50} onClick={() => add("text")}>Añadir texto</button><button type="button" className="ac-outline-button" disabled={steps.length >= 50} onClick={() => add("answer")}>Añadir respuesta</button><button type="button" className="ac-outline-button" disabled={steps.length >= 50 || !resources.some(resource => resource.kind === "image")} onClick={() => add("image")}>Añadir imagen</button></div>
       <p>Para añadir imágenes, importa o carga el archivo en los recursos de esta Unit.</p>
       {steps.map((step, index) => {
@@ -58,6 +56,28 @@ export default function SlideInteractionEditor({ unitId, slide, main, resources,
           <div className="ac-unit-actions"><button type="button" className="ac-outline-button" disabled={!index} onClick={() => update(moveBuild(steps, index, -1))}>Subir</button><button type="button" className="ac-outline-button" disabled={index === steps.length - 1} onClick={() => update(moveBuild(steps, index, 1))}>Bajar</button><button type="button" className="ac-clear-filters" onClick={() => update(steps.filter((_step, position) => position !== index))}>Eliminar paso</button></div>
         </fieldset>;
       })}
-    </>}
+    </>;
+  if (compact) return <section className="ac-interaction-editor ac-interaction-editor-compact" aria-label="Interactividad de la diapositiva">
+    <h3>Vista previa</h3>
+    {countText}
+    {!!steps.length && navigation}
+    {preview}
+    {warning}
+    <details className="ac-interaction-settings">
+      <summary>Editar interactividad</summary>
+      {modeControl}
+      {initialImage}
+      {editing}
+    </details>
+  </section>;
+  return <section className="ac-interaction-editor" aria-label="Interactividad de la diapositiva">
+    <h3>Interactividad de la diapositiva</h3>
+    {modeControl}
+    {countText}
+    {warning}
+    {navigation}
+    {preview}
+    {initialImage}
+    {editing}
   </section>;
 }
