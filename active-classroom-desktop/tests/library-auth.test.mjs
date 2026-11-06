@@ -17,7 +17,7 @@ test("Biblioteca restaura identidad, espera ID token y consulta automáticamente
     },
     load(id) {
       if (id === "\0session-test") return "export const createDeviceSession = (notify) => globalThis.classroomHarness.createSession(notify);";
-      if (id === "\0cache-test") return "export class NativeCache { constructor(owner) { this.owner = owner; } call(action) { if (action !== 'ambient-read') throw new Error('Unexpected cache action'); return Promise.resolve(null); } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } list() { return globalThis.classroomHarness.cacheList(); } }";
+      if (id === "\0cache-test") return "export class NativeCache { constructor(owner) { this.owner = owner; } call(action) { if (action !== 'ambient-read') throw new Error('Unexpected cache action'); return Promise.resolve(null); } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } inventory() { return globalThis.classroomHarness.cacheList(); } list() { return Promise.reject(new Error('list nativo no debe usarse en el arranque')); } }";
       if (id === "\0player-test") return "export class ClassroomPlayer {}";
     },
   }] });
@@ -144,7 +144,7 @@ test("Biblioteca real: error de identidad no ofrece re-vinculación; solo locked
     },
     load(id) {
       if (id === "\0session-identity") return "export const createDeviceSession = (notify) => globalThis.identityHarness.createSession(notify);";
-      if (id === "\0cache-identity") return "export class NativeCache { constructor(owner) { this.owner = owner; } call() { return Promise.resolve(null); } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } list() { return Promise.resolve([]); } }";
+      if (id === "\0cache-identity") return "export class NativeCache { constructor(owner) { this.owner = owner; } call() { return Promise.resolve(null); } adoptLegacy() { return Promise.resolve(); } pending() { return Promise.resolve([]); } inventory() { return Promise.resolve([]); } list() { return Promise.reject(new Error('list nativo no debe usarse en el arranque')); } }";
       if (id === "\0player-identity") return "export class ClassroomPlayer {}";
     },
   }] });

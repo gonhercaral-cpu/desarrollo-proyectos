@@ -15,6 +15,8 @@ export class NativeCache implements CacheStore {
   stage(manifest: Manifest) { return this.call<void>("stage", manifest); }
   pending() { return this.call<Manifest[]>("pending"); }
   list() { return this.call<Manifest[]>("list"); }
+  // Disponibilidad para la UI de arranque (manifests comprometidos, sin SHA de multimedia). No es integridad: open/list siguen verificando.
+  inventory() { return this.call<Manifest[]>("inventory"); }
   adoptLegacy() { return this.call<void>("adopt"); }
   has(hash: string, size: number) { return this.call<boolean>("has", { hash, size }); }
   begin(hash: string) { return this.call<void>("begin", { hash }); }
