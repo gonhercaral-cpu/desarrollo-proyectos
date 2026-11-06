@@ -42,7 +42,7 @@ backend="$2"
 distribution="$3"
 if [[ "$distribution" == deb ]]; then launcher=(/usr/bin/active-classroom);
 else launcher=(/tmp/classroom-test.AppImage --appimage-extract-and-run); fi
-export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_CACHE_HOME="$HOME/.cache"
+export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_CACHE_HOME="$HOME/.cache" XDG_STATE_HOME="$HOME/.local/state"
 export XDG_RUNTIME_DIR="$(mktemp -d)"
 chmod 700 "$XDG_RUNTIME_DIR"
 mkdir -p "$XDG_CACHE_HOME"
@@ -119,7 +119,52 @@ if [[ "$distribution" == deb ]]; then
   # Check only these public packaging values, never print arbitrary environment.
   tr '\0' '\n' < "/proc/${applications[0]}/environ" | grep -qx 'APPIMAGE=/usr/bin/active-classroom'
 fi
-identity="$(secret-tool lookup application com.activeclassroom.desktop credential device-v1 | sha256sum | cut -d' ' -f1)"
+# Native identity store: private regular files owned by this user, never printed.
+# Same HOME across the four invocations, so the fingerprint must not change.
+native_file() {
+  local path="$1" mode="$2" attributes
+  test -f "$path"
+  test ! -L "$path"
+  test -s "$path"
+  attributes="$(stat -c '%F %a %u %h' "$path")"
+  test "$attributes" = "regular file $mode $(id -u) 1"
+}
+native_directory() {
+  local path="$1"
+  test -d "$path"
+  test ! -L "$path"
+  test "$(stat -c '%a %u' "$path")" = "700 $(id -u)"
+}
+native_hash() {
+  local value
+  value="$(sha256sum "$1" | cut -d' ' -f1)" || return 1
+  [[ "$value" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s' "$value"
+}
+state_directory="$XDG_STATE_HOME/active-classroom-identity"
+key_directory="$XDG_CONFIG_HOME/active-classroom-identity"
+cipher="$state_directory/vault-v1.enc"
+marker="$state_directory/identity.json"
+key="$key_directory/vault-v1.key"
+native_directory "$state_directory"
+native_directory "$key_directory"
+native_file "$cipher" 600
+native_file "$key" 600
+native_file "$marker" 600
+# Key: ACVK0001 + ready byte 1 + 32 random bytes. Cipher: ACIV0001 + IV/ciphertext.
+test "$(stat -c '%s' "$key")" -eq 41
+test "$(head -c 8 "$key")" = ACVK0001
+test "$(od -An -tu1 -j8 -N1 "$key" | tr -d ' ')" = 1
+test "$(stat -c '%s' "$cipher")" -ge 36
+test "$(stat -c '%s' "$cipher")" -le 16384
+test "$(head -c 8 "$cipher")" = ACIV0001
+# Public marker: compact (whitespace-insensitive) known serde format, not printed.
+grep -Eq '^\{"version":2,"deviceId":"[0-9a-f]{32}"(,"cacheDeviceId":"[0-9a-f]{32}")?,"collection":"/org/activeclassroom/identity/vault"\}$' < <(tr -d ' \t\r\n' < "$marker")
+cipher_hash="$(native_hash "$cipher")" || exit 1
+key_hash="$(native_hash "$key")" || exit 1
+marker_hash="$(native_hash "$marker")" || exit 1
+identity="$cipher_hash-$key_hash-$marker_hash"
+test "${#identity}" -eq 194
 if [[ -f "$XDG_CACHE_HOME/identity.sha256" ]]; then
   test "$(cat "$XDG_CACHE_HOME/identity.sha256")" = "$identity"
 else
