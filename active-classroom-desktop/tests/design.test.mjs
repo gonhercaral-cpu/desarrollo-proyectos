@@ -10,6 +10,7 @@ test("interfaz aprobada conserva estados, acciones, versión y datos reales", as
   t.after(() => server.close());
   const { unitCard } = await server.ssrLoadModule("/src/ui/library-view.ts");
   const { sidebarMarkup } = await server.ssrLoadModule("/src/ui/shell.ts");
+  const { setLibraryLevels } = await server.ssrLoadModule("/src/offline/levels.ts");
   const packageInfo = JSON.parse(await readFile(new URL("../package.json", import.meta.url)));
   const local = { unit: { unitId: "u", name: "Clase <local>", levelId: "level-1" }, version: 1, integrity: { contentHash: "a".repeat(64) }, resources: [] };
   const remote = { unitId: "u", name: "Clase <real>", levelId: "level-1", version: 1, contentHash: local.integrity.contentHash };
@@ -36,6 +37,7 @@ test("interfaz aprobada conserva estados, acciones, versión y datos reales", as
     dom.window.close();
   });
   await t.test("sidebar separa sincronización, configuración y versión instalada", () => {
+    setLibraryLevels([{ id: "level-2", name: "Nivel 2", position: 1, active: true, icon: "🎓" }]);
     const dom = new JSDOM(sidebarMarkup({ levels: ["level-1", "level-2"], selectedLevel: "level-2", state: "Sincronizado", deviceName: "Aula <4>", busy: true }));
     const root = dom.window.document; const footer = root.querySelector("footer");
     assert.equal(footer.children.length, 3);
@@ -46,6 +48,15 @@ test("interfaz aprobada conserva estados, acciones, versión y datos reales", as
     assert.equal(root.querySelector(".sidebar-device").textContent, "Aula <4>");
     assert.equal(root.querySelector("[data-sidebar-refresh]").disabled, true);
     assert.ok(root.querySelector('[data-level="level-2"].is-selected'));
+    assert.equal(root.querySelector("[data-my-classes]"), null);
+    assert.equal(root.querySelector("nav").textContent.includes("Mis clases"), false);
+    assert.ok(root.querySelector("[data-library-nav]"));
+    assert.equal(root.querySelector('[data-level="level-2"] .ac-icon').textContent, "🎓");
+    assert.ok(root.querySelector('[data-level="level-1"] svg.ac-icon'));
+    setLibraryLevels([{ id: "level-2", name: "Nivel 2", position: 1, active: true, icon: '<img src=x onerror="alert(1)">' }]);
+    const safe = new JSDOM(sidebarMarkup({ levels: ["level-2"], selectedLevel: "", state: "Offline", deviceName: "" }));
+    assert.equal(safe.window.document.querySelector('[data-level="level-2"] img'), null);
+    safe.window.close(); setLibraryLevels([]);
     assert.equal(root.querySelectorAll("[data-desktop-about]").length, 2);
     dom.window.close();
   });

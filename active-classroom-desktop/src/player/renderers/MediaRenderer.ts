@@ -1,6 +1,7 @@
 import { BaseRenderer } from "./base.ts";
 import type { PlayerCommand, RendererOptions, RendererSource, RendererState } from "../types.ts";
 import { mediaDiagnostic, mediaErrorMessage, mediaTransportError } from "../media-diagnostics.ts";
+import { seekIntervalSeconds } from "../preferences.ts";
 
 export abstract class MediaRenderer extends BaseRenderer {
   abstract kind: "audio" | "video";
@@ -56,8 +57,8 @@ export abstract class MediaRenderer extends BaseRenderer {
         else try { await media.play(); if (this.disposed) media.pause(); } catch { this.reportFailure?.(); }
         break;
       case "STOP": media.pause(); this.seek(0); break;
-      case "SEEK_FORWARD": this.seek(media.currentTime + 10); break;
-      case "SEEK_BACKWARD": this.seek(media.currentTime - 10); break;
+      case "SEEK_FORWARD": this.seek(media.currentTime + seekIntervalSeconds()); break;
+      case "SEEK_BACKWARD": this.seek(media.currentTime - seekIntervalSeconds()); break;
       case "VOLUME_UP": this.setVolume(media.volume + 0.1); break;
       case "VOLUME_DOWN": this.setVolume(media.volume - 0.1); break;
       case "MUTE": if (!this.options?.silent) media.muted = !media.muted; this.notify({ muted: media.muted }); break;

@@ -12,6 +12,7 @@ import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
 import { ImageRenderer } from "../src/player/renderers/ImageRenderer.ts";
 import { AudioRenderer } from "../src/player/renderers/AudioRenderer.ts";
 import { VideoRenderer } from "../src/player/renderers/VideoRenderer.ts";
+import { saveSeekInterval } from "../src/player/preferences.ts";
 import { PdfRenderer } from "../src/player/renderers/Presentation/PdfRenderer.ts";
 import { createRenderer } from "../src/player/renderers/factory.ts";
 import { canonical, sha256, validateManifest } from "../src/offline/manifest.ts";
@@ -188,9 +189,21 @@ for (const Renderer of [AudioRenderer, VideoRenderer]) test(`${Renderer.name}: r
   const media = root.querySelector("audio,video"); media.dispatchEvent(new window.Event("loadedmetadata"));
   await renderer.command("PLAY_PAUSE"); assert.equal(states.at(-1).playing, true);
   await renderer.command("PLAY_PAUSE"); assert.equal(states.at(-1).playing, false);
-  await renderer.command("SEEK_FORWARD"); assert.equal(media.currentTime, 10);
+  await renderer.command("SEEK_FORWARD"); assert.equal(media.currentTime, 5);
+  await renderer.command("SEEK_BACKWARD"); assert.equal(media.currentTime, 0);
   renderer.seek(58); await renderer.command("SEEK_FORWARD"); assert.equal(media.currentTime, 60);
-  await renderer.command("SEEK_BACKWARD"); assert.equal(media.currentTime, 50);
+  await renderer.command("SEEK_BACKWARD"); assert.equal(media.currentTime, 55);
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: window.localStorage });
+  try {
+    saveSeekInterval(13);
+    renderer.seek(20); await renderer.command("SEEK_FORWARD"); assert.equal(media.currentTime, 33);
+    await renderer.command("SEEK_BACKWARD"); assert.equal(media.currentTime, 20);
+    renderer.seek(2); await renderer.command("SEEK_BACKWARD"); assert.equal(media.currentTime, 0);
+  } finally {
+    if (previousStorage) Object.defineProperty(globalThis, "localStorage", previousStorage);
+    else delete globalThis.localStorage;
+  }
   await renderer.command("STOP"); assert.equal(media.currentTime, 0);
   renderer.setVolume(.95); await renderer.command("VOLUME_UP"); assert.equal(media.volume, 1);
   await renderer.command("VOLUME_DOWN"); assert.equal(media.volume, .9);

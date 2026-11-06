@@ -2,6 +2,7 @@ const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { resourceKind } = require("./activeClassroom");
 const { needsDocumentProcessing, isGoogleSlides, isRasterSlides, validPageObjectId, slideResourceId, readyProcessing, requireReady, pdfSlides } = require("./activeClassroomProcessingModel");
+const { addPublishedAnimations } = require("./activeClassroomAnimations");
 
 const MAX_RESOURCES = 200;
 const { normalizeInteraction, interactionResourceIds } = require("./activeClassroomInteraction");
@@ -218,6 +219,8 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
           return resource.processing.pages.flatMap((page, index) => [page, ...(page.builds || [])].map((state, stateIndex) => ({ ...snapshot, resourceId: stateIndex ? slideResourceId(resource.id, `${page.pageObjectId}-build-${stateIndex}`) : index === 0 ? resource.id : slideResourceId(resource.id, page.pageObjectId), name: `${resource.name} · ${index + 1}`, deliveryMime: "image/png", pageObjectId: page.pageObjectId, index, width: state.width, height: state.height, derivative: { ...derivative, file: state.download }, download: state.download })));
         }),
       };
+      const animationCandidates = resources.flatMap(resource => isRasterSlides(resource) ? resource.processing.pages.flatMap((page, index) => page.animation ? [{ resourceId: index === 0 ? resource.id : slideResourceId(resource.id, page.pageObjectId), animation: page.animation }] : []) : []);
+      content.resources = addPublishedAnimations(content.resources, animationCandidates, MAX_RESOURCES);
       for (const slide of content.slides) slide.builds = slide.builds.map(build => {
         const references = [...new Set([build.resourceId, ...(build.layers || []).map(layer => layer.resourceId)].filter(Boolean))];
         const assets = references.map(resourceId => {

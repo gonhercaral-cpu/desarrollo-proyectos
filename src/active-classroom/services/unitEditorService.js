@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
+import { guardedSubscription, processingResourceFromSnapshot } from "../utils/processingProgress";
 
 const save = httpsCallable(functions, "saveActiveClassroomUnit");
 const publish = httpsCallable(functions, "publishActiveClassroomUnit");
@@ -32,6 +33,15 @@ export async function validateUnitPublication(unitId, expectedRevision) {
 }
 export function subscribeUnitPublication(unitId, onChange, onError) {
   return onSnapshot(doc(db, "activeClassroomUnits", unitId), (snapshot) => onChange(snapshot.data()?.publicationJob || null), onError);
+}
+export function subscribeUnitProcessing(unitId, resourceId, onChange, onError) {
+  return guardedSubscription(
+    (next, fail) => onSnapshot(doc(db, "activeClassroomResources", resourceId), (snapshot) => {
+      const resource = processingResourceFromSnapshot(unitId, resourceId, snapshot);
+      if (resource) next(resource);
+    }, fail),
+    onChange, onError,
+  );
 }
 export async function checkUnitDriveChanges(unitId, resourceIds) {
   const results = [];

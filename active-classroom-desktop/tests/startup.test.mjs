@@ -4,6 +4,8 @@ import { JSDOM } from "jsdom";
 import { ProgramUpdater } from "../src/updater/controller.ts";
 import { StartupPreferences, StartupUpdate, newerStableVersion } from "../src/startup/controller.ts";
 import { renderUpdater } from "../src/updater/view.ts";
+import { seekIntervalSeconds, saveSeekInterval } from "../src/player/preferences.ts";
+import { playerMarkup } from "../src/ui/player-view.ts";
 
 const state = (phase, extra = {}) => ({ phase, currentVersion: "1.0.6", newVersion: "1.0.7", downloaded: 0, message: phase, ...extra });
 async function fixture(actions = {}, installedUpdate) {
@@ -69,4 +71,42 @@ test("Ajustes permite autostart y kiosco on/off; salida temporal conserva prefer
   await f.preferences.run("autostart", false); await f.preferences.run("kiosk", false); assert.equal(f.preferences.status.autostart, false); assert.equal(f.preferences.status.kiosk, false);
   await f.preferences.run("autostart", true); await f.preferences.run("kiosk", true); await f.preferences.run("library-ready"); await f.preferences.run("exit-kiosk");
   assert.equal(f.preferences.status.kioskActive, false); assert.equal(f.preferences.status.kiosk, true); dom.window.close();
+});
+
+test("Ajustes guarda intervalo, actualiza etiquetas y recupera valor tras reinicio", async t => {
+  const dom = new JSDOM('<div id="player"></div><div id="host"></div>', { url: "http://tauri.localhost" });
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  t.after(() => { dom.window.close(); if (previous) Object.defineProperty(globalThis, "localStorage", previous); else delete globalThis.localStorage; });
+  const f = await fixture(); f.updater.show();
+  const host = dom.window.document.querySelector("#host"), player = dom.window.document.querySelector("#player");
+  player.innerHTML = playerMarkup(); renderUpdater(host, f.updater, f.preferences);
+  assert.equal(seekIntervalSeconds(), 5);
+  assert.equal(player.querySelector('[data-command="SEEK_BACKWARD"]').textContent, "−5 s");
+  assert.equal(player.querySelector('[data-command="SEEK_FORWARD"]').textContent, "+5 s");
+  const input = host.querySelector("[data-seek-interval]"); assert.equal(input.value, "5");
+  input.value = "13";
+  host.querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  assert.match(host.querySelector("[data-seek-status]").textContent, /guardado/);
+  assert.equal(player.querySelector('[data-command="SEEK_BACKWARD"]').textContent, "−13 s");
+  assert.equal(player.querySelector('[data-command="SEEK_FORWARD"]').textContent, "+13 s");
+  assert.equal(player.querySelector('small[data-seek-label]').textContent, "±13 s");
+  const restarted = await import("../src/player/preferences.ts?restart");
+  assert.equal(restarted.seekIntervalSeconds(), 13);
+  renderUpdater(host, f.updater, f.preferences);
+  assert.equal(host.querySelector("[data-seek-interval]").value, "13");
+  for (const invalid of ["0", "-1", "301", "1.5", ""]) {
+    host.querySelector("[data-seek-interval]").value = invalid;
+    host.querySelector("form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+    assert.match(host.querySelector("[data-seek-status]").textContent, /No se pudo guardar/);
+    assert.equal(seekIntervalSeconds(), 13);
+  }
+  for (const invalid of ["bad", "null", '"10"', "0", "301", "1.5", "{}"] ) {
+    localStorage.setItem("active-classroom-seek-interval", invalid); assert.equal(seekIntervalSeconds(), 5);
+  }
+  t.mock.method(dom.window.Storage.prototype, "setItem", () => { throw new Error("storage unavailable"); });
+  assert.throws(() => saveSeekInterval(10), /storage unavailable/);
+  host.querySelector("[data-seek-interval]").value = "10";
+  host.querySelector("form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
+  assert.match(host.querySelector("[data-seek-status]").textContent, /No se pudo guardar/);
 });

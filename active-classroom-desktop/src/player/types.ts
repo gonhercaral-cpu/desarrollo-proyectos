@@ -6,7 +6,7 @@ export interface LocalClassroom {
   manifest: Manifest;
   resolveResource(resourceId: string): { path: string; mimeType: string; kind: string; name: string };
 }
-export interface ResolvedLayer { type: "text" | "answer" | "image"; x: number; y: number; width: number; height: number; text?: string; color?: string; fontSize?: number; url?: string }
+export interface ResolvedLayer { type: "text" | "answer" | "image"; x: number; y: number; width: number; height: number; text?: string; color?: string; fontSize?: number; url?: string; fit?: "fill" }
 export interface RendererSource { url: string; mimeType: string; name: string; sizeBytes: number; codecMime?: string; layers?: ResolvedLayer[] }
 export interface RendererState {
   loading: boolean; page: number; pages: number; playing: boolean;

@@ -13,6 +13,13 @@
 - No afirmar que una integración o prueba funciona sin evidencia. Los auxiliares no tienen shell en Actions: las pruebas que enumeren son pendientes, y Codex/CI deben ejecutarlas.
 - Antes de habilitar escritura automatizada, presentar el diff y pedir aprobación al propietario. La configuración actual no contiene ningún workflow que publique ramas o PRs automáticamente; no añadir uno sin esa aprobación.
 
+## Orquestación local en chats de Codex
+
+- Al iniciar cada chat local de este proyecto, lee [el protocolo de coordinación por terminal](.orquestacion/PROTOCOLO.md) antes de planificar o delegar trabajo. Resuelve esa ruta desde la raíz del repositorio. El propietario ya autorizó este flujo; no necesita volver a mencionarlo en cada chat.
+- Usa Gemini mediante Antigravity CLI para análisis y contexto, y Claude Code para las subtareas de implementación que procedan, conforme a ese protocolo y a las condiciones de autoridad, contratos, revisión y validación anteriores. Codex conserva la responsabilidad de la integración final.
+- Espera a que termine cada consulta, comprueba su código de salida y lee la respuesta generada antes de continuar. No reutilices respuestas antiguas ni sobrescribas los archivos compartidos de otra ejecución activa.
+- Los ejecutores y archivos de intercambio de `.orquestacion/` son locales y están excluidos de Git. Si el protocolo o una herramienta no están disponibles en este checkout o entorno, informa de la limitación y continúa el trabajo independiente autorizado; no inventes respuestas ni sustituyas Antigravity por el antiguo `gemini_worker.py`.
+
 ## Project Structure & Module Organization
 
 This is a Vite + React application backed by Firebase. Main code lives in `src/`: pages in `src/pages`, shared components in `src/components`, auth context in `src/context`, Firebase modules in `src/services`, utilities in `src/utils`, and global styles in `src/styles/app.css` plus `src/index.css`. Static assets belong in `public/` when served directly and `src/assets/` when imported. Firebase security files are at the root: `firestore.rules`, `storage.rules`, and `firestore.indexes.json`. Cloud Functions have separate packages in `functions/` (default) and `drive/` (Drive/Active Classroom). `active-classroom-desktop/` contains the Tauri application and admin web; `active-classroom-processor/` contains the document processor. Rules tests live in `tests/`.

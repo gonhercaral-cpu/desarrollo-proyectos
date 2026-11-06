@@ -2,6 +2,7 @@ import { ProgramUpdater, updateBusy } from "./controller.ts";
 import { escapeHtml } from "../utils/dom.ts";
 import type { StartupPreferences } from "../startup/controller.ts";
 import { startupSettingsMarkup, bindStartupSettings } from "../startup/view.ts";
+import { seekIntervalSeconds, saveSeekInterval } from "../player/preferences.ts";
 export function renderUpdater(host: HTMLElement, updater: ProgramUpdater, preferences?: StartupPreferences): void {
   const status = updater.status;
   const busy = updateBusy(status.phase);
@@ -17,6 +18,19 @@ export function renderUpdater(host: HTMLElement, updater: ProgramUpdater, prefer
   host.querySelector<HTMLButtonElement>("[data-install]")?.addEventListener("click", () => { void updater.run("install"); });
   host.querySelector<HTMLButtonElement>("[data-restart]")?.addEventListener("click", () => { void updater.run("restart"); });
   host.querySelector<HTMLButtonElement>("[data-later]")?.addEventListener("click", () => { updater.later(); });
+  if (updater.visible) {
+    host.querySelector(".app-update-card")!.insertAdjacentHTML("beforeend", `<section class="startup-settings" aria-label="Atajos de teclado"><h3>Atajos de teclado</h3><form data-seek-settings><label>Intervalo de salto (segundos)<input data-seek-interval type="number" min="1" max="300" step="1" required value="${seekIntervalSeconds()}" /></label><small>Retroceder (J) y adelantar (L). Predeterminado: 5 segundos.</small><button class="button button-outline" type="submit">Guardar intervalo</button><p data-seek-status role="status"></p></form></section>`);
+    host.querySelector<HTMLFormElement>("[data-seek-settings]")!.onsubmit = event => {
+      event.preventDefault();
+      const status = host.querySelector<HTMLElement>("[data-seek-status]")!;
+      try {
+        const seconds = host.querySelector<HTMLInputElement>("[data-seek-interval]")!.valueAsNumber;
+        saveSeekInterval(seconds);
+        host.ownerDocument.querySelectorAll<HTMLElement>("[data-seek-label]").forEach(label => { label.textContent = `${label.dataset.seekLabel}${seconds} s`; });
+        status.textContent = "Intervalo guardado.";
+      } catch { status.textContent = "No se pudo guardar. Usa segundos enteros entre 1 y 300 y verifica el almacenamiento local."; }
+    };
+  }
   if (preferences && updater.visible) {
     const section = host.querySelector(".app-update-card")!;
     section.insertAdjacentHTML("beforeend", startupSettingsMarkup(preferences)); bindStartupSettings(section as HTMLElement, preferences);

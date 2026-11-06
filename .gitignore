@@ -27,6 +27,8 @@ releases/active-classroom/
 .multiagent/
 .gemini/
 gemini-artifacts/
+.orquestacion/
+__pycache__/
 gha-creds-*.json
 .claude/settings.local.json
 

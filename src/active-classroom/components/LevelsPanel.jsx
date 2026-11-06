@@ -3,6 +3,7 @@ import { manageActiveClassroomLevel } from "../services/activeClassroomService";
 
 export default function LevelsPanel({ folders, profile, onOpen }) {
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const levels = folders.filter(folder => folder.kind === "level").sort((a, b) => (a.position ?? 999) - (b.position ?? 999) || a.name.localeCompare(b.name, "es"));
@@ -25,16 +26,18 @@ export default function LevelsPanel({ folders, profile, onOpen }) {
   return <section className="ac-section-panel">
     <h1>Niveles</h1><p>Crea y organiza niveles. Desactivar conserva sus Units y publicaciones.</p>
     {error && <div className="ac-error-banner" role="alert">{error}</div>}
-    <form className="ac-unit-actions" onSubmit={async event => { event.preventDefault(); if (await change({ action: "create", name, position: levels.length ? Math.max(...levels.map(level => level.position || 0)) + 1 : 0 })) setName(""); }}>
+    <form className="ac-unit-actions" onSubmit={async event => { event.preventDefault(); if (await change({ action: "create", name, icon, position: levels.length ? Math.max(...levels.map(level => level.position || 0)) + 1 : 0 })) { setName(""); setIcon(""); } }}>
       <label>Nombre del nivel<input required maxLength={160} value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>
+      <label>Ícono (emoji, opcional)<input maxLength={32} value={icon} disabled={busy} placeholder="📚" onChange={event => setIcon(event.target.value)} /></label>
       <button className="ac-primary-button" disabled={busy || !name.trim()}>Crear nivel</button>
     </form>
     {levels.map((level, index) => <article className="ac-unit-card" key={level.id}>
-      <h2>{level.name} <small>{level.active === false ? "Inactivo" : "Activo"}</small></h2>
+      <h2>{level.icon && <span aria-hidden="true">{level.icon} </span>}{level.name} <small>{level.active === false ? "Inactivo" : "Activo"}</small></h2>
       <p>{folders.filter(folder => folder.parentId === level.id).length} Units. Para reasignar, abre cada Unit y cambia su Nivel.</p>
       <div className="ac-unit-actions">
         <button className="ac-outline-button" disabled={busy} onClick={() => onOpen(level.id)}>Ver Units</button>
         <button className="ac-outline-button" disabled={busy} onClick={() => { const next = window.prompt("Nombre del nivel", level.name); if (next !== null) void change({ action: "update", levelId: level.id, name: next }); }}>Renombrar</button>
+        <button className="ac-outline-button" disabled={busy} onClick={() => { const next = window.prompt("Ícono del nivel (emoji, máximo 32 caracteres). Déjalo vacío para usar el predeterminado.", level.icon || ""); if (next !== null) void change({ action: "update", levelId: level.id, icon: next }); }}>Cambiar ícono</button>
         <button className="ac-outline-button" disabled={busy || index === 0} onClick={() => move(index, -1)}>Subir</button>
         <button className="ac-outline-button" disabled={busy || index === levels.length - 1} onClick={() => move(index, 1)}>Bajar</button>
         <button className="ac-outline-button" disabled={busy} onClick={() => change({ action: "update", levelId: level.id, active: level.active === false })}>{level.active === false ? "Activar" : "Desactivar"}</button>

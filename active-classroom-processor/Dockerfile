@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py converter.py builds.py ./
+COPY app.py converter.py builds.py gifs.py ./
 COPY tests ./tests
 RUN useradd --system --uid 10001 --no-create-home classroom
 USER 10001:10001

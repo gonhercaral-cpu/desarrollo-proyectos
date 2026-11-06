@@ -1,4 +1,4 @@
-export interface LibraryLevel { id: string; name: string; position: number; active: boolean }
+export interface LibraryLevel { id: string; name: string; position: number; active: boolean; icon?: string }
 export function validLibraryLevels(value: unknown): value is LibraryLevel[] {
   return Array.isArray(value) && value.every(level => level && typeof level.id === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(level.id) && typeof level.name === "string" && !!level.name.trim() && level.name.length <= 160 && Number.isSafeInteger(level.position) && typeof level.active === "boolean") && new Set(value.map(level => level.id)).size === value.length;
 }
@@ -12,3 +12,7 @@ export function libraryLevelIds(unitLevels: string[]): string[] {
   return [...new Set([...libraryLevels.filter(level => level.active).map(level => level.id), ...unitLevels])].sort((a, b) => (libraryLevels.find(level => level.id === a)?.position ?? 999) - (libraryLevels.find(level => level.id === b)?.position ?? 999) || levelName(a).localeCompare(levelName(b), "es", { numeric: true }));
 }
 export const levelName = (id: string) => libraryLevels.find(level => level.id === id)?.name || (/^level-\d+$/.test(id) ? `Nivel ${id.slice(6)}` : id);
+export const levelIcon = (id: string): string => {
+  const value = libraryLevels.find(level => level.id === id)?.icon;
+  return typeof value === "string" && value.length <= 32 ? value.trim() : "";
+};

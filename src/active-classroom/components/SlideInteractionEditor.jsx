@@ -1,23 +1,62 @@
 import { useEffect, useState } from "react";
 import { getBuildPreview } from "../services/unitEditorService";
 import { manualInteraction, moveBuild, visibleBuildLayers } from "../utils/slideInteraction";
+import { ANIMATION_FALLBACK_NOTICE, pageWarningNotices, usableAnimation } from "../utils/processingProgress";
 
-function PreviewAsset({ unitId, resourceId, pageObjectId, buildIndex = 0, pageNumber = 1, onRatio }) {
+// Resolves with the loaded image only when it decodes; callers fall back to the static PNG otherwise.
+async function preloadImage(url) {
+  const image = new Image();
+  let timeout;
+  const loaded = new Promise((resolve, reject) => {
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("image-load"));
+    image.src = url;
+  }).then(image => typeof image.decode === "function" ? image.decode().then(() => image) : image);
+  try { return await Promise.race([loaded, new Promise((_resolve, reject) => { timeout = setTimeout(() => reject(new Error("image-timeout")), 10000); })]); }
+  finally { clearTimeout(timeout); image.onload = null; image.onerror = null; }
+}
+
+function PreviewAsset({ unitId, resourceId, pageObjectId, buildIndex = 0, pageNumber = 1, onRatio, onNotice }) {
+  return <PreviewAssetState key={`${unitId}:${resourceId}:${pageObjectId}:${buildIndex}`} {...{ unitId, resourceId, pageObjectId, buildIndex, pageNumber, onRatio, onNotice }} />;
+}
+
+function PreviewAssetState({ unitId, resourceId, pageObjectId, buildIndex, pageNumber, onRatio, onNotice }) {
   const [asset, setAsset] = useState(null);
   const [error, setError] = useState("");
+  const [animation, setAnimation] = useState(null);
   useEffect(() => {
     let active = true;
-    getBuildPreview(unitId, resourceId, pageObjectId, buildIndex).then(value => { if (active) { setAsset(value); setError(""); } }).catch(reason => { if (active) setError(reason.message); });
+    getBuildPreview(unitId, resourceId, pageObjectId, buildIndex).then(async value => {
+      if (!active) return;
+      setAsset(value); onNotice?.("");
+      if (!value.animation) return;
+      const candidate = usableAnimation(value.animation);
+      if (!candidate) { onNotice?.(ANIMATION_FALLBACK_NOTICE); return; }
+      try {
+        // The complete PNG stays visible until every image is decoded.
+        const [background] = await Promise.all([candidate.background.url, ...candidate.images.map(image => image.url)].map(preloadImage));
+        if (!active) return;
+        const ratio = background.naturalWidth / background.naturalHeight;
+        if (Number.isFinite(ratio) && ratio > 0) onRatio?.(ratio);
+        setAnimation(candidate);
+      } catch { if (active) onNotice?.(ANIMATION_FALLBACK_NOTICE); }
+    }).catch(reason => { if (active) setError(reason.message); });
     return () => { active = false; };
-  }, [unitId, resourceId, pageObjectId, buildIndex]);
+  }, [unitId, resourceId, pageObjectId, buildIndex, onNotice, onRatio]);
   if (error) return <p role="alert">{error}</p>;
   if (!asset) return <p role="status">Preparando vista previa…</p>;
-  return asset.mimeType === "application/pdf" ? <iframe src={`${asset.url}#page=${pageNumber}&toolbar=0&view=Fit`} title="Diapositiva base" referrerPolicy="no-referrer" /> : <img src={asset.url} alt="Estado de la diapositiva" onLoad={event => onRatio?.(event.target.naturalWidth / event.target.naturalHeight)} />;
+  if (asset.mimeType === "application/pdf") return <iframe src={`${asset.url}#page=${pageNumber}&toolbar=0&view=Fit`} title="Diapositiva base" referrerPolicy="no-referrer" />;
+  if (animation) return <div className="ac-build-animation" style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+    <img src={animation.background.url} alt="Estado de la diapositiva" style={{ width: "100%", height: "100%", display: "block", objectFit: "fill" }} />
+    {animation.images.map((image, index) => <img key={index} src={image.url} alt="" style={{ position: "absolute", left: `${image.x}%`, top: `${image.y}%`, width: `${image.width}%`, height: `${image.height}%`, objectFit: "fill" }} />)}
+  </div>;
+  return <img src={asset.url} alt="Estado de la diapositiva" onLoad={event => onRatio?.(event.target.naturalWidth / event.target.naturalHeight)} />;
 }
 
 export default function SlideInteractionEditor({ unitId, slide, main, resources, onChange }) {
   const [state, setState] = useState(0);
   const [ratio, setRatio] = useState(16 / 9);
+  const [notice, setNotice] = useState("");
   const steps = slide.builds || [];
   const current = Math.min(state, steps.length);
   const automatic = slide.interaction?.source === "pptx";
@@ -39,12 +78,13 @@ export default function SlideInteractionEditor({ unitId, slide, main, resources,
       else if (!steps.length) add("answer");
     }}><option value="static">Sin interactividad</option><option value="builds">Revelado progresivo</option></select></label>
     <p>{steps.length} pasos{automatic ? " · Extraídos de PPTX" : ""}</p>
-    {!!page?.warnings?.length && <p role="status">Animación no compatible. Diapositiva estática; puedes crear revelados manuales.</p>}
+    {pageWarningNotices(page?.warnings).map(message => <p role="status" key={message}>{message}</p>)}
     <div className="ac-unit-actions"><button type="button" className="ac-outline-button" aria-pressed={current === 0} onClick={() => setState(0)}>Estado inicial</button>{steps.map((step, index) => <button type="button" className="ac-outline-button" key={step.order} aria-pressed={current === index + 1} onClick={() => setState(index + 1)}>Paso {index + 1}</button>)}</div>
     <div className="ac-build-preview" style={{ aspectRatio: ratio }}>
-      {main && <PreviewAsset unitId={unitId} resourceId={main.id} pageObjectId={slide.metadata.pageObjectId} buildIndex={automatic ? current : mode === "static" ? page?.builds?.length || 0 : 0} pageNumber={slide.metadata.pageNumber || slide.index + 1} onRatio={setRatio} />}
+      {main && <PreviewAsset unitId={unitId} resourceId={main.id} pageObjectId={slide.metadata.pageObjectId} buildIndex={automatic ? current : mode === "static" ? page?.builds?.length || 0 : 0} pageNumber={slide.metadata.pageNumber || slide.index + 1} onRatio={setRatio} onNotice={setNotice} />}
       {!automatic && visibleBuildLayers(steps, current).map((layer, index) => <div key={index} className="ac-build-layer" style={{ left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, color: layer.color, fontSize: `${layer.fontSize || 3}cqw` }}>{layer.type === "image" ? <PreviewAsset unitId={unitId} resourceId={layer.resourceId} /> : layer.text}</div>)}
     </div>
+    {notice && <p role="status">{notice}</p>}
     {automatic ? <p>Estados rasterizados: orden y diseño conservados. <button type="button" className="ac-clear-filters" onClick={() => { onChange(manualInteraction([], "static")); setState(0); }}>Crear pasos manuales</button></p> : <>
       <div className="ac-unit-actions"><button type="button" className="ac-outline-button" disabled={steps.length >= 50} onClick={() => add("text")}>Añadir texto</button><button type="button" className="ac-outline-button" disabled={steps.length >= 50} onClick={() => add("answer")}>Añadir respuesta</button><button type="button" className="ac-outline-button" disabled={steps.length >= 50 || !resources.some(resource => resource.kind === "image")} onClick={() => add("image")}>Añadir imagen</button></div>
       <p>Para añadir imágenes, importa o carga el archivo en los recursos de esta Unit.</p>
