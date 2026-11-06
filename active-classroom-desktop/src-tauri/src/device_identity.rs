@@ -1,17 +1,24 @@
-//! Device secrets live only in the Linux Secret Service, never in the cache/WebView.
+//! Device secrets live in a native vault (AES-256-GCM, local CSPRNG key), never in the cache/WebView.
 //!
-//! Preservation model (this module never deletes or rotates anything on its own):
-//! * The identity is searched across *all* collections (`SearchItems`), locked or not. A locked
-//!   match, several matches, an empty/failed/garbled answer are never "absence".
-//! * Updates are written back to the collection that already holds the item (never "default").
-//! * A public marker outside APPDATA/WebView (`$XDG_STATE_HOME/active-classroom-identity`)
-//!   records ids + collection only. If the marker exists, an empty store is an error, so a new
-//!   identity is never generated over a lost one. `reset-binding` journals the next public ids in
-//!   the marker *before* storing the new secret, so a crash is recovered on the next load.
-//! * Limit: without a marker, absence of a legacy identity is only provable for what the Secret
-//!   Service exposes. Unlocked/empty collections and `*.keyring` files that the service lists are
-//!   accepted; locked collections or keyring files not represented by the service block creation.
-//!   A secret kept by a different, unreachable backend cannot be detected.
+//! Model (this module never deletes or rotates anything on its own):
+//! * Steady state: the identity lives in `vault` (cipher in the private state dir, random key in a
+//!   different private dir under `$XDG_CONFIG_HOME`, both outside `$APPDATA`). Once a v2 marker or a
+//!   vault exists, load/proof/mark/reset-binding/`authorized_owner` never touch the Secret Service.
+//! * First install: the legacy Secret Service is only *probed* (never written). A single accessible
+//!   legacy identity is copied (wrapped) into the vault, read back in full and only then recorded in
+//!   the marker; the legacy item stays untouched. A confirmed-empty store, or a missing service with
+//!   no on-disk keyring/wallet evidence and no marker, creates a new identity in the vault.
+//! * Locked, ambiguous, corrupt or erroring legacy stores, a legacy (v1) marker whose secret is gone,
+//!   a v2 marker without its vault, and any corrupt vault fail closed: no new identity, no fallback.
+//! * A public marker (`$XDG_STATE_HOME/active-classroom-identity`) records ids + origin only. v1 =
+//!   legacy Secret Service collection, v2 = native vault (sentinel collection outside the real
+//!   Secret Service namespace). `reset-binding` journals the next public ids in the marker *before*
+//!   writing the new secret, so a crash is recovered on the next load.
+//! * Honest limit: the vault key is a plain file protected by the OS (owner UID, 0700/0600), not by a
+//!   password, TPM or keyring. It defends against other OS users, not against root, processes with the
+//!   same UID, or a copy of the powered-off disk. Without a marker, absence of a legacy identity is
+//!   only provable for what the Secret Service and the on-disk GNOME/KWallet files expose; a secret
+//!   kept by a different, unreachable backend cannot be detected.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -39,6 +46,12 @@ const MARKER_LIMIT: u64 = 4096;
 const MARKER_DIR: &str = "active-classroom-identity";
 /// GNOME's in-memory collection: it vanishes with the session, so it can never hold the identity.
 const SESSION_COLLECTION: &str = "/org/freedesktop/secrets/collection/session";
+/// Private sentinel (outside the real Secret Service namespace) marking the native vault as the origin.
+const NATIVE_COLLECTION: &str = "/org/activeclassroom/identity/vault";
+
+#[path = "device_identity/vault.rs"]
+mod vault;
+use vault::Vault;
 
 #[derive(Default)]
 pub struct DeviceGate(pub Arc<Mutex<()>>);
@@ -191,7 +204,8 @@ fn parse_locked(text: &str) -> Res<bool> {
         _ => Err(Kind::Storage),
     }
 }
-/// Output of `ReadAlias`: `(objectpath '/..',)`. `/` means "no such alias".
+/// Output of `ReadAlias`: `(objectpath '/..',)`. `/` means "no such alias". Test fixtures only.
+#[cfg(test)]
 fn parse_alias(text: &str) -> Res<String> {
     let mut cursor = Cursor::new(text);
     cursor.expect("(")?;
@@ -279,14 +293,25 @@ fn text(output: Output) -> Res<String> {
 
 // ---------------------------------------------------------------- Secret Service backend
 
+/// Read-only probe of the legacy store. Nothing in production ever writes to it any more.
 trait Backend: Sync {
     fn search(&self) -> Res<Search>;
     fn read(&self, item: &str) -> Res<String>;
     fn collections(&self) -> Res<Vec<(String, bool)>>;
     fn keyring_files(&self) -> Res<Vec<String>>;
-    fn default_collection(&self) -> Res<String>;
     fn collection_locked(&self, collection: &str) -> Res<bool>;
+    /// On-disk traces of a persistent secret backend. Only consulted when the service itself is gone.
+    fn legacy_evidence(&self) -> Res<bool> { Ok(!self.keyring_files()?.is_empty()) }
+    /// Seeding legacy fixtures in tests; production never creates legacy items.
+    #[cfg(test)]
+    fn default_collection(&self) -> Res<String>;
+    #[cfg(test)]
     fn store(&self, collection: &str, secret: &str) -> Res<()>;
+    /// Fault injection around the vault write (tests only).
+    #[cfg(test)]
+    fn before_vault_save(&self) -> Res<()> { Ok(()) }
+    #[cfg(test)]
+    fn after_vault_save(&self) {}
 }
 struct Linux;
 impl Linux {
@@ -332,13 +357,30 @@ impl Backend for Linux {
             Err(_) => Err(Kind::Storage),
         }
     }
-    fn default_collection(&self) -> Res<String> {
-        parse_alias(&self.gdbus(SECRETS_PATH, "org.freedesktop.Secret.Service.ReadAlias", &["default"])?)
+    fn legacy_evidence(&self) -> Res<bool> {
+        if !self.keyring_files()?.is_empty() { return Ok(true); }
+        let Some(data) = base_dir("XDG_DATA_HOME", ".local/share") else { return Err(Kind::Storage) };
+        match fs::read_dir(data.join("kwalletd")) {
+            Ok(entries) => {
+                for entry in entries {
+                    let name = entry.map_err(|_| Kind::Storage)?.file_name();
+                    if name.to_str().map_or(true, |n| n.ends_with(".kwl")) { return Ok(true); }
+                }
+                Ok(false)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(_) => Err(Kind::Storage),
+        }
     }
     fn collection_locked(&self, collection: &str) -> Res<bool> {
         if !valid_collection(collection) { return Err(Kind::Storage); }
         parse_locked(&self.property(collection, "org.freedesktop.Secret.Collection", "Locked")?)
     }
+    #[cfg(test)]
+    fn default_collection(&self) -> Res<String> {
+        parse_alias(&self.gdbus(SECRETS_PATH, "org.freedesktop.Secret.Service.ReadAlias", &["default"])?)
+    }
+    #[cfg(test)]
     fn store(&self, collection: &str, secret: &str) -> Res<()> {
         if !valid_collection(collection) { return Err(Kind::Storage); }
         // The secret travels only through stdin, never argv.
@@ -370,12 +412,16 @@ struct Marker {
 }
 impl Marker {
     fn of(identity: &Identity, collection: &str) -> Marker {
-        Marker { version: 1, device_id: identity.device_id.clone(), cache_device_id: identity.cache_device_id.clone(), collection: collection.to_owned(), pending: None }
+        let version = if collection == NATIVE_COLLECTION { 2 } else { 1 };
+        Marker { version, device_id: identity.device_id.clone(), cache_device_id: identity.cache_device_id.clone(), collection: collection.to_owned(), pending: None }
     }
     fn ids(&self) -> Ids { Ids { device_id: self.device_id.clone(), cache_device_id: self.cache_device_id.clone() } }
+    /// v2 = the native vault is the only origin; v1 = legacy Secret Service collection.
+    fn native(&self) -> bool { self.version == 2 }
     fn valid(&self) -> bool {
         let ids_ok = |ids: &Ids| valid_hex(&ids.device_id, 32) && ids.cache_device_id.as_ref().map_or(true, |id| valid_hex(id, 32));
-        self.version == 1 && valid_collection(&self.collection) && ids_ok(&self.ids()) && self.pending.as_ref().map_or(true, |p| ids_ok(p) && *p != self.ids())
+        let origin_ok = match self.version { 1 => valid_collection(&self.collection), 2 => self.collection == NATIVE_COLLECTION, _ => false };
+        origin_ok && ids_ok(&self.ids()) && self.pending.as_ref().map_or(true, |p| ids_ok(p) && *p != self.ids())
     }
 }
 fn identity_ids(identity: &Identity) -> Ids { Ids { device_id: identity.device_id.clone(), cache_device_id: identity.cache_device_id.clone() } }
@@ -386,26 +432,50 @@ fn base_dir(variable: &str, fallback: &str) -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").and_then(absolute).map(|home| home.join(fallback)))
 }
 
-struct Files { dir: PathBuf }
+/// `dir`: private state dir (marker, lock, vault cipher). `key_dir`: a different private dir for the
+/// vault key. `appdata`: the WebView asset scope (`$APPDATA`), which must never contain either dir.
+#[derive(Clone)]
+struct Files { dir: PathBuf, key_dir: PathBuf, appdata: PathBuf }
 struct FileLock(#[allow(dead_code)] File);
 impl Files {
     fn from_env() -> Res<Files> {
-        let base = base_dir("XDG_STATE_HOME", ".local/state").ok_or(Kind::Storage)?;
-        Ok(Files { dir: base.join(MARKER_DIR) })
+        let state = base_dir("XDG_STATE_HOME", ".local/state").ok_or(Kind::Storage)?;
+        let config = base_dir("XDG_CONFIG_HOME", ".config").ok_or(Kind::Storage)?;
+        let data = base_dir("XDG_DATA_HOME", ".local/share").ok_or(Kind::Storage)?;
+        Ok(Files { dir: state.join(MARKER_DIR), key_dir: config.join(MARKER_DIR), appdata: data.join(APPLICATION) })
     }
     fn marker(&self) -> PathBuf { self.dir.join("identity.json") }
-    fn prepare(&self) -> Res<()> {
+    fn prepare(&self) -> Res<()> { Self::prepare_dir(&self.dir) }
+    fn prepare_dir(dir: &Path) -> Res<()> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-            fs::DirBuilder::new().recursive(true).mode(0o700).create(&self.dir).map_err(|_| Kind::Storage)?;
-            let meta = fs::symlink_metadata(&self.dir).map_err(|_| Kind::Storage)?;
+            fs::DirBuilder::new().recursive(true).mode(0o700).create(dir).map_err(|_| Kind::Storage)?;
+            let meta = fs::symlink_metadata(dir).map_err(|_| Kind::Storage)?;
             if !meta.is_dir() { return Err(Kind::Storage); }
-            if meta.permissions().mode() & 0o777 != 0o700 { fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o700)).map_err(|_| Kind::Storage)?; }
+            if meta.permissions().mode() & 0o777 != 0o700 { fs::set_permissions(dir, fs::Permissions::from_mode(0o700)).map_err(|_| Kind::Storage)?; }
         }
         #[cfg(not(unix))]
-        fs::create_dir_all(&self.dir).map_err(|_| Kind::Storage)?;
+        fs::create_dir_all(dir).map_err(|_| Kind::Storage)?;
         Ok(())
+    }
+    /// Creates both private dirs (no secret yet), proves through canonical paths that neither is, or
+    /// lies inside, `$APPDATA` (nor one inside the other), and only then hands out the vault. The dirs
+    /// are prepared first on purpose: if they were placed under a missing `$APPDATA`, it exists now.
+    fn vault(&self) -> Res<Vault> {
+        self.prepare()?;
+        Self::prepare_dir(&self.key_dir)?;
+        let state = fs::canonicalize(&self.dir).map_err(|_| Kind::Storage)?;
+        let key = fs::canonicalize(&self.key_dir).map_err(|_| Kind::Storage)?;
+        if state.starts_with(&key) || key.starts_with(&state) { return Err(Kind::Storage); }
+        let mut forbidden = vec![self.appdata.clone()];
+        match fs::canonicalize(&self.appdata) {
+            Ok(real) => forbidden.push(real),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(Kind::Storage),
+        }
+        if forbidden.iter().any(|root| state.starts_with(root) || key.starts_with(root) || self.dir.starts_with(root) || self.key_dir.starts_with(root)) { return Err(Kind::Storage); }
+        Ok(Vault::new(state, key))
     }
     fn open_private(&self, path: &Path, create_new: bool) -> std::io::Result<File> {
         let mut options = OpenOptions::new();
@@ -512,7 +582,16 @@ fn represented_files(backend: &dyn Backend) -> Res<()> {
     if backend.keyring_files()?.iter().all(|stem| represented(stem)) { Ok(()) } else { Err(Kind::Locked) }
 }
 
-struct Resolved { identity: Identity, collection: String, marker: Marker }
+/// What the read-only legacy probe concluded.
+enum Probe {
+    /// Exactly one accessible legacy identity, coherent with the marker (if any).
+    Found(Identity),
+    /// Search confirmed empty, nothing locked, every on-disk keyring represented, no marker.
+    Absent,
+    /// The Secret Service (or its tools) could not be reached at all.
+    Down(Kind),
+}
+struct Resolved { identity: Identity, vault: Vault, marker: Marker }
 struct Service<'a> { backend: &'a dyn Backend, files: &'a Files }
 impl Service<'_> {
     /// Single entry point: process mutex + file lock, then the (lock-free) closure.
@@ -521,56 +600,95 @@ impl Service<'_> {
         let _file = self.files.lock()?;
         work()
     }
+    /// The vault decides first. Only without any vault (and without a v2 marker) is the legacy
+    /// store consulted, and then only to probe it. A vault problem never falls back to legacy.
     fn resolve(&self) -> Res<Resolved> {
         let marker = self.files.read()?;
-        let search = self.backend.search()?;
+        let vault = self.files.vault()?;
+        match vault.load()? {
+            Some(identity) => self.adopt(marker, identity, vault),
+            None if marker.as_ref().is_some_and(Marker::native) => Err(Kind::Storage), // recorded vault vanished
+            None => match self.probe(marker.as_ref())? {
+                Probe::Found(identity) => self.persist_first(identity, vault),
+                Probe::Absent => self.persist_first(self.new_identity()?, vault),
+                Probe::Down(kind) => {
+                    // No service: a brand-new machine may proceed, but only with no marker and no trace of
+                    // a persistent backend that could still hold an identity.
+                    if marker.is_some() || self.backend.legacy_evidence()? { return Err(kind); }
+                    self.persist_first(self.new_identity()?, vault)
+                }
+            },
+        }
+    }
+    /// A valid vault exists: reuse its identity and settle the marker (crash between vault and marker).
+    fn adopt(&self, marker: Option<Marker>, identity: Identity, vault: Vault) -> Res<Resolved> {
+        let marker = match marker {
+            None => self.write_native(&identity)?,
+            Some(marker) if marker.native() => match reconcile(Some(&marker), &identity, NATIVE_COLLECTION)? {
+                Action::Keep => marker,
+                Action::Write(next) => { self.files.write(&next)?; next }
+            },
+            // Legacy marker left by an interrupted migration: only the same public ids may finalize it.
+            Some(marker) => {
+                let current = identity_ids(&identity);
+                if current != marker.ids() && marker.pending.as_ref() != Some(&current) { return Err(Kind::Conflict); }
+                self.write_native(&identity)?
+            }
+        };
+        Ok(Resolved { identity, vault, marker })
+    }
+    fn write_native(&self, identity: &Identity) -> Res<Marker> {
+        let marker = Marker::of(identity, NATIVE_COLLECTION);
+        self.files.write(&marker)?;
+        Ok(marker)
+    }
+    /// Read-only look at the legacy Secret Service. Never writes, never creates.
+    fn probe(&self, marker: Option<&Marker>) -> Res<Probe> {
+        let down = |kind: Kind| matches!(kind, Kind::Unsupported | Kind::Unavailable);
+        let search = match self.backend.search() { Ok(search) => search, Err(kind) if down(kind) => return Ok(Probe::Down(kind)), Err(kind) => return Err(kind) };
         if !search.locked.is_empty() { return Err(Kind::Locked); }
         match search.unlocked.as_slice() {
             [] => {
-                prove_absence(self.backend)?;
+                match prove_absence(self.backend) { Ok(()) => {}, Err(kind) if down(kind) => return Ok(Probe::Down(kind)), Err(kind) => return Err(kind) }
                 // A recorded identity that vanished is an error, never a reason to create another.
                 if marker.is_some() { return Err(Kind::Storage); }
-                self.create()
+                Ok(Probe::Absent)
             }
             [item] => {
-                let collection = collection_of(item).to_owned();
+                let collection = collection_of(item);
                 if collection == SESSION_COLLECTION { return Err(Kind::Unsupported); }
                 if marker.is_none() {
-                    // First adoption: never persist from the ephemeral collection, nor ignore a hidden on-disk keyring.
+                    // First adoption: never ignore a hidden on-disk keyring.
                     represented_files(self.backend)?;
                 }
                 let identity = decode(&self.backend.read(item)?)?;
-                let marker = match reconcile(marker.as_ref(), &identity, &collection)? {
-                    Action::Keep => marker.ok_or(Kind::Storage)?,
-                    Action::Write(next) => { self.files.write(&next)?; next }
-                };
-                Ok(Resolved { identity, collection, marker })
+                // Only coherence is needed here; the legacy marker is superseded by the v2 one.
+                reconcile(marker, &identity, collection)?;
+                Ok(Probe::Found(identity))
             }
             _ => Err(Kind::Conflict),
         }
     }
-    fn create(&self) -> Res<Resolved> {
-        let collection = self.backend.default_collection()?;
-        if collection == SESSION_COLLECTION { return Err(Kind::Unsupported); }
-        if self.backend.collection_locked(&collection)? { return Err(Kind::Locked); }
+    fn new_identity(&self) -> Res<Identity> {
         let name = fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "Equipo del salón".into()).trim().chars().take(50).collect::<String>();
         let name = if name.is_empty() { "Equipo del salón".to_owned() } else { name };
-        let identity = Identity { device_id: random_hex(16)?, credential: random_hex(32)?, name, activated: false, revoked: false, cache_device_id: None };
-        self.store_verified(&collection, &identity)?;
-        // If this write fails the next load adopts the (verified) item as a first adoption.
-        let marker = Marker::of(&identity, &collection);
-        self.files.write(&marker)?;
-        Ok(Resolved { identity, collection, marker })
+        Ok(Identity { device_id: random_hex(16)?, credential: random_hex(32)?, name, activated: false, revoked: false, cache_device_id: None })
     }
-    /// Store in the explicit collection, then prove the same identity is the only match there.
-    fn store_verified(&self, collection: &str, identity: &Identity) -> Res<()> {
-        if self.backend.collection_locked(collection)? { return Err(Kind::Locked); }
-        self.backend.store(collection, &serde_json::to_string(identity).map_err(|_| Kind::Storage)?)?;
-        let search = self.backend.search()?;
-        if !search.locked.is_empty() { return Err(Kind::Locked); }
-        let [item] = search.unlocked.as_slice() else { return Err(if search.unlocked.is_empty() { Kind::Storage } else { Kind::Conflict }) };
-        if collection_of(item) != collection { return Err(Kind::Conflict); }
-        if decode(&self.backend.read(item)?)? != *identity { return Err(Kind::Storage); }
+    /// Wrapped copy (migration) or brand-new identity: vault first, verified in full, marker last.
+    /// If the marker write fails the next load adopts the verified vault as is.
+    fn persist_first(&self, identity: Identity, vault: Vault) -> Res<Resolved> {
+        self.save_native(&vault, &identity)?;
+        let marker = self.write_native(&identity)?;
+        Ok(Resolved { identity, vault, marker })
+    }
+    /// Save in the vault, then prove the very same identity reads back (AEAD-verified).
+    fn save_native(&self, vault: &Vault, identity: &Identity) -> Res<()> {
+        #[cfg(test)]
+        self.backend.before_vault_save()?;
+        vault.save(identity)?;
+        if vault.load()? != Some(identity.clone()) { return Err(Kind::Storage); }
+        #[cfg(test)]
+        self.backend.after_vault_save();
         Ok(())
     }
     fn execute(&self, action: &str) -> Res<Value> {
@@ -581,10 +699,10 @@ impl Service<'_> {
             let mut journal = resolved.marker.clone();
             journal.pending = Some(identity_ids(&identity));
             self.files.write(&journal)?;
-            self.store_verified(&resolved.collection, &identity)?;
-            self.files.write(&Marker::of(&identity, &resolved.collection))?;
+            self.save_native(&resolved.vault, &identity)?;
+            self.files.write(&Marker::of(&identity, NATIVE_COLLECTION))?;
         } else if identity.activated != resolved.identity.activated || identity.revoked != resolved.identity.revoked {
-            self.store_verified(&resolved.collection, &identity)?;
+            self.save_native(&resolved.vault, &identity)?;
         }
         Ok(public)
     }
@@ -640,7 +758,7 @@ mod tests {
     fn fixture() -> Identity { Identity { device_id: "a".repeat(32), credential: "b".repeat(64), name: "Salón 1".into(), activated: false, revoked: false, cache_device_id: None } }
     fn secret(identity: &Identity) -> String { serde_json::to_string(identity).unwrap() }
 
-    // ---- in-memory Secret Service
+    // ---- in-memory Secret Service (legacy probe only: nothing in production writes to it)
     const LOGIN: &str = "/org/freedesktop/secrets/collection/login";
     const OTHER: &str = "/org/freedesktop/secrets/collection/otro";
     #[derive(Default)]
@@ -651,9 +769,11 @@ mod tests {
         files: Vec<String>,
         default: Option<String>,
         fail_search: Option<Kind>,
-        fail_store: bool,
-        sabotage_after_store: Option<PathBuf>,
+        fail_vault_save: bool,
+        sabotage_after_vault_save: Option<PathBuf>,
         stores: Vec<String>,
+        /// Every probe/read call, to prove the steady state never consults the Secret Service.
+        calls: usize,
         next: usize,
     }
     struct Mock(Mutex<State>);
@@ -666,34 +786,39 @@ mod tests {
         }
         fn with<T>(&self, f: impl FnOnce(&mut State) -> T) -> T { f(&mut self.0.lock().unwrap()) }
         fn snapshot(&self) -> Vec<(String, String)> { self.with(|st| st.items.clone()) }
+        fn calls(&self) -> usize { self.with(|st| st.calls) }
+        /// The Secret Service is gone: no daemon answers and no keyring trace is left on disk.
+        fn gone(&self, kind: Kind) { self.with(|st| { st.fail_search = Some(kind); st.files.clear(); }) }
+        /// Nothing may be answered (or written) by the legacy store any more.
+        fn hostile(&self) { self.with(|st| { st.fail_search = Some(Kind::Unavailable); st.locked = st.collections.clone(); st.files = vec!["Default_keyring".into()]; st.default = None; }) }
     }
     impl Backend for Mock {
         fn search(&self) -> Res<Search> {
-            let st = self.0.lock().unwrap();
+            let mut st = self.0.lock().unwrap(); st.calls += 1;
             if let Some(kind) = st.fail_search { return Err(kind); }
             let mut search = Search::default();
             for (path, _) in &st.items { if st.locked.iter().any(|c| c == collection_of(path)) { search.locked.push(path.clone()) } else { search.unlocked.push(path.clone()) } }
             Ok(search)
         }
-        fn read(&self, item: &str) -> Res<String> { self.0.lock().unwrap().items.iter().find(|(p, _)| p == item).map(|(_, s)| s.clone()).ok_or(Kind::Unavailable) }
-        fn collections(&self) -> Res<Vec<(String, bool)>> { let st = self.0.lock().unwrap(); Ok(st.collections.iter().map(|c| (c.clone(), st.locked.contains(c))).collect()) }
-        fn keyring_files(&self) -> Res<Vec<String>> { Ok(self.0.lock().unwrap().files.clone()) }
+        fn read(&self, item: &str) -> Res<String> { let mut st = self.0.lock().unwrap(); st.calls += 1; st.items.iter().find(|(p, _)| p == item).map(|(_, s)| s.clone()).ok_or(Kind::Unavailable) }
+        fn collections(&self) -> Res<Vec<(String, bool)>> { let mut st = self.0.lock().unwrap(); st.calls += 1; Ok(st.collections.iter().map(|c| (c.clone(), st.locked.contains(c))).collect()) }
+        fn keyring_files(&self) -> Res<Vec<String>> { let mut st = self.0.lock().unwrap(); st.calls += 1; Ok(st.files.clone()) }
         fn default_collection(&self) -> Res<String> { self.0.lock().unwrap().default.clone().ok_or(Kind::Unavailable) }
-        fn collection_locked(&self, collection: &str) -> Res<bool> { Ok(self.0.lock().unwrap().locked.iter().any(|c| c == collection)) }
+        fn collection_locked(&self, collection: &str) -> Res<bool> { let mut st = self.0.lock().unwrap(); st.calls += 1; Ok(st.locked.iter().any(|c| c == collection)) }
         fn store(&self, collection: &str, value: &str) -> Res<()> {
             let mut st = self.0.lock().unwrap();
-            if st.fail_store { return Err(Kind::Unavailable); }
             st.stores.push(collection.to_owned());
             match st.items.iter_mut().find(|(p, _)| collection_of(p) == collection) {
                 Some(item) => item.1 = value.to_owned(),
                 None => { st.next += 1; let path = format!("{collection}/{}", st.next); st.items.push((path, value.to_owned())); }
             }
-            if let Some(path) = st.sabotage_after_store.take() { fs::create_dir_all(path).unwrap(); }
             Ok(())
         }
+        fn before_vault_save(&self) -> Res<()> { if self.0.lock().unwrap().fail_vault_save { Err(Kind::Unavailable) } else { Ok(()) } }
+        fn after_vault_save(&self) { if let Some(path) = self.0.lock().unwrap().sabotage_after_vault_save.take() { fs::create_dir_all(path).unwrap(); } }
     }
 
-    // ---- temp state dir (test-owned, freshly created)
+    // ---- temp state/key dirs (test-owned, freshly created)
     /// Owns an exclusive root (`create_dir` + CSPRNG suffix); only that root is ever removed.
     struct Sandbox { root: PathBuf, files: Files }
     const SANDBOX_PREFIX: &str = "ac-identity-test-";
@@ -704,7 +829,10 @@ mod tests {
             for _ in 0..16 {
                 let root = temp.join(format!("{SANDBOX_PREFIX}{}", random_hex(8).unwrap()));
                 match fs::create_dir(&root) {
-                    Ok(()) => return Sandbox { files: Files { dir: root.join(MARKER_DIR) }, root },
+                    Ok(()) => {
+                        let files = Files { dir: root.join("state").join(MARKER_DIR), key_dir: root.join("config").join(MARKER_DIR), appdata: root.join("data").join(APPLICATION) };
+                        return Sandbox { files, root };
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
                     Err(error) => panic!("cannot create test sandbox: {error}"),
                 }
@@ -712,6 +840,12 @@ mod tests {
             panic!("cannot find an unused test sandbox name");
         }
         fn marker_text(&self) -> Option<String> { fs::read_to_string(self.files.marker()).ok() }
+        fn vault(&self) -> Vault { self.files.vault().unwrap() }
+        /// What the vault holds right now (`None` when neither key nor cipher exist).
+        fn stored(&self) -> Option<Identity> { self.vault().load().unwrap() }
+        fn cipher(&self) -> PathBuf { self.files.dir.join("vault-v1.enc") }
+        fn key(&self) -> PathBuf { self.files.key_dir.join("vault-v1.key") }
+        fn no_vault_files(&self) -> bool { !self.cipher().exists() && !self.key().exists() }
     }
     impl Drop for Sandbox {
         fn drop(&mut self) {
@@ -854,87 +988,146 @@ mod tests {
     fn assert_untouched(mock: &Mock, before: &[(String, String)]) {
         assert_eq!(mock.snapshot(), before); assert!(mock.with(|st| st.stores.is_empty()));
     }
+    fn contains_bytes(haystack: &[u8], needle: &str) -> bool {
+        haystack.windows(needle.len()).any(|window| window == needle.as_bytes())
+    }
     #[test]
-    fn clean_first_install_creates_exactly_one_identity_and_a_public_marker() {
+    fn clean_first_install_creates_exactly_one_identity_in_the_vault_and_a_native_marker() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         let public = run_action(&mock, &sandbox, "load").unwrap();
-        assert_eq!(mock.snapshot().len(), 1);
-        assert_eq!(collection_of(&mock.snapshot()[0].0), LOGIN);
-        let stored = decode(&mock.snapshot()[0].1).unwrap();
+        assert!(mock.snapshot().is_empty() && mock.with(|st| st.stores.is_empty()), "the legacy store is never written");
+        let stored = sandbox.stored().unwrap();
         let marker = sandbox.marker_text().unwrap();
-        assert!(marker.contains(&stored.device_id) && marker.contains(LOGIN));
+        assert!(marker.contains(&stored.device_id) && marker.contains(NATIVE_COLLECTION) && marker.contains("\"version\":2"));
         assert!(!marker.contains(&stored.credential) && !marker.contains("credential") && !marker.contains("pending"));
         assert_eq!(public["deviceId"], stored.device_id.as_str()); assert!(public.get("credential").is_none());
+        // Neither file holds the identity in the clear, and the key lives outside the state dir.
+        for file in [sandbox.cipher(), sandbox.key()] {
+            let raw = fs::read(&file).unwrap();
+            assert!(!contains_bytes(&raw, &stored.credential) && !contains_bytes(&raw, &stored.device_id), "{file:?}");
+        }
+        assert_ne!(sandbox.cipher().parent(), sandbox.key().parent());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(&sandbox.files.dir).unwrap().permissions().mode() & 0o777, 0o700);
-            assert_eq!(fs::metadata(sandbox.files.marker()).unwrap().permissions().mode() & 0o777, 0o600);
+            for dir in [&sandbox.files.dir, &sandbox.files.key_dir] { assert_eq!(fs::metadata(dir).unwrap().permissions().mode() & 0o777, 0o700); }
+            for file in [sandbox.files.marker(), sandbox.cipher(), sandbox.key()] { assert_eq!(fs::metadata(file).unwrap().permissions().mode() & 0o777, 0o600); }
         }
-        // Reopening reads, never creates again.
-        run_action(&mock, &sandbox, "load").unwrap();
-        assert_eq!(mock.snapshot().len(), 1); assert_eq!(mock.with(|st| st.stores.len()), 1);
+        // Steady state: even a dead, locked, hostile Secret Service is never consulted again.
+        let calls = mock.calls(); mock.hostile();
+        assert_eq!(run_action(&mock, &sandbox, "load").unwrap()["deviceId"], stored.device_id.as_str());
+        assert_eq!(run_action(&mock, &sandbox, "proof").unwrap()["credential"], stored.credential.as_str());
+        assert_eq!(mock.calls(), calls); assert_eq!(sandbox.stored(), Some(stored));
     }
     #[test]
     fn failures_never_create_any_identity() {
         let ids = |m: &Mock| m.snapshot();
         let cases: Vec<(&str, Box<dyn Fn(&Mock)>, Kind)> = vec![
-            ("search unavailable", Box::new(|m: &Mock|m.with(|s| s.fail_search = Some(Kind::Unavailable))), Kind::Unavailable),
+            ("search unavailable with a keyring on disk", Box::new(|m: &Mock|m.with(|s| s.fail_search = Some(Kind::Unavailable))), Kind::Unavailable),
+            ("tools missing with a keyring on disk", Box::new(|m: &Mock|m.with(|s| s.fail_search = Some(Kind::Unsupported))), Kind::Unsupported),
             ("search garbled", Box::new(|m: &Mock|m.with(|s| s.fail_search = Some(Kind::Storage))), Kind::Storage),
             ("locked match", Box::new(|m: &Mock|{ m.put(OTHER, &secret(&fixture())); m.with(|s| s.locked.push(OTHER.into())) }), Kind::Locked),
             ("locked empty collection", Box::new(|m: &Mock|m.with(|s| s.locked.push(OTHER.into()))), Kind::Locked),
             ("keyring file not represented", Box::new(|m: &Mock|m.with(|s| s.files.push("Default_keyring".into()))), Kind::Locked),
             ("two matches", Box::new(|m: &Mock|{ m.put(LOGIN, &secret(&fixture())); m.put(OTHER, &secret(&fixture())) }), Kind::Conflict),
             ("corrupt legacy credential", Box::new(|m: &Mock|m.put(LOGIN, &"c".repeat(64))), Kind::Corrupt),
-            ("no default collection", Box::new(|m: &Mock|m.with(|s| s.default = None)), Kind::Unavailable),
-            ("default locked", Box::new(|m: &Mock|m.with(|s| { s.default = Some(OTHER.into()); s.locked.push(OTHER.into()); })), Kind::Locked),
-            ("store fails", Box::new(|m: &Mock|m.with(|s| s.fail_store = true)), Kind::Unavailable),
         ];
         for (label, setup, expected) in cases {
             let (mock, sandbox) = (Mock::new(), Sandbox::new());
             setup(&mock); let before = ids(&mock);
             assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), expected, "{label}");
-            assert_eq!(ids(&mock), before, "{label}"); assert!(sandbox.marker_text().is_none(), "{label}");
+            assert_eq!(ids(&mock), before, "{label}"); assert!(sandbox.marker_text().is_none(), "{label}"); assert!(sandbox.no_vault_files(), "{label}");
         }
+    }
+    #[test]
+    fn a_machine_without_secret_service_or_keyring_traces_gets_a_vault_identity() {
+        // Fresh account with no login keyring: neither the service nor the tools exist, nothing is on disk.
+        for kind in [Kind::Unsupported, Kind::Unavailable] {
+            let (mock, sandbox) = (Mock::new(), Sandbox::new());
+            mock.gone(kind);
+            let public = run_action(&mock, &sandbox, "load").unwrap();
+            let stored = sandbox.stored().unwrap();
+            assert_eq!(public["deviceId"], stored.device_id.as_str());
+            assert!(sandbox.files.read().unwrap().unwrap().native());
+            assert!(mock.snapshot().is_empty() && mock.with(|s| s.stores.is_empty()));
+            // The next load decides from the vault alone.
+            let calls = mock.calls();
+            assert_eq!(run_action(&mock, &sandbox, "load").unwrap()["deviceId"], stored.device_id.as_str());
+            assert_eq!(mock.calls(), calls);
+        }
+    }
+    #[test]
+    fn a_fresh_account_without_login_collection_or_default_alias_still_gets_a_vault_identity() {
+        let (mock, sandbox) = (Mock::new(), Sandbox::new());
+        mock.with(|s| { s.collections.clear(); s.files.clear(); s.default = None; });
+        run_action(&mock, &sandbox, "load").unwrap();
+        assert!(sandbox.stored().is_some() && mock.snapshot().is_empty());
+        let (mock, sandbox) = (Mock::new(), Sandbox::new());
+        mock.with(|s| { s.collections = vec![SESSION.into()]; s.files.clear(); s.default = Some(SESSION.into()); });
+        run_action(&mock, &sandbox, "load").unwrap();
+        assert!(sandbox.stored().is_some() && mock.snapshot().is_empty());
+    }
+    #[test]
+    fn without_a_service_any_trace_of_a_previous_identity_blocks_creation() {
+        // A keyring file may hold an identity we cannot see.
+        for kind in [Kind::Unsupported, Kind::Unavailable] {
+            let (mock, sandbox) = (Mock::new(), Sandbox::new());
+            mock.gone(kind); mock.with(|s| s.files = vec!["login".into()]);
+            assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), kind);
+            assert!(sandbox.no_vault_files() && sandbox.marker_text().is_none());
+        }
+        // A legacy marker proves an identity existed.
+        let (mock, sandbox) = (Mock::new(), Sandbox::new());
+        mock.gone(Kind::Unavailable);
+        sandbox.files.write(&Marker::of(&fixture(), LOGIN)).unwrap();
+        let marker = sandbox.marker_text();
+        assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Unavailable);
+        assert!(sandbox.no_vault_files()); assert_eq!(sandbox.marker_text(), marker);
+        // A native marker without its vault is an error, with or without a service.
+        let (mock, sandbox) = (Mock::new(), Sandbox::new());
+        mock.gone(Kind::Unavailable);
+        sandbox.files.write(&Marker::of(&fixture(), NATIVE_COLLECTION)).unwrap();
+        assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Storage);
+        assert!(sandbox.no_vault_files());
     }
     #[test]
     fn represented_keyring_files_do_not_block_a_configured_empty_install() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         mock.with(|s| s.files = vec!["login".into(), "otro".into()]);
         run_action(&mock, &sandbox, "load").unwrap();
-        assert_eq!(mock.snapshot().len(), 1);
+        assert!(mock.snapshot().is_empty()); assert!(sandbox.stored().is_some());
     }
     const SESSION: &str = "/org/freedesktop/secrets/collection/session";
     #[test]
-    fn the_ephemeral_session_collection_never_holds_a_first_identity() {
-        // Default alias pointing at `session` with an empty store: nothing is generated, stored or recorded.
+    fn the_ephemeral_session_collection_is_never_adopted_and_never_hosts_the_identity() {
+        // Default alias pointing at `session` with an empty store: the identity goes to the vault only.
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         mock.with(|s| { s.collections.push(SESSION.into()); s.default = Some(SESSION.into()); });
-        assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Unsupported);
-        assert!(mock.snapshot().is_empty() && mock.with(|s| s.stores.is_empty())); assert!(sandbox.marker_text().is_none());
+        run_action(&mock, &sandbox, "load").unwrap();
+        assert!(mock.snapshot().is_empty() && mock.with(|s| s.stores.is_empty())); assert!(sandbox.stored().is_some());
         // A single legacy identity that only lives in `session` is not adopted, moved or deleted.
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         mock.with(|s| s.collections.push(SESSION.into()));
         mock.put(SESSION, &secret(&fixture())); let before = mock.snapshot();
         for action in ["load", "activated", "reset-binding"] { assert_eq!(run_action(&mock, &sandbox, action).unwrap_err(), Kind::Unsupported, "{action}"); }
-        assert_untouched(&mock, &before); assert!(sandbox.marker_text().is_none());
+        assert_untouched(&mock, &before); assert!(sandbox.marker_text().is_none() && sandbox.no_vault_files());
         sandbox.files.write(&Marker::of(&fixture(), SESSION)).unwrap();
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Unsupported);
-        assert_untouched(&mock, &before);
+        assert_untouched(&mock, &before); assert!(sandbox.no_vault_files());
     }
     #[test]
-    fn a_hidden_keyring_file_blocks_the_first_adoption_but_not_an_already_verified_install() {
+    fn a_hidden_keyring_file_blocks_the_first_migration_but_not_an_already_migrated_install() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         mock.put(LOGIN, &secret(&fixture())); let before = mock.snapshot();
         mock.with(|s| s.files.push("Default_keyring".into()));
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Locked);
-        assert_untouched(&mock, &before); assert!(sandbox.marker_text().is_none());
-        // With the marker recorded, an unrelated locked keyring does not hide the accessible match.
+        assert_untouched(&mock, &before); assert!(sandbox.marker_text().is_none() && sandbox.no_vault_files());
+        // Once the legacy identity is wrapped into the vault, unrelated keyrings no longer matter.
         mock.with(|s| s.files.pop());
         run_action(&mock, &sandbox, "load").unwrap();
         mock.with(|s| { s.files.push("Default_keyring".into()); s.locked.push(OTHER.into()); });
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap()["deviceId"], fixture().device_id.as_str());
-        assert_eq!(mock.snapshot(), before); assert!(mock.with(|s| s.stores.is_empty()));
+        assert_untouched(&mock, &before);
     }
     #[cfg(unix)]
     #[test]
@@ -943,7 +1136,7 @@ mod tests {
         sandbox.files.prepare().unwrap();
         std::os::unix::fs::symlink(sandbox.files.dir.join("gone"), sandbox.files.marker()).unwrap();
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Storage);
-        assert!(mock.snapshot().is_empty() && mock.with(|s| s.stores.is_empty()));
+        assert!(mock.snapshot().is_empty() && mock.with(|s| s.stores.is_empty()) && sandbox.no_vault_files());
         assert!(fs::symlink_metadata(sandbox.files.marker()).unwrap().file_type().is_symlink());
         assert!(fs::symlink_metadata(sandbox.files.dir.join("gone")).is_err());
     }
@@ -958,86 +1151,154 @@ mod tests {
         // SAFETY: `path` is a valid NUL-terminated string that outlives the call.
         assert_eq!(unsafe { mkfifo(path.as_ptr(), 0o600) }, 0);
         let (sender, receiver) = std::sync::mpsc::channel();
-        let files = Files { dir: sandbox.files.dir.clone() };
+        let files = sandbox.files.clone();
         std::thread::spawn(move || { let _ = sender.send(files.read().err()); });
         // Opening a FIFO without a writer would block forever; a timeout here means the marker was opened.
-        assert_eq!(receiver.recv_timeout(Duration::from_secs(10)), Ok(Some(Kind::Storage)));    }
+        assert_eq!(receiver.recv_timeout(Duration::from_secs(10)), Ok(Some(Kind::Storage)));
+    }
     #[test]
-    fn recorded_identity_that_disappears_is_an_error_not_a_new_identity() {
+    fn a_lost_vault_is_an_error_not_a_new_identity() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         run_action(&mock, &sandbox, "load").unwrap();
         let marker = sandbox.marker_text();
-        mock.with(|s| s.items.clear());
+        fs::remove_file(sandbox.cipher()).unwrap(); // ready key, cipher missing
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Storage);
-        assert!(mock.snapshot().is_empty()); assert_eq!(sandbox.marker_text(), marker);
-        mock.with(|s| s.locked.push(LOGIN.into()));
-        assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Locked);
+        assert!(!sandbox.cipher().exists() && sandbox.key().exists());
+        fs::remove_file(sandbox.key()).unwrap(); // nothing left, but the v2 marker proves it existed
+        for action in ["load", "activated", "reset-binding"] { assert_eq!(run_action(&mock, &sandbox, action).unwrap_err(), Kind::Storage, "{action}"); }
+        assert!(sandbox.no_vault_files()); assert_eq!(sandbox.marker_text(), marker);
+        assert!(mock.snapshot().is_empty() && mock.with(|s| s.stores.is_empty()));
     }
     #[test]
-    fn first_adoption_keeps_a_legacy_identity_untouched_even_in_a_non_default_collection() {
+    fn a_corrupt_vault_never_falls_back_to_the_legacy_secret() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
-        let mut legacy = fixture(); legacy.activated = true; legacy.cache_device_id = Some("c".repeat(32));
-        mock.put(OTHER, &secret(&legacy)); let before = mock.snapshot();
-        let public = run_action(&mock, &sandbox, "load").unwrap();
-        assert_untouched(&mock, &before);
-        assert_eq!(public["cacheDeviceId"], "c".repeat(32).as_str()); assert_eq!(public["activated"], true);
-        let marker = sandbox.marker_text().unwrap();
-        assert!(marker.contains(OTHER) && marker.contains(&legacy.device_id) && !marker.contains(&legacy.credential));
+        mock.put(LOGIN, &secret(&fixture())); let before = mock.snapshot();
+        run_action(&mock, &sandbox, "load").unwrap();
+        let (marker, calls) = (sandbox.marker_text(), mock.calls());
+        let mut raw = fs::read(sandbox.cipher()).unwrap();
+        let last = raw.len() - 1; raw[last] ^= 1; // the legacy secret is still healthy and unlocked
+        fs::write(sandbox.cipher(), &raw).unwrap();
+        for action in ["load", "proof", "activated", "reset-binding"] { assert_eq!(run_action(&mock, &sandbox, action).unwrap_err(), Kind::Corrupt, "{action}"); }
         let service = Service { backend: &mock, files: &sandbox.files };
-        assert!(service.locked(|| service.authorized(&format!("ac-device-{}", "c".repeat(32)))).unwrap());
+        assert_eq!(service.locked(|| service.authorized("ac-device-x")), Err(Kind::Corrupt));
+        // A cipher without its key is just as unreadable.
+        fs::remove_file(sandbox.key()).unwrap();
+        assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Corrupt);
+        assert_eq!(mock.calls(), calls); assert_untouched(&mock, &before); assert_eq!(sandbox.marker_text(), marker);
     }
     #[test]
-    fn writes_go_to_the_origin_collection_never_to_a_changed_default() {
+    fn migration_wraps_the_legacy_identity_exactly_and_leaves_the_legacy_item_untouched() {
+        let mut activated = fixture(); activated.activated = true; activated.cache_device_id = Some("c".repeat(32)); activated.name = "Salón de música".into();
+        let mut revoked = fixture(); revoked.revoked = true; revoked.credential = "e".repeat(64);
+        for legacy in [activated, revoked, fixture()] {
+            let (mock, sandbox) = (Mock::new(), Sandbox::new());
+            mock.put(OTHER, &secret(&legacy)); let before = mock.snapshot();
+            let public = run_action(&mock, &sandbox, "load").unwrap();
+            assert_untouched(&mock, &before);
+            assert_eq!(sandbox.stored(), Some(legacy.clone()), "every field survives the wrap");
+            assert_eq!(public["deviceId"], legacy.device_id.as_str()); assert_eq!(public["activated"], legacy.activated);
+            assert_eq!(public["revoked"], legacy.revoked); assert_eq!(public["name"], legacy.name.as_str());
+            assert_eq!(public["cacheDeviceId"], legacy.cache_device_id.clone().map_or(Value::Null, Value::from));
+            let proof = run_action(&mock, &sandbox, "proof").unwrap();
+            assert_eq!(proof["credential"], legacy.credential.as_str()); assert_eq!(proof["registered"], legacy.activated || legacy.revoked);
+            let marker = sandbox.marker_text().unwrap();
+            assert!(marker.contains(NATIVE_COLLECTION) && marker.contains(&legacy.device_id));
+            assert!(!marker.contains(&legacy.credential) && !marker.contains(OTHER));
+            assert!(!contains_bytes(&fs::read(sandbox.cipher()).unwrap(), &legacy.credential));
+            let owner = format!("ac-device-{}", legacy.cache_device_id.as_ref().unwrap_or(&legacy.device_id));
+            let service = Service { backend: &mock, files: &sandbox.files };
+            assert_eq!(service.locked(|| service.authorized(&owner)).unwrap(), legacy.activated && !legacy.revoked);
+            // From now on the legacy store may vanish or turn hostile without any effect.
+            let calls = mock.calls(); mock.hostile();
+            assert_eq!(run_action(&mock, &sandbox, "proof").unwrap()["credential"], legacy.credential.as_str());
+            assert_eq!(mock.calls(), calls);
+        }
+    }
+    #[test]
+    fn after_migration_every_write_goes_to_the_vault_and_the_legacy_item_is_never_modified() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
-        mock.put(OTHER, &secret(&fixture()));
+        mock.put(OTHER, &secret(&fixture())); let before = mock.snapshot();
         run_action(&mock, &sandbox, "load").unwrap();
         mock.with(|s| s.default = Some(LOGIN.into()));
         run_action(&mock, &sandbox, "activated").unwrap();
         run_action(&mock, &sandbox, "revoked").unwrap();
-        assert_eq!(mock.with(|s| s.stores.clone()), vec![OTHER, OTHER]);
-        assert_eq!(mock.snapshot().len(), 1);
-        let stored = decode(&mock.snapshot()[0].1).unwrap();
+        let stored = sandbox.stored().unwrap();
         assert!(stored.revoked && !stored.activated && stored.credential == fixture().credential);
         run_action(&mock, &sandbox, "reset-binding").unwrap();
-        assert!(mock.with(|s| s.stores.iter().all(|c| c == OTHER))); assert_eq!(mock.snapshot().len(), 1);
+        assert_ne!(sandbox.stored().unwrap().device_id, fixture().device_id);
+        assert_untouched(&mock, &before);
     }
     #[test]
-    fn locked_collection_blocks_writes_before_touching_anything() {
+    fn a_locked_legacy_store_blocks_the_first_migration_but_never_the_steady_state() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
+        mock.put(OTHER, &secret(&fixture())); let before = mock.snapshot();
+        mock.with(|s| s.locked.push(OTHER.into()));
+        for action in ["load", "activated", "reset-binding"] { assert_eq!(run_action(&mock, &sandbox, action).unwrap_err(), Kind::Locked, "{action}"); }
+        assert_untouched(&mock, &before); assert!(sandbox.marker_text().is_none() && sandbox.no_vault_files());
+        mock.with(|s| s.locked.clear());
         run_action(&mock, &sandbox, "load").unwrap();
-        let (before, marker) = (mock.snapshot(), sandbox.marker_text());
-        mock.with(|s| { s.locked.push(LOGIN.into()); s.stores.clear(); });
-        for action in ["load", "activated", "reset-binding"] { assert_eq!(run_action(&mock, &sandbox, action).unwrap_err(), Kind::Locked); }
-        assert_untouched(&mock, &before); assert_eq!(sandbox.marker_text(), marker);
+        let calls = mock.calls(); mock.hostile();
+        run_action(&mock, &sandbox, "activated").unwrap(); run_action(&mock, &sandbox, "reset-binding").unwrap();
+        assert_eq!(mock.calls(), calls); assert_untouched(&mock, &before);
     }
     #[test]
     fn divergent_or_damaged_marker_fails_closed_without_overwriting() {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         run_action(&mock, &sandbox, "load").unwrap();
-        let identity = decode(&mock.snapshot()[0].1).unwrap();
-        let before = mock.snapshot();
+        let identity = sandbox.stored().unwrap();
         let write = |marker: &Marker| sandbox.files.write(marker).unwrap();
-        let mut other_id = Marker::of(&identity, LOGIN); other_id.device_id = "d".repeat(32);
-        let mut other_collection = Marker::of(&identity, LOGIN); other_collection.collection = OTHER.into();
-        for (label, marker) in [("id", other_id), ("collection", other_collection)] {
+        let mut native_other_id = Marker::of(&identity, NATIVE_COLLECTION); native_other_id.device_id = "d".repeat(32);
+        let mut legacy_other_id = Marker::of(&identity, LOGIN); legacy_other_id.device_id = "d".repeat(32);
+        for (label, marker) in [("native id", native_other_id), ("legacy id", legacy_other_id)] {
             write(&marker); let text = sandbox.marker_text();
             assert_eq!(run_action(&mock, &sandbox, "activated").unwrap_err(), Kind::Conflict, "{label}");
-            assert_eq!(sandbox.marker_text(), text, "{label}"); assert_eq!(mock.snapshot(), before, "{label}");
+            assert_eq!(sandbox.marker_text(), text, "{label}"); assert_eq!(sandbox.stored().as_ref(), Some(&identity), "{label}");
         }
         let leaked_field = format!("{{\"version\":1,\"deviceId\":\"{}\",\"collection\":\"{LOGIN}\",\"credential\":\"x\"}}", identity.device_id);
-        for broken in ["", "{", "[]", "{\"version\":2,\"deviceId\":\"x\"}", leaked_field.as_str()] {
+        let native_with_legacy_origin = format!("{{\"version\":2,\"deviceId\":\"{}\",\"collection\":\"{LOGIN}\"}}", identity.device_id);
+        let legacy_with_native_origin = format!("{{\"version\":1,\"deviceId\":\"{}\",\"collection\":\"{NATIVE_COLLECTION}\"}}", identity.device_id);
+        for broken in ["", "{", "[]", "{\"version\":2,\"deviceId\":\"x\"}", "{\"version\":3}", leaked_field.as_str(), native_with_legacy_origin.as_str(), legacy_with_native_origin.as_str()] {
             fs::write(sandbox.files.marker(), broken).unwrap();
-            assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Corrupt);
-            assert_eq!(fs::read_to_string(sandbox.files.marker()).unwrap(), broken); assert_eq!(mock.snapshot(), before);
+            assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Corrupt, "{broken}");
+            assert_eq!(fs::read_to_string(sandbox.files.marker()).unwrap(), broken); assert_eq!(sandbox.stored().as_ref(), Some(&identity));
         }
-        let same = Marker { pending: Some(Ids { device_id: identity.device_id.clone(), cache_device_id: None }), ..Marker::of(&identity, LOGIN) };
+        let same = Marker { pending: Some(Ids { device_id: identity.device_id.clone(), cache_device_id: None }), ..Marker::of(&identity, NATIVE_COLLECTION) };
         fs::write(sandbox.files.marker(), serde_json::to_string(&same).unwrap()).unwrap();
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Corrupt);
         fs::write(sandbox.files.marker(), "x".repeat(5000)).unwrap();
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Corrupt);
         fs::remove_file(sandbox.files.marker()).unwrap(); fs::create_dir(sandbox.files.marker()).unwrap();
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Storage);
-        assert_eq!(mock.snapshot(), before);
+        assert_eq!(sandbox.stored().as_ref(), Some(&identity)); assert!(mock.snapshot().is_empty());
+    }
+    #[test]
+    fn an_interruption_after_the_vault_but_before_the_marker_recovers_the_same_identity() {
+        let mut id = fixture(); id.activated = true; id.cache_device_id = Some("c".repeat(32));
+        let mut previous = fixture(); previous.device_id = "7".repeat(32);
+        let journal = Marker { pending: Some(identity_ids(&id)), ..Marker::of(&previous, LOGIN) };
+        for (label, marker) in [("no marker", None), ("legacy marker", Some(Marker::of(&id, LOGIN))), ("legacy journal", Some(journal))] {
+            let (mock, sandbox) = (Mock::new(), Sandbox::new());
+            sandbox.vault().save(&id).unwrap(); // the crash: vault durable, marker never finalized
+            if let Some(marker) = &marker { sandbox.files.write(marker).unwrap(); }
+            mock.hostile(); // and the legacy store is unusable (locked, no tools, other default)
+            let public = run_action(&mock, &sandbox, "load").unwrap();
+            assert_eq!(public["deviceId"], id.device_id.as_str(), "{label}"); assert_eq!(public["activated"], true, "{label}");
+            assert_eq!(mock.calls(), 0, "{label}: recovery must not touch the legacy store");
+            assert_eq!(sandbox.stored(), Some(id.clone()), "{label}");
+            let recorded = sandbox.files.read().unwrap().unwrap();
+            assert!(recorded.native() && recorded.ids() == identity_ids(&id) && recorded.pending.is_none(), "{label}");
+            assert_eq!(run_action(&mock, &sandbox, "proof").unwrap()["credential"], id.credential.as_str(), "{label}");
+        }
+    }
+    #[test]
+    fn a_legacy_marker_that_disagrees_with_the_vault_is_a_conflict() {
+        let (mock, sandbox) = (Mock::new(), Sandbox::new());
+        let mut other = fixture(); other.device_id = "7".repeat(32);
+        sandbox.vault().save(&fixture()).unwrap();
+        sandbox.files.write(&Marker::of(&other, LOGIN)).unwrap();
+        let marker = sandbox.marker_text();
+        assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Conflict);
+        assert_eq!(sandbox.marker_text(), marker); assert_eq!(sandbox.stored(), Some(fixture())); assert_eq!(mock.calls(), 0);
     }
     #[test]
     fn marker_write_is_atomic_and_never_truncates_the_previous_one() {
@@ -1054,67 +1315,107 @@ mod tests {
         assert_eq!(sandbox.files.read().unwrap(), Some(second));
         assert!(!sandbox.files.dir.join("identity.json.tmp").exists());
     }
+    #[test]
+    fn vault_dirs_are_refused_inside_the_webview_asset_scope_or_inside_each_other() {
+        let sandbox = Sandbox::new();
+        let (dir, key, app) = (sandbox.files.dir.clone(), sandbox.files.key_dir.clone(), sandbox.files.appdata.clone());
+        let with = |dir: PathBuf, key_dir: PathBuf| Files { dir, key_dir, appdata: app.clone() };
+        // $APPDATA does not exist yet: preparing a private dir beneath it creates it, so it is still caught.
+        assert!(!app.exists());
+        assert_eq!(with(app.join("state"), key.clone()).vault().err(), Some(Kind::Storage));
+        assert_eq!(with(dir.clone(), app.join("keys")).vault().err(), Some(Kind::Storage));
+        assert_eq!(with(dir.clone(), app.clone()).vault().err(), Some(Kind::Storage));
+        // `..` segments cannot hide the location.
+        fs::create_dir_all(app.join("sub")).unwrap();
+        assert_eq!(with(app.join("sub").join("..").join("state"), key.clone()).vault().err(), Some(Kind::Storage));
+        assert_eq!(with(dir.clone(), app.join("..").join(APPLICATION).join("k")).vault().err(), Some(Kind::Storage));
+        // The two vault dirs must be disjoint.
+        assert_eq!(with(dir.clone(), dir.clone()).vault().err(), Some(Kind::Storage));
+        assert_eq!(with(dir.clone(), dir.join("keys")).vault().err(), Some(Kind::Storage));
+        assert_eq!(with(key.join("state"), key.clone()).vault().err(), Some(Kind::Storage));
+        #[cfg(unix)]
+        {
+            let link = sandbox.root.join("link");
+            std::os::unix::fs::symlink(&app, &link).unwrap();
+            assert_eq!(with(link.join("state2"), key.clone()).vault().err(), Some(Kind::Storage));
+            assert_eq!(with(dir.clone(), link.join("keys2")).vault().err(), Some(Kind::Storage));
+            // A symlinked private dir itself is never followed.
+            let alias = sandbox.root.join("alias");
+            std::os::unix::fs::symlink(&dir, &alias).unwrap();
+            assert_eq!(with(alias, key.clone()).vault().err(), Some(Kind::Storage));
+        }
+        // Nothing secret was written anywhere, and the real layout is accepted.
+        for candidate in [&dir, &key, &app] { assert!(!candidate.join("vault-v1.enc").exists() && !candidate.join("vault-v1.key").exists()); }
+        assert!(sandbox.files.vault().is_ok());
+        // Through the service the same refusal happens before any identity is generated.
+        let mock = Mock::new();
+        let forbidden = with(app.join("state3"), key.clone());
+        let service = Service { backend: &mock, files: &forbidden };
+        assert_eq!(service.locked(|| service.execute("load")).unwrap_err(), Kind::Storage);
+        assert!(!forbidden.marker().exists() && !forbidden.dir.join("vault-v1.enc").exists() && mock.calls() == 0);
+    }
 
     // ---- reset-binding journal and crash recovery
     fn activated_install() -> (Mock, Sandbox, Identity) {
         let (mock, sandbox) = (Mock::new(), Sandbox::new());
         run_action(&mock, &sandbox, "load").unwrap(); run_action(&mock, &sandbox, "activated").unwrap();
-        let identity = decode(&mock.snapshot()[0].1).unwrap();
+        let identity = sandbox.stored().unwrap();
         (mock, sandbox, identity)
     }
     #[test]
     fn reset_binding_commits_marker_only_after_the_new_secret_is_verified() {
         let (mock, sandbox, old) = activated_install();
         let public = run_action(&mock, &sandbox, "reset-binding").unwrap();
-        let fresh = decode(&mock.snapshot()[0].1).unwrap();
+        let fresh = sandbox.stored().unwrap();
         assert_ne!(fresh.device_id, old.device_id); assert_ne!(fresh.credential, old.credential);
         assert_eq!(fresh.cache_device_id.as_deref(), Some(old.device_id.as_str()));
         assert!(!fresh.activated && !fresh.revoked); assert_eq!(public["cacheDeviceId"], old.device_id.as_str());
         let marker = sandbox.files.read().unwrap().unwrap();
-        assert_eq!((marker.device_id.as_str(), marker.pending.is_none()), (fresh.device_id.as_str(), true));
+        assert_eq!((marker.device_id.as_str(), marker.pending.is_none(), marker.native()), (fresh.device_id.as_str(), true, true));
         assert!(!sandbox.marker_text().unwrap().contains(&fresh.credential) && !sandbox.marker_text().unwrap().contains(&old.credential));
-        assert_eq!(mock.snapshot().len(), 1);
+        assert!(mock.snapshot().is_empty());
     }
     #[test]
     fn failed_secret_write_leaves_a_journal_that_the_next_load_aborts_safely() {
         let (mock, sandbox, old) = activated_install();
-        mock.with(|s| s.fail_store = true);
+        mock.with(|s| s.fail_vault_save = true);
         assert_eq!(run_action(&mock, &sandbox, "reset-binding").unwrap_err(), Kind::Unavailable);
         assert!(sandbox.files.read().unwrap().unwrap().pending.is_some());
-        mock.with(|s| s.fail_store = false);
+        mock.with(|s| s.fail_vault_save = false);
         let public = run_action(&mock, &sandbox, "load").unwrap();
         assert_eq!(public["deviceId"], old.device_id.as_str());
         assert!(sandbox.files.read().unwrap().unwrap().pending.is_none());
-        assert_eq!(decode(&mock.snapshot()[0].1).unwrap(), old);
+        assert_eq!(sandbox.stored(), Some(old.clone()));
         run_action(&mock, &sandbox, "reset-binding").unwrap(); // idempotent retry
-        assert_ne!(decode(&mock.snapshot()[0].1).unwrap().device_id, old.device_id);
+        assert_ne!(sandbox.stored().unwrap().device_id, old.device_id);
     }
     #[test]
     fn crash_after_secret_but_before_marker_is_finalized_automatically() {
         let (mock, sandbox, old) = activated_install();
         // Marker rename gets blocked right after the secret is stored, like a crash before the final write.
-        mock.with(|s| s.sabotage_after_store = Some(sandbox.files.dir.join("identity.json.tmp")));
+        mock.with(|s| s.sabotage_after_vault_save = Some(sandbox.files.dir.join("identity.json.tmp")));
         assert_eq!(run_action(&mock, &sandbox, "reset-binding").unwrap_err(), Kind::Storage);
-        let stored = decode(&mock.snapshot()[0].1).unwrap();
+        let stored = sandbox.stored().unwrap();
         assert_ne!(stored.device_id, old.device_id);
         assert_eq!(sandbox.files.read().unwrap().unwrap().device_id, old.device_id);
         fs::remove_dir(sandbox.files.dir.join("identity.json.tmp")).unwrap();
+        mock.hostile();
         let public = run_action(&mock, &sandbox, "load").unwrap();
         assert_eq!(public["deviceId"], stored.device_id.as_str()); assert_eq!(public["cacheDeviceId"], old.device_id.as_str());
         let marker = sandbox.files.read().unwrap().unwrap();
         assert_eq!(marker.device_id, stored.device_id); assert!(marker.pending.is_none());
-        assert_eq!(decode(&mock.snapshot()[0].1).unwrap(), stored);
+        assert_eq!(sandbox.stored(), Some(stored));
     }
     #[test]
     fn incoherent_journal_blocks_instead_of_guessing() {
         let (mock, sandbox, old) = activated_install();
-        let mut journal = Marker::of(&old, LOGIN);
+        let mut journal = Marker::of(&old, NATIVE_COLLECTION);
         journal.pending = Some(Ids { device_id: "9".repeat(32), cache_device_id: Some(old.device_id.clone()) });
         sandbox.files.write(&journal).unwrap();
         let mut moved = old.clone(); moved.device_id = "8".repeat(32);
-        mock.with(|s| s.items[0].1 = secret(&moved)); let before = mock.snapshot();
+        sandbox.vault().save(&moved).unwrap();
         assert_eq!(run_action(&mock, &sandbox, "load").unwrap_err(), Kind::Conflict);
-        assert_eq!(sandbox.files.read().unwrap(), Some(journal)); assert_eq!(mock.snapshot(), before);
+        assert_eq!(sandbox.files.read().unwrap(), Some(journal)); assert_eq!(sandbox.stored(), Some(moved));
     }
     #[test]
     fn cache_namespace_survives_repeated_rebinding_and_owner_checks_follow_it() {
@@ -1122,14 +1423,19 @@ mod tests {
         let owner = format!("ac-device-{}", first.device_id);
         let service = Service { backend: &mock, files: &sandbox.files };
         assert!(service.locked(|| service.authorized(&owner)).unwrap());
+        mock.hostile(); // reset/revoke/authorize never depend on the legacy store
         run_action(&mock, &sandbox, "reset-binding").unwrap();
         assert!(!service.locked(|| service.authorized(&owner)).unwrap()); // not activated yet
         run_action(&mock, &sandbox, "activated").unwrap();
         assert!(service.locked(|| service.authorized(&owner)).unwrap());
         run_action(&mock, &sandbox, "reset-binding").unwrap();
-        assert_eq!(decode(&mock.snapshot()[0].1).unwrap().cache_device_id.as_deref(), Some(first.device_id.as_str()));
+        assert_eq!(sandbox.stored().unwrap().cache_device_id.as_deref(), Some(first.device_id.as_str()));
         run_action(&mock, &sandbox, "activated").unwrap(); run_action(&mock, &sandbox, "revoked").unwrap();
         assert!(!service.locked(|| service.authorized(&owner)).unwrap());
+        // Revocation and the rotated ids persist in the native vault and marker.
+        assert!(sandbox.stored().unwrap().revoked);
+        let marker = sandbox.files.read().unwrap().unwrap();
+        assert!(marker.native() && marker.ids() == identity_ids(&sandbox.stored().unwrap()));
     }
     #[test]
     fn concurrent_operations_are_serialized_and_create_a_single_identity() {
@@ -1143,12 +1449,13 @@ mod tests {
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
         assert!(ids.windows(2).all(|pair| pair[0] == pair[1]));
-        assert_eq!(mock.snapshot().len(), 1);
-        let stored = decode(&mock.snapshot()[0].1).unwrap();
+        assert!(mock.snapshot().is_empty());
+        let stored = sandbox.stored().unwrap();
+        assert_eq!(stored.device_id, ids[0]);
         assert!(stored.activated); assert_eq!(sandbox.files.read().unwrap().unwrap().device_id, stored.device_id);
         let before_rebind = stored.device_id.clone();
         std::thread::scope(|scope| { for _ in 0..4 { scope.spawn(|| { let _ = run_action(&mock, &sandbox, "reset-binding"); }); } });
-        let after = decode(&mock.snapshot()[0].1).unwrap();
+        let after = sandbox.stored().unwrap();
         assert_ne!(after.device_id, before_rebind); assert_eq!(after.cache_device_id.as_deref(), Some(before_rebind.as_str()));
         assert_eq!(sandbox.files.read().unwrap().unwrap().ids(), identity_ids(&after));
     }
@@ -1158,14 +1465,17 @@ mod tests {
     mod linux {
         use super::secret;
         use crate::device_identity::*;
-        fn isolated() -> (Linux, Files) {
+        pub(super) fn isolated() -> (Linux, Files) {
             assert_eq!(std::env::var("ACTIVE_CLASSROOM_TEST_KEYRING").as_deref(), Ok("1"));
             let temp = std::env::temp_dir();
             for variable in ["XDG_DATA_HOME", "XDG_STATE_HOME"] {
                 let value = PathBuf::from(std::env::var_os(variable).unwrap_or_else(|| panic!("{variable} must point to a temporary directory")));
                 assert!(value.is_absolute() && (value.starts_with(&temp) || value.starts_with("/tmp")), "{variable} is not temporary: refusing to touch real data");
             }
-            (Linux, Files::from_env().unwrap())
+            let files = Files::from_env().unwrap();
+            // The vault key lives under XDG_CONFIG_HOME; it must be temporary too (set it in the CI step).
+            assert!(files.key_dir.starts_with(&temp) || files.key_dir.starts_with("/tmp"), "XDG_CONFIG_HOME is not temporary: refusing to touch real data");
+            (Linux, files)
         }
         fn clear_fixture_items() {
             // Only ever reached after `isolated()` and after this test created its own items.
@@ -1186,53 +1496,116 @@ mod tests {
             for action in ["load", "activated", "reset-binding"] { assert_eq!(service.locked(|| service.execute(action)).unwrap_err(), Kind::Corrupt); }
             assert_eq!(backend.search().unwrap(), before);
             assert!(files.read().unwrap().is_none(), "no marker may be recorded for an unreadable identity");
+            assert!(!files.dir.join("vault-v1.enc").exists() && !files.key_dir.join("vault-v1.key").exists(), "no vault may be created over an unreadable identity");
         }
         #[test]
         #[ignore = "requires an isolated unlocked Secret Service with no matching item"]
-        fn linux_keyring_round_trip() {
+        fn linux_legacy_migration_round_trip() {
             let (backend, files) = isolated();
             assert_eq!(backend.search().unwrap(), Search::default(), "refusing to run over existing matching items");
             assert!(files.read().unwrap().is_none());
-            let open = || Service { backend: &Linux, files: &files };
-            let act = |action: &str| { let service = open(); service.locked(|| service.execute(action)) };
+            let act = |action: &str| { let service = Service { backend: &Linux, files: &files }; service.locked(|| service.execute(action)) };
             let login = backend.default_collection().unwrap();
             assert!(valid_collection(&login) && !backend.collection_locked(&login).unwrap());
-            // 1. creation in the default collection + persistence when reopening
-            let first = act("load").unwrap();
-            act("activated").unwrap();
-            let search = backend.search().unwrap();
-            assert_eq!(search.unlocked.len(), 1); assert_eq!(collection_of(&search.unlocked[0]), login);
-            let stored = decode(&backend.read(&search.unlocked[0]).unwrap()).unwrap();
-            assert!(stored.activated && stored.device_id == first["deviceId"].as_str().unwrap());
-            assert_eq!(files.read().unwrap().unwrap().ids(), identity_ids(&stored));
-            assert_eq!(act("proof").unwrap()["credential"], stored.credential.as_str());
-            // 2. the marker prevents re-creation after the secret vanishes (isolated keyring only)
-            clear_fixture_items();
-            assert_eq!(act("load").unwrap_err(), Kind::Storage);
-            assert_eq!(backend.search().unwrap(), Search::default());
-            // 3. an identity living in a NON-default collection keeps being written there after the default changes
-            let session = "/org/freedesktop/secrets/collection/session".to_owned();
-            fs::remove_file(files.marker()).unwrap();
-            backend.store(&login, &secret(&stored)).unwrap();
-            assert_eq!(act("load").unwrap()["deviceId"], stored.device_id.as_str());
-            set_default(&session);
-            assert_eq!(backend.default_collection().unwrap(), session);
+            // 1. a real legacy identity is wrapped into the vault; the keyring item is left exactly as it was
+            let mut legacy = super::fixture(); legacy.activated = true; legacy.cache_device_id = Some("c".repeat(32));
+            backend.store(&login, &secret(&legacy)).unwrap();
+            let before = backend.search().unwrap();
+            assert_eq!(before.unlocked.len(), 1);
+            assert_eq!(act("load").unwrap()["deviceId"], legacy.device_id.as_str());
+            assert_eq!(backend.search().unwrap(), before);
+            assert_eq!(decode(&backend.read(&before.unlocked[0]).unwrap()).unwrap(), legacy);
+            let vault = files.vault().unwrap();
+            assert_eq!(vault.load().unwrap(), Some(legacy.clone()));
+            assert!(files.read().unwrap().unwrap().native());
+            // 2. later writes only touch the vault
             act("revoked").unwrap();
-            let moved = backend.search().unwrap();
-            assert_eq!(moved.unlocked.len(), 1); assert_eq!(collection_of(&moved.unlocked[0]), login);
-            assert!(decode(&backend.read(&moved.unlocked[0]).unwrap()).unwrap().revoked);
-            // 4. a second match (other collection) is a conflict and nothing changes
-            backend.store(&session, &secret(&stored)).unwrap();
-            let both = backend.search().unwrap();
-            assert_eq!(both.unlocked.len(), 2);
-            assert_eq!(act("activated").unwrap_err(), Kind::Conflict);
-            assert_eq!(backend.search().unwrap(), both);
-            set_default(&login);
-            // 5. a locked matching collection never creates or rewrites (last: it stays locked)
+            assert!(decode(&backend.read(&before.unlocked[0]).unwrap()).unwrap().activated);
+            assert!(vault.load().unwrap().unwrap().revoked);
+            // 3. the keyring item may disappear without any effect
+            clear_fixture_items();
+            assert_eq!(backend.search().unwrap(), Search::default());
+            assert_eq!(act("proof").unwrap()["credential"], legacy.credential.as_str());
+            // 4. neither does a locked keyring (last: it stays locked)
             let targets = format!("[objectpath '{login}']");
             Linux.gdbus(SECRETS_PATH, "org.freedesktop.Secret.Service.Lock", &[targets.as_str()]).unwrap();
-            assert_eq!(act("load").unwrap_err(), Kind::Locked);
-            assert_eq!(backend.search().unwrap().locked.len(), 1);
+            assert_eq!(act("load").unwrap()["deviceId"], legacy.device_id.as_str());
+        }
+    }
+
+    // ---- native vault across two PROCESSES (not an OS reboot): run 1 inside an isolated
+    // dbus-run-session without any keyring daemon, run 2 with no session bus at all.
+    #[cfg(target_os = "linux")]
+    mod linux2 {
+        use super::linux::isolated;
+        use crate::device_identity::*;
+        use sha2::{Digest, Sha256};
+        const ACCEPTANCE: &str = "native-acceptance.json";
+        fn sha(bytes: &[u8]) -> String { format!("{:x}", Sha256::digest(bytes)) }
+        /// Public digests only (credential, ciphertext, key file): no secret is stored or printed.
+        fn digests(files: &Files, credential: &str) -> (String, String, String) {
+            let read = |path: PathBuf| fs::read(&path).unwrap_or_else(|_| panic!("cannot read {}", path.display()));
+            (sha(credential.as_bytes()), sha(&read(files.dir.join("vault-v1.enc"))), sha(&read(files.key_dir.join("vault-v1.key"))))
+        }
+        #[test]
+        #[ignore = "process 1 of 2: isolated session bus WITHOUT a keyring daemon, empty temporary XDG dirs"]
+        fn linux_fresh_without_keyring() {
+            let (backend, files) = isolated();
+            assert!(backend.keyring_files().unwrap().is_empty(), "no keyring file may exist");
+            assert!(files.read().unwrap().is_none());
+            assert!(!files.dir.join("vault-v1.enc").exists() && !files.key_dir.join("vault-v1.key").exists());
+            assert!(!files.dir.join(ACCEPTANCE).exists(), "refusing to overwrite an existing acceptance fixture");
+            let loaded = with_service(|service| service.execute("load")).unwrap();
+            let activated = with_service(|service| service.execute("activated")).unwrap();
+            assert_eq!(activated["deviceId"], loaded["deviceId"]);
+            assert_eq!(activated["activated"], true);
+            let proof = with_service(|service| service.execute("proof")).unwrap();
+            let credential = proof["credential"].as_str().unwrap();
+            let device_id = proof["deviceId"].as_str().unwrap();
+            assert_eq!(device_id, loaded["deviceId"].as_str().unwrap());
+            // Native vault + marker are valid; the app never created a persistent keyring.
+            let marker = files.read().unwrap().unwrap();
+            assert!(marker.native() && marker.device_id == device_id);
+            let stored = files.vault().unwrap().load().unwrap().unwrap();
+            assert!(stored.device_id == device_id && stored.activated && stored.credential == credential);
+            assert!(backend.keyring_files().unwrap().is_empty(), "the app must not create a persistent keyring");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                for path in [files.dir.join("vault-v1.enc"), files.key_dir.join("vault-v1.key")] {
+                    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+                }
+            }
+            let (credential_sha, cipher_sha, key_sha) = digests(&files, credential);
+            let fixture = json!({ "deviceId": device_id, "cacheDeviceId": stored.cache_device_id, "credentialSha256": credential_sha, "cipherSha256": cipher_sha, "keySha256": key_sha });
+            let mut file = files.open_private(&files.dir.join(ACCEPTANCE), true).unwrap();
+            file.write_all(&serde_json::to_vec(&fixture).unwrap()).unwrap();
+            file.sync_all().unwrap();
+        }
+        #[test]
+        #[ignore = "process 2 of 2: same XDG dirs as linux_fresh_without_keyring, without session bus or display"]
+        fn linux_native_vault_reopens_without_service() {
+            assert!(std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none(), "this process must have no session bus");
+            let (backend, files) = isolated();
+            let raw = fs::read(files.dir.join(ACCEPTANCE)).expect("run linux_fresh_without_keyring first");
+            let fixture: Value = serde_json::from_slice(&raw).unwrap();
+            assert!(backend.keyring_files().unwrap().is_empty());
+            assert!(files.read().unwrap().unwrap().native());
+            let loaded = with_service(|service| service.execute("load")).unwrap();
+            assert_eq!(loaded["deviceId"], fixture["deviceId"], "a new process must not create another identity");
+            assert_eq!(loaded["cacheDeviceId"], fixture["cacheDeviceId"]);
+            assert_eq!(loaded["activated"], true);
+            assert_eq!(loaded["revoked"], false);
+            let proof = with_service(|service| service.execute("proof")).unwrap();
+            assert_eq!(proof["deviceId"], fixture["deviceId"]);
+            let (credential_sha, cipher_sha, key_sha) = digests(&files, proof["credential"].as_str().unwrap());
+            assert_eq!(credential_sha, fixture["credentialSha256"].as_str().unwrap(), "credential changed");
+            assert_eq!(cipher_sha, fixture["cipherSha256"].as_str().unwrap(), "vault ciphertext was rewritten");
+            assert_eq!(key_sha, fixture["keySha256"].as_str().unwrap(), "vault key changed");
+            let namespace = fixture["cacheDeviceId"].as_str().unwrap_or_else(|| fixture["deviceId"].as_str().unwrap());
+            assert!(authorized_owner(&format!("ac-device-{namespace}")).unwrap());
+            assert!(backend.keyring_files().unwrap().is_empty(), "no keyring may be created");
+            assert_eq!(fs::read(files.dir.join(ACCEPTANCE)).unwrap(), raw, "the expected fixture is never rewritten");
         }
     }
 }
