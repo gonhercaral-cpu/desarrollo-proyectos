@@ -66,6 +66,10 @@ Corrección adicional de Claude revisada por Codex: lookup e inserción requiere
 
 La granularidad variable del kernel está documentada en [Multigrain timestamps](https://www.kernel.org/doc/html/v7.0/filesystems/multigrain-ts.html). La confianza de esta caché supone filesystem local con timestamps normales; no promete resistencia frente a root, retrocesos arbitrarios del reloj ni filesystem remoto. Archivos con timestamps futuros o inválidos usan SHA completo.
 
+## Compatibilidad de cabeceras multimedia
+
+La revisión añadió una regresión para MP4 con un box `free` de 8 KiB antes de `ftyp`: la propuesta de cabecera de 4 KiB lo rechazaba como `format`, mientras la ventana original de 64 KiB lo admitía. La nueva prueba falla antes de restaurar esa ventana; se conserva lectura acotada de 64 KiB y el ahorro del SHA compartido. No se reduce la compatibilidad para ahorrar unos KiB.
+
 ## Publicación
 
 Versión preparada: 1.0.23, consistente en npm, Cargo y Tauri. Última release verificada al iniciar: 1.0.22. Sin cambios al workflow, firma ni endpoint del updater. Solo publicar mediante flujo existente después de VALIDATION verde del SHA exacto, verificación de certificados, paquetes, hashes y firmas. Hasta entonces no hay artefacto 1.0.23 declarado instalable ni detección del updater comprobada.

@@ -154,7 +154,7 @@ impl MediaServer {
         diagnostic.sha256_valid = Some(valid);
         if !valid { return diagnostic.fail("damaged", "El archivo descargado está dañado"); }
         let mut file = match File::open(&path) { Ok(file) => file, Err(_) => return diagnostic.fail("read", "No se pudo leer el video local") };
-        let mut head = vec![0u8; 4096.min(size as usize)];
+        let mut head = vec![0u8; size.min(BLOCK_BYTES as u64) as usize];
         if file.read_exact(&mut head).is_err() { return diagnostic.fail("read", "No se pudo leer el video local"); }
         if !supported_mime(&mime) || !signature_matches(&mime, &head) { return diagnostic.fail("format", "El formato de video no es compatible"); }
         if mime == "video/mp4" || matches!(mime.as_str(), "audio/mp4" | "audio/m4a" | "audio/x-m4a") { diagnostic.codec_mime = mp4_codec_mime(&mut file, size, &mime); }
@@ -382,6 +382,17 @@ mod tests {
         let checked = server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic);
         assert_eq!(checked.codec_mime.as_deref(), Some("video/mp4; codecs=\"avc1.42E01E, mp4a.40.2\"")); fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn ftyp_after_padding_keeps_legacy_header_window() {
+        // Existing validation accepted a valid ftyp box anywhere in the first 64 KiB.
+        let mut bytes = Vec::from(8192u32.to_be_bytes()); bytes.extend_from_slice(b"free"); bytes.resize(8192, 0);
+        bytes.extend_from_slice(b"\0\0\0\x18ftypisom0123456789ABCDEF");
+        let (root, server, hash, diagnostic) = fixture(&bytes, "video/mp4");
+        let checked = server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic);
+        assert!(checked.url.is_some(), "{:?}", checked.error_code);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn missing_hash_and_mime_fail_before_grant() {
         let bytes = b"\0\0\0\x18ftypisom0123456789ABCDEF";
