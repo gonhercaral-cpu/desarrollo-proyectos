@@ -1,4 +1,4 @@
-name: Diagnóstico aislado PR25 (sin release)
+name: Diagnóstico causal buffering PR25 (sin release)
 on:
   workflow_dispatch:
 permissions:
@@ -45,7 +45,120 @@ jobs:
           sha256sum "$RUNNER_TEMP/video-fixtures"/* > "$RUNNER_TEMP/video-report/fixture-hashes.txt"
           git rev-parse HEAD > "$RUNNER_TEMP/video-report/source-commit.txt"
           git status --porcelain > "$RUNNER_TEMP/video-report/generated-files.txt"
-      - name: Mismos paquetes, solo .deb/X11 en Ubuntu 24.04 y control 22.04
+      - name: Sondeo separado de 12 segundos sin editar fuentes ni tests
+        working-directory: active-classroom-desktop
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/hold-probe.mjs" <<'PROBE'
+          import { invoke } from "@diagnostic/core";
+          import { VideoRenderer } from "@diagnostic/renderer";
+          import { playAndObserve } from "@diagnostic/observer";
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          async function until(check) {
+            const deadline = performance.now() + 8000;
+            while (!check() && performance.now() < deadline) await wait(25);
+            if (!check()) throw new Error("Diagnostic setup did not settle in 8 seconds");
+          }
+          const cycles = PROBE_CYCLES;
+          const records = [];
+          function snapshot(media, frameTime) {
+            return { atMs: performance.now(), time: media.currentTime, frameTime, paused: media.paused, seeking: media.seeking, ended: media.ended, readyState: media.readyState, networkState: media.networkState, error: media.error?.code || 0, buffered: Array.from({ length: media.buffered.length }, (_, i) => [media.buffered.start(i), media.buffered.end(i)]) };
+          }
+          async function run() {
+            const fixture = await invoke("media_fixture");
+            for (let cycle = 0; cycle < cycles; cycle++) {
+              await invoke("fixture_checkpoint", { phase: `hold-${cycle}:mount` });
+              const renderer = new VideoRenderer();
+              let interval, callback, media;
+              const record = { cycle, samples: [], events: [] };
+              let frameTime = 0;
+              const event = value => record.events.push({ event: value.type, ...snapshot(media, frameTime) });
+              try {
+                await renderer.mount(document.querySelector("#media"), fixture.largeSource, { page: 1, volume: .5, muted: true, onPage() {}, onState() {} });
+                media = renderer.media;
+                await until(() => media.readyState >= 2 || !!media.error);
+                if (media.error) throw new Error(`MediaError ${media.error.code}`);
+                await invoke("fixture_checkpoint", { phase: `hold-${cycle}:firstplay` });
+                record.firstPlay = await playAndObserve(renderer);
+                await until(() => media.currentTime > .15);
+                await renderer.command("PLAY_PAUSE");
+                if (!media.paused) throw new Error("Pause failed");
+                for (const target of [media.duration * .75, 5, 1]) {
+                  renderer.seek(target);
+                  await until(() => !media.seeking && Math.abs(media.currentTime - target) < .3);
+                }
+                renderer.setVolume(.25);
+                await renderer.command("MUTE"); await renderer.command("MUTE");
+                await invoke("fixture_fullscreen", { active: true }); await wait(200);
+                await invoke("fixture_fullscreen", { active: false });
+                for (const name of ["playing", "play", "waiting", "canplay", "progress", "pause", "seeking", "seeked", "ended", "error"]) media.addEventListener(name, event);
+                const observe = (_now, metadata) => { frameTime = metadata.mediaTime; callback = media.requestVideoFrameCallback(observe); };
+                callback = media.requestVideoFrameCallback(observe);
+                record.startedAt = performance.now();
+                record.samples.push(snapshot(media, frameTime));
+                interval = setInterval(() => record.samples.push(snapshot(media, frameTime)), 100);
+                await invoke("fixture_checkpoint", { phase: `hold-${cycle}:resume` });
+                try { record.observer = await playAndObserve(renderer); record.observerOk = true; }
+                catch (error) { record.observerOk = false; record.observerError = String(error); }
+                // Separate diagnostic only: preserve the original observer verdict and
+                // observe its aftermath. Do not issue play/pause/seek or clean up early.
+                await wait(Math.max(0, record.startedAt + 12000 - performance.now()));
+                record.samples.push(snapshot(media, frameTime));
+                record.at8 = record.samples.find(s => s.atMs - record.startedAt >= 8000);
+                record.at12 = record.samples.at(-1);
+                let changedAt = record.samples[0].atMs, previous = record.samples[0].time;
+                record.longestFrozenMs = 0;
+                for (const sample of record.samples) {
+                  if (Math.abs(sample.time - previous) > .005 || sample.paused || sample.seeking || sample.ended) changedAt = sample.atMs;
+                  else record.longestFrozenMs = Math.max(record.longestFrozenMs, sample.atMs - changedAt);
+                  previous = sample.time;
+                }
+                record.frozen8Seconds = record.longestFrozenMs >= 8000;
+              } catch (error) { record.setupError = String(error); if (media) record.setupSnapshot = snapshot(media, frameTime); }
+              finally {
+                clearInterval(interval);
+                if (media) {
+                  if (callback !== undefined) media.cancelVideoFrameCallback(callback);
+                  for (const name of ["playing", "play", "waiting", "canplay", "progress", "pause", "seeking", "seeked", "ended", "error"]) media.removeEventListener(name, event);
+                }
+                renderer.destroy(); await wait(250);
+              }
+              records.push(record);
+              await invoke("fixture_checkpoint", { phase: `hold-${cycle}:closed` });
+            }
+            await invoke("fixture_report", { ok: records.every(r => r.observerOk && !r.setupError && !r.frozen8Seconds), result: { kind: "separate-native-hold-probe", cycles: records } });
+          }
+          if (!location.pathname.includes("projection-test")) {
+            run().catch(error => invoke("fixture_report", { ok: false, result: { kind: "separate-native-hold-probe", fatal: String(error), cycles: records } }));
+          }
+          PROBE
+          node --input-type=module <<'BUNDLE'
+          import { build } from "vite";
+          import { readFile, writeFile, mkdir } from "node:fs/promises";
+          import { resolve, join } from "node:path";
+          const base = process.env.DIAGNOSTIC_HOLD_BASE || process.env.RUNNER_TEMP;
+          const original = await readFile(join(base, "hold-probe.mjs"), "utf8");
+          for (const cycles of [8, 28]) {
+            const entry = join(base, `hold-${cycles}.mjs`);
+            await writeFile(entry, original.replace("PROBE_CYCLES", String(cycles)));
+            const bundle = await build({ configFile: false, logLevel: "error", resolve: { alias: { "@diagnostic/core": resolve("node_modules/@tauri-apps/api/core.js"), "@diagnostic/renderer": resolve("src/player/renderers/VideoRenderer.ts"), "@diagnostic/observer": resolve("tests/media-play-observer.mjs") } }, build: { write: false, minify: false, lib: { entry, name: "NativeHoldProbe", formats: ["iife"] } } });
+            const output = (Array.isArray(bundle) ? bundle[0] : bundle).output;
+            const directory = join(base, `hold-scripts-${cycles}`);
+            await mkdir(directory, { recursive: true });
+            await writeFile(join(directory, "media.js"), output.find(item => item.type === "chunk").code);
+          }
+          console.log("Separate hold probes bundled; production sources and tests unchanged");
+          BUNDLE
+          for cycles in 8 28; do
+            destination="$RUNNER_TEMP/hold-fixtures-$cycles"
+            cp -al "$RUNNER_TEMP/video-fixtures" "$destination"
+            # Break only this generated-script hardlink before replacing it.
+            rm "$destination/media.js"
+            cp "$RUNNER_TEMP/hold-scripts-$cycles/media.js" "$destination/media.js"
+          done
+          cp "$RUNNER_TEMP/hold-probe.mjs" "$RUNNER_TEMP/video-report/hold-probe-source.mjs"
+          sha256sum "$RUNNER_TEMP/hold-fixtures-8/media.js" "$RUNNER_TEMP/hold-fixtures-28/media.js" > "$RUNNER_TEMP/video-report/hold-script-hashes.txt"
+      - name: Observar buffering nativo en .deb/X11, sin cambios de producción
         working-directory: active-classroom-desktop
         run: |
           set -euo pipefail
@@ -69,11 +182,13 @@ jobs:
             docker commit "$container" "$tag" >/dev/null
             docker image inspect "$tag" > "$report/image-$ubuntu.json"
             docker run --rm --network none "$tag" bash -c 'dpkg-query -W; . /usr/lib/active-classroom/system-media.sh; classroom_system_media /usr/lib/active-classroom/codecs; printf "LD_LIBRARY_PATH=%s\nGST_PLUGIN_PATH_1_0=%s\n" "${LD_LIBRARY_PATH:-}" "${GST_PLUGIN_PATH_1_0:-}"' > "$report/versions-and-route-$ubuntu.txt" 2>&1
-            if [[ "$ubuntu" == 24.04 ]]; then cases='baseline1 baseline2 baseline3 trace1 trace2 trace3'; else cases='baseline1 trace1'; fi
+            if [[ "$ubuntu" == 24.04 ]]; then cases='hold-baseline8 hold-trace28'; else cases='hold-trace8'; fi
             for case_name in $cases; do
+              if [[ "$case_name" == *28 ]]; then fixtures="$RUNNER_TEMP/hold-fixtures-28"; else fixtures="$RUNNER_TEMP/hold-fixtures-8"; fi
+              printf "BEGIN %s %s\n" "$ubuntu" "$case_name"
               options=()
-              if [[ "$case_name" == trace* ]]; then
-                options=(-e 'GST_DEBUG=2,webkit*:5,playbin*:5,playsink:5,basesink:4,qtdemux:5,queue:5,appsrc:5' -e GST_DEBUG_NO_COLOR=1 -e 'GST_DEBUG_FILE=/diagnostics/gst-%p.log')
+              if [[ "$case_name" == *trace* ]]; then
+                options=(-e 'GST_DEBUG=2,webkitmediaplayer:7,webkitwebsrc:4,queue2:5,GST_STATES:4' -e GST_DEBUG_NO_COLOR=1 -e 'GST_DEBUG_FILE=/diagnostics/gst-%p.log')
               fi
               case_report="$report/$ubuntu-$case_name"
               mkdir -p "$case_report"
@@ -99,17 +214,30 @@ jobs:
               docker rm "$test_container" >/dev/null
               set -e
               printf '%s %s %s\n' "$ubuntu" "$case_name" "$status" >> "$report/results.tsv"
+              printf "END %s %s status=%s\n" "$ubuntu" "$case_name" "$status"
               if [[ "$status" -ne 0 ]]; then failed=1; fi
             done
             docker rm "$container" >/dev/null
             docker image rm "$tag" >/dev/null
           done
+          python3 - "$report" <<'SUMMARY'
+          from pathlib import Path
+          import sys,json
+          root=Path(sys.argv[1]); rows=[]
+          for path in sorted(root.glob('*/stdout.log')):
+            for line in path.read_text(errors='replace').splitlines():
+              if 'MEDIA_NATIVE_RESULT ' not in line: continue
+              data=json.loads(line.split('MEDIA_NATIVE_RESULT ',1)[1]); result=data['result']; cycles=result.get('cycles',[])
+              row={'case':path.parent.name,'ok':data['ok'],'cycles':len(cycles),'observer_failures':sum(x.get('observerOk') is False for x in cycles),'frozen_8s':sum(x.get('frozen8Seconds',False) for x in cycles),'setup_errors':sum(bool(x.get('setupError')) for x in cycles),'fatal':result.get('fatal')}
+              rows.append(row)
+          (root/'hold-summary.json').write_text(json.dumps(rows,indent=2)); print(json.dumps(rows,indent=2))
+          SUMMARY
           git status --porcelain > "$report/final-generated-files.txt"
           exit "$failed"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         if: always()
         with:
-          name: pr25-video-investigation-${{ github.run_id }}
+          name: pr25-buffering-hold-${{ github.run_id }}
           path: ${{ runner.temp }}/video-report/
           if-no-files-found: warn
           retention-days: 5
