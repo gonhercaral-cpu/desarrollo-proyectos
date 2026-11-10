@@ -16,6 +16,21 @@ dist-ssr
 !**/.env.example
 .firebase/cli-config/
 .firebase/emulator-data/
+.firebase/classroom-linux-source-*/
+.firebase/publication-task-smoke.json
+.firebase/updater-*.yaml
+.firebase/updater-*-ci/
+.firebase/updater-*-metadata-repair/
+releases/active-classroom/
+
+# Estado efímero de auxiliares; nunca subir credenciales o transcripciones.
+.multiagent/
+.gemini/
+gemini-artifacts/
+.orquestacion/
+__pycache__/
+gha-creds-*.json
+.claude/settings.local.json
 
 # Editor directories and files
 .vscode/*
