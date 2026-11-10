@@ -19,6 +19,7 @@ import { syncDiagnostic } from "./sync-diagnostics";
 import { openLocalClass, unitSyncMessage } from "./sync";
 import "./library.css";
 import { ClassroomPlayer } from "../player/ClassroomPlayer";
+import { mediaDiagnostic } from "../player/media-diagnostics";
 import { prepareNativeMedia, prepareAmbientMedia, releaseNativeMedia } from "../player/native-media";
 import { AmbientLibrary } from "./ambient.ts";
 import { BlobTransfers } from "./sync.ts";
@@ -163,6 +164,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         const inventory = await currentCache.inventory();
         if (current !== epoch) return false;
         locals = inventory; cacheReady = true;
+        mediaDiagnostic({ event: "catalog-ready" });
         if (message === hydrateError) message = "";
         hydrateError = "";
       } catch (error) {
@@ -291,6 +293,8 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     const current = epoch;
     const currentCache = cache;
     if (queue) queue.protectedUnit = unitId;
+    const openedAt = performance.now();
+    mediaDiagnostic({ event: "unit-open-start" });
     opening = true; message = "Verificando archivos locales…"; render();
     try {
       if (current !== epoch) return;
@@ -302,13 +306,18 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         root.innerHTML = `<div class="desktop-shell is-classroom">${sidebar(true)}<div class="classroom-workspace" data-classroom-host></div></div>`;
         bindSidebar(true);
         player = new ClassroomPlayer(root.querySelector<HTMLElement>("[data-classroom-host]")!, classroom, () => {
-          player = undefined; if (queue) queue.protectedUnit = ""; message = "Clase cerrada. Verificando biblioteca local…"; render();
-          void (async () => { await queue?.activatePending(); return currentCache.list(); })().then((saved) => {
-            if (current !== epoch) return;
+          // Un cierre tardío de una sesión anterior no puede tocar la sesión/cola actuales.
+          if (current !== epoch) return;
+          mediaDiagnostic({ event: "unit-close" });
+          const closingQueue = queue;
+          const stale = () => current !== epoch || queue !== closingQueue;
+          player = undefined; if (closingQueue) closingQueue.protectedUnit = ""; message = "Clase cerrada. Verificando biblioteca local…"; render();
+          void (async () => { await closingQueue?.activatePending(); return stale() ? undefined : currentCache.inventory(); })().then((saved) => {
+            if (!saved || stale()) return;
             locals = saved;
             if (!saved.some((item) => item.unit.unitId === unitId && item.version >= local.version)) errors.set(unitId, "La copia local requiere reparación. Sincroniza de nuevo cuando tengas conexión.");
             message = "Biblioteca local verificada."; render();
-          }).catch((error) => { if (current === epoch) { message = String(error); render(); } });
+          }).catch((error) => { if (!stale()) { message = String(error); render(); } });
         }, {
           ...(music ? { ambientMusic: { tracks: music.tracks.filter(track => track.active).map(track => ({ ...track, resourceId: track.id })), defaultTrackIds: music.playlists.find(playlist => playlist.id === "module-default")?.trackIds, prepare: async (id: string) => { const track = music.tracks.find(track => track.id === id); if (!track) throw new Error("Audio global no disponible"); return prepareAmbientMedia(currentCache.owner, music.ambientCatalogVersion, track); } } } : {}),
           prepareMediaSource: (id) => prepareNativeMedia(currentCache.owner, classroom, id),
@@ -318,10 +327,14 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
             return !!resource && await currentCache.has(resource.download.checksums.sha256, resource.download.sizeBytes);
           },
         });
+        // This marks the player shell; media readiness is reported by its renderer.
+        mediaDiagnostic({ event: "unit-open-ready", elapsedMs: Math.round(performance.now() - openedAt) });
       }
     } catch (error) {
-      const recovered = await currentCache.list().catch(() => null);
+      mediaDiagnostic({ event: "unit-open-error", elapsedMs: Math.round(performance.now() - openedAt) });
+      const recovered = await currentCache.inventory().catch(() => null);
       if (current === epoch) {
+        // Solo el inventario rápido: nunca un list completo al fallar open.
         message = error instanceof Error ? error.message : String(error);
         errors.set(unitId, message);
         if (recovered) locals = recovered;

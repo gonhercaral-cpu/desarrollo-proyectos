@@ -1,3 +1,11 @@
+## 1.0.23 — pendiente de validación y publicación
+
+- Evita recalcular el SHA-256 de toda la biblioteca al cerrar una clase o recuperar un error de apertura; conserva el inventario rápido y la activación de versiones pendientes.
+- Reutiliza verificaciones de objetos sin cambios en una caché volátil limitada; cambios de tamaño, identidad, mtime o ctime invalidan la entrada. Descargas, apertura y activación mantienen la comprobación de integridad.
+- Comparte la verificación entre caché offline y transporte multimedia; conserva rangos, códecs, proyección y liberación de grants.
+- Cancela precargas de animaciones e imágenes temporales al cambiar o cerrar; verifica revelados futuros cuando se alcanzan.
+- Amplía diagnóstico opcional con hitos de apertura/cierre, swap y contadores de I/O por proceso. Prueba de reapertura multimedia Linux ampliada a 20 ciclos.
+
 ## 1.0.22 — pendiente de publicación
 
 - Muestra las clases descargadas al iniciar sin esperar la verificación completa de todos los archivos de la biblioteca.

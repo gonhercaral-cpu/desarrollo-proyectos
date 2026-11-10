@@ -147,6 +147,35 @@ for (const online of [false, true]) test(`60 clases ya descargadas se ven y abre
   assert.equal(cache.calls.list, 0); assert.equal(remote.counts.list, online ? 1 : 0); assert.equal(remote.counts.manifest, 0); assert.equal(remote.counts.file, 0);
 });
 
+test("20 ciclos abrir unidad, volver a la biblioteca y abrir la siguiente: sin list completo, con locales y error de open conservados", async (t) => {
+  const items = await catalog(20);
+  const cache = mockCache(items);
+  const remote = makeRemote(items.map((item) => item.publication));
+  const harness = { cacheFor: () => cache, remote, online: false };
+  const { root } = launch(t, harness);
+  await settle(() => cards(root) === 20 && localCards(root) === 20);
+  for (let index = 0; index < 20; index++) {
+    const unitId = `unit-${String(index).padStart(2, "0")}`;
+    root.querySelector(`[data-open="${unitId}"]`).click();
+    await settle(() => harness.opened?.unitId === unitId && cache.calls.open.length === index + 1);
+    harness.close();
+    await settle(() => root.textContent.includes("Biblioteca local verificada.") && cards(root) === 20);
+    assert.equal(cache.calls.list, 0, `Ciclo ${index}: cerrar no llama list`);
+    assert.equal(localCards(root), 20, `Ciclo ${index}: las 20 locales siguen presentes`);
+    harness.opened = undefined;
+  }
+  assert.deepEqual(cache.calls.open, items.map((item) => item.publication.unitId));
+  // Error de open (corrupción detectada): se muestra, no llama list y conserva el catálogo local.
+  const open = cache.open;
+  cache.open = async () => { throw new Error("Archivo local corrupto"); };
+  root.querySelector('[data-open="unit-05"]').click();
+  await settle(() => root.textContent.includes("Archivo local corrupto"));
+  assert.equal(cache.calls.list, 0, "El error de open no llama list");
+  assert.equal(localCards(root), 20); assert.equal(cards(root), 20);
+  cache.open = open;
+  assert.equal(remote.auth.size, 0, "Offline: ninguna petición remota");
+});
+
 test("inventario diferido: online/refresh/preferencias/polling no consultan ni encolan hasta hidratar; luego 0 manifest y 0 descarga", async (t) => {
   const items = await catalog(60);
   const gate = deferred();

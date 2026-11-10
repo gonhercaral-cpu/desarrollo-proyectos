@@ -284,8 +284,8 @@ try {
   const baseline = await memory();
   // Range/200/416 probes above cover every size, including the encoded >500 MiB
   // and 1 GiB files. Measure reopening separately: Fetch buffers must not become
-  // ten extra consumers inside the renderer/decoder lifetime measurement.
-  for (let index = 0; index < 10; index++) { await video(fixture.largeSource); assertMemoryCeilings(await memory()); }
+  // twenty extra consumers inside the renderer/decoder lifetime measurement.
+  for (let index = 0; index < 20; index++) { await video(fixture.largeSource); assertMemoryCeilings(await memory()); }
   const after = await memory();
   observations.push({ phase: "repetitive-memory-before-assertions", baseline, after, streams: await invoke("fixture_metrics"), disposedMedia: disposedSummary() });
   for (const process of after) {
@@ -298,7 +298,7 @@ try {
     if (process.pid === after[0].pid) assert(rss(process) < 256 * 1024, "Proceso principal carga archivo completo");
     if (process.name.startsWith("WebKitWeb")) assert(rss(process) < 768 * 1024, "WebKit almacena video completo en RAM");
   }
-  observations.push({ repetitiveMemory: { baseline, after, opens: 10, bounded: true } });
+  observations.push({ repetitiveMemory: { baseline, after, opens: 20, bounded: true } });
   await checkpoint("interactive-slides"); observations.push({ interactiveSlides: await interactiveSlides(fixture.buildFixture) });
   if (fixture.musicFixture) { await checkpoint("background-music"); await backgroundMusic(fixture.musicFixture, fixture.source); }
   if (fixture.performance) { await checkpoint("performance-stress"); observations.push({ performance: await mediaPerformance(fixture) }); }

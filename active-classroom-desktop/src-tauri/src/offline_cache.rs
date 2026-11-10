@@ -53,16 +53,174 @@ fn checked_manifest(manifest: &Value) -> Result<(), String> {
 }
 // Per-thread so concurrent tests cannot disturb each other's count of hashed objects.
 #[cfg(test)]
-thread_local! { static HASHED_OBJECTS: std::cell::Cell<usize> = std::cell::Cell::new(0); }
-fn verified(path: &Path, hash: &str, size: u64) -> Result<bool, String> {
-    let mut file = match File::open(path) { Ok(file) => file, Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false), Err(error) => return Err(io_error(error)) };
-    if file.metadata().map_err(io_error)?.len() != size { return Ok(false); }
+thread_local! {
+    static HASHED_OBJECTS: std::cell::Cell<usize> = std::cell::Cell::new(0);
+    static HASHED_BYTES: std::cell::Cell<u64> = std::cell::Cell::new(0);
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct CacheSignature {
+    dev: u64,
+    ino: u64,
+    len: u64,
+    mtime_sec: i64,
+    mtime_nsec: i64,
+    ctime_sec: i64,
+    ctime_nsec: i64,
+}
+
+#[cfg(unix)]
+impl CacheSignature {
+    fn from_metadata(meta: &fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        Self {
+            dev: meta.dev(),
+            ino: meta.ino(),
+            len: meta.len(),
+            mtime_sec: meta.mtime(),
+            mtime_nsec: meta.mtime_nsec(),
+            ctime_sec: meta.ctime(),
+            ctime_nsec: meta.ctime_nsec(),
+        }
+    }
+}
+
+#[cfg(unix)]
+type CacheKey = (PathBuf, String, u64);
+
+#[cfg(unix)]
+struct VerifiedCache {
+    entries: std::collections::HashMap<CacheKey, CacheSignature>,
+    order: std::collections::VecDeque<CacheKey>,
+}
+
+#[cfg(unix)]
+impl VerifiedCache {
+    const CAPACITY: usize = 1024;
+    fn new() -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+            order: std::collections::VecDeque::new(),
+        }
+    }
+    fn get(&self, key: &CacheKey, sig: &CacheSignature) -> bool {
+        self.entries.get(key).map(|s| s == sig).unwrap_or(false)
+    }
+    fn insert(&mut self, key: CacheKey, sig: CacheSignature) {
+        if self.entries.insert(key.clone(), sig).is_none() {
+            self.order.push_back(key);
+        }
+        while self.entries.len() > Self::CAPACITY {
+            if let Some(evicted) = self.order.pop_front() {
+                self.entries.remove(&evicted);
+            } else {
+                self.entries.clear();
+                break;
+            }
+        }
+    }
+    fn remove(&mut self, key: &CacheKey) {
+        self.entries.remove(key);
+        self.order.retain(|entry| entry != key);
+    }
+}
+
+#[cfg(unix)]
+static VERIFIED_CACHE: std::sync::OnceLock<Mutex<VerifiedCache>> = std::sync::OnceLock::new();
+#[cfg(unix)]
+fn cache_store() -> &'static Mutex<VerifiedCache> {
+    VERIFIED_CACHE.get_or_init(|| Mutex::new(VerifiedCache::new()))
+}
+#[cfg(all(unix, test))]
+fn clear_verified_cache(root: &Path) {
+    if let Ok(mut cache) = cache_store().lock() {
+        let keys: Vec<_> = cache.entries.keys().filter(|key| key.0.starts_with(root)).cloned().collect();
+        for key in keys { cache.remove(&key); }
+    }
+}
+
+pub(crate) fn verified(path: &Path, hash: &str, size: u64) -> Result<bool, String> {
+    let sym_meta = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(io_error(e)),
+    };
+    if sym_meta.file_type().is_symlink() || !sym_meta.is_file() || sym_meta.len() != size { return Ok(false); }
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(io_error(e)),
+    };
+    let desc_meta = file.metadata().map_err(io_error)?;
+    if !desc_meta.is_file() || desc_meta.len() != size { return Ok(false); }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if sym_meta.dev() != desc_meta.dev() || sym_meta.ino() != desc_meta.ino() { return Ok(false); }
+        let sig_before = CacheSignature::from_metadata(&desc_meta);
+        let key = (path.to_path_buf(), hash.to_string(), size);
+        let hit = cache_store().lock().map(|cache| cache.get(&key, &sig_before)).unwrap_or(false);
+        if hit {
+            let sym_after = match fs::symlink_metadata(path) {
+                Ok(m) => m,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    if let Ok(mut cache) = cache_store().lock() { cache.remove(&key); }
+                    return Ok(false);
+                }
+                Err(e) => return Err(io_error(e)),
+            };
+            let desc_after = file.metadata().map_err(io_error)?;
+            if sym_after.file_type().is_symlink() || !sym_after.is_file() || !desc_after.is_file() || CacheSignature::from_metadata(&sym_after) != sig_before || CacheSignature::from_metadata(&desc_after) != sig_before {
+                if let Ok(mut cache) = cache_store().lock() { cache.remove(&key); }
+                return Ok(false);
+            }
+            return Ok(true);
+        }
+    }
+
     #[cfg(test)]
-    HASHED_OBJECTS.with(|count| count.set(count.get() + 1));
+    {
+        HASHED_OBJECTS.with(|count| count.set(count.get() + 1));
+    }
     let mut digest = Sha256::new();
     let mut chunk = [0u8; 65536];
-    loop { let read = file.read(&mut chunk).map_err(io_error)?; if read == 0 { break; } digest.update(&chunk[..read]); }
-    Ok(format!("{:x}", digest.finalize()) == hash)
+    loop {
+        let read = file.read(&mut chunk).map_err(io_error)?; if read == 0 { break; }
+        #[cfg(test)] HASHED_BYTES.with(|bytes| bytes.set(bytes.get() + read as u64));
+        digest.update(&chunk[..read]);
+    }
+    let valid = format!("{:x}", digest.finalize()) == hash;
+    if !valid {
+        #[cfg(unix)]
+        if let Ok(mut cache) = cache_store().lock() { cache.remove(&(path.to_path_buf(), hash.to_string(), size)); }
+        return Ok(false);
+    }
+
+    let sym_after = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(io_error(e)),
+    };
+    let desc_after = file.metadata().map_err(io_error)?;
+    if sym_after.file_type().is_symlink() || !sym_after.is_file() || !desc_after.is_file() || sym_after.len() != size || desc_after.len() != size {
+        return Ok(false);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if sym_after.dev() != desc_after.dev() || sym_after.ino() != desc_after.ino() { return Ok(false); }
+        let sig_before = CacheSignature::from_metadata(&desc_meta);
+        let sig_after = CacheSignature::from_metadata(&desc_after);
+        if sig_before != sig_after || CacheSignature::from_metadata(&sym_after) != sig_after { return Ok(false); }
+        if let Ok(mut cache) = cache_store().lock() {
+            cache.insert((path.to_path_buf(), hash.to_string(), size), sig_after);
+        }
+    }
+
+    Ok(true)
 }
 fn sync_directory(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
@@ -363,7 +521,7 @@ pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow
         // only idempotently creates/chmods the cache layout directories (no manifest or
         // object is written), so a long adoption or activation holding the gate must
         // not delay showing or opening a visible Unit.
-        if matches!(action.as_str(), "ambient-read" | "inventory" | "open") { return execute(&root,&action,data); }
+        if matches!(action.as_str(), "ambient-read" | "inventory" | "open" | "has") { return execute(&root,&action,data); }
         let _guard = lock.lock().map_err(|_| "cache: Caché ocupado")?;
         if action == "adopt" {
             if !crate::device_identity::authorized_owner(&owner)? { return Err("cache: Equipo no activado".into()); }
@@ -532,7 +690,11 @@ mod startup_tests {
     impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
 
     fn hashed() -> usize { HASHED_OBJECTS.with(|count| count.get()) }
-    fn reset_hashed() { HASHED_OBJECTS.with(|count| count.set(0)); }
+    fn hashed_bytes() -> u64 { HASHED_BYTES.with(|count| count.get()) }
+    fn reset_hashed() {
+        HASHED_OBJECTS.with(|count| count.set(0));
+        HASHED_BYTES.with(|count| count.set(0));
+    }
     fn manifest_for(unit: &str, version: u64, payload: &[u8]) -> Value {
         let mut manifest: Value = serde_json::from_str(include_str!("../../../docs/active-classroom-manifest.example.json")).unwrap();
         manifest["unit"]["unitId"] = json!(unit);
@@ -570,8 +732,167 @@ mod startup_tests {
         let inventory = execute(&root, "inventory", Value::Null).unwrap();
         assert_eq!(inventory.as_array().unwrap().len(), 60);
         assert_eq!(hashed(), 0, "el inventario no debe calcular SHA de objetos");
-        assert_eq!(execute(&root, "list", Value::Null).unwrap().as_array().unwrap().len(), 60);
-        assert!(hashed() > 0, "list sí debe verificar los bytes reales");
+        assert_eq!(hashed_bytes(), 0);
+
+        // Adaptación a caché caliente:
+        // `publish` ejecuta `commit`, el cual llama a `verified` y puebla la caché volátil en Unix.
+        // En caliente, `list` verifica las rutas de los 60 objetos mediante `verified`, pero no recalcula SHA.
+        let list_hot = execute(&root, "list", Value::Null).unwrap();
+        assert_eq!(list_hot.as_array().unwrap().len(), 60);
+        #[cfg(unix)]
+        {
+            assert_eq!(hashed(), 0, "con caché caliente list no debe recalcular hashes");
+            assert_eq!(hashed_bytes(), 0);
+
+            // Al vaciar la caché volátil (escenario en frío), `list` calcula y verifica el SHA de los 60 objetos.
+            clear_verified_cache(&root);
+            reset_hashed();
+            let list_cold = execute(&root, "list", Value::Null).unwrap();
+            assert_eq!(list_cold.as_array().unwrap().len(), 60);
+            assert_eq!(hashed(), 60, "en frío list debe verificar y hashear cada objeto");
+            assert!(hashed_bytes() > 0, "debe registrar los bytes hasheados en frío");
+
+            // Una llamada posterior vuelve a beneficiarse de la caché caliente
+            reset_hashed();
+            assert_eq!(execute(&root, "list", Value::Null).unwrap().as_array().unwrap().len(), 60);
+            assert_eq!(hashed(), 0);
+            assert_eq!(hashed_bytes(), 0);
+        }
+        #[cfg(not(unix))]
+        {
+            assert!(hashed() > 0, "sin soporte Unix no hay reutilización sin firma equivalente");
+        }
+    }
+
+    #[test]
+    fn veinte_reaperturas_mismo_objeto_sin_rehashear() {
+        let fixture = Fixture::new("twenty-reopen");
+        let root = fixture.cache();
+        let payload = b"video o audio para reapertura continua";
+        publish(&root, "commit", "u_reopen", 1, payload);
+        #[cfg(unix)]
+        clear_verified_cache(&root);
+        reset_hashed();
+
+        // Primera apertura: verificación en frío
+        let first = execute(&root, "open", json!({"unitId": "u_reopen", "version": 1})).unwrap();
+        assert!(first["paths"].is_object());
+        #[cfg(unix)]
+        {
+            assert_eq!(hashed(), 1, "la primera verificación debe calcular el hash");
+            let bytes_first = hashed_bytes();
+            assert_eq!(bytes_first, payload.len() as u64);
+
+            // 20 reaperturas consecutivas del mismo objeto
+            for _ in 0..20 {
+                let reopened = execute(&root, "open", json!({"unitId": "u_reopen", "version": 1})).unwrap();
+                assert!(reopened["paths"].is_object());
+            }
+            assert_eq!(hashed(), 1, "las 20 reaperturas no deben volver a hashear el objeto");
+            assert_eq!(hashed_bytes(), bytes_first, "el contador de bytes hasheados no debe aumentar");
+        }
+    }
+
+    #[test]
+    fn mutacion_mismo_tamano_con_mtime_restaurada_invalida_por_ctime() {
+        let fixture = Fixture::new("mtime-restored");
+        let root = fixture.cache();
+        let payload_orig = b"archivo_original_12345";
+        let payload_tamp = b"archivo_alterado_12345"; // 22 bytes
+        assert_eq!(payload_orig.len(), payload_tamp.len());
+
+        publish(&root, "commit", "u_tamper", 1, payload_orig);
+        let obj_path = object(&root, payload_orig);
+
+        reset_hashed();
+        assert!(verified(&obj_path, &digest(payload_orig), payload_orig.len() as u64).unwrap());
+        #[cfg(unix)]
+        assert_eq!(hashed(), 0);
+
+        let meta_orig = fs::metadata(&obj_path).unwrap();
+        let orig_mtime = meta_orig.modified().unwrap();
+
+        // Mutamos el contenido con igual tamaño
+        fs::write(&obj_path, payload_tamp).unwrap();
+
+        // Restauramos mtime al valor original mediante standard library
+        let file = File::options().write(true).open(&obj_path).unwrap();
+        let times = fs::FileTimes::new().set_modified(orig_mtime);
+        file.set_times(times).unwrap();
+        drop(file);
+
+        let meta_after = fs::metadata(&obj_path).unwrap();
+        assert_eq!(meta_after.modified().unwrap(), orig_mtime);
+
+        // ctime se actualizó por el cambio en inodo/escritura; la firma no coincidirá
+        reset_hashed();
+        let is_valid = verified(&obj_path, &digest(payload_orig), payload_orig.len() as u64).unwrap();
+        assert!(!is_valid, "el contenido alterado debe ser rechazado aunque el mtime coincida");
+        #[cfg(unix)]
+        {
+            assert_eq!(hashed(), 1, "debió recalcular el hash por discrepancia de ctime");
+            assert_eq!(hashed_bytes(), payload_orig.len() as u64);
+        }
+    }
+
+    #[test]
+    fn reemplazo_de_archivo_cambia_inodo_y_no_reutiliza_cache() {
+        let fixture = Fixture::new("inode-replace");
+        let root = fixture.cache();
+        let payload = b"contenido inodo test";
+        publish(&root, "commit", "u_inode", 1, payload);
+        let obj_path = object(&root, payload);
+
+        reset_hashed();
+        assert!(verified(&obj_path, &digest(payload), payload.len() as u64).unwrap());
+        #[cfg(unix)]
+        assert_eq!(hashed(), 0);
+
+        // Reemplazo atómico / nuevo archivo crea nuevo inodo
+        fs::remove_file(&obj_path).unwrap();
+        fs::write(&obj_path, payload).unwrap();
+
+        reset_hashed();
+        assert!(verified(&obj_path, &digest(payload), payload.len() as u64).unwrap());
+        #[cfg(unix)]
+        {
+            assert_eq!(hashed(), 1, "nuevo inodo debe forzar re-verificación");
+            assert_eq!(hashed_bytes(), payload.len() as u64);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_en_cache_es_rechazado_sin_hashear() {
+        let fixture = Fixture::new("symlink-reject");
+        let payload = b"archivo real";
+        let target = fixture.0.join("real_file");
+        fs::write(&target, payload).unwrap();
+
+        let symlink_path = fixture.0.join("symlink_file");
+        std::os::unix::fs::symlink(&target, &symlink_path).unwrap();
+
+        reset_hashed();
+        let res = verified(&symlink_path, &digest(payload), payload.len() as u64).unwrap();
+        assert!(!res, "los symlinks deben ser rechazados tajantemente");
+        assert_eq!(hashed(), 0, "no se deben leer ni hashear bytes a través de symlinks");
+        assert_eq!(hashed_bytes(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn limite_de_tabla_cache_a_1024_entradas_desaloja_elementos_antiguos() {
+        let fixture = Fixture::new("cache-limit");
+        let path = fixture.0.join("sample"); fs::write(&path, b"sample").unwrap();
+        let signature = CacheSignature::from_metadata(&fs::metadata(path).unwrap());
+        let mut cache = VerifiedCache::new();
+        let key = |index: usize| (PathBuf::from(format!("object-{index}")), String::from("hash"), 6);
+        for index in 0..1025 { cache.insert(key(index), signature); }
+        assert_eq!(cache.entries.len(), 1024); assert_eq!(cache.order.len(), 1024);
+        assert!(!cache.get(&key(0), &signature)); assert!(cache.get(&key(1024), &signature));
+        // Repeated invalidation must bound the eviction queue as well as the map.
+        for _ in 0..2048 { cache.remove(&key(1024)); cache.insert(key(1024), signature); }
+        assert_eq!(cache.entries.len(), 1024); assert_eq!(cache.order.len(), 1024);
     }
 
     #[test]

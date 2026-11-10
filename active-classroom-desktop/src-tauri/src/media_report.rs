@@ -12,6 +12,8 @@ pub(crate) fn record(value: Value) {
         events.push_back(json!({"atMs":SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,"data":value}));
     }
 }
+fn io_value(text: &str, name: &str) -> Option<u64> { text.lines().find_map(|line| line.strip_prefix(name)).and_then(|value| value.trim().parse().ok()) }
+fn status_kb(text: &str, name: &str) -> Option<u64> { text.lines().find_map(|line| line.strip_prefix(name)).and_then(|value| value.split_whitespace().next()).and_then(|value| value.parse().ok()) }
 fn processes() -> Value {
     let mut result = Vec::new(); let mut pending = vec![std::process::id()]; let mut seen = std::collections::HashSet::new();
     while let Some(pid) = pending.pop() {
@@ -21,7 +23,13 @@ fn processes() -> Value {
         let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
         let ticks: Vec<_> = stat.rsplit_once(") ").map(|(_, value)| value.split_whitespace().collect()).unwrap_or_default();
         let cpu: u64 = [11usize, 12].into_iter().filter_map(|index| ticks.get(index).and_then(|value| value.parse::<u64>().ok())).sum();
-        result.push(json!({"pid":pid,"process":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"threads":field("Threads:"),"cpuTicks":cpu,"descriptors":std::fs::read_dir(format!("/proc/{pid}/fd")).map(|entries| entries.count()).unwrap_or(0)}));
+        // Absent or unreadable sources yield null, never a fabricated zero. rchar/wchar count syscall bytes
+        // (including page cache); read_bytes/write_bytes count bytes that reached the storage layer.
+        let io = std::fs::read_to_string(format!("/proc/{pid}/io")).ok();
+        let io_field = |name: &str| io.as_deref().and_then(|text| io_value(text, name));
+        let swap = status_kb(&status, "VmSwap:");
+        let start = ticks.get(19).and_then(|value| value.parse::<u64>().ok());
+        result.push(json!({"pid":pid,"startTicks":start,"process":field("Name:"),"rss":field("VmRSS:"),"peak":field("VmHWM:"),"swap":swap,"threads":field("Threads:"),"cpuTicks":cpu,"rchar":io_field("rchar:"),"readBytes":io_field("read_bytes:"),"writeBytes":io_field("write_bytes:"),"descriptors":std::fs::read_dir(format!("/proc/{pid}/fd")).map(|entries| entries.count()).unwrap_or(0)}));
         for task in std::fs::read_dir(format!("/proc/{pid}/task")).into_iter().flatten().flatten() {
             if let Ok(children) = std::fs::read_to_string(task.path().join("children")) { pending.extend(children.split_whitespace().filter_map(|child| child.parse::<u32>().ok())); }
         }
