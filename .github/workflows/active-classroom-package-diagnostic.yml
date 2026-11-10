@@ -39,6 +39,7 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           npm ci
+          npm run build
           mkdir -p "$RUNNER_TEMP/video-report" "$RUNNER_TEMP/video-fixtures"
           ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$RUNNER_TEMP/video-fixtures" npm run test:media:linux
           sha256sum "$RUNNER_TEMP/video-fixtures"/* > "$RUNNER_TEMP/video-report/fixture-hashes.txt"
