@@ -87,6 +87,31 @@ impl CacheSignature {
 }
 
 #[cfg(unix)]
+const SETTLED_AGE: std::time::Duration = std::time::Duration::from_secs(2);
+
+#[cfg(unix)]
+fn valid_timestamp(sec: i64, nsec: i64) -> Option<std::time::Duration> {
+    if sec < 0 || !(0..1_000_000_000).contains(&nsec) { return None; }
+    Some(std::time::Duration::new(sec as u64, nsec as u32))
+}
+
+#[cfg(unix)]
+fn now_since_epoch() -> Option<std::time::Duration> {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()
+}
+
+// A signature may be cached (lookup and insert) only if its ctime was already at least
+// SETTLED_AGE old when verification started, before any byte was read. Future, negative or
+// out-of-range timestamps are never eligible. Not a guarantee against root, clock rollback or remote FS.
+#[cfg(unix)]
+impl CacheSignature {
+    fn settled_at(&self, now: std::time::Duration) -> bool {
+        let (Some(mtime), Some(ctime)) = (valid_timestamp(self.mtime_sec, self.mtime_nsec), valid_timestamp(self.ctime_sec, self.ctime_nsec)) else { return false };
+        mtime <= now && now.checked_sub(ctime).map(|age| age >= SETTLED_AGE).unwrap_or(false)
+    }
+}
+
+#[cfg(unix)]
 type CacheKey = (PathBuf, String, u64);
 
 #[cfg(unix)]
@@ -141,6 +166,9 @@ fn clear_verified_cache(root: &Path) {
 }
 
 pub(crate) fn verified(path: &Path, hash: &str, size: u64) -> Result<bool, String> {
+    // Instant taken before any byte is read; cache eligibility depends only on it.
+    #[cfg(unix)]
+    let started = now_since_epoch();
     let sym_meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -160,8 +188,9 @@ pub(crate) fn verified(path: &Path, hash: &str, size: u64) -> Result<bool, Strin
         use std::os::unix::fs::MetadataExt;
         if sym_meta.dev() != desc_meta.dev() || sym_meta.ino() != desc_meta.ino() { return Ok(false); }
         let sig_before = CacheSignature::from_metadata(&desc_meta);
+        let settled = started.map(|now| sig_before.settled_at(now)).unwrap_or(false);
         let key = (path.to_path_buf(), hash.to_string(), size);
-        let hit = cache_store().lock().map(|cache| cache.get(&key, &sig_before)).unwrap_or(false);
+        let hit = settled && cache_store().lock().map(|cache| cache.get(&key, &sig_before)).unwrap_or(false);
         if hit {
             let sym_after = match fs::symlink_metadata(path) {
                 Ok(m) => m,
@@ -215,6 +244,7 @@ pub(crate) fn verified(path: &Path, hash: &str, size: u64) -> Result<bool, Strin
         let sig_before = CacheSignature::from_metadata(&desc_meta);
         let sig_after = CacheSignature::from_metadata(&desc_after);
         if sig_before != sig_after || CacheSignature::from_metadata(&sym_after) != sig_after { return Ok(false); }
+        if !started.map(|now| sig_before.settled_at(now)).unwrap_or(false) { return Ok(true); }
         if let Ok(mut cache) = cache_store().lock() {
             cache.insert((path.to_path_buf(), hash.to_string(), size), sig_after);
         }
@@ -695,6 +725,13 @@ mod startup_tests {
         HASHED_OBJECTS.with(|count| count.set(0));
         HASHED_BYTES.with(|count| count.set(0));
     }
+    // Waits once so every object published so far has a ctime older than the cache margin, then
+    // forces one settled verification of each committed object. Never call it per object or from publish().
+    #[cfg(unix)]
+    fn settle(root: &Path) {
+        std::thread::sleep(std::time::Duration::from_millis(2100));
+        execute(root, "list", Value::Null).unwrap();
+    }
     fn manifest_for(unit: &str, version: u64, payload: &[u8]) -> Value {
         let mut manifest: Value = serde_json::from_str(include_str!("../../../docs/active-classroom-manifest.example.json")).unwrap();
         manifest["unit"]["unitId"] = json!(unit);
@@ -728,6 +765,9 @@ mod startup_tests {
         let fixture = Fixture::new("sixty");
         let root = fixture.cache();
         for index in 0..60 { publish(&root, "commit", &format!("clase{index}"), 1, format!("audio {index}").as_bytes()); }
+        // One wait for all 60 fixtures; the settling pass leaves every object verified and cached.
+        #[cfg(unix)]
+        settle(&root);
         reset_hashed();
         let inventory = execute(&root, "inventory", Value::Null).unwrap();
         assert_eq!(inventory.as_array().unwrap().len(), 60);
@@ -771,7 +811,11 @@ mod startup_tests {
         let payload = b"video o audio para reapertura continua";
         publish(&root, "commit", "u_reopen", 1, payload);
         #[cfg(unix)]
-        clear_verified_cache(&root);
+        {
+            // Settle once so the first open is a cold, cacheable verification.
+            settle(&root);
+            clear_verified_cache(&root);
+        }
         reset_hashed();
 
         // Primera apertura: verificación en frío
@@ -804,6 +848,9 @@ mod startup_tests {
         publish(&root, "commit", "u_tamper", 1, payload_orig);
         let obj_path = object(&root, payload_orig);
 
+        // Settle once so the baseline verification is a true cache hit.
+        #[cfg(unix)]
+        settle(&root);
         reset_hashed();
         assert!(verified(&obj_path, &digest(payload_orig), payload_orig.len() as u64).unwrap());
         #[cfg(unix)]
@@ -843,6 +890,9 @@ mod startup_tests {
         publish(&root, "commit", "u_inode", 1, payload);
         let obj_path = object(&root, payload);
 
+        // Settle once so the baseline verification is a true cache hit.
+        #[cfg(unix)]
+        settle(&root);
         reset_hashed();
         assert!(verified(&obj_path, &digest(payload), payload.len() as u64).unwrap());
         #[cfg(unix)]
@@ -893,6 +943,46 @@ mod startup_tests {
         // Repeated invalidation must bound the eviction queue as well as the map.
         for _ in 0..2048 { cache.remove(&key(1024)); cache.insert(key(1024), signature); }
         assert_eq!(cache.entries.len(), 1024); assert_eq!(cache.order.len(), 1024);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn elegibilidad_de_cache_exige_ctime_asentada_con_tiempo_inyectado() {
+        use std::time::Duration;
+        let sig = |mtime: (i64, i64), ctime: (i64, i64)| CacheSignature { dev: 1, ino: 1, len: 1, mtime_sec: mtime.0, mtime_nsec: mtime.1, ctime_sec: ctime.0, ctime_nsec: ctime.1 };
+        let now = Duration::new(1000, 500);
+        assert!(sig((900, 0), (998, 500)).settled_at(now), "exactamente 2 s es el límite elegible");
+        assert!(!sig((900, 0), (998, 501)).settled_at(now), "un nanosegundo menos no es elegible");
+        assert!(sig((900, 0), (0, 0)).settled_at(now));
+        assert!(!sig((900, 0), (1000, 0)).settled_at(now), "ctime reciente");
+        assert!(!sig((900, 0), (1000, 501)).settled_at(now), "ctime futura");
+        assert!(!sig((1000, 501), (900, 0)).settled_at(now), "mtime futura");
+        assert!(!sig((-1, 0), (900, 0)).settled_at(now), "mtime negativa");
+        assert!(!sig((900, 0), (-1, 0)).settled_at(now), "ctime negativa");
+        assert!(!sig((900, 0), (900, -1)).settled_at(now), "nsec negativo");
+        assert!(!sig((900, 1_000_000_000), (900, 0)).settled_at(now), "nsec fuera de rango");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn firma_no_asentada_repetida_hashea_siempre_y_no_entra_en_cache() {
+        let fixture = Fixture::new("fresh-signature");
+        let path = fixture.0.join("recien");
+        let payload = b"recien escrito";
+        let hash = digest(payload);
+        fs::write(&path, payload).unwrap();
+        let file = File::options().write(true).open(&path).unwrap();
+        file.set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))).unwrap();
+        drop(file);
+        for _ in 0..3 {
+            reset_hashed();
+            assert!(verified(&path, &hash, payload.len() as u64).unwrap());
+            assert_eq!(hashed(), 1, "una firma reciente debe hashear en cada verificación");
+        }
+        let key = (path.clone(), hash.clone(), payload.len() as u64);
+        assert!(!cache_store().lock().unwrap().entries.contains_key(&key), "una firma reciente no debe tener entrada");
+        fs::write(&path, b"RECIEN ESCRITO").unwrap();
+        assert!(!verified(&path, &hash, payload.len() as u64).unwrap(), "mutación inmediata del mismo tamaño debe detectarse");
     }
 
     #[test]

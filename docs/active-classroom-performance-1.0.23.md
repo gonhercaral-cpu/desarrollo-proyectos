@@ -23,7 +23,7 @@ No se delegaron secretos, shell, red, publicación, firma ni integración. Los a
 ## Correcciones
 
 - El cierre y recuperación de errores consultan `inventory()`. La activación de pendientes se conserva; resultados de otra sesión/cola se descartan.
-- Caché de éxitos SHA-256 exclusivamente en RAM, limitada a 1024 entradas en Unix. Clave: ruta, hash esperado y tamaño; firma: dispositivo, inodo, tamaño, mtime y ctime con nanosegundos. No se persiste confianza entre reinicios. Sin firma equivalente en otras plataformas se recalcula el hash.
+- Caché de éxitos SHA-256 exclusivamente en RAM, limitada a 1024 entradas en Unix. Clave: ruta, hash esperado y tamaño; firma: dispositivo, inodo, tamaño, mtime y ctime con nanosegundos. Solo se reutilizan firmas cuya ctime ya tenía al menos dos segundos al empezar la verificación; archivos recientes o timestamps inválidos/futuros se verifican completos sin esperar. No se persiste confianza entre reinicios. Sin firma equivalente en otras plataformas se recalcula el hash.
 - Cambios de identidad, contenido o metadatos invalidan confianza. Se rechazan enlaces simbólicos y archivos no regulares; se compara descriptor/ruta antes y después. Ningún mutex de caché se retiene durante hashing; `has` sale del gate de escritura.
 - Multimedia comparte esa validación y lee cabecera/descritores de códec; mantiene Range, streaming acotado, grants y leases. No se modifican archivos descargados, identidad, auth, reglas ni infraestructura.
 - Animaciones cancelables con un máximo de dos cargas/decodificaciones simultáneas por operación; fallback estático y orden de capas conservados. Revelados futuros se verifican al alcanzarlos. Las capas GIF retiradas liberan `src`, nodos y referencias al cerrar.
@@ -31,13 +31,13 @@ No se delegaron secretos, shell, red, publicación, firma ni integración. Los a
 
 ## Medición comparable de componente en macOS
 
-Arnés temporal que compila el código real de caché sin el envoltorio Tauri; build **debug**, mismo equipo y fixture: ocho unidades con un objeto de 4 MiB por unidad, compartido por sus recursos. Veinte ciclos de apertura y retorno al catálogo. Contador de hashes multiplicado por el tamaño conocido de cada objeto; no son lecturas físicas del dispositivo ni tiempos del programa completo. Preparación/commit del fixture queda fuera del cronómetro.
+Arnés temporal que compila el código real de caché sin el envoltorio Tauri; build **debug**, mismo equipo y fixture: ocho unidades con un objeto de 4 MiB por unidad, compartido por sus recursos. Veinte ciclos de apertura y retorno al catálogo. Contador de hashes multiplicado por el tamaño conocido de cada objeto; no son lecturas físicas del dispositivo ni tiempos del programa completo. Preparación del fixture, asentamiento de timestamps y calentamiento de verificaciones quedan fuera del cronómetro. La espera de asentamiento existe solo en el arnés de pruebas; la aplicación nunca duerme para permitir un hit de caché.
 
 | Variante | Bytes hasheados en 20 ciclos | Tiempo total | Mediana por ciclo | P95 por ciclo |
 | --- | ---: | ---: | ---: | ---: |
 | 1.0.22: open + list al cerrar | 754 974 720 (720 MiB) | 36 742 ms | 1 823,378 ms | 1 972,866 ms |
-| 1.0.23: caché vaciada antes del primer ciclo | 33 554 432 (32 MiB) | 1 956 ms | 21,602 ms | 213,763 ms |
-| 1.0.23: verificaciones de commit aún calientes | 0 | 436 ms | 21,557 ms | 23,233 ms |
+| 1.0.23: caché vaciada antes del primer ciclo | 33 554 432 (32 MiB) | 1 998 ms | 23,220 ms | 216,890 ms |
+| 1.0.23: objetos asentados ya verificados | 0 | 492 ms | 21,985 ms | 24,913 ms |
 
 El caso frío reduce bytes hasheados un 95,56%; cada objeto se valida una vez. Estos números no permiten estimar RAM, swap, latencia Linux ni garantía de toda una jornada. `rchar` cuenta bytes de llamadas de lectura, incluso servidos desde page cache; `read_bytes` cuenta I/O atribuido a la capa de almacenamiento. No se deben sumar RSS compartidos como RAM física única. Referencia: [documentación /proc del kernel](https://www.kernel.org/doc/html/next/filesystems/proc.html).
 
@@ -57,6 +57,14 @@ Criterios deterministas: cero auditorías globales al cerrar/error, 20 cambios c
 CI existente compila en Ubuntu 22.04 y comprueba paquetes en Ubuntu 22.04/24.04/26.04. No equivale a Zorin físico ni a equipos limitados del aula. No hubo Ubuntu/Zorin local en esta Mac. Deben repetirse veinte ciclos con unidades reales (imágenes grandes, GIF, audio, video, diapositivas y proyección), reposo, cierre completo/reinicio, offline y actualización.
 
 En Ajustes > Acerca de > Diagnóstico multimedia: iniciar, reproducir la secuencia, guardar reporte en Descargas y detener. Correlacionar `unit-open-start`, `unit-open-ready`, eventos multimedia y `unit-close` con diferencias por `(pid,startTicks)`; contadores ausentes son null. Para atribución a archivos, usar una traza local acotada de open/read del PID señalado y conservarla fuera del repositorio; no activar trazas permanentes ni registrar buffers de contenido. Complementar con `pidstat -r -u -d -p PID 1` durante una ventana corta y PSS de `smaps_rollup` si está disponible. No vaciar page cache ni alterar swap como parte de la corrección.
+
+## Defecto detectado por la primera VALIDATION Ubuntu
+
+Run [42918901172](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/42918901172), SHA `6bc30abec47564c380cb82277d618f20dea458c2`: falló `local_media::tests::missing_hash_and_mime_fail_before_grant` en el target `media_playback` (esperaba `damaged`, observó `format`). Una reescritura inmediata pudo conservar la firma de timestamps y reutilizar un SHA antiguo. No se publicó ese candidato ni se cambió la expectativa de la prueba.
+
+Corrección adicional de Claude revisada por Codex: lookup e inserción requieren que ctime ya estuviera asentada al **inicio** de la verificación; el tiempo empleado hasheando no legitima un archivo reciente. No hay esperas en producción. Las pruebas de caché caliente esperan una sola vez por fixture, y las de archivos no asentados verifican que no entren en caché. Límites de tiempo/validez se prueban con reloj inyectado en la función de elegibilidad. Catorce pruebas de inicio/caché y el target concreto que falló pasan localmente tras la corrección; pendiente repetir VALIDATION completa.
+
+La granularidad variable del kernel está documentada en [Multigrain timestamps](https://www.kernel.org/doc/html/v7.0/filesystems/multigrain-ts.html). La confianza de esta caché supone filesystem local con timestamps normales; no promete resistencia frente a root, retrocesos arbitrarios del reloj ni filesystem remoto. Archivos con timestamps futuros o inválidos usan SHA completo.
 
 ## Publicación
 
