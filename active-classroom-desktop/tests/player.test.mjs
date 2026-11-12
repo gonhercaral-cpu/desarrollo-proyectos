@@ -186,6 +186,69 @@ test("imagen inválida y formato no compatible informan error recuperable", asyn
   assert.match(states.at(-1).error, /no compatible/); unsupported.destroy();
 });
 
+function fakeImages(t) {
+  const created = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  class FakeImage {
+    constructor() { this.gate = deferred(); this.attributes = new Map(); created.push(this); }
+    set src(value) { this.attributes.set("src", value); }
+    get src() { return this.attributes.get("src") ?? ""; }
+    removeAttribute(name) { this.attributes.delete(name); }
+    decode() { return this.gate.promise.then(() => { if (!this.attributes.has("src")) throw new Error("decode-cancelled"); }); }
+  }
+  Object.defineProperty(globalThis, "Image", { configurable: true, writable: true, value: FakeImage });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, "Image", previous); else delete globalThis.Image; });
+  return created;
+}
+
+test("ImageRenderer.setSource limpia temporales al cambiar o destruir y no instala tardío", async (t) => {
+  const { root } = dom(t); const created = fakeImages(t);
+  const options = { page: 1, volume: .8, muted: false, onState() {}, onPage() {} };
+  const renderer = new ImageRenderer();
+  await renderer.mount(root, { url: "asset://localhost/a", name: "A", mimeType: "image/png", sizeBytes: 1 }, options);
+  const img = root.querySelector("img"); const source = url => ({ url, name: url, mimeType: "image/png", sizeBytes: 1 });
+  const first = renderer.setSource(source("asset://localhost/b")); const [tempB] = created;
+  const second = renderer.setSource(source("asset://localhost/c")); const tempC = created[1];
+  assert.equal(tempB.attributes.has("src"), false, "el temporal reemplazado libera src");
+  tempB.gate.resolve(); await first;
+  assert.equal(img.src, "asset://localhost/a", "un resultado obsoleto no se instala");
+  tempC.gate.resolve(); await second;
+  assert.equal(img.src, "asset://localhost/c"); assert.equal(tempC.attributes.has("src"), false);
+  const third = renderer.setSource(source("asset://localhost/d")); const tempD = created[2];
+  renderer.destroy(); assert.equal(tempD.attributes.has("src"), false);
+  tempD.gate.resolve(); await third;
+  assert.equal(img.hasAttribute("src"), false, "tras destroy no se instala nada");
+  await renderer.setSource(source("asset://localhost/e")); assert.equal(created.length, 3, "destruido no crea temporales");
+});
+
+test("pasos futuros no se verifican hasta ser alcanzados", async (t) => {
+  const { root, cleanup } = dom(t); const manifest = googleSlidesFixture(); const slide = manifest.slides[0];
+  const base = manifest.resources[0];
+  slide.builds = [1, 2, 3].map(n => { const resource = structuredClone(base); resource.resourceId = `build-${n}`; manifest.resources.push(resource); return { order: n, resourceId: resource.resourceId }; });
+  Object.assign(slide, { interactionMode: "builds", buildCount: 3, interaction: { mode: "builds", buildCount: 3 } });
+  const verified = [];
+  const player = new ClassroomPlayer(root, localClass(manifest), () => {}, { toUrl, verifyResource: async id => { verified.push(id); return true; }, createRenderer: async kind => { const renderer = rendererDouble(kind); renderer.setSource = async () => {}; return renderer; } });
+  cleanup(() => player.destroy()); await tick(); await tick();
+  assert.deepEqual(verified.filter(id => id.startsWith("build-")), []);
+  await player.dispatch("ADVANCE"); await tick();
+  assert.deepEqual(verified.filter(id => id.startsWith("build-")), ["build-1"]);
+  await player.dispatch("ADVANCE"); await tick();
+  const reached = verified.filter(id => id.startsWith("build-"));
+  assert.ok(reached.includes("build-2") && !reached.includes("build-3"));
+});
+
+test("cerrar el player aborta la precarga de GIF en curso", async (t) => {
+  const { root } = dom(t); const manifest = googleSlidesFixture(); const base = manifest.resources[0];
+  for (const id of ["anim-bg", "anim-gif"]) { const resource = structuredClone(base); resource.resourceId = id; manifest.resources.push(resource); }
+  base.animation = { backgroundResourceId: "anim-bg", images: [{ resourceId: "anim-gif", x: 1, y: 1, width: 10, height: 10 }] };
+  const signals = [];
+  const player = new ClassroomPlayer(root, localClass(manifest), () => {}, { toUrl, verifyResource: async () => true, preloadAnimationImage: (_source, signal) => { signals.push(signal); return new Promise(() => {}); }, createRenderer: async kind => { const renderer = rendererDouble(kind); renderer.setSource = async () => {}; return renderer; } });
+  await waitFor(() => signals.length > 0);
+  assert.ok(signals.every(signal => !signal.aborted));
+  player.destroy();
+  assert.ok(signals.every(signal => signal.aborted));
+});
+
 for (const Renderer of [AudioRenderer, VideoRenderer]) test(`${Renderer.name}: reproducción, stop, seek, volumen, mute, error y limpieza`, async (t) => {
   const { root, window } = dom(t); const prototype = window.HTMLMediaElement.prototype;
   t.mock.method(prototype, "load", () => {});

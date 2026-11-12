@@ -34,6 +34,7 @@ export class ClassroomPlayer {
   private source?: RendererSource;
   private surface?: InteractionSurface;
   private buildSequence = 0;
+  private buildAbort?: AbortController;
   private sourceSlide: number | null = null;
   private sourceBuild = 0;
   private verifiedSources = new Map<string, Promise<RendererSource>>();
@@ -238,7 +239,7 @@ export class ClassroomPlayer {
     }
     const sequence = ++this.sequence;
     this.animationMessage = "";
-    ++this.buildSequence; this.surface?.destroy(); this.surface = undefined;
+    ++this.buildSequence; this.buildAbort?.abort(); this.buildAbort = undefined; this.surface?.destroy(); this.surface = undefined;
     this.renderer?.destroy(); this.renderer = undefined; this.renderedId = "";
     if (previousSource) this.dependencies.releaseMediaSource?.(previousSource);
     this.source = undefined;
@@ -445,11 +446,13 @@ export class ClassroomPlayer {
   private async showBuild(): Promise<void> {
     if (!this.controller.isPresentation || this.controller.slideIndex === null || !this.renderer) return;
     const generation = ++this.buildSequence;
+    this.buildAbort?.abort(); const abort = this.buildAbort = new AbortController();
+    const preload = (source: RendererSource, signal?: AbortSignal) => (this.dependencies.preloadAnimationImage ?? preloadAnimationImage)(source, signal ?? abort.signal);
     const slide = this.classroom.manifest.slides[this.controller.slideIndex];
     if (!this.controller.buildCount) {
       if (this.renderer.kind === "image") {
         const base = localSource(this.classroom, this.controller.presentationId, this.dependencies.toUrl);
-        const source = await animatedSource(this.classroom, this.controller.presentationId, base, id => this.buildSource(id), this.dependencies.preloadAnimationImage);
+        const source = await animatedSource(this.classroom, this.controller.presentationId, base, id => this.buildSource(id), preload, abort.signal);
         if (generation !== this.buildSequence || this.disposed) return;
         this.animationMessage = source === base && this.classroom.manifest.resources.find(resource => resource.resourceId === this.controller.presentationId)?.animation ? "Animación no disponible; se muestra imagen estática." : "";
         if (this.source && this.source.url !== source.url) await this.renderer.setSource?.(source);
@@ -465,13 +468,13 @@ export class ClassroomPlayer {
     }
     if (!this.surface) this.surface = new InteractionSurface(this.element(".player-renderer-content"));
     const current = this.controller.currentBuild;
-    // Verify and preload the complete sequence once, so clicking never fetches remote content.
-    const ids = [...new Set((slide.builds || []).flatMap(step => [step.resourceId, ...(step.layers || []).map(layer => layer.resourceId)].filter((id): id is string => !!id)))];
+    // Verify only the steps already reached; future steps are verified when they become current.
+    const ids = [...new Set((slide.builds || []).slice(0, current).flatMap(step => [step.resourceId, ...(step.layers || []).map(layer => layer.resourceId)].filter((id): id is string => !!id)))];
     await Promise.all(ids.map(id => this.buildSource(id)));
     if (generation !== this.buildSequence || this.disposed) return;
     const raster = current ? slide.builds?.[current - 1]?.resourceId : undefined;
     const base = await this.buildSource(raster || this.controller.presentationId);
-    const source = raster ? base : await animatedSource(this.classroom, this.controller.presentationId, base, id => this.buildSource(id), this.dependencies.preloadAnimationImage);
+    const source = raster ? base : await animatedSource(this.classroom, this.controller.presentationId, base, id => this.buildSource(id), preload, abort.signal);
     const layers: ResolvedLayer[] = [...(source.layers || [])];
     for (const step of (slide.builds || []).slice(0, current)) for (const layer of step.layers || []) layers.push({ ...layer, ...(layer.resourceId ? { url: (await this.buildSource(layer.resourceId)).url } : {}) });
     if (generation !== this.buildSequence || this.disposed) return;
@@ -508,7 +511,7 @@ export class ClassroomPlayer {
     if (this.disposed) return;
     this.disposed = true; this.music.destroy(); ++this.sequence; ++this.audioSequence;
     this.discardAudio();
-    ++this.buildSequence; this.surface?.destroy(); this.verifiedSources.clear();
+    ++this.buildSequence; this.buildAbort?.abort(); this.buildAbort = undefined; this.surface?.destroy(); this.surface = undefined; this.verifiedSources.clear();
     this.projection.destroy();
     if (this.source) this.dependencies.releaseMediaSource?.(this.source); this.source = undefined;
     window.removeEventListener("keydown", this.keyListener); window.removeEventListener("classroom-shortcuts-changed", this.refreshShortcuts); this.renderer?.destroy(); this.renderer = undefined;

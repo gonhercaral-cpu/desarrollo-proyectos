@@ -27,7 +27,7 @@ export class InteractionSurface {
       this.overlay.append(node);
       retained.set(key, node);
     }
-    for (const [key, node] of this.nodes) if (!retained.has(key)) node.remove();
+    for (const [key, node] of this.nodes) if (!retained.has(key)) { node.removeAttribute("src"); node.remove(); }
     this.nodes = retained;
     this.host.append(this.overlay); this.layout();
   }
@@ -40,5 +40,9 @@ export class InteractionSurface {
     Object.assign(this.overlay.style, Object.fromEntries(Object.entries(bounds).map(([key, value]) => [key, `${value}px`])));
     Array.from(this.overlay.children).forEach((node, index) => { (node as HTMLElement).style.fontSize = `${bounds.width * (this.layers[index].fontSize || 3) / 100}px`; });
   }
-  destroy(): void { this.observer?.disconnect(); this.host.removeEventListener("load", this.onLoad, true); this.overlay.remove(); }
+  destroy(): void {
+    this.observer?.disconnect(); this.host.removeEventListener("load", this.onLoad, true);
+    for (const node of this.nodes.values()) node.removeAttribute("src");
+    this.nodes.clear(); this.layers = []; this.overlay.replaceChildren(); this.overlay.remove();
+  }
 }

@@ -23,10 +23,24 @@ impl Drop for TransferLog { fn drop(&mut self) {
     if std::env::var_os("ACTIVE_CLASSROOM_MEDIA_DIAGNOSTICS").is_some() { eprintln!("[Active Classroom Media] event={} read_bytes={} sent_bytes={} block_bytes={BLOCK_BYTES}", if complete { "range-completed" } else { "range-cancelled" }, self.read, self.sent); }
 } }
 #[derive(Clone, PartialEq, Eq)]
-struct Signature { size: u64, modified: Option<SystemTime>, #[cfg(unix)] inode: (u64, u64) }
+struct Signature {
+    size: u64,
+    modified: Option<SystemTime>,
+    #[cfg(unix)]
+    inode: (u64, u64),
+    #[cfg(unix)]
+    ctime: (i64, i64),
+}
 impl Signature {
     fn new(metadata: &Metadata) -> Self {
-        Self { size: metadata.len(), modified: metadata.modified().ok(), #[cfg(unix)] inode: { use std::os::unix::fs::MetadataExt; (metadata.dev(), metadata.ino()) } }
+        Self {
+            size: metadata.len(),
+            modified: metadata.modified().ok(),
+            #[cfg(unix)]
+            inode: { use std::os::unix::fs::MetadataExt; (metadata.dev(), metadata.ino()) },
+            #[cfg(unix)]
+            ctime: { use std::os::unix::fs::MetadataExt; (metadata.ctime(), metadata.ctime_nsec()) },
+        }
     }
 }
 #[derive(Serialize, Clone)]
@@ -132,19 +146,23 @@ impl MediaServer {
         let canonical = path.canonicalize().ok();
         if !metadata.is_file() || canonical.as_ref().and_then(|p| p.parent()) != Some(canonical_root.join("objects").as_path()) { return diagnostic.fail("path", "No se pudo leer el video local"); }
         if size != metadata.len() { diagnostic.sha256_valid = Some(false); return diagnostic.fail("damaged", "El archivo descargado está dañado"); }
-        let mut file = match File::open(&path) { Ok(file) => file, Err(_) => return diagnostic.fail("read", "No se pudo leer el video local") };
-        let before = Signature::new(&metadata); let mut digest = Sha256::new(); let mut block = [0u8; BLOCK_BYTES]; let mut head = Vec::new();
-        loop {
-            let count = match file.read(&mut block) { Ok(count) => count, Err(_) => return diagnostic.fail("read", "No se pudo leer el video local") };
-            if count == 0 { break; }
-            if head.is_empty() { head.extend_from_slice(&block[..count]); }
-            digest.update(&block[..count]);
-        }
-        let valid = format!("{:x}", digest.finalize()) == hash && file.metadata().map(|metadata| before == Signature::new(&metadata)).unwrap_or(false);
+        let before = Signature::new(&metadata);
+        let valid = match crate::offline_cache::verified(&path, hash, size) {
+            Ok(valid) => valid,
+            Err(_) => return diagnostic.fail("read", "No se pudo leer el video local"),
+        };
         diagnostic.sha256_valid = Some(valid);
         if !valid { return diagnostic.fail("damaged", "El archivo descargado está dañado"); }
+        let mut file = match File::open(&path) { Ok(file) => file, Err(_) => return diagnostic.fail("read", "No se pudo leer el video local") };
+        let mut head = vec![0u8; size.min(BLOCK_BYTES as u64) as usize];
+        if file.read_exact(&mut head).is_err() { return diagnostic.fail("read", "No se pudo leer el video local"); }
         if !supported_mime(&mime) || !signature_matches(&mime, &head) { return diagnostic.fail("format", "El formato de video no es compatible"); }
         if mime == "video/mp4" || matches!(mime.as_str(), "audio/mp4" | "audio/m4a" | "audio/x-m4a") { diagnostic.codec_mime = mp4_codec_mime(&mut file, size, &mime); }
+        let after_file = match file.metadata() { Ok(m) => m, Err(_) => return diagnostic.fail("read", "No se pudo leer el video local") };
+        let after_path = match fs::symlink_metadata(&path) { Ok(m) => m, Err(_) => return diagnostic.fail("read", "No se pudo leer el video local") };
+        if !after_path.is_file() || before != Signature::new(&after_file) || before != Signature::new(&after_path) {
+            return diagnostic.fail("damaged", "El archivo descargado está dañado");
+        }
         match self.register(path, mime, size, before) {
             Ok(url) => { diagnostic.url = Some(url); diagnostic },
             Err(_) => diagnostic.fail("read", "No se pudo leer el video local"),
@@ -327,7 +345,7 @@ pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, server: t
         }
     }
     let safe = Value::Object(safe);
-    if safe["window"] == "teacher" && safe["event"] == "playback-sample" { crate::media_report::sample(server.metrics()); }
+    if safe["window"] == "teacher" && matches!(safe["event"].as_str(), Some("playback-sample" | "unit-open-start" | "unit-open-ready" | "unit-open-error" | "unit-close" | "catalog-ready")) { crate::media_report::sample(server.metrics()); }
     crate::media_report::record(safe.clone());
     eprintln!("[Active Classroom Media] {}", safe); Ok(())
 }
@@ -364,6 +382,17 @@ mod tests {
         let checked = server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic);
         assert_eq!(checked.codec_mime.as_deref(), Some("video/mp4; codecs=\"avc1.42E01E, mp4a.40.2\"")); fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn ftyp_after_padding_keeps_legacy_header_window() {
+        // Existing validation accepted a valid ftyp box anywhere in the first 64 KiB.
+        let mut bytes = Vec::from(8192u32.to_be_bytes()); bytes.extend_from_slice(b"free"); bytes.resize(8192, 0);
+        bytes.extend_from_slice(b"\0\0\0\x18ftypisom0123456789ABCDEF");
+        let (root, server, hash, diagnostic) = fixture(&bytes, "video/mp4");
+        let checked = server.inspect_object(&root, &hash, bytes.len() as u64, "video/mp4".into(), diagnostic);
+        assert!(checked.url.is_some(), "{:?}", checked.error_code);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn missing_hash_and_mime_fail_before_grant() {
         let bytes = b"\0\0\0\x18ftypisom0123456789ABCDEF";

@@ -4,7 +4,7 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonical, sha256, validateManifest } from "../src/offline/manifest.ts";
-import { animatedSource } from "../src/player/animated-source.ts";
+import { animatedSource, preloadAnimationImage } from "../src/player/animated-source.ts";
 import { SyncEngine, openLocalClass } from "../src/offline/sync.ts";
 import { localSource } from "../src/player/local-source.ts";
 import { DiskCache } from "./disk-cache.mjs";
@@ -60,6 +60,95 @@ test("asset ausente o GIF inválido conserva diapositiva estática completa", as
       async () => { throw new Error("invalid-gif"); });
     assert.equal(source, fallback);
   }
+});
+
+function fakeImage(t) {
+  const created = []; const previous = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  globalThis.Image = class { constructor() { this.attrs = new Map(); this.decodes = 0; created.push(this); }
+    set src(value) { this.attrs.set("src", value); } get src() { return this.attrs.get("src"); }
+    removeAttribute(name) { this.attrs.delete(name); } decode() { this.decodes++; return new Promise(() => {}); } };
+  t.after(() => { if (previous) Object.defineProperty(globalThis, "Image", previous); else delete globalThis.Image; });
+  return created;
+}
+
+test("preloadAnimationImage: abort limpia src, cancela timeout y no espera decode", async t => {
+  const created = fakeImage(t); const cleared = []; const realClear = globalThis.clearTimeout;
+  t.mock.method(globalThis, "clearTimeout", handle => { cleared.push(handle); realClear(handle); });
+  const controller = new AbortController();
+  const pending = preloadAnimationImage({ url: "asset://localhost/x" }, controller.signal);
+  const outcome = assert.rejects(pending, /animation-load-aborted/);
+  assert.equal(created[0].src, "asset://localhost/x");
+  controller.abort(); await outcome;
+  assert.equal(created[0].attrs.has("src"), false);
+  assert.equal(cleared.length, 1, "el timeout de 10 s se cancela");
+});
+
+test("preloadAnimationImage no inicia si la señal ya está abortada", async t => {
+  const created = fakeImage(t); const controller = new AbortController(); controller.abort();
+  await preloadAnimationImage({ url: "asset://localhost/x" }, controller.signal);
+  assert.equal(created.length, 0);
+});
+
+test("animatedSource no inicia precarga si se aborta mientras espera load", async () => {
+  const classroom = { manifest: fixture() }; const fallback = { url: "asset://localhost/full.png" };
+  const controller = new AbortController(); let preloads = 0;
+  const source = await animatedSource(classroom, classroom.manifest.mainPresentationId, fallback,
+    async id => { controller.abort(); return { url: `asset://localhost/${id}` }; },
+    async () => { preloads++; }, controller.signal);
+  assert.equal(source, fallback); assert.equal(preloads, 0);
+});
+
+function layered(count) {
+  const manifest = fixture();
+  manifest.resources[0].animation = { backgroundResourceId: "background", images: Array.from({ length: count }, (_, i) => ({ resourceId: `l${i}`, x: i, y: i, width: 10, height: 10 })) };
+  return manifest;
+}
+const tick = () => new Promise(resolve => setImmediate(resolve));
+function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
+
+test("animatedSource limita load y decode a 2 trabajos y conserva el orden de capas", async () => {
+  const classroom = { manifest: layered(4) }; const fallback = { url: "asset://localhost/full.png", name: "Slide" };
+  const ids = ["background", "l0", "l1", "l2", "l3"]; const gates = new Map(ids.map(id => [id, deferred()]));
+  let active = 0, max = 0; const started = [];
+  const enter = () => { active++; max = Math.max(max, active); };
+  const pending = animatedSource(classroom, classroom.manifest.mainPresentationId, fallback,
+    async id => { enter(); started.push(id); await gates.get(id).promise; active--; return { url: `asset://localhost/${id}` }; },
+    async () => { enter(); await tick(); active--; });
+  await tick();
+  assert.deepEqual(started, ["background", "l0"]);
+  for (const id of ["l3", "l2", "l1", "l0", "background"]) gates.get(id).resolve(); // l0 termina antes que el fondo
+  const source = await pending;
+  assert.equal(max, 2); assert.deepEqual(started, ids);
+  assert.equal(source.url, "asset://localhost/background");
+  assert.deepEqual(source.layers.map(layer => layer.url), ids.slice(1).map(id => `asset://localhost/${id}`));
+});
+
+test("animatedSource no procesa más capas tras abortar en el primer job", async () => {
+  const classroom = { manifest: layered(4) }; const fallback = { url: "asset://localhost/full.png" };
+  const controller = new AbortController(); const loads = []; const preloads = [];
+  const source = await animatedSource(classroom, classroom.manifest.mainPresentationId, fallback,
+    async id => { loads.push(id); return { url: `asset://localhost/${id}` }; },
+    async value => { preloads.push(value.url); controller.abort(); }, controller.signal);
+  assert.equal(source, fallback);
+  assert.deepEqual(loads, ["background", "l0"]);
+  assert.deepEqual(preloads, ["asset://localhost/background"]);
+});
+
+test("animatedSource: un error cancela precargas hermanas y retira el listener externo", async t => {
+  const classroom = { manifest: layered(4) }; const fallback = { url: "asset://localhost/full.png" };
+  const controller = new AbortController(); const removed = t.mock.method(controller.signal, "removeEventListener");
+  const loads = []; let siblingAborted = false;
+  const source = await animatedSource(classroom, classroom.manifest.mainPresentationId, fallback,
+    async id => { loads.push(id); return { url: `asset://localhost/${id}` }; },
+    async (value, signal) => {
+      if (value.url.endsWith("/background")) throw new Error("invalid-gif");
+      if (!signal.aborted) await new Promise(resolve => signal.addEventListener("abort", resolve, { once: true }));
+      siblingAborted = signal.aborted;
+    }, controller.signal);
+  await tick();
+  assert.equal(source, fallback); assert.equal(siblingAborted, true);
+  assert.deepEqual(loads, ["background", "l0"]);
+  assert.deepEqual(removed.mock.calls.map(call => call.arguments[0]), ["abort"]);
 });
 
 test("GIF y fondo descargan con integridad y se abren después de reiniciar sin red", async t => {

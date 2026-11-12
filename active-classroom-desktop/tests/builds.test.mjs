@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import { ClassSessionController, isProjectionSnapshot } from "../src/player/ClassSessionController.ts";
 import { ClassroomPlayer } from "../src/player/ClassroomPlayer.ts";
+import { InteractionSurface } from "../src/player/InteractionSurface.ts";
 import { ProjectionPlayer } from "../src/player/projection/ProjectionPlayer.ts";
 import { initialRendererState } from "../src/player/types.ts";
 import { shortcutFor } from "../src/player/shortcuts.ts";
@@ -107,4 +108,17 @@ test("fallback manual usa imagen inicial sin respuestas y mantiene profesor/proy
   assert.match(projected.source.url, /initial-image/); assert.equal(display.mounts, 1);
   await player.dispatch("BACK"); await settle(); assert.equal(document.querySelector("#audience .interaction-surface").textContent, "");
   const invalid = structuredClone(m); invalid.slides[0].interaction.initialResourceId = "missing"; assert.throws(() => new ClassSessionController(invalid));
+});
+
+
+test("20 cierres de capas GIF retiran src y no retienen nodos al eliminar o destruir", t => {
+  environment(t); const host = document.querySelector("#teacher");
+  for (let index = 0; index < 20; index++) {
+    const surface = new InteractionSurface(host);
+    const gif = { type: "image", url: "asset://localhost/animated.gif", x: 0, y: 0, width: 50, height: 50 };
+    surface.update([gif]); const removed = host.querySelector("img");
+    surface.update([]); assert.equal(removed.hasAttribute("src"), false);
+    surface.update([gif]); const closed = host.querySelector("img");
+    surface.destroy(); assert.equal(closed.hasAttribute("src"), false); assert.equal(host.childElementCount, 0);
+  }
 });
