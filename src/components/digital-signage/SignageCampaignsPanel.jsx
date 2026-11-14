@@ -53,6 +53,10 @@ export default function SignageCampaignsPanel({
     updateSchedule({ daysOfWeek: nextDays });
   }
 
+  const plantelOptions = [...new Set([...DIGITAL_SIGNAGE_PLANTELES, ...(form.planteles || [])])];
+  const selectedPlanteles = form.planteles || [];
+  const allPlantelesSelected = plantelOptions.every((plantel) => selectedPlanteles.includes(plantel));
+
   return (
     <div className="signage-main-grid">
       <section className="signage-panel">
@@ -142,30 +146,19 @@ export default function SignageCampaignsPanel({
       </section>
 
       <aside className="signage-side-column">
-        <form className="signage-panel" onSubmit={onSubmit}>
-          <h3>{editingCampaignId ? "Editar campaña" : "Nueva campaña"}</h3>
-          <div className="digital-form-grid">
-            <label>
-              Nombre
-              <input value={form.name} onChange={(event) => updateField("name", event.target.value)} placeholder="Ej. Promoción matutina" />
+        <form className="signage-panel signage-campaign-form" onSubmit={onSubmit}>
+          <header className="signage-campaign-form-header">
+            <h3>{editingCampaignId ? "Editar campaña" : "Nueva campaña"}</h3>
+            <p>Elige el contenido, dónde se mostrará y cuándo estará disponible.</p>
+          </header>
+
+          <section className="signage-campaign-form-section" aria-labelledby="campaign-content-title">
+            <h4 id="campaign-content-title">Contenido</h4>
+            <label className="signage-campaign-field">
+              Nombre de la campaña
+              <input value={form.name} onChange={(event) => updateField("name", event.target.value)} placeholder="Ej. Inscripciones 2027" />
             </label>
-            <fieldset className="signage-schedule-box">
-              <legend>Planteles de la campaña</legend>
-              <button type="button" className="visual-outline-button" onClick={() => updateField("planteles", [...DIGITAL_SIGNAGE_PLANTELES])}>
-                Seleccionar todos
-              </button>
-              {[...new Set([...DIGITAL_SIGNAGE_PLANTELES, ...(form.planteles || [])])].map((plantel) => (
-                <label key={plantel} className="digital-checkbox-label">
-                  <input type="checkbox" checked={(form.planteles || []).includes(plantel)}
-                    onChange={(event) => updateField("planteles", event.target.checked
-                      ? [...(form.planteles || []), plantel]
-                      : (form.planteles || []).filter((value) => value !== plantel))} />
-                  {plantel}
-                </label>
-              ))}
-              <p className="digital-helper">{(form.planteles || []).length} planteles seleccionados. Selecciona al menos uno.</p>
-            </fieldset>
-            <label>
+            <label className="signage-campaign-field">
               Playlist
               <select value={form.playlistId} onChange={(event) => updateField("playlistId", event.target.value)}>
                 <option value="">Seleccionar playlist</option>
@@ -174,86 +167,114 @@ export default function SignageCampaignsPanel({
                 ))}
               </select>
             </label>
-            <label>
-              Prioridad
-              <select value={form.priority} onChange={(event) => updateField("priority", event.target.value)}>
-                <option value="normal">Normal</option>
-                <option value="alta">Alta</option>
-                <option value="urgente">Urgente</option>
-              </select>
-            </label>
-            <label>
-              Publicación
-              <select value={getPublishStatus(form.publishStatus)} onChange={(event) => updateField("publishStatus", event.target.value)}>
-                {PUBLISH_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Fecha inicio
-              <input type="date" value={form.startDate} onChange={(event) => updateField("startDate", event.target.value)} />
-            </label>
-            <label>
-              Fecha fin
-              <input type="date" value={form.endDate} onChange={(event) => updateField("endDate", event.target.value)} />
-            </label>
-          </div>
+          </section>
 
-          <section className="signage-schedule-box">
-            <label className="signage-toggle-row">
-              <input
-                type="checkbox"
-                checked={form.schedule?.enabled === true}
-                onChange={(event) => updateSchedule({ enabled: event.target.checked })}
-              />
-              Usar horario específico
-            </label>
-            <p className="digital-helper">
-              Si no activas esta opción, la campaña se mostrará todo el día durante su vigencia.
+          <fieldset className="signage-campaign-form-section signage-campaign-planteles">
+            <legend>Planteles</legend>
+            <div className="signage-campaign-planteles-toolbar">
+              <p>Selecciona dónde se mostrará esta campaña.</p>
+              <button type="button" className="signage-campaign-select-all" disabled={saving}
+                onClick={() => updateField("planteles", allPlantelesSelected ? [] : [...plantelOptions])}>
+                {allPlantelesSelected ? "Limpiar selección" : "Seleccionar todos"}
+              </button>
+            </div>
+            <div className="signage-campaign-planteles-options">
+              {plantelOptions.map((plantel) => (
+                <label key={plantel} className={`signage-campaign-plantel-option ${selectedPlanteles.includes(plantel) ? "is-selected" : ""}`}>
+                  <input type="checkbox" checked={selectedPlanteles.includes(plantel)}
+                    onChange={(event) => updateField("planteles", event.target.checked
+                      ? [...selectedPlanteles, plantel]
+                      : selectedPlanteles.filter((value) => value !== plantel))} />
+                  <span>{plantel}</span>
+                </label>
+              ))}
+            </div>
+            <p className="signage-campaign-selection-count" role="status">
+              {selectedPlanteles.length === 0 ? "Selecciona al menos un plantel."
+                : `${selectedPlanteles.length} ${selectedPlanteles.length === 1 ? "plantel seleccionado" : "planteles seleccionados"}`}
             </p>
+          </fieldset>
 
+          <section className="signage-campaign-form-section" aria-labelledby="campaign-dates-title">
+            <h4 id="campaign-dates-title">Vigencia y horario</h4>
+            <div className="signage-campaign-field-pair">
+              <label className="signage-campaign-field">
+                Fecha inicio
+                <input type="date" value={form.startDate} onChange={(event) => updateField("startDate", event.target.value)} />
+              </label>
+              <label className="signage-campaign-field">
+                Fecha fin
+                <input type="date" value={form.endDate} onChange={(event) => updateField("endDate", event.target.value)} />
+              </label>
+            </div>
+            <label className="signage-campaign-schedule-toggle">
+              <input type="checkbox" checked={form.schedule?.enabled === true}
+                onChange={(event) => updateSchedule({ enabled: event.target.checked })} />
+              <span>Usar horario específico</span>
+            </label>
+            <p className="signage-campaign-field-hint">
+              {form.schedule?.enabled ? "Elige los días y las horas de reproducción." : "La campaña se mostrará todo el día durante su vigencia."}
+            </p>
             {form.schedule?.enabled === true && (
-              <>
-                <div className="signage-day-picker">
+              <div className="signage-campaign-schedule-fields">
+                <div className="signage-day-picker" role="group" aria-label="Días de reproducción">
                   {WEEKDAY_OPTIONS.map((day) => (
-                    <button
-                      key={day.value}
-                      type="button"
+                    <button key={day.value} type="button" aria-label={day.label}
+                      aria-pressed={form.schedule.daysOfWeek.includes(day.value)}
                       className={form.schedule.daysOfWeek.includes(day.value) ? "active" : ""}
-                      onClick={() => toggleDay(day.value)}
-                    >
+                      onClick={() => toggleDay(day.value)}>
                       {day.short}
                     </button>
                   ))}
                 </div>
-
-                <div className="digital-form-grid">
-                  <label>
+                <div className="signage-campaign-field-pair">
+                  <label className="signage-campaign-field">
                     Hora inicio
                     <input type="time" value={form.schedule.startTime} onChange={(event) => updateSchedule({ startTime: event.target.value })} />
                   </label>
-                  <label>
+                  <label className="signage-campaign-field">
                     Hora fin
                     <input type="time" value={form.schedule.endTime} onChange={(event) => updateSchedule({ endTime: event.target.value })} />
                   </label>
-                  <label>
-                    Zona horaria
-                    <input value={form.schedule.timezone} readOnly />
-                  </label>
                 </div>
-              </>
+                <label className="signage-campaign-field">
+                  Zona horaria
+                  <input value={form.schedule.timezone} readOnly />
+                </label>
+              </div>
             )}
           </section>
 
-          <div className="signage-form-actions">
+          <section className="signage-campaign-form-section" aria-labelledby="campaign-publication-title">
+            <h4 id="campaign-publication-title">Publicación</h4>
+            <div className="signage-campaign-field-pair">
+              <label className="signage-campaign-field">
+                Prioridad
+                <select value={form.priority} onChange={(event) => updateField("priority", event.target.value)}>
+                  <option value="normal">Normal</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">Urgente</option>
+                </select>
+              </label>
+              <label className="signage-campaign-field">
+                Estado de publicación
+                <select value={getPublishStatus(form.publishStatus)} onChange={(event) => updateField("publishStatus", event.target.value)}>
+                  {PUBLISH_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <div className="signage-campaign-form-footer">
             {editingCampaignId && (
-              <button type="button" className="visual-outline-button" onClick={onCancelEdit}>
+              <button type="button" className="visual-outline-button" onClick={onCancelEdit} disabled={saving}>
                 Cancelar edición
               </button>
             )}
             <button type="submit" className="visual-primary-button" disabled={saving}>
-              {editingCampaignId ? "Guardar campaña" : "Crear campaña"}
+              {saving ? "Guardando…" : editingCampaignId ? "Guardar campaña" : "Crear campaña"}
             </button>
           </div>
         </form>
