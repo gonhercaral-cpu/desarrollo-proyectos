@@ -12,7 +12,6 @@ import {
   where,
   limit,
   db,
-  DEVICES_COLLECTION,
   PAIRING_SESSIONS_COLLECTION,
   PAIRING_CODE_TTL_MS,
   assertAdminUser,
@@ -28,6 +27,7 @@ import {
   isPairingSessionClaimable
 } from "./shared";
 import { logSignageAudit } from "./auditService";
+import { prepareRoomDeviceWrite } from "./roomLayoutsService";
 
 export async function createPairingSession() {
   const pairingRef = doc(collection(db, PAIRING_SESSIONS_COLLECTION));
@@ -114,7 +114,6 @@ export async function claimPairingCode(code, deviceData, user) {
   }
 
   const deviceToken = await createUniqueDeviceToken();
-  const deviceRef = doc(db, DEVICES_COLLECTION, deviceToken);
   const pairingRef = doc(db, PAIRING_SESSIONS_COLLECTION, sessionDocument.id);
 
   await runTransaction(db, async (transaction) => {
@@ -133,7 +132,9 @@ export async function claimPairingCode(code, deviceData, user) {
       throw new Error("Codigo expirado.");
     }
 
-    transaction.set(deviceRef, {
+    // Lecturas (device, guards, snapshots publicados) antes de cualquier escritura.
+    const plan = await prepareRoomDeviceWrite(transaction, {
+      id: deviceToken,
       name,
       plantel,
       location,
@@ -146,8 +147,10 @@ export async function claimPairingCode(code, deviceData, user) {
       updatedAt: serverTimestamp(),
       createdBy: getUserName(user),
       createdById: getUserId(user),
-    });
+    }, { mustBeNew: true });
 
+    // Pantalla + manifiesto + guard + pairing consumido: todo junto o nada.
+    plan.commit();
     transaction.update(pairingRef, {
       status: "claimed",
       deviceToken,

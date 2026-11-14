@@ -18,6 +18,8 @@ import {
   normalizePublishStatus,
 } from "../utils/digitalSignage";
 import { campaignMatchesDevice } from "../utils/digitalSignage/signageCampaigns";
+import useRoomLayoutPlayback from "../hooks/useRoomLayoutPlayback";
+import RoomLayoutDisplay from "./digital-signage/RoomLayoutDisplay";
 
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const FALLBACK_DURATION_SECONDS = 10;
@@ -63,7 +65,19 @@ export default function SignagePlayer() {
   const offlineLogRef = useRef("");
   const playStartLogRef = useRef(new Map());
   const currentPlayRef = useRef({ key: "", nonce: -1, startedAt: 0, ended: false });
+  const videoRef = useRef(null);
+  const roomPausedRef = useRef(false);
+  // Tiempo remanente del item: sobrevive a la pausa por acomodo sin cambiar de item.
+  const itemTimerRef = useRef({ instanceId: "", remainingMs: 0 });
+  const roomVideoSnapshotRef = useRef({ instanceId: "", time: 0 });
+  const playlistIdentityRef = useRef({ playlistId: "", signature: "" });
   const device = deviceState.token === deviceToken ? deviceState.value : undefined;
+  const roomPlayback = useRoomLayoutPlayback({
+    deviceToken,
+    device,
+    allowCachedDevice: device === undefined && (Boolean(playerError) || isOffline),
+  });
+  const { getNow: getRoomNow, getRoomAssetUrls } = roomPlayback;
   const canSubscribeCampaigns =
     deviceState.token === deviceToken &&
     deviceState.value !== undefined &&
@@ -81,6 +95,13 @@ export default function SignagePlayer() {
     activeCampaign && !campaignPlaylistUnavailable
       ? activeCampaign.playlistId
       : assignedPlaylistId;
+  // Prioridad: campaña urgente > acomodo > campaña alta/normal > playlist de la pantalla.
+  const urgentCampaignActive =
+    Boolean(activeCampaign) &&
+    !campaignPlaylistUnavailable &&
+    getCampaignPriorityWeight(activeCampaign.priority) >= 3;
+  const activeRoom = urgentCampaignActive ? null : roomPlayback.activeRoomLayout;
+  const roomActive = Boolean(activeRoom);
   const playlist =
     playlistState.playlistId === effectivePlaylistId ? playlistState.value : null;
   const playlistError =
@@ -235,7 +256,11 @@ export default function SignagePlayer() {
     cacheSignageAssets(getCacheablePlaybackItems(liveItems)).catch((error) => {
       console.warn("No se pudo precargar cache de Digital Signage.", error);
     });
-    clearOldSignageCache(getCacheablePlaybackItems(liveItems).map((item) => item.url)).catch((error) => {
+    // Conserva también fondos/logos de acomodos para que sigan disponibles sin red.
+    clearOldSignageCache([
+      ...getCacheablePlaybackItems(liveItems).map((item) => item.url),
+      ...getRoomAssetUrls(),
+    ]).catch((error) => {
       console.warn("No se pudo limpiar cache de Digital Signage.", error);
     });
   }, [
@@ -246,6 +271,7 @@ export default function SignagePlayer() {
     activeCampaign,
     playlist,
     liveItems,
+    getRoomAssetUrls,
   ]);
 
   useEffect(() => {
@@ -290,21 +316,21 @@ export default function SignagePlayer() {
     return subscribeSignageCampaigns(
       (nextCampaigns) => {
         setCampaignState({ value: nextCampaigns, error: "" });
-        setScheduleNow(Date.now());
+        setScheduleNow(getRoomNow());
       },
       () => {
         setCampaignState({ value: [], error: "No se pudieron cargar campañas." });
       }
     );
-  }, [canSubscribeCampaigns]);
+  }, [canSubscribeCampaigns, getRoomNow]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setScheduleNow(Date.now());
+      setScheduleNow(getRoomNow());
     }, CAMPAIGN_RECHECK_MS);
 
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [getRoomNow]);
 
   useEffect(() => {
     if (!effectivePlaylistId || device.active === false) {
@@ -314,21 +340,33 @@ export default function SignagePlayer() {
     return subscribePlaylist(
       effectivePlaylistId,
       (nextPlaylist) => {
+        const nextValue =
+          nextPlaylist?.active === false || !isPublished(nextPlaylist?.publishStatus)
+            ? null
+            : nextPlaylist;
+        const signature = getPlaylistIdentitySignature(nextValue);
+        const previous = playlistIdentityRef.current;
+        const identityChanged =
+          previous.playlistId !== effectivePlaylistId || previous.signature !== signature;
+        playlistIdentityRef.current = { playlistId: effectivePlaylistId, signature };
+
         setPlaylistState({
           playlistId: effectivePlaylistId,
-          value:
-            nextPlaylist?.active === false || !isPublished(nextPlaylist?.publishStatus)
-              ? null
-              : nextPlaylist,
+          value: nextValue,
           error: "",
         });
         setPlayerError("");
-        setCurrentIndex(0);
-        setPlaybackNonce(0);
-        setPlaybackEpoch((current) => current + 1);
-        setFailedItemKeys(new Set());
+        // Solo reinicia la posición si cambió la lista efectiva de items; un snapshot
+        // idéntico (heartbeat, edición ajena, metadatos) conserva item y orden actuales.
+        if (identityChanged) {
+          setCurrentIndex(0);
+          setPlaybackNonce(0);
+          setPlaybackEpoch((current) => current + 1);
+          setFailedItemKeys(new Set());
+        }
       },
       () => {
+        playlistIdentityRef.current = { playlistId: "", signature: "" };
         setPlayerError("Error al cargar contenido");
         setStoredManifestState({
           token: deviceToken,
@@ -385,6 +423,7 @@ export default function SignagePlayer() {
   // Un solo avance por instancia de reproducción, aunque coincidan timer y error.
   const advanceOnce = useCallback(() => {
     const guard = advanceGuardRef.current;
+    if (roomPausedRef.current) return false;
     if (guard.id !== playInstanceId || guard.done) return false;
 
     advanceGuardRef.current = { ...guard, done: true };
@@ -411,6 +450,8 @@ export default function SignagePlayer() {
 
   const failCurrentItem = useCallback(
     (item, errorMessage = "Error al cargar contenido") => {
+      // Con el acomodo visible no se cambia de item ni se marcan fallos ocultos.
+      if (roomPausedRef.current) return;
       if (advanceGuardRef.current.id !== playInstanceId || advanceGuardRef.current.done) return;
 
       if (item) {
@@ -433,15 +474,83 @@ export default function SignagePlayer() {
   // El temporizador depende solo de la instancia y su duración, no de heartbeats del device.
   const currentDurationMillis = currentItem ? getItemTimeoutMillis(currentItem) : 0;
 
+  // Pausa por acomodo: el timer conserva el tiempo remanente del MISMO item y no avanza
+  // mientras el acomodo está visible; al terminar continúa con lo que faltaba.
+  useEffect(() => {
+    roomPausedRef.current = roomActive;
+  }, [roomActive]);
+
   useEffect(() => {
     if (!playInstanceId) return undefined;
 
-    const timeoutId = window.setTimeout(() => {
-      finishCurrentItemRef.current();
-    }, currentDurationMillis);
+    const timer = itemTimerRef.current;
+    if (timer.instanceId !== playInstanceId) {
+      itemTimerRef.current = { instanceId: playInstanceId, remainingMs: currentDurationMillis };
+    }
+    if (roomActive) return undefined;
 
-    return () => window.clearTimeout(timeoutId);
-  }, [playInstanceId, currentDurationMillis]);
+    const startedAt = performance.now();
+    const timeoutId = window.setTimeout(() => {
+      itemTimerRef.current = { instanceId: playInstanceId, remainingMs: 0 };
+      finishCurrentItemRef.current();
+    }, itemTimerRef.current.remainingMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      const current = itemTimerRef.current;
+      if (current.instanceId === playInstanceId) {
+        itemTimerRef.current = {
+          instanceId: playInstanceId,
+          remainingMs: Math.max(0, current.remainingMs - (performance.now() - startedAt)),
+        };
+      }
+    };
+  }, [playInstanceId, currentDurationMillis, roomActive]);
+
+  // Video: se pausa al aparecer el acomodo y se reanuda sin reiniciar el elemento.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (roomActive) {
+      if (roomVideoSnapshotRef.current.instanceId !== playInstanceId) {
+        roomVideoSnapshotRef.current = { instanceId: playInstanceId, time: video.currentTime || 0 };
+      }
+      video.pause();
+      return;
+    }
+
+    const snapshot = roomVideoSnapshotRef.current;
+    if (snapshot.instanceId === playInstanceId) {
+      // Una fuente recién cambiada puede seguir sin metadata. El evento de carga
+      // terminará el seek; hasta entonces se conserva la posición pendiente.
+      if (video.readyState < 1) return;
+      try {
+        if (Math.abs((video.currentTime || 0) - snapshot.time) > 0.1) video.currentTime = snapshot.time;
+      } catch {
+        return;
+      }
+      roomVideoSnapshotRef.current = { instanceId: "", time: 0 };
+    }
+    video.play?.()?.catch?.(() => {});
+  }, [roomActive, playInstanceId]);
+
+  const handleRoomVideoLoaded = useCallback((video, loadedInstanceId) => {
+    if (!video || loadedInstanceId !== playInstanceId) return;
+    const snapshot = roomVideoSnapshotRef.current;
+    if (snapshot.instanceId === loadedInstanceId) {
+      try {
+        if (Math.abs((video.currentTime || 0) - snapshot.time) > 0.1) video.currentTime = snapshot.time;
+      } catch {
+        video.pause();
+        return;
+      }
+      // Mientras se pausa, conservar el punto de reanudación para otros cambios de src.
+      if (!roomPausedRef.current) roomVideoSnapshotRef.current = { instanceId: "", time: 0 };
+    }
+    if (roomPausedRef.current) video.pause();
+    else video.play?.()?.catch?.(() => {});
+  }, [playInstanceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -581,41 +690,58 @@ export default function SignagePlayer() {
     playlistError,
   ]);
 
+  // El acomodo programado se muestra aunque no haya playlist normal válida, siempre que
+  // la pantalla sea válida/activa (el hook ya devuelve null si no lo es).
+  const roomOverlay = roomActive ? (
+    <div className="signage-player-room-overlay" style={ROOM_OVERLAY_STYLE}>
+      <RoomLayoutDisplay
+        layout={activeRoom.layout}
+        template={activeRoom.template}
+        nowMillis={roomPlayback.nowMillis}
+      />
+    </div>
+  ) : null;
+
+  let blockingMessage = "";
   if (playerError && !canUseStoredManifest) {
-    return <PlayerMessage message={playerError} />;
-  }
-
-  if (device === undefined && !canUseStoredManifest) {
-    return <PlayerMessage message="Cargando contenido..." />;
-  }
-
-  if (!device && !canUseStoredManifest) {
-    return <PlayerMessage message="Dispositivo no registrado" />;
-  }
-
-  if (device?.active === false) {
-    return <PlayerMessage message="Dispositivo inactivo" />;
-  }
-
-  if (allItemsFailed) {
-    return <PlayerMessage message="Error al cargar contenido" />;
-  }
-
-  if (
+    blockingMessage = playerError;
+  } else if (device === undefined && !canUseStoredManifest) {
+    blockingMessage = "Cargando contenido...";
+  } else if (!device && !canUseStoredManifest) {
+    blockingMessage = "Dispositivo no registrado";
+  } else if (device?.active === false) {
+    blockingMessage = "Dispositivo inactivo";
+  } else if (allItemsFailed) {
+    blockingMessage = "Error al cargar contenido";
+  } else if (
     !canUseStoredManifest &&
     (!effectivePlaylistId || playlistError || !playlist || items.length === 0 || !currentItem)
   ) {
-    return <PlayerMessage message="Sin contenido asignado" />;
+    blockingMessage = "Sin contenido asignado";
   }
+
+  if (blockingMessage) {
+    if (roomOverlay) {
+      return <main className="signage-player-screen">{roomOverlay}</main>;
+    }
+    return <PlayerMessage message={blockingMessage} />;
+  }
+
+  const visibleNotice = playerNotice || roomPlayback.clockNotice;
 
   return (
     <main className="signage-player-screen">
-      {playerNotice && (
+      {visibleNotice && (
         <div className="signage-player-offline-badge">
-          {playerNotice}
+          {visibleNotice}
         </div>
       )}
-      <div className="signage-player-stage">
+      {/* El stage normal sigue montado (no se recarga) y solo se oculta bajo el acomodo. */}
+      <div
+        className="signage-player-stage"
+        style={roomActive ? { visibility: "hidden" } : undefined}
+        aria-hidden={roomActive || undefined}
+      >
         {currentItem.type === "image" && (
           <img
             key={playInstanceId}
@@ -628,17 +754,26 @@ export default function SignagePlayer() {
         {currentItem.type === "video" && (
           <video
             key={playInstanceId}
+            ref={videoRef}
             src={currentAssetUrl}
-            autoPlay
+            autoPlay={!roomActive}
             muted
             playsInline
             controls={false}
             loop
+            onLoadedMetadata={(event) => handleRoomVideoLoaded(event.currentTarget, playInstanceId)}
+            onLoadedData={(event) => handleRoomVideoLoaded(event.currentTarget, playInstanceId)}
+            onPlay={(event) => {
+              // Un play tardío (cambio de src/caché) no puede sonar ni avanzar bajo el acomodo.
+              if (roomPausedRef.current) event.currentTarget.pause();
+            }}
             onError={() => failCurrentItem(currentItem, "No se pudo reproducir video")}
           />
         )}
 
-        {currentItem.type === "web" && (
+        {/* Limitación: un iframe externo no se puede pausar; se desmonta bajo el acomodo para
+            detener su audio/actividad y se recarga desde el inicio al reanudar. */}
+        {currentItem.type === "web" && !roomActive && (
           <WebContentFrame
             key={playInstanceId}
             item={currentItem}
@@ -661,9 +796,21 @@ export default function SignagePlayer() {
           />
         )}
       </div>
+      {roomOverlay}
     </main>
   );
 }
+
+const ROOM_OVERLAY_STYLE = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 30,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#000",
+  overflow: "hidden",
+};
 
 function PlayerMessage({ message }) {
   return (
@@ -729,6 +876,14 @@ function WebContentFrame({ item, onFailure }) {
       />
     </div>
   );
+}
+
+// Identidad efectiva: items reproducibles en orden con su duración. Ignora metadatos.
+function getPlaylistIdentitySignature(playlist) {
+  if (!playlist) return "none";
+  return normalizePlayableItems(playlist.items)
+    .map((item) => `${item.key}:${item.durationSeconds}`)
+    .join("|");
 }
 
 function goNext(length, setCurrentIndex) {

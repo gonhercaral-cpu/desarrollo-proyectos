@@ -2928,3 +2928,84 @@ describe("Biblioteca global privada de Digital Signage", () => {
     await assertFails(storageAuth("requester").ref("digital-signage/assets/other/image.png").put(new Uint8Array([1]), { contentType: "image/png" }));
   });
 });
+
+
+describe("Acomodo de salones: borradores privados y publicación por pantalla", () => {
+  const layout = {
+    name: "Clases de las nueve", plantel: "Plantel A", timezone: "America/Tijuana",
+    classDays: [1, 2, 3, 4, 5], classStart: "09:00", classEnd: "10:00",
+    assignments: [{ id: "room-1", roomName: "Salón 1", teacher: "Maestra", group: "A1", active: true }],
+    displayRules: [], active: true,
+  };
+
+  it("reserva catálogos, plantillas y borradores a administración", async () => {
+    const db = auth("admin");
+    const documents = [
+      ["digitalSignageRoomConfigs", { plantel: "Plantel A", timezone: "America/Tijuana", rooms: [], teacherNames: [] }],
+      ["digitalSignageRoomLayouts", layout],
+      ["digitalSignageRoomTemplates", { name: "Institucional", version: 1, columns: 2, rows: 4, elements: [] }],
+    ];
+    for (const [name, data] of documents) {
+      await assertSucceeds(setDoc(doc(db, name, "draft"), data));
+      await assertSucceeds(getDocs(collection(db, name)));
+      for (const reader of [unauth(), auth("requester"), auth("collab")]) {
+        await assertFails(getDoc(doc(reader, name, "draft")));
+        await assertFails(getDocs(collection(reader, name)));
+        await assertFails(setDoc(doc(reader, name, "forged"), data));
+      }
+    }
+    await assertFails(setDoc(doc(db, "digitalSignageRoomLayouts", "invalid"), { ...layout, assignments: "invalid" }));
+  });
+
+  it("permite al token existente leer solo su manifiesto vigente y bloquea listados", async () => {
+    const db = auth("admin");
+    const token = "room-screen-token-1234567890";
+    await assertSucceeds(setDoc(doc(db, "digitalSignageDevices", token), { deviceToken: token, plantel: "Plantel A", active: true }));
+    await assertSucceeds(getDoc(doc(unauth(), "digitalSignageRoomDisplays", token)));
+    const manifest = { version: 1, deviceToken: token, plantel: "Plantel A", timezone: "America/Tijuana", active: true, layouts: [] };
+    await assertSucceeds(setDoc(doc(db, "digitalSignageRoomDisplays", token), manifest));
+    await assertSucceeds(getDoc(doc(unauth(), "digitalSignageRoomDisplays", token)));
+    await assertFails(getDocs(collection(unauth(), "digitalSignageRoomDisplays")));
+    await assertFails(getDoc(doc(unauth(), "digitalSignageRoomDisplays", "unknown-token")));
+    await assertFails(updateDoc(doc(unauth(), "digitalSignageRoomDisplays", token), { layouts: [layout] }));
+    await assertSucceeds(setDoc(doc(db, "digitalSignageRoomDisplays", token), { ...manifest, plantel: "Plantel B" }));
+    await assertFails(getDoc(doc(unauth(), "digitalSignageRoomDisplays", token)));
+    await assertSucceeds(setDoc(doc(db, "digitalSignageRoomDisplays", token), manifest));
+    await assertSucceeds(updateDoc(doc(db, "digitalSignageDevices", token), { plantel: "Plantel B" }));
+    await assertFails(getDoc(doc(unauth(), "digitalSignageRoomDisplays", token)));
+    await assertSucceeds(setDoc(doc(db, "digitalSignageRoomDisplays", token), { ...manifest, plantel: "Plantel B" }));
+    await assertSucceeds(updateDoc(doc(db, "digitalSignageDevices", token), { active: false }));
+    await assertFails(getDoc(doc(unauth(), "digitalSignageRoomDisplays", token)));
+  });
+
+  it("valida tipos y límites sin restringir los acomodos a ocho salones", async () => {
+    const db = auth("admin");
+    await assertSucceeds(setDoc(doc(db, "digitalSignageRoomLayouts", "large"), {
+      ...layout, assignments: Array.from({ length: 30 }, (_, index) => ({ id: `room-${index}`, roomName: `Salón ${index}`, teacher: "Maestro", active: true })),
+    }));
+    await assertFails(setDoc(doc(db, "digitalSignageRoomLayouts", "too-large"), { ...layout, assignments: Array(201).fill({}) }));
+    await assertFails(setDoc(doc(db, "digitalSignageRoomTemplates", "invalid"), { name: "Inválida", version: 1, columns: 0, rows: 4, elements: [] }));
+  });
+
+  it("permite alta atómica de pantalla y manifiesto sin abrir escritura a reproductores", async () => {
+    const db = auth("admin");
+    const batch = writeBatch(db);
+    const token = "new-room-screen-atomic-token";
+    batch.set(doc(db, "digitalSignageDevices", token), { deviceToken: token, plantel: "Plantel A", active: true });
+    batch.set(doc(db, "digitalSignageRoomDisplays", token), { version: 1, deviceToken: token, plantel: "Plantel A", active: true, layouts: [] });
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(getDoc(doc(unauth(), "digitalSignageRoomDisplays", token)));
+  });
+
+  it("protege fondos y logos: solo administración carga imágenes acotadas e inmutables", async () => {
+    const path = "digital-signage/room-templates/template-1/background.png";
+    const file = storageAuth("admin").ref(path);
+    await assertSucceeds(file.put(new Uint8Array([1, 2]), { contentType: "image/png" }));
+    await assertSucceeds(file.getMetadata());
+    await assertFails(file.put(new Uint8Array([3]), { contentType: "image/png" }));
+    await assertFails(storageAuth("requester").ref(path).getMetadata());
+    await assertFails(testEnv.unauthenticatedContext().storage().ref(path).getMetadata());
+    await assertFails(storageAuth("requester").ref("digital-signage/room-templates/other/logo.png").put(new Uint8Array([1]), { contentType: "image/png" }));
+    await assertFails(storageAuth("admin").ref("digital-signage/room-templates/other/code.svg").putString("<svg/>", "raw", { contentType: "image/svg+xml" }));
+  });
+});

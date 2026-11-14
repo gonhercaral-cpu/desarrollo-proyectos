@@ -51,6 +51,7 @@ export const SIGNAGE_TABS = [
   { key: "playlists", label: "Playlists", icon: "list" },
   { key: "campaigns", label: "Campañas", icon: "calendar" },
   { key: "devices", label: "Dispositivos", icon: "screen" },
+  { key: "rooms", label: "Acomodo de salones", icon: "screen" },
   { key: "health", label: "Salud", icon: "chart" },
   { key: "preview", label: "Vista previa", icon: "eye" },
   { key: "playback", label: "Reproducción", icon: "play" },

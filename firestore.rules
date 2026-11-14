@@ -3619,6 +3619,67 @@ service cloud.firestore {
 
 
 
+    function validSignageRoomLayout(data) {
+      return validBoundedStringField(data, "name", 180)
+        && data.name.size() > 0
+        && validBoundedStringField(data, "plantel", 180)
+        && data.plantel.size() > 0
+        && validBoundedStringField(data, "timezone", 80)
+        && data.classDays is list && data.classDays.size() > 0 && data.classDays.size() <= 7
+        && data.classStart is string && data.classEnd is string
+        && data.assignments is list && data.assignments.size() <= 200
+        && data.displayRules is list && data.displayRules.size() <= 100
+        && data.active is bool;
+    }
+
+    match /digitalSignageRoomConfigs/{configId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && validBoundedStringField(request.resource.data, "plantel", 180)
+        && request.resource.data.plantel.size() > 0
+        && validBoundedStringField(request.resource.data, "timezone", 80)
+        && request.resource.data.rooms is list && request.resource.data.rooms.size() <= 200
+        && request.resource.data.teacherNames is list && request.resource.data.teacherNames.size() <= 500;
+    }
+
+    match /digitalSignageRoomLayouts/{layoutId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin() && validSignageRoomLayout(request.resource.data);
+    }
+
+    match /digitalSignageRoomTemplates/{templateId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && validBoundedStringField(request.resource.data, "name", 180)
+        && request.resource.data.name.size() > 0
+        && request.resource.data.version == 1
+        && request.resource.data.elements is list && request.resource.data.elements.size() <= 200
+        && request.resource.data.columns is int && request.resource.data.columns > 0 && request.resource.data.columns <= 12
+        && request.resource.data.rows is int && request.resource.data.rows > 0 && request.resource.data.rows <= 100;
+    }
+
+    // The existing screen token grants access to its published manifest only.
+    // Drafts, template catalogues and other manifests cannot be enumerated by players.
+    match /digitalSignageRoomDisplays/{deviceToken} {
+      allow list, delete: if isAdmin();
+      allow get: if isAdmin() || (
+        exists(/databases/$(database)/documents/digitalSignageDevices/$(deviceToken))
+        && get(/databases/$(database)/documents/digitalSignageDevices/$(deviceToken)).data.active == true
+        && get(/databases/$(database)/documents/digitalSignageDevices/$(deviceToken)).data.deviceToken == deviceToken
+        && (!exists(/databases/$(database)/documents/digitalSignageRoomDisplays/$(deviceToken)) || (
+          resource.data.deviceToken == deviceToken
+          && resource.data.plantel == get(/databases/$(database)/documents/digitalSignageDevices/$(deviceToken)).data.plantel
+        ))
+      );
+      allow create, update: if isAdmin()
+        && request.resource.data.version == 1
+        && request.resource.data.deviceToken == deviceToken
+        && validBoundedStringField(request.resource.data, "plantel", 180)
+        && request.resource.data.plantel.size() > 0
+        && request.resource.data.active is bool
+        && request.resource.data.layouts is list && request.resource.data.layouts.size() <= 100;
+    }
+
     match /digitalSignagePlaybackLogs/{logId} {
 
       allow create: if hasOnlyFields(request.resource.data, [

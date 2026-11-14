@@ -4,7 +4,6 @@ import {
   getDoc,
   onSnapshot,
   serverTimestamp,
-  setDoc,
   updateDoc,
   db,
   DEVICES_COLLECTION,
@@ -17,6 +16,7 @@ import {
   createUniqueDeviceToken
 } from "./shared";
 import { logSignageAudit } from "./auditService";
+import { deleteRoomDisplayQuietly, saveRoomDevice } from "./roomLayoutsService";
 
 export async function createSignageDevice(data, user) {
   assertAdminUser(user);
@@ -30,7 +30,6 @@ export async function createSignageDevice(data, user) {
   }
 
   const deviceToken = await createUniqueDeviceToken();
-  const deviceRef = doc(db, DEVICES_COLLECTION, deviceToken);
   const payload = {
     name,
     plantel,
@@ -46,7 +45,8 @@ export async function createSignageDevice(data, user) {
     createdById: getUserId(user),
   };
 
-  await setDoc(deviceRef, payload);
+  // Pantalla + manifiesto (acomodos ya publicados del plantel) en una sola transacción.
+  await saveRoomDevice({ id: deviceToken, ...payload }, { mustBeNew: true });
   await logSignageAudit("crear dispositivo", "device", deviceToken, name, {
     plantel,
     location,
@@ -84,12 +84,14 @@ export async function updateSignageDevice(id, data) {
     if (payload[key] === undefined) delete payload[key];
   });
 
-  await updateDoc(doc(db, DEVICES_COLLECTION, id), payload);
+  // Pantalla + manifiesto atómicos; la autorización real la aplican las reglas de Firestore.
+  await saveRoomDevice({ id, ...payload });
 }
 
 export async function deleteSignageDevice(id) {
   if (!id) throw new Error("Falta el ID del dispositivo.");
   await deleteDoc(doc(db, DEVICES_COLLECTION, id));
+  await deleteRoomDisplayQuietly(id);
 }
 
 export async function getDeviceByToken(deviceToken) {

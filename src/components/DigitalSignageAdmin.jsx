@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ModuleHeader from "./ModuleHeader";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -44,6 +44,7 @@ import SignageLibraryPanel from "./digital-signage/SignageLibraryPanel";
 import SignagePlaybackPanel from "./digital-signage/SignagePlaybackPanel";
 import SignagePlaylistsPanel from "./digital-signage/SignagePlaylistsPanel";
 import SignagePreviewPanel from "./digital-signage/SignagePreviewPanel";
+import SignageRoomLayoutsPanel from "./digital-signage/SignageRoomLayoutsPanel";
 import VisualAdEditor, { VisualAdPreview } from "./digital-signage/VisualAdEditor";
 import {
   DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
@@ -197,6 +198,10 @@ const DEVICES_VIEW_MODE_KEY = "digitalSignage:devicesViewMode";
 export default function DigitalSignageAdmin() {
   const { profile, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState("library");
+  const roomLeaveGuardRef = useRef(null);
+  const registerRoomLeaveGuard = useCallback((guard) => {
+    roomLeaveGuardRef.current = guard;
+  }, []);
   const [assets, setAssets] = useState([]);
   const [playlists, setPlaylists] = useState([]);
   const [playlistSaveStates, setPlaylistSaveStates] = useState({});
@@ -2159,7 +2164,10 @@ export default function DigitalSignageAdmin() {
             key={tab.key}
             type="button"
             className={activeTab === tab.key ? "active" : ""}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              if (activeTab === "rooms" && tab.key !== "rooms" && roomLeaveGuardRef.current?.() === false) return;
+              setActiveTab(tab.key);
+            }}
           >
             <span className="printshop-tab-icon">
               <SignageIcon name={tab.icon} />
@@ -2526,6 +2534,15 @@ export default function DigitalSignageAdmin() {
           getPlaylistSummary={getPlaylistSummary}
           getPlaylistPublishIssue={getPlaylistPublishIssue}
           formatDuration={formatDuration}
+        />
+      )}
+
+      {!loading && activeTab === "rooms" && (
+        <SignageRoomLayoutsPanel
+          onLeaveGuardChange={registerRoomLeaveGuard}
+          profile={profile}
+          devices={devices}
+          planteles={[...new Set([...DIGITAL_SIGNAGE_PLANTELES, ...devices.map((device) => device.plantel).filter(Boolean)])]}
         />
       )}
 
