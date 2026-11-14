@@ -17,10 +17,10 @@ import {
   isPublished,
   normalizePublishStatus,
 } from "../utils/digitalSignage";
+import { campaignMatchesDevice } from "../utils/digitalSignage/signageCampaigns";
 
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const FALLBACK_DURATION_SECONDS = 10;
-const VIDEO_SAFETY_BUFFER_MS = 1500;
 const MANIFEST_STORAGE_PREFIX = "signage:lastGoodManifest:";
 const CAMPAIGN_RECHECK_MS = 60 * 1000;
 const NO_CONTENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
@@ -41,6 +41,7 @@ export default function SignagePlayer() {
   const [scheduleNow, setScheduleNow] = useState(() => Date.now());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [playbackNonce, setPlaybackNonce] = useState(0);
+  const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const [failedItemKeys, setFailedItemKeys] = useState(() => new Set());
   const [playerError, setPlayerError] = useState("");
   const [storedManifestState, setStoredManifestState] = useState(() => ({
@@ -54,6 +55,9 @@ export default function SignagePlayer() {
     cached: false,
   });
   const heartbeatTokenRef = useRef(deviceToken);
+  const advanceGuardRef = useRef({ id: "", done: false });
+  const finishCurrentItemRef = useRef(() => {});
+  const logPlayerEventRef = useRef(() => {});
   const resolvedLogRef = useRef("");
   const noContentLogRef = useRef({ key: "", at: 0 });
   const offlineLogRef = useRef("");
@@ -98,6 +102,9 @@ export default function SignagePlayer() {
   const allItemsFailed = baseItems.length > 0 && failedItemKeys.size >= baseItems.length;
   const safeCurrentIndex = items.length ? currentIndex % items.length : 0;
   const currentItem = items[safeCurrentIndex] || null;
+  const playInstanceId = currentItem
+    ? `${playbackEpoch}|${safeCurrentIndex}|${currentItem.key}|${playbackNonce}`
+    : "";
   const currentAssetUrl =
     assetSource.key === currentItem?.key && assetSource.url
       ? assetSource.url
@@ -165,6 +172,15 @@ export default function SignagePlayer() {
   );
 
   useEffect(() => {
+    logPlayerEventRef.current = logPlayerEvent;
+  }, [logPlayerEvent]);
+
+  // Reinicia el guard de avance cuando cambia la instancia de reproducción.
+  useEffect(() => {
+    advanceGuardRef.current = { id: playInstanceId, done: false };
+  }, [playInstanceId]);
+
+  useEffect(() => {
     heartbeatTokenRef.current = deviceToken;
 
     return subscribeDeviceByToken(
@@ -185,6 +201,7 @@ export default function SignagePlayer() {
         });
         setCurrentIndex(0);
         setPlaybackNonce(0);
+        setPlaybackEpoch((current) => current + 1);
         setFailedItemKeys(new Set());
       }
     );
@@ -308,6 +325,7 @@ export default function SignagePlayer() {
         setPlayerError("");
         setCurrentIndex(0);
         setPlaybackNonce(0);
+        setPlaybackEpoch((current) => current + 1);
         setFailedItemKeys(new Set());
       },
       () => {
@@ -322,6 +340,7 @@ export default function SignagePlayer() {
           error: "Sin contenido asignado",
         });
         setPlaybackNonce(0);
+        setPlaybackEpoch((current) => current + 1);
         setFailedItemKeys(new Set());
       }
     );
@@ -363,7 +382,19 @@ export default function SignagePlayer() {
     goNext(items.length, setCurrentIndex);
   }, [items.length]);
 
+  // Un solo avance por instancia de reproducción, aunque coincidan timer y error.
+  const advanceOnce = useCallback(() => {
+    const guard = advanceGuardRef.current;
+    if (guard.id !== playInstanceId || guard.done) return false;
+
+    advanceGuardRef.current = { ...guard, done: true };
+    advanceToNext();
+    return true;
+  }, [advanceToNext, playInstanceId]);
+
   const finishCurrentItem = useCallback(() => {
+    if (advanceGuardRef.current.id !== playInstanceId || advanceGuardRef.current.done) return;
+
     const currentPlay = currentPlayRef.current;
 
     if (currentItem && currentPlay.key === currentItem.key && !currentPlay.ended) {
@@ -372,36 +403,45 @@ export default function SignagePlayer() {
         ? Math.max(0, Math.round((Date.now() - currentPlay.startedAt) / 1000))
         : Number(currentItem.durationSeconds || 0);
 
-      logPlayerEvent("play_end", currentItem, { durationSeconds: elapsedSeconds });
+      logPlayerEventRef.current("play_end", currentItem, { durationSeconds: elapsedSeconds });
     }
 
-    advanceToNext();
-  }, [advanceToNext, currentItem, logPlayerEvent]);
+    advanceOnce();
+  }, [advanceOnce, currentItem, playInstanceId]);
 
   const failCurrentItem = useCallback(
     (item, errorMessage = "Error al cargar contenido") => {
+      if (advanceGuardRef.current.id !== playInstanceId || advanceGuardRef.current.done) return;
+
       if (item) {
-        logPlayerEvent("play_error", item, { errorMessage });
+        logPlayerEventRef.current("play_error", item, { errorMessage });
         currentPlayRef.current = {
           ...currentPlayRef.current,
           ended: true,
         };
       }
 
-      handleItemFailure(item, advanceToNext, setFailedItemKeys);
+      handleItemFailure(item, advanceOnce, setFailedItemKeys);
     },
-    [advanceToNext, logPlayerEvent]
+    [advanceOnce, playInstanceId]
   );
 
   useEffect(() => {
-    if (!currentItem) return undefined;
+    finishCurrentItemRef.current = finishCurrentItem;
+  }, [finishCurrentItem]);
+
+  // El temporizador depende solo de la instancia y su duración, no de heartbeats del device.
+  const currentDurationMillis = currentItem ? getItemTimeoutMillis(currentItem) : 0;
+
+  useEffect(() => {
+    if (!playInstanceId) return undefined;
 
     const timeoutId = window.setTimeout(() => {
-      finishCurrentItem();
-    }, getItemTimeoutMillis(currentItem));
+      finishCurrentItemRef.current();
+    }, currentDurationMillis);
 
     return () => window.clearTimeout(timeoutId);
-  }, [currentItem, finishCurrentItem]);
+  }, [playInstanceId, currentDurationMillis]);
 
   useEffect(() => {
     let cancelled = false;
@@ -462,8 +502,10 @@ export default function SignagePlayer() {
     }
   }, [currentItem, failCurrentItem, isOffline]);
 
+  const deviceCanPlay = Boolean(device) && device.active !== false;
+
   useEffect(() => {
-    if (!currentItem || !device || device.active === false) return;
+    if (!currentItem || !deviceCanPlay) return;
 
     const now = Date.now();
     const lastStartedAt = playStartLogRef.current.get(currentItem.key) || 0;
@@ -478,8 +520,10 @@ export default function SignagePlayer() {
     if (now - lastStartedAt < PLAY_START_THROTTLE_MS) return;
 
     playStartLogRef.current.set(currentItem.key, now);
-    logPlayerEvent("play_start", currentItem);
-  }, [currentItem, device, logPlayerEvent, playbackNonce]);
+    logPlayerEventRef.current("play_start", currentItem);
+    // Solo reinicia por nueva instancia, no por cambios de device/heartbeat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playInstanceId, deviceCanPlay]);
 
   useEffect(() => {
     const source = canUseStoredManifest
@@ -574,7 +618,7 @@ export default function SignagePlayer() {
       <div className="signage-player-stage">
         {currentItem.type === "image" && (
           <img
-            key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
+            key={playInstanceId}
             src={currentAssetUrl}
             alt={currentItem.title || "Contenido"}
             onError={() => failCurrentItem(currentItem, "No se pudo cargar imagen")}
@@ -583,20 +627,20 @@ export default function SignagePlayer() {
 
         {currentItem.type === "video" && (
           <video
-            key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
+            key={playInstanceId}
             src={currentAssetUrl}
             autoPlay
             muted
             playsInline
             controls={false}
-            onEnded={finishCurrentItem}
+            loop
             onError={() => failCurrentItem(currentItem, "No se pudo reproducir video")}
           />
         )}
 
         {currentItem.type === "web" && (
           <WebContentFrame
-            key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
+            key={playInstanceId}
             item={currentItem}
             onFailure={() => failCurrentItem(currentItem, "No se pudo cargar web")}
           />
@@ -604,14 +648,14 @@ export default function SignagePlayer() {
 
         {currentItem.type === "template" && (
           <TemplateSlide
-            key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
+            key={playInstanceId}
             item={currentItem}
           />
         )}
 
         {currentItem.type === "visual_ad" && (
           <VisualAdSlide
-            key={`${currentItem.assetId}-${safeCurrentIndex}-${playbackNonce}`}
+            key={playInstanceId}
             item={currentItem}
             backgroundUrl={assetSource.key === currentItem.key ? assetSource.url : ""}
           />
@@ -702,6 +746,7 @@ function normalizePlayableItems(items = []) {
       const durationSeconds = Number(item?.durationSeconds);
       const templateData = normalizeTemplateData(item?.templateData);
       const assetId = String(item?.assetId || `item-${index}`);
+      const itemId = String(item?.itemId || "").trim();
       const templateKey = normalizeTemplateKey(item?.templateKey);
       const templateTheme = normalizeTemplateTheme(item?.templateTheme);
       const visualAdData = normalizeVisualAdData(item?.visualAdData);
@@ -709,7 +754,10 @@ function normalizePlayableItems(items = []) {
 
       return {
         assetId,
-        key: `${assetId}-${type}-${url || templateKey || visualAdData.canvas.backgroundUrl}-${templateData.title || item?.title || index}`,
+        itemId,
+        key: itemId
+          ? `${itemId}-${type}-${url || templateKey || visualAdData.canvas.backgroundUrl}`
+          : `${assetId}-${type}-${url || templateKey || visualAdData.canvas.backgroundUrl}-${templateData.title || item?.title || index}`,
         title: String(item?.title || templateData.title || "Contenido"),
         type,
         url,
@@ -1028,19 +1076,6 @@ function isCampaignApplicable(campaign, device, nowMillis) {
   return isCampaignWithinSchedule(campaign.schedule, nowMillis);
 }
 
-function campaignMatchesDevice(campaign, device) {
-  const deviceIds = Array.isArray(campaign.deviceIds) ? campaign.deviceIds : [];
-  const deviceId = device?.id || "";
-  const deviceToken = device?.deviceToken || "";
-
-  if (deviceIds.length > 0) {
-    return deviceIds.includes(deviceId) || deviceIds.includes(deviceToken);
-  }
-
-  if (!campaign.plantel) return true;
-  return String(campaign.plantel || "").trim() === String(device?.plantel || "").trim();
-}
-
 function isCampaignWithinDateRange(campaign, nowMillis) {
   const today = getDateKeyInTimezone(
     nowMillis,
@@ -1133,10 +1168,7 @@ function getItemTimeoutMillis(item) {
     ? durationSeconds
     : FALLBACK_DURATION_SECONDS;
 
-  if (item?.type === "video") {
-    return safeDuration * 1000 + VIDEO_SAFETY_BUFFER_MS;
-  }
-
+  // La duración configurada manda para todos los tipos (videos en loop hasta el temporizador).
   return safeDuration * 1000;
 }
 

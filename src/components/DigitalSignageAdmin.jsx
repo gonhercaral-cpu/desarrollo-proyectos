@@ -66,17 +66,20 @@ import {
   normalizeSearch,
 } from "../utils/digitalSignage";
 
+import { createPlaylistSaveQueue } from "../utils/digitalSignage/playlistSaveQueue";
+import { campaignMatchesDevice, getCampaignPlanteles } from "../utils/digitalSignage/signageCampaigns";
+
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 const DEFAULT_ASSET_FORM = {
   title: "",
-  plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+  plantel: "",
   durationSeconds: 10,
 };
 
 const DEFAULT_DRIVE_IMPORT_FORM = {
   title: "",
-  plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+  plantel: "",
   category: "institucional",
   tags: "",
   publishStatus: "draft",
@@ -86,7 +89,7 @@ const DEFAULT_DRIVE_IMPORT_FORM = {
 const DEFAULT_WEB_FORM = {
   title: "",
   url: "",
-  plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+  plantel: "",
   durationSeconds: 20,
   webSettings: {
     mode: "iframe",
@@ -106,7 +109,7 @@ const DEFAULT_TEMPLATE_FORM = {
   footer: "",
   cta: "",
   templateTheme: "azul",
-  plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+  plantel: "",
   durationSeconds: 12,
   active: true,
 };
@@ -126,7 +129,7 @@ const DEFAULT_VISUAL_AD_ELEMENT = {
 
 const DEFAULT_VISUAL_AD_FORM = {
   title: "",
-  plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+  plantel: "",
   durationSeconds: 12,
   active: true,
   publishStatus: "draft",
@@ -150,6 +153,7 @@ const DEFAULT_PLAYLIST_FORM = {
 
 const DEFAULT_CAMPAIGN_FORM = {
   name: "",
+  planteles: [DEFAULT_DIGITAL_SIGNAGE_PLANTEL],
   plantel: DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
   playlistId: "",
   priority: "normal",
@@ -195,6 +199,25 @@ export default function DigitalSignageAdmin() {
   const [activeTab, setActiveTab] = useState("library");
   const [assets, setAssets] = useState([]);
   const [playlists, setPlaylists] = useState([]);
+  const [playlistSaveStates, setPlaylistSaveStates] = useState({});
+  const playlistEditsRef = useRef(new Map());
+  const playlistQueueRef = useRef(null);
+  const playlistAuditProfileRef = useRef(profile);
+  useEffect(() => { playlistAuditProfileRef.current = profile; }, [profile]);
+  if (!playlistQueueRef.current) {
+    playlistQueueRef.current = createPlaylistSaveQueue({
+      write: async (id, items) => {
+        await updateSignagePlaylist(id, { items });
+        void logSignageAudit("editar contenido de playlist", "playlist", id, "Playlist", {
+          itemsCount: items.length,
+        }, playlistAuditProfileRef.current).catch((error) => console.warn("No se pudo registrar la edición de playlist.", error));
+      },
+      onStatus: (id, status, error) => {
+        setPlaylistSaveStates((current) => ({ ...current, [id]: status }));
+        if (error) setMessage(`No se guardó la playlist: ${error.message}. Reintenta el guardado.`);
+      },
+    });
+  }
   const [campaigns, setCampaigns] = useState([]);
   const [visualTemplates, setVisualTemplates] = useState([]);
   const [devices, setDevices] = useState([]);
@@ -311,7 +334,7 @@ export default function DigitalSignageAdmin() {
             ...tags,
           ].some((value) => normalizeSearch(value).includes(normalizedSearch));
         const matchesType = assetTypeFilter === "all" || asset.type === assetTypeFilter;
-        const matchesPlantel = assetPlantelFilter === "all" || asset.plantel === assetPlantelFilter;
+        const matchesPlantel = assetPlantelFilter === "all" || (assetPlantelFilter === "global" ? !asset.plantel : asset.plantel === assetPlantelFilter);
         const matchesCategory = assetCategoryFilter === "all" || category === assetCategoryFilter;
         const matchesPublish =
           assetPublishFilter === "all" ||
@@ -583,6 +606,7 @@ export default function DigitalSignageAdmin() {
   ]);
 
   async function loadAll() {
+    const editsAtStart = new Map(playlistEditsRef.current);
     setLoading(true);
     setMessage("");
 
@@ -606,7 +630,13 @@ export default function DigitalSignageAdmin() {
       ]);
 
       setAssets(nextAssets);
-      setPlaylists(nextPlaylists);
+      setPlaylists(nextPlaylists.map((playlist) => {
+        const pending = playlistQueueRef.current.pending(playlist.id);
+        const latest = playlistEditsRef.current.get(playlist.id);
+        const changedDuringLoad = latest && latest !== editsAtStart.get(playlist.id);
+        if (!pending && !changedDuringLoad) playlistEditsRef.current.delete(playlist.id);
+        return pending || changedDuringLoad ? { ...playlist, items: pending || latest } : playlist;
+      }));
       setCampaigns(nextCampaigns);
       setVisualTemplates(nextVisualTemplates);
       setDevices(nextDevices);
@@ -734,11 +764,14 @@ export default function DigitalSignageAdmin() {
     setMessage("");
 
     try {
+      await playlistQueueRef.current.flush();
       await action();
       await loadAll();
       setMessage(successMessage);
+      return true;
     } catch (error) {
       setMessage(error.message || "No se pudo guardar el cambio.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1561,7 +1594,7 @@ export default function DigitalSignageAdmin() {
       }
     }
 
-    await runAction(async () => {
+    return runAction(async () => {
       if (editingPlaylistId) {
         await updateSignagePlaylist(editingPlaylistId, playlistForm);
         await audit("editar playlist", "playlist", editingPlaylistId, playlistForm.name, {
@@ -1673,7 +1706,10 @@ export default function DigitalSignageAdmin() {
   function editCampaign(campaign) {
     setCampaignForm({
       name: campaign.name || "",
-      plantel: campaign.plantel || DEFAULT_DIGITAL_SIGNAGE_PLANTEL,
+      plantel: campaign.plantel || "",
+      planteles: Array.isArray(campaign.planteles) || campaign.plantel
+        ? getCampaignPlanteles(campaign) : [...DIGITAL_SIGNAGE_PLANTELES],
+      deviceIds: campaign.deviceIds || [],
       playlistId: campaign.playlistId || "",
       priority: campaign.priority || "normal",
       startDate: campaign.startDate || "",
@@ -1720,26 +1756,17 @@ export default function DigitalSignageAdmin() {
     }, "Pantalla vinculada.");
   }
 
-  async function addAssetToPlaylist() {
-    if (!selectedPlaylist || !assetToAddId) return;
-
-    const asset = assets.find((item) => item.id === assetToAddId);
-    if (!asset) return;
-
-    const nextItems = [
-      ...(selectedPlaylist.items || []),
-      buildPlaylistItemFromAsset(asset),
-    ];
-
-    await runAction(async () => {
-      await updateSignagePlaylist(selectedPlaylist.id, { items: nextItems });
-      await audit("agregar contenido a playlist", "playlist", selectedPlaylist.id, selectedPlaylist.name, {
-        assetId: asset.id,
-        assetName: asset.title || "",
-        itemsCount: nextItems.length,
-      });
-      setAssetToAddId("");
-    }, "Playlist guardada.");
+  function addAssetsToPlaylist(ids) {
+    if (!selectedPlaylist || !Array.isArray(ids)) return;
+    const currentItems = playlistEditsRef.current.get(selectedPlaylist.id) || selectedPlaylist.items || [];
+    const existingIds = new Set(currentItems.map((item) => item.assetId));
+    const additions = [...new Set(ids)]
+      .filter((id) => !existingIds.has(id))
+      .map((id) => activeAssets.find((asset) => asset.id === id))
+      .filter(Boolean)
+      .map(buildPlaylistItemFromAsset);
+    if (additions.length) updatePlaylistItems([...currentItems, ...additions]);
+    setAssetToAddId("");
   }
 
   function prepareAssetForPlaylist(asset) {
@@ -1966,11 +1993,12 @@ export default function DigitalSignageAdmin() {
 
   function buildPlaylistItemFromAsset(asset) {
     const baseItem = {
+        itemId: crypto.randomUUID(),
         assetId: asset.id,
         title: asset.title || "Contenido",
         type: asset.type || "image",
       url: asset.url || "",
-      durationSeconds: asset.durationSeconds || 10,
+      durationSeconds: (asset.type === "video" ? asset.metadataDurationSeconds : 0) || asset.durationSeconds || 10,
       publishStatus: getPublishStatus(asset.publishStatus),
     };
 
@@ -1998,17 +2026,23 @@ export default function DigitalSignageAdmin() {
     };
   }
 
-  async function updatePlaylistItems(items, successMessage = "Playlist guardada.") {
+  function updatePlaylistItems(items) {
     if (!selectedPlaylist) return;
-
-    await runAction(async () => {
-      await updateSignagePlaylist(selectedPlaylist.id, { items });
-      await audit("editar contenido de playlist", "playlist", selectedPlaylist.id, selectedPlaylist.name, {
-        previousItemsCount: selectedPlaylist.items?.length || 0,
-        itemsCount: items.length,
-      });
-    }, successMessage);
+    const id = selectedPlaylist.id;
+    playlistEditsRef.current.set(id, items);
+    setPlaylists((current) => current.map((playlist) => playlist.id === id ? { ...playlist, items } : playlist));
+    void playlistQueueRef.current.enqueue(id, items);
   }
+
+  useEffect(() => {
+    function warnPendingPlaylist(event) {
+      if (!playlistQueueRef.current.hasPending()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnPendingPlaylist);
+    return () => window.removeEventListener("beforeunload", warnPendingPlaylist);
+  }, []);
 
   async function copyPlayerUrl(device) {
     const url = getPlayerUrl(device.deviceToken || device.id);
@@ -2475,7 +2509,9 @@ export default function DigitalSignageAdmin() {
           onPlaylistPublishStatusChange={changePlaylistPublishStatus}
           onDeletePlaylist={handleDeletePlaylist}
           onAssetToAddChange={setAssetToAddId}
-          onAddAssetToPlaylist={addAssetToPlaylist}
+          onAddAssetsToPlaylist={addAssetsToPlaylist}
+          playlistSaveState={playlistSaveStates[effectiveSelectedPlaylistId] || "saved"}
+          onRetryPlaylistSave={() => playlistQueueRef.current.retry(effectiveSelectedPlaylistId)}
           onPlaylistItemsChange={updatePlaylistItems}
           onSubmitPlaylist={handleCreatePlaylist}
           onPlaylistFormChange={setPlaylistForm}
@@ -2486,7 +2522,6 @@ export default function DigitalSignageAdmin() {
           StatusBadge={StatusBadge}
           PublishStatusBadge={PublishStatusBadge}
           PlantelSelect={PlantelSelect}
-          PlaylistItemsEditor={PlaylistItemsEditor}
           SignagePreviewCard={SignagePreviewCard}
           getPlaylistItemCountLabel={getPlaylistItemCountLabel}
           getPlaylistDurationSeconds={getPlaylistDurationSeconds}
@@ -2966,71 +3001,6 @@ function PlantelSelect({ value, onChange }) {
   );
 }
 
-function PlaylistItemsEditor({ items, saving, onChange }) {
-  function removeItem(index) {
-    onChange(items.filter((_, itemIndex) => itemIndex !== index), "Playlist guardada.");
-  }
-
-  function moveItem(index, direction) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= items.length) return;
-
-    const nextItems = [...items];
-    const [item] = nextItems.splice(index, 1);
-    nextItems.splice(nextIndex, 0, item);
-    onChange(nextItems, "Playlist guardada.");
-  }
-
-  function updateDuration(index, value) {
-    const nextItems = items.map((item, itemIndex) =>
-      itemIndex === index ? { ...item, durationSeconds: Number(value) || 10 } : item
-    );
-    onChange(nextItems, "Playlist guardada.");
-  }
-
-  if (items.length === 0) {
-    return <p className="digital-empty">Playlist vacía. Agrega contenidos desde el selector superior.</p>;
-  }
-
-  return (
-    <div className="digital-playlist-items signage-playlist-items">
-      {items.map((item, index) => (
-        <article className="digital-playlist-item" key={`${item.assetId}-${index}`}>
-          <span>{index + 1}</span>
-          <div>
-            <strong>{item.title}</strong>
-            {item.type === "visual_ad" && (
-              <VisualAdPreview
-                visualAdData={item.visualAdData}
-                className="signage-playlist-visual-preview"
-                mini
-              />
-            )}
-            <div className="signage-badge-row">
-              <TypeBadge type={item.type} />
-              <span className="signage-soft-badge">{formatDuration(item.durationSeconds || 10)}</span>
-            </div>
-          </div>
-          <label>
-            Seg.
-            <input type="number" min="1" max="3600" value={item.durationSeconds || 10} onChange={(event) => updateDuration(index, event.target.value)} disabled={saving} />
-          </label>
-          <div className="digital-row-actions">
-            <button type="button" className="visual-outline-button" onClick={() => moveItem(index, -1)} disabled={saving || index === 0}>
-              Arriba
-            </button>
-            <button type="button" className="visual-outline-button" onClick={() => moveItem(index, 1)} disabled={saving || index === items.length - 1}>
-              Abajo
-            </button>
-            <button type="button" className="danger-table-button" onClick={() => removeItem(index)} disabled={saving}>
-              Quitar
-            </button>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
 
 function AssetThumb({ asset }) {
   if (asset.type === "image") {
@@ -3067,7 +3037,7 @@ function SignagePreview({ playlist, contextLabel = "" }) {
   const item = items[index] || null;
 
   useEffect(() => {
-    if (!item || item.type === "video") return undefined;
+    if (!item) return undefined;
 
     const timeout = window.setTimeout(() => {
       setIndex((current) => (items.length ? (current + 1) % items.length : 0));
@@ -3097,7 +3067,7 @@ function SignagePreview({ playlist, contextLabel = "" }) {
             autoPlay
             muted
             playsInline
-            onEnded={() => setIndex((current) => (current + 1) % items.length)}
+            loop
             onError={() => setIndex((current) => (current + 1) % items.length)}
           />
         )}
@@ -3397,7 +3367,7 @@ function normalizeVisualAdDraftForm(form) {
   });
 
   nextForm.title = String(nextForm.title || "");
-  nextForm.plantel = nextForm.plantel || DEFAULT_DIGITAL_SIGNAGE_PLANTEL;
+  nextForm.plantel = nextForm.plantel || "";
   nextForm.durationSeconds = Number(nextForm.durationSeconds) || 12;
   nextForm.active = nextForm.active !== false;
 
@@ -3846,12 +3816,7 @@ function isCampaignVisuallyApplicable(campaign, device) {
   if (getCampaignDisplayStatus(campaign).status !== "active") return false;
   if (!isCampaignScheduleNow(campaign.schedule)) return false;
 
-  const deviceIds = Array.isArray(campaign.deviceIds) ? campaign.deviceIds : [];
-  if (deviceIds.length) {
-    return deviceIds.includes(device.id) || deviceIds.includes(device.deviceToken);
-  }
-
-  return !campaign.plantel || campaign.plantel === device.plantel;
+  return campaignMatchesDevice(campaign, device);
 }
 
 function isCampaignScheduleNow(schedule = {}) {

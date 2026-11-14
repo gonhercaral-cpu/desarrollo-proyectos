@@ -2670,7 +2670,7 @@ service cloud.firestore {
         && (canManageTechnicalSupport());
       allow update: if collectionName in ["technicalAssets", "technicalInstallationTemplates", "technicalLocationReviews", "technicalMaintenances", "technicalSpareParts"]
         && (canManageTechnicalSupport());
-      allow get: if collectionName in ["digitalSignageAssets", "digitalSignagePlaylists"]
+      allow get: if collectionName in ["digitalSignagePlaylists"]
         && (resource.data.active == true);
     }
 

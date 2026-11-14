@@ -45,6 +45,13 @@ import {
 } from "./shared";
 import { logSignageAudit } from "./auditService";
 import { runDriveImportBatch } from "../../utils/digitalSignage/driveImport";
+import {
+  DEFAULT_ASSET_DURATION_SECONDS,
+  getDriveVideoDurationSeconds,
+  isValidDurationSeconds,
+  measureMediaDuration,
+  normalizeDurationSeconds,
+} from "../../utils/digitalSignage/signageMedia";
 
 export async function uploadSignageAsset(file, data, user) {
   assertAdminUser(user);
@@ -54,16 +61,13 @@ export async function uploadSignageAsset(file, data, user) {
   }
 
   const title = cleanText(data?.title) || cleanText(file.name);
-  const plantel = cleanText(data?.plantel);
 
   if (!title) {
     throw new Error("El titulo es obligatorio.");
   }
 
-  if (!plantel) {
-    throw new Error("El plantel es obligatorio.");
-  }
-
+  const type = getAssetTypeFromFile(file);
+  const durationSeconds = await resolveUploadDurationSeconds(type, file, data);
   const assetRef = doc(collection(db, ASSETS_COLLECTION));
   const fileName = cleanFileName(file.name);
   const storagePath = `${ASSET_STORAGE_ROOT}/${assetRef.id}/${fileName}`;
@@ -74,11 +78,11 @@ export async function uploadSignageAsset(file, data, user) {
 
   const payload = {
     title,
-    type: getAssetTypeFromFile(file),
+    type,
     url,
     storagePath,
-    plantel,
-    durationSeconds: cleanDuration(data?.durationSeconds),
+    ...ORGANIZATION_SCOPE,
+    durationSeconds,
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
     archived: data?.archived === true,
@@ -93,7 +97,7 @@ export async function uploadSignageAsset(file, data, user) {
   await setDoc(assetRef, payload);
   await logSignageAudit("crear asset", "asset", assetRef.id, title, {
     type: payload.type,
-    plantel,
+    scope: payload.scope,
     publishStatus: payload.publishStatus,
   }, user);
 
@@ -108,10 +112,9 @@ export async function createWebAsset(data, user) {
 
   const title = cleanText(data?.title);
   const url = cleanText(data?.url);
-  const plantel = cleanText(data?.plantel);
 
-  if (!title || !url || !plantel) {
-    throw new Error("Completa titulo, URL y plantel.");
+  if (!title || !url) {
+    throw new Error("Completa titulo y URL.");
   }
 
   const assetRef = doc(collection(db, ASSETS_COLLECTION));
@@ -120,7 +123,7 @@ export async function createWebAsset(data, user) {
     type: "web",
     url,
     storagePath: "",
-    plantel,
+    ...ORGANIZATION_SCOPE,
     durationSeconds: cleanDuration(data?.durationSeconds),
     webSettings: cleanWebSettings(data?.webSettings),
     category: cleanAssetCategory(data?.category),
@@ -137,7 +140,7 @@ export async function createWebAsset(data, user) {
   await setDoc(assetRef, payload);
   await logSignageAudit("crear asset web", "web_asset", assetRef.id, title, {
     url,
-    plantel,
+    scope: payload.scope,
     publishStatus: payload.publishStatus,
   }, user);
 
@@ -152,7 +155,6 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
 
   const driveFileId = cleanText(driveFile?.id || data?.sourceFileId);
   const title = cleanText(data?.title) || cleanText(driveFile?.name);
-  const plantel = cleanText(data?.plantel);
 
   if (!driveFileId) {
     throw new Error("Selecciona un archivo de Nube AES.");
@@ -160,10 +162,6 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
 
   if (!title) {
     throw new Error("El titulo es obligatorio.");
-  }
-
-  if (!plantel) {
-    throw new Error("El plantel es obligatorio.");
   }
 
   const existingSnapshot = await getDocs(
@@ -186,7 +184,8 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     type: importedFile.type,
     url: importedFile.url,
     storagePath: importedFile.storagePath,
-    plantel,
+    ...ORGANIZATION_SCOPE,
+    durationSeconds: await resolveDriveDurationSeconds(importedFile, driveFile, data),
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
     archived: false,
@@ -231,7 +230,7 @@ export async function importSignageAssetFromDrive(driveFile, data, user) {
     sourceFolderId: payload.sourceFolderId,
     sourceFolderName: payload.sourceFolderName,
     type: payload.type,
-    plantel,
+    scope: payload.scope,
   }, user).catch((error) => {
     console.error("Digital Signage: asset importado, pero fallo registro de auditoria", {
       assetId: assetRef.id,
@@ -273,6 +272,39 @@ export async function importSignageAssetsFromDrive(
   return result;
 }
 
+// "Global" = visible para toda la organización admin; no sustituye las reglas de acceso.
+const ORGANIZATION_SCOPE = { plantel: "", scope: "organization" };
+
+async function resolveUploadDurationSeconds(type, file, data) {
+  if (type !== "video") return cleanDuration(data?.durationSeconds);
+
+  if (isValidDurationSeconds(data?.metadataDurationSeconds)) {
+    return normalizeDurationSeconds(data.metadataDurationSeconds);
+  }
+
+  const measured = await measureMediaDuration(file);
+  if (measured) return measured;
+
+  return isValidDurationSeconds(data?.durationSeconds)
+    ? normalizeDurationSeconds(data.durationSeconds)
+    : DEFAULT_ASSET_DURATION_SECONDS;
+}
+
+async function resolveDriveDurationSeconds(importedFile, driveFile, data) {
+  if (importedFile?.type !== "video") return cleanDuration(data?.durationSeconds);
+
+  const fromMetadata =
+    getDriveVideoDurationSeconds(driveFile) ?? getDriveVideoDurationSeconds(importedFile);
+  if (fromMetadata) return fromMetadata;
+
+  const measured = importedFile.url ? await measureMediaDuration(importedFile.url) : null;
+  if (measured) return measured;
+
+  return isValidDurationSeconds(data?.durationSeconds)
+    ? normalizeDurationSeconds(data.durationSeconds)
+    : DEFAULT_ASSET_DURATION_SECONDS;
+}
+
 function normalizeSourceFileSize(value) {
   const size = Number(value);
   return Number.isFinite(size) && size >= 0 ? size : 0;
@@ -289,10 +321,9 @@ export async function createTemplateAsset(data, user) {
 
   const templateData = normalizeTemplateData(data?.templateData);
   const title = cleanText(data?.title) || templateData.title;
-  const plantel = cleanText(data?.plantel);
 
-  if (!title || !plantel) {
-    throw new Error("Completa titulo y plantel.");
+  if (!title) {
+    throw new Error("Completa el titulo.");
   }
 
   const assetRef = doc(collection(db, ASSETS_COLLECTION));
@@ -301,7 +332,7 @@ export async function createTemplateAsset(data, user) {
     type: "template",
     url: "",
     storagePath: "",
-    plantel,
+    ...ORGANIZATION_SCOPE,
     durationSeconds: cleanDuration(data?.durationSeconds),
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
@@ -324,7 +355,7 @@ export async function createTemplateAsset(data, user) {
   await logSignageAudit("crear plantilla rapida", "asset", assetRef.id, title, {
     type: "template",
     templateKey: payload.templateKey,
-    plantel,
+    scope: payload.scope,
     publishStatus: payload.publishStatus,
   }, user);
 
@@ -338,10 +369,9 @@ export async function createVisualAdAsset(data, backgroundFile, user, elementFil
   assertAdminUser(user);
 
   const title = cleanText(data?.title);
-  const plantel = cleanText(data?.plantel);
 
-  if (!title || !plantel) {
-    throw new Error("Completa titulo y plantel.");
+  if (!title) {
+    throw new Error("Completa el titulo.");
   }
 
   const assetRef = doc(collection(db, ASSETS_COLLECTION));
@@ -379,7 +409,7 @@ export async function createVisualAdAsset(data, backgroundFile, user, elementFil
     type: "visual_ad",
     url: "",
     storagePath: backgroundStoragePath || "",
-    plantel,
+    ...ORGANIZATION_SCOPE,
     durationSeconds: cleanDuration(data?.durationSeconds),
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
@@ -396,7 +426,7 @@ export async function createVisualAdAsset(data, backgroundFile, user, elementFil
   await setDoc(assetRef, payload);
   await logSignageAudit("crear anuncio visual", "asset", assetRef.id, title, {
     type: "visual_ad",
-    plantel,
+    scope: payload.scope,
     publishStatus: payload.publishStatus,
   }, user);
 
@@ -412,10 +442,9 @@ export async function updateVisualAdAsset(id, data, backgroundFile, user, elemen
   if (!id) throw new Error("Falta el ID del anuncio visual.");
 
   const title = cleanText(data?.title);
-  const plantel = cleanText(data?.plantel);
 
-  if (!title || !plantel) {
-    throw new Error("Completa titulo y plantel.");
+  if (!title) {
+    throw new Error("Completa el titulo.");
   }
 
   const assetRef = doc(db, ASSETS_COLLECTION, id);
@@ -477,7 +506,6 @@ export async function updateVisualAdAsset(id, data, backgroundFile, user, elemen
     type: "visual_ad",
     url: "",
     storagePath: backgroundStoragePath || "",
-    plantel,
     durationSeconds: cleanDuration(data?.durationSeconds),
     category: cleanAssetCategory(data?.category),
     tags: cleanTags(data?.tags),
@@ -488,10 +516,11 @@ export async function updateVisualAdAsset(id, data, backgroundFile, user, elemen
     updatedAt: serverTimestamp(),
   };
 
+  // El plantel legacy del asset (si existe) se conserva: no se incluye en la edición.
   await updateDoc(assetRef, payload);
   await logSignageAudit("editar anuncio visual", "asset", id, title, {
     type: "visual_ad",
-    plantel,
+    plantel: snapshot.exists() ? cleanText(snapshot.data()?.plantel) : "",
     publishStatus: payload.publishStatus,
   }, user);
 }

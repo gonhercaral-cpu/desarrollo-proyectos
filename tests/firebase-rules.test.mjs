@@ -2896,3 +2896,35 @@ describe("Permisos granulares Active Classroom", () => {
     await assertSucceeds(storageAuth("collab").ref("active-classroom/resources/ambient-upload/calma.mp3").putString("audio","raw",{contentType:"audio/mpeg",customMetadata:{uploadedByUid:"collab"}}));
   });
 });
+
+
+describe("Biblioteca global privada de Digital Signage", () => {
+  it("permite assets sin plantel solo al administrador y bloquea su lectura pública", async () => {
+    const asset = { title: "Global", type: "image", url: "https://example.test/image.png", scope: "organization", active: true };
+    await assertSucceeds(setDoc(doc(auth("admin"), "digitalSignageAssets", "global-asset"), asset));
+    await assertSucceeds(getDoc(doc(auth("admin"), "digitalSignageAssets", "global-asset")));
+    await assertFails(getDoc(doc(unauth(), "digitalSignageAssets", "global-asset")));
+    await assertFails(getDoc(doc(auth("requester"), "digitalSignageAssets", "global-asset")));
+    await assertFails(setDoc(doc(auth("requester"), "digitalSignageAssets", "unauthorized"), asset));
+    await assertFails(getDocs(collection(unauth(), "digitalSignageAssets")));
+  });
+
+  it("reutiliza el mismo recurso y una campaña en varios planteles sin duplicar archivos", async () => {
+    const db = auth("admin");
+    const item = { assetId: "shared-asset", title: "Compartido", type: "image", url: "https://example.test/image.png", durationSeconds: 15 };
+    await assertSucceeds(setDoc(doc(db, "digitalSignagePlaylists", "campus-a"), { name: "A", plantel: "A", active: true, items: [item] }));
+    await assertSucceeds(setDoc(doc(db, "digitalSignagePlaylists", "campus-b"), { name: "B", plantel: "B", active: true, items: [item] }));
+    await assertSucceeds(setDoc(doc(db, "digitalSignageCampaigns", "shared-campaign"), { name: "Compartida", planteles: ["A", "B"], plantel: "A", playlistId: "campus-a" }));
+    await assertFails(updateDoc(doc(auth("requester"), "digitalSignageCampaigns", "shared-campaign"), { planteles: ["C"] }));
+  });
+
+  it("restringe Storage a administración y conserva las rutas existentes y anidadas", async () => {
+    for (const path of ["digital-signage/assets/global-asset/image.png", "digital-signage/assets/legacy/elements/image.png"]) {
+      await assertSucceeds(storageAuth("admin").ref(path).put(new Uint8Array([1, 2, 3]), { contentType: "image/png" }));
+      await assertSucceeds(storageAuth("admin").ref(path).getMetadata());
+      await assertFails(testEnv.unauthenticatedContext().storage().ref(path).getMetadata());
+      await assertFails(storageAuth("requester").ref(path).getMetadata());
+    }
+    await assertFails(storageAuth("requester").ref("digital-signage/assets/other/image.png").put(new Uint8Array([1]), { contentType: "image/png" }));
+  });
+});
