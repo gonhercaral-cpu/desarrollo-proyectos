@@ -33,6 +33,14 @@ import {
   WEB_MODES,
   normalizePublishStatus,
 } from "../../utils/digitalSignage";
+import { assignPlaylistItemIds, normalizeDurationSeconds } from "../../utils/digitalSignage/signageMedia";
+import {
+  campaignTimeToMinutes,
+  cleanCampaignTime,
+  normalizeCampaignPayload,
+  normalizeCampaignSchedule,
+  validateCampaignSchedule,
+} from "../../utils/digitalSignage/signageCampaigns";
 
 export const ASSETS_COLLECTION = "digitalSignageAssets";
 export const PLAYLISTS_COLLECTION = "digitalSignagePlaylists";
@@ -56,13 +64,7 @@ export function cleanText(value = "") {
 }
 
 export function cleanDuration(value) {
-  const duration = Number(value);
-
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return 10;
-  }
-
-  return Math.min(Math.round(duration), 3600);
+  return normalizeDurationSeconds(value);
 }
 
 export function cleanFileName(fileName = "archivo") {
@@ -142,13 +144,14 @@ export function normalizeVisualTemplateDocument(documentSnapshot) {
 export function normalizePlaylistItems(items = []) {
   if (!Array.isArray(items)) return [];
 
-  return items
+  const normalizedItems = items
     .map((item) => {
       const type = ASSET_TYPES.includes(item?.type) ? item.type : "image";
       const templateData = normalizeTemplateData(item?.templateData);
       const visualAdData = normalizeVisualAdData(item?.visualAdData);
 
       return {
+        itemId: cleanText(item?.itemId),
         assetId: cleanText(item?.assetId),
         title: cleanText(item?.title) || templateData.title || "Contenido sin titulo",
         type,
@@ -180,6 +183,8 @@ export function normalizePlaylistItems(items = []) {
       if (item.type === "visual_ad") return isValidVisualAdData(item.visualAdData);
       return Boolean(item.url);
     });
+
+  return assignPlaylistItemIds(normalizedItems);
 }
 
 export function cleanTemplateKey(value) {
@@ -349,77 +354,14 @@ export function clearVisualAdStorageReferences(visualAdData) {
   };
 }
 
-export function normalizeCampaignSchedule(schedule = {}) {
-  const enabled = schedule?.enabled === true;
-  const daysOfWeek = Array.isArray(schedule?.daysOfWeek)
-    ? Array.from(
-        new Set(
-          schedule.daysOfWeek
-            .map((day) => Number(day))
-            .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
-        )
-      ).sort((a, b) => a - b)
-    : [];
-  const startTime = cleanTime(schedule?.startTime);
-  const endTime = cleanTime(schedule?.endTime);
+export {
+  normalizeCampaignSchedule,
+  validateCampaignSchedule,
+  normalizeCampaignPayload,
+};
 
-  return {
-    enabled,
-    daysOfWeek: enabled ? daysOfWeek : [],
-    startTime: enabled ? startTime : "",
-    endTime: enabled ? endTime : "",
-    timezone: cleanText(schedule?.timezone) || "America/Tijuana",
-  };
-}
-
-export function cleanTime(value = "") {
-  const cleanValue = cleanText(value);
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(cleanValue) ? cleanValue : "";
-}
-
-export function timeToMinutes(value = "") {
-  const [hours, minutes] = cleanTime(value).split(":").map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return -1;
-  return hours * 60 + minutes;
-}
-
-export function validateCampaignSchedule(schedule) {
-  if (schedule.enabled !== true) return;
-
-  if (!schedule.daysOfWeek.length) {
-    throw new Error("Selecciona al menos un dia para la programacion.");
-  }
-
-  if (!schedule.startTime || !schedule.endTime) {
-    throw new Error("Completa hora inicio y hora fin.");
-  }
-
-  if (timeToMinutes(schedule.endTime) <= timeToMinutes(schedule.startTime)) {
-    throw new Error("La hora fin debe ser posterior a la hora inicio.");
-  }
-}
-
-export function normalizeCampaignPayload(data = {}) {
-  const schedule = normalizeCampaignSchedule(data.schedule);
-  validateCampaignSchedule(schedule);
-
-  return {
-    name: cleanText(data.name),
-    plantel: cleanText(data.plantel),
-    playlistId: cleanText(data.playlistId),
-    priority: CAMPAIGN_PRIORITIES.includes(data.priority)
-      ? data.priority
-      : "normal",
-    startDate: cleanText(data.startDate),
-    endDate: cleanText(data.endDate),
-    active: data.active !== false,
-    publishStatus: cleanPublishStatus(data.publishStatus),
-    deviceIds: Array.isArray(data.deviceIds)
-      ? data.deviceIds.map(cleanText).filter(Boolean)
-      : [],
-    schedule,
-  };
-}
+export const cleanTime = cleanCampaignTime;
+export const timeToMinutes = campaignTimeToMinutes;
 
 export async function getOrderedCollection(collectionName) {
   const snapshot = await getDocs(

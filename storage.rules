@@ -958,8 +958,8 @@ service firebase.storage {
         && (isAdmin() || request.auth.uid == userUid);
     }
 
-    match /digital-signage/assets/{assetId}/{fileName} {
-      allow read: if true;
+    match /digital-signage/assets/{assetId}/{filePath=**} {
+      allow read: if signedIn() && isAdmin();
 
       allow create: if signedIn()
         && isAdmin()

@@ -29,7 +29,6 @@ export default function DriveImportModal({
   onFormChange,
   onSubmit,
   SignageIcon,
-  PlantelSelect,
 }) {
   if (!open) return null;
 
@@ -43,7 +42,7 @@ export default function DriveImportModal({
           <div>
             <span>Nube AES</span>
             <h3>Importar desde Nube AES</h3>
-            <p>Selecciona uno o varios archivos. Digital Signage los copiará a Storage antes de registrarlos.</p>
+            <p>Selecciona uno o varios archivos. Quedarán disponibles en la biblioteca global de la organización.</p>
           </div>
           <button type="button" className="drive-preview-close" onClick={onClose} disabled={saving} aria-label="Cerrar">
             <SignageIcon name="close" />
@@ -194,10 +193,6 @@ export default function DriveImportModal({
                   required={selected.length === 1}
                 />
               </label>}
-              <label>
-                Plantel
-                <PlantelSelect value={form.plantel} onChange={(value) => onFormChange({ plantel: value })} />
-              </label>
               <label>
                 Categoría
                 <select value={form.category} onChange={(event) => onFormChange({ category: event.target.value })}>

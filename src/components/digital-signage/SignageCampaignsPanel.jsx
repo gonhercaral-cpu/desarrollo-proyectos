@@ -1,9 +1,12 @@
 import {
   PUBLISH_STATUS_OPTIONS,
   WEEKDAY_OPTIONS,
+  DIGITAL_SIGNAGE_PLANTELES,
   getPublishStatus,
   isPublished,
 } from "../../utils/digitalSignage";
+
+import { getCampaignPlanteles } from "../../utils/digitalSignage/signageCampaigns";
 
 export default function SignageCampaignsPanel({
   campaigns,
@@ -19,7 +22,6 @@ export default function SignageCampaignsPanel({
   onPublishStatusChange,
   onViewPlaylist,
   onDelete,
-  PlantelSelect,
   PublishStatusBadge,
   InfoPair,
   getCampaignDisplayStatus,
@@ -73,7 +75,7 @@ export default function SignageCampaignsPanel({
                 <div className="signage-campaign-main">
                   <div>
                     <strong>{campaign.name || "Campaña sin nombre"}</strong>
-                    <span>{campaign.plantel || "Sin plantel"} - {playlist?.name || "Playlist no encontrada"}</span>
+                    <span>{getCampaignPlanteles(campaign).join(", ") || (Array.isArray(campaign.planteles) ? "Sin planteles asignados" : "Todos (campaña anterior)")} - {playlist?.name || "Playlist no encontrada"}</span>
                   </div>
                   <div className="signage-health-badges">
                     <span className={`signage-status-badge ${campaignStatus.status}`}>{campaignStatus.label}</span>
@@ -147,10 +149,22 @@ export default function SignageCampaignsPanel({
               Nombre
               <input value={form.name} onChange={(event) => updateField("name", event.target.value)} placeholder="Ej. Promoción matutina" />
             </label>
-            <label>
-              Plantel
-              <PlantelSelect value={form.plantel} onChange={(value) => updateField("plantel", value)} />
-            </label>
+            <fieldset className="signage-schedule-box">
+              <legend>Planteles de la campaña</legend>
+              <button type="button" className="visual-outline-button" onClick={() => updateField("planteles", [...DIGITAL_SIGNAGE_PLANTELES])}>
+                Seleccionar todos
+              </button>
+              {[...new Set([...DIGITAL_SIGNAGE_PLANTELES, ...(form.planteles || [])])].map((plantel) => (
+                <label key={plantel} className="digital-checkbox-label">
+                  <input type="checkbox" checked={(form.planteles || []).includes(plantel)}
+                    onChange={(event) => updateField("planteles", event.target.checked
+                      ? [...(form.planteles || []), plantel]
+                      : (form.planteles || []).filter((value) => value !== plantel))} />
+                  {plantel}
+                </label>
+              ))}
+              <p className="digital-helper">{(form.planteles || []).length} planteles seleccionados. Selecciona al menos uno.</p>
+            </fieldset>
             <label>
               Playlist
               <select value={form.playlistId} onChange={(event) => updateField("playlistId", event.target.value)}>

@@ -9,7 +9,6 @@ export default function VisualAdControls({
   form,
   selectedElement,
   selectedElementId,
-  PlantelSelect,
   onFieldChange,
   onCanvasChange,
   onBackgroundTypeChange,
@@ -55,10 +54,6 @@ export default function VisualAdControls({
               <label>
                 Título
                 <input value={form.title} onChange={(event) => onFieldChange("title", event.target.value)} placeholder="Ej. Anuncio recepción" required />
-              </label>
-              <label>
-                Plantel
-                <PlantelSelect value={form.plantel} onChange={(value) => onFieldChange("plantel", value)} />
               </label>
               <label>
                 Duración seg.

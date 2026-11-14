@@ -18,11 +18,14 @@ export function normalizeSearch(value = "") {
 }
 
 export function formatDuration(seconds) {
-  const total = Number(seconds) || 0;
-  if (total < 60) return `${total}s`;
-  const minutes = Math.floor(total / 60);
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
   const rest = total % 60;
-  return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const pad = (value) => String(value).padStart(2, "0");
+
+  if (hours > 0) return `${pad(hours)}:${pad(minutes)}:${pad(rest)}`;
+  return `${pad(minutes)}:${pad(rest)}`;
 }
 
 export function formatFileSize(value) {

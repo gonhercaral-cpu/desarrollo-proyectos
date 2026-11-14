@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -12,28 +13,20 @@ import {
   getUserName,
   getUserId,
   normalizeCampaignDocument,
-  cleanPublishStatus,
-  normalizeCampaignPayload,
   getOrderedCollection
 } from "./shared";
+import {
+  buildCampaignUpdate,
+  normalizeCampaignPayload,
+  validateCampaignPayload,
+} from "../../utils/digitalSignage/signageCampaigns";
 import { logSignageAudit } from "./auditService";
 
 export async function createSignageCampaign(data, user) {
   assertAdminUser(user);
 
   const payload = normalizeCampaignPayload(data);
-
-  if (!payload.name || !payload.plantel || !payload.playlistId) {
-    throw new Error("Completa nombre, plantel y playlist.");
-  }
-
-  if (!payload.startDate || !payload.endDate) {
-    throw new Error("Completa fecha inicio y fecha fin.");
-  }
-
-  if (payload.endDate < payload.startDate) {
-    throw new Error("La fecha fin debe ser posterior a la fecha inicio.");
-  }
+  validateCampaignPayload(payload);
 
   const campaignRef = doc(collection(db, CAMPAIGNS_COLLECTION));
   const campaignPayload = {
@@ -47,6 +40,7 @@ export async function createSignageCampaign(data, user) {
   await setDoc(campaignRef, campaignPayload);
   await logSignageAudit("crear campana", "campaign", campaignRef.id, campaignPayload.name, {
     plantel: campaignPayload.plantel,
+    planteles: campaignPayload.planteles,
     playlistId: campaignPayload.playlistId,
     priority: campaignPayload.priority,
     publishStatus: campaignPayload.publishStatus,
@@ -67,27 +61,14 @@ export async function getSignageCampaigns() {
 export async function updateSignageCampaign(id, data) {
   if (!id) throw new Error("Falta el ID de la campaña.");
 
-  const payload =
-    data?.schedule !== undefined ||
-    data?.name !== undefined ||
-    data?.plantel !== undefined ||
-    data?.playlistId !== undefined ||
-    data?.priority !== undefined ||
-    data?.startDate !== undefined ||
-    data?.endDate !== undefined ||
-    data?.deviceIds !== undefined
-      ? normalizeCampaignPayload(data)
-      : { ...data };
+  const campaignRef = doc(db, CAMPAIGNS_COLLECTION, id);
+  const snapshot = await getDoc(campaignRef);
 
-  if (data?.publishStatus !== undefined) {
-    payload.publishStatus = cleanPublishStatus(data.publishStatus);
-  }
+  if (!snapshot.exists()) throw new Error("No se encontró la campaña.");
 
-  Object.keys(payload).forEach((key) => {
-    if (payload[key] === undefined) delete payload[key];
-  });
+  const payload = buildCampaignUpdate(snapshot.data(), data || {});
 
-  await updateDoc(doc(db, CAMPAIGNS_COLLECTION, id), {
+  await updateDoc(campaignRef, {
     ...payload,
     updatedAt: serverTimestamp(),
   });

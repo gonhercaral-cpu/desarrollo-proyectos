@@ -5,6 +5,7 @@ import {
   TEMPLATE_THEME_OPTIONS,
   VISUAL_TEMPLATE_CATEGORIES,
   getPublishStatus,
+  formatDuration,
 } from "../../utils/digitalSignage";
 
 export default function SignageLibraryPanel({
@@ -200,9 +201,10 @@ export default function SignageLibraryPanel({
             </select>
           </label>
           <label>
-            Plantel
+            Origen anterior
             <select value={assetPlantelFilter} onChange={(event) => onAssetPlantelFilterChange(event.target.value)}>
-              <option value="all">Todos</option>
+              <option value="all">Toda la biblioteca</option>
+              <option value="global">Sin plantel de origen</option>
               {DIGITAL_SIGNAGE_PLANTELES.map((plantel) => (
                 <option key={plantel} value={plantel}>{plantel}</option>
               ))}
@@ -266,10 +268,10 @@ export default function SignageLibraryPanel({
               </div>
               <div className="signage-list-main">
                 <strong>{asset.title || "Sin título"}</strong>
-                <span>{getAssetTypeLabel(asset.type)} - {asset.plantel || "Sin plantel"} - {getLibraryDurationLabel(asset)} - {getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
+                <span>{getAssetTypeLabel(asset.type)} - {asset.plantel ? `Global · Origen: ${asset.plantel}` : "Global · Organización"} - {getLibraryDurationLabel(asset)} - {getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
                 <div className="signage-list-meta">
                   <TypeBadge type={asset.type} />
-                  <span className="signage-chip">{asset.plantel || "Sin plantel"}</span>
+                  <span className="signage-chip">{asset.plantel ? `Global · Origen: ${asset.plantel}` : "Global · Organización"}</span>
                   <span className="signage-chip">{getLibraryDurationLabel(asset)}</span>
                   <span className="signage-chip">{getAssetCategoryLabel(getAssetCategoryValue(asset.category))}</span>
                   <StatusBadge status={asset.active === false ? "inactive" : "active"} />
@@ -389,10 +391,6 @@ export default function SignageLibraryPanel({
                 <input value={templateForm.cta} onChange={(event) => onTemplateFormChange({ ...templateForm, cta: event.target.value })} placeholder="Ej. Inscribete hoy" />
               </label>
               <label>
-                Plantel
-                <PlantelSelect value={templateForm.plantel} onChange={(value) => onTemplateFormChange({ ...templateForm, plantel: value })} />
-              </label>
-              <label>
                 Duracion seg.
                 <input type="number" min="1" max="3600" value={templateForm.durationSeconds} onChange={(event) => onTemplateFormChange({ ...templateForm, durationSeconds: event.target.value })} />
               </label>
@@ -407,18 +405,11 @@ export default function SignageLibraryPanel({
 
         <form className="signage-panel" onSubmit={onUploadAsset}>
           <h3>Subir imagen o video</h3>
+          <p className="digital-helper">Biblioteca global de la organización. Los videos usan su duración real; las imágenes, 10 segundos. Personaliza cada duración en la playlist.</p>
           <div className="digital-form-grid">
             <label>
               Título
               <input value={assetForm.title} onChange={(event) => onAssetFormChange({ ...assetForm, title: event.target.value })} placeholder="Ej. Promoción julio" />
-            </label>
-            <label>
-              Plantel
-              <PlantelSelect value={assetForm.plantel} onChange={(value) => onAssetFormChange({ ...assetForm, plantel: value })} />
-            </label>
-            <label>
-              Duración seg.
-              <input type="number" min="1" max="3600" value={assetForm.durationSeconds} onChange={(event) => onAssetFormChange({ ...assetForm, durationSeconds: event.target.value })} />
             </label>
             <label>
               Archivo
@@ -438,10 +429,6 @@ export default function SignageLibraryPanel({
             <label>
               URL
               <input value={webForm.url} onChange={(event) => onWebFormChange({ ...webForm, url: event.target.value })} placeholder="https://..." />
-            </label>
-            <label>
-              Plantel
-              <PlantelSelect value={webForm.plantel} onChange={(value) => onWebFormChange({ ...webForm, plantel: value })} />
             </label>
             <label>
               Duración seg.
@@ -497,6 +484,6 @@ export default function SignageLibraryPanel({
 function getLibraryDurationLabel(asset) {
   const durationSeconds = Number(asset?.durationSeconds);
   return Number.isFinite(durationSeconds) && durationSeconds > 0
-    ? `${Math.round(durationSeconds)}s`
+    ? formatDuration(durationSeconds)
     : "Duración al asignar";
 }
