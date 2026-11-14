@@ -958,6 +958,16 @@ service firebase.storage {
         && (isAdmin() || request.auth.uid == userUid);
     }
 
+    match /digital-signage/room-templates/{templateId}/{fileName} {
+      allow read: if signedIn() && isAdmin();
+      allow create: if signedIn() && isAdmin()
+        && resource == null
+        && request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp'];
+      allow update: if false;
+      allow delete: if signedIn() && isAdmin();
+    }
+
     match /digital-signage/assets/{assetId}/{filePath=**} {
       allow read: if signedIn() && isAdmin();
 
