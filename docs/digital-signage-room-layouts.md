@@ -69,3 +69,24 @@ Archivos principales:
 - Build de producción correcto. Advertencias existentes de tamaño de bundle/importación dinámica ineficaz. ESLint dirigido de archivos modificados correcto; `npm run lint` global se ejecutó y falla por `typescript-eslint` ausente en la configuración de Active Classroom Desktop, ajena a estos cambios.
 
 No se escribieron datos ficticios en producción ni se inspeccionaron televisores físicos. Las pantallas que mantienen un bundle anterior abierto deben recargar su player una vez para recibir esta funcionalidad; después las asignaciones publicadas se sincronizan automáticamente.
+
+## Integración y despliegue completados
+
+Implementación: commit `8b7c9cdf34473fab9df8ae16abc3854b0d063fd9`, [PR #35](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/35), integrado en main como `5671689c7430da6ca14b1fb5fba1b7ba4126d32a`. El árbol de archivos compilado coincide exactamente con el árbol del merge. Issue #34 cerrado por la integración.
+
+Producción: **14 de noviembre de 2026, aproximadamente 12:17 PST**, proyecto `sistema-desarrollo-proyectos`. Primero se activaron reglas Firestore/Storage y después se publicó Hosting:
+
+```text
+firebase deploy --only firestore:rules,storage --project sistema-desarrollo-proyectos --non-interactive
+firebase deploy --only hosting --project sistema-desarrollo-proyectos --non-interactive
+```
+
+El primer intento de reglas recibió HTTP 503 de la API de Firebase; el reintento terminó correctamente. Ambos despliegues confirmaron sus releases. No se desplegaron Functions, índices ni otros servicios; no se publicaron releases de escritorio ni se ejecutaron migraciones o escrituras de datos de prueba en producción.
+
+Verificación posterior, solo lecturas: [aplicación publicada](https://sistema-desarrollo-proyectos.web.app) con HTTP 200 y CSP presente; SHA-256 remoto idéntico al local para `/assets/index-CqSxlyWC.js` y `/assets/index-CIB0flBn.css`. Chrome carga la aplicación publicada y el acceso de usuarios sin excepciones JavaScript.
+
+La programación y la continuación de playlist quedaron verificadas en reproductores reales de Chrome con Firebase emulado y datos ficticios, incluidos los escenarios A–H descritos arriba. No se afirma haber probado una pantalla física instalada ni una programación con datos reales de la escuela.
+
+CI del commit fuente: [autorización/reglas Firebase y conversión Office aprobadas](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/43636364575). La validación nativa de Active Classroom seguía en curso al cerrar este informe; no se declara aprobada y su paso de publicación de release fue omitido. La CI del [merge](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/43636570941) vuelve a ejecutar los controles existentes. El lint global local tiene la limitación de dependencias indicada anteriormente.
+
+Para activar el nuevo código en una pantalla que ya estaba abierta, recargar su URL del player una vez. A partir de ahí, las publicaciones y los horarios funcionan sin mantener abierta la administración. Recuperación: restaurar la versión anterior de Hosting y las reglas de main anterior a este PR; los datos nuevos son aditivos y no se borraron playlists, campañas ni assets existentes.
