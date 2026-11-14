@@ -49,7 +49,19 @@ Sin datos de prueba ni migraciones en producción. Nube AES se cubrió por sus p
 
 ## Publicación y límites operativos
 
-Pendiente registrar commit, PR, integración y despliegue de Hosting + Firestore/Storage después de publicarlos. No se necesita release de escritorio ni actualización de Functions o índices.
+Implementacion: commit `8255b01ed3a68b59b511b0aaff4da1723fba62d0`, PR [#30](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/30), integrado en main como `21dcbe8134380b4b1ed00a2e7dbccf7e47e5daf0`.
+
+El propietario confirmo directamente el despliegue a produccion despues de que la revision automatica exigiera resolver la contradiccion con AGENTS.md. Despliegue confirmado y terminado el 13 de noviembre de 2026 (America/Tijuana):
+
+```text
+firebase deploy --only firestore:rules,storage,hosting --project sistema-desarrollo-proyectos --non-interactive
+```
+
+Hosting y reglas Firestore/Storage publicados correctamente. URL: [sistema-desarrollo-proyectos.web.app](https://sistema-desarrollo-proyectos.web.app).
+
+Verificacion posterior, exclusivamente lecturas: HTTP 200, CSP presente y SHA-256 de los archivos remotos identico a la compilacion local para `/assets/index-Bbc8fw76.js` y `/assets/index-B5p17UB7.css`. Chrome carga la aplicacion publicada y muestra el acceso de usuarios sin excepciones JavaScript. No se modificaron datos de produccion para estas pruebas.
+
+CI del commit fuente: autorizacion de equipos/reglas Firebase y conversion Office correctas. La validacion nativa de escritorio del workflow existente seguia ejecutandose al registrar este informe; no se declara aprobada ni se publica una release de escritorio. La CI del merge vuelve a ejecutar las comprobaciones existentes. No se desplegaron Functions, indices ni otros servicios.
 
 Las pantallas con un bundle anterior abierto deben recargar su URL de player para recibir el nuevo código, especialmente antes de usar campañas multiplantel. El escalar conserva compatibilidad básica con el primer destino; un cliente anterior no interpreta el array nuevo. No existe canal para forzar una recarga remota de esos navegadores. No se inspeccionaron dispositivos físicos instalados.
 
