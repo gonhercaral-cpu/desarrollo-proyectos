@@ -220,6 +220,13 @@ export default function SignagePlaylistItemsEditor({
     }
   };
 
+  const handleDuplicateItem = (index) => {
+    const item = items[index];
+    const copy = { ...item, itemId: crypto.randomUUID() };
+    onChange([...items.slice(0, index + 1), copy, ...items.slice(index + 1)], "Contenido duplicado");
+    setAnnouncement(`${item.title || "Contenido"} duplicado en la posición ${index + 2}`);
+  };
+
   const handleDeleteBatch = () => {
     if (selectedBatchIds.length === 0) return;
     const newItems = items.filter((it) => !selectedBatchIds.includes(it.itemId));
@@ -509,19 +516,31 @@ export default function SignagePlaylistItemsEditor({
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  className="signage-delete-item-btn danger-table-button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteItem(item.itemId);
-                  }}
-                  disabled={saving}
-                  aria-label={`Eliminar ${item.title || "elemento"}`}
-                  title="Eliminar elemento de la playlist"
-                >
-                  ✕
-                </button>
+                <div className="signage-item-copy-actions" onClick={(event) => event.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="signage-duplicate-item-btn"
+                    onClick={() => handleDuplicateItem(index)}
+                    disabled={saving}
+                    aria-label={`Duplicar ${item.title || "elemento"}`}
+                    title="Duplicar contenido en esta playlist"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <rect x="8" y="8" width="12" height="12" rx="2" />
+                      <path d="M16 8V4H4v12h4" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="signage-delete-item-btn danger-table-button"
+                    onClick={() => handleDeleteItem(item.itemId)}
+                    disabled={saving}
+                    aria-label={`Eliminar ${item.title || "elemento"}`}
+                    title="Eliminar elemento de la playlist"
+                  >
+                    ✕
+                  </button>
+                </div>
               </article>
             );
           })
