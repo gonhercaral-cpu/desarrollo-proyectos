@@ -157,7 +157,7 @@ export default function SignagePlaylistsPanel({
 
   const handleAddSelectedAssets = () => {
     if (selectedAssetIds.length === 0) return;
-    onAddAssetsToPlaylist(selectedAssetIds.filter((id) => !currentPlaylistItems.some((item) => item.assetId === id)));
+    onAddAssetsToPlaylist(selectedAssetIds);
     handleCloseAssetPicker();
   };
 
@@ -681,7 +681,7 @@ export default function SignagePlaylistsPanel({
               <div>
                 <h3 id="asset-picker-title">Agregar contenido a la playlist</h3>
                 <p className="signage-modal-subtitle">
-                  Selecciona uno o más elementos de la biblioteca activa.
+                  Selecciona uno o más elementos. Puedes volver a agregar contenidos que ya están en la playlist.
                 </p>
               </div>
               <button
@@ -725,29 +725,22 @@ export default function SignagePlaylistsPanel({
                   </p>
                 ) : (
                   filteredAssets.map((asset) => {
-                    const isAlreadyInPlaylist = currentPlaylistItems.some(
+                    const occurrences = currentPlaylistItems.filter(
                       (item) =>
                         String(item.assetId || item.id) === String(asset.id)
-                    );
+                    ).length;
                     const isChecked = selectedAssetIds.includes(asset.id);
 
                     return (
                       <article
                         key={asset.id}
-                        className={`signage-asset-picker-card ${
-                          isAlreadyInPlaylist ? "is-added" : ""
-                        } ${isChecked ? "is-selected" : ""}`}
-                        onClick={() => {
-                          if (!isAlreadyInPlaylist) {
-                            handleToggleSelectAsset(asset.id);
-                          }
-                        }}
+                        className={`signage-asset-picker-card ${isChecked ? "is-selected" : ""}`}
+                        onClick={() => handleToggleSelectAsset(asset.id)}
                       >
                         <div className="signage-asset-picker-card-top">
                           <input
                             type="checkbox"
-                            checked={isChecked || isAlreadyInPlaylist}
-                            disabled={isAlreadyInPlaylist}
+                            checked={isChecked}
                             onChange={() => handleToggleSelectAsset(asset.id)}
                             aria-label={`Seleccionar ${asset.title}`}
                             onClick={(e) => e.stopPropagation()}
@@ -780,9 +773,9 @@ export default function SignagePlaylistsPanel({
 
                         <div className="signage-asset-picker-info">
                           <strong>{asset.title || "Sin título"}</strong>
-                          {isAlreadyInPlaylist && (
-                            <span className="signage-already-added-tag">
-                              Ya agregado
+                          {occurrences > 0 && (
+                            <span className="signage-asset-occurrences">
+                              En la playlist: {occurrences} {occurrences === 1 ? "vez" : "veces"}
                             </span>
                           )}
                         </div>

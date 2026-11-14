@@ -436,7 +436,7 @@
 
 .signage-editor-item-row {
   display: grid;
-  grid-template-columns: 24px 20px 52px minmax(100px, 1fr) 92px 34px 28px;
+  grid-template-columns: 24px 20px 52px minmax(0, 1fr) 92px 28px 54px;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -849,7 +849,7 @@
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.signage-asset-picker-card:hover:not(.is-added) {
+.signage-asset-picker-card:hover {
   border-color: #0f4fc4;
 }
 
@@ -910,10 +910,10 @@
   white-space: nowrap;
 }
 
-.signage-already-added-tag {
+.signage-asset-occurrences {
   font-size: 10px;
   font-weight: 800;
-  color: #b42318;
+  color: var(--muted, #64748b);
 }
 
 .signage-asset-picker-footer {
@@ -964,7 +964,7 @@
     grid-column: auto;
   }
   .signage-editor-item-row {
-    grid-template-columns: 24px 20px 48px minmax(80px, 1fr) 74px 30px 24px;
+    grid-template-columns: 24px 20px 48px minmax(0, 1fr) 74px 28px 54px;
     gap: 6px;
     padding: 5px 6px;
   }
@@ -983,7 +983,7 @@
 @media (max-width: 540px) {
   .signage-editor-item-row { grid-template-columns: 22px 18px 44px minmax(0, 1fr) 78px; gap: 5px; }
   .signage-item-step-actions { grid-column: 4; flex-direction: row; }
-  .signage-delete-item-btn { grid-column: 5; justify-self: end; }
+  .signage-item-copy-actions { grid-column: 5; justify-self: end; }
   .signage-asset-picker-footer, .signage-modal-actions { flex-wrap: wrap; }
   .signage-playlist-sidebar-list { max-height: 280px; }
   .signage-items-scroll-area { max-height: none; }
@@ -999,3 +999,40 @@ html[data-theme="dark"] .signage-playlists-three-col .signage-items-editor-toolb
 html[data-theme="dark"] .signage-playlists-three-col .signage-playlist-sidebar-card.active,
 html[data-theme="dark"] .signage-playlists-three-col .signage-editor-item-row.is-active { background: #12233f; border-color: #60a5fa; }
 html[data-theme="dark"] .signage-playlists-three-col .signage-asset-picker-card.is-selected { background: #12233f; }
+
+.signage-playlist-sidebar-card .signage-action-menu[open] {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+.signage-playlist-sidebar-card .signage-action-menu-popover {
+  position: static;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.signage-item-copy-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.signage-duplicate-item-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+}
+
+.signage-duplicate-item-btn:hover {
+  background: var(--blue-soft, #eaf2ff);
+  color: var(--primary, #0f4fc4);
+}

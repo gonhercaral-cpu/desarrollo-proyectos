@@ -1759,9 +1759,7 @@ export default function DigitalSignageAdmin() {
   function addAssetsToPlaylist(ids) {
     if (!selectedPlaylist || !Array.isArray(ids)) return;
     const currentItems = playlistEditsRef.current.get(selectedPlaylist.id) || selectedPlaylist.items || [];
-    const existingIds = new Set(currentItems.map((item) => item.assetId));
     const additions = [...new Set(ids)]
-      .filter((id) => !existingIds.has(id))
       .map((id) => activeAssets.find((asset) => asset.id === id))
       .filter(Boolean)
       .map(buildPlaylistItemFromAsset);
