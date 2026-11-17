@@ -140,7 +140,8 @@ test("resolvedor rechaza Internet, ruta remota y MIME inconsistente", () => {
 
 test("Player opera offline, navega, conserva presentación y libera renderer al cerrar", async (t) => {
   const { root, window, cleanup } = dom(t); const renderers = [];
-  t.mock.method(globalThis, "fetch", () => { throw new Error("Internet prohibido"); });
+  // Thumbnail reads use the local asset protocol; any remote request still fails this offline test.
+  t.mock.method(globalThis, "fetch", async url => { assertLocalUrl(url); return new Response(new Uint8Array(1)); });
   const player = new ClassroomPlayer(root, localClass(), () => {}, { verifyResource: async () => true, toUrl, createRenderer: async (kind) => { const renderer = rendererDouble(kind); renderers.push(renderer); return renderer; } });
   cleanup(() => player.destroy()); await tick();
   window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true })); await tick();
@@ -152,7 +153,7 @@ test("Player opera offline, navega, conserva presentación y libera renderer al 
   renderers[1].options.onPage(4);
   root.querySelector("[data-presentation]").click(); await tick();
   assert.equal(player.controller.page, 2); assert.equal(renderers[2].options.page, 2);
-  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  for (const call of globalThis.fetch.mock.calls) assertLocalUrl(call.arguments[0]);
   player.destroy(); assert.equal(renderers[2].destroyed, true); assert.equal(root.childElementCount, 0);
   window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft" })); assert.equal(player.controller.slideIndex, 1);
 });
@@ -336,7 +337,8 @@ test("reinicio con manifest en disco permite abrir Player offline y detecta corr
     for (const resource of saved.resources) { assert.equal(await verify(resource.download.checksums.sha256, resource.download.sizeBytes), true); paths[resource.resourceId] = join(directory, resource.download.checksums.sha256); }
     return { manifest: saved, paths };
   } };
-  t.mock.method(globalThis, "fetch", () => { throw new Error("Sin Internet"); });
+  // Thumbnail reads use the local asset protocol; any remote request still fails this offline test.
+  t.mock.method(globalThis, "fetch", async url => { assertLocalUrl(url); return new Response(new Uint8Array(1)); });
   const classroom = await openLocalClass(cache, manifest.unit.unitId, manifest.version);
   const player = new ClassroomPlayer(root, classroom, () => {}, { toUrl: () => "asset://localhost/cache/file", createRenderer: async kind => rendererDouble(kind), verifyResource: async id => { const resource = manifest.resources.find(item => item.resourceId === id); return verify(resource.download.checksums.sha256, resource.download.sizeBytes); } });
   cleanup(() => player.destroy()); await waitFor(() => root.querySelector("[data-status]").hidden);
@@ -346,7 +348,7 @@ test("reinicio con manifest en disco permite abrir Player offline y detecta corr
   // Disk hashing is async; wait for completion without relying on a fixed timer.
   await waitFor(() => root.querySelector("[role='alert']"));
   assert.match(root.querySelector("[role='alert']").textContent, /corrupto/);
-  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  for (const call of globalThis.fetch.mock.calls) assertLocalUrl(call.arguments[0]);
 });
 
 test("Google Slides PNG: navegación elige imagen por slide y conserva posición al volver", () => {
@@ -376,7 +378,8 @@ test("Google Slides PNG sincroniza, verifica hash, reinicia y navega Player sin 
   await validateManifest(manifest);
   const publication = { unitId: manifest.unit.unitId, version: manifest.version, contentHash: manifest.integrity.contentHash };
   await new SyncEngine(new DiskCache(directory), { manifest: async () => manifest, download: async (_manifest, resource, write) => write(bytes.get(resource.resourceId)) }).sync(publication);
-  t.mock.method(globalThis, "fetch", () => { throw new Error("Internet prohibido"); });
+  // Thumbnail reads use the local asset protocol; any remote request still fails this offline test.
+  t.mock.method(globalThis, "fetch", async url => { assertLocalUrl(url); return new Response(new Uint8Array(1)); });
   const restarted = new DiskCache(directory);
   const classroom = await openLocalClass(restarted, manifest.unit.unitId, manifest.version);
   const renderers = [];
@@ -391,7 +394,7 @@ test("Google Slides PNG sincroniza, verifica hash, reinicia y navega Player sin 
   root.querySelector("[data-general] button").click(); await waitFor(() => renderers.length === 3);
   root.querySelector("[data-presentation]").click(); await waitFor(() => renderers.length === 4);
   assert.equal(player.controller.slideIndex, 1); assert.equal(renderers[3].source.name, "slide-2.png");
-  assert.equal(globalThis.fetch.mock.callCount(), 0);
+  for (const call of globalThis.fetch.mock.calls) assertLocalUrl(call.arguments[0]);
   const bad = structuredClone(manifest); bad.slides[1].metadata.presentationResourceId = "missing";
   await assert.rejects(validateManifest(bad), { code: "manifest" });
 });

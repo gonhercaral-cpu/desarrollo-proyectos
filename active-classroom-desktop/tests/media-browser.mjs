@@ -212,32 +212,53 @@ export async function scroll(seed, slideCount = 80, changeProjectorStatus = fals
       const bounds = root.querySelector(selector).getBoundingClientRect();
       assert(bounds.right <= innerWidth + 1 && bounds.bottom <= innerHeight + 1, `${selector}: botón cortado`);
     }
-    assert(getComputedStyle(root.querySelector(".player-scroll-list")).overflowY === "auto", "Lista sin scroll");
-    const bounds = projection.getBoundingClientRect();
-    for (const selector of ["[data-slides]", "[data-associated]", "[data-general]"]) {
-      const list = root.querySelector(selector); const last = list.lastElementChild;
-      list.scrollTop = list.scrollHeight;
-      await until(() => Math.abs(list.scrollHeight - list.clientHeight - list.scrollTop) <= 1.5, 2);
-      const before = { projectorHeight: projection.getBoundingClientRect().height, clientHeight: list.clientHeight, scrollTop: list.scrollTop, status: root.querySelector("[data-projector-status]").textContent };
-      if (changeProjectorStatus && selector === "[data-slides]") failProjectorPublish(new Error("Salida de proyección desconectada"));
-      const sections = root.querySelector(".player-resource-sections");
-      const bottomOverflow = last.getBoundingClientRect().bottom - sections.getBoundingClientRect().bottom;
-      if (bottomOverflow > 0) sections.scrollTop += bottomOverflow;
-      await delay(50);
-      const rectangle = last.getBoundingClientRect();
-      observations.push({ viewport: [innerWidth, innerHeight], slides: slideCount, selector, before, projectorHeight: projection.getBoundingClientRect().height, status: root.querySelector("[data-projector-status]").textContent, scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, clientWidth: list.clientWidth, scrollWidth: list.scrollWidth, list: list.getBoundingClientRect().toJSON(), last: rectangle.toJSON(), sections: sections.getBoundingClientRect().toJSON(), display: getComputedStyle(last).display });
-      if (changeProjectorStatus && selector === "[data-slides]") {
-        assert(root.querySelector("[data-projector-status]").textContent.includes("No se pudo actualizar el proyector"), "La transición del estado no ocurrió");
-        assert(projection.getBoundingClientRect().height === before.projectorHeight && list.clientHeight === before.clientHeight, "El estado del Proyector cambió la altura de la lista");
-      }
-      assert(rectangle.top >= list.getBoundingClientRect().top - 1 && rectangle.bottom <= list.getBoundingClientRect().bottom, `${selector}: último elemento cortado`);
-      assert(rectangle.bottom <= innerHeight + 1, `${selector}: último elemento fuera de ventana`);
-      assert(projection.getBoundingClientRect().top === bounds.top, "Bloque proyección se desplazó");
-      observations.push({ scroll: selector, last: last.textContent, reachable: true });
+    const activatePanel = selector => {
+      const list = root.querySelector(selector);
+      const panel = list.closest('[role="tabpanel"]');
+      assert(panel, `${selector}: falta panel accesible`);
+      root.querySelector(`[role="tab"][aria-controls="${panel.id}"]`).click();
+      assert(!panel.hidden, `${selector}: panel oculto`);
+      return panel;
+    };
+    activatePanel("[data-slides]");
+    assert(root.querySelector("[data-teacher-clock]").textContent.trim(), "Reloj local vacío");
+    const clock = root.querySelector("[data-teacher-clock]");
+    assert(clock.getBoundingClientRect().bottom <= innerHeight, "Reloj fuera de pantalla");
+    if (changeProjectorStatus) {
+      const before = projection.getBoundingClientRect().height;
+      failProjectorPublish(new Error("Salida de proyección desconectada")); await delay(50);
+      assert(root.querySelector("[data-projector-status]").textContent.includes("No se pudo actualizar el proyector"), "La transición del estado no ocurrió");
+      assert(projection.getBoundingClientRect().height === before, "El estado del Proyector cambió la altura disponible");
     }
-    root.querySelector("[data-slides]").lastElementChild.click(); await delay(25); assert(player.controller.slideIndex === slideCount - 1, "Última diapositiva inaccesible");
-    root.querySelector("[data-associated]").lastElementChild.querySelector("[data-resource]").click(); await delay(25); assert(player.controller.selectedResourceId === "resource-59", "Último asociado inaccesible");
-    root.querySelector("[data-general]").lastElementChild.querySelector("[data-resource]").click(); await delay(25); assert(player.controller.selectedResourceId === "resource-119", "Último general inaccesible");
+    root.querySelector("[data-slide-gallery-open]").click(); await delay(25);
+    const gallery = root.querySelector(".slide-gallery-grid");
+    const lastSlide = gallery.querySelector(`[data-slide-index="${slideCount - 1}"]`);
+    lastSlide.focus(); lastSlide.scrollIntoView({ block: "end" }); await delay(25);
+    assert(lastSlide.getBoundingClientRect().bottom <= innerHeight + 1, "Última miniatura fuera de ventana");
+    assert(gallery.querySelectorAll("[data-slide-index]").length === slideCount, "Galería incompleta");
+    lastSlide.click(); await delay(25);
+    assert(player.controller.slideIndex === slideCount - 1, "Última diapositiva inaccesible");
+    for (const [selector, expected] of [["[data-associated]", "resource-59"], ["[data-general]", "resource-119"]]) {
+      const panel = activatePanel(selector); const list = root.querySelector(selector); const last = list.lastElementChild;
+      // Only one vertical scrolling region between the row and the aside.
+      const scrolling = []; let ancestor = last.parentElement;
+      while (ancestor && ancestor !== root.querySelector(".player-resources")) {
+        if (["auto", "scroll"].includes(getComputedStyle(ancestor).overflowY)) scrolling.push(ancestor);
+        ancestor = ancestor.parentElement;
+      }
+      assert(scrolling.length === 1, `${selector}: scrolls anidados (${scrolling.length})`);
+      const scrollHost = scrolling[0]; scrollHost.scrollTop = scrollHost.scrollHeight; await delay(50);
+      const rectangle = last.getBoundingClientRect(), bounds = scrollHost.getBoundingClientRect();
+      assert(rectangle.top >= bounds.top - 1 && rectangle.bottom <= bounds.bottom + 1, `${selector}: último recurso cortado`);
+      assert(rectangle.bottom <= innerHeight + 1, `${selector}: último recurso fuera de ventana`);
+      assert(panel.scrollWidth <= panel.clientWidth + 1, `${selector}: scroll horizontal`);
+      last.querySelector("[data-resource]").click(); await delay(25);
+      assert(player.controller.selectedResourceId === expected, `${selector}: último recurso inaccesible`);
+      observations.push({ viewport: [innerWidth, innerHeight], selector, oneScroll: true, reachable: true });
+    }
+    const musicHost = root.querySelector("[data-background-music]");
+    activatePanel("[data-background-music]"); activatePanel("[data-slides]");
+    assert(root.querySelector("[data-background-music]") === musicHost, "Música desmontada al cambiar pestaña");
     root.querySelector("[data-presentation]").click(); await delay(25); assert(player.controller.isPresentation, "Volver a presentación");
     observations.push({ responsive: [innerWidth, innerHeight], slides: slideCount, associated: 60, general: 60, footerSeparated: true, allLastItemsAccessible: true });
   } finally { player.destroy(); }
