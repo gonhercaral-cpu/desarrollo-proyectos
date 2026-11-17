@@ -32,7 +32,7 @@ class Tile {
     this.thumbnails = thumbnails; this.priority = priority;
     this.thumb.className = "slide-thumb"; this.thumb.setAttribute("aria-hidden", "true");
     this.fallback.className = "slide-thumb-fallback"; this.thumb.append(this.fallback);
-    this.show("loading");
+    this.show("empty");
   }
   setIndex(index: number): void {
     if (index === this.index) return;
