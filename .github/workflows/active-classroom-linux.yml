@@ -21,7 +21,7 @@ jobs:
   compare:
     name: Ubuntu 24 AppImage Wayland runtime ${{ matrix.version }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 65
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix:
@@ -54,13 +54,24 @@ jobs:
             active-classroom-desktop/src-tauri/target
           key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
           restore-keys: classroom-native-ubuntu22-x64-
-      - name: Descargar candidato sin firma para diagnóstico
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          artifact-ids: '14362614824'
-          run-id: '44150284122'
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/candidate
+      - name: Preparar fixtures con el mismo reproductor
+        run: |
+          mkdir -p "$RUNNER_TEMP/report"
+          ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$RUNNER_TEMP/fixtures" npm run test:media:linux
+      - name: Esperar artefacto del intento actual y descargarlo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 170); do
+            artifact=$(gh api repos/gonhercaral-cpu/desarrollo-proyectos/actions/runs/44150284122/artifacts --jq '.artifacts[]|select(.expired==false)|select((.name|startswith("classroom-packaging-diagnostic-")) or ((.name|startswith("active-classroom-validation-")) and ((.name|contains("reports"))|not)))|.name' | head -1)
+            if [[ -n "$artifact" ]]; then
+              gh run download 44150284122 --name "$artifact" --dir "$RUNNER_TEMP/candidate"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "El intento actual no dejó paquetes disponibles para comparar" >&2
+          exit 1
       - name: Preparar exactamente los dos runtimes
         env:
           PROBE_VERSION: ${{ matrix.version }}
@@ -78,7 +89,6 @@ jobs:
           fi
           chmod 755 "$RUNNER_TEMP/probe/classroom.AppImage"
           sha256sum "$RUNNER_TEMP/probe/"* > "$RUNNER_TEMP/report/input-sha256.txt"
-          ACTIVE_CLASSROOM_MEDIA_PERFORMANCE=1 ACTIVE_CLASSROOM_MEDIA_EXPORT="$RUNNER_TEMP/fixtures" npm run test:media:linux
       - name: Cinco procesos independientes, límites originales intactos
         env:
           PROBE_VERSION: ${{ matrix.version }}
