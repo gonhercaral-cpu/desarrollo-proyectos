@@ -155,7 +155,7 @@ test("el audio persiste al navegar adelante y atrás, con el teclado de presenta
   h.query("[data-slide-next]").click(); await settle(); assert.equal(h.player.controller.slideIndex, 1);
   key(" "); await settle(); key("ArrowRight"); await settle();
   assert.equal(audio.commands.length, commands); assert.equal(audio.state.playing, true); assert.equal(audio.destroyed, false);
-  h.query("[data-slides] button").click(); await settle(); assert.equal(h.player.controller.slideIndex, 0);
+  h.query("[data-slide-gallery-open]").click(); h.query('[data-slide-index="0"]').click(); await settle(); assert.equal(h.player.controller.slideIndex, 0);
   h.query("[data-slide-previous]").click(); await settle();
   assert.equal(h.audios.length, 1); assert.equal(audio.destroyed, false); assert.equal(audio.state.playing, true); assert.equal(h.query("[data-audio-dock]").hidden, false);
 });

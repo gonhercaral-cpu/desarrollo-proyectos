@@ -13,6 +13,9 @@ import { BackgroundMusic } from "./BackgroundMusic.ts";
 import { selectUnitMusic } from "./unit-music.ts";
 import { desktopSettings } from "../settings/preferences.ts";
 import { animatedSource, preloadAnimationImage } from "./animated-source.ts";
+import { TeacherWorkspace } from "../ui/TeacherWorkspace.ts";
+import { SlideNavigator } from "./SlideNavigator.ts";
+import { SlideThumbnails, type SlideThumbnailOptions } from "./slide-thumbnails.ts";
 
 export interface PlayerDependencies {
   ambientMusic?: { tracks: NonNullable<import("../offline/manifest.ts").Manifest["backgroundMusic"]>; defaultTrackIds?: string[]; prepare(id: string): Promise<RendererSource> };
@@ -23,6 +26,8 @@ export interface PlayerDependencies {
   preloadAnimationImage?: typeof preloadAnimationImage;
   toUrl?: (path: string) => string;
   projectionBridge?: ProjectionBridge;
+  // Test hooks for the slide thumbnails; the app uses the local file reader and pdf.js.
+  slideThumbnails?: Pick<SlideThumbnailOptions, "fetchBytes" | "openPdf" | "objectUrls" | "maxCacheEntries" | "rasterizeImage" | "openTimeoutMs">;
 }
 const timeLabel = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
 const setText = (node: HTMLElement, value: string) => { if (node.textContent !== value) node.textContent = value; };
@@ -31,6 +36,8 @@ export class ClassroomPlayer {
   private music: BackgroundMusic;
   readonly controller: ClassSessionController;
   private projection: ProjectionCoordinator;
+  private slideNavigator?: SlideNavigator;
+  private teacherWorkspace?: TeacherWorkspace;
   private source?: RendererSource;
   private surface?: InteractionSurface;
   private buildSequence = 0;
@@ -78,6 +85,8 @@ export class ClassroomPlayer {
     host.innerHTML = '<strong>Atajos de teclado:</strong>' + (["BACK", "ADVANCE", "PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"] as ShortcutCommand[]).map(command => `<span><kbd>${escapeHtml(map[command].map(shortcutLabel).join(" / ") || "Sin asignar")}</kbd><small>${escapeHtml(SHORTCUT_ACTIONS[command].label)}</small></span>`).join("");
   };
   private keyListener = (event: KeyboardEvent) => {
+    // The slide gallery is modal: it owns the keyboard (Escape included) while it is open.
+    if (this.slideNavigator?.galleryOpen) return;
     const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""), this.audioOwnsSeek());
     if (!command || (event.repeat && ["PLAY_PAUSE", "BACKGROUND_MUSIC_PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
     event.preventDefault(); void this.dispatch(command);
@@ -95,6 +104,9 @@ export class ClassroomPlayer {
       if (!await dependencies.verifyResource(id)) throw new Error("Audio local ausente o dañado.");
       return localSource(classroom, id, dependencies.toUrl);
     }, () => !(desktopSettings().pauseBackgroundMusic && (this.audioActive() || this.state.playing && ["audio", "video"].includes(this.renderer?.kind || ""))), dependencies.releaseMediaSource);
+    this.teacherWorkspace = new TeacherWorkspace(root);
+    const musicDetails = this.element("[data-background-music]").querySelector("details");
+    if (musicDetails) musicDetails.open = true;
     this.refreshShortcuts(); window.addEventListener("keydown", this.keyListener); window.addEventListener("classroom-shortcuts-changed", this.refreshShortcuts);
     this.projection.start(); void this.showResource();
   }
@@ -129,6 +141,11 @@ export class ClassroomPlayer {
       this.audioVolume = Math.max(0, Math.min(1, value));
       if (this.audioReady) this.audioRenderer?.setVolume(this.audioVolume); else this.updateAudioControls();
     };
+    this.slideNavigator = new SlideNavigator({
+      host: this.element("[data-slides]"), classroom: this.classroom,
+      thumbnails: new SlideThumbnails({ ...this.dependencies.slideThumbnails, classroom: this.classroom, verifyResource: id => this.dependencies.verifyResource(id), toUrl: this.dependencies.toUrl }),
+      onSelect: index => { this.controller.goSlide(index); void this.showResource(); },
+    });
     this.updateProjection(); this.updateLists(); this.updateState(); this.updateAudioControls();
   }
   private updateProjection(): void {
@@ -152,14 +169,7 @@ export class ClassroomPlayer {
   }
   private updateLists(): void {
     const positions = ["[data-slides]", "[data-associated]", "[data-general]"].map(selector => [selector, this.element(selector).scrollTop] as const);
-    const slides = this.element("[data-slides]"); slides.replaceChildren();
-    this.classroom.manifest.slides.forEach((slide, index) => {
-      const button = document.createElement("button"); button.className = "button player-list-button";
-      button.textContent = `${index + 1}. ${slide.title || `Diapositiva ${index + 1}`}`;
-      button.setAttribute("aria-current", String(index === this.controller.slideIndex));
-      button.onclick = () => { this.controller.goSlide(index); void this.showResource(); };
-      slides.append(button);
-    });
+    this.slideNavigator?.update(this.controller.slideIndex);
     for (const [selector, ids] of [["[data-associated]", this.controller.associatedIds], ["[data-general]", this.classroom.manifest.generalResourceIds]] as const) {
       const list = this.element(selector); list.replaceChildren();
       if (!ids.length) { const empty = document.createElement("p"); empty.textContent = "Sin recursos asociados."; list.append(empty); }
@@ -509,7 +519,7 @@ export class ClassroomPlayer {
   private exit(): void { this.destroy(); this.onExit(); }
   destroy(): void {
     if (this.disposed) return;
-    this.disposed = true; this.music.destroy(); ++this.sequence; ++this.audioSequence;
+    this.disposed = true; this.teacherWorkspace?.destroy(); this.teacherWorkspace = undefined; this.slideNavigator?.destroy(); this.slideNavigator = undefined; this.music.destroy(); ++this.sequence; ++this.audioSequence;
     this.discardAudio();
     ++this.buildSequence; this.buildAbort?.abort(); this.buildAbort = undefined; this.surface?.destroy(); this.surface = undefined; this.verifiedSources.clear();
     this.projection.destroy();

@@ -1,3 +1,10 @@
+## 1.0.24 — 2026-11-17
+
+- Navegación visual con miniaturas locales anterior/siguiente y galería de diapositivas con selección directa.
+- Reloj local permanente en el panel del maestro, independiente de la proyección.
+- Panel de diapositivas, recursos y música organizado por pestañas para aprovechar la altura sin listas con scroll anidado.
+- Conserva audio independiente, música ambiente, atajos configurables, contenido descargado y actualizador firmado.
+
 ## 1.0.23 — pendiente de validación y publicación
 
 - Evita recalcular el SHA-256 de toda la biblioteca al cerrar una clase o recuperar un error de apertura; conserva el inventario rápido y la activación de versiones pendientes.

@@ -369,11 +369,11 @@ test("shortcuts del profesor gobiernan proyector offline y mantienen notas priva
   const manifest = fixture(); manifest.slides[1].metadata.notes = "Solo para profesor";
   const classroom = { manifest, resolveResource(id) { const resource = manifest.resources.find(value => value.resourceId === id); return { path: `/cache/${id}`, mimeType: resource.download.mimeType, name: resource.name, kind: resource.kind }; } };
   const player = new ClassroomPlayer(root, classroom, () => {}, { projectionBridge: native, verifyResource: async () => true, toUrl: path => `asset://localhost${path}`, createRenderer: async kind => rendererDouble(kind) });
-  cleanup(() => player.destroy()); t.mock.method(globalThis, "fetch", () => { throw new Error("Internet prohibido"); }); await tick();
+  cleanup(() => player.destroy()); t.mock.method(globalThis, "fetch", async url => { assert.match(url, /^asset:\/\/localhost\//); return new Response(new Uint8Array(1)); }); await tick();
   window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true })); await tick();
   assert.equal(player.controller.page, 2); assert.equal(native.snapshots.at(-1).page, 2); assert.equal(followerRenderers.at(-1).pages.at(-1), 2);
   assert.equal(root.querySelector("[data-notes]").textContent, "Solo para profesor"); assert.equal(audience.textContent.includes("Solo para profesor"), false);
-  assert.equal(globalThis.fetch.mock.callCount(), 0); player.destroy(); await tick(); assert.equal(native.closed.length, 1);
+  for (const call of globalThis.fetch.mock.calls) assert.match(call.arguments[0], /^asset:\/\/localhost\//); player.destroy(); await tick(); assert.equal(native.closed.length, 1);
 });
 
 test("capabilities separan audiencia de caché/identidad/dialog y bootstrap no inicia Firebase", async () => {
