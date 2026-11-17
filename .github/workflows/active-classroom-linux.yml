@@ -13,12 +13,17 @@ on:
         required: false
         type: boolean
 
+      published_probe:
+        required: false
+        type: boolean
+
 permissions:
   contents: read
   actions: read
 
 jobs:
   compare:
+    if: ${{ !inputs.published_probe }}
     name: Ubuntu 24 AppImage Wayland runtime ${{ matrix.version }}
     runs-on: ubuntu-22.04
     timeout-minutes: 130
@@ -116,5 +121,107 @@ jobs:
         with:
           name: classroom-runtime-comparison-${{ matrix.version }}-${{ github.run_id }}
           path: ${{ runner.temp }}/report/
+          retention-days: 7
+          if-no-files-found: warn
+  published-updater:
+    if: ${{ inputs.published_probe }}
+    name: Cliente nativo de CI detecta release público
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: active-classroom-desktop
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: active-classroom-desktop/package-lock.json
+      - name: Dependencias del adaptador de pruebas
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev libsecret-tools gnome-keyring dbus-x11 xvfb xauth weston ffmpeg gstreamer1.0-tools gstreamer1.0-gl gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          npm ci
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            active-classroom-desktop/src-tauri/target
+          key: classroom-native-ubuntu22-x64-${{ hashFiles('active-classroom-desktop/src-tauri/Cargo.lock') }}
+          restore-keys: classroom-native-ubuntu22-x64-
+      - name: Verificar detección con función real y firmas publicadas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATER_PROBE_REPORT: ${{ runner.temp }}/published-updater/report.json
+        run: |
+          mkdir -p "$RUNNER_TEMP/published-updater"
+          gh release download active-classroom-v1.0.24 --repo gonhercaral-cpu/desarrollo-proyectos --dir "$RUNNER_TEMP/published-updater"
+          npm run build
+          cat > src-tauri/examples/updater_published_probe.rs <<'RS'
+          // Diagnostic only: invoke the unchanged product check against the public endpoint.
+          #[path = "../src/app_updater.rs"]
+          mod app_updater;
+          use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+          fn main() {
+              let mut context = tauri::generate_context!();
+              context.config_mut().app.windows.clear();
+              context.package_info_mut().version = "1.0.23".parse().unwrap();
+              let app = tauri::Builder::default()
+                  .plugin(tauri_plugin_updater::Builder::new().build())
+                  .manage(app_updater::UpdateGate::default())
+                  .register_uri_scheme_protocol("updaterprobe", |_, _| {
+                      tauri::http::Response::builder().header("Content-Type", "text/html")
+                          .body(b"<!doctype html><title>Updater CI</title>".to_vec()).unwrap()
+                  })
+                  .setup(|app| {
+                      let window = WebviewWindowBuilder::new(app, "teacher", WebviewUrl::CustomProtocol("updaterprobe://localhost/".parse().unwrap())).visible(false).build()?;
+                      let handle = app.handle().clone();
+                      tauri::async_runtime::spawn(async move {
+                          let endpoint = handle.config().plugins.0["updater"]["endpoints"][0].as_str().unwrap();
+                          assert_eq!(endpoint, "https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/latest/download/latest.json");
+                          let status = app_updater::classroom_app_update(window, handle.clone(), handle.state::<app_updater::UpdateGate>(), "check".into(), Some(false)).await.unwrap();
+                          assert_eq!(status.current_version, "1.0.23");
+                          assert_eq!(status.phase, "available", "{}", status.message);
+                          assert_eq!(status.new_version.as_deref(), Some("1.0.24"));
+                          let report = serde_json::json!({"ok":true,"nativeProductCheck":true,"clientVersionConfiguredForCI":"1.0.23","newVersion":status.new_version,"phase":status.phase,"endpoint":endpoint,"installed":false,"physicalClassroom":false});
+                          std::fs::write(std::env::var("UPDATER_PROBE_REPORT").unwrap(), report.to_string()).unwrap();
+                          println!("PUBLISHED_UPDATER_PROBE {}", report);
+                          handle.exit(0);
+                      });
+                      Ok(())
+                  }).build(context).unwrap();
+              let watchdog = app.handle().clone();
+              std::thread::spawn(move || { std::thread::sleep(std::time::Duration::from_secs(90)); watchdog.exit(1); });
+              app.run(|_, _| {});
+          }
+          RS
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml --example updater_published_probe --example verify_updater
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          p=Path('src-tauri/target/release/examples/updater_published_probe')
+          data=p.read_bytes()
+          assert b'__TAURI_BUNDLE_TYPE_VAR_UNK' in data
+          p.write_bytes(data.replace(b'__TAURI_BUNDLE_TYPE_VAR_UNK', b'__TAURI_BUNDLE_TYPE_VAR_DEB'))
+          PYCODE
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/probe-config" XDG_CACHE_HOME="$RUNNER_TEMP/probe-cache" XDG_DATA_HOME="$RUNNER_TEMP/probe-data"
+          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+          timeout 100s xvfb-run -a dbus-run-session -- src-tauri/target/release/examples/updater_published_probe
+          export ACTIVE_CLASSROOM_UPDATER_PUBLIC_KEY=$(node -p 'JSON.parse(require("fs").readFileSync("src-tauri/tauri.conf.json")).plugins.updater.pubkey')
+          for artifact in "$RUNNER_TEMP/published-updater/"*.deb "$RUNNER_TEMP/published-updater/"*.AppImage; do
+            src-tauri/target/release/examples/verify_updater "$artifact" "$artifact.sig" 1.0.24
+          done
+      - name: Conservar evidencia del cliente aislado
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: classroom-published-updater-${{ github.run_id }}
+          path: ${{ runner.temp }}/published-updater/report.json
           retention-days: 7
           if-no-files-found: warn
