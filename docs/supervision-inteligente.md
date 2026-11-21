@@ -219,7 +219,7 @@ de las herramientas. Contratos/resultados privados permanecen fuera de Git en
 
 ## Validación
 
-Batería conjunta final: **204 pruebas, 204 correctas, 0 fallos**, en 29 suites.
+Batería conjunta final: **205 pruebas, 205 correctas, 0 fallos**, en 29 suites.
 
 - Reglas y Storage en `security-rules-audit`, sin credenciales de producción.
 - Motor: fechas locales/DST, días hábiles/festivos, estados terminales, alto avance

@@ -123,7 +123,7 @@ function createSupervisionHandlers({ db, FieldValue, HttpsError, provider = null
       const project = projectSnap.exists ? await related(rawProject, tx) : null;
       const summary = project ? evaluate(project, cfg) : null;
       const inputRevision = project ? hash([project.title, project.status, project.deadline, project.advances, project.comments,
-        project.evidenceFiles, project.externalEvidence, project.deliverables, project.activities, project.milestones,
+        project.evidenceFiles, project.externalEvidence, project.externalEvidenceCounts, project.deliverables, project.activities, project.milestones,
         project.reviewChecklist, project.assignedToUid, project.assignedToId, project.collaboratorIds, project.supervisionOverrides]) : null;
       const sameInput = previous?.inputRevision === inputRevision;
       const decisionState = sameInput && !expiredSnooze ? previous?.decisionState || "pending" : "pending";

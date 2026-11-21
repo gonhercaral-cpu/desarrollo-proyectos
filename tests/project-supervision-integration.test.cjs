@@ -340,3 +340,16 @@ test("mezcla de evidencias heredadas y embebidas declara mínimo conocido sin su
   assert.equal(s.evidenceCountPartial, true); assert.equal(s.readyForClosure, false);
   assert.equal((await request("overview")).metrics.partialEvidenceProjects, 1);
 });
+
+
+test("cambios de conteo fuera de la muestra reabren recomendaciones descartadas", async () => {
+  await seedProject("p1", { status: "Listo para revisión", advances: [] });
+  const batch = db.batch();
+  for (let i = 0; i < 31; i++) batch.set(db.collection("evidence").doc(`old${i}`), { projectId: "p1", reviewStatus: "approved", createdAt: new Date(Date.UTC(2026, 10, 1, 0, i)) });
+  await batch.commit();
+  const s = await handlers.recompute("p1");
+  await request("decision", { projectId: "p1", version: s.version, action: "dismiss" });
+  await db.collection("evidence").doc("old0").update({ reviewStatus: "pending" });
+  await handlers.recompute("p1", undefined, true);
+  assert.equal((await request("overview")).items[0].decisionState, "pending");
+});
