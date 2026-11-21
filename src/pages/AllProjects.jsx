@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   getActiveProjects,
@@ -10,7 +10,23 @@ import { buildUnreadActivityByProject } from "../utils/projectNotificationActivi
 import UserAvatar from "../components/UserAvatar";
 import ProjectActivityIndicator from "../components/ProjectActivityIndicator";
 
-export default function AllProjects({ onOpenProject, onEditProject }) {
+const ProjectSupervision = lazy(() => import("../components/ProjectSupervision"));
+
+export default function AllProjects(props) {
+  const { isAdmin } = useAuth();
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get("tab") === "supervision" ? "supervision" : "list");
+  return <>
+    {isAdmin && <nav className="supervision-tabs" aria-label="Vistas de todos los proyectos">
+      <button type="button" aria-pressed={tab === "list"} onClick={() => setTab("list")}>Proyectos (lista)</button>
+      <button type="button" aria-pressed={tab === "supervision"} onClick={() => setTab("supervision")}>✦ Supervisión inteligente</button>
+    </nav>}
+    {isAdmin && tab === "supervision"
+      ? <Suspense fallback={<div className="dashboard-loading-card">Cargando supervisión…</div>}><ProjectSupervision onOpenProject={props.onOpenProject} /></Suspense>
+      : <AllProjectsList {...props} />}
+  </>;
+}
+
+function AllProjectsList({ onOpenProject, onEditProject }) {
   const { profile, currentUser, firebaseUser, isAdmin } = useAuth();
 
   const [projects, setProjects] = useState([]);
@@ -47,7 +63,12 @@ export default function AllProjects({ onOpenProject, onEditProject }) {
   }
 
   useEffect(() => {
-    loadProjects();
+    let cancelled = false;
+    getActiveProjects()
+      .then((data) => { if (!cancelled) setProjects(data); })
+      .catch(() => { if (!cancelled) setMessage("No se pudieron cargar todos los proyectos."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const currentUserId =

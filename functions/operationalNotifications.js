@@ -535,6 +535,8 @@ async function createEditorialNotificationsFromCallable(db, fieldValue, input, a
 }
 
 module.exports = {
+  buildNotificationDocument,
+  deduplicationDocumentId,
   NOTIFICATION_TYPES,
   collectBatchRecipients,
   collectPrintRequestRecipients,
