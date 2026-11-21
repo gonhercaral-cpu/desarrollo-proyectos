@@ -74,6 +74,10 @@ const {
 initializeApp();
 
 const db = getFirestore();
+const signageHandlers = require("./digitalSignage").createSignageHandlers({ db, FieldValue, HttpsError });
+exports.signagePairing = onCall({ region: "us-central1", maxInstances: 5 }, signageHandlers.pairing);
+exports.signageControl = onCall({ region: "us-central1", maxInstances: 5 }, signageHandlers.control);
+exports.signagePlayerExchange = onCall({ region: "us-central1", maxInstances: 10 }, signageHandlers.exchange);
 const firebaseRuntimeConfig = (() => {
   try {
     return JSON.parse(process.env.FIREBASE_CONFIG || "{}");

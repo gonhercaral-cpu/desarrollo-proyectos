@@ -126,6 +126,20 @@ function writeStoredManifest(deviceToken, manifest) {
   }
 }
 
+// Mismo manifiesto aplicado (por revisión/updatedAt): evita churn de estado en cada poll idéntico.
+// Un manifiesto null (acomodo despublicado) también se considera ya aplicado si lo estaba.
+function isSameManifest(applied, stateKey, next, revision) {
+  if (!applied || applied.key !== stateKey || applied.revision !== revision) return false;
+  const previous = applied.manifest;
+  if (!previous || !next) return previous === next;
+  return (
+    previous.updatedAt === next.updatedAt &&
+    previous.plantel === next.plantel &&
+    previous.active === next.active &&
+    previous.layouts?.length === next.layouts?.length
+  );
+}
+
 function applyUrlMap(template, urlMap) {
   if (!template || urlMap.size === 0) return template;
   return {
@@ -143,13 +157,21 @@ function applyUrlMap(template, urlMap) {
 // colecciones admin. `allowCachedDevice` permite mostrar el acomodo cacheado cuando el
 // documento del dispositivo no pudo cargarse (sin red / error), sin inventar dispositivos
 // distintos al token ni a su manifiesto.
-export default function useRoomLayoutPlayback({ deviceToken, device, allowCachedDevice = false }) {
+export default function useRoomLayoutPlayback({
+  deviceToken,
+  device,
+  allowCachedDevice = false,
+  playbackMode = "cache",
+  cacheScope = "",
+}) {
   const devicePlantel = typeof device?.plantel === "string" ? device.plantel.trim() : null;
   // La identidad del manifiesto incluye el plantel: al cambiarlo nunca se muestra el anterior.
   const stateKey = `${deviceToken || ""}|${devicePlantel ?? ""}`;
+  const streamMode = playbackMode === "stream";
   const [manifestState, setManifestState] = useState(() => ({
     key: stateKey,
     manifest: readStoredManifest(deviceToken, devicePlantel),
+    revision: undefined,
   }));
   const [retryNonce, setRetryNonce] = useState(0);
   const [urlState, setUrlState] = useState({ key: "", map: new Map() });
@@ -157,6 +179,7 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
   const { getNow, clockNotice } = useCorrectedClock(deviceToken);
   const [nowMillis, setNowMillis] = useState(() => Date.now());
   const retryRef = useRef({ key: "", attempts: 0 });
+  const appliedRef = useRef(null);
 
   const deviceInvalid = device === null || (Boolean(device) && device.active === false);
   const manifestRaw = manifestState.key === stateKey && !deviceInvalid ? manifestState.manifest : null;
@@ -164,7 +187,9 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
   const manifest =
     manifestRaw && devicePlantel !== null && manifestRaw.plantel !== devicePlantel ? null : manifestRaw;
   const effectiveDevice = useMemo(() => {
-    if (device) return device;
+    // The resolver checks the local manifest identity, while targeting rules keep
+    // using the stable administrative id. This alias never goes to a public doc.
+    if (device) return { ...device, deviceToken };
     if (device === undefined && allowCachedDevice && manifest?.plantel) {
       return { id: deviceToken, deviceToken, plantel: manifest.plantel, active: true };
     }
@@ -194,6 +219,8 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
   useEffect(() => {
     if (!deviceToken || !subscribed) return undefined;
     if (retryRef.current.key !== stateKey) retryRef.current = { key: stateKey, attempts: 0 };
+    // Nueva suscripción: la primera respuesta siempre se aplica (el estado pudo venir de localStorage).
+    appliedRef.current = null;
     let retryTimerId = 0;
 
     function scheduleRetry() {
@@ -214,17 +241,23 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
         if (!nextManifest && meta.fromCache) return;
         if (nextManifest && devicePlantel !== null && nextManifest.plantel !== devicePlantel) {
           // Manifiesto previo al cambio de plantel: no se usa ni se guarda; llegará la recomposición.
+          appliedRef.current = null;
           writeStoredManifest(deviceToken, null);
           setManifestState({ key: stateKey, manifest: null });
           return;
         }
         retryRef.current = { key: stateKey, attempts: 0 };
+        // Una respuesta idéntica (poll cada 10 s) no escribe ni re-renderiza.
+        const revision = meta.revision;
+        if (isSameManifest(appliedRef.current, stateKey, nextManifest, revision)) return;
+        appliedRef.current = { key: stateKey, manifest: nextManifest, revision };
         writeStoredManifest(deviceToken, nextManifest);
-        setManifestState({ key: stateKey, manifest: nextManifest });
+        setManifestState({ key: stateKey, manifest: nextManifest, revision });
       },
       (error) => {
         if (error?.code === "permission-denied") {
           // El contenido pudo ser revocado: no se conserva; se reintenta de forma limitada.
+          appliedRef.current = null;
           writeStoredManifest(deviceToken, null);
           setManifestState({ key: stateKey, manifest: null });
           scheduleRetry();
@@ -244,6 +277,8 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
   // Precarga de fondos/logos una sola vez por conjunto de URLs; blobs locales para offline.
   const roomAssetUrls = useMemo(() => getRoomManifestImageUrls(manifest), [manifest]);
   const urlsKey = roomAssetUrls.join("\n");
+  // La identidad del mapa incluye modo y scope: stream/otro scope nunca reutiliza un blob anterior.
+  const mapKey = `${streamMode ? "stream" : "cache"}|${cacheScope || ""}|${urlsKey}`;
   const roomAssetUrlsRef = useRef(roomAssetUrls);
   useEffect(() => {
     roomAssetUrlsRef.current = roomAssetUrls;
@@ -252,15 +287,28 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
   useEffect(() => {
     let cancelled = false;
     const created = [];
-    if (roomAssetUrls.length === 0) {
-      return undefined;
+
+    // Stream (o sin imágenes): sin cache ni blobs; se suelta el mapa anterior (se revoca al reemplazarse).
+    if (streamMode || roomAssetUrls.length === 0) {
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setUrlState((current) => (current.map.size === 0 && !current.key ? current : { key: "", map: new Map() }));
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
+    const controller = new AbortController();
+    const options = { ...(cacheScope ? { scope: cacheScope } : {}), signal: controller.signal };
+
     (async () => {
-      await cacheSignageAssets(roomAssetUrls.map((url) => ({ type: "image", url }))).catch(() => {});
+      await cacheSignageAssets(roomAssetUrls.map((url) => ({ type: "image", url })), options).catch(() => {});
       const map = new Map();
       for (const url of roomAssetUrls) {
-        const blobUrl = await getCachedAssetUrl(url);
+        if (cancelled) break;
+        const blobUrl = await getCachedAssetUrl(url, options).catch(() => "");
         if (blobUrl) {
           created.push(blobUrl);
           map.set(url, blobUrl);
@@ -270,16 +318,17 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
         created.forEach((blobUrl) => window.URL.revokeObjectURL(blobUrl));
         return;
       }
-      setUrlState({ key: urlsKey, map });
+      setUrlState({ key: mapKey, map });
     })();
 
     return () => {
       cancelled = true;
+      controller.abort();
       // Los blobs del mapa vigente se revocan al reemplazarse (ver efecto siguiente).
     };
-    // roomAssetUrls cambia solo cuando cambia urlsKey.
+    // roomAssetUrls/modo/scope están contenidos en mapKey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlsKey]);
+  }, [mapKey]);
 
   useEffect(() => {
     const map = urlState.map;
@@ -309,13 +358,13 @@ export default function useRoomLayoutPlayback({ deviceToken, device, allowCached
     // Sin manifiesto vigente para este token+plantel no se reutiliza un resultado anterior.
     if (!resolved.value || resolved.stateKey !== stateKey || !manifest || !deviceActive) return null;
     const { layout, rule } = resolved.value;
-    const urlMap = urlState.key === urlsKey ? urlState.map : new Map();
+    const urlMap = !streamMode && urlState.key === mapKey ? urlState.map : new Map();
     return {
       layout,
       rule,
       template: applyUrlMap(layout.template, urlMap),
     };
-  }, [resolved.value, resolved.stateKey, stateKey, manifest, deviceActive, urlState.map, urlState.key, urlsKey]);
+  }, [resolved.value, resolved.stateKey, stateKey, manifest, deviceActive, urlState.map, urlState.key, mapKey, streamMode]);
 
   const getRoomAssetUrls = useCallback(() => roomAssetUrlsRef.current, []);
 

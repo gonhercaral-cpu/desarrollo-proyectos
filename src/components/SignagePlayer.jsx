@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { collection, doc, getDocFromServer, getDocsFromServer } from "firebase/firestore";
+import { db } from "../services/firebase";
 import {
   subscribeSignageCampaigns,
   subscribeDeviceByToken,
@@ -7,10 +9,16 @@ import {
   logPlaybackEvent,
   updateDeviceHeartbeat,
 } from "../services/digitalSignageService";
+import { isSecureSignageToken, playerSignageExchange } from "../services/digital-signage/controlService";
+import useSignageControl, {
+  readStoredSignageMode,
+} from "./digital-signage/useSignageControl";
 import {
   cacheSignageAssets,
   clearOldSignageCache,
   getCachedAssetUrl,
+  isNetworkTransferVerified,
+  resolveAssetOrigin,
 } from "../utils/signageCache";
 import {
   getCampaignPriorityWeight,
@@ -27,6 +35,9 @@ const MANIFEST_STORAGE_PREFIX = "signage:lastGoodManifest:";
 const CAMPAIGN_RECHECK_MS = 60 * 1000;
 const NO_CONTENT_LOG_INTERVAL_MS = 5 * 60 * 1000;
 const PLAY_START_THROTTLE_MS = 5 * 1000;
+const WEB_LOAD_TIMEOUT_MS = 15 * 1000;
+const WEB_SCROLL_STEP_PX = 400;
+const ERROR_REPORT_WINDOW_MS = 60 * 1000;
 
 export default function SignagePlayer() {
   const { deviceToken = "" } = useParams();
@@ -46,6 +57,7 @@ export default function SignagePlayer() {
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const [failedItemKeys, setFailedItemKeys] = useState(() => new Set());
   const [playerError, setPlayerError] = useState("");
+  const [corsFallbackKey, setCorsFallbackKey] = useState("");
   const [storedManifestState, setStoredManifestState] = useState(() => ({
     token: deviceToken,
     manifest: readLastGoodManifest(deviceToken),
@@ -56,6 +68,15 @@ export default function SignagePlayer() {
     url: "",
     cached: false,
   });
+  const [storedMode, setSignageMode] = useState(() => readStoredSignageMode(deviceToken));
+  // stageRef apunta siempre al contenido VISIBLE: el acomodo si está activo, si no el stage normal.
+  const stageRef = useRef(null);
+  const playlistStageRef = useRef(null);
+  const roomOverlayRef = useRef(null);
+  const webControlRef = useRef(null);
+  const lastErrorRef = useRef({ key: "", message: "", at: 0 });
+  const telemetryContextRef = useRef({});
+  const roomVisibleRef = useRef({ id: "", startedAt: 0 });
   const heartbeatTokenRef = useRef(deviceToken);
   const advanceGuardRef = useRef({ id: "", done: false });
   const finishCurrentItemRef = useRef(() => {});
@@ -72,10 +93,20 @@ export default function SignagePlayer() {
   const roomVideoSnapshotRef = useRef({ instanceId: "", time: 0 });
   const playlistIdentityRef = useRef({ playlistId: "", signature: "" });
   const device = deviceState.token === deviceToken ? deviceState.value : undefined;
+  const secureToken = isSecureSignageToken(deviceToken);
+  const signageMode = secureToken ? device?.playbackMode || storedMode : "cache";
+  // Mismo scope de cache para playlist y acomodos; los tokens legacy conservan la cache global.
+  const roomCacheScope = secureToken ? deviceToken : "";
+  const cacheScopeOptions = useMemo(
+    () => (roomCacheScope ? { scope: roomCacheScope } : {}),
+    [roomCacheScope]
+  );
   const roomPlayback = useRoomLayoutPlayback({
     deviceToken,
     device,
     allowCachedDevice: device === undefined && (Boolean(playerError) || isOffline),
+    playbackMode: signageMode,
+    cacheScope: roomCacheScope,
   });
   const { getNow: getRoomNow, getRoomAssetUrls } = roomPlayback;
   const canSubscribeCampaigns =
@@ -111,6 +142,7 @@ export default function SignagePlayer() {
   const storedManifest =
     storedManifestState.token === deviceToken ? storedManifestState.manifest : null;
   const canUseStoredManifest =
+    device !== null &&
     device?.active !== false &&
     storedManifest?.items?.length > 0 &&
     liveItems.length === 0 &&
@@ -126,12 +158,18 @@ export default function SignagePlayer() {
   const playInstanceId = currentItem
     ? `${playbackEpoch}|${safeCurrentIndex}|${currentItem.key}|${playbackNonce}`
     : "";
+  // La clave incluye el modo: al cambiar a stream no se continúa con un blob de cache anterior.
+  const currentAssetKey = currentItem ? `${signageMode}:${currentItem.key}` : "";
   const currentAssetUrl =
-    assetSource.key === currentItem?.key && assetSource.url
+    assetSource.key === currentAssetKey && assetSource.url
       ? assetSource.url
       : currentItem?.url;
   const isUsingCachedAsset =
-    assetSource.key === currentItem?.key && assetSource.cached;
+    assetSource.key === currentAssetKey && assetSource.cached;
+  const mediaCors =
+    !String(currentAssetUrl || "").startsWith("blob:") && corsFallbackKey !== currentAssetKey
+      ? "anonymous"
+      : undefined;
   const playerNotice = getPlayerNotice({
     canUseStoredManifest,
     isOffline,
@@ -208,10 +246,9 @@ export default function SignagePlayer() {
       deviceToken,
       (nextDevice) => {
         setPlayerError("");
-        setStoredManifestState({
-          token: deviceToken,
-          manifest: readLastGoodManifest(deviceToken),
-        });
+        setStoredManifestState((previous) =>
+          mergeManifestState(previous, deviceToken, readLastGoodManifest(deviceToken))
+        );
         setDeviceState({ token: deviceToken, value: nextDevice });
       },
       () => {
@@ -253,16 +290,27 @@ export default function SignagePlayer() {
 
     writeLastGoodManifest(deviceToken, manifest);
 
-    cacheSignageAssets(getCacheablePlaybackItems(liveItems)).catch((error) => {
-      console.warn("No se pudo precargar cache de Digital Signage.", error);
-    });
-    // Conserva también fondos/logos de acomodos para que sigan disponibles sin red.
-    clearOldSignageCache([
-      ...getCacheablePlaybackItems(liveItems).map((item) => item.url),
-      ...getRoomAssetUrls(),
-    ]).catch((error) => {
-      console.warn("No se pudo limpiar cache de Digital Signage.", error);
-    });
+    // Modo stream: sin precarga ni limpieza; lo ya cacheado no se borra al cambiar de modo.
+    if (signageMode !== "cache") return undefined;
+
+    const controller = new AbortController();
+    const options = { ...cacheScopeOptions, signal: controller.signal };
+    const cacheableItems = getCacheablePlaybackItems(liveItems);
+    cacheSignageAssets(cacheableItems, options)
+      .then((results) => {
+        if (controller.signal.aborted || results?.some?.((result) => result.status === "failed")) return undefined;
+        // Conserva también fondos/logos de acomodos para que sigan disponibles sin red.
+        return clearOldSignageCache(
+          [...cacheableItems.map((item) => item.url), ...getRoomAssetUrls()],
+          options
+        );
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          console.warn("No se pudo preparar cache de Digital Signage.", error);
+        }
+      });
+    return () => controller.abort();
   }, [
     deviceToken,
     effectivePlaylistId,
@@ -272,6 +320,8 @@ export default function SignagePlayer() {
     playlist,
     liveItems,
     getRoomAssetUrls,
+    signageMode,
+    cacheScopeOptions,
   ]);
 
   useEffect(() => {
@@ -385,7 +435,7 @@ export default function SignagePlayer() {
   }, [effectivePlaylistId, device?.active, deviceToken]);
 
   useEffect(() => {
-    if (!device?.id || device.active === false) return undefined;
+    if (!device?.id || device.active === false || isSecureSignageToken(deviceToken)) return undefined;
 
     updateDeviceHeartbeat(device.id).catch(() => {});
 
@@ -394,7 +444,7 @@ export default function SignagePlayer() {
     }, HEARTBEAT_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [device?.id, device?.active]);
+  }, [device?.id, device?.active, deviceToken]);
 
   useEffect(() => {
     function handleOnlineStatusChange() {
@@ -455,6 +505,7 @@ export default function SignagePlayer() {
       if (advanceGuardRef.current.id !== playInstanceId || advanceGuardRef.current.done) return;
 
       if (item) {
+        lastErrorRef.current = { key: item.key, message: errorMessage, at: Date.now() };
         logPlayerEventRef.current("play_error", item, { errorMessage });
         currentPlayRef.current = {
           ...currentPlayRef.current,
@@ -554,7 +605,6 @@ export default function SignagePlayer() {
 
   useEffect(() => {
     let cancelled = false;
-    let localObjectUrl = "";
 
     if (!currentItem || !["image", "video", "visual_ad"].includes(currentItem.type)) {
       return undefined;
@@ -566,16 +616,32 @@ export default function SignagePlayer() {
       return undefined;
     }
 
-    getCachedAssetUrl(sourceUrl).then((cachedUrl) => {
+    const assetKey = `${signageMode}:${currentItem.key}`;
+
+    if (signageMode === "stream") {
+      // Stream: URL directa, sin getCachedAssetUrl; el blob anterior se libera al reemplazar la fuente.
+      if (isOffline && currentItem.type !== "visual_ad") {
+        failCurrentItem(currentItem, "Asset no disponible sin conexion en modo stream");
+        return undefined;
+      }
+
+      Promise.resolve().then(() => {
+        if (!cancelled) setAssetSource({ key: assetKey, url: sourceUrl, cached: false });
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getCachedAssetUrl(sourceUrl, cacheScopeOptions).then((cachedUrl) => {
       if (cancelled) {
         revokeObjectUrl(cachedUrl);
         return;
       }
 
       if (cachedUrl) {
-        localObjectUrl = cachedUrl;
         setAssetSource({
-          key: currentItem.key,
+          key: assetKey,
           url: cachedUrl,
           cached: true,
         });
@@ -584,7 +650,7 @@ export default function SignagePlayer() {
 
       if (isOffline) {
         if (currentItem.type === "visual_ad") {
-          setAssetSource({ key: currentItem.key, url: "", cached: false });
+          setAssetSource({ key: assetKey, url: "", cached: false });
           return;
         }
 
@@ -593,7 +659,7 @@ export default function SignagePlayer() {
       }
 
       setAssetSource({
-        key: currentItem.key,
+        key: assetKey,
         url: sourceUrl,
         cached: false,
       });
@@ -601,9 +667,11 @@ export default function SignagePlayer() {
 
     return () => {
       cancelled = true;
-      revokeObjectUrl(localObjectUrl);
     };
-  }, [currentItem, failCurrentItem, isOffline]);
+  }, [currentItem, failCurrentItem, isOffline, signageMode, cacheScopeOptions]);
+
+  // Se revoca solo después de que React reemplazó la fuente renderizada, nunca mientras sigue montada.
+  useEffect(() => () => revokeObjectUrl(assetSource.url), [assetSource.url]);
 
   useEffect(() => {
     if (isOffline && currentItem?.type === "web") {
@@ -690,10 +758,109 @@ export default function SignagePlayer() {
     playlistError,
   ]);
 
+  // Captura y telemetría reflejan el contenido visible: bajo el acomodo, nunca el stage oculto.
+  useLayoutEffect(() => {
+    stageRef.current = roomActive ? roomOverlayRef.current : playlistStageRef.current;
+  });
+
+  const activeRoomId = activeRoom?.layout?.id || "";
+  const activeRoomName = activeRoom?.layout?.name || "";
+
+  useEffect(() => {
+    if (roomVisibleRef.current.id !== activeRoomId) {
+      roomVisibleRef.current = { id: activeRoomId, startedAt: activeRoomId ? Date.now() : 0 };
+    }
+    telemetryContextRef.current = {
+      currentItem,
+      playlistId: playbackPlaylistId,
+      playlistName: playbackPlaylistName || playlist?.name || "",
+      effectivePlaylistId,
+      signageMode,
+      isUsingCachedAsset,
+      startedAt: currentPlayRef.current.startedAt,
+      room: activeRoomId
+        ? { id: activeRoomId, name: activeRoomName, startedAt: roomVisibleRef.current.startedAt }
+        : null,
+    };
+  });
+
+  const registerWebControl = useCallback((control) => {
+    webControlRef.current = control;
+  }, []);
+
+  const getTelemetry = useCallback(
+    () =>
+      buildPlayerTelemetry(
+        telemetryContextRef.current,
+        stageRef.current,
+        webControlRef.current,
+        lastErrorRef.current
+      ),
+    []
+  );
+
+  const refreshPlayerData = useCallback(async () => {
+    if (isNavigatorOffline()) throw new Error("Sin conexión a internet.");
+    // forceRead también deja en caché la última respuesta con roomManifest para el listener de acomodos.
+    const { device: refreshedDevice } = await playerSignageExchange(deviceToken, {
+      readOnly: true,
+      forceRead: true,
+    });
+    if (!refreshedDevice || refreshedDevice.active === false) throw new Error("Pantalla no disponible.");
+    const snapshot = await getDocsFromServer(collection(db, "digitalSignageCampaigns"));
+    const campaigns = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    const campaign = resolveActiveCampaign(campaigns, refreshedDevice, Date.now());
+    let playlistId = campaign?.playlistId || refreshedDevice.assignedPlaylistId || "";
+    async function fetchPlaylist(id) {
+      if (!id) return null;
+      const result = await getDocFromServer(doc(db, "digitalSignagePlaylists", id));
+      const value = result.exists() ? { id: result.id, ...result.data() } : null;
+      return value?.active !== false && isPublished(value?.publishStatus) ? value : null;
+    }
+    let nextPlaylist = await fetchPlaylist(playlistId);
+    if (!nextPlaylist && campaign) {
+      playlistId = refreshedDevice.assignedPlaylistId || "";
+      nextPlaylist = await fetchPlaylist(playlistId);
+    }
+    // Misma regla de identidad que el listener: solo se reinicia la posición si cambió la lista efectiva.
+    const signature = getPlaylistIdentitySignature(nextPlaylist);
+    const previous = playlistIdentityRef.current;
+    const identityChanged = previous.playlistId !== playlistId || previous.signature !== signature;
+    playlistIdentityRef.current = { playlistId, signature };
+
+    setDeviceState({ token: deviceToken, value: refreshedDevice });
+    setCampaignState({ value: campaigns, error: "" });
+    setPlaylistState({ playlistId, value: nextPlaylist, error: "" });
+    setPlayerError("");
+    setScheduleNow(getRoomNow());
+    if (identityChanged) {
+      setCurrentIndex(0);
+      setPlaybackNonce(0);
+    }
+    // An explicit refresh also retries a failed item when the playlist is identical.
+    setPlaybackEpoch((current) => current + 1);
+    setFailedItemKeys(new Set());
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const message = "Configuración y playlist obtenidas del servidor y aplicadas.";
+    return isSecureSignageToken(deviceToken)
+      ? `${message} Los acomodos se actualizan en el siguiente ciclo de sincronización (hasta 10 s).`
+      : message;
+  }, [deviceToken, getRoomNow]);
+
+  useSignageControl({
+    token: deviceToken,
+    device,
+    stageRef,
+    getTelemetry,
+    onRefresh: refreshPlayerData,
+    webControlRef,
+    onModeChange: setSignageMode,
+  });
+
   // El acomodo programado se muestra aunque no haya playlist normal válida, siempre que
   // la pantalla sea válida/activa (el hook ya devuelve null si no lo es).
   const roomOverlay = roomActive ? (
-    <div className="signage-player-room-overlay" style={ROOM_OVERLAY_STYLE}>
+    <div className="signage-player-room-overlay" style={ROOM_OVERLAY_STYLE} ref={roomOverlayRef}>
       <RoomLayoutDisplay
         layout={activeRoom.layout}
         template={activeRoom.template}
@@ -739,23 +906,30 @@ export default function SignagePlayer() {
       {/* El stage normal sigue montado (no se recarga) y solo se oculta bajo el acomodo. */}
       <div
         className="signage-player-stage"
+        ref={playlistStageRef}
         style={roomActive ? { visibility: "hidden" } : undefined}
         aria-hidden={roomActive || undefined}
       >
         {currentItem.type === "image" && (
           <img
-            key={playInstanceId}
+            key={`${playInstanceId}|${mediaCors || "fallback"}`}
             src={currentAssetUrl}
+            crossOrigin={mediaCors}
             alt={currentItem.title || "Contenido"}
-            onError={() => failCurrentItem(currentItem, "No se pudo cargar imagen")}
+            onError={() => {
+              if (mediaCors) setCorsFallbackKey(currentAssetKey);
+              else failCurrentItem(currentItem, "No se pudo cargar imagen");
+            }}
           />
         )}
 
         {currentItem.type === "video" && (
           <video
-            key={playInstanceId}
+            key={`${playInstanceId}|${mediaCors || "fallback"}`}
             ref={videoRef}
             src={currentAssetUrl}
+            crossOrigin={mediaCors}
+            preload={signageMode === "stream" ? "metadata" : undefined}
             autoPlay={!roomActive}
             muted
             playsInline
@@ -767,7 +941,10 @@ export default function SignagePlayer() {
               // Un play tardío (cambio de src/caché) no puede sonar ni avanzar bajo el acomodo.
               if (roomPausedRef.current) event.currentTarget.pause();
             }}
-            onError={() => failCurrentItem(currentItem, "No se pudo reproducir video")}
+            onError={() => {
+              if (mediaCors) setCorsFallbackKey(currentAssetKey);
+              else failCurrentItem(currentItem, "No se pudo reproducir video");
+            }}
           />
         )}
 
@@ -777,6 +954,7 @@ export default function SignagePlayer() {
           <WebContentFrame
             key={playInstanceId}
             item={currentItem}
+            registerControl={registerWebControl}
             onFailure={() => failCurrentItem(currentItem, "No se pudo cargar web")}
           />
         )}
@@ -792,7 +970,7 @@ export default function SignagePlayer() {
           <VisualAdSlide
             key={playInstanceId}
             item={currentItem}
-            backgroundUrl={assetSource.key === currentItem.key ? assetSource.url : ""}
+            backgroundUrl={assetSource.key === currentAssetKey ? assetSource.url : ""}
           />
         )}
       </div>
@@ -824,12 +1002,127 @@ function PlayerMessage({ message }) {
   );
 }
 
-function WebContentFrame({ item, onFailure }) {
+function WebContentFrame({ item, onFailure, registerControl }) {
   const settings = normalizeWebSettings(item?.webSettings);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const [navigatedUrl, setNavigatedUrl] = useState("");
+  const iframeRef = useRef(null);
+  const loadWaiterRef = useRef(null);
+  const loadStateRef = useRef("loading");
+  const settingsRef = useRef(settings);
+  const itemUrlRef = useRef(item?.url || "");
   const commandSignature = getWebCommandSignature(settings.lastCommand);
   const commandSignatureRef = useRef(commandSignature);
-  const iframeUrl = buildWebPlaybackUrl(item?.url, settings, reloadNonce);
+  const iframeUrl = navigatedUrl || buildWebPlaybackUrl(item?.url, settings, reloadNonce);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+    itemUrlRef.current = item?.url || "";
+  });
+
+  // Control interno acotado: solo recarga, scroll vertical y ruta relativa del mismo origen.
+  useEffect(() => {
+    function waitForLoad(action) {
+      return new Promise((resolve, reject) => {
+        loadWaiterRef.current?.reject(new Error("Reemplazado por otro comando."));
+        const timeoutId = window.setTimeout(() => {
+          loadWaiterRef.current = null;
+          reject(new Error("Tiempo agotado esperando la carga de la web."));
+        }, WEB_LOAD_TIMEOUT_MS);
+
+        loadWaiterRef.current = {
+          resolve: () => {
+            window.clearTimeout(timeoutId);
+            resolve();
+          },
+          reject: (error) => {
+            window.clearTimeout(timeoutId);
+            reject(error);
+          },
+        };
+        try { action(); }
+        catch (error) { loadWaiterRef.current?.reject(error); loadWaiterRef.current = null; }
+      });
+    }
+
+    const control = {
+      getState: () => loadStateRef.current,
+      getUrl: () => {
+        try { return iframeRef.current?.contentWindow?.location?.href || iframeRef.current?.src || ""; }
+        catch { return iframeRef.current?.src || ""; }
+      },
+      reload: async () => {
+        await waitForLoad(() => {
+          loadStateRef.current = "loading";
+          setReloadNonce((current) => current + 1);
+        });
+        if (!getSameOriginFrameWindow(iframeRef.current, itemUrlRef.current)) {
+          throw new Error("Recarga solicitada; el origen externo no permite confirmar el resultado.");
+        }
+        return "Web recargada.";
+      },
+      scroll: async (direction) => {
+        if (!settingsRef.current.allowInteraction) {
+          throw new Error("La web no permite interaccion (allowInteraction desactivado).");
+        }
+        if (direction !== "up" && direction !== "down") throw new Error("Direccion de scroll invalida.");
+
+        const frameWindow = getSameOriginFrameWindow(iframeRef.current, itemUrlRef.current);
+        if (!frameWindow) throw new Error("La web no es del mismo origen; no se puede desplazar.");
+
+        const before = frameWindow.scrollY;
+        frameWindow.scrollBy(0, direction === "up" ? -WEB_SCROLL_STEP_PX : WEB_SCROLL_STEP_PX);
+        return frameWindow.scrollY === before
+          ? "Sin desplazamiento: la pagina esta en el limite o no tiene scroll."
+          : "Scroll aplicado.";
+      },
+      navigate: async (path) => {
+        if (!settingsRef.current.allowInteraction) {
+          throw new Error("La web no permite interaccion (allowInteraction desactivado).");
+        }
+
+        const target = resolveSameOriginWebPath(path, itemUrlRef.current);
+        if (!getSameOriginFrameWindow(iframeRef.current, itemUrlRef.current)) {
+          throw new Error("La web no es del mismo origen; no se puede navegar.");
+        }
+
+        await waitForLoad(() => {
+          loadStateRef.current = "loading";
+          setNavigatedUrl(target.href);
+          setReloadNonce((current) => current + 1);
+        });
+
+        const finalWindow = getSameOriginFrameWindow(iframeRef.current, itemUrlRef.current);
+        const finalLocation = finalWindow?.location;
+        if (!finalLocation || finalLocation.pathname + finalLocation.search !== target.pathname + target.search) {
+          throw new Error("La web redirigio a una ruta distinta de la solicitada.");
+        }
+        return `Navegacion completada: ${target.pathname}`;
+      },
+    };
+
+    registerControl?.(control);
+
+    return () => {
+      registerControl?.(null);
+      loadWaiterRef.current?.reject(new Error("El contenido web ya no esta en pantalla."));
+      loadWaiterRef.current = null;
+    };
+  }, [registerControl]);
+
+  function handleFrameLoad() {
+    loadStateRef.current = "playing";
+    loadWaiterRef.current?.resolve();
+    loadWaiterRef.current = null;
+  }
+
+  function handleFrameError() {
+    loadStateRef.current = "error";
+    loadWaiterRef.current?.reject(new Error("No se pudo cargar la página."));
+    loadWaiterRef.current = null;
+    onFailure?.();
+  }
+
   const zoom = Math.min(Math.max(Number(settings.zoom) || 100, 50), 150);
   const zoomScale = zoom / 100;
   const frameStyle = {
@@ -867,15 +1160,171 @@ function WebContentFrame({ item, onFailure }) {
       )}
       <iframe
         key={`${item.assetId}-${reloadNonce}`}
+        ref={iframeRef}
         src={iframeUrl}
         title={item.title || "Contenido web"}
         allow="autoplay; fullscreen"
-        referrerPolicy="no-referrer-when-downgrade"
-        onError={onFailure}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+        referrerPolicy="no-referrer"
+        onLoad={handleFrameLoad}
+        onError={handleFrameError}
         style={frameStyle}
       />
     </div>
   );
+}
+
+function isLocalHostname(hostname) {
+  return ["localhost", "127.0.0.1", "[::1]"].includes(hostname);
+}
+
+// Ventana del iframe solo si su documento es accesible y del mismo origen que el player.
+function getSameOriginFrameWindow(iframe, itemUrl) {
+  try {
+    const itemOrigin = new URL(itemUrl, window.location.href).origin;
+    if (itemOrigin !== window.location.origin) return null;
+
+    const frameWindow = iframe?.contentWindow;
+    if (!frameWindow?.document || frameWindow.location.origin !== window.location.origin) return null;
+    return frameWindow;
+  } catch {
+    return null;
+  }
+}
+
+function resolveSameOriginWebPath(path, itemUrl) {
+  const rawPath = String(path || "").trim();
+  if (
+    !rawPath.startsWith("/") ||
+    rawPath.startsWith("//") ||
+    rawPath.includes("\\") ||
+    // eslint-disable-next-line no-control-regex
+    /[\u0000-\u001f\u007f]/.test(rawPath)
+  ) {
+    throw new Error("Ruta invalida: debe ser relativa y comenzar con /.");
+  }
+
+  const base = new URL(itemUrl, window.location.href);
+  const target = new URL(rawPath, base.origin);
+  const protocolAllowed =
+    target.protocol === "https:" ||
+    (target.protocol === "http:" && isLocalHostname(target.hostname));
+
+  if (target.origin !== base.origin || !protocolAllowed) {
+    throw new Error("La ruta debe pertenecer al mismo origen y usar https (o http local).");
+  }
+
+  return target;
+}
+
+// Sin credenciales, query ni hash: la telemetria no debe filtrar tokens embebidos en la URL.
+function sanitizeWebUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return "";
+  }
+}
+
+function getPlaybackSourceKind(url, cached, initiatorType = "img") {
+  if (cached) return "cache";
+  return isNetworkTransferVerified(url, globalThis.performance, initiatorType) ? "network" : "unverified";
+}
+
+function buildPlayerTelemetry(context, stage, webControl, lastError) {
+  const item = context?.currentItem || null;
+  const room = context?.room || null;
+  const telemetry = {
+    contentId: item?.assetId || "",
+    title: item?.title || "",
+    type: item?.type || "",
+    playlistId: context?.playlistId || "",
+    playlistName: context?.playlistName || "",
+    state: "unavailable",
+    appliedMode: context?.signageMode === "stream" ? "stream" : "cache",
+    origin: "unknown",
+    positionSeconds: 0,
+    webUrl: "",
+    error: "",
+  };
+
+  // Acomodo visible: es el contenido en pantalla (la playlist sigue pausada debajo).
+  // El origen de sus recursos no se verifica individualmente, por eso queda "unknown".
+  if (room) {
+    telemetry.contentId = room.id;
+    telemetry.title = room.name;
+    telemetry.type = "room_layout";
+    telemetry.state = stage?.isConnected ? "playing" : "unavailable";
+    telemetry.positionSeconds = room.startedAt
+      ? Math.max(0, Math.round((Date.now() - room.startedAt) / 1000))
+      : 0;
+    return telemetry;
+  }
+
+  if (!item) return telemetry;
+
+  const elapsedSeconds = context.startedAt
+    ? Math.max(0, Math.round((Date.now() - context.startedAt) / 1000))
+    : 0;
+  telemetry.positionSeconds = elapsedSeconds;
+
+  // El error reciente se informa aunque el item fallido ya se haya saltado; el estado solo si sigue en pantalla.
+  const hasRecentError = lastError?.message && Date.now() - lastError.at < ERROR_REPORT_WINDOW_MS;
+  if (hasRecentError) telemetry.error = String(lastError.message).slice(0, 200);
+
+  if (item.type === "image") {
+    const image = stage?.querySelector("img");
+    telemetry.state = image ? (image.complete && image.naturalWidth > 0 ? "playing" : "loading") : "unavailable";
+    telemetry.origin = resolveAssetOrigin([getPlaybackSourceKind(image?.currentSrc || image?.src || item.url, context.isUsingCachedAsset)]);
+  } else if (item.type === "video") {
+    const video = stage?.querySelector("video");
+    if (!video) {
+      telemetry.state = "unavailable";
+    } else if (video.error) {
+      telemetry.state = "error";
+    } else if (video.paused) {
+      telemetry.state = "paused";
+    } else {
+      telemetry.state = video.readyState >= 3 ? "playing" : "loading";
+    }
+    if (video) telemetry.positionSeconds = Math.round(video.currentTime || 0);
+    telemetry.origin = resolveAssetOrigin([getPlaybackSourceKind(video?.currentSrc || item.url, context.isUsingCachedAsset, "video")]);
+  } else if (item.type === "web") {
+    telemetry.state = webControl?.getState?.() || "unavailable";
+    telemetry.webUrl = sanitizeWebUrl(webControl?.getUrl?.() || item.url);
+  } else if (item.type === "template") {
+    telemetry.state = stage?.querySelector(".signage-template-slide") ? "playing" : "unavailable";
+  } else if (item.type === "visual_ad") {
+    telemetry.state = stage?.querySelector(".signage-player-visual-ad") ? "playing" : "unavailable";
+    const backgroundUrl = item.visualAdData?.canvas?.backgroundUrl;
+    const sources = [];
+    if (item.visualAdData?.canvas?.backgroundType === "image" && backgroundUrl) {
+      sources.push(getPlaybackSourceKind(backgroundUrl, context.isUsingCachedAsset));
+    }
+    (item.visualAdData?.elements || []).forEach((element) => {
+      if (element?.type === "image" && element.url) {
+        sources.push(getPlaybackSourceKind(element.url, false));
+      }
+    });
+    telemetry.origin = resolveAssetOrigin(sources);
+  }
+
+  if (hasRecentError && lastError.key === item.key) telemetry.state = "error";
+  return telemetry;
+}
+
+// Conserva la referencia previa si el manifest no cambió (evita reiniciar la reproducción por heartbeat).
+function mergeManifestState(previous, deviceToken, manifest) {
+  const previousManifest = previous.token === deviceToken ? previous.manifest : null;
+  const unchanged =
+    previous.token === deviceToken &&
+    Boolean(previousManifest) === Boolean(manifest) &&
+    previousManifest?.resolvedAt === manifest?.resolvedAt &&
+    previousManifest?.playlistId === manifest?.playlistId &&
+    previousManifest?.items?.length === manifest?.items?.length;
+
+  return unchanged ? previous : { token: deviceToken, manifest };
 }
 
 // Identidad efectiva: items reproducibles en orden con su duración. Ignora metadatos.

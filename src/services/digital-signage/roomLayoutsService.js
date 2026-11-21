@@ -40,6 +40,9 @@ import {
   byteLength,
   normalizeRoomManifest,
 } from "../../utils/digitalSignage/roomPublication.js";
+import { isSecureSignageToken, playerSignageExchange } from "./controlService";
+
+const SECURE_ROOM_POLL_MS = 10 * 1000;
 
 export const ROOM_CONFIGS_COLLECTION = "digitalSignageRoomConfigs";
 export const ROOM_LAYOUTS_COLLECTION = "digitalSignageRoomLayouts";
@@ -586,12 +589,53 @@ export async function refreshRoomDisplayForDevice(device) {
 
 // ---------- player ----------
 
+// Tokens seguros (ds2_): el manifiesto llega por el intercambio autenticado del backend
+// (nada se guarda en Firestore público). Sondeo secuencial: nunca hay dos solicitudes en vuelo.
+// controlService cachea las respuestas, así que un refresh remoto con forceRead se consume aquí.
+function subscribeSecureRoomDisplay(token, callback, onError) {
+  let cancelled = false;
+  let timerId = 0;
+
+  async function poll() {
+    let outcome;
+    try {
+      const response = await playerSignageExchange(token, { readOnly: true });
+      const raw = response?.roomManifest;
+      if (!raw || typeof raw !== "object") {
+        outcome = { manifest: null };
+      } else {
+        // deviceToken del manifiesto es el ID administrativo estable: se valida contra el token local.
+        const manifest = normalizeRoomManifest({ ...raw, deviceToken: token }, { deviceToken: token });
+        outcome = manifest
+          ? { manifest, revision: response.roomRevision }
+          : { error: new Error("Manifiesto de acomodos no válido.") };
+      }
+    } catch (error) {
+      outcome = { error: error?.code === "functions/permission-denied"
+        ? Object.assign(new Error("La identidad de la pantalla fue revocada."), { code: "permission-denied" })
+        : error };
+    }
+
+    if (cancelled) return;
+    if (outcome.error) onError?.(outcome.error);
+    else callback(outcome.manifest, { fromCache: false, revision: outcome.revision });
+    if (!cancelled) timerId = window.setTimeout(poll, SECURE_ROOM_POLL_MS);
+  }
+
+  poll();
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timerId);
+  };
+}
+
 // Lectura única por token (regla `get`); sin listas ni colecciones admin.
-// callback(manifest|null, { fromCache }). Un manifiesto inválido se reporta como error
+// callback(manifest|null, { fromCache, revision? }). Un manifiesto inválido se reporta como error
 // para que el player conserve su caché en vez de borrarla.
 export function subscribeRoomDisplay(deviceToken, callback, onError) {
   const token = cleanText(deviceToken);
   if (!token) return () => {};
+  if (isSecureSignageToken(token)) return subscribeSecureRoomDisplay(token, callback, onError);
 
   return onSnapshot(
     manifestRef(token),

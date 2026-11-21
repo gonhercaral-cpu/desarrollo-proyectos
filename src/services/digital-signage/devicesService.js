@@ -16,6 +16,7 @@ import {
   createUniqueDeviceToken
 } from "./shared";
 import { logSignageAudit } from "./auditService";
+import { isSecureSignageToken, playerSignageExchange } from "./controlService";
 import { deleteRoomDisplayQuietly, saveRoomDevice } from "./roomLayoutsService";
 
 export async function createSignageDevice(data, user) {
@@ -95,6 +96,10 @@ export async function deleteSignageDevice(id) {
 }
 
 export async function getDeviceByToken(deviceToken) {
+  if (isSecureSignageToken(deviceToken)) {
+    return (await playerSignageExchange(deviceToken, { readOnly: true })).device;
+  }
+
   const cleanToken = cleanText(deviceToken);
   if (!cleanToken) return null;
 
@@ -108,6 +113,25 @@ export async function getDeviceByToken(deviceToken) {
 }
 
 export function subscribeDeviceByToken(deviceToken, callback, onError) {
+  if (isSecureSignageToken(deviceToken)) {
+    let cancelled = false;
+    let timer;
+    async function poll() {
+      try {
+        const device = await getDeviceByToken(deviceToken);
+        if (!cancelled) callback(device);
+      } catch (error) {
+        if (!cancelled) {
+          if (error.code === "functions/permission-denied") callback(null);
+          else onError?.(error);
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(poll, 10000);
+    }
+    void poll();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }
+
   const cleanToken = cleanText(deviceToken);
   if (!cleanToken) return () => {};
 
