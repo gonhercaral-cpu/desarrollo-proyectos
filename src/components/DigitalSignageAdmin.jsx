@@ -226,6 +226,20 @@ export default function DigitalSignageAdmin() {
   const [campaigns, setCampaigns] = useState([]);
   const [visualTemplates, setVisualTemplates] = useState([]);
   const [devices, setDevices] = useState([]);
+  const handleDeviceConnectionUpdate = useCallback((id, status) => {
+    setDevices((current) => {
+      let changed = false;
+      const next = current.map((device) => {
+        if (device.id !== id) return device;
+        const lastSeenMillis = status.lastSeenAt || 0;
+        const secureControl = status.enabled === true;
+        if (device.lastSeenMillis === lastSeenMillis && Boolean(device.secureControl) === secureControl) return device;
+        changed = true;
+        return { ...device, lastSeenMillis, secureControl, ...(secureControl ? { deviceToken: "" } : {}) };
+      });
+      return changed ? next : current;
+    });
+  }, []);
   const [playbackLogs, setPlaybackLogs] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2221,6 +2235,7 @@ export default function DigitalSignageAdmin() {
             setDeviceForm(DEFAULT_DEVICE_FORM);
           }}
           onSelectDevice={setSelectedDeviceId}
+          onDeviceConnectionUpdate={handleDeviceConnectionUpdate}
           onEditDevice={openEditDeviceForm}
           onCopyPlayerUrl={copyPlayerUrl}
           onAssignDevicePlaylist={assignDevicePlaylist}

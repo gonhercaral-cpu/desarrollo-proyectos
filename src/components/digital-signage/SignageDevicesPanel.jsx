@@ -29,6 +29,7 @@ export default function SignageDevicesPanel({
   onDeviceFormChange,
   onCloseDeviceForm,
   onSelectDevice,
+  onDeviceConnectionUpdate,
   onEditDevice,
   onCopyPlayerUrl,
   onAssignDevicePlaylist,
@@ -278,6 +279,7 @@ export default function SignageDevicesPanel({
               key={selectedDevice.id}
               device={selectedDevice}
               playlists={playlists}
+              onConnectionUpdate={onDeviceConnectionUpdate}
             />
           </>
         )}

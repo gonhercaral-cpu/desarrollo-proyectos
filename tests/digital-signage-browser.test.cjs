@@ -38,6 +38,7 @@ test("Digital Signage: flujo panel–Functions–player en Chrome y emuladores",
     await db.collection("digitalSignageDevices").doc("ds-ui-device").set({
       name: "Recepción de prueba", plantel: "Centro", location: "Lobby", deviceToken: "ds-ui-device",
       assignedPlaylistId: "ds-ui-playlist", active: true, createdAt: FieldValue.serverTimestamp(),
+      lastSeenMillis: Date.now(),
     });
     const imageItem = (title, version) => ({
       assetId: "ui-image", title, type: "image", url: `http://127.0.0.1:4178/ds-test-image.svg?v=${version}`,
@@ -77,8 +78,8 @@ test("Digital Signage: flujo panel–Functions–player en Chrome y emuladores",
       if(location.pathname==='/admin') await signInWithEmailAndPassword(auth,'ds-ui-admin@test.local','LocalTest40!');
       window.dsTest={admin:adminSignageControl};
       createRoot(document.getElementById('root')).render(<BrowserRouter><Routes>
-        <Route path='/setup' element={<Setup/>}/><Route path='/signage/player/:deviceToken' element={<Player/>}/>
-        <Route path='/admin' element={<Control device={{id:'ds-ui-device',name:'Recepción de prueba'}}/>}/>
+        <Route path='/setup' element={<Setup/>}/><Route path='/signage/setup' element={<Setup/>}/><Route path='/signage/player/:deviceToken' element={<Player/>}/>
+        <Route path='/admin' element={<Control device={{id:'ds-ui-device',name:'Recepción de prueba'}} onConnectionUpdate={(id,status)=>{window.dsTest.connection={id,...status};}}/>}/>
       </Routes></BrowserRouter>);
     `);
     const { createServer } = await import("vite");
@@ -105,7 +106,7 @@ test("Digital Signage: flujo panel–Functions–player en Chrome y emuladores",
                 res.setHeader("Content-Type", "text/html");
                 res.end('<!doctype html><title>Web compatible</title><body style="height:3000px;background:#eef"><h1>Web de prueba</h1><p>Control limitado al iframe.</p></body>'); return;
               }
-              if (/^\/(admin|setup|signage\/player\/)/.test(req.url)) {
+              if (/^\/(admin|setup|signage\/(?:player\/|setup))/.test(req.url)) {
                 vite.transformIndexHtml(req.url, `<html><body style="margin:0"><div id="root"></div><script type="module" src="/@fs${entry}"></script></body></html>`)
                   .then((html) => { res.setHeader("Content-Type", "text/html"); res.end(html); }).catch(next);
                 return;
@@ -141,10 +142,20 @@ test("Digital Signage: flujo panel–Functions–player en Chrome y emuladores",
     const screen = await deviceContext.newPage();
     const panel = await adminContext.newPage();
     panel.on("dialog", (dialog) => dialog.accept());
-    await screen.goto("http://127.0.0.1:4178/setup");
+    await screen.goto("http://127.0.0.1:4178/signage/setup");
     await screen.waitForFunction(() => /AES-\d{6}/.test(globalThis.document.querySelector(".signage-setup-code")?.textContent || ""));
     const code = (await screen.locator(".signage-setup-code").textContent()).trim();
     await panel.goto("http://127.0.0.1:4178/admin");
+    await panel.getByText("En línea", { exact: true }).waitFor();
+    await panel.getByText("Requiere revinculación", { exact: true }).waitFor();
+    assert.equal(await panel.getByLabel("Dirección para abrir en la pantalla física").inputValue(), "http://127.0.0.1:4178/signage/setup");
+    await panel.getByText("Si la pantalla está en modo kiosco", { exact: true }).click();
+    await panel.getByText(/nueva dirección final del reproductor/).waitFor();
+    await panel.getByRole("button", { name: "Revincular dispositivo", exact: true }).click();
+    await panel.getByRole("alert").filter({ hasText: "Primero abre /signage/setup" }).waitFor();
+    const legacyConnection = await panel.evaluate(() => globalThis.dsTest.connection);
+    assert.equal(legacyConnection.enabled, false);
+    assert.equal(legacyConnection.online, true);
     await panel.getByLabel("Codigo de revinculacion").fill(code);
     await panel.getByRole("button", { name: "Revincular dispositivo", exact: true }).click();
     await screen.waitForURL("**/signage/player/ds2_*", { timeout: 30000 });

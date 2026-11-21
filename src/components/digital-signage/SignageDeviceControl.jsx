@@ -10,6 +10,7 @@ const MONITOR_STATUS_POLL_MS = 5 * 1000;
 const MONITOR_RENEW_MS = 15 * 1000;
 const FRAME_MAX_AGE_MS = 20 * 1000;
 const TELEMETRY_MAX_AGE_MS = 75 * 1000;
+const CONNECTION_MAX_AGE_MS = 2 * 60 * 1000;
 
 const STATE_LABELS = {
   playing: "Reproduciendo",
@@ -94,7 +95,7 @@ function useIsVisible(ref) {
   return inView && pageVisible;
 }
 
-export default function SignageDeviceControl({ device, playlists = [] }) {
+export default function SignageDeviceControl({ device, playlists = [], onConnectionUpdate }) {
   const deviceId = device?.id || "";
   const rootRef = useRef(null);
   const mountedRef = useRef(true);
@@ -128,6 +129,7 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
       const payload = await adminSignageControl({ action: "status", deviceId });
       if (!mountedRef.current || requestId !== statusRequestRef.current) return;
       setStatus(payload || null);
+      if (payload) onConnectionUpdate?.(deviceId, payload);
       setStatusError("");
     } catch (error) {
       if (!mountedRef.current || requestId !== statusRequestRef.current) return;
@@ -139,7 +141,7 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
         setNow(Date.now());
       }
     }
-  }, [deviceId]);
+  }, [deviceId, onConnectionUpdate]);
 
   const monitorOpen = Boolean(monitorSession);
 
@@ -270,7 +272,7 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
     event.preventDefault();
     const code = rebindCode.trim();
     if (!code) {
-      setActionError("Ingresa el codigo que muestra la pantalla.");
+      setActionError("Primero abre /signage/setup en el navegador de la pantalla física para obtener el código AES.");
       return;
     }
     if (
@@ -304,7 +306,9 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
 
   const enabled = status?.enabled === true;
   const lastSeenAt = toEpochMillis(status?.lastSeenAt || status?.telemetry?.updatedAt);
-  const online = status?.online === true && lastSeenAt > now - TELEMETRY_MAX_AGE_MS;
+  const online = status?.online === true && lastSeenAt > now - CONNECTION_MAX_AGE_MS;
+  const inactive = status?.active === false;
+  const setupUrl = typeof window !== "undefined" ? `${window.location.origin}/signage/setup` : "/signage/setup";
   const telemetry = status?.telemetry || null;
   const telemetryAt = toEpochMillis(telemetry?.updatedAt);
   const telemetryFresh = Boolean(telemetry && telemetryAt && now - telemetryAt <= TELEMETRY_MAX_AGE_MS);
@@ -345,7 +349,8 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
       )}
       {loaded && status && !enabled && (
         <p style={mutedStyle}>
-          Dispositivo legacy: el control remoto no esta habilitado. Revincula el dispositivo para activarlo.
+          Esta pantalla tiene una vinculación anterior y puede seguir reproduciendo su contenido.
+          Sigue los pasos de revinculación de abajo para habilitar el control remoto.
         </p>
       )}
       {loaded && status && enabled && !online && (
@@ -355,7 +360,11 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
       <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
         <p style={rowStyle}>
           <strong>Conexion</strong>
-          <span>{status ? (online ? "En linea" : "Fuera de linea") : "—"}</span>
+          <span>{status ? (inactive ? "Inactiva" : online ? "En línea" : lastSeenAt ? "Fuera de línea" : "Sin conexión registrada") : "—"}</span>
+        </p>
+        <p style={rowStyle}>
+          <strong>Control remoto</strong>
+          <span>{status ? (enabled ? "Habilitado" : "Requiere revinculación") : "—"}</span>
         </p>
         <p style={rowStyle}>
           <strong>Ultima comunicacion</strong>
@@ -558,7 +567,39 @@ export default function SignageDeviceControl({ device, playlists = [] }) {
         </div>
       )}
 
-      <form style={{ ...actionsStyle, marginTop: 14 }} onSubmit={handleRebind}>
+      <div style={{ marginTop: 18 }}>
+        <h3>Revincular esta pantalla</h3>
+        <p style={mutedStyle}>
+          El código se genera al abrir la página de vinculación en el navegador de la pantalla física.
+          Activar o desactivar el dispositivo no genera un código.
+        </p>
+        <ol style={{ paddingLeft: 20, fontSize: 13 }}>
+          <li>Abre esta dirección en la pantalla que vas a revincular:</li>
+        </ol>
+        <input type="url" value={setupUrl} readOnly aria-label="Dirección para abrir en la pantalla física" style={{ width: "100%", boxSizing: "border-box" }} />
+        <button
+          type="button"
+          className="visual-outline-button"
+          disabled={Boolean(busy)}
+          style={{ marginTop: 6 }}
+          onClick={() => runAction("copy-setup", () => navigator.clipboard.writeText(setupUrl), "Dirección copiada. Ábrela en el navegador de la pantalla física.")}
+        >
+          Copiar dirección de vinculación
+        </button>
+        <ol start={2} style={{ paddingLeft: 20, fontSize: 13 }}>
+          <li>Introduce aquí el código AES que aparezca allí y confirma la revinculación.</li>
+        </ol>
+        <details style={mutedStyle}>
+          <summary>Si la pantalla está en modo kiosco</summary>
+          <p>
+            Sal temporalmente del modo kiosco o utiliza el acceso remoto del equipo para abrir la dirección anterior.
+            Después de vincular, guarda la nueva dirección final del reproductor en la configuración de inicio del kiosco.
+            La dirección anterior dejará de funcionar. Conserva la nueva dirección únicamente en ese equipo.
+          </p>
+        </details>
+        <p style={mutedStyle}>Se conserva este registro, su nombre, playlist y configuración.</p>
+      </div>
+      <form style={{ ...actionsStyle, marginTop: 10 }} onSubmit={handleRebind}>
         <input
           value={rebindCode}
           onChange={(event) => setRebindCode(event.target.value.toUpperCase())}
