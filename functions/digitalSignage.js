@@ -8,6 +8,7 @@ const IDENTITIES = "digitalSignageControlIdentities";
 const DEVICES = "digitalSignageDevices";
 const TTL = 120000;
 const LEASE = 45000;
+const CONNECTION_MAX_AGE_MS = 120000;
 const TERMINAL = new Set(["executed", "failed", "expired"]);
 const TYPES = new Set(["refresh", "web_reload", "web_scroll", "web_navigate"]);
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -195,13 +196,23 @@ function createSignageHandlers({ db, FieldValue, HttpsError, now = Date.now }) {
       const [runtimeDoc, deviceDoc] = await Promise.all([tx.get(runtimeRef), tx.get(db.collection(DEVICES).doc(deviceId))]);
       if (!deviceDoc.exists) fail("not-found", "Pantalla no encontrada.");
       const runtime = runtimeDoc.data();
+      const timestamp = now();
+      const device = deviceDoc.data();
+      const active = device.active !== false;
       if (!runtime) {
-        if (data.action === "status") return { enabled: false, mode: "cache", online: false, telemetry: null, command: null, monitor: null };
+        if (data.action === "status") {
+          // Legacy heartbeat describes connectivity, not permission to control the player.
+          const reported = Number(device.lastSeenMillis) || device.lastSeenAt?.toMillis?.() || 0;
+          const lastSeenAt = Number.isFinite(reported) ? reported : 0;
+          return {
+            enabled: false, active, mode: device.playbackMode === "stream" ? "stream" : "cache",
+            lastSeenAt, online: active && lastSeenAt > timestamp - CONNECTION_MAX_AGE_MS,
+            telemetry: null, command: null, monitor: null,
+          };
+        }
         fail("failed-precondition", "Revincula el dispositivo para habilitar el control seguro.");
       }
-      const timestamp = now();
       const command = expire(runtime.command, timestamp);
-      const active = deviceDoc.data().active !== false;
       if (data.action === "status") {
         if (command?.status !== runtime.command?.status) {
           tx.update(runtimeRef, { command });
@@ -209,9 +220,9 @@ function createSignageHandlers({ db, FieldValue, HttpsError, now = Date.now }) {
         }
         const liveMonitor = runtime.monitor?.expiresAt > timestamp && runtime.monitor.owner === uid ? runtime.monitor : null;
         return {
-          enabled: true, mode: runtime.mode, command, lastSeenAt: runtime.lastSeenAt || 0,
+          enabled: true, active, mode: runtime.mode, command, lastSeenAt: runtime.lastSeenAt || 0,
           telemetry: runtime.telemetry || null,
-          online: active && runtime.lastSeenAt > timestamp - 75000,
+          online: active && runtime.lastSeenAt > timestamp - CONNECTION_MAX_AGE_MS,
           monitor: liveMonitor ? { sessionId: liveMonitor.sessionId, expiresAt: liveMonitor.expiresAt,
             frame: liveMonitor.frame || null, captureError: liveMonitor.captureError || "" } : null,
         };

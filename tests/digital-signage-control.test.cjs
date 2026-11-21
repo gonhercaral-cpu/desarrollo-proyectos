@@ -65,6 +65,39 @@ describe("Digital Signage: comunicación real con Firestore emulado", {
     assert.equal(state.device.assignedPlaylistId, "playlist-original");
   });
 
+  it("una pantalla anterior puede estar conectada sin tener control remoto y no pierde su configuración", async () => {
+    const deviceId = `legacy-${randomUUID()}`;
+    const ref = db.collection("digitalSignageDevices").doc(deviceId);
+    const original = {
+      name: "Pantalla Windows", plantel: "Centro", location: "Recepción", active: true,
+      deviceToken: deviceId, assignedPlaylistId: "playlist-conservada", playbackMode: "stream", lastSeenMillis: clock,
+    };
+    await ref.set(original);
+    const status = await call({ action: "status", deviceId });
+    assert.equal(status.enabled, false);
+    assert.equal(status.online, true);
+    assert.equal(status.lastSeenAt, clock);
+    assert.equal(status.mode, "stream");
+    assert.equal(status.telemetry, null);
+    await assert.rejects(call({ action: "command", deviceId, requestId: randomUUID(), type: "refresh" }), { code: "failed-precondition" });
+    await assert.rejects(call({ action: "monitor_start", deviceId, sessionId: randomUUID() }), { code: "failed-precondition" });
+    assert.deepEqual((await ref.get()).data(), original);
+    clock += 76000;
+    assert.equal((await call({ action: "status", deviceId })).online, true);
+    clock += 45000;
+    assert.equal((await call({ action: "status", deviceId })).online, false);
+    await ref.update({ lastSeenMillis: clock, active: false });
+    const inactive = await call({ action: "status", deviceId });
+    assert.equal(inactive.active, false);
+    assert.equal(inactive.online, false);
+    await ref.update({ active: true });
+    const reactivated = await call({ action: "status", deviceId });
+    assert.equal(reactivated.online, true);
+    assert.equal(reactivated.enabled, false);
+    assert.equal((await ref.get()).data().assignedPlaylistId, "playlist-conservada");
+    assert.equal((await db.collection("digitalSignageControl").doc(deviceId).get()).exists, false);
+  });
+
   it("rechaza códigos inválidos, expirados, duplicados y carreras de claim", async () => {
     await assert.rejects(call({ action: "claim", code: "invalid" }), { code: "invalid-argument" });
     const p = await pending();
@@ -158,6 +191,8 @@ describe("Digital Signage: comunicación real con Firestore emulado", {
     assert.equal(sb.mode, "cache"); assert.equal(sb.telemetry.origin, "cache");
     assert.equal(sa.online, true);
     clock += 76000;
+    assert.equal((await call({ action: "status", deviceId: a.deviceId })).online, true);
+    clock += 45000;
     assert.equal((await call({ action: "status", deviceId: a.deviceId })).online, false);
   });
 
