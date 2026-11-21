@@ -11,7 +11,7 @@ function onCall(options, handler) {
     : firebaseOnCall(options, guardClassroomDevices(handler, HttpsError));
 }
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { initializeApp } = require("firebase-admin/app");
+const { initializeApp, getApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
@@ -1186,3 +1186,40 @@ Object.assign(
     FieldValue,
   })
 );
+
+// Supervisión: sin habilitar pagos ni comunicaciones automáticas por defecto.
+const { createSupervisionHandlers } = require("./projectSupervision");
+const { createVertexProvider } = require("./projectSupervisionAI");
+const supervisionHandlers = createSupervisionHandlers({
+  db, FieldValue, HttpsError,
+  automationApproved: process.env.PROJECT_SUPERVISION_AUTOMATION_APPROVED === "true",
+  aiApproved: process.env.PROJECT_SUPERVISION_AI_APPROVED === "true",
+  provider: createVertexProvider({
+    credential: getApp().options.credential,
+    projectId: process.env.GCLOUD_PROJECT || firebaseRuntimeConfig.projectId || "",
+  }),
+});
+exports.projectSupervision = onCall(
+  { region: "us-central1", maxInstances: 3, timeoutSeconds: 120, memory: "512MiB" },
+  supervisionHandlers.callable
+);
+exports.updateProjectSupervision = onDocumentWritten(
+  { document: "projects/{projectId}", region: "us-central1", maxInstances: 3, retry: false },
+  supervisionHandlers.projectWritten
+);
+exports.scanProjectSupervision = onSchedule(
+  { schedule: "every 15 minutes", timeZone: "UTC", region: "us-central1", maxInstances: 1,
+    timeoutSeconds: 540, memory: "512MiB", retryCount: 0 },
+  supervisionHandlers.scheduled
+);
+
+for (const [name, collectionName] of [
+  ["updateSupervisionFromAdvance", "projectUpdates"],
+  ["updateSupervisionFromLog", "projectLogs"],
+  ["updateSupervisionFromEvidence", "evidence"],
+]) {
+  exports[name] = onDocumentWritten(
+    { document: `${collectionName}/{documentId}`, region: "us-central1", maxInstances: 3, retry: false },
+    supervisionHandlers.relatedWritten
+  );
+}

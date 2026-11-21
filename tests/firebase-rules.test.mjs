@@ -3044,3 +3044,21 @@ describe("Acomodo de salones: borradores privados y publicación por pantalla", 
     await assertFails(storageAuth("admin").ref("digital-signage/room-templates/other/code.svg").putString("<svg/>", "raw", { contentType: "image/svg+xml" }));
   });
 });
+
+
+describe("aislamiento de supervisión inteligente", () => {
+  it("impide lectura y escritura directa incluso a dirección", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "projectSupervisionSummaries", "private-test"), { title: "Interno", projectId: "p1" });
+      await setDoc(doc(context.firestore(), "projectSupervisionPrivate", "settings"), { aiEnabled: false });
+    });
+    for (const uid of ["admin", "collab", "requester"]) {
+      for (const name of ["projectSupervisionSummaries", "projectSupervisionPrivate"]) {
+        await assertFails(getDocs(collection(auth(uid), name)));
+        await assertFails(getDoc(doc(auth(uid), name, name === "projectSupervisionPrivate" ? "settings" : "private-test")));
+        await assertFails(setDoc(doc(auth(uid), name, "forged"), { role: "admin" }));
+      }
+    }
+    await assertFails(getDocs(collection(unauth(), "projectSupervisionSummaries")));
+  });
+});

@@ -2861,6 +2861,14 @@ service cloud.firestore {
 
     }
 
+    // Datos internos de dirección: acceso exclusivamente mediante callables autorizados.
+    match /projectSupervisionSummaries/{document=**} {
+      allow read, write: if false;
+    }
+    match /projectSupervisionPrivate/{document=**} {
+      allow read, write: if false;
+    }
+
     match /projects/{projectId} {
       allow get: if canAccessProject();
 

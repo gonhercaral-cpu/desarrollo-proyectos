@@ -468,9 +468,11 @@ export default function Dashboard({ theme = "light", onToggleTheme }) {
   const defaultDashboardPage = isAdmin ? "executive-dashboard" : "workspace-dashboard";
   const defaultReturnPage = isAdmin ? "all-projects" : "workspace-dashboard";
 
-  const [page, setPageState] = useState(() =>
-    getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, defaultDashboardPage)
-  );
+  const [page, setPageState] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (isAdmin && params.get("page") === "all-projects" && params.get("tab") === "supervision") return "all-projects";
+    return getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.page, defaultDashboardPage);
+  });
   const [selectedProjectId, setSelectedProjectIdState] = useState(() =>
     getStoredDashboardValue(DASHBOARD_STORAGE_KEYS.selectedProjectId, "")
   );
