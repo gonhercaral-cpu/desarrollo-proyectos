@@ -3680,6 +3680,11 @@ service cloud.firestore {
         && request.resource.data.layouts is list && request.resource.data.layouts.size() <= 100;
     }
 
+    // Server-only capabilities, commands, telemetry and visual monitoring.
+    match /digitalSignageControl/{document=**} { allow read, write: if false; }
+    match /digitalSignageControlIdentities/{document=**} { allow read, write: if false; }
+    match /digitalSignageControlPairings/{document=**} { allow read, write: if false; }
+
     match /digitalSignagePlaybackLogs/{logId} {
 
       allow create: if hasOnlyFields(request.resource.data, [

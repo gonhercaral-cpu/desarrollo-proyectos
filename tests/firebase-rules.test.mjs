@@ -779,6 +779,41 @@ after(async () => {
   await testEnv.cleanup();
 });
 
+describe("Digital Signage: canal privado de control", () => {
+  it("bloquea lectura y escritura directa de credenciales, sesiones, telemetría y comandos incluso para admin", async () => {
+    const paths = [
+      "digitalSignageControl/test-device",
+      "digitalSignageControl/test-device/commands/test-command",
+      "digitalSignageControlIdentities/test-hash",
+      "digitalSignageControlPairings/test-session",
+    ];
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      for (const path of paths) await setDoc(doc(context.firestore(), path), { secret: "private-test" });
+    });
+    for (const client of [unauth(), auth("requester"), auth("admin")]) {
+      for (const path of paths) {
+        await assertFails(getDoc(doc(client, path)));
+        await assertFails(setDoc(doc(client, path), { secret: "replacement" }));
+      }
+    }
+  });
+
+  it("revincular revoca get y heartbeat legacy conservando lectura administrativa", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "digitalSignageDevices", "legacy-ds"), {
+        name: "Pantalla", deviceToken: "legacy-ds", active: true, lastSeenMillis: 0,
+      });
+    });
+    await assertSucceeds(getDoc(doc(unauth(), "digitalSignageDevices", "legacy-ds")));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(doc(context.firestore(), "digitalSignageDevices", "legacy-ds"), { deviceToken: "", secureControl: true });
+    });
+    await assertFails(getDoc(doc(unauth(), "digitalSignageDevices", "legacy-ds")));
+    await assertFails(updateDoc(doc(unauth(), "digitalSignageDevices", "legacy-ds"), { lastSeenMillis: Date.now() }));
+    await assertSucceeds(getDoc(doc(auth("admin"), "digitalSignageDevices", "legacy-ds")));
+  });
+});
+
 describe("roles y perfiles", () => {
   it("bloquea usuario no autenticado", async () => {
     await assertFails(getDoc(doc(unauth(), "projects", "owned-project")));

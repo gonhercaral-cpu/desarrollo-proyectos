@@ -1,199 +1,46 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  query,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-  limit,
-  db,
-  PAIRING_SESSIONS_COLLECTION,
-  PAIRING_CODE_TTL_MS,
-  assertAdminUser,
-  cleanText,
-  getUserName,
-  getUserId,
-  normalizePairingSessionDocument,
-  createUniqueDeviceToken,
-  generatePairingCode,
-  generateSessionSecret,
-  normalizePairingCode,
-  getTimestampMillis,
-  isPairingSessionClaimable
-} from "./shared";
-import { logSignageAudit } from "./auditService";
-import { prepareRoomDeviceWrite } from "./roomLayoutsService";
+import { adminSignageControl, signagePairingRequest } from "./controlService";
+import { assertAdminUser } from "./shared";
+
+// Secrets stay in the setup browser; private backend records store only hashes.
+const setupSessions = new Map();
 
 export async function createPairingSession() {
-  const pairingRef = doc(collection(db, PAIRING_SESSIONS_COLLECTION));
-  const code = generatePairingCode();
-  const setupSecret = generateSessionSecret();
-  const payload = {
-    code,
-    status: "pending",
-    deviceToken: null,
-    createdAt: serverTimestamp(),
-    expiresAt: Timestamp.fromMillis(Date.now() + PAIRING_CODE_TTL_MS),
-    claimedAt: null,
-    claimedBy: "",
-    userAgent:
-      typeof navigator !== "undefined" ? String(navigator.userAgent || "") : "",
-    lastSeenAt: serverTimestamp(),
-    setupSecret,
-  };
-
-  await setDoc(pairingRef, payload);
-
-  return {
-    id: pairingRef.id,
-    ...payload,
-  };
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = `ds2_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  const sessionId = crypto.randomUUID();
+  const session = await signagePairingRequest({ action: "create", sessionId, token });
+  setupSessions.set(session.id, token);
+  return { ...session, setupSecret: token };
 }
 
 export function subscribePairingSession(sessionId, callback, onError) {
-  const cleanSessionId = cleanText(sessionId);
-  if (!cleanSessionId) return () => {};
-
-  return onSnapshot(
-    doc(db, PAIRING_SESSIONS_COLLECTION, cleanSessionId),
-    (snapshot) => {
-      callback(snapshot.exists() ? normalizePairingSessionDocument(snapshot) : null);
-    },
-    onError
-  );
+  let stopped = false;
+  let timer;
+  async function poll() {
+    try {
+      const token = setupSessions.get(sessionId);
+      if (!token) throw new Error("Sesión local no disponible; genera un nuevo código.");
+      const session = await signagePairingRequest({ action: "poll", sessionId, token });
+      if (stopped) return;
+      callback({ ...session, deviceToken: session.status === "claimed" ? token : null });
+      if (session.status === "claimed" || session.status === "expired") {
+        setupSessions.delete(sessionId);
+        return;
+      }
+    } catch (error) {
+      if (!stopped) onError?.(error);
+    }
+    if (!stopped) timer = window.setTimeout(poll, 3000);
+  }
+  void poll();
+  return () => { stopped = true; window.clearTimeout(timer); setupSessions.delete(sessionId); };
 }
 
-export async function updatePairingSessionHeartbeat(sessionId, setupSecret) {
-  const cleanSessionId = cleanText(sessionId);
-  const cleanSecret = cleanText(setupSecret);
-  if (!cleanSessionId || !cleanSecret) return;
-
-  await updateDoc(doc(db, PAIRING_SESSIONS_COLLECTION, cleanSessionId), {
-    lastSeenAt: serverTimestamp(),
-    setupSecret: cleanSecret,
-  });
-}
+// Secure sessions expire server-side; they need no public heartbeat writes.
+export async function updatePairingSessionHeartbeat() {}
+export async function expireOldPairingSessions() {}
 
 export async function claimPairingCode(code, deviceData, user) {
   assertAdminUser(user);
-
-  const cleanCode = normalizePairingCode(code);
-  const name = cleanText(deviceData?.name);
-  const plantel = cleanText(deviceData?.plantel);
-  const location = cleanText(deviceData?.location);
-  const assignedPlaylistId = cleanText(deviceData?.assignedPlaylistId);
-
-  if (!cleanCode) {
-    throw new Error("Ingresa el codigo de vinculacion.");
-  }
-
-  if (!name || !plantel || !location) {
-    throw new Error("Completa nombre, plantel y ubicacion.");
-  }
-
-  const pairingSnapshot = await getDocs(
-    query(
-      collection(db, PAIRING_SESSIONS_COLLECTION),
-      where("code", "==", cleanCode),
-      limit(10)
-    )
-  );
-  const now = Date.now();
-  const sessionDocument = pairingSnapshot.docs.find((candidate) => {
-    const data = candidate.data();
-    return isPairingSessionClaimable(data, now);
-  });
-
-  if (!sessionDocument) {
-    throw new Error("Codigo invalido, expirado o ya usado.");
-  }
-
-  const deviceToken = await createUniqueDeviceToken();
-  const pairingRef = doc(db, PAIRING_SESSIONS_COLLECTION, sessionDocument.id);
-
-  await runTransaction(db, async (transaction) => {
-    const pairingDoc = await transaction.get(pairingRef);
-
-    if (!pairingDoc.exists()) {
-      throw new Error("Codigo no encontrado.");
-    }
-
-    const pairingData = pairingDoc.data();
-    if (pairingData.status !== "pending") {
-      throw new Error("Codigo ya usado.");
-    }
-
-    if (!isPairingSessionClaimable(pairingData, Date.now())) {
-      throw new Error("Codigo expirado.");
-    }
-
-    // Lecturas (device, guards, snapshots publicados) antes de cualquier escritura.
-    const plan = await prepareRoomDeviceWrite(transaction, {
-      id: deviceToken,
-      name,
-      plantel,
-      location,
-      deviceToken,
-      assignedPlaylistId,
-      active: true,
-      lastSeenAt: null,
-      lastSeenMillis: 0,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      createdBy: getUserName(user),
-      createdById: getUserId(user),
-    }, { mustBeNew: true });
-
-    // Pantalla + manifiesto + guard + pairing consumido: todo junto o nada.
-    plan.commit();
-    transaction.update(pairingRef, {
-      status: "claimed",
-      deviceToken,
-      claimedAt: serverTimestamp(),
-      claimedBy: getUserName(user),
-      updatedAt: serverTimestamp(),
-    });
-  });
-  await logSignageAudit("vincular pantalla por codigo", "pairing", deviceToken, name, {
-    code: cleanCode,
-    plantel,
-    location,
-    assignedPlaylistId,
-  }, user);
-
-  return {
-    id: deviceToken,
-    deviceToken,
-    name,
-    plantel,
-    location,
-    assignedPlaylistId,
-  };
-}
-
-export async function expireOldPairingSessions() {
-  const snapshot = await getDocs(
-    query(
-      collection(db, PAIRING_SESSIONS_COLLECTION),
-      where("status", "==", "pending"),
-      limit(50)
-    )
-  );
-  const now = Date.now();
-
-  await Promise.all(
-    snapshot.docs
-      .filter((sessionDocument) => getTimestampMillis(sessionDocument.data().expiresAt) <= now)
-      .map((sessionDocument) =>
-        updateDoc(doc(db, PAIRING_SESSIONS_COLLECTION, sessionDocument.id), {
-          status: "expired",
-          updatedAt: serverTimestamp(),
-        })
-      )
-  );
+  return adminSignageControl({ action: "claim", code, device: deviceData });
 }

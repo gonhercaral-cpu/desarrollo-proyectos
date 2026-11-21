@@ -2048,6 +2048,10 @@ export default function DigitalSignageAdmin() {
   }, []);
 
   async function copyPlayerUrl(device) {
+    if (device.secureControl) {
+      setMessage("La credencial privada permanece en la pantalla. Usa Revincular dispositivo si necesitas abrirla en otro navegador.");
+      return;
+    }
     const url = getPlayerUrl(device.deviceToken || device.id);
 
     try {

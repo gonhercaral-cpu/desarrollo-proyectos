@@ -1,3 +1,5 @@
+import SignageDeviceControl from "./SignageDeviceControl";
+
 export default function SignageDevicesPanel({
   devices,
   filteredDevices,
@@ -266,6 +268,19 @@ export default function SignageDevicesPanel({
           playlist={selectedDevicePlaylist}
           activeCampaign={selectedDevice ? activeCampaignByDeviceId.get(selectedDevice.id) : null}
         />
+        {selectedDevice && (
+          <>
+            <p className="signage-helper-note">
+              La vista previa de arriba es la programación esperada, no lo que la pantalla muestra ahora. Usa
+              “Ver pantalla” para el monitor real.
+            </p>
+            <SignageDeviceControl
+              key={selectedDevice.id}
+              device={selectedDevice}
+              playlists={playlists}
+            />
+          </>
+        )}
         <QuickActions
           onNewDevice={onOpenNewDeviceForm}
           onPlaylists={onPlaylists}

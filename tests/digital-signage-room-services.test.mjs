@@ -155,6 +155,7 @@ const storage = {
 // dobles en memoria; la prueba es hermética y no depende de node_modules ni de la red.
 globalThis.__roomFirestoreMock = firestore;
 globalThis.__roomStorageMock = storage;
+globalThis.__roomControlMock = async () => ({});
 const stubModule = (globalName, names) =>
   `data:text/javascript,${encodeURIComponent(
     names.map((name) => `export const ${name} = globalThis.${globalName}.${name} instanceof Function ? (...args) => globalThis.${globalName}.${name}(...args) : globalThis.${globalName}.${name};`).join("\n")
@@ -165,6 +166,9 @@ const STUBS = {
 };
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier === "./controlService") {
+      return { url: "data:text/javascript,export const isSecureSignageToken = (token) => token.startsWith('ds2_'); export const playerSignageExchange = async () => ({roomManifest:null}); export const adminSignageControl = (...args) => globalThis.__roomControlMock(...args); export const signagePairingRequest = async () => ({});", shortCircuit: true };
+    }
     if (STUBS[specifier]) return { url: STUBS[specifier], shortCircuit: true };
     if (specifier === "../firebase") {
       return { url: "data:text/javascript,export const db = {}; export const storage = {};", shortCircuit: true };
@@ -346,8 +350,8 @@ test("Contratos de integración (estáticos): devices, player y lecturas admin",
   assert.doesNotMatch(devices + pairing, /refreshRoomDisplayQuietly/);
   assert.equal(devices.match(/saveRoomDevice\(/g).length, 2, "create + update, una vez cada uno");
   assert.match(devices, /saveRoomDevice\(\{ id: deviceToken, \.\.\.payload \}, \{ mustBeNew: true \}\)/);
-  assert.equal(pairing.match(/prepareRoomDeviceWrite\(/g).length, 1);
-  assert.equal(pairing.match(/plan\.commit\(\)/g).length, 1);
+  // Secure pairing now composes device + manifest atomically in the backend;
+  // its behavioral/revocation tests run against Firestore in digital-signage-control.
 
   // El player y su hook no escuchan colecciones administrativas.
   const hook = read("hooks/useRoomLayoutPlayback.js");
@@ -651,24 +655,18 @@ test("Alta concurrente con publicación: reintenta y el manifiesto incluye lo pu
   assert.equal(store.get("digitalSignageDevices/nuevo").plantel, "Norte");
 });
 
-test("claimPairingCode atómico: éxito escribe pairing+pantalla+manifiesto; fallo no consume nada", async () => {
+test("pairing seguro propaga rechazo del servidor y no realiza escrituras cliente parciales", async () => {
   resetTx();
   seedDevice("d1", "Norte");
   await publishedNorte();
-  const pairingKey = "digitalSignagePairingSessions/s1";
-  store.set(pairingKey, { code: "ABC123", status: "pending", deviceToken: null, createdAt: Date.now(), expiresAt: Date.now() + 600000, setupSecret: "x" });
-
   const before = JSON.stringify([...store]);
-  txHooks.failCommit = true;
-  await assert.rejects(() => pairingService.claimPairingCode("ABC123", { name: "P", plantel: "Norte", location: "L" }, admin), /commit failed/);
-  txHooks.failCommit = false;
-  assert.equal(JSON.stringify([...store]), before, "pairing sigue pending; sin pantalla ni manifiesto");
-
-  const result = await pairingService.claimPairingCode("ABC123", { name: "P", plantel: "Norte", location: "L" }, admin);
-  assert.equal(store.get(pairingKey).status, "claimed");
-  assert.equal(store.get(pairingKey).deviceToken, result.deviceToken);
-  assert.equal(store.get(`digitalSignageDevices/${result.deviceToken}`).name, "P");
-  assert.equal(store.get(`digitalSignageRoomDisplays/${result.deviceToken}`).layouts.length, 1);
+  globalThis.__roomControlMock = async () => { throw new Error("backend rechazado"); };
+  await assert.rejects(() => pairingService.claimPairingCode("AES-123456", { name: "P", plantel: "Norte", location: "L" }, admin), /backend rechazado/);
+  assert.equal(JSON.stringify([...store]), before, "no hay alta parcial en el SDK cliente");
+  globalThis.__roomControlMock = async () => ({ id: "estable", deviceId: "estable" });
+  assert.equal((await pairingService.claimPairingCode("AES-123456", { name: "P", plantel: "Norte", location: "L" }, admin)).id, "estable");
+  await assert.rejects(() => pairingService.claimPairingCode("AES-123456", {}, { role: "requester" }), /administradores/);
+  globalThis.__roomControlMock = async () => ({});
 });
 
 test("roomId opcional se conserva en normalización, snapshot publicado y borrador desde catálogo", async () => {
