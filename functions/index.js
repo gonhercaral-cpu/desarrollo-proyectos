@@ -1194,9 +1194,11 @@ const supervisionHandlers = createSupervisionHandlers({
   db, FieldValue, HttpsError,
   automationApproved: process.env.PROJECT_SUPERVISION_AUTOMATION_APPROVED === "true",
   aiApproved: process.env.PROJECT_SUPERVISION_AI_APPROVED === "true",
+  aiScheduledApproved: process.env.PROJECT_SUPERVISION_AI_SCHEDULED_APPROVED === "true",
   provider: createVertexProvider({
     credential: getApp().options.credential,
     projectId: process.env.GCLOUD_PROJECT || firebaseRuntimeConfig.projectId || "",
+    location: process.env.PROJECT_SUPERVISION_AI_LOCATION || "us",
   }),
 });
 exports.projectSupervision = onCall(

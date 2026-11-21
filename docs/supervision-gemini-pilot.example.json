@@ -1,0 +1,29 @@
+{
+  "status": "prepared-not-enabled",
+  "projectId": "sistema-desarrollo-proyectos",
+  "serverEnvironment": {
+    "PROJECT_SUPERVISION_AI_APPROVED": "false",
+    "PROJECT_SUPERVISION_AI_LOCATION": "us",
+    "PROJECT_SUPERVISION_AI_SCHEDULED_APPROVED": "false",
+    "PROJECT_SUPERVISION_AUTOMATION_APPROVED": "false"
+  },
+  "moduleConfigPatch": {
+    "aiEnabled": false,
+    "aiModel": "gemini-3.5-flash-lite",
+    "aiMonthlyRequestLimit": 20,
+    "aiMonthlyTokenLimit": 200000,
+    "aiMaxInputChars": 12000,
+    "aiMaxOutputTokens": 1000,
+    "automaticNotifications": false,
+    "reportDaily": false,
+    "reportWeekly": false
+  },
+  "pricingReference": {
+    "checkedOn": "2026-11-21",
+    "currency": "USD",
+    "tier": "standard-paygo-non-global",
+    "inputPerMillionTokens": 0.33,
+    "outputAndReasoningPerMillionTokens": 2.75,
+    "infrastructureAndTaxesIncluded": false
+  }
+}

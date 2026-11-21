@@ -12,7 +12,7 @@ const iso = (value) => value?.toDate ? value.toDate().toISOString() : value || n
 const route = (id) => `/?page=project-detail&projectId=${encodeURIComponent(id)}`;
 
 function createSupervisionHandlers({ db, FieldValue, HttpsError, provider = null, now = () => new Date(),
-  automationApproved = false, aiApproved = false }) {
+  automationApproved = false, aiApproved = false, aiScheduledApproved = false }) {
   const settingsRef = db.collection(PRIVATE).doc("settings");
   const statsRef = db.collection(PRIVATE).doc("stats");
   const summaries = db.collection(SUMMARIES);
@@ -366,7 +366,7 @@ function createSupervisionHandlers({ db, FieldValue, HttpsError, provider = null
     if (cached) return { status: "cached", analysis: cached };
     try {
       const generated = await provider({ sources, config: cfg });
-      const analysis = { ...require("./projectSupervisionAI").validateAnalysis(generated, sources), model: generated.model || cfg.aiModel, generatedAt: now().toISOString(), analyzedSourceIds: sources.map((s) => s.id),
+      const analysis = { ...require("./projectSupervisionAI").validateAnalysis(generated, sources), model: generated.model || cfg.aiModel, location: generated.location || null, generatedAt: now().toISOString(), analyzedSourceIds: sources.map((s) => s.id),
         omittedSources: summary.sources.length - sources.length, filesRead: false,
         tokenCount: Number.isSafeInteger(generated.tokenCount) && generated.tokenCount >= 0 ? generated.tokenCount : 0 };
       await db.runTransaction(async (tx) => {
@@ -631,7 +631,7 @@ function createSupervisionHandlers({ db, FieldValue, HttpsError, provider = null
       const snapshot = await query.limit(50).get();
       let analyzed = 0;
       for (const doc of snapshot.docs) {
-        if (aiApproved && cfg.aiEnabled && provider && cfg.aiModel && analyzed < 3 && doc.data().active) {
+        if (aiScheduledApproved && aiApproved && cfg.aiEnabled && provider && cfg.aiModel && analyzed < 3 && doc.data().active) {
           const cached = await ref("analysis", doc.id).get();
           if (cached.data()?.key !== analysisKey(doc.data(), cfg)) {
             try { const result = await analyze({ projectId: doc.id }); if (result.status !== "cached") analyzed += 1; }
