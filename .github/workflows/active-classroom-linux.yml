@@ -19,6 +19,7 @@ on:
   push:
     branches:
       - "**"
+    # Las entradas y reglas Firebase compartidas se validan en firebase-shared.yml.
     paths:
       - "active-classroom-desktop/**"
       - "docs/active-classroom-manifest.example.json"
@@ -27,10 +28,6 @@ on:
       - "drive/activeClassroomPublicationLimits.json"
       - "drive/index.js"
       - "functions/deviceAccess.js"
-      - "functions/index.js"
-      - "firestore.rules"
-      - "storage.rules"
-      - "firebase.rules-test.json"
       - "tests/active-classroom-device*"
       - "src/active-classroom/**"
       - "tests/active-classroom-console*"

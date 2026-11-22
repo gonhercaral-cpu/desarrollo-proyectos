@@ -1,0 +1,86 @@
+name: Firebase compartido — compatibilidad Active Classroom
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    paths:
+      - ".github/workflows/firebase-shared.yml"
+      - "functions/index.js"
+      - "firestore.rules"
+      - "storage.rules"
+      - "firebase.rules-test.json"
+      - "firestore.indexes.json"
+      - "package.json"
+      - "package-lock.json"
+      - "functions/package.json"
+      - "functions/package-lock.json"
+      - "drive/package.json"
+      - "drive/package-lock.json"
+      - "tests/firebase-rules.test.mjs"
+      - "eslint.config.js"
+      - "vite.config.js"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-shared-${{ github.ref }}
+  cancel-in-progress: true
+
+# Conserva íntegra la validación de permisos/backend que antes se disparaba
+# junto al empaquetado Linux por cambios en archivos Firebase compartidos.
+jobs:
+  permissions:
+    name: Autorización de equipos y reglas Firebase
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      XDG_CONFIG_HOME: ${{ github.workspace }}/.firebase/cli-config
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            drive/package-lock.json
+            active-classroom-desktop/package-lock.json
+      - name: Instalar dependencias bloqueadas y CLI de emuladores
+        run: |
+          npm ci
+          npm ci --prefix drive
+          npm ci --prefix active-classroom-desktop
+          npm install --prefix "$RUNNER_TEMP/firebase-cli" firebase-tools@15.27.0
+          test -x "$JAVA_HOME_21_X64/bin/java"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Tests backend y lint específico
+        run: |
+          mapfile -t classroom_tests < <(find tests -maxdepth 1 -type f -name 'active-classroom-*.test.*' ! -name '*-emulator.test.*' | sort)
+          node --test "${classroom_tests[@]}"
+          npx eslint drive/activeClassroomProcessing*.js drive/activeClassroomProcessorClient.js drive/activeClassroomUnit.js tests/active-classroom-office*.cjs
+          npx eslint drive/activeClassroomSlides.js drive/activeClassroomDriveContent.js tests/active-classroom-slides*.cjs
+          npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
+          npx eslint drive/activeClassroomInteraction.js drive/activeClassroomBuildPreview.js src/active-classroom/components/SlideInteractionEditor.jsx src/active-classroom/utils/slideInteraction.js tests/active-classroom-builds*.cjs
+          npx eslint drive/activeClassroomVideoDelivery.js drive/activeClassroomFiles.js tests/active-classroom-video-delivery.test.cjs
+          npx eslint drive/activeClassroomDevices.js drive/activeClassroomDesktop.js functions/deviceAccess.js tests/active-classroom-device*.cjs
+          npx eslint src/active-classroom/components/TeamsPanel.jsx src/active-classroom/services/deviceService.js tests/active-classroom-device-ui.test.mjs
+          npx eslint drive/activeClassroomLevels.js drive/activeClassroomPermissions.js drive/activeClassroomUploadCleanup.js src/active-classroom tests/active-classroom-admin* tests/active-classroom-permissions.test.cjs tests/active-classroom-console.test.mjs
+          npm run build
+          node --check drive/index.js
+          node --check functions/index.js
+      - name: Reglas y transacciones reales en emuladores
+        run: |
+          publication_tests=""
+          if [[ -f tests/active-classroom-large-publication-emulator.test.cjs ]]; then
+            publication_tests=" tests/active-classroom-large-publication-emulator.test.cjs"
+          fi
+          "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
+            --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-redesign-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
