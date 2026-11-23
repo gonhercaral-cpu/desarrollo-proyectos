@@ -86,7 +86,7 @@ fn return_to_teacher(app: &tauri::AppHandle, teacher: &tauri::WebviewWindow, gat
 // cannot be bypassed by a site's scripts (including a nested file input).
 #[cfg(target_os = "linux")]
 async fn secure_linux(view: &tauri::Webview) -> Result<(), String> {
-    use webkit2gtk::prelude::*;
+    use webkit2gtk::{FileChooserRequestExt, PermissionRequestExt, SettingsExt, WebViewExt};
     let (sender, mut receiver) = tauri::async_runtime::channel(1);
     view.with_webview(move |platform| {
         let native = platform.inner();
@@ -105,7 +105,7 @@ async fn secure_linux(view: &tauri::Webview) -> Result<(), String> {
         }
         let _ = sender.try_send(());
     }).map_err(|e| e.to_string())?;
-    receiver.recv().await.ok_or("No se pudo aplicar la política nativa del navegador")
+    receiver.recv().await.ok_or_else(|| "No se pudo aplicar la política nativa del navegador".to_string())
 }
 #[cfg(not(target_os = "linux"))]
 async fn secure_linux(_: &tauri::Webview) -> Result<(), String> {
