@@ -24,7 +24,7 @@
     "test:player": "node --test tests/player.test.mjs tests/media.test.mjs tests/background-music.test.mjs tests/media-fixture.test.mjs tests/unit-music.test.mjs tests/audio-channel.test.mjs tests/audio-shortcuts.test.mjs tests/animated-slides.test.mjs tests/slide-navigation.test.mjs tests/slide-thumbnails.test.mjs",
     "test:projection": "node --test tests/projection.test.mjs",
     "test:release": "node --test tests/release.test.mjs tests/validation-release.test.mjs tests/system-media.test.mjs tests/release-tag.test.mjs",
-    "lint:player": "eslint src/player src/offline src/app.ts tests/release.test.mjs src/updater src/ui src/startup src/settings",
+    "lint:player": "eslint src/browser src/player src/offline src/app.ts tests/release.test.mjs src/updater src/ui src/startup src/settings",
     "test:media:linux": "node tests/media-linux.mjs",
     "test:updater": "node --test tests/updater.test.mjs",
     "test:updater:linux": "node tests/updater-linux.mjs",

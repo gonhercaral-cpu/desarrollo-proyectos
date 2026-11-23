@@ -21,6 +21,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "webkit2gtk",
  "zip 2.4.2",
 ]
 

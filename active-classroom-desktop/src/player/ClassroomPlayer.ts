@@ -1,5 +1,5 @@
 import { ClassSessionController } from "./ClassSessionController.ts";
-import { ProjectionCoordinator, type ProjectionBridge } from "./projection/ProjectionCoordinator.ts";
+import { ProjectionCoordinator, nativeProjectionBridge, type ProjectionBridge } from "./projection/ProjectionCoordinator.ts";
 import { localSource } from "./local-source.ts";
 import { createRenderer } from "./renderers/factory.ts";
 import { shortcutFor, readShortcuts, shortcutLabel, SHORTCUT_ACTIONS, type ShortcutCommand } from "./shortcuts.ts";
@@ -16,6 +16,7 @@ import { animatedSource, preloadAnimationImage } from "./animated-source.ts";
 import { TeacherWorkspace } from "../ui/TeacherWorkspace.ts";
 import { SlideNavigator } from "./SlideNavigator.ts";
 import { SlideThumbnails, type SlideThumbnailOptions } from "./slide-thumbnails.ts";
+import { BrowserTool, type BrowserBridge } from "../browser/BrowserTool.ts";
 
 export interface PlayerDependencies {
   ambientMusic?: { tracks: NonNullable<import("../offline/manifest.ts").Manifest["backgroundMusic"]>; defaultTrackIds?: string[]; prepare(id: string): Promise<RendererSource> };
@@ -26,6 +27,8 @@ export interface PlayerDependencies {
   preloadAnimationImage?: typeof preloadAnimationImage;
   toUrl?: (path: string) => string;
   projectionBridge?: ProjectionBridge;
+  // Test hook: an injected bridge also marks the web browser as available outside Tauri.
+  browserBridge?: BrowserBridge;
   // Test hooks for the slide thumbnails; the app uses the local file reader and pdf.js.
   slideThumbnails?: Pick<SlideThumbnailOptions, "fetchBytes" | "openPdf" | "objectUrls" | "maxCacheEntries" | "rasterizeImage" | "openTimeoutMs">;
 }
@@ -38,6 +41,7 @@ export class ClassroomPlayer {
   private projection: ProjectionCoordinator;
   private slideNavigator?: SlideNavigator;
   private teacherWorkspace?: TeacherWorkspace;
+  private browser?: BrowserTool;
   private source?: RendererSource;
   private surface?: InteractionSurface;
   private buildSequence = 0;
@@ -87,6 +91,8 @@ export class ClassroomPlayer {
   private keyListener = (event: KeyboardEvent) => {
     // The slide gallery is modal: it owns the keyboard (Escape included) while it is open.
     if (this.slideNavigator?.galleryOpen) return;
+    // The web browser overlay owns the keyboard: class shortcuts are ignored while it is open.
+    if (this.browser?.active) return;
     const command = shortcutFor(event, this.controller.isPresentation && !["audio", "video"].includes(this.renderer?.kind || ""), this.audioOwnsSeek());
     if (!command || (event.repeat && ["PLAY_PAUSE", "BACKGROUND_MUSIC_PLAY_PAUSE", "MUTE", "FULLSCREEN", "ESCAPE"].includes(command))) return;
     event.preventDefault(); void this.dispatch(command);
@@ -103,8 +109,13 @@ export class ClassroomPlayer {
       if (dependencies.prepareMediaSource) return dependencies.prepareMediaSource(id);
       if (!await dependencies.verifyResource(id)) throw new Error("Audio local ausente o dañado.");
       return localSource(classroom, id, dependencies.toUrl);
-    }, () => !(desktopSettings().pauseBackgroundMusic && (this.audioActive() || this.state.playing && ["audio", "video"].includes(this.renderer?.kind || ""))), dependencies.releaseMediaSource);
+    }, () => !this.browser?.active && !(desktopSettings().pauseBackgroundMusic && (this.audioActive() || this.state.playing && ["audio", "video"].includes(this.renderer?.kind || ""))), dependencies.releaseMediaSource);
     this.teacherWorkspace = new TeacherWorkspace(root);
+    this.browser = new BrowserTool({
+      root, trigger: this.element<HTMLButtonElement>("[data-browser-open]"), bridge: dependencies.browserBridge, available: dependencies.browserBridge ? true : undefined,
+      monitors: () => (dependencies.projectionBridge ?? nativeProjectionBridge).status().then(status => status.monitors),
+      beforeOpen: () => this.prepareBrowser(),
+    });
     const musicDetails = this.element("[data-background-music]").querySelector("details");
     if (musicDetails) musicDetails.open = true;
     this.refreshShortcuts(); window.addEventListener("keydown", this.keyListener); window.addEventListener("classroom-shortcuts-changed", this.refreshShortcuts);
@@ -278,6 +289,11 @@ export class ClassroomPlayer {
           if (sequence !== this.sequence || this.disposed) return;
           const started = state.playing && !this.state.playing;
           this.state = state;
+          // A pending play may settle after the browser opened. Keep the class
+          // paused without destroying its renderer or changing its position.
+          if (state.playing && this.browser?.active && ["audio", "video"].includes(renderer.kind)) {
+            void Promise.resolve(renderer.command("PLAY_PAUSE")).catch(() => {});
+          }
           if (state.playing && desktopSettings().pauseBackgroundMusic && ["audio", "video"].includes(renderer.kind)) this.music.pause("class-media");
           if (renderer.kind === "audio" || renderer.kind === "video") { this.volume = state.volume; this.muted = state.muted; }
           if (["audio", "video"].includes(renderer.kind)) this.updatePlaybackState(); else this.updateState();
@@ -406,6 +422,13 @@ export class ClassroomPlayer {
     try { renderer.seek(target); }
     catch { if (sequence === this.audioSequence && !this.disposed) { this.audioSeekPending = undefined; this.audioState = { ...this.audioState, error: "Este control de audio no está disponible." }; this.updateAudioControls(); } }
   }
+  // Opening the browser only pauses: nothing is resumed when it closes, and the unit, slide and mounted resources stay untouched.
+  private async prepareBrowser(): Promise<void> {
+    if (this.disposed) return;
+    this.pauseVideo(); this.music.pause("class-media");
+    await this.pauseAudio();
+    if (this.projection.projecting) await this.projection.toggle();
+  }
   private async pauseAudio(): Promise<void> {
     this.audioPlayRequested = false;
     if (this.audioState.playing) await this.audioCommand("PLAY_PAUSE");
@@ -494,7 +517,7 @@ export class ClassroomPlayer {
   }
   private navigate(direction: number): void { if (!this.controller.isPresentation) this.controller.moveSlide(direction); else if (direction > 0) this.controller.advance(); else this.controller.back(); void this.showResource(); }
   async dispatch(command: ShortcutCommand): Promise<void> {
-    if (this.disposed) return;
+    if (this.disposed || this.browser?.active) return;
     if (command === "BACKGROUND_MUSIC_PLAY_PAUSE") { await this.music.toggle(); return; }
     if (command === "BACKGROUND_MUSIC_NEXT") { await this.music.move(1); return; }
     if (command === "BACKGROUND_MUSIC_PREVIOUS") { await this.music.move(-1); return; }
@@ -519,7 +542,10 @@ export class ClassroomPlayer {
   private exit(): void { this.destroy(); this.onExit(); }
   destroy(): void {
     if (this.disposed) return;
-    this.disposed = true; this.teacherWorkspace?.destroy(); this.teacherWorkspace = undefined; this.slideNavigator?.destroy(); this.slideNavigator = undefined; this.music.destroy(); ++this.sequence; ++this.audioSequence;
+    this.disposed = true;
+    // First, so the native webview is released even if anything below throws or the session lost authorization.
+    try { this.browser?.dispose(); } catch { /* the rest of the teardown must still run */ } this.browser = undefined;
+    this.teacherWorkspace?.destroy(); this.teacherWorkspace = undefined; this.slideNavigator?.destroy(); this.slideNavigator = undefined; this.music.destroy(); ++this.sequence; ++this.audioSequence;
     this.discardAudio();
     ++this.buildSequence; this.buildAbort?.abort(); this.buildAbort = undefined; this.surface?.destroy(); this.surface = undefined; this.verifiedSources.clear();
     this.projection.destroy();

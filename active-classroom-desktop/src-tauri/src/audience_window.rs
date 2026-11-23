@@ -104,6 +104,20 @@ fn hide(app: &tauri::AppHandle, gate: &ProjectionGate) -> Result<(), String> {
     app.emit_to("audience", "classroom-projection", Value::Null).map_err(|e| e.to_string())
 }
 
+// The web browser uses the existing monitor identity and native Wayland placement.
+pub(crate) fn browser_monitor(window: &tauri::WebviewWindow, id: &str) -> Result<tauri::PhysicalPosition<f64>, String> {
+    let monitors = displays(window)?;
+    if monitors.len() < 2 { return Err("Sin segunda pantalla".into()); }
+    let monitor = monitors.iter().find(|monitor| monitor.id == id).ok_or("Monitor desconectado")?;
+    if window.current_monitor().ok().flatten().map(|current| current.position().x == monitor.x && current.position().y == monitor.y).unwrap_or(false) {
+        return Err("Selecciona una pantalla distinta de la del profesor".into());
+    }
+    Ok(tauri::PhysicalPosition::new(monitor.x as f64, monitor.y as f64))
+}
+pub(crate) fn suspend_for_browser(app: &tauri::AppHandle) -> Result<(), String> {
+    hide(app, &app.state::<ProjectionGate>())
+}
+
 #[tauri::command]
 pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::WebviewWindow, gate: tauri::State<'_, ProjectionGate>, action: String, data: Option<Value>) -> Result<Value, String> {
     if action == "read" {
