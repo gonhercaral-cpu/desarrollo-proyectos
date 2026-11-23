@@ -1,11 +1,22 @@
 # Active Classroom 1.0.25 — preparación del release
 
-Estado: candidata en validación. No publicar como estable ni cambiar `latest.json` hasta cerrar los controles pendientes.
+Estado: **1.0.25 publicada como estable**, con aceptación expresa del usuario de las limitaciones físicas documentadas. Las 12 pruebas físicas de esta matriz siguen **pendientes**; no se consideran realizadas por la publicación.
+
+## Resultado de publicación
+
+- [PR #48 integrado](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/48), merge `3191a612e598d7f2e44c8c5192337b2121a24700`.
+- Código certificado y tag: `f1677c0b5613caf881fe98a08e994d9c6608eccf`.
+- [VALIDATION completa aprobada](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45251651419).
+- [RELEASE aprobado: firma y verificación criptográfica de ambos instaladores](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45277063304).
+- [Release público 1.0.25](https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/tag/active-classroom-v1.0.25), con `.deb`, AppImage, firmas, hashes, certificado e informes. Se publicaron los mismos bytes de VALIDATION.
+- El manifiesto público del actualizador apunta a 1.0.25. La actualización sobre equipos físicos permanece pendiente. El test instalado de CI usa fixtures 1.0.6 → 1.0.7.
+- La validación de instalación y reproducción offline pasó en contenedores Ubuntu 22.04/24.04/26.04; no certifica Zorin, GPU ni proyectores reales.
+- La versión 1.0.24 continúa conservada para reversión. Los apartados siguientes registran la preparación y las limitaciones aceptadas; la publicación no cambia sus resultados físicos.
 
 ## Propuesta
 
 - Issue: [AC-47](https://github.com/gonhercaral-cpu/desarrollo-proyectos/issues/47).
-- PR en borrador: [#48](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/48).
+- PR integrado: [#48](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/48).
 - Rama: `codex/claude/issue-47-20261123`.
 - Base funcional: `active-classroom-v1.0.24`.
 - Versión candidata sincronizada en npm, lockfiles, Cargo y configuración Tauri: `1.0.25`.
