@@ -20,11 +20,19 @@ async fn evaluate(view: &tauri::Webview, source: &str) -> Result<Value, String> 
     serde_json::from_str(&receiver.recv().await.ok_or("No llegó resultado JavaScript")?).map_err(|e| e.to_string())
 }
 async fn until(view: &tauri::Webview, expression: &str) -> Result<(), String> {
+    let mut last_error = None;
     for _ in 0..100 {
-        if evaluate(view, expression).await? == true { return Ok(()); }
+        // Wry queues initial scripts until the first page is ready, without
+        // retaining eval callbacks. Navigation can also replace the JS context.
+        // Retry readiness observations; the condition must still become true.
+        match evaluate(view, expression).await {
+            Ok(value) if value == true => return Ok(()),
+            Ok(_) => {},
+            Err(error) => last_error = Some(error),
+        }
         delay(100).await;
     }
-    Err(format!("No se cumplió la condición de la fixture: {expression}"))
+    Err(format!("No se cumplió la condición de la fixture: {expression}; {last_error:?}"))
 }
 async fn action(app: &tauri::AppHandle, action: &str, data: Option<Value>) -> Result<Value, String> {
     let teacher = app.get_webview_window("teacher").ok_or("Falta teacher")?;
@@ -66,9 +74,11 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     let opened = action(app, "open", Some(json!({"url":format!("{base}/first"),"bounds":bounds}))).await?;
     assert_eq!(opened["open"], true);
     let view = app.get_webview("classroom-browser").ok_or("No se creó child webview")?;
+    println!("BROWSER_CHECKPOINT initial-load");
     until(&view, "window.fixtureReady===true").await?;
     evaluate(&view, "document.querySelector('#answer').value='conservar';sessionStorage.setItem('lesson','47');document.cookie='fixture=47';true").await?;
     // All these are forbidden from a real remote-origin webview, not a DOM mock.
+    println!("BROWSER_CHECKPOINT remote-ipc");
     evaluate(&view, "window.ipcDenied=false;window.dialogDenied=false; const invoke=window.__TAURI_INTERNALS__?.invoke;if(!invoke){window.ipcDenied=true;window.dialogDenied=true;}else{invoke('classroom_browser',{action:'close'}).then(()=>{},()=>window.ipcDenied=true);invoke('plugin:dialog|open',{options:{}}).then(()=>{},()=>window.dialogDenied=true);}true").await?;
     until(&view, "window.ipcDenied===true && window.dialogDenied===true").await?;
     evaluate(&view, "window.open('/next');document.querySelector('#popup').click();true").await?;
@@ -76,6 +86,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     assert!(action(app,"navigate",Some(json!({"url":"file:///etc/passwd"}))).await.is_err());
     assert!(action(app,"navigate",Some(json!({"url":"asset://localhost/private"}))).await.is_err());
     // A normal H.264/AAC resource must load in the remote webview too.
+    println!("BROWSER_CHECKPOINT remote-video");
     until(&view, "document.querySelector('#clip').readyState>=2 && document.querySelector('#clip').videoWidth>0").await?;
     evaluate(&view, "document.querySelector('#clip').play().catch(()=>{});true").await?;
     until(&view, "document.querySelector('#clip').currentTime>0.1").await?;
@@ -86,7 +97,8 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
         let current = teacher.current_monitor().map_err(|e| e.to_string())?.ok_or("Monitor docente ausente")?;
         let monitors = audience_window::classroom_projection(app.clone(),teacher,app.state(),"monitors".into(),None).await?;
         let target = monitors["monitors"].as_array().unwrap().iter().find(|m| m["x"]!=current.position().x || m["y"]!=current.position().y).ok_or("Falta segunda pantalla virtual")?;
-        for _ in 0..30 {
+        for cycle in 0..30 {
+            println!("BROWSER_CHECKPOINT projection-cycle-{cycle}");
             let shown=action(app,"present",Some(json!({"monitorId":target["id"]}))).await?;
             assert_eq!(shown["presenting"],true); delay(80).await;
             assert_eq!(evaluate(&view,"document.querySelector('#answer').value==='conservar' && sessionStorage.getItem('lesson')==='47'").await?,true);
@@ -96,15 +108,18 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
             cycles+=1;
         }
     }
+    println!("BROWSER_CHECKPOINT history");
     action(app,"navigate",Some(json!({"url":format!("{base}/second")}))).await?;
     until(&view,"location.pathname==='/second' && window.fixtureReady===true").await?;
     action(app,"back",None).await?; until(&view,"location.pathname==='/first'").await?;
     action(app,"forward",None).await?; until(&view,"location.pathname==='/second'").await?;
     action(app,"reload",None).await?; until(&view,"window.fixtureReady===true && location.pathname==='/second'").await?;
+    println!("BROWSER_CHECKPOINT download");
     action(app,"navigate",Some(json!({"url":format!("{base}/download")}))).await?;
     for _ in 0..50 { if downloads.load(Ordering::SeqCst)>0 {break;} delay(100).await; }
     assert!(downloads.load(Ordering::SeqCst)>0,"No se intentó descarga"); delay(200).await;
     action(app,"close",None).await?; assert!(app.get_webview("classroom-browser").is_none());
+    println!("BROWSER_CHECKPOINT fresh-session");
     action(app,"open",Some(json!({"url":format!("{base}/fresh"),"bounds":bounds}))).await?;
     let fresh=app.get_webview("classroom-browser").unwrap(); until(&fresh,"window.fixtureReady===true").await?;
     assert_eq!(evaluate(&fresh,"sessionStorage.getItem('lesson')===null && !document.cookie.includes('fixture=47')").await?,true,"La sesión efímera no se liberó");
