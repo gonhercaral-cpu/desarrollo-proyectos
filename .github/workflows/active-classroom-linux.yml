@@ -261,6 +261,9 @@ jobs:
 
       - name: Tests Player
         run: npm run test:player
+      - name: Navegador, conservación de clase y prioridad de descargas
+        run: npm run test:browser
+
       - name: Revelados progresivos y sesión offline compartida
         run: npm run test:builds
 
@@ -363,6 +366,9 @@ jobs:
       - name: Cargo check y validación nativa de configuración/capabilities
         # build.rs ejecuta tauri_build::build(); no se usa un mock de Tauri.
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
+
+      - name: Navegador nativo aislado en X11 y Wayland con pantallas virtuales
+        run: npm run test:browser:linux
 
       - name: MP4 H.264/AAC local, Range, controles, proyección y scroll largo en Tauri real
         env:

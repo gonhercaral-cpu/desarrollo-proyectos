@@ -1,4 +1,5 @@
 mod audience_window;
+mod browser;
 mod offline_cache;
 mod device_identity;
 mod local_media;
@@ -110,7 +111,7 @@ struct Relationship {
 #[tauri::command]
 fn import_presentation(
     app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     path: String,
 ) -> Result<InternalPresentation, String> {
     if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }
@@ -955,9 +956,12 @@ pub fn run() {
         .manage(offline_cache::CacheGate::default())
         .manage(device_identity::DeviceGate::default())
         .manage(audience_window::ProjectionGate::default())
+        .manage(browser::BrowserGate::default())
         .setup(|app| { app.manage(startup::StartupGate::load(app.handle())); app.manage(local_media::MediaServer::start()?); Ok(()) })
-        .on_window_event(audience_window::window_event)
-        .invoke_handler(tauri::generate_handler![
+        .on_window_event(|window, event| { audience_window::window_event(window, event); browser::window_event(window, event); })
+        .invoke_handler({
+            let trusted_commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+            browser::classroom_browser,
             offline_cache::classroom_cache,
             app_updater::classroom_app_update,
             startup::classroom_startup,
@@ -969,7 +973,16 @@ pub fn run() {
             device_identity::classroom_device,
             classroom_projection,
             import_presentation
-        ])
+            ];
+            move |invoke| {
+                // Remote Internet content never reaches application commands,
+                // even if a future command forgets its per-window guard.
+                if invoke.message.webview().label() == "classroom-browser" {
+                    invoke.resolver.reject("Contenido web sin acceso a comandos de Active Classroom");
+                    true
+                } else { trusted_commands(invoke) }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error al ejecutar Active Classroom");
 }

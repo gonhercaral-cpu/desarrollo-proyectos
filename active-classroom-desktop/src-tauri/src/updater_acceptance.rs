@@ -14,13 +14,13 @@ async fn acceptance_duplicate() -> Result<(), String> {
     }).await.map_err(|error| error.to_string())?
 }
 #[tauri::command]
-async fn acceptance_restart(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+async fn acceptance_restart(window: tauri::Webview, app: tauri::AppHandle) -> Result<(), String> {
     std::env::set_var("ACTIVE_CLASSROOM_UPDATER_STAGE", "restarted");
     classroom_app_update(window, app.clone(), app.state::<UpdateGate>(), "restart".into(), Some(true)).await?;
     Ok(())
 }
 #[tauri::command]
-async fn acceptance_ready(window: tauri::WebviewWindow, app: tauri::AppHandle, preferences_valid: bool, automatic_valid: bool) -> Result<(), String> {
+async fn acceptance_ready(window: tauri::Webview, app: tauri::AppHandle, preferences_valid: bool, automatic_valid: bool) -> Result<(), String> {
     assert!(preferences_valid, "Preferencias WebKit no conservadas");
     assert!(automatic_valid, "Flujo frontend automático no completado");
     let stage = acceptance_stage();
@@ -31,9 +31,9 @@ async fn acceptance_ready(window: tauri::WebviewWindow, app: tauri::AppHandle, p
     let startup = classroom_startup(window.clone(), app.clone(), app.state::<StartupGate>(), "status".into(), None, None).await?;
     assert!(startup.autostart && startup.kiosk && startup.launched_automatically && startup.kiosk_active);
     assert!(app.get_webview_window("audience").is_none(), "Kiosco no abre el proyector");
-    let primary = window.primary_monitor().map_err(|error| error.to_string())?
-        .or_else(|| window.available_monitors().ok().and_then(|monitors| monitors.into_iter().next())).unwrap();
-    assert_eq!(window.current_monitor().map_err(|error| error.to_string())?.unwrap().position(), primary.position());
+    let primary = window.window().primary_monitor().map_err(|error| error.to_string())?
+        .or_else(|| window.window().available_monitors().ok().and_then(|monitors| monitors.into_iter().next())).unwrap();
+    assert_eq!(window.window().current_monitor().map_err(|error| error.to_string())?.unwrap().position(), primary.position());
     let status = classroom_app_update(window, app.clone(), app.state::<UpdateGate>(), "status".into(), Some(true)).await?;
     let expected = if stage.ends_with("restarted") { "1.0.7" } else { "1.0.6" };
     assert_eq!(app.package_info().version.to_string(), expected);

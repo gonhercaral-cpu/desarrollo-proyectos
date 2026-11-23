@@ -15,7 +15,7 @@ export interface SidebarVisual {
   deviceName: string; state: string; detail?: string; updatedAt?: number; busy?: boolean;
 }
 export function sidebarMarkup(model: SidebarVisual): string {
-  const status = model.busy ? "Sincronizando" : model.state;
+  const status = model.busy ? model.inClass ? "Descargas en segundo plano" : "Sincronizando" : model.state;
   const positive = status === "Sincronizado";
   const date = model.updatedAt ? new Intl.DateTimeFormat("es", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(model.updatedAt) : "Todavía sin consultar";
   return `<aside class="classroom-sidebar" aria-label="Active Classroom">

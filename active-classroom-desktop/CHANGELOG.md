@@ -1,3 +1,12 @@
+## 1.0.25 — candidata pendiente de validación Linux
+
+- Reloj docente más grande y adaptable a diferentes resoluciones.
+- Acceso a unidades completas mientras continúan las descargas; regulación compartida de transferencias durante la clase.
+- Navegador web integrado con dirección, historial, recarga y presentación en pantalla externa conservando la clase abierta.
+- Vista web aislada con políticas nativas de navegación, permisos, archivos, ventanas emergentes y descargas.
+- Sesión web efímera; las páginas compatibles mantienen su estado al mostrar/ocultar la pantalla. No se garantiza compatibilidad con DRM, OAuth mediante popups ni todos los formatos web.
+- Pendiente aceptación física Ubuntu/Zorin, escalas mixtas, GPU y desconexión de monitores. No es todavía un release estable publicado.
+
 ## 1.0.24 — 2026-11-17
 
 - Navegación visual con miniaturas locales anterior/siguiente y galería de diapositivas con selección directa.

@@ -539,7 +539,7 @@ fn adopt_legacy(root: &Path) -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::WebviewWindow, gate: tauri::State<'_, CacheGate>, owner: String, action: String, data: Value) -> Result<Value, String> {
+pub async fn classroom_cache(app: tauri::AppHandle, window: tauri::Webview, gate: tauri::State<'_, CacheGate>, owner: String, action: String, data: Value) -> Result<Value, String> {
     if window.label() != "teacher" || owner.is_empty() || owner.len() > 200 { return Err("cache: Sesión local inválida".into()); }
     let root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("offline-v1").join("users").join(digest(owner.as_bytes()));
     let lock = gate.0.clone();

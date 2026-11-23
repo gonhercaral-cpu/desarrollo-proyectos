@@ -378,9 +378,9 @@ test("shortcuts del profesor gobiernan proyector offline y mantienen notas priva
 
 test("capabilities separan audiencia de caché/identidad/dialog y bootstrap no inicia Firebase", async () => {
   const capability = JSON.parse(await readFile(new URL("../src-tauri/capabilities/audience.json", import.meta.url), "utf8"));
-  assert.deepEqual(capability.windows, ["audience"]); assert.deepEqual(capability.permissions, ["core:event:allow-listen", "core:event:allow-unlisten"]);
+  assert.deepEqual(capability.webviews, ["audience"]); assert.equal(capability.windows, undefined); assert.deepEqual(capability.permissions, ["core:event:allow-listen", "core:event:allow-unlisten"]);
   const teacher = JSON.parse(await readFile(new URL("../src-tauri/capabilities/default.json", import.meta.url), "utf8"));
-  assert.deepEqual(teacher.windows, ["teacher"]); assert.ok(teacher.permissions.includes("core:window:allow-set-fullscreen-on-monitor"));
+  assert.deepEqual(teacher.webviews, ["teacher"]); assert.equal(teacher.windows, undefined); assert.ok(teacher.permissions.includes("core:window:allow-set-fullscreen-on-monitor"));
   const main = await readFile(new URL("../src/main.ts", import.meta.url), "utf8"); assert.match(main, /getCurrentWindow\(\).label === "audience"/);
   const audienceEntry = await readFile(new URL("../src/player/projection/mountProjection.ts", import.meta.url), "utf8");
   assert.doesNotMatch(audienceEntry, /firebase|offline\/auth|sync\.ts/); assert.match(audienceEntry, /stopPropagation/);
