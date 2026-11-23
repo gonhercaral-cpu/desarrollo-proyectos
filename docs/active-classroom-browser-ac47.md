@@ -1,6 +1,6 @@
 # Active Classroom — AC-01, AC-02 y AC-03
 
-Estado al 23 de noviembre de 2026: implementación local sobre `active-classroom-v1.0.24`, commit base `1c3ba9c113f0cee5d0066b0696c1ed8585287358`. Issue: https://github.com/gonhercaral-cpu/desarrollo-proyectos/issues/47. Rama de integración `codex/claude/issue-47-20261123`. **No es un release publicado ni una certificación de Linux o hardware.** Se conserva la numeración 1.0.24 de la base hasta completar aceptación y preparar una nueva versión.
+Informe de implementación del 23 de noviembre de 2026, con base funcional sobre `active-classroom-v1.0.24`, commit base `1c3ba9c113f0cee5d0066b0696c1ed8585287358`. Issue: https://github.com/gonhercaral-cpu/desarrollo-proyectos/issues/47. Rama de integración `codex/claude/issue-47-20261123`. La candidata preparada es **1.0.25**, publicada como rama y [PR #48 en borrador](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/48). **No es un release estable publicado ni una certificación de hardware.** La [preparación del release y aceptación física](active-classroom-1.0.25-release.md) distingue los controles automatizados de los pendientes. El resultado vinculante de CI corresponde al SHA y certificado de VALIDATION de la candidata final, no a una ejecución anterior.
 
 ## Comportamiento implementado
 
@@ -47,11 +47,11 @@ Codex realizó auditoría, contratos asociados al Issue, backend Rust, controles
 ## Validación realizada
 
 - 350/350 pruebas Node de las 34 suites portables: navegador, conservación de clase, cola, caché offline, música, audio/video, proyección, inicio, identidad y updater. Las dos suites con requisitos externos se enumeran debajo.
-- 97/97 pruebas unitarias Rust en macOS; `cargo check --locked` correcto. Incluyen lecturas/rangos y transferencia de un recurso de 600 MiB. Las comprobaciones de RSS que dependen de `/proc` no miden memoria en macOS. El cuerpo específico de WebKitGTK/Linux aún no se ha compilado ni ejecutado aquí.
+- 97/97 pruebas unitarias Rust en macOS; `cargo check --locked` correcto. Incluyen lecturas/rangos y transferencia de un recurso de 600 MiB. Las comprobaciones de RSS que dependen de `/proc` no miden memoria en macOS. El backend específico de WebKitGTK ya compiló en Ubuntu 22.04; se corrigieron los imports de traits y el error tipado detectados en el primer CI. La aceptación específica del navegador X11/Wayland se ejecuta como parte de VALIDATION de la candidata final.
 - TypeScript/Vite correctos, 2/2 verificaciones de assets del bundle; advertencia existente de tamaño del chunk PDF.js.
 - `npm run lint:player` correcto, incluido el nuevo módulo. El lint general de la copia de control conserva 137 errores y 37 advertencias ajenos al cambio, también documentados en la base 1.0.24.
 - Aceptación Chromium headless: seis escenarios, clase y herramienta a 920×640, 1366×768 y 1920×1080. Viewports exactos mediante DevTools; reloj visible, controles sin superposición, host dentro de ventana, un ajuste de layout y dos sondeos durante 2.2 s, sin bucle de redimensionado. Es una fixture con puente falso, **no navegación remota real ni validación del navegador nativo**.
-- Pruebas Firebase con emuladores pendientes: este worktree no tiene dependencias/emuladores backend preparados; no se conectó a producción. No se cambiaron reglas, identidad ni backend.
+- Reglas y transacciones Firebase aprobadas en emuladores de CI Ubuntu 22.04; no se conectó a producción. No se cambiaron reglas, identidad ni backend.
 - `system-media.test.mjs`: tres casos fallan en Bash 3.2 de macOS al interpretar el script Linux sin modificaciones; requieren Bash moderno/Linux. No se altera empaquetado para ocultar ese límite.
 
 Comandos reproducibles desde `active-classroom-desktop/`:
@@ -90,6 +90,6 @@ La aceptación visual usa Chrome en macOS o `chromium` en Linux; `CHROMIUM_EXECU
 
 ## Publicación y reversión
 
-No se modifican Digital Signage, Firebase, configuración de vinculación, workflows, claves ni endpoints del updater. No hay merge a `main`, tag, firma, release ni despliegue en esta entrega local. El manifiesto público consultado sigue anunciando 1.0.24 con plataforma `linux-x86_64-deb`, firma presente y URL del `.deb` publicado. Esto comprueba el manifiesto existente, no que un equipo haya instalado una versión nueva.
+No se modifican Digital Signage, Firebase, configuración de vinculación, workflows, claves ni endpoints del updater. La rama está publicada y existe el PR #48 en borrador. No hay merge a `main`, tag, firma estable, release publicado ni despliegue. El manifiesto público consultado sigue anunciando 1.0.24 con plataforma `linux-x86_64-deb`, firma presente y URL del `.deb` publicado. Esto comprueba el manifiesto existente, no que un equipo haya instalado una versión nueva.
 
-El workflow existente se dispara al publicar cualquier rama con cambios del desktop y tiene pasos de empaquetado/firma, además del flujo manual RELEASE. Conforme al protocolo del repositorio, la revisión del propietario precede a su publicación. Después de aceptar Linux/hardware, preparar versión nueva, notas, VALIDATION y release del mismo SHA, conservando los artefactos y metadata de 1.0.24 para reversión. Las pruebas del updater preservan sus barreras de firma y procedencia; no se han ejecutado instalaciones remotas.
+El workflow existente se dispara al publicar cualquier rama con cambios del desktop y tiene pasos de empaquetado/firma, además del flujo manual RELEASE. El propietario autorizó el push y CI para preparar 1.0.25. Después de aceptar Linux/hardware, publicar exclusivamente los artefactos certificados del mismo SHA, conservando los artefactos y metadata de 1.0.24 para reversión. Las pruebas del updater preservan sus barreras de firma y procedencia; no se han ejecutado instalaciones remotas.
