@@ -7,6 +7,7 @@ Estado: **1.0.25 publicada como estable**, con aceptación expresa del usuario d
 - [PR #48 integrado](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/48), merge `3191a612e598d7f2e44c8c5192337b2121a24700`.
 - Código certificado y tag: `f1677c0b5613caf881fe98a08e994d9c6608eccf`.
 - [VALIDATION completa aprobada](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45251651419).
+- [CI del merge aprobado, sin reintentos ni correcciones adicionales](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45277047216): Firebase, Office, tests y paquetes Linux, instalación APT/Gdebi/Dpkg, ABI y multimedia offline en Ubuntu 22.04/24.04/26.04. Las 12 pruebas físicas permanecen pendientes.
 - [RELEASE aprobado: firma y verificación criptográfica de ambos instaladores](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45277063304).
 - [Release público 1.0.25](https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/tag/active-classroom-v1.0.25), con `.deb`, AppImage, firmas, hashes, certificado e informes. Se publicaron los mismos bytes de VALIDATION.
 - El manifiesto público del actualizador apunta a 1.0.25. La actualización sobre equipos físicos permanece pendiente. El test instalado de CI usa fixtures 1.0.6 → 1.0.7.
