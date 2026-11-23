@@ -742,7 +742,7 @@ fn operate(mut identity: Identity, action: &str) -> Res<(Identity, Value)> {
     Ok((identity, public))
 }
 #[tauri::command]
-pub async fn classroom_device(window: tauri::WebviewWindow, gate: tauri::State<'_, DeviceGate>, action: String) -> Result<Value, String> {
+pub async fn classroom_device(window: tauri::Webview, gate: tauri::State<'_, DeviceGate>, action: String) -> Result<Value, String> {
     if window.label() != "teacher" { return Err("device: Ventana no autorizada.".into()); }
     let mutex = gate.0.clone();
     tauri::async_runtime::spawn_blocking(move || {

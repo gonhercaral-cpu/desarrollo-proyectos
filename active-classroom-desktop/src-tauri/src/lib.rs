@@ -111,7 +111,7 @@ struct Relationship {
 #[tauri::command]
 fn import_presentation(
     app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
+    window: tauri::Webview,
     path: String,
 ) -> Result<InternalPresentation, String> {
     if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }

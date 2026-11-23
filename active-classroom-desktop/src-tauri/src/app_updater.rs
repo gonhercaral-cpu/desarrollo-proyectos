@@ -87,7 +87,7 @@ mod tests {
     }
 }
 #[tauri::command]
-pub async fn classroom_app_update(window: tauri::WebviewWindow, app: tauri::AppHandle,
+pub async fn classroom_app_update(window: tauri::Webview, app: tauri::AppHandle,
     gate: tauri::State<'_, UpdateGate>, action: String, startup: Option<bool>) -> Result<Status, String> {
     if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }
     let mut status = {

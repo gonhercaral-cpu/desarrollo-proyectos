@@ -54,3 +54,7 @@ Registrar cada resultado con versión de SO, sesión X11/Wayland, WebKitGTK, GPU
 ## Condición de salida
 
 Un CI verde acredita únicamente los escenarios automatizados registrados. La publicación estable requiere resolver los fallos observados y aceptar expresamente las limitaciones físicas y de sitios. Preparar la ejecución RELEASE con el run y SHA certificados, sin usar una ejecución antigua de otro commit.
+
+## Compatibilidad de comandos con varias vistas
+
+La aceptación nativa detectó que Tauri deja de ofrecer `WebviewWindow` cuando una ventana contiene varias vistas. Los argumentos inyectados de comandos usan ahora `Webview` y conservan sus comprobaciones de etiqueta del solicitante; las operaciones de pantalla obtienen su `Window` por separado. No cambian credenciales, roles, formatos de vinculación, caché ni firmas del updater. La fixture comprueba por IPC real que el docente puede leer el inventario con el navegador abierto y que la página remota no puede hacerlo. Esta adaptación evita bloquear las descargas y el control al añadir la vista hija.

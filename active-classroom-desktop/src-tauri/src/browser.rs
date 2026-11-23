@@ -43,7 +43,7 @@ fn bounds(data: &Value) -> Result<Bounds, String> {
     }
     Ok(value)
 }
-fn check_bounds(window: &tauri::WebviewWindow, value: Bounds) -> Result<(), String> {
+fn check_bounds(window: &tauri::Window, value: Bounds) -> Result<(), String> {
     let size = window.inner_size().map_err(|e| e.to_string())?;
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     if value.x + value.width > size.width as f64 / scale + 1.0 || value.y + value.height > size.height as f64 / scale + 1.0 {
@@ -66,7 +66,7 @@ fn close(app: &tauri::AppHandle, gate: &BrowserGate) -> Result<(), String> {
     *gate.session.lock().map_err(|_| "Navegador ocupado")? = Session::default();
     Ok(())
 }
-fn return_to_teacher(app: &tauri::AppHandle, teacher: &tauri::WebviewWindow, gate: &BrowserGate, value: Bounds) -> Result<(), String> {
+fn return_to_teacher(app: &tauri::AppHandle, teacher: &tauri::Window, gate: &BrowserGate, value: Bounds) -> Result<(), String> {
     check_bounds(teacher, value)?;
     let view = app.get_webview(VIEW).ok_or("El navegador está cerrado")?;
     view.hide().map_err(|e| e.to_string())?;
@@ -113,9 +113,10 @@ async fn secure_linux(_: &tauri::Webview) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::WebviewWindow,
+pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webview,
     gate: tauri::State<'_, BrowserGate>, action: String, data: Option<Value>) -> Result<BrowserStatus, String> {
     if window.label() != "teacher" { return Err("Ventana sin permiso para controlar el navegador".into()); }
+    let window = window.window();
     let _operation = gate.operation.lock().await;
     let data = data.unwrap_or(Value::Null);
     match action.as_str() {

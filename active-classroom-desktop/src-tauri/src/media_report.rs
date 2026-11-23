@@ -38,7 +38,7 @@ fn processes() -> Value {
 }
 pub(crate) fn sample(streams: Value) { if enabled() { record(json!({"event":"process-sample","streams":streams,"processes":processes()})); } }
 #[tauri::command]
-pub(crate) async fn classroom_media_report(app: tauri::AppHandle, window: tauri::WebviewWindow, server: tauri::State<'_, crate::local_media::MediaServer>, action: String) -> Result<String, String> {
+pub(crate) async fn classroom_media_report(app: tauri::AppHandle, window: tauri::Webview, server: tauri::State<'_, crate::local_media::MediaServer>, action: String) -> Result<String, String> {
     if window.label() != "teacher" { return Err("media: Ventana inválida".into()); }
     match action.as_str() {
         "start" => { ENABLED.store(false, Ordering::Relaxed); EVENTS.get_or_init(Mutex::default).lock().map_err(|_| "Diagnóstico ocupado")?.clear(); ENABLED.store(true, Ordering::Relaxed); sample(server.metrics()); Ok("Diagnóstico iniciado".into()) },

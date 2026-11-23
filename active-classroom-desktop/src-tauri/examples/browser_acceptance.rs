@@ -35,7 +35,7 @@ async fn until(view: &tauri::Webview, expression: &str) -> Result<(), String> {
     Err(format!("No se cumplió la condición de la fixture: {expression}; {last_error:?}"))
 }
 async fn action(app: &tauri::AppHandle, action: &str, data: Option<Value>) -> Result<Value, String> {
-    let teacher = app.get_webview_window("teacher").ok_or("Falta teacher")?;
+    let teacher = app.get_webview("teacher").ok_or("Falta teacher")?;
     let status = browser::classroom_browser(app.clone(), teacher, app.state(), action.into(), data).await?;
     serde_json::to_value(status).map_err(|e| e.to_string())
 }
@@ -78,9 +78,13 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     until(&view, "window.fixtureReady===true").await?;
     evaluate(&view, "document.querySelector('#answer').value='conservar';sessionStorage.setItem('lesson','47');document.cookie='fixture=47';true").await?;
     // All these are forbidden from a real remote-origin webview, not a DOM mock.
+    println!("BROWSER_CHECKPOINT teacher-cache-with-child");
+    let teacher = app.get_webview("teacher").ok_or("Falta vista docente")?;
+    evaluate(&teacher, "window.cacheWorks=false;window.__TAURI_INTERNALS__.invoke('classroom_cache',{owner:'browser-ci',action:'inventory',data:{}}).then(value=>window.cacheWorks=Array.isArray(value),()=>{});true").await?;
+    until(&teacher, "window.cacheWorks===true").await?;
     println!("BROWSER_CHECKPOINT remote-ipc");
-    evaluate(&view, "window.ipcDenied=false;window.dialogDenied=false; const invoke=window.__TAURI_INTERNALS__?.invoke;if(!invoke){window.ipcDenied=true;window.dialogDenied=true;}else{invoke('classroom_browser',{action:'close'}).then(()=>{},()=>window.ipcDenied=true);invoke('plugin:dialog|open',{options:{}}).then(()=>{},()=>window.dialogDenied=true);}true").await?;
-    until(&view, "window.ipcDenied===true && window.dialogDenied===true").await?;
+    evaluate(&view, "window.ipcDenied=false;window.dialogDenied=false;window.cacheDenied=false; const invoke=window.__TAURI_INTERNALS__?.invoke;if(!invoke){window.ipcDenied=true;window.dialogDenied=true;window.cacheDenied=true;}else{invoke('classroom_browser',{action:'close'}).then(()=>{},()=>window.ipcDenied=true);invoke('plugin:dialog|open',{options:{}}).then(()=>{},()=>window.dialogDenied=true);invoke('classroom_cache',{owner:'browser-ci',action:'inventory',data:{}}).then(()=>{},()=>window.cacheDenied=true);}true").await?;
+    until(&view, "window.ipcDenied===true && window.dialogDenied===true && window.cacheDenied===true").await?;
     evaluate(&view, "window.open('/next');document.querySelector('#popup').click();true").await?;
     delay(300).await; assert_eq!(app.webviews().len(), 2, "Popup creó otra vista");
     assert!(action(app,"navigate",Some(json!({"url":"file:///etc/passwd"}))).await.is_err());
@@ -93,8 +97,8 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     let media_ready = true;
     let mut cycles = 0;
     if std::env::var_os("CLASSROOM_BROWSER_PROJECT").is_some() {
-        let teacher = app.get_webview_window("teacher").unwrap();
-        let current = teacher.current_monitor().map_err(|e| e.to_string())?.ok_or("Monitor docente ausente")?;
+        let teacher = app.get_webview("teacher").unwrap();
+        let current = teacher.window().current_monitor().map_err(|e| e.to_string())?.ok_or("Monitor docente ausente")?;
         let monitors = audience_window::classroom_projection(app.clone(),teacher,app.state(),"monitors".into(),None).await?;
         let target = monitors["monitors"].as_array().unwrap().iter().find(|m| m["x"]!=current.position().x || m["y"]!=current.position().y).ok_or("Falta segunda pantalla virtual")?;
         for cycle in 0..30 {
@@ -124,7 +128,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     let fresh=app.get_webview("classroom-browser").unwrap(); until(&fresh,"window.fixtureReady===true").await?;
     assert_eq!(evaluate(&fresh,"sessionStorage.getItem('lesson')===null && !document.cookie.includes('fixture=47')").await?,true,"La sesión efímera no se liberó");
     action(app,"close",None).await?;
-    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"popupDenied":true,"ephemeralSessionCleared":true}))
+    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true}))
 }
 fn main() {
     #[cfg(not(target_os="linux"))] { eprintln!("Acceptance requires Linux"); return; }
@@ -132,11 +136,12 @@ fn main() {
         let (base, downloads)=fixture();
         let mut context=tauri::generate_context!();context.config_mut().app.windows.clear();
         let passed=Arc::new(AtomicBool::new(false));let success=passed.clone();
-        let app=tauri::Builder::default().manage(browser::BrowserGate::default()).manage(audience_window::ProjectionGate::default())
+        let app=tauri::Builder::default().plugin(tauri_plugin_dialog::init()).manage(browser::BrowserGate::default()).manage(audience_window::ProjectionGate::default()).manage(offline_cache::CacheGate::default())
             .on_window_event(browser::window_event)
-            .invoke_handler(tauri::generate_handler![browser::classroom_browser])
+            .register_uri_scheme_protocol("tauri", |_, _| tauri::http::Response::builder().header("Content-Type","text/html").body(b"<!doctype html><title>Teacher browser fixture</title>".to_vec()).unwrap())
+            .invoke_handler(tauri::generate_handler![browser::classroom_browser,offline_cache::classroom_cache])
             .setup(move |app| {
-                let teacher=WebviewWindowBuilder::new(app,"teacher",WebviewUrl::External("about:blank".parse().unwrap())).inner_size(800.,600.).build()?;
+                let teacher=WebviewWindowBuilder::new(app,"teacher",WebviewUrl::CustomProtocol("tauri://localhost/browser-test".parse().unwrap())).inner_size(800.,600.).build()?;
                 if std::env::var_os("CLASSROOM_BROWSER_PROJECT").is_some() {
                     let monitors=teacher.available_monitors()?; assert_eq!(monitors.len(),2);
                     teacher.set_fullscreen_on_monitor(tauri::PhysicalPosition::new(monitors[0].position().x as f64,monitors[0].position().y as f64))?;

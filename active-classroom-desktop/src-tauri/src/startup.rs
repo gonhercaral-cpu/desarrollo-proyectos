@@ -55,12 +55,12 @@ pub fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 }
 pub fn single_instance_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri_plugin_single_instance::init(|app, _, _| {
-        if let Some(window) = app.get_webview_window("teacher") {
+        if let Some(window) = app.get_window("teacher") {
             let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus();
         }
     })
 }
-pub fn enter_kiosk(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub fn enter_kiosk(window: &tauri::Window) -> Result<(), String> {
     let monitor = window.primary_monitor().map_err(|_| "No se pudo consultar el monitor principal")?
         .or_else(|| window.available_monitors().ok().and_then(|monitors| monitors.into_iter().next()));
     // Some Wayland compositors expose no primary flag; use their first output.
@@ -80,7 +80,7 @@ pub struct Status {
     pub installed_update: Option<InstalledUpdate>,
 }
 #[tauri::command]
-pub async fn classroom_startup(window: tauri::WebviewWindow, app: tauri::AppHandle,
+pub async fn classroom_startup(window: tauri::Webview, app: tauri::AppHandle,
     gate: tauri::State<'_, StartupGate>, action: String, value: Option<bool>, target: Option<String>) -> Result<Status, String> {
     if window.label() != "teacher" { return Err("Ventana no autorizada".into()); }
     // The existing secure identity is authoritative, including activation after installation.
@@ -101,9 +101,9 @@ pub async fn classroom_startup(window: tauri::WebviewWindow, app: tauri::AppHand
             let mut next = settings.clone(); next.autostart = Some(enabled); gate.save(&next)?; *settings = next;
         }
         "kiosk" => { let mut next = settings.clone(); next.kiosk = value.ok_or("Preferencia no válida")?; gate.save(&next)?; *settings = next; }
-        "exit-kiosk" => { window.set_fullscreen(false).map_err(|_| "No se pudo salir del modo kiosco")?; window.maximize().map_err(|_| "No se pudo restaurar la ventana")?; }
+        "exit-kiosk" => { window.window().set_fullscreen(false).map_err(|_| "No se pudo salir del modo kiosco")?; window.window().maximize().map_err(|_| "No se pudo restaurar la ventana")?; }
         "library-ready" => {
-            if gate.automatic && settings.kiosk { enter_kiosk(&window)?; }
+            if gate.automatic && settings.kiosk { enter_kiosk(&window.window())?; }
             if settings.resume_autostart { let mut next = settings.clone(); next.resume_autostart = false; gate.save(&next)?; *settings = next; }
         }
         "remember-update" => {
@@ -117,7 +117,7 @@ pub async fn classroom_startup(window: tauri::WebviewWindow, app: tauri::AppHand
         _ => return Err("Acción de inicio no válida".into()),
     }
     Ok(Status { autostart: app.autolaunch().is_enabled().map_err(|_| "No se pudo consultar el inicio automático")?,
-        kiosk: settings.kiosk, kiosk_active: window.is_fullscreen().unwrap_or(false), launched_automatically: gate.automatic,
+        kiosk: settings.kiosk, kiosk_active: window.window().is_fullscreen().unwrap_or(false), launched_automatically: gate.automatic,
         installed_update: settings.installed_update.clone() })
 }
 #[cfg(test)]

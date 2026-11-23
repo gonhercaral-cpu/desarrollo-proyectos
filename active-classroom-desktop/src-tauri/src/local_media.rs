@@ -311,25 +311,25 @@ fn reply(socket: &mut TcpStream, status: u16, mime: &str, length: u64, range: Op
     socket.write_all(b"\r\n")
 }
 #[tauri::command]
-pub(crate) async fn classroom_ambient_media(app: tauri::AppHandle, window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, owner: String, version: u64, track_id: String) -> Result<Inspection, String> {
+pub(crate) async fn classroom_ambient_media(app: tauri::AppHandle, window: tauri::Webview, server: tauri::State<'_, MediaServer>, owner: String, version: u64, track_id: String) -> Result<Inspection, String> {
     if window.label() != "teacher" || owner.is_empty() || owner.len() > 200 { return Err("media: Sesión local inválida".into()); }
     let root = app.path().app_data_dir().map_err(|_| "media: Caché no disponible")?.join("offline-v1").join("users").join(format!("{:x}", Sha256::digest(owner.as_bytes()))); let server = server.inner().clone();
     tauri::async_runtime::spawn_blocking(move || server.inspect_ambient(&root, version, &track_id)).await.map_err(|_| "media: Audio local no disponible")?
 }
 #[tauri::command]
-pub(crate) async fn classroom_media(app: tauri::AppHandle, window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, owner: String, unit_id: String, version: u64, resource_id: String) -> Result<Inspection, String> {
+pub(crate) async fn classroom_media(app: tauri::AppHandle, window: tauri::Webview, server: tauri::State<'_, MediaServer>, owner: String, unit_id: String, version: u64, resource_id: String) -> Result<Inspection, String> {
     if window.label() != "teacher" || owner.is_empty() || owner.len() > 200 { return Err("media: Sesión local inválida".into()); }
     let root = app.path().app_data_dir().map_err(|_| "media: Caché no disponible")?.join("offline-v1").join("users").join(format!("{:x}", Sha256::digest(owner.as_bytes())));
     let server = server.inner().clone();
     tauri::async_runtime::spawn_blocking(move || server.inspect(&root, &unit_id, version, &resource_id)).await.map_err(|_| "media: No se pudo leer el video local")?
 }
 #[tauri::command]
-pub(crate) fn classroom_release_media(window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, url: String) -> Result<(), String> {
+pub(crate) fn classroom_release_media(window: tauri::Webview, server: tauri::State<'_, MediaServer>, url: String) -> Result<(), String> {
     if window.label() != "teacher" { return Err("media: Ventana inválida".into()); }
     server.release(&url); Ok(())
 }
 #[tauri::command]
-pub(crate) fn classroom_media_diagnostic(window: tauri::WebviewWindow, server: tauri::State<'_, MediaServer>, data: Value) -> Result<(), String> {
+pub(crate) fn classroom_media_diagnostic(window: tauri::Webview, server: tauri::State<'_, MediaServer>, data: Value) -> Result<(), String> {
     if !["teacher", "audience"].contains(&window.label()) { return Err("media: Ventana inválida".into()); }
     // Client sends only this whitelist, with capability URLs and browser messages redacted.
     let keys = ["event", "elapsedMs", "playElapsedMs", "currentTime", "seeking", "buffered", "kind", "mime", "codecMime", "localPath", "exists", "expectedSize", "actualSize", "sha256Valid", "url", "mediaErrorCode", "mediaErrorMessage", "networkState", "readyState", "canPlayMime", "canPlayCodec", "canPlayH264Aac", "httpStatus", "contentType", "acceptRanges", "contentRange", "contentLength", "frames", "droppedFrames", "presentedFrames", "presentedMediaTime", "videos", "audio"];

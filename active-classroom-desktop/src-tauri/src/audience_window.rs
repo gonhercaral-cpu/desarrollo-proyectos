@@ -51,7 +51,7 @@ struct Display {
 fn monitor_id(name: &str, width: u32, height: u32, x: i32, y: i32) -> String {
     format!("{:x}", Sha256::digest(format!("{name}:{width}:{height}:{x}:{y}").as_bytes()))
 }
-fn displays(window: &tauri::WebviewWindow) -> Result<Vec<Display>, String> {
+fn displays(window: &tauri::Window) -> Result<Vec<Display>, String> {
     // Wayland may not expose an OS primary monitor; use the teacher's output then.
     let primary = window.primary_monitor().map_err(|e| e.to_string())?
         .or_else(|| window.current_monitor().ok().flatten());
@@ -105,7 +105,7 @@ fn hide(app: &tauri::AppHandle, gate: &ProjectionGate) -> Result<(), String> {
 }
 
 // The web browser uses the existing monitor identity and native Wayland placement.
-pub(crate) fn browser_monitor(window: &tauri::WebviewWindow, id: &str) -> Result<tauri::PhysicalPosition<f64>, String> {
+pub(crate) fn browser_monitor(window: &tauri::Window, id: &str) -> Result<tauri::PhysicalPosition<f64>, String> {
     let monitors = displays(window)?;
     if monitors.len() < 2 { return Err("Sin segunda pantalla".into()); }
     let monitor = monitors.iter().find(|monitor| monitor.id == id).ok_or("Monitor desconectado")?;
@@ -119,12 +119,13 @@ pub(crate) fn suspend_for_browser(app: &tauri::AppHandle) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::WebviewWindow, gate: tauri::State<'_, ProjectionGate>, action: String, data: Option<Value>) -> Result<Value, String> {
+pub(crate) async fn classroom_projection(app: tauri::AppHandle, window: tauri::Webview, gate: tauri::State<'_, ProjectionGate>, action: String, data: Option<Value>) -> Result<Value, String> {
     if action == "read" {
         if window.label() != "audience" { teacher(window.label())?; }
         return Ok(gate.0.lock().map_err(|_| "projection: Estado no disponible")?.snapshot.clone().unwrap_or(Value::Null));
     }
     teacher(window.label())?;
+    let window = window.window();
     match action.as_str() {
         "publish" => {
             let snapshot = data.ok_or("projection: Snapshot ausente")?;
