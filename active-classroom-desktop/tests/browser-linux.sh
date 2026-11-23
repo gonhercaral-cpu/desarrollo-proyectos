@@ -6,6 +6,8 @@ if ! getent hosts classroom-browser.test >/dev/null; then
   printf '127.0.0.1 classroom-browser.test\n' | sudo tee -a /etc/hosts >/dev/null
 fi
 cargo build --locked --manifest-path src-tauri/Cargo.toml --example browser_acceptance
+# The installed launcher already applies this policy before starting WebKit.
+export MALLOC_MMAP_THRESHOLD_="${MALLOC_MMAP_THRESHOLD_:-131072}"
 fixture_root="$(mktemp -d)"
 trap 'rm -rf "$fixture_root"' EXIT
 export CLASSROOM_BROWSER_CLIP="$fixture_root/clip.mp4"

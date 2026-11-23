@@ -58,7 +58,11 @@ try {
     await copyFile("src-tauri/target/release/examples/media_playback", join(destination, "media_playback"));
   } else {
     const executable = process.env.ACTIVE_CLASSROOM_MEDIA_RUNTIME || "src-tauri/target/release/examples/media_playback";
-    const env = { ...process.env, GDK_BACKEND: "x11", LIBGL_ALWAYS_SOFTWARE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script };
+    // Match the installed launcher's existing allocator policy (system-media.sh).
+    // This direct fixture bypasses that launcher; leaving glibc's adaptive
+    // threshold enabled measures a different decoder/compositor lifetime.
+    // Keep every RSS/growth limit and honor an explicit administrator setting.
+    const env = { ...process.env, MALLOC_MMAP_THRESHOLD_: process.env.MALLOC_MMAP_THRESHOLD_ || "131072", GDK_BACKEND: "x11", LIBGL_ALWAYS_SOFTWARE: "1", WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1", ACTIVE_CLASSROOM_MEDIA_FIXTURE: fixture, ACTIVE_CLASSROOM_MEDIA_SCRIPT: script };
     delete env.WEBKIT_DISABLE_COMPOSITING_MODE;
     command("xvfb-run", ["-a", "-s", "-screen 0 1920x1200x24", "dbus-run-session", "--", executable], { env, timeout: 510000 });
   }
