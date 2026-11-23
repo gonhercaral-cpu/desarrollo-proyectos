@@ -264,6 +264,9 @@ jobs:
 
       - name: Tests Player
         run: npm run test:player
+      - name: Navegador, conservación de clase y prioridad de descargas
+        run: npm run test:browser
+
       - name: Revelados progresivos y sesión offline compartida
         run: npm run test:builds
 
@@ -376,6 +379,9 @@ jobs:
 
       - name: Fullscreen Tauri real en Wayland con dos monitores virtuales
         run: bash tests/wayland-projection.sh
+
+      - name: Navegador nativo aislado en X11 y Wayland con pantallas virtuales
+        run: npm run test:browser:linux
 
       # Save BEFORE acceptance fixtures and production signing. No production
       # private key has been exposed to any process cached by this step.
