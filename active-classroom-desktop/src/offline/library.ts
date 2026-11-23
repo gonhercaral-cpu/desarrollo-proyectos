@@ -65,7 +65,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
   function sidebar(inClass = false): string {
     const combined = mergeLibraryPublications(locals, publications);
     const levels = libraryLevelIds([...combined.values()].map(({ local, remote }) => remote?.levelId || local!.unit.levelId));
-    return sidebarMarkup({ levels, selectedLevel, localOnly, inClass, deviceName: device.identity ? visibleDeviceName(device.identity) : "", state: device.online ? "Sincronizado" : device.issue && device.issue !== "offline" ? connectionLabel(device.issue) : "Offline", detail: device.issue ? connectionLabel(device.issue) : "", busy: busy() || refreshing, updatedAt });
+    return sidebarMarkup({ levels, selectedLevel, localOnly, inClass, deviceName: device.identity ? visibleDeviceName(device.identity) : "", state: device.online ? "Sincronizado" : device.issue && device.issue !== "offline" ? connectionLabel(device.issue) : "Offline", detail: device.issue ? connectionLabel(device.issue) : inClass && busy() ? "Descargas en segundo plano" : "", busy: busy() || refreshing, updatedAt });
   }
   function bindSidebar(inClass = false): void {
     root.querySelectorAll<HTMLButtonElement>("[data-library-nav], [data-my-classes], .classroom-sidebar [data-level]").forEach(button => {
@@ -292,7 +292,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
     if (!cache || !local || opening || player) return;
     const current = epoch;
     const currentCache = cache;
-    if (queue) queue.protectedUnit = unitId;
+    if (queue) { queue.protectedUnit = unitId; queue.setInteractive(true); }
     const openedAt = performance.now();
     mediaDiagnostic({ event: "unit-open-start" });
     opening = true; message = "Verificando archivos locales…"; render();
@@ -311,7 +311,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
           mediaDiagnostic({ event: "unit-close" });
           const closingQueue = queue;
           const stale = () => current !== epoch || queue !== closingQueue;
-          player = undefined; if (closingQueue) closingQueue.protectedUnit = ""; message = "Clase cerrada. Verificando biblioteca local…"; render();
+          player = undefined; if (closingQueue) { closingQueue.protectedUnit = ""; closingQueue.setInteractive(false); } message = "Clase cerrada. Verificando biblioteca local…"; render();
           void (async () => { await closingQueue?.activatePending(); return stale() ? undefined : currentCache.inventory(); })().then((saved) => {
             if (!saved || stale()) return;
             locals = saved;
@@ -340,7 +340,7 @@ export function mountOfflineLibrary(root: HTMLDivElement): void {
         if (recovered) locals = recovered;
       }
     }
-    finally { if (current === epoch) { opening = false; if (!player && queue) { queue.protectedUnit = ""; void queue.activatePending().catch(() => {}); } render(); } }
+    finally { if (current === epoch) { opening = false; if (!player && queue) { queue.protectedUnit = ""; queue.setInteractive(false); void queue.activatePending().catch(() => {}); } render(); } }
   }
   root.innerHTML = `<main class="desktop-loading"><strong>Active Classroom</strong><span>Restaurando sesión y biblioteca local…</span></main>`;
   const session = createDeviceSession((state) => {

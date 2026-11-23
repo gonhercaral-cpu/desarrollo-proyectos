@@ -29,8 +29,42 @@ export interface RemoteStore {
 export interface Progress { unitId: string; bytes: number; total: number; fileName: string; phase: "download" | "verify" | "activate" }
 // Serialize shared hash transfers across queue workers. The second worker checks
 // the verified object again after acquiring the lock; .part files never race.
+// Durante una clase las escrituras comparten un ritmo conservador (ritmo JS de transferencia,
+// no un límite real de red/CPU del sistema operativo). Burst máximo: un chunk de 64 KiB.
+const INTERACTIVE_BYTES_PER_SECOND = 4 * 1024 * 1024;
+const INTERACTIVE_BURST_BYTES = 64 * 1024;
 export class BlobTransfers {
   private tails = new Map<string, Promise<void>>();
+  private interactive = false;
+  // Instante monotónico (ms) hasta el que el presupuesto compartido ya está reservado.
+  private reservedUntil = 0;
+  private waiters = new Set<() => void>();
+  private now: () => number;
+  constructor(now: () => number = () => performance.now()) { this.now = now; }
+  setInteractive(active: boolean): void {
+    if (this.interactive === active) return;
+    this.interactive = active; this.reservedUntil = 0;
+    // Al desactivar se liberan las esperas: nada queda retenido por un ritmo ya inactivo.
+    if (!active) for (const release of [...this.waiters]) release();
+  }
+  // Reserva `bytes` del presupuesto compartido y espera (abortable) si excede el burst. No acumula datos.
+  async pace(bytes: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) throw new SyncError("cancelled", "Descarga cancelada.");
+    if (!this.interactive || !(bytes > 0)) return;
+    const now = this.now();
+    this.reservedUntil = Math.max(this.reservedUntil, now) + bytes * 1000 / INTERACTIVE_BYTES_PER_SECOND;
+    const delay = this.reservedUntil - now - INTERACTIVE_BURST_BYTES * 1000 / INTERACTIVE_BYTES_PER_SECOND;
+    if (delay <= 0) return;
+    if (signal.aborted) throw new SyncError("cancelled", "Descarga cancelada.");
+    await new Promise<void>((resolve, reject) => {
+      const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); this.waiters.delete(release); };
+      const release = () => { finish(); resolve(); };
+      const abort = () => { finish(); reject(new SyncError("cancelled", "Descarga cancelada.")); };
+      const timer = setTimeout(release, delay);
+      this.waiters.add(release);
+      signal.addEventListener("abort", abort, { once: true });
+    });
+  }
   async run<T>(hash: string, signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
     const previous = this.tails.get(hash) || Promise.resolve();
     let release!: () => void;
@@ -105,6 +139,8 @@ export class SyncEngine {
         await this.remote.download(manifest, resource, async (chunk) => {
           checkCancelled();
           if (received + chunk.length > size) throw new SyncError("integrity", "Tamaño descargado superior al publicado.");
+          await this.transfers.pace(chunk.length, signal);
+          checkCancelled();
           await this.cached("append", () => this.cache.append(hash, received, chunk));
           received += chunk.length;
           progress({ unitId: publication.unitId, bytes: bytes + received, total, fileName: resource.name, phase: "download" });

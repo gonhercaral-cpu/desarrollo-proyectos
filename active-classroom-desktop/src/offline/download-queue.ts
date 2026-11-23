@@ -9,11 +9,13 @@ export class DownloadQueue {
   private running = new Set<SyncEngine>();
   protectedUnit = "";
   private closed = false;
+  private interactive = false;
+  private transfers: BlobTransfers;
   private installed = new Map<string, Manifest>();
   private cache: StagingCache;
   private changed: (task: DownloadTask) => void;
   constructor(cache: StagingCache, remote: RemoteStore, changed: (task: DownloadTask) => void, concurrency = 2, transfers = new BlobTransfers()) {
-    this.cache = cache; this.changed = changed;
+    this.cache = cache; this.changed = changed; this.transfers = transfers;
     // Initial verified versions are shared by workers, avoiding a full rescan of
     // every installed video for every Unit in a batch. Each blob/commit is verified.
     const installed = this.installed;
@@ -46,7 +48,13 @@ export class DownloadQueue {
     if (worker) worker.cancel();
     else if (task?.state === "queued") { task.state = "failed"; task.error = new SyncError("cancelled", "Descarga cancelada."); this.changed(task); }
   }
-  close(): void { this.closed = true; this.workers.forEach(worker => worker.cancel()); }
+  // Durante una clase solo un worker toma tareas nuevas. Las descargas en curso nunca se abortan:
+  // con dos activas se drenan hasta quedar una. Independiente de protectedUnit.
+  setInteractive(active: boolean): void {
+    this.interactive = active; this.transfers.setInteractive(active);
+    if (!active) this.pump();
+  }
+  close(): void { this.closed = true; this.workers.forEach(worker => worker.cancel()); this.transfers.setInteractive(false); }
   async activatePending(): Promise<void> {
     for (const manifest of await this.cache.pending()) {
       if (manifest.unit.unitId === this.protectedUnit) continue;
@@ -60,6 +68,7 @@ export class DownloadQueue {
     if (this.closed) return;
     for (const engine of this.workers) {
       if (this.running.has(engine)) continue;
+      if (this.interactive && this.running.size >= 1) break;
       const task = [...this.tasks.values()].find(value => value.state === "queued");
       if (!task) break;
       this.running.add(engine); task.state = "downloading"; this.changed(task);

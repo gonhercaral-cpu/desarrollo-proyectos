@@ -43,7 +43,7 @@ export class AmbientLibrary {
         let offset = 0;
         try {
           await this.cache.begin(track.sha256);
-          await this.api.downloadAmbient(catalog.ambientCatalogVersion, track, async chunk => { signal.throwIfAborted(); await this.cache.append(track.sha256, offset, chunk); offset += chunk.length; }, signal);
+          await this.api.downloadAmbient(catalog.ambientCatalogVersion, track, async chunk => { signal.throwIfAborted(); await this.transfers.pace(chunk.length, signal); signal.throwIfAborted(); await this.cache.append(track.sha256, offset, chunk); offset += chunk.length; }, signal);
           if (offset !== track.size) throw new SyncError("integrity", "Audio incompleto."); signal.throwIfAborted(); await this.cache.finish(track.sha256, track.size);
         } catch (error) { await this.cache.discard(track.sha256).catch(() => {}); throw error; }
       });
