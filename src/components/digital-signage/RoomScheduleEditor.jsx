@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import RoomTeacherPicker from "./RoomTeacherPicker";
 import { createRoomId } from "../../utils/digitalSignage/roomLayouts";
 import {
   createRoomSchedule,
@@ -46,6 +47,9 @@ export default function RoomScheduleEditor({
   layout,
   onChange,
   onOpenTemplateEditor,
+  teachers = [],
+  teachersLoading = false,
+  teachersError = "",
 }) {
   const assignments = layout?.assignments || EMPTY_ASSIGNMENTS;
   // El borrador conserva espacios y valores parciales mientras se escribe.
@@ -782,21 +786,14 @@ export default function RoomScheduleEditor({
               </div>
 
               <div className="signage-rooms-form-grid" style={{ marginTop: 10 }}>
-                <label className="signage-rooms-field">
-                  Maestro Asignado
-                  <input
-                    type="text"
-                    list="signage-rooms-teachers-datalist"
-                    value={selectedCellData?.teacher || ""}
-                    onChange={(e) =>
-                      updateCell(selectedCellPos.rowId, selectedCellPos.columnId, {
-                        teacher: e.target.value,
-                        activity: "",
-                      })
-                    }
-                    placeholder="Escribe o selecciona maestro…"
-                  />
-                </label>
+                <RoomTeacherPicker
+                  key={`${selectedCellPos.rowId}|${selectedCellPos.columnId}`}
+                  value={selectedCellData?.teacher || ""}
+                  onChange={teacher => updateCell(selectedCellPos.rowId, selectedCellPos.columnId, {teacher, activity: ""})}
+                  teachers={teachers}
+                  loading={teachersLoading}
+                  error={teachersError}
+                />
 
                 <label className="signage-rooms-field">
                   Actividad Especial (Opcional)

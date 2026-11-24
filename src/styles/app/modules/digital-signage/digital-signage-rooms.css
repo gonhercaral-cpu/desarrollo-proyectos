@@ -202,6 +202,16 @@
   color: var(--primary, #0f4fc4);
 }
 
+.signage-rooms-badge.is-independent {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.signage-rooms-badge.is-legacy {
+  background: var(--surface-3, #eef3f9);
+  color: #475569;
+}
+
 .signage-rooms-fieldset {
   border: 1px solid var(--border, #dbe3ec);
   border-radius: 10px;
@@ -432,6 +442,133 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* DESTINATIONS EDITOR */
+.signage-rooms-destinations-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.signage-rooms-destinations-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.signage-rooms-destinations-legacy-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface-3, #eef3f9);
+  border: 1px dashed var(--border, #cbd5e1);
+  border-radius: 8px;
+}
+
+.signage-rooms-destinations-legacy-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 650px;
+}
+
+.signage-rooms-destinations-legacy-info p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted, #64748b);
+}
+
+.signage-rooms-destinations-empty-notice {
+  padding: 10px 14px;
+  background: var(--gold-soft, #fff4d8);
+  border: 1px solid var(--gold, #d99a00);
+  border-radius: 8px;
+  color: #78350f;
+  font-size: 13px;
+}
+
+.signage-rooms-destinations-empty-notice p {
+  margin: 0;
+}
+
+.signage-rooms-destinations-branches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.signage-rooms-destinations-branch-card {
+  padding: 12px;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dbe3ec);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signage-rooms-destinations-branch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.signage-rooms-destinations-branch-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signage-rooms-destinations-branch-title h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--primary-dark, #062d77);
+}
+
+.signage-rooms-destinations-branch-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.signage-rooms-destinations-devices-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 26px;
+}
+
+.signage-rooms-device-label-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.signage-rooms-device-location-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  background: var(--blue-soft, #eaf2ff);
+  color: var(--primary, #0f4fc4);
+  border-radius: 4px;
+}
+
+.signage-rooms-destinations-add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.signage-rooms-preview-branch-row {
+  margin-bottom: 12px;
 }
 
 .signage-rooms-device-checkboxes-grid {
@@ -1286,3 +1423,6 @@ html[data-theme="dark"] .signage-rooms-status-banner.success { color: #bbf7d0; }
 }
 
 .signage-room-matrix-display-cell { flex-flow: row wrap; align-content: center; column-gap: calc(8 * 100cqi / 1600); }
+
+.signage-room-teacher-picker { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.signage-room-teacher-picker select { width: 100%; min-width: 0; }

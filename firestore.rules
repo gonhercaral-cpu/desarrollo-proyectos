@@ -3631,7 +3631,8 @@ service cloud.firestore {
       return validBoundedStringField(data, "name", 180)
         && data.name.size() > 0
         && validBoundedStringField(data, "plantel", 180)
-        && data.plantel.size() > 0
+        && (data.plantel.size() > 0 || ("destinations" in data && data.destinations is list))
+        && (!("destinations" in data) || (data.destinations is list && data.destinations.size() <= 20))
         && validBoundedStringField(data, "timezone", 80)
         && data.classDays is list && data.classDays.size() > 0 && data.classDays.size() <= 7
         && data.classStart is string && data.classEnd is string

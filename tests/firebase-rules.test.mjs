@@ -2973,6 +2973,25 @@ describe("Acomodo de salones: borradores privados y publicación por pantalla", 
     displayRules: [], active: true,
   };
 
+  it("permite a administración guardar un acomodo independiente sin plantel y conserva la privacidad", async () => {
+    const independent = { ...layout, plantel: "", destinations: [] };
+    await assertSucceeds(setDoc(doc(auth("admin"), "digitalSignageRoomLayouts", "independiente"), independent));
+    await assertSucceeds(updateDoc(doc(auth("admin"), "digitalSignageRoomLayouts", "independiente"), { destinations: [{ plantel: "Estrella", deviceIds: ["arriba"] }, { plantel: "Sur", deviceIds: [] }] }));
+    await assertSucceeds(getDoc(doc(auth("admin"), "digitalSignageRoomLayouts", "independiente")));
+    for (const reader of [unauth(), auth("requester"), auth("collab")]) {
+      await assertFails(getDoc(doc(reader, "digitalSignageRoomLayouts", "independiente")));
+      await assertFails(setDoc(doc(reader, "digitalSignageRoomLayouts", "forjado-global"), independent));
+    }
+  });
+
+  it("no admite plantel vacío sin destinos explícitos ni destinos mal tipados o excesivos", async () => {
+    const reference = doc(auth("admin"), "digitalSignageRoomLayouts", "mal-global");
+    await assertFails(setDoc(reference, { ...layout, plantel: "" }));
+    await assertFails(setDoc(reference, { ...layout, plantel: "", destinations: "Estrella" }));
+    await assertFails(setDoc(reference, { ...layout, plantel: "", destinations: Array.from({ length: 21 }, (_, i) => ({ plantel: `Sucursal ${i}`, deviceIds: [] })) }));
+    await assertSucceeds(setDoc(reference, { ...layout, plantel: "", destinations: Array.from({ length: 20 }, (_, i) => ({ plantel: `Sucursal ${i}`, deviceIds: [] })) }));
+  });
+
   it("reserva catálogos, plantillas y borradores a administración", async () => {
     const db = auth("admin");
     const documents = [

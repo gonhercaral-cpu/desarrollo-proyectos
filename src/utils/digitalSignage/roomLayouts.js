@@ -15,6 +15,8 @@ export const ROOM_MAX_RULES = 100;
 export const ROOM_MAX_ROOMS = 200;
 export const ROOM_MAX_TEACHER_NAMES = 500;
 export const ROOM_MAX_ELEMENTS = 200;
+export const ROOM_MAX_DESTINATION_PLANTELES = 20;
+export const ROOM_MAX_DESTINATION_DEVICES = 390;
 export const ROOM_MAX_COLUMNS = 12;
 export const ROOM_MAX_ROWS = 100;
 export const ROOM_ELEMENT_TYPES = ["text", "field", "assignments", "rect", "image", "scheduleGrid"];
@@ -357,6 +359,109 @@ export function normalizeDisplayRule(rule = {}) {
   };
 }
 
+// ---------- destinos (acomodos independientes del plantel) ----------
+//
+// `destinations` es opcional: su presencia (incluso []) vuelve independiente al acomodo; su
+// ausencia conserva la semántica antigua ligada a `plantel`. deviceIds vacío = todas las
+// pantallas (activas y futuras) de ESE plantel.
+
+export function hasRoomLayoutDestinations(layout) {
+  return Array.isArray(layout?.destinations);
+}
+
+// Normalización tolerante (datos ya validados o leídos de Firestore). Nunca ensancha: una lista
+// explícita que queda vacía tras filtrar descarta el destino en lugar de convertirlo en "todas".
+export function normalizeRoomDestinations(value) {
+  const seen = new Set();
+  const result = [];
+  (Array.isArray(value) ? value : []).forEach((entry) => {
+    const plantel = text(entry?.plantel, 120);
+    if (!plantel || seen.has(plantel)) return;
+    if (entry?.deviceIds !== undefined && !Array.isArray(entry.deviceIds)) return;
+    const raw = Array.isArray(entry?.deviceIds) ? entry.deviceIds : [];
+    const deviceIds = Array.from(
+      new Set(raw.map((id) => text(id, 120)).filter(Boolean))
+    ).slice(0, ROOM_MAX_DESTINATION_DEVICES);
+    if (raw.length > 0 && deviceIds.length === 0) return;
+    seen.add(plantel);
+    result.push({ plantel, deviceIds });
+  });
+  return result.slice(0, ROOM_MAX_DESTINATION_PLANTELES);
+}
+
+// Valida el dato CRUDO antes de normalizar: duplicados/inválidos/excesos fallan, no se corrigen.
+export function validateRoomDestinations(raw) {
+  if (!Array.isArray(raw)) throw new Error("Los destinos del acomodo no son válidos.");
+  if (raw.length > ROOM_MAX_DESTINATION_PLANTELES) {
+    throw new Error(`El acomodo admite máximo ${ROOM_MAX_DESTINATION_PLANTELES} planteles destino.`);
+  }
+  const planteles = new Set();
+  let totalDevices = 0;
+  raw.forEach((entry, index) => {
+    const label = `Destino ${index + 1}`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label}: no es válido.`);
+    const plantel = typeof entry.plantel === "string" ? entry.plantel.trim() : "";
+    if (!plantel || plantel.length > 120) throw new Error(`${label}: elige un plantel válido.`);
+    if (planteles.has(plantel)) throw new Error(`El plantel "${plantel}" está repetido en los destinos.`);
+    planteles.add(plantel);
+    const ids = entry.deviceIds === undefined ? [] : entry.deviceIds;
+    if (!Array.isArray(ids)) throw new Error(`${label}: la lista de pantallas no es válida.`);
+    if (ids.length > ROOM_MAX_DESTINATION_DEVICES) {
+      throw new Error(`${label}: máximo ${ROOM_MAX_DESTINATION_DEVICES} pantallas por destino.`);
+    }
+    const seen = new Set();
+    ids.forEach((id) => {
+      const clean = typeof id === "string" ? id.trim() : "";
+      if (!clean || clean.length > 120) throw new Error(`${label}: hay una pantalla no válida.`);
+      if (seen.has(clean)) throw new Error(`${label}: hay pantallas repetidas.`);
+      seen.add(clean);
+    });
+    totalDevices += ids.length;
+  });
+  if (totalDevices > ROOM_MAX_DESTINATION_DEVICES) {
+    throw new Error(`Los destinos suman más de ${ROOM_MAX_DESTINATION_DEVICES} pantallas.`);
+  }
+}
+
+// Antiguo: [{ plantel, deviceIds: [] }]; independiente: la lista propia (puede ser []).
+export function getRoomLayoutDestinations(layout) {
+  if (hasRoomLayoutDestinations(layout)) return normalizeRoomDestinations(layout.destinations);
+  return [{ plantel: text(layout?.plantel, 120), deviceIds: [] }];
+}
+
+export function getRoomLayoutPlanteles(layout) {
+  return Array.from(new Set(getRoomLayoutDestinations(layout).map((destination) => destination.plantel).filter(Boolean)));
+}
+
+// Solo la relación destino <-> pantalla; la intersección con rule.deviceIds es aparte.
+export function roomLayoutTargetsDevice(layout, device) {
+  const plantel = text(device?.plantel, 120);
+  if (!hasRoomLayoutDestinations(layout)) return text(layout?.plantel, 120) === plantel;
+  if (!plantel) return false;
+  const destination = layout.destinations.find((entry) => text(entry?.plantel, 120) === plantel);
+  if (!destination) return false;
+  if (destination.deviceIds !== undefined && !Array.isArray(destination.deviceIds)) return false;
+  const raw = Array.isArray(destination.deviceIds) ? destination.deviceIds : [];
+  if (raw.length === 0) return true;
+  const identifiers = [text(device?.id, 120), text(device?.deviceToken, 120)].filter(Boolean);
+  return raw.some((id) => identifiers.includes(text(id, 120)));
+}
+
+// Cada ventana activa con pantallas explícitas debe caer dentro de algún destino. Con destinos
+// "todas las pantallas del plantel" no se puede saber sin las pantallas reales (lo valida el servicio).
+function validateRuleTargetsWithinDestinations(layout) {
+  const destinations = layout.destinations || [];
+  if (destinations.length === 0) return;
+  if (destinations.some((destination) => destination.deviceIds.length === 0)) return;
+  const allowed = new Set(destinations.flatMap((destination) => destination.deviceIds));
+  layout.displayRules.forEach((rule, index) => {
+    if (!rule.active) return;
+    if (rule.deviceIds.some((id) => !allowed.has(id))) {
+      throw new Error(`Ventana ${index + 1}: apunta a una pantalla fuera de los destinos del acomodo.`);
+    }
+  });
+}
+
 export function normalizeRoomLayout(data = {}) {
   const source = data && typeof data === "object" ? data : {};
   const timezone = text(source.timezone, 80);
@@ -384,6 +489,7 @@ export function normalizeRoomLayout(data = {}) {
     displayRules,
     active: source.active !== false,
   };
+  if (Array.isArray(source.destinations)) layout.destinations = normalizeRoomDestinations(source.destinations);
   // Las celdas solo pueden apuntar a filas de ESTE acomodo; sin schedule = acomodo antiguo.
   const schedule = normalizeRoomSchedule(source.schedule, assignments);
   if (schedule) layout.schedule = schedule;
@@ -404,9 +510,10 @@ export function validateRoomLayout(data) {
   if (raw.schedule !== undefined && raw.schedule !== null) {
     validateRoomSchedule(raw.schedule, Array.isArray(raw.assignments) ? raw.assignments : []);
   }
+  if (raw.destinations !== undefined) validateRoomDestinations(raw.destinations);
 
   const layout = normalizeRoomLayout(raw);
-  if (!layout.plantel) throw new Error("Selecciona un plantel.");
+  if (!layout.destinations && !layout.plantel) throw new Error("Selecciona un plantel.");
   if (!layout.name) throw new Error("Escribe un nombre para el acomodo.");
   if (layout.classDays.length === 0) throw new Error("Selecciona al menos un día de clase.");
   if (!TIME_PATTERN.test(text(raw.classStart || layout.classStart, 5)) ||
@@ -434,10 +541,12 @@ export function validateRoomLayout(data) {
       }
     }
   });
+  if (layout.destinations) validateRuleTargetsWithinDestinations(layout);
   return layout;
 }
 
 export function createRoomLayoutDraft({
+  destinations,
   plantel = "",
   timezone = ROOM_DEFAULT_TIMEZONE,
   rooms = [],
@@ -464,9 +573,11 @@ export function createRoomLayoutDraft({
     `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
   const windowEnd = Math.min(startMinutes + 15, 24 * 60 - 1);
 
+  const independent = Array.isArray(destinations);
   return {
-    name: `${text(plantel, 60) || "Plantel"} · ${getRoomDayLabel(days)} ${start}–${end}`,
+    name: `${text(plantel, 60) || (independent ? "Acomodo" : "Plantel")} · ${getRoomDayLabel(days)} ${start}–${end}`,
     plantel: text(plantel, 120),
+    ...(independent ? { destinations: normalizeRoomDestinations(destinations) } : {}),
     timezone: safeTimezone,
     classDays: days.length ? days : [1, 2, 3, 4, 5],
     classStart: start,
@@ -691,6 +802,13 @@ function describeRule(rule) {
   return `${rule.startTime}–${rule.endTime}`;
 }
 
+// Dos acomodos compiten solo si pueden coincidir en algún plantel (antiguos: mismo plantel, como siempre).
+function sharesDestination(a, b) {
+  if (!a.destinations && !b.destinations) return a.plantel === b.plantel;
+  const mine = new Set(getRoomLayoutPlanteles(a));
+  return getRoomLayoutPlanteles(b).some((plantel) => mine.has(plantel));
+}
+
 export function getRoomLayoutWarnings(layout, allLayouts = [], devices = []) {
   const warnings = [];
   const current = normalizeRoomLayout(layout || {});
@@ -732,7 +850,7 @@ export function getRoomLayoutWarnings(layout, allLayouts = [], devices = []) {
 
   const others = (Array.isArray(allLayouts) ? allLayouts : [])
     .map((other) => normalizeRoomLayout(other || {}))
-    .filter((other) => other.active && other.plantel === current.plantel && (!currentId || other.id !== currentId));
+    .filter((other) => other.active && sharesDestination(current, other) && (!currentId || other.id !== currentId));
 
   // Maestro simultáneo en otros acomodos del mismo plantel con bloque de clase solapado.
   others.forEach((other) => {
@@ -747,6 +865,10 @@ export function getRoomLayoutWarnings(layout, allLayouts = [], devices = []) {
   // Ventanas de aparición superpuestas con destinos compatibles.
   const currentRules = current.displayRules.filter((rule) => rule.active);
   others.forEach((other) => {
+    const overlapsScreens = getRoomLayoutDestinations(current).some(mine =>
+      getRoomLayoutDestinations(other).some(theirs => mine.plantel === theirs.plantel &&
+        (!mine.deviceIds.length || !theirs.deviceIds.length || mine.deviceIds.some(id => theirs.deviceIds.includes(id)))));
+    if (!overlapsScreens) return;
     const hit = currentRules.find((rule) =>
       other.displayRules.some((otherRule) =>
         otherRule.active && destinationsCompatible(rule, otherRule) && rulesOverlap(rule, otherRule)
@@ -761,18 +883,22 @@ export function getRoomLayoutWarnings(layout, allLayouts = [], devices = []) {
   const deviceList = Array.isArray(devices) ? devices : [];
   if (deviceList.length > 0) {
     const known = new Map(deviceList.map((device) => [text(device.id || device.deviceToken), device]));
+    const independent = Boolean(current.destinations);
     currentRules.forEach((rule) => {
       rule.deviceIds.forEach((id) => {
         const device = known.get(id);
         if (!device) warnings.push(`La ventana ${describeRule(rule)} apunta a una pantalla que ya no existe (${id}).`);
-        else if (text(device.plantel) !== current.plantel) {
-          warnings.push(`La pantalla "${device.name || id}" pertenece a otro plantel y no mostrará este acomodo.`);
+        else if (independent ? !roomLayoutTargetsDevice(current, device) : text(device.plantel) !== current.plantel) {
+          warnings.push(independent
+            ? `La pantalla "${device.name || id}" está fuera de los destinos y no mostrará este acomodo.`
+            : `La pantalla "${device.name || id}" pertenece a otro plantel y no mostrará este acomodo.`);
         }
       });
     });
-    const plantelDevices = deviceList.filter((device) => text(device.plantel) === current.plantel && device.active !== false);
+    const plantelDevices = deviceList.filter((device) =>
+      (independent ? roomLayoutTargetsDevice(current, device) : text(device.plantel) === current.plantel) && device.active !== false);
     if (currentRules.length > 0 && plantelDevices.length === 0) {
-      warnings.push("El plantel no tiene pantallas activas.");
+      warnings.push(independent ? "Los destinos no tienen pantallas activas." : "El plantel no tiene pantallas activas.");
     }
   }
 
