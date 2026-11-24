@@ -6,7 +6,7 @@ Estado: **1.0.26 firmada y publicada como estable**, con autorización explícit
 
 - Código certificado: `3a3e9059b8136ca391c33efa8c1c1bc5b43618ee`.
 - Merge: `95299bee9a6b56fc030e227394c8a58d2089a8df`, con el mismo árbol de archivos que el código certificado.
-- [CI adicional del merge](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45340698886): en curso.
+- [CI adicional del merge aprobado](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45340698886): todos los controles obligatorios en verde, incluidos paquetes e instalación en Ubuntu 22.04/24.04/26.04. No hubo fallos adicionales que corregir.
 - Instaladores candidatos `.deb` y AppImage: [artefactos del run aprobado](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45329577199).
 - Las 12 pruebas físicas permanecen pendientes.
 
