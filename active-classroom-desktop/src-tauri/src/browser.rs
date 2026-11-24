@@ -84,13 +84,13 @@ async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
                 };
                 let layer = overlay.children().into_iter().find_map(|child| child.downcast::<gtk::Fixed>().ok())
                     .ok_or("Falta el área superpuesta del navegador")?;
-                container.remove(native);
-                layer.put(native, value.x.round() as i32, value.y.round() as i32);
+                container.remove(&native);
+                layer.put(&native, value.x.round() as i32, value.y.round() as i32);
                 layer
             };
             native.set_hexpand(false); native.set_vexpand(false);
             native.set_size_request(value.width.round() as i32, value.height.round() as i32);
-            layer.move_(native, value.x.round() as i32, value.y.round() as i32);
+            layer.move_(&native, value.x.round() as i32, value.y.round() as i32);
             layer.queue_resize();
             Ok(())
         })();
