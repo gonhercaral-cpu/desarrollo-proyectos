@@ -35,4 +35,5 @@ zip = "2.4"
 
 # Native kiosk policy signals; same WebKitGTK already used by Tauri on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk = "=0.18.2"
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }

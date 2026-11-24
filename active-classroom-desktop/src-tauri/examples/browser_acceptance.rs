@@ -68,12 +68,45 @@ fn fixture() -> (String, Arc<AtomicUsize>) {
     });
     (format!("http://classroom-browser.test:{port}"), downloads)
 }
+// Observe GTK allocations and mapped ancestors, not just JS state. A page can
+// execute normally while its native parent is hidden or half the window tall.
+#[cfg(target_os = "linux")]
+async fn geometry(view: &tauri::Webview) -> Result<Value, String> {
+    use gtk::prelude::*;
+    let (sender, mut receiver) = tauri::async_runtime::channel(1);
+    view.with_webview(move |platform| {
+        let widget = platform.inner();
+        let allocation = widget.allocation();
+        let position = widget.toplevel().and_then(|top| widget.translate_coordinates(&top, 0, 0));
+        let _ = sender.try_send(json!({"drawable":widget.is_drawable(), "width":allocation.width(), "height":allocation.height(),
+            "x":position.map(|p|p.0),"y":position.map(|p|p.1)}));
+    }).map_err(|e| e.to_string())?;
+    receiver.recv().await.ok_or("No llegó geometría GTK".into())
+}
+#[cfg(not(target_os = "linux"))]
+async fn geometry(_: &tauri::Webview) -> Result<Value, String> { Err("Solo Linux".into()) }
+async fn assert_geometry(view: &tauri::Webview, x: i32, y: i32, width: i32, height: i32) -> Result<(), String> {
+    let mut actual = Value::Null;
+    for _ in 0..100 {
+        actual = geometry(view).await?;
+        if actual["drawable"] == true && [("x",x),("y",y),("width",width),("height",height)].iter()
+            .all(|(key,expected)| actual[*key].as_i64().map(|v|(v-*expected as i64).abs()<=2).unwrap_or(false)) { return Ok(()); }
+        delay(30).await;
+    }
+    Err(format!("Vista no visible o geometría incorrecta: {actual}; esperado {x},{y},{width},{height}"))
+}
 async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize) -> Result<Value, String> {
     delay(800).await;
+    let teacher = app.get_webview("teacher").ok_or("Falta docente")?;
+    until(&teacher, "document.readyState==='complete'").await?;
+    let teacher_before = evaluate(&teacher, "({width:innerWidth,height:innerHeight})").await?;
     let bounds = json!({"x":10,"y":100,"width":760,"height":450});
     let opened = action(app, "open", Some(json!({"url":format!("{base}/first"),"bounds":bounds}))).await?;
     assert_eq!(opened["open"], true);
     let view = app.get_webview("classroom-browser").ok_or("No se creó child webview")?;
+    println!("BROWSER_CHECKPOINT initial-geometry");
+    assert_geometry(&view, 10, 100, 760, 450).await?;
+    assert_eq!(evaluate(&teacher, "({width:innerWidth,height:innerHeight})").await?,teacher_before,"Se dividió la ventana docente");
     println!("BROWSER_CHECKPOINT initial-load");
     until(&view, "window.fixtureReady===true").await?;
     evaluate(&view, "document.querySelector('#answer').value='conservar';sessionStorage.setItem('lesson','47');document.cookie='fixture=47';true").await?;
@@ -99,15 +132,22 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     if std::env::var_os("CLASSROOM_BROWSER_PROJECT").is_some() {
         let teacher = app.get_webview("teacher").unwrap();
         let current = teacher.window().current_monitor().map_err(|e| e.to_string())?.ok_or("Monitor docente ausente")?;
-        let monitors = audience_window::classroom_projection(app.clone(),teacher,app.state(),"monitors".into(),None).await?;
+        let monitors = audience_window::classroom_projection(app.clone(),teacher.clone(),app.state(),"monitors".into(),None).await?;
         let target = monitors["monitors"].as_array().unwrap().iter().find(|m| m["x"]!=current.position().x || m["y"]!=current.position().y).ok_or("Falta segunda pantalla virtual")?;
         for cycle in 0..30 {
             println!("BROWSER_CHECKPOINT projection-cycle-{cycle}");
             let shown=action(app,"present",Some(json!({"monitorId":target["id"]}))).await?;
-            assert_eq!(shown["presenting"],true); delay(80).await;
+            assert_eq!(shown["presenting"],true);
+            let screen = app.get_window("classroom-browser-screen").ok_or("Falta ventana externa")?;
+            let logical = screen.inner_size().map_err(|e|e.to_string())?.to_logical::<i32>(screen.scale_factor().map_err(|e|e.to_string())?);
+            assert_geometry(&view,0,0,logical.width,logical.height).await?;
+            let monitor = screen.current_monitor().map_err(|e|e.to_string())?.ok_or("Falta monitor externo")?;
+            assert_ne!(monitor.position(), current.position(), "La página no llegó a la pantalla seleccionada");
             assert_eq!(evaluate(&view,"document.querySelector('#answer').value==='conservar' && sessionStorage.getItem('lesson')==='47'").await?,true);
             let returned=action(app,"return",Some(json!({"bounds":bounds}))).await?;
-            assert_eq!(returned["presenting"],false); delay(80).await;
+            assert_eq!(returned["presenting"],false);
+            assert_geometry(&view,10,100,760,450).await?;
+            assert_eq!(evaluate(&teacher, "({width:innerWidth,height:innerHeight})").await?,teacher_before,"El retorno dividió la ventana docente");
             assert_eq!(evaluate(&view,"document.querySelector('#answer').value==='conservar' && document.cookie.includes('fixture=47')").await?,true);
             cycles+=1;
         }
@@ -128,7 +168,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     let fresh=app.get_webview("classroom-browser").unwrap(); until(&fresh,"window.fixtureReady===true").await?;
     assert_eq!(evaluate(&fresh,"sessionStorage.getItem('lesson')===null && !document.cookie.includes('fixture=47')").await?,true,"La sesión efímera no se liberó");
     action(app,"close",None).await?;
-    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true}))
+    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true,"nativeGeometryVerified":true,"teacherViewportPreserved":true}))
 }
 fn main() {
     #[cfg(not(target_os="linux"))] { eprintln!("Acceptance requires Linux"); return; }

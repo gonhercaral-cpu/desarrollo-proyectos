@@ -51,10 +51,83 @@ fn check_bounds(window: &tauri::Window, value: Bounds) -> Result<(), String> {
     }
     Ok(())
 }
-fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
+// Tauri's GTK child views are packed into a vertical Box. Bounds on that
+// container are ignored by Wry: a second child divides the teacher viewport.
+// Keep the trusted view full-sized and place the browser in an overlay layer.
+#[cfg(target_os = "linux")]
+async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
+    use gtk::prelude::*;
+    let (sender, mut receiver) = tauri::async_runtime::channel(1);
+    view.with_webview(move |platform| {
+        let result = (|| -> Result<(), String> {
+            let native = platform.inner();
+            let parent = native.parent().ok_or("El navegador no tiene contenedor")?;
+            let layer = if let Ok(layer) = parent.clone().downcast::<gtk::Fixed>() {
+                layer
+            } else {
+                let container = parent.downcast::<gtk::Box>().map_err(|_| "Contenedor del navegador incompatible")?;
+                let existing = container.children().into_iter().find_map(|child| child.downcast::<gtk::Overlay>().ok());
+                let overlay = match existing {
+                    Some(overlay) => overlay,
+                    None => {
+                        let teacher = container.children().into_iter().find(|child| child.is::<webkit2gtk::WebView>() && child != native.upcast_ref::<gtk::Widget>())
+                            .ok_or("Falta el contenido docente")?;
+                        let overlay = gtk::Overlay::new();
+                        let layer = gtk::Fixed::new();
+                        layer.set_hexpand(true); layer.set_vexpand(true);
+                        container.remove(&teacher);
+                        overlay.add(&teacher); overlay.add_overlay(&layer);
+                        container.pack_start(&overlay, true, true, 0);
+                        overlay.show_all();
+                        overlay
+                    }
+                };
+                let layer = overlay.children().into_iter().find_map(|child| child.downcast::<gtk::Fixed>().ok())
+                    .ok_or("Falta el área superpuesta del navegador")?;
+                container.remove(native);
+                layer.put(native, value.x.round() as i32, value.y.round() as i32);
+                layer
+            };
+            native.set_hexpand(false); native.set_vexpand(false);
+            native.set_size_request(value.width.round() as i32, value.height.round() as i32);
+            layer.move_(native, value.x.round() as i32, value.y.round() as i32);
+            layer.queue_resize();
+            Ok(())
+        })();
+        let _ = sender.try_send(result);
+    }).map_err(|e| e.to_string())?;
+    receiver.recv().await.ok_or("No se pudo ajustar el navegador")?
+}
+#[cfg(not(target_os = "linux"))]
+async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
     view.set_auto_resize(false).map_err(|e| e.to_string())?;
     view.set_position(tauri::LogicalPosition::new(value.x, value.y)).map_err(|e| e.to_string())?;
     view.set_size(tauri::LogicalSize::new(value.width, value.height)).map_err(|e| e.to_string())
+}
+
+// A newly-created hidden GTK window also has a hidden default Box. Showing
+// only its WebView and top-level window leaves that ancestor invisible.
+#[cfg(target_os = "linux")]
+async fn fill_projection(view: &tauri::Webview) -> Result<(), String> {
+    use gtk::prelude::*;
+    let (sender, mut receiver) = tauri::async_runtime::channel(1);
+    view.with_webview(move |platform| {
+        let native = platform.inner();
+        native.set_size_request(-1, -1);
+        native.set_hexpand(true); native.set_vexpand(true);
+        let result = native.parent().ok_or("Falta el contenedor de proyección").map(|parent| {
+            parent.show_all();
+            parent.queue_resize();
+        }).map_err(String::from);
+        let _ = sender.try_send(result);
+    }).map_err(|e| e.to_string())?;
+    receiver.recv().await.ok_or("No se pudo preparar la pantalla del navegador")?
+}
+#[cfg(not(target_os = "linux"))]
+async fn fill_projection(view: &tauri::Webview) -> Result<(), String> {
+    view.set_position(tauri::LogicalPosition::new(0., 0.)).map_err(|e| e.to_string())?;
+    view.set_size(view.window().inner_size().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    view.set_auto_resize(true).map_err(|e| e.to_string())
 }
 fn status(gate: &BrowserGate) -> Result<BrowserStatus, String> {
     Ok(gate.session.lock().map_err(|_| "Navegador ocupado")?.status.clone())
@@ -66,13 +139,13 @@ fn close(app: &tauri::AppHandle, gate: &BrowserGate) -> Result<(), String> {
     *gate.session.lock().map_err(|_| "Navegador ocupado")? = Session::default();
     Ok(())
 }
-fn return_to_teacher(app: &tauri::AppHandle, teacher: &tauri::Window, gate: &BrowserGate, value: Bounds) -> Result<(), String> {
+async fn return_to_teacher(app: &tauri::AppHandle, teacher: &tauri::Window, gate: &BrowserGate, value: Bounds) -> Result<(), String> {
     check_bounds(teacher, value)?;
     let view = app.get_webview(VIEW).ok_or("El navegador está cerrado")?;
     view.hide().map_err(|e| e.to_string())?;
     let teacher_window = app.get_window("teacher").ok_or("Ventana docente cerrada")?;
     view.reparent(&teacher_window).map_err(|e| e.to_string())?;
-    place(&view, value)?;
+    place(&view, value).await?;
     if let Some(screen) = app.get_window(SCREEN) { screen.hide().map_err(|e| e.to_string())?; }
     view.show().map_err(|e| e.to_string())?;
     let mut session = gate.session.lock().map_err(|_| "Navegador ocupado")?;
@@ -160,6 +233,7 @@ pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webv
                     session.status = BrowserStatus { open: true, url: url.to_string(), loading: true, ..Default::default() };
                     session.bounds = Some(value);
                 }
+                if let Err(error) = place(&view, value).await { let _ = close(&app, &gate); return Err(error); }
                 if let Err(error) = view.navigate(url) { let _ = close(&app, &gate); return Err(error.to_string()); }
                 view.show().map_err(|e| e.to_string())?;
             }
@@ -182,7 +256,7 @@ pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webv
             let presenting = { let mut session = gate.session.lock().map_err(|_| "Navegador ocupado")?;
                 session.bounds = Some(value); session.status.presenting };
             if !presenting {
-                if let Some(view) = app.get_webview(VIEW) { place(&view, value)?; }
+                if let Some(view) = app.get_webview(VIEW) { place(&view, value).await?; }
             }
         }
         "present" => {
@@ -202,19 +276,17 @@ pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webv
             screen.set_fullscreen_on_monitor(position).map_err(|e| e.to_string())?;
             view.hide().map_err(|e| e.to_string())?;
             let value = gate.session.lock().map_err(|_| "Navegador ocupado")?.bounds.ok_or("Área docente ausente")?;
-            let result = (|| -> Result<(), String> {
+            let result = async {
                 view.reparent(&screen).map_err(|e| e.to_string())?;
-                view.set_position(tauri::LogicalPosition::new(0., 0.)).map_err(|e| e.to_string())?;
-                view.set_size(screen.inner_size().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-                view.set_auto_resize(true).map_err(|e| e.to_string())?;
+                fill_projection(&view).await?;
                 // Recheck immediately before showing, as projection does.
                 crate::audience_window::browser_monitor(&window, id)?;
                 view.show().map_err(|e| e.to_string())?;
                 screen.show().map_err(|e| e.to_string())?;
-                Ok(())
-            })();
+                Ok::<(), String>(())
+            }.await;
             if let Err(error) = result {
-                if return_to_teacher(&app, &window, &gate, value).is_err() { let _ = close(&app, &gate); }
+                if return_to_teacher(&app, &window, &gate, value).await.is_err() { let _ = close(&app, &gate); }
                 return Err(error);
             }
             let mut session = gate.session.lock().map_err(|_| "Navegador ocupado")?;
@@ -222,11 +294,12 @@ pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webv
             drop(session);
             let _ = window.set_focus();
         }
-        "return" => { return_to_teacher(&app, &window, &gate, bounds(&data)?)?; }
+        "return" => { return_to_teacher(&app, &window, &gate, bounds(&data)?).await?; }
         "status" => {
             let (target, value) = { let session = gate.session.lock().map_err(|_| "Navegador ocupado")?; (session.target.clone(), session.bounds) };
             if target.as_ref().map(|id| crate::audience_window::browser_monitor(&window, id).is_err()).unwrap_or(false) {
-                if value.map(|value| return_to_teacher(&app, &window, &gate, value).is_err()).unwrap_or(true) { close(&app, &gate)?; }
+                let returned = if let Some(value) = value { return_to_teacher(&app, &window, &gate, value).await.is_ok() } else { false };
+                if !returned { close(&app, &gate)?; }
             }
             if let Some(view) = app.get_webview(VIEW) {
                 if let Ok(url) = view.url() {
