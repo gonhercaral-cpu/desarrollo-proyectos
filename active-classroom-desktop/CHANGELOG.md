@@ -1,3 +1,10 @@
+## 1.0.26 — corrección del navegador, pendiente de validación Linux
+
+- El navegador se coloca sobre su área reservada sin dividir ni reducir la interfaz docente en Linux.
+- La pantalla externa muestra el contenedor nativo completo; se restaura el tamaño del navegador al volver al docente.
+- Las pruebas nativas comprueban visibilidad y geometría, conservación del viewport docente y 30 ciclos de proyección/retorno, con escalas 100% y 200% en X11/Wayland.
+- Las pruebas físicas con equipos y proyectores reales siguen pendientes; el video recibido muestra el fallo de 1.0.25, no la validación física de esta corrección.
+
 ## 1.0.25 — candidata pendiente de validación Linux
 
 - Reloj docente más grande y adaptable a diferentes resoluciones.

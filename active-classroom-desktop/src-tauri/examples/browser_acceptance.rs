@@ -139,10 +139,16 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
             let shown=action(app,"present",Some(json!({"monitorId":target["id"]}))).await?;
             assert_eq!(shown["presenting"],true);
             let screen = app.get_window("classroom-browser-screen").ok_or("Falta ventana externa")?;
-            let logical = screen.inner_size().map_err(|e|e.to_string())?.to_logical::<i32>(screen.scale_factor().map_err(|e|e.to_string())?);
-            assert_geometry(&view,0,0,logical.width,logical.height).await?;
-            let monitor = screen.current_monitor().map_err(|e|e.to_string())?.ok_or("Falta monitor externo")?;
-            assert_ne!(monitor.position(), current.position(), "La página no llegó a la pantalla seleccionada");
+            let mut on_target = false;
+            for _ in 0..100 {
+                on_target = screen.current_monitor().map_err(|e|e.to_string())?.map(|monitor|
+                    Some(monitor.position().x as i64) == target["x"].as_i64() && Some(monitor.position().y as i64) == target["y"].as_i64()).unwrap_or(false);
+                if on_target { break; }
+                delay(30).await;
+            }
+            assert!(on_target, "La página no llegó a la pantalla seleccionada");
+            let scale = target["scaleFactor"].as_f64().ok_or("Falta escala de pantalla")?;
+            assert_geometry(&view,0,0,(target["width"].as_f64().unwrap()/scale) as i32,(target["height"].as_f64().unwrap()/scale) as i32).await?;
             assert_eq!(evaluate(&view,"document.querySelector('#answer').value==='conservar' && sessionStorage.getItem('lesson')==='47'").await?,true);
             let returned=action(app,"return",Some(json!({"bounds":bounds}))).await?;
             assert_eq!(returned["presenting"],false);
