@@ -34,6 +34,15 @@ xvfb-run -a -s "-screen 0 3200x2400x24" dbus-run-session -- bash -euo pipefail -
     sleep 0.1
   done
   test -S "$XDG_RUNTIME_DIR/wayland-browser"
+  # Keep both nested output windows unobscured for compositor pixel evidence.
+  for output in 0 1; do
+    for attempt in $(seq 1 100); do
+      host_window=$(xdotool search --name "^Weston Compositor - screen${output}$" | head -1) && break
+      sleep 0.1
+    done
+    test -n "$host_window"
+    xdotool windowmove "$host_window" $((output*1600)) 0
+  done
   export GDK_SCALE="$CLASSROOM_BROWSER_SCALE"
   export WAYLAND_DISPLAY=wayland-browser GDK_BACKEND=wayland XDG_SESSION_TYPE=wayland CLASSROOM_BROWSER_PROJECT=1
   timeout 105s src-tauri/target/debug/examples/browser_acceptance

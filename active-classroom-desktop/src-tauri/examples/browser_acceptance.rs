@@ -176,6 +176,41 @@ async fn painted_color(app: &tauri::AppHandle,color:[u8;3]) -> Result<Value,Stri
     }
     Err(format!("El espejo no contiene los píxeles esperados {color:?}: {last}"))
 }
+// Inspect the actual nested compositor output, independently of our draw
+// callback. Desktop capture is confined to the synthetic CI display/fixture.
+#[cfg(target_os="linux")]
+fn compositor_color(target: &Value,color:[u8;3],name:&str) -> Result<(),String> {
+    use std::process::Command;
+    let output_name=if target["x"].as_i64()==Some(0) {"screen0"} else {"screen1"};
+    let title=format!("^Weston Compositor - {output_name}$");
+    let found=Command::new("xdotool").args(["search","--name",&title]).output().map_err(|e|e.to_string())?;
+    if !found.status.success() {return Err(format!("No se encontró la salida virtual {title}"));}
+    let id=String::from_utf8_lossy(&found.stdout).lines().next().ok_or("Salida sin identificador")?.to_string();
+    let geometry=Command::new("xdotool").args(["getwindowgeometry","--shell",&id]).output().map_err(|e|e.to_string())?;
+    let dimensions=String::from_utf8_lossy(&geometry.stdout);
+    let dimension=|key:&str| -> Result<i32,String> {
+        dimensions.lines().find_map(|line|line.strip_prefix(key)).ok_or("Falta tamaño X11")?.parse().map_err(|e|format!("Tamaño X11: {e}"))
+    };
+    let width=dimension("WIDTH=")?;let height=dimension("HEIGHT=")?;
+    let size=format!("{width}x{height}");let display=std::env::var("DISPLAY").map_err(|e|e.to_string())?;
+    let captured=Command::new("timeout").args(["8s","ffmpeg","-hide_banner","-loglevel","error","-f","x11grab","-window_id",&id,"-video_size",&size,"-i",&display,"-frames:v","1","-pix_fmt","rgb24","-f","rawvideo","pipe:1"]).output().map_err(|e|e.to_string())?;
+    if !captured.status.success() {return Err(format!("Captura del compositor: {}",String::from_utf8_lossy(&captured.stderr)));}
+    if captured.stdout.len()!=(width*height*3) as usize {return Err("Captura del compositor incompleta".into());}
+    let matches=|expected:[u8;3]| captured.stdout.chunks_exact(3).filter(|pixel|pixel.iter().zip(expected).all(|(a,b)|(*a as i16-b as i16).abs()<6)).count();
+    let body=matches(color);let corner=matches([220,20,160]);
+    if let Some(directory)=std::env::var_os("CLASSROOM_BROWSER_EVIDENCE_DIR") {
+        let directory=std::path::PathBuf::from(directory);std::fs::create_dir_all(&directory).map_err(|e|e.to_string())?;
+        let bytes=gtk::glib::Bytes::from_owned(captured.stdout);
+        let picture=gtk::gdk_pixbuf::Pixbuf::from_bytes(&bytes,gtk::gdk_pixbuf::Colorspace::Rgb,false,8,width,height,width*3);
+        let scale=std::env::var("GDK_SCALE").unwrap_or_default();
+        picture.savev(directory.join(format!("compositor-wayland-scale{scale}-{name}.png")),"png",&[]).map_err(|e|e.to_string())?;
+    }
+    if body<1000 || corner<100 {return Err(format!("Salida real negra/incompleta: {output_name}, color={color:?}, píxeles={body}, esquina={corner}"));}
+    println!("BROWSER_COMPOSITOR_PIXELS output={output_name} color={color:?} body={body} corner={corner}");
+    Ok(())
+}
+#[cfg(not(target_os="linux"))]
+fn compositor_color(_: &Value,_:[u8;3],_:&str) -> Result<(),String> {Err("Solo Linux".into())}
 async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize) -> Result<Value, String> {
     delay(800).await;
     let teacher = app.get_webview("teacher").ok_or("Falta docente")?;
@@ -242,9 +277,11 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
                 projected_pixels(app,Some("initial")).await?;
                 let first=painted_color(app,[20,160,70]).await?;
                 assert!(first["corner"].as_array().unwrap().iter().zip([220i64,20,160]).all(|(a,b)|(a.as_i64().unwrap()-b).abs()<6),"Se recortó el contenido: {first}");
+                delay(150).await;compositor_color(target,[20,160,70],"initial")?;
                 // Change the live page while presenting; the teacher retains it.
                 evaluate(&view,"document.querySelector('#flip').click();true").await?;
                 let updated=painted_color(app,[20,70,200]).await?;
+                delay(150).await;compositor_color(target,[20,70,200],"live-page")?;
                 let old_hash=updated["videoHash"].clone(); let mut advanced=false;
                 for _ in 0..30 {delay(100).await;if projected_pixels(app,None).await?["videoHash"]!=old_hash {advanced=true;break;}}
                 assert!(advanced,"El video del espejo está negro o congelado");
