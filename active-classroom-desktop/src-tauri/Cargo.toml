@@ -1,6 +1,6 @@
 [package]
 name = "active-classroom"
-version = "1.0.25"
+version = "1.0.26"
 description = "Panel docente y vista de alumnado para un salón de clases activo"
 authors = ["Active Classroom <gonher.car.al@gmail.com>"]
 edition = "2021"
@@ -35,4 +35,5 @@ zip = "2.4"
 
 # Native kiosk policy signals; same WebKitGTK already used by Tauri on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk = "=0.18.2"
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }

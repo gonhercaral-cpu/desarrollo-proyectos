@@ -15,12 +15,16 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=320x180:rate=15 -f
 export XDG_CONFIG_HOME="$fixture_root/config" XDG_DATA_HOME="$fixture_root/data" XDG_CACHE_HOME="$fixture_root/cache"
 mkdir -p "$XDG_CONFIG_HOME" "$fixture_root/downloads"
 printf 'XDG_DOWNLOAD_DIR="%s/downloads"\n' "$fixture_root" > "$XDG_CONFIG_HOME/user-dirs.dirs"
-XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- timeout 105s src-tauri/target/debug/examples/browser_acceptance
+for browser_scale in 1 2; do
+  XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GDK_SCALE="$browser_scale" xvfb-run -a -s "-screen 0 3200x2400x24" dbus-run-session -- timeout 105s src-tauri/target/debug/examples/browser_acceptance
+done
 
 export XDG_RUNTIME_DIR="$fixture_root/runtime"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
-xvfb-run -a dbus-run-session -- bash -euo pipefail -c '
-  weston --backend=x11-backend.so --use-pixman --output-count=2 --width=800 --height=600 \
+for browser_scale in 1 2; do
+export CLASSROOM_BROWSER_SCALE="$browser_scale"
+xvfb-run -a -s "-screen 0 3200x2400x24" dbus-run-session -- bash -euo pipefail -c '
+  weston --backend=x11-backend.so --use-pixman --output-count=2 --width=$((800*CLASSROOM_BROWSER_SCALE)) --height=$((600*CLASSROOM_BROWSER_SCALE)) \
     --socket=wayland-browser --idle-time=0 --no-config --log="$XDG_RUNTIME_DIR/weston.log" &
   compositor=$!
   trap '\''kill "$compositor" 2>/dev/null || true; cat "$XDG_RUNTIME_DIR/weston.log"'\'' EXIT
@@ -30,8 +34,10 @@ xvfb-run -a dbus-run-session -- bash -euo pipefail -c '
     sleep 0.1
   done
   test -S "$XDG_RUNTIME_DIR/wayland-browser"
+  export GDK_SCALE="$CLASSROOM_BROWSER_SCALE"
   export WAYLAND_DISPLAY=wayland-browser GDK_BACKEND=wayland XDG_SESSION_TYPE=wayland CLASSROOM_BROWSER_PROJECT=1
   timeout 105s src-tauri/target/debug/examples/browser_acceptance
 '
+done
 test ! -e "$fixture_root/downloads/escape.bin"
 printf 'BROWSER_LINUX_ACCEPTANCE_OK\n'
