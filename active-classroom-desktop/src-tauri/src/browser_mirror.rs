@@ -122,7 +122,11 @@ pub(super) async fn start(view: &tauri::Webview, screen: &tauri::Window) -> Resu
         let _=sender.try_send(result);
     }).map_err(|e|e.to_string())?;
     receiver.recv().await.ok_or("No se pudo preparar el espejo del navegador")??;
-    screen.show().map_err(|e|e.to_string())?;
+    if let Err(error)=screen.show() {
+        // A failed window operation must not leave a hidden capture task alive.
+        control.stop();
+        return Err(error.to_string());
+    }
     // Do not report success merely because a window exists: a real page frame
     // must have reached the drawing callback while both views remain present.
     for _ in 0..100 {

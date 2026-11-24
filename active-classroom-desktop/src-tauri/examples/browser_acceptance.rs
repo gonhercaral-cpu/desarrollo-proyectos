@@ -278,10 +278,12 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
                 let first=painted_color(app,[20,160,70]).await?;
                 assert!(first["corner"].as_array().unwrap().iter().zip([220i64,20,160]).all(|(a,b)|(a.as_i64().unwrap()-b).abs()<6),"Se recortó el contenido: {first}");
                 delay(150).await;compositor_color(target,[20,160,70],"initial")?;
+                compositor_color(&json!({"x":current.position().x}),[20,160,70],"teacher-initial")?;
                 // Change the live page while presenting; the teacher retains it.
                 evaluate(&view,"document.querySelector('#flip').click();true").await?;
                 let updated=painted_color(app,[20,70,200]).await?;
                 delay(150).await;compositor_color(target,[20,70,200],"live-page")?;
+                compositor_color(&json!({"x":current.position().x}),[20,70,200],"teacher-live-page")?;
                 let old_hash=updated["videoHash"].clone(); let mut advanced=false;
                 for _ in 0..30 {delay(100).await;if projected_pixels(app,None).await?["videoHash"]!=old_hash {advanced=true;break;}}
                 assert!(advanced,"El video del espejo está negro o congelado");
