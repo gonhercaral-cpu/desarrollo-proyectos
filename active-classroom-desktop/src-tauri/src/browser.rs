@@ -1,5 +1,6 @@
 //! Untrusted Internet content has its own webview, ephemeral context and no ACL.
 //! Only the local teacher webview can operate it. No external browser is launched.
+#[path = "browser_mirror.rs"] mod mirror;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Mutex;
@@ -12,11 +13,12 @@ const SCREEN: &str = "classroom-browser-screen";
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BrowserStatus {
     open: bool, url: String, title: String, loading: bool, presenting: bool,
+    projection_error: Option<String>,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
 struct Bounds { x: f64, y: f64, width: f64, height: f64 }
 #[derive(Default)]
-struct Session { status: BrowserStatus, bounds: Option<Bounds>, target: Option<String> }
+struct Session { status: BrowserStatus, bounds: Option<Bounds>, target: Option<String>, mirror: Option<std::sync::Arc<mirror::MirrorControl>> }
 #[derive(Default)]
 pub(crate) struct BrowserGate {
     operation: tauri::async_runtime::Mutex<()>,
@@ -119,57 +121,35 @@ async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
     view.set_size(tauri::LogicalSize::new(value.width, value.height)).map_err(|e| e.to_string())
 }
 
-// A newly-created hidden GTK window also has a hidden default Box. Showing
-// only its WebView and top-level window leaves that ancestor invisible.
-#[cfg(target_os = "linux")]
-async fn fill_projection(view: &tauri::Webview) -> Result<(), String> {
-    use gtk::prelude::*;
-    let (sender, mut receiver) = tauri::async_runtime::channel(1);
-    view.with_webview(move |platform| {
-        let native = platform.inner();
-        native.set_size_request(-1, -1);
-        native.set_margin_start(0); native.set_margin_end(0);
-        native.set_margin_top(0); native.set_margin_bottom(0);
-        native.set_halign(gtk::Align::Fill); native.set_valign(gtk::Align::Fill);
-        native.set_hexpand(true); native.set_vexpand(true);
-        let result = native.parent().ok_or("Falta el contenedor de proyección").map(|parent| {
-            parent.show_all();
-            parent.queue_resize();
-        }).map_err(String::from);
-        let _ = sender.try_send(result);
-    }).map_err(|e| e.to_string())?;
-    receiver.recv().await.ok_or("No se pudo preparar la pantalla del navegador")?
-}
-#[cfg(not(target_os = "linux"))]
-async fn fill_projection(view: &tauri::Webview) -> Result<(), String> {
-    view.set_position(tauri::LogicalPosition::new(0., 0.)).map_err(|e| e.to_string())?;
-    view.set_size(view.window().inner_size().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    view.set_auto_resize(true).map_err(|e| e.to_string())
-}
 fn status(gate: &BrowserGate) -> Result<BrowserStatus, String> {
-    Ok(gate.session.lock().map_err(|_| "Navegador ocupado")?.status.clone())
+    let mut session=gate.session.lock().map_err(|_| "Navegador ocupado")?;
+    if session.mirror.as_ref().map(|mirror|mirror.failed.load(std::sync::atomic::Ordering::SeqCst) || mirror.cancelled.load(std::sync::atomic::Ordering::SeqCst)).unwrap_or(false) {
+        session.status.presenting=false;
+        session.status.projection_error=Some("Se interrumpió la imagen de la pantalla externa. El navegador sigue disponible en el equipo docente; puedes volver a duplicarlo.".into());
+    }
+    Ok(session.status.clone())
+}
+fn stop_projection(app: &tauri::AppHandle, gate: &BrowserGate) -> Result<(), String> {
+    {
+        let mut session=gate.session.lock().map_err(|_| "Navegador ocupado")?;
+        if let Some(mirror)=session.mirror.take() { mirror.stop(); }
+        session.target=None; session.status.presenting=false; session.status.projection_error=None;
+    }
+    if let Some(screen)=app.get_window(SCREEN) { screen.hide().map_err(|e|e.to_string())?; }
+    Ok(())
 }
 fn close(app: &tauri::AppHandle, gate: &BrowserGate) -> Result<(), String> {
-    // Destroy the webview before the host, releasing its ephemeral cookies/media.
-    if let Some(view) = app.get_webview(VIEW) { view.close().map_err(|e| e.to_string())?; }
-    if let Some(screen) = app.get_window(SCREEN) { screen.destroy().map_err(|e| e.to_string())?; }
-    *gate.session.lock().map_err(|_| "Navegador ocupado")? = Session::default();
-    Ok(())
+    let projection=stop_projection(app,gate);
+    // Closing the source must still run if the presentation window disappeared.
+    let browser=app.get_webview(VIEW).map(|view|view.close().map_err(|e|e.to_string())).unwrap_or(Ok(()));
+    let screen=app.get_window(SCREEN).map(|screen|screen.destroy().map_err(|e|e.to_string())).unwrap_or(Ok(()));
+    *gate.session.lock().map_err(|_| "Navegador ocupado")?=Session::default();
+    projection.and(browser).and(screen)
 }
-async fn return_to_teacher(app: &tauri::AppHandle, teacher: &tauri::Window, gate: &BrowserGate, value: Bounds) -> Result<(), String> {
-    check_bounds(teacher, value)?;
-    let view = app.get_webview(VIEW).ok_or("El navegador está cerrado")?;
-    view.hide().map_err(|e| e.to_string())?;
-    let teacher_window = app.get_window("teacher").ok_or("Ventana docente cerrada")?;
-    view.reparent(&teacher_window).map_err(|e| e.to_string())?;
-    place(&view, value).await?;
-    if let Some(screen) = app.get_window(SCREEN) { screen.hide().map_err(|e| e.to_string())?; }
-    view.show().map_err(|e| e.to_string())?;
-    let mut session = gate.session.lock().map_err(|_| "Navegador ocupado")?;
-    session.bounds = Some(value); session.target = None; session.status.presenting = false;
-    drop(session);
-    let _ = teacher.set_focus();
-    Ok(())
+
+pub(crate) fn mirror_counters(gate: &BrowserGate) -> (u64,u64) {
+    gate.session.lock().ok().and_then(|session|session.mirror.as_ref().map(|m|(
+        m.captures.load(std::sync::atomic::Ordering::SeqCst),m.paints.load(std::sync::atomic::Ordering::SeqCst)))).unwrap_or_default()
 }
 
 // Registered before navigating away from an inert page. These native signals
@@ -270,53 +250,45 @@ pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webv
         }
         "layout" => {
             let value = bounds(&data)?; check_bounds(&window, value)?;
-            let presenting = { let mut session = gate.session.lock().map_err(|_| "Navegador ocupado")?;
-                session.bounds = Some(value); session.status.presenting };
-            if !presenting {
-                if let Some(view) = app.get_webview(VIEW) { place(&view, value).await?; }
-            }
+            gate.session.lock().map_err(|_| "Navegador ocupado")?.bounds=Some(value);
+            if let Some(view)=app.get_webview(VIEW) { place(&view,value).await?; }
         }
         "present" => {
             let id = data["monitorId"].as_str().ok_or("Selecciona una pantalla")?;
             let position = crate::audience_window::browser_monitor(&window, id)?;
             let view = app.get_webview(VIEW).ok_or("El navegador está cerrado")?;
             crate::audience_window::suspend_for_browser(&app)?;
+            stop_projection(&app,&gate)?;
             let screen = match app.get_window(SCREEN) {
                 Some(screen) => screen,
                 None => tauri::window::WindowBuilder::new(&app, SCREEN)
                     .title("Active Classroom · Navegador web").visible(false).decorations(false)
-                    .resizable(false).skip_taskbar(true).focused(false).build().map_err(|e| e.to_string())?,
+                    .resizable(false).skip_taskbar(true).focused(false).focusable(false).build().map_err(|e| e.to_string())?,
             };
-            // Do not use absolute positioning: the monitor-specific fullscreen path
-            // is the same mechanism as the existing projection on Wayland.
-            screen.hide().map_err(|e| e.to_string())?;
-            screen.set_fullscreen_on_monitor(position).map_err(|e| e.to_string())?;
-            view.hide().map_err(|e| e.to_string())?;
-            let value = gate.session.lock().map_err(|_| "Navegador ocupado")?.bounds.ok_or("Área docente ausente")?;
-            let result = async {
-                view.reparent(&screen).map_err(|e| e.to_string())?;
-                fill_projection(&view).await?;
-                // Recheck immediately before showing, as projection does.
-                crate::audience_window::browser_monitor(&window, id)?;
-                view.show().map_err(|e| e.to_string())?;
-                screen.show().map_err(|e| e.to_string())?;
-                Ok::<(), String>(())
-            }.await;
-            if let Err(error) = result {
-                if return_to_teacher(&app, &window, &gate, value).await.is_err() { let _ = close(&app, &gate); }
-                return Err(error);
+            screen.set_fullscreen_on_monitor(position).map_err(|e|e.to_string())?;
+            // Keep the only browser in the teacher window. The external window
+            // receives pixels, never ownership of the page or another session.
+            let mirrored=match mirror::start(&view,&screen).await {
+                Ok(mirrored)=>mirrored,
+                Err(error)=>{ let _=screen.hide(); return Err(error); }
+            };
+            if let Err(error)=crate::audience_window::browser_monitor(&window,id) {
+                mirrored.stop(); let _=screen.hide(); return Err(error);
             }
-            let mut session = gate.session.lock().map_err(|_| "Navegador ocupado")?;
-            session.target = Some(id.to_string()); session.status.presenting = true;
+            let mut session=gate.session.lock().map_err(|_| "Navegador ocupado")?;
+            session.target=Some(id.to_string()); session.status.presenting=true;
+            session.status.projection_error=None; session.mirror=Some(mirrored);
             drop(session);
-            let _ = window.set_focus();
+            let _=window.set_focus();
         }
-        "return" => { return_to_teacher(&app, &window, &gate, bounds(&data)?).await?; }
+        "return" => {
+            stop_projection(&app,&gate)?;
+            let _=window.set_focus();
+        }
         "status" => {
-            let (target, value) = { let session = gate.session.lock().map_err(|_| "Navegador ocupado")?; (session.target.clone(), session.bounds) };
+            let target=gate.session.lock().map_err(|_| "Navegador ocupado")?.target.clone();
             if target.as_ref().map(|id| crate::audience_window::browser_monitor(&window, id).is_err()).unwrap_or(false) {
-                let returned = if let Some(value) = value { return_to_teacher(&app, &window, &gate, value).await.is_ok() } else { false };
-                if !returned { close(&app, &gate)?; }
+                stop_projection(&app,&gate)?;
             }
             if let Some(view) = app.get_webview(VIEW) {
                 if let Ok(url) = view.url() {
@@ -337,7 +309,7 @@ pub(crate) fn window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             let app = window.app_handle().clone();
             tauri::async_runtime::spawn(async move {
                 let gate = app.state::<BrowserGate>(); let _operation = gate.operation.lock().await;
-                let _ = close(&app, &gate);
+                let _ = stop_projection(&app, &gate);
             });
         }
     } else if window.label() == "teacher" && matches!(event, tauri::WindowEvent::Destroyed) {

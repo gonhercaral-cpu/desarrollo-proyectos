@@ -4,7 +4,7 @@ import { preferredMonitor, readMonitorPreference, type ProjectionMonitor } from 
 import { icon } from "../ui/icons.ts";
 void import("./browser.css").catch(() => {});
 
-export interface BrowserStatus { open: boolean; url: string; title: string; loading: boolean; presenting: boolean }
+export interface BrowserStatus { open: boolean; url: string; title: string; loading: boolean; presenting: boolean; projectionError?: string | null }
 export interface BrowserBounds { x: number; y: number; width: number; height: number }
 // Every method resolves with the native status. The web content lives in a native child webview, never in this document.
 export interface BrowserBridge {
@@ -101,7 +101,7 @@ export class BrowserTool {
     this.overlay.innerHTML = `<header class="browser-toolbar">
       <div class="browser-nav"><button type="button" class="button button-outline" data-browser-back aria-label="Atrás">${icon("previous")}<span>Atrás</span></button><button type="button" class="button button-outline" data-browser-forward aria-label="Adelante">${icon("next")}<span>Adelante</span></button><button type="button" class="button button-outline" data-browser-reload aria-label="Recargar">${icon("refresh")}<span>Recargar</span></button></div>
       <form class="browser-address" data-browser-form novalidate><input data-browser-url type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://" aria-label="Dirección web" /><button type="submit" class="button button-primary" data-browser-go>Ir</button></form>
-      <div class="browser-screen"><label>Pantalla<select data-browser-monitor aria-label="Pantalla para mostrar la página"></select></label><button type="button" class="button button-primary" data-browser-present>${icon("projector")}<span>Mostrar en pantalla</span></button><button type="button" class="button button-outline" data-browser-return>Ocultar pantalla</button></div>
+      <div class="browser-screen"><label>Pantalla<select data-browser-monitor aria-label="Pantalla para mostrar la página"></select></label><button type="button" class="button button-primary" data-browser-present>${icon("projector")}<span>Duplicar en pantalla</span></button><button type="button" class="button button-outline" data-browser-return>Dejar de duplicar</button></div>
       <button type="button" class="button button-outline browser-close" data-browser-close>Cerrar y volver a clase</button>
     </header>
     <p class="browser-info"><strong data-browser-title></strong><span data-browser-address></span></p>
@@ -204,6 +204,7 @@ export class BrowserTool {
   private apply(status: BrowserStatus, epoch: number): void {
     if (!this.current(epoch)) return;
     this.status = { open: !!status?.open, url: String(status?.url ?? ""), title: String(status?.title ?? ""), loading: !!status?.loading, presenting: !!status?.presenting };
+    if (status?.projectionError) this.error = String(status.projectionError);
     if (this.webOpen && !this.status.open) { this.webOpen = false; this.opened = false; this.error = "La página se cerró. Escribe una dirección para abrirla de nuevo."; }
   }
   private async simple(task: () => Promise<BrowserStatus>): Promise<void> {
@@ -245,13 +246,13 @@ export class BrowserTool {
     });
   }
   private async layoutNow(epoch: number): Promise<void> {
-    if (!this.current(epoch) || !this.webOpen || this.status.presenting) return;
+    if (!this.current(epoch) || !this.webOpen) return;
     const bounds = this.bounds();
     if (!bounds || sameBounds(this.lastBounds, bounds)) return;
     this.apply(await this.bridge.layout(bounds), epoch); this.lastBounds = bounds;
   }
   private scheduleLayout(): void {
-    if (!this.active || !this.webOpen || this.status.presenting || this.layoutQueued) return;
+    if (!this.active || !this.webOpen || this.layoutQueued) return;
     this.layoutQueued = true;
     void this.act(async epoch => { this.layoutQueued = false; await this.layoutNow(epoch); });
   }
@@ -262,7 +263,7 @@ export class BrowserTool {
       this.timer = undefined;
       if (!this.active || this.pending) return;
       void this.act(async epoch => {
-        try { this.apply(await this.bridge.status(), epoch); if (this.pollFailed) { this.pollFailed = false; this.error = ""; } }
+        try { const status = await this.bridge.status(); this.apply(status, epoch); if (this.pollFailed) { this.pollFailed = false; this.error = status.projectionError ? String(status.projectionError) : ""; } }
         catch { if (this.current(epoch)) { this.error = "No se pudo consultar el estado del navegador."; this.pollFailed = true; } }
       });
     }, this.pollMs);
@@ -303,9 +304,9 @@ export class BrowserTool {
     this.part<HTMLButtonElement>("[data-browser-return]").disabled = !presenting || busy;
     this.part("[data-browser-host]").setAttribute("aria-busy", String(busy || this.status.loading));
     const note = this.part("[data-browser-note]");
-    const text = !ready ? "El navegador web solo está disponible en la aplicación de escritorio." : presenting ? "El contenido se muestra en la pantalla externa. Controla la navegación desde esta barra." : !web ? this.monitors.length < 2 ? "Escribe una dirección y pulsa Ir. Conecta una segunda pantalla para mostrarla al grupo." : "Escribe una dirección y pulsa Ir." : "";
+    const text = !ready ? "El navegador web solo está disponible en la aplicación de escritorio." : !web ? this.monitors.length < 2 ? "Escribe una dirección y pulsa Ir. Conecta una segunda pantalla para mostrarla al grupo." : "Escribe una dirección y pulsa Ir." : "";
     set("[data-browser-note]", text); note.hidden = !text;
-    const message = this.error || (!ready ? "Navegador no disponible fuera de la aplicación de escritorio." : busy || this.status.loading ? "Cargando…" : "");
+    const message = this.error || (!ready ? "Navegador no disponible fuera de la aplicación de escritorio." : busy || this.status.loading ? "Cargando…" : presenting ? "Duplicando en pantalla externa" : "");
     const status = this.part("[data-browser-status]");
     set("[data-browser-status]", message); status.hidden = !this.active || !message; status.setAttribute("role", this.active && (this.error || !ready) ? "alert" : "status");
   }

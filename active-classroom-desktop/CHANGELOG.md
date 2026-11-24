@@ -1,3 +1,11 @@
+## 1.0.27 — duplicación del navegador, pendiente de validación
+
+- La página permanece visible e interactiva en el equipo del docente durante la duplicación; ya no se traslada a otra ventana.
+- La pantalla externa dibuja una copia visual de esa misma página y sesión, sin un segundo navegador ni audio duplicado.
+- Capturas limitadas al área visible del navegador, una operación en curso y un fotograma retenido, con un máximo de 20 actualizaciones por segundo. No se captura el escritorio ni los controles privados del docente.
+- La duplicación solo se confirma después de dibujar un fotograma; ante un fallo se conserva el navegador principal y se informa del problema.
+- Nuevas pruebas de píxeles, cambios de la página y movimiento de video en Ubuntu/Wayland. La aceptación física sigue pendiente; contenidos protegidos y rendimiento dependen del sitio y del equipo.
+
 ## 1.0.26 — corrección del navegador, pendiente de validación Linux
 
 - El navegador se coloca sobre su área reservada sin dividir ni reducir la interfaz docente en Linux.
