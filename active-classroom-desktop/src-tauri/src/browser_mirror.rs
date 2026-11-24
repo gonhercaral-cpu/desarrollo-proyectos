@@ -25,6 +25,9 @@ pub(super) async fn start(view: &tauri::Webview, screen: &tauri::Window) -> Resu
     view.with_webview(move |platform| {
         let result = (|| -> Result<(), String> {
             let container = host.default_vbox().map_err(|e|e.to_string())?;
+            // Reuse the native window, but never retain a previous capture task
+            // or drawing area when the teacher starts duplication again.
+            for child in container.children() { child.destroy(); }
             let page = platform.inner();
             let area = gtk::DrawingArea::new();
             area.set_widget_name("classroom-browser-mirror");
@@ -124,7 +127,7 @@ pub(super) async fn start(view: &tauri::Webview, screen: &tauri::Window) -> Resu
         tauri::async_runtime::spawn_blocking(||std::thread::sleep(std::time::Duration::from_millis(50))).await.map_err(|e|e.to_string())?;
     }
     control.stop();
-    let _=screen.destroy();
+    let _=screen.hide();
     Err("No se pudo dibujar el navegador en la pantalla externa. La página permanece disponible en el equipo docente.".into())
 }
 

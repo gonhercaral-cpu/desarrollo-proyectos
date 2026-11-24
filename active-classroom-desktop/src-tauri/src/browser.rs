@@ -135,14 +135,16 @@ fn stop_projection(app: &tauri::AppHandle, gate: &BrowserGate) -> Result<(), Str
         if let Some(mirror)=session.mirror.take() { mirror.stop(); }
         session.target=None; session.status.presenting=false; session.status.projection_error=None;
     }
-    if let Some(screen)=app.get_window(SCREEN) { screen.destroy().map_err(|e|e.to_string())?; }
+    if let Some(screen)=app.get_window(SCREEN) { screen.hide().map_err(|e|e.to_string())?; }
     Ok(())
 }
 fn close(app: &tauri::AppHandle, gate: &BrowserGate) -> Result<(), String> {
-    stop_projection(app,gate)?;
-    if let Some(view)=app.get_webview(VIEW) { view.close().map_err(|e|e.to_string())?; }
+    let projection=stop_projection(app,gate);
+    // Closing the source must still run if the presentation window disappeared.
+    let browser=app.get_webview(VIEW).map(|view|view.close().map_err(|e|e.to_string())).unwrap_or(Ok(()));
+    let screen=app.get_window(SCREEN).map(|screen|screen.destroy().map_err(|e|e.to_string())).unwrap_or(Ok(()));
     *gate.session.lock().map_err(|_| "Navegador ocupado")?=Session::default();
-    Ok(())
+    projection.and(browser).and(screen)
 }
 
 pub(crate) fn mirror_counters(gate: &BrowserGate) -> (u64,u64) {
@@ -268,10 +270,10 @@ pub(crate) async fn classroom_browser(app: tauri::AppHandle, window: tauri::Webv
             // receives pixels, never ownership of the page or another session.
             let mirrored=match mirror::start(&view,&screen).await {
                 Ok(mirrored)=>mirrored,
-                Err(error)=>{ let _=screen.destroy(); return Err(error); }
+                Err(error)=>{ let _=screen.hide(); return Err(error); }
             };
             if let Err(error)=crate::audience_window::browser_monitor(&window,id) {
-                mirrored.stop(); let _=screen.destroy(); return Err(error);
+                mirrored.stop(); let _=screen.hide(); return Err(error);
             }
             let mut session=gate.session.lock().map_err(|_| "Navegador ocupado")?;
             session.target=Some(id.to_string()); session.status.presenting=true;
