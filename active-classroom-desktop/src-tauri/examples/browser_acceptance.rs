@@ -39,6 +39,26 @@ async fn action(app: &tauri::AppHandle, action: &str, data: Option<Value>) -> Re
     let status = browser::classroom_browser(app.clone(), teacher, app.state(), action.into(), data).await?;
     serde_json::to_value(status).map_err(|e| e.to_string())
 }
+fn clip_response(request: &str, clip: &[u8]) -> (&'static str,String,Vec<u8>) {
+    let range=request.lines().filter_map(|line|line.split_once(':'))
+        .find(|(name,_)|name.eq_ignore_ascii_case("range")).map(|(_,value)|value.trim());
+    let Some(range)=range else {return ("200 OK","Accept-Ranges: bytes\r\n".into(),clip.to_vec());};
+    let span=(|| -> Option<(usize,usize)> {
+        let (start,end)=range.strip_prefix("bytes=")?.split_once('-')?;
+        let (start,end)=if start.is_empty() {
+            let suffix=end.parse::<usize>().ok()?;
+            if suffix==0 {return None;}
+            (clip.len().saturating_sub(suffix),clip.len().checked_sub(1)?)
+        } else {
+            (start.parse().ok()?,if end.is_empty() {clip.len().checked_sub(1)?} else {end.parse::<usize>().ok()?.min(clip.len().checked_sub(1)?)})
+        };
+        (start<=end && start<clip.len()).then_some((start,end))
+    })();
+    match span {
+        Some((start,end))=>("206 Partial Content",format!("Accept-Ranges: bytes\r\nContent-Range: bytes {start}-{end}/{}\r\n",clip.len()),clip[start..=end].to_vec()),
+        None=>("416 Range Not Satisfiable",format!("Content-Range: bytes */{}\r\n",clip.len()),Vec::new()),
+    }
+}
 fn fixture() -> (String, Arc<AtomicUsize>) {
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = server.local_addr().unwrap().port();
@@ -50,20 +70,22 @@ fn fixture() -> (String, Arc<AtomicUsize>) {
             let mut request = [0u8; 8192]; let length = socket.read(&mut request).unwrap_or(0);
             let request = String::from_utf8_lossy(&request[..length]);
             let path = request.split_whitespace().nth(1).unwrap_or("/");
-            let (mime, extra, bytes) = if path.starts_with("/clip.mp4") {
-                ("video/mp4", "", clip.clone())
+            let (status,mime, extra, bytes) = if path.starts_with("/clip.mp4") {
+                // WebKit must be able to seek back when the short clip loops.
+                let (status,extra,bytes)=clip_response(&request,&clip);
+                (status,"video/mp4",extra,bytes)
             } else if path.starts_with("/download") {
                 counter.fetch_add(1, Ordering::SeqCst);
-                ("application/octet-stream", "Content-Disposition: attachment; filename=escape.bin\r\n", b"blocked download".to_vec())
+                ("200 OK","application/octet-stream", "Content-Disposition: attachment; filename=escape.bin\r\n".into(), b"blocked download".to_vec())
             } else {
-                ("text/html", "", br#"<!doctype html><title>Browser acceptance</title>
+                ("200 OK","text/html",String::new(), br#"<!doctype html><title>Browser acceptance</title>
                   <style>html,body{margin:0;min-height:100%;background:rgb(20,160,70)}#answer{position:fixed;left:8px;top:8px}#clip{position:fixed;left:20px;top:180px;width:320px;height:180px}#corner{position:fixed;right:0;bottom:0;width:80px;height:80px;background:rgb(220,20,160)}#flip{position:fixed;left:400px;top:20px;width:120px;height:50px}</style>
                   <input id="answer"><input id="upload" type="file"><div id="corner"></div><button id="flip" onclick="document.documentElement.style.background='rgb(20,70,200)';document.body.style.background='rgb(20,70,200)'">Cambiar</button>
                   <a id="popup" href="/next" target="_blank">popup</a>
                   <video id="clip" muted autoplay loop playsinline src="/clip.mp4"></video>
                   <script>window.fixtureReady=true;</script>"#.to_vec())
             };
-            let header = format!("HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n", bytes.len());
+            let header = format!("HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n", bytes.len());
             let _ = socket.write_all(header.as_bytes()); let _ = socket.write_all(&bytes);
         }
     });
@@ -286,7 +308,10 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
                 compositor_color(&json!({"x":current.position().x}),[20,70,200],"teacher-live-page")?;
                 let old_hash=updated["videoHash"].clone(); let mut advanced=false;
                 for _ in 0..30 {delay(100).await;if projected_pixels(app,None).await?["videoHash"]!=old_hash {advanced=true;break;}}
-                assert!(advanced,"El video del espejo está negro o congelado");
+                if !advanced {
+                    let playback=evaluate(&view,"(()=>{const v=document.querySelector('#clip');return {time:v.currentTime,paused:v.paused,ended:v.ended,ready:v.readyState,error:v.error?.message,loop:v.loop}})()").await?;
+                    return Err(format!("El video del espejo está negro o congelado; reproducción de origen: {playback}"));
+                }
                 projected_pixels(app,Some("live-page")).await?;
             }
             if cycle==1 {
