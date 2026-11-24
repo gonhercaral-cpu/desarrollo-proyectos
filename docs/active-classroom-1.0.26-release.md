@@ -1,6 +1,8 @@
 # Active Classroom 1.0.26 — corrección de navegador y proyección
 
-Estado: corrección integrada en [PR #52](https://github.com/gonhercaral-cpu/desarrollo-proyectos/pull/52), con VALIDATION completa aprobada. Firma y publicación estable **pendientes de autorización explícita para 1.0.26**. La versión pública continúa siendo 1.0.25.
+Estado: **1.0.26 firmada y publicada como estable**, con autorización explícita del usuario. [Release público](https://github.com/gonhercaral-cpu/desarrollo-proyectos/releases/tag/active-classroom-v1.0.26). Las 12 pruebas físicas permanecen pendientes.
+
+[Firma y publicación aprobadas](https://github.com/gonhercaral-cpu/desarrollo-proyectos/actions/runs/45341311772). El endpoint público del actualizador anuncia 1.0.26; la instalación sobre equipos físicos sigue pendiente.
 
 - Código certificado: `3a3e9059b8136ca391c33efa8c1c1bc5b43618ee`.
 - Merge: `95299bee9a6b56fc030e227394c8a58d2089a8df`, con el mismo árbol de archivos que el código certificado.
