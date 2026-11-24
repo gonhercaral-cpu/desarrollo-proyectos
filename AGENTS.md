@@ -1,5 +1,11 @@
 # Repository Guidelines
 
+## Base actualizada al iniciar una tarea
+
+Antes de auditar o modificar código, ejecutar `bash scripts/actualizar-checkout.sh`. Actualiza las referencias remotas, adelanta el checkout por fast-forward cuando es seguro y comprueba que contiene la última versión estable publicada. Resolver una base atrasada dentro de la tarea, sin pedir autorización de nuevo para la sincronización rutinaria. Si una rama activa diverge de `origin/main`, integrar la base vigente preservando su trabajo antes de implementar; no continuar silenciosamente desde una versión antigua.
+
+El checkout principal debe permanecer en `main`, siguiendo `origin/main`; usar ramas de trabajo para implementar y devolver el principal a `main` actualizado al finalizar. Conservar los cambios locales y las ramas con trabajo pendiente. No usar `reset --hard`, limpieza de archivos ni actualización automática en segundo plano sobre tareas activas. Si falla la consulta remota, no afirmar que la base está actualizada.
+
 ## Project Structure & Module Organization
 
 This is a Vite + React application backed by Firebase. Main code lives in `src/`: pages in `src/pages`, shared components in `src/components`, auth context in `src/context`, Firebase modules in `src/services`, utilities in `src/utils`, and global styles in `src/styles/app.css` plus `src/index.css`. Static assets belong in `public/` when served directly and `src/assets/` when imported. Firebase security files are at the root: `firestore.rules`, `storage.rules`, and `firestore.indexes.json`. Cloud Functions are a separate package in `functions/`. Rules tests live in `tests/`.
