@@ -360,7 +360,9 @@ export default function useRoomLayoutPlayback({
     const { layout, rule } = resolved.value;
     const urlMap = !streamMode && urlState.key === mapKey ? urlState.map : new Map();
     return {
-      layout,
+      // La ventana elige el bloque de columnas; las horas de clase siguen
+      // siendo datos del acomodo y nunca determinan su aparición.
+      layout: layout.schedule ? { ...layout, selectedViewId: rule.viewId || "" } : layout,
       rule,
       template: applyUrlMap(layout.template, urlMap),
     };

@@ -1,6 +1,13 @@
 // Modelo puro de "Acomodo de salones": normalización, validación, advertencias y
 // resolución horaria. Sin dependencias de Firebase/React para poder probarse en Node.
 
+import {
+  getScheduleWarnings,
+  normalizeMatrixStyle,
+  normalizeRoomSchedule,
+  validateRoomSchedule,
+} from "./roomSchedule.js";
+
 export const ROOM_MODEL_VERSION = 1;
 export const ROOM_DEFAULT_TIMEZONE = "America/Tijuana";
 export const ROOM_MAX_ASSIGNMENTS = 200;
@@ -10,7 +17,9 @@ export const ROOM_MAX_TEACHER_NAMES = 500;
 export const ROOM_MAX_ELEMENTS = 200;
 export const ROOM_MAX_COLUMNS = 12;
 export const ROOM_MAX_ROWS = 100;
-export const ROOM_ELEMENT_TYPES = ["text", "field", "assignments", "rect", "image"];
+export const ROOM_ELEMENT_TYPES = ["text", "field", "assignments", "rect", "image", "scheduleGrid"];
+// Plantilla integrada (no se guarda en Firestore): la selección por ID se resuelve al publicar.
+export const SCHEDULE_GRID_TEMPLATE_ID = "__schedule_grid__";
 export const ROOM_FIELDS = ["plantel", "day", "classTime", "room", "teacher", "group"];
 export const ROOM_ALIGNS = ["left", "center", "right"];
 
@@ -61,6 +70,39 @@ export const DEFAULT_ROOM_TEMPLATE = Object.freeze({
     }),
   ]),
 });
+
+// Misma cabecera institucional, con el cuadro dinámico de horarios en lugar de `assignments`.
+// Conserva version/columns/rows (campos obligatorios del modelo antiguo).
+export const DEFAULT_SCHEDULE_TEMPLATE = Object.freeze({
+  name: "Acomodo por horarios — Cuadrícula",
+  version: 1,
+  backgroundColor: "#0b3265",
+  backgroundUrl: "",
+  columns: 2,
+  rows: 4,
+  active: true,
+  matrixStyle: Object.freeze({ ...normalizeMatrixStyle({}) }),
+  elements: Object.freeze([
+    Object.freeze({
+      id: "title", type: "text", x: 6, y: 5, width: 70, height: 10, fontSize: 46,
+      color: "#ffffff", backgroundColor: "transparent", align: "left",
+      text: "Acomodo por horarios", field: "plantel", rowIndex: 0, url: "",
+    }),
+    DEFAULT_ROOM_TEMPLATE.elements.find((element) => element.id === "logo"),
+    DEFAULT_ROOM_TEMPLATE.elements.find((element) => element.id === "plantel"),
+    DEFAULT_ROOM_TEMPLATE.elements.find((element) => element.id === "day"),
+    Object.freeze({
+      id: "scheduleGrid", type: "scheduleGrid", x: 6, y: 26, width: 88, height: 68, fontSize: 34,
+      color: "#ffffff", backgroundColor: "transparent", align: "left",
+      text: "", field: "room", rowIndex: 0, url: "",
+    }),
+  ]),
+});
+
+export function getBuiltInRoomTemplate(templateId) {
+  if (text(templateId, 120) !== SCHEDULE_GRID_TEMPLATE_ID) return null;
+  return { ...normalizeRoomTemplate(DEFAULT_SCHEDULE_TEMPLATE), id: "" };
+}
 
 export const ROOM_BLOCK_PRESETS = Object.freeze([
   ...[["08:00", "09:00"], ["09:00", "10:00"], ["10:00", "11:00"]].map(([startTime, endTime]) => ({
@@ -222,6 +264,10 @@ export function normalizeRoomTemplate(data = {}) {
     rows: clampInt(source.rows, 1, ROOM_MAX_ROWS, DEFAULT_ROOM_TEMPLATE.rows),
     elements,
     active: source.active !== false,
+    // Solo plantillas con matriz lo llevan: las antiguas no ganan claves nuevas.
+    ...(source.matrixStyle && typeof source.matrixStyle === "object" && !Array.isArray(source.matrixStyle)
+      ? { matrixStyle: normalizeMatrixStyle(source.matrixStyle) }
+      : {}),
   };
   const id = text(source.id, 120);
   return id ? { id, ...template } : template;
@@ -306,6 +352,8 @@ export function normalizeDisplayRule(rule = {}) {
     ),
     active: rule?.active !== false,
     priority: clampInt(rule?.priority, -1000, 1000, 0),
+    // Vista de la matriz que muestra esta ventana; vacío = primera vista (sin clave en datos antiguos).
+    ...(text(rule?.viewId, 120) ? { viewId: text(rule.viewId, 120) } : {}),
   };
 }
 
@@ -336,6 +384,9 @@ export function normalizeRoomLayout(data = {}) {
     displayRules,
     active: source.active !== false,
   };
+  // Las celdas solo pueden apuntar a filas de ESTE acomodo; sin schedule = acomodo antiguo.
+  const schedule = normalizeRoomSchedule(source.schedule, assignments);
+  if (schedule) layout.schedule = schedule;
   const id = text(source.id, 120);
   return id ? { id, ...layout } : layout;
 }
@@ -349,6 +400,10 @@ export function validateRoomLayout(data) {
     throw new Error(`El acomodo admite máximo ${ROOM_MAX_RULES} ventanas de aparición.`);
   }
   if (raw.timezone && !isValidTimeZone(raw.timezone)) throw new Error("Zona horaria no válida.");
+  // Topes, referencias y rangos de la matriz se validan sobre el dato crudo, antes de normalizar.
+  if (raw.schedule !== undefined && raw.schedule !== null) {
+    validateRoomSchedule(raw.schedule, Array.isArray(raw.assignments) ? raw.assignments : []);
+  }
 
   const layout = normalizeRoomLayout(raw);
   if (!layout.plantel) throw new Error("Selecciona un plantel.");
@@ -371,6 +426,12 @@ export function validateRoomLayout(data) {
     }
     if (rule.dates.length === 0 && rule.daysOfWeek.length === 0) {
       throw new Error(`${label}: elige días de la semana o fechas.`);
+    }
+    if (rule.viewId) {
+      if (!layout.schedule) throw new Error(`${label}: elige una vista, pero el acomodo no usa matriz de horarios.`);
+      if (!layout.schedule.views.some((view) => view.id === rule.viewId)) {
+        throw new Error(`${label}: la vista seleccionada no existe.`);
+      }
     }
   });
   return layout;
@@ -636,7 +697,9 @@ export function getRoomLayoutWarnings(layout, allLayouts = [], devices = []) {
   const currentId = current.id || "";
   const activeAssignments = current.assignments.filter((row) => row.active);
 
-  const withoutTeacher = activeAssignments.filter((row) => !row.teacher).length;
+  // Con matriz, el maestro vive en las celdas: los avisos por fila no aplican.
+  const withoutTeacher = current.schedule ? 0 : activeAssignments.filter((row) => !row.teacher).length;
+  if (current.schedule) warnings.push(...getScheduleWarnings(current.schedule, current.assignments));
   if (withoutTeacher > 0) {
     warnings.push(`${withoutTeacher} fila(s) activa(s) sin maestro; se mostrarán sin nombre al publicar.`);
   }

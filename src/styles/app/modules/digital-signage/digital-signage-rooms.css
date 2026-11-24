@@ -879,3 +879,410 @@ html[data-theme="dark"] .signage-rooms-status-banner.success { color: #bbf7d0; }
   .signage-rooms-layer-row-actions { width: 100%; justify-content: flex-end; }
   .signage-rooms-layer-desc { flex-basis: 40%; }
 }
+
+/* =========================================================
+   MODO ACOMODO POR HORARIOS (SCHEDULE MATRIX & EDITOR)
+========================================================= */
+
+.signage-rooms-mode-switch-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--blue-soft, #eaf2ff);
+  border: 1px solid var(--border, #c2d2ed);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.signage-rooms-mode-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--primary-dark, #062d77);
+}
+
+.signage-rooms-schedule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.signage-rooms-schedule-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid var(--border, #dbe3ec);
+  padding-bottom: 10px;
+}
+
+.signage-rooms-schedule-nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.signage-rooms-subtab {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #dbe3ec);
+  border-radius: 6px;
+  background: var(--surface, #ffffff);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted, #64748b);
+  cursor: pointer;
+}
+
+.signage-rooms-subtab.active {
+  background: var(--primary, #0f4fc4);
+  border-color: var(--primary, #0f4fc4);
+  color: #ffffff;
+}
+
+.signage-rooms-toast-notice {
+  padding: 8px 12px;
+  background: var(--green-soft, #dcfce7);
+  border: 1px solid var(--green, #16a34a);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #14532d;
+}
+
+.signage-rooms-grid-filter-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.signage-rooms-view-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.signage-rooms-view-filter-label select {
+  height: 32px;
+  min-height: 32px;
+  padding: 2px 8px;
+  width: 220px;
+}
+
+.signage-rooms-matrix-scroll-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border, #dbe3ec);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  max-height: 520px;
+}
+
+.signage-rooms-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.signage-rooms-matrix-th-room {
+  width: 160px;
+  min-width: 160px;
+  background: var(--surface-3, #eef3f9);
+  padding: 8px;
+  font-size: 12px;
+  border-bottom: 2px solid var(--border, #dbe3ec);
+}
+
+.signage-rooms-matrix-th-col {
+  padding: 6px 8px;
+  background: var(--surface-3, #eef3f9);
+  border-bottom: 2px solid var(--border, #dbe3ec);
+  border-left: 1px solid var(--border, #dbe3ec);
+  text-align: center;
+}
+
+.signage-rooms-col-header-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.signage-rooms-col-header-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--primary-dark, #062d77);
+}
+
+.signage-rooms-col-header-time {
+  font-size: 11px;
+  color: var(--muted, #64748b);
+  font-weight: 600;
+}
+
+.signage-rooms-col-mini-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.signage-rooms-col-mini-actions button,
+.signage-rooms-room-row-tools button {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dbe3ec);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.signage-rooms-col-mini-actions button.danger,
+.signage-rooms-room-row-tools button.danger {
+  color: var(--danger, #b42318);
+}
+
+.signage-rooms-room-row-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+}
+
+.signage-rooms-room-name-input {
+  height: 30px !important;
+  min-height: 30px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+.signage-rooms-matrix-td-cell {
+  border-left: 1px solid var(--border, #dbe3ec);
+  border-bottom: 1px solid var(--border, #dbe3ec);
+  padding: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  vertical-align: middle;
+}
+
+.signage-rooms-matrix-td-cell:hover {
+  background: rgba(15, 79, 196, 0.04);
+}
+
+.signage-rooms-matrix-td-cell.is-selected {
+  outline: 2px solid var(--primary, #0f4fc4);
+  background: rgba(15, 79, 196, 0.08);
+}
+
+.signage-rooms-cell-tile {
+  padding: 6px 8px;
+  border-radius: 6px;
+  min-height: 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+}
+
+.signage-rooms-cell-teacher-name {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.signage-rooms-cell-activity-name {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.signage-rooms-tag-chip {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.signage-rooms-cell-empty-placeholder {
+  color: var(--border, #cbd5e1);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.signage-rooms-cell-inspector-panel {
+  padding: 14px;
+  border: 1px solid var(--primary, #0f4fc4);
+  background: var(--surface, #ffffff);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(15, 79, 196, 0.1);
+}
+
+.signage-rooms-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.signage-rooms-inspector-head h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--primary-dark, #062d77);
+}
+
+.signage-rooms-tags-chips-selection {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.signage-rooms-tag-toggle-chip {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* DISPLAY GRID STYLES (16:9 SCALED) */
+.signage-room-display-schedule-grid {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.signage-room-matrix-display-table {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.signage-room-matrix-display-row {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  flex: 1;
+  gap: inherit;
+}
+
+.signage-room-matrix-display-row.header-row {
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.signage-room-matrix-display-header-cell {
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signage-room-matrix-room-badge-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.signage-room-matrix-room-badge {
+  width: 100%;
+  height: 100%;
+  max-height: calc(85 * 100cqi / 1600);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  box-shadow: 0 calc(4 * 100cqi / 1600) calc(10 * 100cqi / 1600) rgba(0, 0, 0, 0.25);
+}
+
+.signage-room-matrix-display-cell {
+  flex: 1;
+  border: 1px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(6 * 100cqi / 1600) calc(10 * 100cqi / 1600);
+  gap: calc(4 * 100cqi / 1600);
+  box-shadow: 0 calc(2 * 100cqi / 1600) calc(8 * 100cqi / 1600) rgba(0, 0, 0, 0.08);
+}
+
+.signage-room-matrix-cell-teacher {
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.signage-room-matrix-cell-activity {
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.signage-room-matrix-cell-tag {
+  display: inline-block;
+  padding: calc(2 * 100cqi / 1600) calc(6 * 100cqi / 1600);
+  border-radius: calc(4 * 100cqi / 1600);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+/* PREVIEW ENLARGE MODAL */
+.signage-rooms-enlarge-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.signage-rooms-enlarge-modal-content {
+  width: min(95vw, calc(90vh * 16 / 9));
+  background: var(--surface, #ffffff);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* Las filas usan el alto disponible; el tamaño intrínseco del círculo no puede
+   expulsar salones fuera del lienzo. Encabezados y celdas comparten columnas. */
+.signage-room-matrix-display-row { min-height: 0; min-width: 0; }
+.signage-room-matrix-display-header-cell.room-col-header { flex: 0 0 auto; }
+.signage-room-matrix-room-badge-wrap { min-height: 0; }
+.signage-room-matrix-room-badge { width: auto; max-width: 100%; min-height: 0; overflow: hidden; }
+.signage-room-matrix-display-cell { min-width: 0; min-height: 0; box-sizing: border-box; overflow: hidden; }
+.signage-room-matrix-cell-teacher, .signage-room-matrix-cell-activity { overflow-wrap: anywhere; max-width: 100%; }
+.signage-room-matrix-cell-tag { line-height: 1.05; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.signage-rooms-preview-pages { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+@media (max-width: 600px) {
+  .signage-rooms-mode-switch-card, .signage-rooms-schedule-toolbar { flex-wrap: wrap; }
+  .signage-rooms-col-item-card, .signage-rooms-tag-item-card { flex-wrap: wrap; }
+  .signage-rooms-grid-workspace, .signage-rooms-schedule-editor { min-width: 0; }
+}
+
+.signage-room-matrix-display-cell { flex-flow: row wrap; align-content: center; column-gap: calc(8 * 100cqi / 1600); }
