@@ -16,7 +16,7 @@ impl MirrorControl {
 #[cfg(target_os = "linux")]
 pub(super) async fn start(view: &tauri::Webview, screen: &tauri::Window) -> Result<Arc<MirrorControl>, String> {
     use gtk::{prelude::*, cairo::{Context, ImageSurface}, glib::{self, ControlFlow}};
-    use webkit2gtk::{WebViewExt, SnapshotRegion, SnapshotOptions, gio::{Cancellable, prelude::*}};
+    use webkit2gtk::{WebViewExt, SnapshotRegion, SnapshotOptions, gio::Cancellable};
     use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
     let control = Arc::new(MirrorControl::default());
     let state = control.clone();
@@ -27,7 +27,11 @@ pub(super) async fn start(view: &tauri::Webview, screen: &tauri::Window) -> Resu
             let container = host.default_vbox().map_err(|e|e.to_string())?;
             // Reuse the native window, but never retain a previous capture task
             // or drawing area when the teacher starts duplication again.
-            for child in container.children() { child.destroy(); }
+            for child in container.children() {
+                // SAFETY: these are our private mirror widgets, on GTK's main
+                // thread. Destroy cancels their timer; no state is queried after.
+                unsafe { child.destroy(); }
+            }
             let page = platform.inner();
             let area = gtk::DrawingArea::new();
             area.set_widget_name("classroom-browser-mirror");
