@@ -68,6 +68,27 @@ fn fixture() -> (String, Arc<AtomicUsize>) {
     });
     (format!("http://classroom-browser.test:{port}"), downloads)
 }
+// XTest pointer/keyboard input verifies that the native overlay does not eat
+// clicks on the teacher toolbar and that the page itself remains interactive.
+async fn pointer(app: &tauri::AppHandle, x: f64, y: f64, text: Option<&str>) -> Result<(), String> {
+    let scale = app.get_window("teacher").ok_or("Falta docente")?.scale_factor().map_err(|e| e.to_string())?;
+    let found = std::process::Command::new("xdotool").args(["search","--onlyvisible","--name","^Browser geometry fixture$"]).output().map_err(|e|e.to_string())?;
+    let id = String::from_utf8_lossy(&found.stdout).lines().next().ok_or("Falta ventana X11 de prueba")?.to_string();
+    let clicked = std::process::Command::new("xdotool").args(["mousemove","--window",&id,&format!("{}",(x*scale).round() as i32),&format!("{}",(y*scale).round() as i32),"click","1"]).status().map_err(|e|e.to_string())?;
+    if !clicked.success() { return Err("Falló el clic nativo".into()); }
+    if let Some(text) = text {
+        let typed = std::process::Command::new("xdotool").args(["type","--clearmodifiers",text]).status().map_err(|e|e.to_string())?;
+        if !typed.success() { return Err("Falló el teclado nativo".into()); }
+    }
+    Ok(())
+}
+async fn teacher_pointer(app: &tauri::AppHandle) -> Result<(), String> {
+    if std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("x11") { return Ok(()); }
+    let teacher = app.get_webview("teacher").ok_or("Falta docente")?;
+    evaluate(&teacher,"window.toolbarClicks=0;true").await?;
+    pointer(app,30.,30.,None).await?;
+    until(&teacher,"window.toolbarClicks===1").await
+}
 // Observe GTK allocations and mapped ancestors, not just JS state. A page can
 // execute normally while its native parent is hidden or half the window tall.
 #[cfg(target_os = "linux")]
@@ -99,6 +120,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     delay(800).await;
     let teacher = app.get_webview("teacher").ok_or("Falta docente")?;
     until(&teacher, "document.readyState==='complete'").await?;
+    evaluate(&teacher,"window.toolbarClicks=0;document.querySelector('#toolbar').onclick=()=>window.toolbarClicks++;true").await?;
     let teacher_before = evaluate(&teacher, "({width:innerWidth,height:innerHeight})").await?;
     let bounds = json!({"x":10,"y":100,"width":760,"height":450});
     let opened = action(app, "open", Some(json!({"url":format!("{base}/first"),"bounds":bounds}))).await?;
@@ -109,6 +131,11 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     assert_eq!(evaluate(&teacher, "({width:innerWidth,height:innerHeight})").await?,teacher_before,"Se dividió la ventana docente");
     println!("BROWSER_CHECKPOINT initial-load");
     until(&view, "window.fixtureReady===true").await?;
+    teacher_pointer(app).await?;
+    if std::env::var("XDG_SESSION_TYPE").as_deref() == Ok("x11") {
+        pointer(app,30.,120.,Some("teclado")).await?;
+        until(&view,"document.querySelector('#answer').value.includes('teclado')").await?;
+    }
     evaluate(&view, "document.querySelector('#answer').value='conservar';sessionStorage.setItem('lesson','47');document.cookie='fixture=47';true").await?;
     // All these are forbidden from a real remote-origin webview, not a DOM mock.
     println!("BROWSER_CHECKPOINT teacher-cache-with-child");
@@ -169,12 +196,13 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     for _ in 0..50 { if downloads.load(Ordering::SeqCst)>0 {break;} delay(100).await; }
     assert!(downloads.load(Ordering::SeqCst)>0,"No se intentó descarga"); delay(200).await;
     action(app,"close",None).await?; assert!(app.get_webview("classroom-browser").is_none());
+    teacher_pointer(app).await?;
     println!("BROWSER_CHECKPOINT fresh-session");
     action(app,"open",Some(json!({"url":format!("{base}/fresh"),"bounds":bounds}))).await?;
     let fresh=app.get_webview("classroom-browser").unwrap(); until(&fresh,"window.fixtureReady===true").await?;
     assert_eq!(evaluate(&fresh,"sessionStorage.getItem('lesson')===null && !document.cookie.includes('fixture=47')").await?,true,"La sesión efímera no se liberó");
     action(app,"close",None).await?;
-    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true,"nativeGeometryVerified":true,"teacherViewportPreserved":true}))
+    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true,"nativeGeometryVerified":true,"teacherViewportPreserved":true,"nativePointerVerified":std::env::var("XDG_SESSION_TYPE").as_deref()==Ok("x11")}))
 }
 fn main() {
     #[cfg(not(target_os="linux"))] { eprintln!("Acceptance requires Linux"); return; }
@@ -184,10 +212,10 @@ fn main() {
         let passed=Arc::new(AtomicBool::new(false));let success=passed.clone();
         let app=tauri::Builder::default().plugin(tauri_plugin_dialog::init()).manage(browser::BrowserGate::default()).manage(audience_window::ProjectionGate::default()).manage(offline_cache::CacheGate::default())
             .on_window_event(browser::window_event)
-            .register_uri_scheme_protocol("tauri", |_, _| tauri::http::Response::builder().header("Content-Type","text/html").body(b"<!doctype html><title>Teacher browser fixture</title>".to_vec()).unwrap())
+            .register_uri_scheme_protocol("tauri", |_, _| tauri::http::Response::builder().header("Content-Type","text/html").body(br#"<!doctype html><title>Teacher browser fixture</title><button id="toolbar" style="position:fixed;left:10px;top:10px;width:150px;height:50px">Control docente</button>"#.to_vec()).unwrap())
             .invoke_handler(tauri::generate_handler![browser::classroom_browser,offline_cache::classroom_cache])
             .setup(move |app| {
-                let teacher=WebviewWindowBuilder::new(app,"teacher",WebviewUrl::CustomProtocol("tauri://localhost/browser-test".parse().unwrap())).inner_size(800.,600.).build()?;
+                let teacher=WebviewWindowBuilder::new(app,"teacher",WebviewUrl::CustomProtocol("tauri://localhost/browser-test".parse().unwrap())).title("Browser geometry fixture").decorations(false).inner_size(800.,600.).build()?;
                 if std::env::var_os("CLASSROOM_BROWSER_PROJECT").is_some() {
                     let monitors=teacher.available_monitors()?; assert_eq!(monitors.len(),2);
                     teacher.set_fullscreen_on_monitor(tauri::PhysicalPosition::new(monitors[0].position().x as f64,monitors[0].position().y as f64))?;

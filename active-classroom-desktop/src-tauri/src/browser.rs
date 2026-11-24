@@ -62,8 +62,8 @@ async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
         let result = (|| -> Result<(), String> {
             let native = platform.inner();
             let parent = native.parent().ok_or("El navegador no tiene contenedor")?;
-            let layer = if let Ok(layer) = parent.clone().downcast::<gtk::Fixed>() {
-                layer
+            let overlay = if let Ok(overlay) = parent.clone().downcast::<gtk::Overlay>() {
+                overlay
             } else {
                 let container = parent.downcast::<gtk::Box>().map_err(|_| "Contenedor del navegador incompatible")?;
                 let existing = container.children().into_iter().find_map(|child| child.downcast::<gtk::Overlay>().ok());
@@ -73,25 +73,25 @@ async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
                         let teacher = container.children().into_iter().find(|child| child.is::<webkit2gtk::WebView>() && child != native.upcast_ref::<gtk::Widget>())
                             .ok_or("Falta el contenido docente")?;
                         let overlay = gtk::Overlay::new();
-                        let layer = gtk::Fixed::new();
-                        layer.set_hexpand(true); layer.set_vexpand(true);
                         container.remove(&teacher);
-                        overlay.add(&teacher); overlay.add_overlay(&layer);
+                        overlay.add(&teacher);
                         container.pack_start(&overlay, true, true, 0);
                         overlay.show_all();
                         overlay
                     }
                 };
-                let layer = overlay.children().into_iter().find_map(|child| child.downcast::<gtk::Fixed>().ok())
-                    .ok_or("Falta el área superpuesta del navegador")?;
                 container.remove(&native);
-                layer.put(&native, value.x.round() as i32, value.y.round() as i32);
-                layer
+                overlay.add_overlay(&native);
+                overlay
             };
+            // The overlay's input window must cover only the page rectangle.
+            // A full-window Fixed layer would swallow clicks on teacher controls.
+            native.set_halign(gtk::Align::Start); native.set_valign(gtk::Align::Start);
             native.set_hexpand(false); native.set_vexpand(false);
+            native.set_margin_start(value.x.round() as i32); native.set_margin_end(0);
+            native.set_margin_top(value.y.round() as i32); native.set_margin_bottom(0);
             native.set_size_request(value.width.round() as i32, value.height.round() as i32);
-            layer.move_(&native, value.x.round() as i32, value.y.round() as i32);
-            layer.queue_resize();
+            overlay.queue_resize();
             Ok(())
         })();
         let _ = sender.try_send(result);
@@ -114,6 +114,9 @@ async fn fill_projection(view: &tauri::Webview) -> Result<(), String> {
     view.with_webview(move |platform| {
         let native = platform.inner();
         native.set_size_request(-1, -1);
+        native.set_margin_start(0); native.set_margin_end(0);
+        native.set_margin_top(0); native.set_margin_bottom(0);
+        native.set_halign(gtk::Align::Fill); native.set_valign(gtk::Align::Fill);
         native.set_hexpand(true); native.set_vexpand(true);
         let result = native.parent().ok_or("Falta el contenedor de proyección").map(|parent| {
             parent.show_all();
