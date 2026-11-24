@@ -24,34 +24,40 @@ mkdir -m 700 "$XDG_RUNTIME_DIR"
 for browser_scale in 1 2; do
 export CLASSROOM_BROWSER_SCALE="$browser_scale"
 xvfb-run -a -s "-screen 0 3200x2400x24" dbus-run-session -- bash -euo pipefail -c '
+  browser_socket="wayland-browser-$CLASSROOM_BROWSER_SCALE"
   weston --backend=x11-backend.so --use-pixman --output-count=2 --width=$((800*CLASSROOM_BROWSER_SCALE)) --height=$((600*CLASSROOM_BROWSER_SCALE)) \
-    --socket=wayland-browser --idle-time=0 --no-config --log="$XDG_RUNTIME_DIR/weston.log" &
+    --socket="$browser_socket" --idle-time=0 --no-config --log="$XDG_RUNTIME_DIR/weston.log" &
   compositor=$!
-  trap '\''kill "$compositor" 2>/dev/null || true; cat "$XDG_RUNTIME_DIR/weston.log"'\'' EXIT
+  trap '\''kill "$compositor" 2>/dev/null || true; wait "$compositor" 2>/dev/null || true; cat "$XDG_RUNTIME_DIR/weston.log"'\'' EXIT
   for attempt in $(seq 1 100); do
-    test -S "$XDG_RUNTIME_DIR/wayland-browser" && break
+    test -S "$XDG_RUNTIME_DIR/$browser_socket" && break
     kill -0 "$compositor"
     sleep 0.1
   done
-  test -S "$XDG_RUNTIME_DIR/wayland-browser"
-  # Weston sets only _NET_WM_NAME; xdotool search reads legacy WM_NAME.
-  # Copy the existing title so the test can identify each output explicitly.
-  for host in $(xdotool search --class "Weston Compositor"); do
-    title=$(xdotool getwindowname "$host")
-    printf "BROWSER_COMPOSITOR_WINDOW %s %s\n" "$host" "$title"
-    xdotool set_window --name "$title" "$host"
-  done
+  test -S "$XDG_RUNTIME_DIR/$browser_socket"
   # Keep both nested output windows unobscured for compositor pixel evidence.
   for output in 0 1; do
+    host_window=""
     for attempt in $(seq 1 100); do
-      host_window=$(xdotool search --name "^Weston Compositor - screen${output}$" | head -1) && break
+      # A Wayland socket can appear before X11 output windows are ready.
+      # Weston sets only _NET_WM_NAME; search by class and read that title.
+      for host in $(xdotool search --class "Weston Compositor" || true); do
+        title=$(xdotool getwindowname "$host")
+        if [[ "$title" == "Weston Compositor - screen${output}" ]]; then
+          host_window="$host"
+          xdotool set_window --name "$title" "$host"
+          printf "BROWSER_COMPOSITOR_WINDOW %s %s\n" "$host" "$title"
+          break
+        fi
+      done
+      test -n "$host_window" && break
       sleep 0.1
     done
     test -n "$host_window"
     xdotool windowmove "$host_window" $((output*1600)) 0
   done
   export GDK_SCALE="$CLASSROOM_BROWSER_SCALE"
-  export WAYLAND_DISPLAY=wayland-browser GDK_BACKEND=wayland XDG_SESSION_TYPE=wayland CLASSROOM_BROWSER_PROJECT=1
+  export WAYLAND_DISPLAY="$browser_socket" GDK_BACKEND=wayland XDG_SESSION_TYPE=wayland CLASSROOM_BROWSER_PROJECT=1
   timeout 105s src-tauri/target/debug/examples/browser_acceptance
 '
 done
