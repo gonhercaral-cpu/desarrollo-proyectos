@@ -57,7 +57,8 @@ fn fixture() -> (String, Arc<AtomicUsize>) {
                 ("application/octet-stream", "Content-Disposition: attachment; filename=escape.bin\r\n", b"blocked download".to_vec())
             } else {
                 ("text/html", "", br#"<!doctype html><title>Browser acceptance</title>
-                  <input id="answer"><input id="upload" type="file">
+                  <style>html,body{margin:0;min-height:100%;background:rgb(20,160,70)}#answer{position:fixed;left:8px;top:8px}#clip{position:fixed;left:20px;top:180px;width:320px;height:180px}#corner{position:fixed;right:0;bottom:0;width:80px;height:80px;background:rgb(220,20,160)}#flip{position:fixed;left:400px;top:20px;width:120px;height:50px}</style>
+                  <input id="answer"><input id="upload" type="file"><div id="corner"></div><button id="flip" onclick="document.documentElement.style.background='rgb(20,70,200)';document.body.style.background='rgb(20,70,200)'">Cambiar</button>
                   <a id="popup" href="/next" target="_blank">popup</a>
                   <video id="clip" muted autoplay loop playsinline src="/clip.mp4"></video>
                   <script>window.fixtureReady=true;</script>"#.to_vec())
@@ -116,6 +117,65 @@ async fn assert_geometry(view: &tauri::Webview, x: i32, y: i32, width: i32, heig
     }
     Err(format!("Vista no visible o geometría incorrecta: {actual}; esperado {x},{y},{width},{height}"))
 }
+// Read the native projection's painted pixels, not a DOM flag or its size.
+#[cfg(target_os="linux")]
+async fn projected_pixels(app: &tauri::AppHandle, save: Option<&str>) -> Result<Value,String> {
+    use gtk::prelude::*;
+    let host=app.get_window("classroom-browser-screen").ok_or("Falta espejo")?;
+    let screen=host.clone(); let filename=save.map(String::from);
+    let (sender,mut receiver)=tauri::async_runtime::channel(1);
+    host.run_on_main_thread(move || {
+        let result=(|| -> Result<Value,String> {
+            let area=screen.default_vbox().map_err(|e|e.to_string())?.children().into_iter()
+                .find_map(|child|child.downcast::<gtk::DrawingArea>().ok()).ok_or("Falta superficie del espejo")?;
+            if !area.is_drawable() { return Err("El espejo no está dibujándose".into()); }
+            let a=area.allocation();
+            let image=gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32,a.width(),a.height()).map_err(|e|e.to_string())?;
+            let context=gtk::cairo::Context::new(&image).map_err(|e|e.to_string())?;
+            area.draw(&context);
+            let scale=(a.width() as f64/760.).min(a.height() as f64/450.);
+            let ox=(a.width() as f64-760.*scale)/2.; let oy=(a.height() as f64-450.*scale)/2.;
+            let mut body=[0u8;3]; let mut corner=[0u8;3]; let mut video_hash=1469598103934665603u64;
+            let mut rgb=Vec::with_capacity((a.width()*a.height()*3) as usize);
+            image.with_data(|bytes| {
+                let pixel=|x:f64,y:f64| {
+                    let x=(ox+x*scale).round().clamp(0.,a.width() as f64-1.) as usize;
+                    let y=(oy+y*scale).round().clamp(0.,a.height() as f64-1.) as usize;
+                    let index=y*image.stride() as usize+x*4;
+                    [bytes[index+2],bytes[index+1],bytes[index]]
+                };
+                body=pixel(380.,100.); corner=pixel(740.,430.);
+                for y in (200..340).step_by(3) { for x in (40..320).step_by(3) {
+                    for channel in pixel(x as f64,y as f64) {video_hash=(video_hash ^ channel as u64).wrapping_mul(1099511628211);}
+                }}
+                if filename.is_some() { for y in 0..a.height() as usize { for x in 0..a.width() as usize {
+                    let i=y*image.stride() as usize+x*4; rgb.extend_from_slice(&[bytes[i+2],bytes[i+1],bytes[i]]);
+                }}}
+            }).map_err(|e|e.to_string())?;
+            if let (Some(name),Some(directory))=(filename,std::env::var_os("CLASSROOM_BROWSER_EVIDENCE_DIR")) {
+                let directory=std::path::PathBuf::from(directory);std::fs::create_dir_all(&directory).map_err(|e|e.to_string())?;
+                let data=gtk::glib::Bytes::from_owned(rgb);
+                let picture=gtk::gdk_pixbuf::Pixbuf::from_bytes(&data,gtk::gdk_pixbuf::Colorspace::Rgb,false,8,a.width(),a.height(),a.width()*3);
+                let suffix=std::env::var("GDK_SCALE").unwrap_or_default();
+                picture.savev(directory.join(format!("mirror-wayland-scale{suffix}-{name}.png")),"png",&[]).map_err(|e|e.to_string())?;
+            }
+            Ok(json!({"body":body,"corner":corner,"videoHash":video_hash,"width":a.width(),"height":a.height()}))
+        })();let _=sender.try_send(result);
+    }).map_err(|e|e.to_string())?;
+    receiver.recv().await.ok_or("No llegaron píxeles del espejo")?
+}
+#[cfg(not(target_os="linux"))]
+async fn projected_pixels(_: &tauri::AppHandle,_: Option<&str>) -> Result<Value,String> {Err("Solo Linux".into())}
+async fn painted_color(app: &tauri::AppHandle,color:[u8;3]) -> Result<Value,String> {
+    let mut last=Value::Null;
+    for _ in 0..50 {
+        last=projected_pixels(app,None).await?;
+        let rgb=last["body"].as_array().unwrap();
+        if rgb.iter().zip(color).all(|(a,b)|(a.as_i64().unwrap()-b as i64).abs()<6) {return Ok(last);}
+        delay(100).await;
+    }
+    Err(format!("El espejo no contiene los píxeles esperados {color:?}: {last}"))
+}
 async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize) -> Result<Value, String> {
     delay(800).await;
     let teacher = app.get_webview("teacher").ok_or("Falta docente")?;
@@ -163,6 +223,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
         let target = monitors["monitors"].as_array().unwrap().iter().find(|m| m["x"]!=current.position().x || m["y"]!=current.position().y).ok_or("Falta segunda pantalla virtual")?;
         for cycle in 0..30 {
             println!("BROWSER_CHECKPOINT projection-cycle-{cycle}");
+            evaluate(&view,"document.documentElement.style.background='rgb(20,160,70)';document.body.style.background='rgb(20,160,70)';true").await?;
             let shown=action(app,"present",Some(json!({"monitorId":target["id"]}))).await?;
             assert_eq!(shown["presenting"],true);
             let screen = app.get_window("classroom-browser-screen").ok_or("Falta ventana externa")?;
@@ -174,8 +235,26 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
                 delay(30).await;
             }
             assert!(on_target, "La página no llegó a la pantalla seleccionada");
-            let scale = target["scaleFactor"].as_f64().ok_or("Falta escala de pantalla")?;
-            assert_geometry(&view,0,0,(target["width"].as_f64().unwrap()/scale) as i32,(target["height"].as_f64().unwrap()/scale) as i32).await?;
+            assert_eq!(view.window().label(),"teacher","La duplicación movió la página fuera del docente");
+            assert_geometry(&view,10,100,760,450).await?;
+            assert_eq!(evaluate(&teacher,"({width:innerWidth,height:innerHeight})").await?,teacher_before);
+            if cycle==0 {
+                projected_pixels(app,Some("initial")).await?;
+                let first=painted_color(app,[20,160,70]).await?;
+                assert!(first["corner"].as_array().unwrap().iter().zip([220i64,20,160]).all(|(a,b)|(a.as_i64().unwrap()-b).abs()<6),"Se recortó el contenido: {first}");
+                // Change the live page while presenting; the teacher retains it.
+                evaluate(&view,"document.querySelector('#flip').click();true").await?;
+                let updated=painted_color(app,[20,70,200]).await?;
+                let old_hash=updated["videoHash"].clone(); let mut advanced=false;
+                for _ in 0..30 {delay(100).await;if projected_pixels(app,None).await?["videoHash"]!=old_hash {advanced=true;break;}}
+                assert!(advanced,"El video del espejo está negro o congelado");
+                projected_pixels(app,Some("live-page")).await?;
+            }
+            if cycle==1 {
+                let before=browser::mirror_counters(&app.state());delay(1000).await;
+                let after=browser::mirror_counters(&app.state());
+                assert!(after.0>=before.0+5 && after.1>before.1,"El espejo no se actualiza: {before:?} -> {after:?}");
+            }
             assert_eq!(evaluate(&view,"document.querySelector('#answer').value==='conservar' && sessionStorage.getItem('lesson')==='47'").await?,true);
             let returned=action(app,"return",Some(json!({"bounds":bounds}))).await?;
             assert_eq!(returned["presenting"],false);
@@ -206,7 +285,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     let fresh=app.get_webview("classroom-browser").unwrap(); until(&fresh,"window.fixtureReady===true").await?;
     assert_eq!(evaluate(&fresh,"sessionStorage.getItem('lesson')===null && !document.cookie.includes('fixture=47')").await?,true,"La sesión efímera no se liberó");
     action(app,"close",None).await?;
-    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true,"nativeGeometryVerified":true,"teacherViewportPreserved":true,"nativePointerVerified":std::env::var("XDG_SESSION_TYPE").as_deref()==Ok("x11")}))
+    Ok(json!({"ok":true,"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"projectionCycles":cycles,"mediaReady":media_ready,"ipcDenied":true,"teacherCacheWithChild":true,"remoteCacheDenied":true,"popupDenied":true,"ephemeralSessionCleared":true,"nativeGeometryVerified":true,"mirrorPixelsVerified":cycles>0,"mirrorVideoAdvances":cycles>0,"teacherKeptBrowser":true,"teacherViewportPreserved":true,"nativePointerVerified":std::env::var("XDG_SESSION_TYPE").as_deref()==Ok("x11")}))
 }
 fn main() {
     #[cfg(not(target_os="linux"))] { eprintln!("Acceptance requires Linux"); return; }

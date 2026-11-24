@@ -368,7 +368,18 @@ jobs:
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
 
       - name: Navegador nativo aislado en X11 y Wayland con pantallas virtuales
+        env:
+          CLASSROOM_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/browser-evidence
         run: npm run test:browser:linux
+
+      - name: Guardar imágenes de duplicación del navegador
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: classroom-browser-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/browser-evidence/*
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: MP4 H.264/AAC local, Range, controles, proyección y scroll largo en Tauri real
         env:

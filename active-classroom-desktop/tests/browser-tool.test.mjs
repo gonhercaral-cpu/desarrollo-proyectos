@@ -134,12 +134,13 @@ test("flujo completo: abrir, navegar, historial, recargar, mostrar, volver y cer
 
   h.query("[data-browser-present]").click(); await settle();
   assert.deepEqual(h.bridge.calls.at(-1), { name: "present", args: ["m2"] });
-  assert.match(h.query("[data-browser-note]").textContent, /pantalla externa/); assert.equal(h.query("[data-browser-note]").hidden, false);
+  assert.equal(h.query("[data-browser-note]").hidden, true, "la página continúa en el host");
+  assert.match(h.query("[data-browser-status]").textContent, /Duplicando/);
   assert.equal(h.query("[data-browser-present]").disabled, true); assert.equal(h.query("[data-browser-return]").disabled, false);
   assert.equal(h.query("[data-browser-back]").disabled, false); assert.equal(h.query("[data-browser-close]").disabled, false);
   assert.equal(h.query("[data-browser-tool]").hidden, false);
   h.rect.width = 700; window.dispatchEvent(new window.Event("resize")); await settle();
-  assert.equal(h.bridge.names().includes("layout"), false, "sin layout mientras se presenta");
+  assert.equal(h.bridge.names().includes("layout"), true, "el navegador docente sigue respondiendo al tamaño durante la duplicación");
   h.query("[data-browser-return]").click(); await settle();
   assert.deepEqual(h.bridge.calls.at(-1), { name: "returnToHost", args: [{ x: 10, y: 80, width: 700, height: 500 }] });
   assert.equal(h.bridge.state.presenting, false); assert.equal(h.query("[data-browser-return]").disabled, true);
@@ -234,7 +235,7 @@ test("el sondeo cada 1000 ms no se solapa, refleja presenting y se detiene al ce
   release(); await settle();
   assert.equal(h.query("[data-browser-return]").disabled, false); assert.equal(h.status().textContent, "Cargando…");
   h.bridge.state.loading = false;
-  t.mock.timers.tick(1000); await settle(); assert.equal(statusCalls(), 3); assert.equal(h.status().hidden, true);
+  t.mock.timers.tick(1000); await settle(); assert.equal(statusCalls(), 3); assert.equal(h.status().hidden, false); assert.match(h.status().textContent, /Duplicando/);
   h.query("[data-browser-close]").click(); await settle();
   const after = h.bridge.calls.length;
   t.mock.timers.tick(10000); await settle(); assert.equal(h.bridge.calls.length, after);
@@ -300,4 +301,21 @@ test("un fallo al pausar o preparar la clase impide abrir contenido web", async 
  assert.equal(h.query("[data-browser-go]").disabled, true);
  assert.match(h.status().textContent, /preparad/);
  await h.tool.close();
+});
+
+
+test("un fallo del espejo conserva la página docente y permite reintentar", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = setup(t); await h.openPage();
+  h.query("[data-browser-present]").click(); await settle();
+  h.bridge.state.presenting = false;
+  h.bridge.state.projectionError = "Se interrumpió la duplicación; la página sigue disponible aquí.";
+  t.mock.timers.tick(1000); await settle();
+  assert.match(h.status().textContent, /interrumpió/);
+  assert.equal(h.status().getAttribute("role"), "alert");
+  assert.equal(h.query("[data-browser-present]").disabled, false);
+  assert.equal(h.query("[data-browser-back]").disabled, false);
+  assert.equal(h.query("[data-browser-tool]").hidden, false);
+  assert.equal(h.bridge.names().filter(name => name === "open").length, 1);
+  assert.equal(h.bridge.names().includes("close"), false);
 });
