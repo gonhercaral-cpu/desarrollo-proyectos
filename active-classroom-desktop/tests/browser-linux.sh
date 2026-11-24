@@ -34,6 +34,13 @@ xvfb-run -a -s "-screen 0 3200x2400x24" dbus-run-session -- bash -euo pipefail -
     sleep 0.1
   done
   test -S "$XDG_RUNTIME_DIR/wayland-browser"
+  # Weston sets only _NET_WM_NAME; xdotool search reads legacy WM_NAME.
+  # Copy the existing title so the test can identify each output explicitly.
+  for host in $(xdotool search --class "Weston Compositor"); do
+    title=$(xdotool getwindowname "$host")
+    printf "BROWSER_COMPOSITOR_WINDOW %s %s\n" "$host" "$title"
+    xdotool set_window --name "$title" "$host"
+  done
   # Keep both nested output windows unobscured for compositor pixel evidence.
   for output in 0 1; do
     for attempt in $(seq 1 100); do
