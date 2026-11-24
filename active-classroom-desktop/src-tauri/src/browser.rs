@@ -62,8 +62,8 @@ async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
         let result = (|| -> Result<(), String> {
             let native = platform.inner();
             let parent = native.parent().ok_or("El navegador no tiene contenedor")?;
-            let overlay = if let Ok(overlay) = parent.clone().downcast::<gtk::Overlay>() {
-                overlay
+            let layer = if let Ok(layer) = parent.clone().downcast::<gtk::Layout>() {
+                layer
             } else {
                 let container = parent.downcast::<gtk::Box>().map_err(|_| "Contenedor del navegador incompatible")?;
                 let existing = container.children().into_iter().find_map(|child| child.downcast::<gtk::Overlay>().ok());
@@ -80,18 +80,32 @@ async fn place(view: &tauri::Webview, value: Bounds) -> Result<(), String> {
                         overlay
                     }
                 };
+                let layer = overlay.children().into_iter().find_map(|child| child.downcast::<gtk::Layout>().ok())
+                    .unwrap_or_else(|| {
+                        let layer = gtk::Layout::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+                        layer.set_halign(gtk::Align::Start); layer.set_valign(gtk::Align::Start);
+                        // Empty input windows must not intercept the class after
+                        // projection or close. The same layer is reused on return.
+                        layer.connect_remove(|layer, _| layer.hide());
+                        overlay.add_overlay(&layer);
+                        layer
+                    });
                 container.remove(&native);
-                overlay.add_overlay(&native);
-                overlay
+                layer.put(&native, 0, 0);
+                layer
             };
-            // The overlay's input window must cover only the page rectangle.
-            // A full-window Fixed layer would swallow clicks on teacher controls.
-            native.set_halign(gtk::Align::Start); native.set_valign(gtk::Align::Start);
+            // Layout has no natural-size dependency on its children. WebKit can
+            // retain the projector's preferred size; it must not enlarge the host.
+            // Both the paint and input windows cover only the reserved rectangle.
+            layer.set_margin_start(value.x.round() as i32); layer.set_margin_top(value.y.round() as i32);
+            layer.set_size_request(value.width.round() as i32, value.height.round() as i32);
+            layer.set_size(value.width.round() as u32, value.height.round() as u32);
+            native.set_margin_start(0); native.set_margin_end(0);
+            native.set_margin_top(0); native.set_margin_bottom(0);
+            native.set_halign(gtk::Align::Fill); native.set_valign(gtk::Align::Fill);
             native.set_hexpand(false); native.set_vexpand(false);
-            native.set_margin_start(value.x.round() as i32); native.set_margin_end(0);
-            native.set_margin_top(value.y.round() as i32); native.set_margin_bottom(0);
             native.set_size_request(value.width.round() as i32, value.height.round() as i32);
-            overlay.queue_resize();
+            layer.queue_resize(); layer.show_all();
             Ok(())
         })();
         let _ = sender.try_send(result);

@@ -120,7 +120,7 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     delay(800).await;
     let teacher = app.get_webview("teacher").ok_or("Falta docente")?;
     until(&teacher, "document.readyState==='complete'").await?;
-    evaluate(&teacher,"window.toolbarClicks=0;document.querySelector('#toolbar').onclick=()=>window.toolbarClicks++;true").await?;
+    evaluate(&teacher,"window.toolbarClicks=0;window.hostClicks=0;document.querySelector('#toolbar').onclick=()=>window.toolbarClicks++;document.querySelector('#inside').onclick=()=>window.hostClicks++;true").await?;
     let teacher_before = evaluate(&teacher, "({width:innerWidth,height:innerHeight})").await?;
     let bounds = json!({"x":10,"y":100,"width":760,"height":450});
     let opened = action(app, "open", Some(json!({"url":format!("{base}/first"),"bounds":bounds}))).await?;
@@ -197,6 +197,10 @@ async fn acceptance(app: &tauri::AppHandle, base: &str, downloads: &AtomicUsize)
     assert!(downloads.load(Ordering::SeqCst)>0,"No se intentó descarga"); delay(200).await;
     action(app,"close",None).await?; assert!(app.get_webview("classroom-browser").is_none());
     teacher_pointer(app).await?;
+    if std::env::var("XDG_SESSION_TYPE").as_deref() == Ok("x11") {
+        pointer(app,30.,130.,None).await?;
+        until(&teacher,"window.hostClicks===1").await?;
+    }
     println!("BROWSER_CHECKPOINT fresh-session");
     action(app,"open",Some(json!({"url":format!("{base}/fresh"),"bounds":bounds}))).await?;
     let fresh=app.get_webview("classroom-browser").unwrap(); until(&fresh,"window.fixtureReady===true").await?;
@@ -212,7 +216,7 @@ fn main() {
         let passed=Arc::new(AtomicBool::new(false));let success=passed.clone();
         let app=tauri::Builder::default().plugin(tauri_plugin_dialog::init()).manage(browser::BrowserGate::default()).manage(audience_window::ProjectionGate::default()).manage(offline_cache::CacheGate::default())
             .on_window_event(browser::window_event)
-            .register_uri_scheme_protocol("tauri", |_, _| tauri::http::Response::builder().header("Content-Type","text/html").body(br#"<!doctype html><title>Teacher browser fixture</title><button id="toolbar" style="position:fixed;left:10px;top:10px;width:150px;height:50px">Control docente</button>"#.to_vec()).unwrap())
+            .register_uri_scheme_protocol("tauri", |_, _| tauri::http::Response::builder().header("Content-Type","text/html").body(br#"<!doctype html><title>Teacher browser fixture</title><button id="toolbar" style="position:fixed;left:10px;top:10px;width:150px;height:50px">Control docente</button><button id="inside" style="position:fixed;left:10px;top:110px;width:150px;height:50px">Clase</button>"#.to_vec()).unwrap())
             .invoke_handler(tauri::generate_handler![browser::classroom_browser,offline_cache::classroom_cache])
             .setup(move |app| {
                 let teacher=WebviewWindowBuilder::new(app,"teacher",WebviewUrl::CustomProtocol("tauri://localhost/browser-test".parse().unwrap())).title("Browser geometry fixture").decorations(false).inner_size(800.,600.).build()?;
