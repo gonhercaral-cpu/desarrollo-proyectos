@@ -3,7 +3,15 @@ import {
   formatRoomClassTime,
   getRoomDayLabel,
   DEFAULT_ROOM_TEMPLATE,
+  DEFAULT_SCHEDULE_TEMPLATE,
 } from "../../utils/digitalSignage/roomLayouts";
+import {
+  getSchedulePages,
+  getScheduleCell,
+  getScheduleView,
+  normalizeMatrixStyle,
+  DEFAULT_MATRIX_STYLE,
+} from "../../utils/digitalSignage/roomSchedule";
 
 function fitTextSize(text, requested, width, height) {
   const count = Math.max(1, Array.from(String(text || "")).length);
@@ -26,10 +34,13 @@ export default function RoomLayoutDisplay({
   template,
   nowMillis = 0,
   className = "",
+  selectedViewId = "",
+  pageIndex: explicitPageIndex = null,
 }) {
   const activeTemplate = useMemo(() => {
     if (template && typeof template === "object") return template;
     if (layout?.template && typeof layout.template === "object") return layout.template;
+    if (layout?.schedule) return DEFAULT_SCHEDULE_TEMPLATE;
     return (
       DEFAULT_ROOM_TEMPLATE || {
         version: 1,
@@ -40,7 +51,7 @@ export default function RoomLayoutDisplay({
         elements: [],
       }
     );
-  }, [template, layout?.template]);
+  }, [template, layout?.template, layout?.schedule]);
 
   const activeAssignments = useMemo(() => {
     const list = Array.isArray(layout?.assignments) ? layout.assignments : [];
@@ -260,6 +271,196 @@ export default function RoomLayoutDisplay({
                     </div>
                   ); })}
                 </div>
+              </div>
+            );
+          }
+
+          if (el.type === "scheduleGrid") {
+            const schedule = layout?.schedule;
+            const matrixStyle = typeof normalizeMatrixStyle === "function"
+              ? normalizeMatrixStyle(activeTemplate.matrixStyle)
+              : (activeTemplate.matrixStyle || DEFAULT_MATRIX_STYLE);
+
+            if (!schedule) {
+              return (
+                <div
+                  key={key}
+                  className="signage-room-display-element signage-room-display-schedule-grid"
+                  style={style}
+                >
+                  <div className="signage-room-schedule-empty-msg">
+                    Cuadrícula de horarios (sin datos configurados en este acomodo).
+                  </div>
+                </div>
+              );
+            }
+
+            const activeView = typeof getScheduleView === "function"
+              ? getScheduleView(schedule, selectedViewId || layout.selectedViewId)
+              : (schedule.views?.[0] || null);
+
+            const schedulePages = typeof getSchedulePages === "function"
+              ? getSchedulePages(layout, activeView?.id)
+              : [{ rows: activeAssignments, columns: schedule.columns || [] }];
+
+            const scheduleTotalPages = Math.max(1, schedulePages.length);
+            const activePageIndex = explicitPageIndex !== null && explicitPageIndex !== undefined
+              ? Math.max(0, Math.min(scheduleTotalPages - 1, explicitPageIndex))
+              : activeView?.rotate && activeView?.pageSeconds > 0 && scheduleTotalPages > 1 && nowMillis > 0
+              ? Math.floor(nowMillis / (activeView.pageSeconds * 1000)) % scheduleTotalPages
+              : 0;
+
+            const currentPage = schedulePages[activePageIndex] || { rows: [], columns: [] };
+            const baseFontPx = matrixStyle.fontSize || 34;
+            const shape = matrixStyle.roomShape || "circle";
+            const roomRadius =
+              shape === "circle"
+                ? "9999px"
+                : shape === "pill" ? "9999px" : shape === "rounded"
+                ? "calc(12 * 100cqi / 1600)"
+                : "0px";
+
+            return (
+              <div
+                key={key}
+                className="signage-room-display-element signage-room-display-schedule-grid"
+                style={{
+                  ...style,
+                  backgroundColor: "transparent",
+                  fontFamily: matrixStyle.fontFamily || "sans-serif",
+                }}
+              >
+                <div
+                  className="signage-room-matrix-display-table"
+                  style={{
+                    display: "grid",
+                    gridTemplateRows: `auto repeat(${Math.max(1, currentPage.rows.length)}, minmax(0, 1fr))`,
+                    rowGap: `calc(${matrixStyle.rowGap ?? 10} * 100cqi / 1600)`,
+                    columnGap: `calc(${matrixStyle.columnGap ?? 16} * 100cqi / 1600)`,
+                  }}
+                >
+                  <div className="signage-room-matrix-display-row header-row">
+                    <div
+                      className="signage-room-matrix-display-header-cell room-col-header"
+                      style={{
+                        width: `calc(${matrixStyle.roomWidth || 120} * 100cqi / 1600)`,
+                        color: matrixStyle.headerColor || "#ffffff",
+                        fontSize: `calc(${baseFontPx * 0.85} * 100cqi / 1600)`,
+                      }}
+                    >
+                      Salón
+                    </div>
+                    {currentPage.columns.map((col) => (
+                      <div
+                        key={col.id}
+                        className="signage-room-matrix-display-header-cell time-col-header"
+                        style={{
+                          color: matrixStyle.headerColor || "#ffffff",
+                          fontSize: `calc(${baseFontPx * 0.9} * 100cqi / 1600)`,
+                        }}
+                      >
+                        {col.label || `${col.startTime} - ${col.endTime}`}
+                      </div>
+                    ))}
+                  </div>
+
+                  {currentPage.rows.map((assignment, rowIdx) => (
+                    <div key={assignment.id || rowIdx} className="signage-room-matrix-display-row data-row">
+                      <div
+                        className="signage-room-matrix-room-badge-wrap"
+                        style={{
+                          width: `calc(${matrixStyle.roomWidth || 120} * 100cqi / 1600)`,
+                        }}
+                      >
+                        <div
+                          className="signage-room-matrix-room-badge"
+                          style={{
+                            backgroundColor: matrixStyle.roomBackground || "#bb4937",
+                            color: matrixStyle.roomColor || "#ffffff",
+                            borderRadius: roomRadius,
+                            fontSize: `calc(${baseFontPx * 0.9} * 100cqi / 1600)`,
+                          }}
+                        >
+                          {assignment.roomName || `${rowIdx + 1}`}
+                        </div>
+                      </div>
+
+                      {currentPage.columns.map((col) => {
+                        let cell = null;
+                        if (typeof getScheduleCell === "function") {
+                          try {
+                            cell = getScheduleCell(schedule, assignment.id, col.id);
+                          } catch { /* Se representa una celda vacía. */ }
+                        }
+                        if (!cell) {
+                          cell = (schedule.cells || []).find(
+                            (c) => c && c.rowId === assignment.id && c.columnId === col.id
+                          );
+                        }
+
+                        const cellTags = (cell?.tagIds || [])
+                          .map((tId) => (schedule.tags || []).find((t) => t.id === tId))
+                          .filter(Boolean);
+
+                        const hasData = Boolean(cell?.teacher?.trim()) || Boolean(cell?.activity?.trim()) || cellTags.length > 0;
+                        const cellText = [cell?.teacher || cell?.activity, ...cellTags.map(tag => tag.name)].filter(Boolean).join(" ");
+                        const availableWidth = ((el.width || 88) * 16 - matrixStyle.roomWidth - matrixStyle.columnGap * currentPage.columns.length) / Math.max(1, currentPage.columns.length) - 20;
+                        const availableHeight = ((el.height || 68) * 9 - baseFontPx * 1.2 - matrixStyle.rowGap * currentPage.rows.length) / Math.max(1, currentPage.rows.length) - 12;
+                        const cellFontPx = Math.min(baseFontPx, Math.max(20, fitTextSize(cellText, baseFontPx, Math.max(20, availableWidth), Math.max(20, availableHeight))));
+
+                        return (
+                          <div
+                            key={col.id}
+                            className={`signage-room-matrix-display-cell ${hasData ? "has-data" : "is-empty"}`}
+                            title={cellText}
+                            style={{
+                              backgroundColor: cell?.backgroundColor || matrixStyle.cellBackground || "#edf4ff",
+                              color: cell?.color || matrixStyle.cellColor || "#11243a",
+                              borderColor: matrixStyle.borderColor || "#c2d2ed",
+                              borderRadius: `calc(${matrixStyle.borderRadius ?? 10} * 100cqi / 1600)`,
+                            }}
+                          >
+                            {cell?.teacher && (
+                              <span
+                                className="signage-room-matrix-cell-teacher"
+                                style={{ fontSize: `calc(${cellFontPx} * 100cqi / 1600)` }}
+                              >
+                                {cell.teacher}
+                              </span>
+                            )}
+                            {cell?.activity && (
+                              <span
+                                className="signage-room-matrix-cell-activity"
+                                style={{ fontSize: `calc(${cellFontPx * 0.85} * 100cqi / 1600)` }}
+                              >
+                                {cell.activity}
+                              </span>
+                            )}
+                            {cellTags.map((tag) => (
+                              <span
+                                key={tag.id}
+                                className="signage-room-matrix-cell-tag"
+                                style={{
+                                  backgroundColor: tag.backgroundColor,
+                                  color: tag.color,
+                                  fontSize: `calc(${cellFontPx * 0.65} * 100cqi / 1600)`,
+                                }}
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+
+                {scheduleTotalPages > 1 && (
+                  <div className="signage-room-display-page-indicator">
+                    Pág. {activePageIndex + 1} / {scheduleTotalPages}
+                  </div>
+                )}
               </div>
             );
           }

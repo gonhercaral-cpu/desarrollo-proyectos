@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import RoomLayoutDisplay from "./RoomLayoutDisplay";
 import { createRoomId } from "../../utils/digitalSignage/roomLayouts";
+import { DEFAULT_MATRIX_STYLE, MATRIX_FONT_FAMILIES } from "../../utils/digitalSignage/roomSchedule";
 
 
 const EMPTY_TEMPLATE = {
@@ -42,6 +43,12 @@ export default function RoomLayoutTemplateEditor({
     const next = { ...templateRef.current, ...partial };
     templateRef.current = next;
     onChange(next);
+  }
+
+  function updateMatrixStyle(partial) {
+    const currentStyle = templateRef.current.matrixStyle || DEFAULT_MATRIX_STYLE || {};
+    const nextStyle = { ...currentStyle, ...partial };
+    updateTemplate({ matrixStyle: nextStyle });
   }
 
   function updateElement(id, partial) {
@@ -86,6 +93,12 @@ export default function RoomLayoutTemplateEditor({
       defaultEl.width = 90;
       defaultEl.height = 72;
       defaultEl.fontSize = 32;
+    } else if (type === "scheduleGrid") {
+      defaultEl.x = 6;
+      defaultEl.y = 26;
+      defaultEl.width = 88;
+      defaultEl.height = 68;
+      defaultEl.fontSize = 34;
     } else if (type === "text") {
       defaultEl.text = "Texto informativo";
       defaultEl.width = 40;
@@ -322,6 +335,14 @@ export default function RoomLayoutTemplateEditor({
             type="button"
             className="visual-outline-button"
             disabled={uploading || saving}
+            onClick={() => addElement("scheduleGrid")}
+          >
+            + Cuadrícula horarios
+          </button>
+          <button
+            type="button"
+            className="visual-outline-button"
+            disabled={uploading || saving}
             onClick={() => addElement("rect")}
           >
             + Rectángulo
@@ -349,6 +370,7 @@ export default function RoomLayoutTemplateEditor({
                 if (el.type === "field") desc = `Campo: ${el.field}`;
                 if (el.type === "image") desc = el.url ? "Imagen personalizada" : "Logo AES";
                 if (el.type === "assignments") desc = "Distribución de salones";
+                if (el.type === "scheduleGrid") desc = "Matriz de Horarios";
                 return (
                   <div
                     key={el.id}
@@ -642,6 +664,134 @@ export default function RoomLayoutTemplateEditor({
                       </label>
                     )}
                   </div>
+                )}
+
+                {selectedElement.type === "scheduleGrid" && (
+                  <fieldset className="signage-rooms-fieldset">
+                    <legend>Estilo de la Matriz de Horarios</legend>
+                    <div className="signage-rooms-coords-grid">
+                      <label className="signage-rooms-field">
+                        Tipografía
+                        <select
+                          value={activeTemplate.matrixStyle?.fontFamily || "sans-serif"}
+                          onChange={(e) => updateMatrixStyle({ fontFamily: e.target.value })}
+                        >
+                          {MATRIX_FONT_FAMILIES.map(font => <option key={font} value={font}>{font}</option>)}
+                        </select>
+                      </label>
+                      <label className="signage-rooms-field">
+                        Tamaño base letra
+                        <input
+                          type="number"
+                          min="16"
+                          max="72"
+                          value={activeTemplate.matrixStyle?.fontSize || 34}
+                          onChange={(e) =>
+                            updateMatrixStyle({ fontSize: parseInt(e.target.value, 10) || 34 })
+                          }
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Color encabezado
+                        <input
+                          type="color"
+                          value={activeTemplate.matrixStyle?.headerColor || "#ffffff"}
+                          onChange={(e) => updateMatrixStyle({ headerColor: e.target.value })}
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Color texto celda
+                        <input
+                          type="color"
+                          value={activeTemplate.matrixStyle?.cellColor || "#11243a"}
+                          onChange={(e) => updateMatrixStyle({ cellColor: e.target.value })}
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Fondo celda
+                        <input
+                          type="text"
+                          value={activeTemplate.matrixStyle?.cellBackground || "#edf4ff"}
+                          onChange={(e) => updateMatrixStyle({ cellBackground: e.target.value })}
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Borde celda
+                        <input
+                          type="text"
+                          value={activeTemplate.matrixStyle?.borderColor || "#c2d2ed"}
+                          onChange={(e) => updateMatrixStyle({ borderColor: e.target.value })}
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Color número salón
+                        <input
+                          type="color"
+                          value={activeTemplate.matrixStyle?.roomColor || "#ffffff"}
+                          onChange={(e) => updateMatrixStyle({ roomColor: e.target.value })}
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Fondo número salón
+                        <input
+                          type="color"
+                          value={activeTemplate.matrixStyle?.roomBackground || "#bb4937"}
+                          onChange={(e) => updateMatrixStyle({ roomBackground: e.target.value })}
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Forma salón
+                        <select
+                          value={activeTemplate.matrixStyle?.roomShape || "circle"}
+                          onChange={(e) => updateMatrixStyle({ roomShape: e.target.value })}
+                        >
+                          <option value="circle">Círculo</option>
+                          <option value="rounded">Redondeado</option>
+                          <option value="square">Cuadrado</option>
+                        </select>
+                      </label>
+                      <label className="signage-rooms-field">
+                        Ancho salón (px)
+                        <input
+                          type="number"
+                          min="60"
+                          max="240"
+                          value={activeTemplate.matrixStyle?.roomWidth || 120}
+                          onChange={(e) =>
+                            updateMatrixStyle({ roomWidth: parseInt(e.target.value, 10) || 120 })
+                          }
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Separación filas
+                        <input
+                          type="number"
+                          min="0"
+                          max="40"
+                          value={activeTemplate.matrixStyle?.rowGap ?? 10}
+                          onChange={(e) =>
+                            updateMatrixStyle({ rowGap: parseInt(e.target.value, 10) || 0 })
+                          }
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Separación columnas
+                        <input
+                          type="number"
+                          min="0"
+                          max="40"
+                          value={activeTemplate.matrixStyle?.columnGap ?? 16}
+                          onChange={(e) =>
+                            updateMatrixStyle({ columnGap: parseInt(e.target.value, 10) || 0 })
+                          }
+                        />
+                      </label>
+                      <label className="signage-rooms-field">
+                        Redondez de celdas
+                        <input type="number" min="0" max="60" value={activeTemplate.matrixStyle?.borderRadius ?? 10} onChange={event => updateMatrixStyle({borderRadius: Number(event.target.value)})} />
+                      </label>
+                    </div>
+                  </fieldset>
                 )}
 
                 {selectedElement.type === "image" && (

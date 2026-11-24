@@ -686,3 +686,142 @@ test("roomId opcional se conserva en normalización, snapshot publicado y borrad
   const fromCatalog = roomModel.createRoomLayoutDraft({ plantel: "Norte", rooms: [{ id: "r9", name: "9" }] });
   assert.equal(fromCatalog.assignments[0].roomId, "r9");
 });
+
+// ---------- matriz de horarios (control optimista simulado; NO es el emulador real) ----------
+
+function scheduleDraft(overrides = {}) {
+  const assignments = ["1", "2", "3"].map((name) => ({ id: `row-${name}`, roomName: name, teacher: "", group: "", active: true }));
+  const columns = [15, 16, 17].map((hour) => ({
+    id: `col-${hour}`, label: `${hour - 12}:00 PM`, startTime: `${hour}:00`, endTime: `${hour + 1}:00`,
+  }));
+  const base = draft({
+    assignments,
+    schedule: {
+      version: 1,
+      shift: "Vespertino",
+      columns,
+      cells: [
+        { rowId: "row-1", columnId: "col-15", teacher: "Ailyn", tagIds: ["kids"] },
+        { rowId: "row-3", columnId: "col-17", activity: "Conv. Club" },
+      ],
+      tags: [{ id: "kids", name: "KIDS", color: "#ffffff", backgroundColor: "#d97706" }],
+      views: [
+        { id: "a", name: "Vista A", columnIds: ["col-15", "col-16"] },
+        { id: "b", name: "Vista B", columnIds: ["col-17"] },
+      ],
+    },
+    templateId: roomModel.SCHEDULE_GRID_TEMPLATE_ID,
+  });
+  return { ...base, ...overrides };
+}
+
+test("Matriz: la plantilla integrada '__schedule_grid__' se publica sin guardarla y viaja con la vista de la regla", async () => {
+  resetTx();
+  seedDevice("d1", "Norte");
+  const base = scheduleDraft();
+  const saved = await service.saveRoomLayout({ ...base, displayRules: [{ ...base.displayRules[0], viewId: "b" }] }, admin);
+  assert.equal(saved.schedule.cells.length, 2);
+  assert.equal([...store.keys()].some((path) => path.startsWith("digitalSignageRoomTemplates/")), false, "no se guardó ninguna plantilla");
+
+  await service.publishRoomLayout(saved.id, admin);
+  const published = store.get("digitalSignageRoomDisplays/d1").layouts[0];
+  assert.equal(published.template.name, roomModel.DEFAULT_SCHEDULE_TEMPLATE.name);
+  assert.ok(published.template.elements.some((element) => element.type === "scheduleGrid"));
+  assert.equal(published.template.matrixStyle.roomShape, "circle");
+  assert.equal(published.displayRules[0].viewId, "b");
+  assert.deepEqual(published.schedule, saved.schedule, "la matriz hace ida y vuelta por el snapshot");
+  assert.equal(published.schedule.cells[0].teacher, "Ailyn");
+
+  // Con matriz y sin plantilla elegida también se usa la cuadrícula; sin matriz sigue la plantilla antigua.
+  const noTemplate = await service.saveRoomLayout({ ...scheduleDraft(), templateId: "", name: "Sin plantilla" }, admin);
+  await service.publishRoomLayout(noTemplate.id, admin);
+  const legacy = await service.saveRoomLayout(draft({ name: "Antiguo" }), admin);
+  await service.publishRoomLayout(legacy.id, admin);
+  const byName = new Map(store.get("digitalSignageRoomDisplays/d1").layouts.map((layout) => [layout.name, layout]));
+  assert.equal(byName.get("Sin plantilla").template.name, roomModel.DEFAULT_SCHEDULE_TEMPLATE.name);
+  assert.equal(byName.get("Antiguo").template.name, roomModel.DEFAULT_ROOM_TEMPLATE.name);
+  assert.equal("schedule" in byName.get("Antiguo"), false);
+  assert.equal("matrixStyle" in byName.get("Antiguo").template, false);
+});
+
+test("Matriz: editar el borrador no altera lo publicado y quitar la matriz la borra del borrador", async () => {
+  resetTx();
+  seedDevice("d1", "Norte");
+  const saved = await service.saveRoomLayout(scheduleDraft(), admin);
+  await service.publishRoomLayout(saved.id, admin);
+
+  const edited = { ...saved, schedule: { ...saved.schedule, cells: [{ rowId: "row-2", columnId: "col-16", teacher: "Nuevo" }] } };
+  await service.saveRoomLayout(edited, admin);
+  let stored = store.get(`digitalSignageRoomLayouts/${saved.id}`);
+  assert.equal(stored.schedule.cells[0].teacher, "Nuevo");
+  assert.equal(stored.publishedSnapshot.schedule.cells[0].teacher, "Ailyn");
+  assert.equal(store.get("digitalSignageRoomDisplays/d1").layouts[0].schedule.cells[0].teacher, "Ailyn");
+  assert.equal(roomModel.getRoomLayoutPublicationState({ ...stored, id: saved.id }, null), "pending");
+
+  await service.publishRoomLayout(saved.id, admin);
+  assert.equal(store.get("digitalSignageRoomDisplays/d1").layouts[0].schedule.cells[0].teacher, "Nuevo");
+
+  const { schedule: _removed, ...withoutSchedule } = saved; // eslint-disable-line no-unused-vars
+  await service.saveRoomLayout({ ...withoutSchedule, templateId: "" }, admin);
+  stored = store.get(`digitalSignageRoomLayouts/${saved.id}`);
+  assert.equal("schedule" in stored, false, "el merge no deja la matriz anterior");
+  assert.ok(stored.publishedSnapshot.schedule, "lo publicado sigue intacto");
+});
+
+test("Matriz: datos inválidos se rechazan al guardar y al publicar sin escribir nada", async () => {
+  resetTx();
+  seedDevice("d1", "Norte");
+  const base = scheduleDraft();
+  const before = JSON.stringify([...store]);
+  const invalid = [
+    [{ ...base.schedule, cells: [...base.schedule.cells, { ...base.schedule.cells[0] }] }, /ya existe otra celda/],
+    [{ ...base.schedule, cells: [{ rowId: "ajena", columnId: "col-15", teacher: "X" }] }, /fila que no existe/],
+    [{ ...base.schedule, columns: [{ ...base.schedule.columns[0], startTime: "99:99" }] }, /hora no válida/],
+    [{ ...base.schedule, views: [{ id: "a", name: "A", columnIds: ["otra"] }] }, /columna que no existe/],
+  ];
+  for (const [schedule, pattern] of invalid) {
+    await assert.rejects(() => service.saveRoomLayout({ ...base, schedule }, admin), pattern);
+  }
+  const badView = { ...base, displayRules: [{ ...base.displayRules[0], viewId: "no-existe" }] };
+  await assert.rejects(() => service.saveRoomLayout(badView, admin), /vista seleccionada no existe/);
+  assert.equal(JSON.stringify([...store]), before, "ningún guardado parcial");
+
+  // Un documento ya almacenado con referencias rotas no se publica ni toca manifiestos.
+  const saved = await service.saveRoomLayout(base, admin);
+  const stored = store.get(`digitalSignageRoomLayouts/${saved.id}`);
+  store.set(`digitalSignageRoomLayouts/${saved.id}`, {
+    ...stored,
+    schedule: { ...stored.schedule, cells: [{ rowId: "row-1", columnId: "col-fantasma", teacher: "X" }] },
+  });
+  const beforePublish = JSON.stringify([...store]);
+  await assert.rejects(() => service.publishRoomLayout(saved.id, admin), /columna que no existe/);
+  assert.equal(JSON.stringify([...store]), beforePublish, "sin snapshot, manifiestos ni guard");
+  assert.equal(store.get("digitalSignageRoomDisplays/d1"), undefined);
+});
+
+test("Matriz: 200 filas × 48 columnas dispersas se guardan y publican; el exceso de tamaño se rechaza", async () => {
+  resetTx();
+  seedDevice("d1", "Norte");
+  const assignments = Array.from({ length: 200 }, (_, index) => ({ id: `r${index}`, roomName: String(index + 1), teacher: "", group: "", active: true }));
+  const columns = Array.from({ length: 48 }, (_, index) => ({
+    id: `c${index}`, label: `H${index}`,
+    startTime: `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`,
+    endTime: `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "59" : "29"}`,
+  }));
+  const sparse = assignments.filter((_, index) => index % 10 === 0)
+    .map((row) => ({ rowId: row.id, columnId: "c5", teacher: "Maestro" }));
+  const schedule = { version: 1, shift: "", columns, cells: sparse, tags: [], views: [{ id: "v", name: "Todo", columnIds: columns.map((column) => column.id), rowsPerPage: 12, columnsPerPage: 6 }] };
+  const saved = await service.saveRoomLayout(draft({ assignments, schedule }), admin);
+  assert.equal(saved.assignments.length, 200);
+  assert.equal(saved.schedule.columns.length, 48);
+  assert.equal((await service.publishRoomLayout(saved.id, admin)).devicesUpdated, 1);
+  assert.equal(store.get("digitalSignageRoomDisplays/d1").layouts[0].schedule.cells.length, 20);
+
+  const dense = {
+    ...schedule,
+    cells: assignments.flatMap((row) => columns.map((column) => ({ rowId: row.id, columnId: column.id, teacher: "N".repeat(120) }))),
+  };
+  const before = JSON.stringify([...store]);
+  await assert.rejects(() => service.saveRoomLayout(draft({ assignments, schedule: dense }), admin), /demasiado grande/);
+  assert.equal(JSON.stringify([...store]), before);
+});

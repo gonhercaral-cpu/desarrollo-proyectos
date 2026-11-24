@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   DEFAULT_ROOM_TEMPLATE,
+  DEFAULT_SCHEDULE_TEMPLATE,
   createRoomId,
   ROOM_BLOCK_PRESETS,
   createRoomLayoutDraft,
@@ -24,6 +25,12 @@ import {
   unpublishRoomLayout,
   uploadRoomTemplateImage,
 } from "../../services/digital-signage/roomLayoutsService";
+import {
+  createRoomSchedule,
+  getSchedulePages,
+  getScheduleActivePageIndex,
+} from "../../utils/digitalSignage/roomSchedule";
+import RoomScheduleEditor from "./RoomScheduleEditor";
 
 import RoomLayoutDisplay from "./RoomLayoutDisplay";
 import RoomLayoutTemplateEditor from "./RoomLayoutTemplateEditor";
@@ -54,7 +61,7 @@ export default function SignageRoomLayoutsPanel({
   onLeaveGuardChange,
 }) {
   const [adminData, setAdminData] = useState({ configs: [], layouts: [], templates: [] });
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
 
@@ -99,6 +106,9 @@ export default function SignageRoomLayoutsPanel({
   const [localTimezone, setLocalTimezone] = useState("America/Tijuana");
 
   const [previewNowMillis, setPreviewNowMillis] = useState(() => Date.now());
+  const [previewViewId, setPreviewViewId] = useState("");
+  const [previewPageIndex, setPreviewPageIndex] = useState(null);
+  const [isEnlargedPreviewOpen, setIsEnlargedPreviewOpen] = useState(false);
 
   const layoutRevisionRef = useRef(0);
   const draftRef = useRef(draft);
@@ -115,6 +125,7 @@ export default function SignageRoomLayoutsPanel({
   const copyOpenerRef = useRef(null);
   const editorModalRef = useRef(null);
   const copyModalRef = useRef(null);
+  const previewModalRef = useRef(null);
 
   const anyDirty = isDirty || roomsDirty || templateDirty;
   const busy = saving || publishing || savingRoomsConfig || savingTemplate || uploadingTemplate;
@@ -293,11 +304,16 @@ export default function SignageRoomLayoutsPanel({
   }, [adminData.layouts, draft]);
 
   const currentTemplate = useMemo(() => {
-    if (!draft?.templateId) return DEFAULT_ROOM_TEMPLATE;
+    if (draft?.templateId === "__schedule_grid__") return DEFAULT_SCHEDULE_TEMPLATE;
+    if (!draft?.templateId) return draft?.schedule ? DEFAULT_SCHEDULE_TEMPLATE : DEFAULT_ROOM_TEMPLATE;
     return (
       adminData.templates.find((t) => t.id === draft.templateId) || DEFAULT_ROOM_TEMPLATE
     );
   }, [draft, adminData.templates]);
+
+  const effectivePreviewView = draft?.schedule?.views?.find(view => view.id === previewViewId) || draft?.schedule?.views?.[0];
+  const previewPages = draft?.schedule ? getSchedulePages(draft, effectivePreviewView?.id) : [];
+  const activePreviewPage = getScheduleActivePageIndex(effectivePreviewView, previewPages.length, previewNowMillis, previewPageIndex);
 
   const publicationState = useMemo(() => {
     const layoutWithMeta = {
@@ -351,7 +367,7 @@ export default function SignageRoomLayoutsPanel({
       if (t && typeof t === "string") set.add(t.trim());
     });
     adminData.layouts.forEach((l) => {
-      (l.assignments || []).forEach((a) => {
+      [...(l.assignments || []), ...(l.schedule?.cells || [])].forEach((a) => {
         if (a?.teacher && typeof a.teacher === "string" && a.teacher.trim()) {
           set.add(a.teacher.trim());
         }
@@ -379,6 +395,8 @@ export default function SignageRoomLayoutsPanel({
     if (newPlantel === selectedPlantel) return;
     if (!confirmDiscard(`cambiar a ${newPlantel}`)) return;
 
+    setPreviewViewId("");
+    setPreviewPageIndex(null);
     setSelectedPlantel(newPlantel);
     setCopyTargetPlantel(newPlantel);
 
@@ -420,6 +438,8 @@ export default function SignageRoomLayoutsPanel({
     if (busy) return;
     if (draft?.id === layout.id) return;
     if (isDirty && !window.confirm("¿Descartar los cambios del acomodo para abrir otro?")) return;
+    setPreviewViewId("");
+    setPreviewPageIndex(null);
     const normalized = normalizeRoomLayout ? normalizeRoomLayout(layout) : layout;
     setDraft(normalized);
     draftRef.current = normalized;
@@ -576,7 +596,7 @@ export default function SignageRoomLayoutsPanel({
 
   async function handlePublish() {
     if (!draft) return;
-    const unassigned = (draft.assignments || []).filter((a) => a.active && !a.teacher?.trim());
+    const unassigned = (draft.schedule ? [] : draft.assignments || []).filter((a) => a.active && !a.teacher?.trim());
     if (unassigned.length > 0) {
       const proceed = window.confirm(
         `Hay ${unassigned.length} salón(es) sin maestro asignado. ¿Deseas publicar de todas formas?`
@@ -646,14 +666,17 @@ export default function SignageRoomLayoutsPanel({
     if (roomsDirty && !window.confirm("La copia cambiará el catálogo visible. ¿Descartar los cambios pendientes del catálogo?")) return;
     const targetCfg = adminData.configs.find((c) => c.plantel === copyTargetPlantel);
     const targetRooms = targetCfg?.rooms || [];
+    const rowIdMap = new Map();
 
     const newAssignments = (draft.assignments || []).map((a) => {
+      const newId = createRoomId("assignment");
+      rowIdMap.set(a.id, newId);
       const matchedTargetRoom = targetRooms.find(
         (r) => r.name?.trim().toLowerCase() === a.roomName?.trim().toLowerCase()
       );
       return {
         ...a,
-        id: createRoomId("assignment"),
+        id: newId,
         roomId: matchedTargetRoom ? matchedTargetRoom.id : copyTargetPlantel === selectedPlantel ? a.roomId : undefined,
       };
     });
@@ -668,6 +691,17 @@ export default function SignageRoomLayoutsPanel({
       deviceIds: [],
     }));
 
+    let newSchedule = null;
+    if (draft.schedule) {
+      newSchedule = {
+        ...draft.schedule,
+        cells: (draft.schedule.cells || []).map((cell) => ({
+          ...cell,
+          rowId: rowIdMap.get(cell.rowId) || cell.rowId,
+        })),
+      };
+    }
+
     const newDraft = {
       ...draft,
       id: createRoomId("layout"),
@@ -678,6 +712,7 @@ export default function SignageRoomLayoutsPanel({
       classStart: copyClassStart,
       classEnd: copyClassEnd,
       assignments: newAssignments,
+      schedule: newSchedule,
       displayRules: newRules,
       publishedAt: null,
       publishedSnapshot: null,
@@ -882,9 +917,9 @@ export default function SignageRoomLayoutsPanel({
   }, [isEditorOpen, busy]);
 
   useEffect(() => {
-    const modal = isEditorOpen ? editorModalRef.current : showCopyModal ? copyModalRef.current : null;
+    const modal = isEditorOpen ? editorModalRef.current : showCopyModal ? copyModalRef.current : isEnlargedPreviewOpen ? previewModalRef.current : null;
     modal?.querySelector("button:not(:disabled), input:not(:disabled), select:not(:disabled)")?.focus();
-  }, [isEditorOpen, showCopyModal]);
+  }, [isEditorOpen, showCopyModal, isEnlargedPreviewOpen]);
 
   function handleModalKeyDown(e, closeFn) {
     if (e.key === "Tab") {
@@ -907,7 +942,8 @@ export default function SignageRoomLayoutsPanel({
 
   return (
     <div className="signage-rooms-container">
-      <div inert={busy} style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 18, width: "100%" }}>
+      {loading && <p role="status">Cargando acomodos y catálogos…</p>}
+      <div inert={busy || loading} style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 18, width: "100%" }}>
       <datalist id="signage-rooms-teachers-datalist">
         {teacherSuggestions.map((name) => (
           <option key={name} value={name} />
@@ -1185,9 +1221,35 @@ export default function SignageRoomLayoutsPanel({
               </div>
             )}
 
+            <div className="signage-rooms-mode-switch-card">
+              <div className="signage-rooms-mode-info">
+                <strong>Modo de Acomodo:</strong>
+                <span>{draft?.schedule ? "Por horarios (Cuadrícula matricial)" : "Tradicional (un horario único por bloque)"}</span>
+              </div>
+              <button
+                type="button"
+                className="visual-outline-button compact"
+                onClick={() => {
+                  if (draft?.schedule) {
+                    if (window.confirm("¿Deseas cambiar a modo tradicional? Las asignaciones por hora se eliminarán del borrador. La versión publicada no cambia hasta volver a publicar.")) {
+                      updateDraft({ schedule: null, templateId: "", displayRules: draft.displayRules.map(rule => ({ ...rule, viewId: "" })) });
+                    }
+                  } else {
+                    const initSchedule = createRoomSchedule(draft?.assignments || []);
+                    updateDraft({
+                      schedule: initSchedule,
+                      templateId: draft?.templateId || "__schedule_grid__",
+                    });
+                  }
+                }}
+              >
+                {draft?.schedule ? "Cambiar a modo tradicional" : "Activar Acomodo por Horarios"}
+              </button>
+            </div>
+
             <fieldset className="signage-rooms-fieldset">
-              <legend>Clase y Horario de Actividad</legend>
-              <div className="signage-rooms-presets-bar">
+              <legend>{draft?.schedule ? "Nombre y días del acomodo" : "Clase y Horario de Actividad"}</legend>
+              <div className="signage-rooms-presets-bar" style={draft?.schedule ? { display: "none" } : undefined}>
                 <span className="signage-rooms-presets-label">Horarios habituales:</span>
                 {ROOM_BLOCK_PRESETS.map((p, i) => (
                   <button
@@ -1203,7 +1265,7 @@ export default function SignageRoomLayoutsPanel({
 
               <div className="signage-rooms-form-grid">
                 <label className="signage-rooms-field">
-                  Nombre descriptivo del bloque
+                  Nombre del acomodo
                   <input
                     type="text"
                     value={draft?.name || ""}
@@ -1212,7 +1274,7 @@ export default function SignageRoomLayoutsPanel({
                   />
                 </label>
 
-                <div className="signage-rooms-field-pair">
+                <div className="signage-rooms-field-pair" style={draft?.schedule ? { display: "none" } : undefined}>
                   <label className="signage-rooms-field">
                     Inicio de clase (09:00)
                     <input
@@ -1250,6 +1312,7 @@ export default function SignageRoomLayoutsPanel({
               </div>
             </fieldset>
 
+            {!draft?.schedule && (
             <fieldset className="signage-rooms-fieldset">
               <legend>Distribución de Salones y Maestros</legend>
               <div className="signage-rooms-assignments-table-wrap">
@@ -1348,6 +1411,24 @@ export default function SignageRoomLayoutsPanel({
                 </button>
               </div>
             </fieldset>
+            )}
+
+            {draft?.schedule && (
+              <fieldset className="signage-rooms-fieldset">
+                <legend>Matriz de Horarios y Maestros (Acomodo por Horarios)</legend>
+                <RoomScheduleEditor
+                  layout={draft}
+                  key={`${selectedPlantel}|${draft.id || "new"}`}
+                  onChange={(updated) => {
+                    const ids = new Set(updated.schedule.views.map(view => view.id));
+                    updateDraft({ ...updated, displayRules: draft.displayRules.map(rule =>
+                      rule.viewId && !ids.has(rule.viewId) ? { ...rule, viewId: updated.schedule.views[0]?.id || "" } : rule
+                    ) });
+                  }}
+                  onOpenTemplateEditor={(e) => handleOpenEditor("edit", e)}
+                />
+              </fieldset>
+            )}
 
             <fieldset className="signage-rooms-fieldset">
               <legend>Ventanas de Aparición en Pantallas</legend>
@@ -1423,6 +1504,24 @@ export default function SignageRoomLayoutsPanel({
                             />
                           </label>
                         </div>
+
+                        {draft?.schedule && Array.isArray(draft.schedule.views) && draft.schedule.views.length > 0 && (
+                          <label className="signage-rooms-field">
+                            Vista de horarios a proyectar en esta ventana:
+                            <select
+                              value={rule.viewId || draft.schedule.views[0]?.id || ""}
+                              onChange={(e) =>
+                                updateDisplayRule(rIdx, { viewId: e.target.value })
+                              }
+                            >
+                              {draft.schedule.views.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.name || "Vista sin nombre"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
 
                         <label className="signage-rooms-field">
                           Prioridad
@@ -1589,6 +1688,7 @@ export default function SignageRoomLayoutsPanel({
                     value={draft?.templateId || ""}
                     onChange={(e) => updateDraft({ templateId: e.target.value })}
                   >
+                    <option value="__schedule_grid__">Acomodo por horarios — Cuadrícula (Prediseñada)</option>
                     <option value="">Predeterminada Institucional (Azul AES)</option>
                     {adminData.templates.map((tpl) => (
                       <option key={tpl.id} value={tpl.id}>
@@ -1666,11 +1766,53 @@ export default function SignageRoomLayoutsPanel({
               Así lucirá la pantalla en recepción durante la ventana programada.
             </p>
 
+            {draft?.schedule && Array.isArray(draft.schedule.views) && draft.schedule.views.length > 0 && (
+              <div className="signage-rooms-preview-view-selector-bar">
+                <label className="signage-rooms-field">
+                  Vista proyectada:
+                  <select
+                    value={effectivePreviewView?.id || ""}
+                    onChange={(e) => {
+                      setPreviewViewId(e.target.value);
+                      setPreviewPageIndex(null);
+                    }}
+                  >
+                    {draft.schedule.views.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name || "Vista"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="visual-outline-button compact"
+                  onClick={() => setIsEnlargedPreviewOpen(true)}
+                >
+                  Ampliar
+                </button>
+              </div>
+            )}
+
+            {previewPages.length > 1 && (
+              <div className="signage-rooms-preview-pages">
+                <button type="button" className="visual-outline-button compact" onClick={() => setPreviewPageIndex((activePreviewPage + previewPages.length - 1) % previewPages.length)}>Página anterior</button>
+                <span>Página {activePreviewPage + 1} de {previewPages.length}</span>
+                <button type="button" className="visual-outline-button compact" onClick={() => setPreviewPageIndex((activePreviewPage + 1) % previewPages.length)}>Página siguiente</button>
+                <button type="button" className="visual-outline-button compact" onClick={() => setPreviewPageIndex(null)}>Rotación de la vista</button>
+              </div>
+            )}
+            {draft?.schedule && !currentTemplate.elements?.some(element => element.type === "scheduleGrid") && (
+              <p role="alert" className="signage-rooms-warning-banner">Esta plantilla necesita una capa «Cuadrícula horarios». Agrégala desde Personalizar o elige la plantilla Cuadrícula.</p>
+            )}
+            {draft?.schedule && <p className="signage-rooms-hint-text">Revisa nombres y etiquetas. Si no caben, reduce los salones o las columnas por página en Vistas y Paginación.</p>}
             <div className="signage-rooms-preview-screen-box">
               <RoomLayoutDisplay
                 layout={draft}
                 template={currentTemplate}
                 nowMillis={previewNowMillis}
+                selectedViewId={effectivePreviewView?.id || ""}
+                pageIndex={previewPageIndex}
               />
             </div>
 
@@ -1685,6 +1827,9 @@ export default function SignageRoomLayoutsPanel({
                 Salones activos:{" "}
                 {(draft?.assignments || []).filter((a) => a.active).length} de{" "}
                 {draft?.assignments?.length || 0}
+                {draft?.schedule && (
+                  <span> | Columnas de horario: {draft.schedule.columns?.length || 0} | Vistas: {draft.schedule.views?.length || 0}</span>
+                )}
               </p>
               <p>
                 Ventanas configuradas: {draft?.displayRules?.length || 0}
@@ -1825,6 +1970,8 @@ export default function SignageRoomLayoutsPanel({
                   <button
                     key={d.value}
                     type="button"
+                    title={d.label}
+                    aria-label={d.label}
                     className={copyClassDays.includes(d.value) ? "active" : ""}
                     onClick={() => {
                       const next = copyClassDays.includes(d.value)
@@ -1858,6 +2005,38 @@ export default function SignageRoomLayoutsPanel({
                 Crear copia independiente
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isEnlargedPreviewOpen && (
+        <div
+          ref={previewModalRef}
+          onKeyDown={(event) => handleModalKeyDown(event, () => setIsEnlargedPreviewOpen(false))}
+          className="signage-rooms-enlarge-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="signage-rooms-enlarge-title"
+          onClick={() => setIsEnlargedPreviewOpen(false)}
+        >
+          <div className="signage-rooms-enlarge-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="signage-rooms-modal-header">
+              <h3 id="signage-rooms-enlarge-title">Vista Previa 16:9 en Pantalla Completa</h3>
+              <button
+                type="button"
+                className="visual-outline-button compact"
+                onClick={() => setIsEnlargedPreviewOpen(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+            <RoomLayoutDisplay
+              layout={draft}
+              template={currentTemplate}
+              nowMillis={previewNowMillis}
+              selectedViewId={effectivePreviewView?.id || ""}
+              pageIndex={previewPageIndex}
+            />
           </div>
         </div>
       )}

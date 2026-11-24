@@ -26,7 +26,9 @@ import { logSignageAudit } from "./auditService";
 import {
   DEFAULT_ROOM_TEMPLATE,
   ROOM_DEFAULT_TIMEZONE,
+  SCHEDULE_GRID_TEMPLATE_ID,
   createRoomId,
+  getBuiltInRoomTemplate,
   normalizeRoomConfig,
   normalizeRoomLayout,
   normalizeRoomTemplate,
@@ -57,6 +59,9 @@ export const MAX_FANOUT_DEVICES = 390;
 export const MAX_PUBLISHED_LAYOUTS = 100;
 export const MAX_TRANSACTION_OPERATIONS = 400;
 export const MAX_TRANSACTION_BYTES = 8 * 1024 * 1024;
+// El borrador y el snapshot publicado viven en el MISMO documento (límite de 1 MiB de Firestore).
+export const ROOM_LAYOUT_MAX_BYTES = 400 * 1024;
+export const ROOM_LAYOUT_DOCUMENT_MAX_BYTES = 900 * 1024;
 
 function toMillis(value) {
   if (!value) return 0;
@@ -181,6 +186,9 @@ export async function saveRoomConfig(configData, user) {
 export async function saveRoomLayout(layoutData, user) {
   assertAdminUser(user);
   const layout = validateRoomLayout(layoutData);
+  if (byteLength(layout) > ROOM_LAYOUT_MAX_BYTES) {
+    throw new Error("El acomodo es demasiado grande para guardarse; reduce filas, columnas o celdas.");
+  }
   const layoutRef = layout.id
     ? doc(db, ROOM_LAYOUTS_COLLECTION, layout.id)
     : doc(collection(db, ROOM_LAYOUTS_COLLECTION));
@@ -189,8 +197,11 @@ export async function saveRoomLayout(layoutData, user) {
 
   // Nunca se incluyen publishedSnapshot/publishedPlantel: el borrador no altera lo publicado.
   const { id: _omit, ...fields } = layout; // eslint-disable-line no-unused-vars
+  // setDoc con merge fusionaría mapas: al quitar la matriz hay que borrarla explícitamente.
+  const removesSchedule = !isNew && !layout.schedule && existing.data().schedule !== undefined;
   const payload = {
     ...fields,
+    ...(removesSchedule ? { schedule: deleteField() } : {}),
     updatedAt: serverTimestamp(),
     ...(isNew ? { createdAt: serverTimestamp(), createdById: getUserId(user) } : {}),
   };
@@ -200,6 +211,7 @@ export async function saveRoomLayout(layoutData, user) {
     plantel: layout.plantel,
     assignments: layout.assignments.length,
     rules: layout.displayRules.length,
+    ...(layout.schedule ? { scheduleColumns: layout.schedule.columns.length, scheduleCells: layout.schedule.cells.length } : {}),
   }, user);
 
   return { ...layout, id: layoutRef.id };
@@ -393,7 +405,11 @@ async function logAuditQuietly(...args) {
   }
 }
 
-async function resolveTemplate(transaction, templateId) {
+// Plantillas integradas (sin lectura): '__schedule_grid__', y también el valor por omisión de un
+// acomodo con matriz, que si no se quedaría sin cuadro de horarios que mostrar.
+async function resolveTemplate(transaction, templateId, { hasSchedule = false } = {}) {
+  const builtIn = getBuiltInRoomTemplate(templateId || (hasSchedule ? SCHEDULE_GRID_TEMPLATE_ID : ""));
+  if (builtIn) return builtIn;
   if (!templateId) return { ...normalizeRoomTemplate(DEFAULT_ROOM_TEMPLATE), id: "" };
   const snapshot = await transaction.get(doc(db, ROOM_TEMPLATES_COLLECTION, templateId));
   if (!snapshot.exists()) throw new Error("La plantilla seleccionada ya no existe.");
@@ -412,8 +428,11 @@ export async function publishRoomLayout(id, user) {
 
     const storedData = stored.data();
     const layout = validateRoomLayout({ ...storedData, id: layoutId });
-    const template = await resolveTemplate(transaction, layout.templateId);
+    const template = await resolveTemplate(transaction, layout.templateId, { hasSchedule: Boolean(layout.schedule) });
     const snapshot = buildPublishedRoomSnapshot({ ...layout, id: layoutId }, template, Date.now());
+    if (byteLength(layout) + byteLength(snapshot) > ROOM_LAYOUT_DOCUMENT_MAX_BYTES) {
+      throw new Error("El acomodo publicado superaría el tamaño máximo del documento; simplifica la matriz de horarios.");
+    }
 
     const planteles = uniquePlanteles([layout.plantel, storedData.publishedPlantel]);
     const context = await readPublicationContext(transaction, planteles, new Map([[layoutId, storedData]]));
@@ -447,7 +466,7 @@ export async function publishRoomLayout(id, user) {
     plantel: outcome.layout.plantel,
     publishedAtMillis: outcome.snapshot.publishedAtMillis,
     devicesUpdated: outcome.devicesUpdated,
-    warnings: outcome.layout.assignments.some((row) => row.active && !row.teacher)
+    warnings: !outcome.layout.schedule && outcome.layout.assignments.some((row) => row.active && !row.teacher)
       ? ["Hay filas activas sin maestro."]
       : [],
   };

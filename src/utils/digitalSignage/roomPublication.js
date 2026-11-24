@@ -25,6 +25,9 @@ export function buildPublishedRoomSnapshot(layoutData, templateData, publishedAt
   const layout = validateRoomLayout(layoutData);
   const template = validateRoomTemplate(templateData);
   if (template.active === false) throw new Error("La plantilla seleccionada está inactiva.");
+  if (layout.schedule && !template.elements.some(element => element.type === "scheduleGrid")) {
+    throw new Error("La plantilla necesita una capa Cuadrícula horarios para publicar esta matriz.");
+  }
   const { id, ...rest } = layout;
   if (!id) throw new Error("Guarda el acomodo antes de publicarlo.");
   return JSON.parse(JSON.stringify({ id, ...rest, template, publishedAtMillis }));
