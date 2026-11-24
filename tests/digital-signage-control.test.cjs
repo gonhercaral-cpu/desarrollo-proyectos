@@ -167,6 +167,62 @@ describe("Digital Signage: comunicación real con Firestore emulado", {
     } finally { await layoutRef.delete(); }
   });
 
+  it("acomodos independientes: alta y revinculación reciben su proyección sin fugas entre planteles", async () => {
+    const north = `Norte-${randomUUID()}`, south = `Sur-${randomUUID()}`;
+    const claimIn = async (plantel, extra = {}) => {
+      const { credential, session } = await pending();
+      const result = await call({ action: "claim", code: session.code, device: { name: "P", plantel, location: "L" }, ...extra });
+      return { credential, deviceId: result.deviceId };
+    };
+    const snapshot = (id, destinations, rules) => ({
+      id, name: id, plantel: "", destinations, active: true, timezone: "America/Tijuana",
+      publishedAtMillis: clock, displayRules: rules.map((deviceIds, index) => ({ id: `r${index}`, active: true, deviceIds })),
+    });
+    const refs = [];
+    const publish = async (id, destinations, rules) => {
+      const ref = db.collection("digitalSignageRoomLayouts").doc(`${id}-${randomUUID()}`);
+      refs.push(ref);
+      await ref.set({
+        publishedPlantel: "", publishedPlanteles: destinations.map((entry) => entry.plantel),
+        publishedSnapshot: snapshot(ref.id, destinations, rules),
+      });
+      return ref;
+    };
+    try {
+      const all = await publish("global", [{ plantel: north, deviceIds: [] }, { plantel: south, deviceIds: ["otro-id"] }], [[]]);
+      // Alta nueva en el plantel con "todas las pantallas": recibe el acomodo ya proyectado.
+      const first = await claimIn(north);
+      const manifest = (await exchange(first.credential, { readOnly: true })).roomManifest;
+      assert.equal(manifest.layouts.length, 1);
+      assert.equal(manifest.layouts[0].id, all.id);
+      assert.equal(manifest.layouts[0].plantel, north);
+      assert.equal(Object.hasOwn(manifest.layouts[0], "destinations"), false);
+      assert.equal(JSON.stringify(manifest).includes(south), false, "sin datos de otro plantel");
+      // Alta en el otro plantel: la pantalla no figura en la lista explícita.
+      const outsider = await claimIn(south);
+      assert.equal((await exchange(outsider.credential, { readOnly: true })).roomManifest.layouts.length, 0);
+
+      // Pantallas de arriba/abajo: solo la listada recibe el acomodo, y las IDs ajenas no viajan.
+      const upstairs = await claimIn(north);
+      const downstairs = await claimIn(north);
+      await publish("arriba", [{ plantel: north, deviceIds: [upstairs.deviceId] }], [[upstairs.deviceId, "ajena"], ["ajena"]]);
+      const p = await pending();
+      await call({ action: "rebind", deviceId: upstairs.deviceId, code: p.session.code });
+      const rebound = (await exchange(p.credential, { readOnly: true })).roomManifest;
+      const arriba = rebound.layouts.find((layout) => layout.name.startsWith("arriba"));
+      assert.deepEqual(arriba.displayRules.map((rule) => rule.deviceIds), [[upstairs.deviceId]]);
+      assert.equal(JSON.stringify(rebound).includes("ajena"), false);
+      const q = await pending();
+      await call({ action: "rebind", deviceId: downstairs.deviceId, code: q.session.code });
+      const lower = (await exchange(q.credential, { readOnly: true })).roomManifest;
+      assert.deepEqual(lower.layouts.map((layout) => layout.id), [all.id], "la pantalla de abajo no recibe 'arriba'");
+
+      // Reubicación: fuera de su plantel el canal privado ya no entrega manifiesto.
+      await db.collection("digitalSignageDevices").doc(first.deviceId).update({ plantel: south });
+      assert.equal((await exchange(first.credential, { readOnly: true })).roomManifest, null);
+    } finally { await Promise.all(refs.map((ref) => ref.delete())); }
+  });
+
   it("expira órdenes desconectadas y rechaza ACK ajeno/tardío", async () => {
     const d = await device();
     const request = { action: "command", deviceId: d.deviceId, requestId: randomUUID(), type: "refresh" };

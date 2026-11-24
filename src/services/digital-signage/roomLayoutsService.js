@@ -29,6 +29,9 @@ import {
   SCHEDULE_GRID_TEMPLATE_ID,
   createRoomId,
   getBuiltInRoomTemplate,
+  getRoomLayoutPlanteles,
+  hasRoomLayoutDestinations,
+  roomLayoutTargetsDevice,
   normalizeRoomConfig,
   normalizeRoomLayout,
   normalizeRoomTemplate,
@@ -79,6 +82,7 @@ function layoutFromDocument(snapshot) {
     // el borrador normalizado (campos puros) no se altera.
     publishedSnapshot: data.publishedSnapshot || null,
     publishedPlantel: data.publishedPlantel || "",
+    publishedPlanteles: Array.isArray(data.publishedPlanteles) ? data.publishedPlanteles : [],
     publishedAt: toMillis(data.publishedAt),
     publishedAtMillis: toMillis(data.publishedAt) || Number(data.publishedSnapshot?.publishedAtMillis) || 0,
     createdAt: toMillis(data.createdAt),
@@ -199,9 +203,11 @@ export async function saveRoomLayout(layoutData, user) {
   const { id: _omit, ...fields } = layout; // eslint-disable-line no-unused-vars
   // setDoc con merge fusionaría mapas: al quitar la matriz hay que borrarla explícitamente.
   const removesSchedule = !isNew && !layout.schedule && existing.data().schedule !== undefined;
+  const removesDestinations = !isNew && !layout.destinations && existing.data().destinations !== undefined;
   const payload = {
     ...fields,
     ...(removesSchedule ? { schedule: deleteField() } : {}),
+    ...(removesDestinations ? { destinations: deleteField() } : {}),
     updatedAt: serverTimestamp(),
     ...(isNew ? { createdAt: serverTimestamp(), createdById: getUserId(user) } : {}),
   };
@@ -209,6 +215,7 @@ export async function saveRoomLayout(layoutData, user) {
   await setDoc(layoutRef, payload, { merge: true });
   await logSignageAudit("guardar acomodo", "roomLayout", layoutRef.id, layout.name, {
     plantel: layout.plantel,
+    ...(layout.destinations ? { destinations: layout.destinations.length } : {}),
     assignments: layout.assignments.length,
     rules: layout.displayRules.length,
     ...(layout.schedule ? { scheduleColumns: layout.schedule.columns.length, scheduleCells: layout.schedule.cells.length } : {}),
@@ -299,6 +306,55 @@ async function queryIdsOrReject(collectionName, field, plantel, max, label) {
   return result.docs.map((snapshot) => snapshot.id);
 }
 
+// Acomodos publicados de un plantel: UNIÓN de los antiguos (publishedPlantel == plantel) y los
+// independientes (publishedPlanteles array-contains plantel), sin duplicados y con tope combinado.
+async function queryPublishedLayoutIds(plantel) {
+  const max = MAX_PUBLISHED_LAYOUTS;
+  const layouts = collection(db, ROOM_LAYOUTS_COLLECTION);
+  const legacy = await getDocs(query(layouts, where("publishedPlantel", "==", plantel), limit(max + 1)));
+  const independent = await getDocs(query(layouts, where("publishedPlanteles", "array-contains", plantel), limit(max + 1)));
+  const ids = new Set([...legacy.docs, ...independent.docs].map((snapshot) => snapshot.id));
+  if (ids.size > max) {
+    throw new Error(`El plantel "${plantel}" supera el límite de ${max} acomodos publicados por publicación; divide el plantel o retira elementos.`);
+  }
+  return Array.from(ids);
+}
+
+// Planteles donde un documento está publicado hoy (antiguo: publishedPlantel; independiente:
+// publishedPlanteles). Si faltan ambos pero hay snapshot, se deduce de él para poder limpiarlo.
+function publishedTargets(data) {
+  const fromFields = uniquePlanteles([
+    data?.publishedPlantel,
+    ...(Array.isArray(data?.publishedPlanteles) ? data.publishedPlanteles : []),
+  ]);
+  if (fromFields.length > 0 || !data?.publishedSnapshot) return fromFields;
+  return uniquePlanteles(getRoomLayoutPlanteles(data.publishedSnapshot));
+}
+
+// Pantallas de destino explícitas deben existir y pertenecer al plantel reclamado; las ventanas
+// activas con pantallas explícitas deben caer dentro de algún destino (datos vivos, no del borrador).
+function assertLiveDestinations(layout, devices) {
+  if (!hasRoomLayoutDestinations(layout)) return;
+  const byId = new Map(devices.map((device) => [device.id, device]));
+  layout.destinations.forEach((destination) => {
+    destination.deviceIds.forEach((deviceId) => {
+      const device = byId.get(deviceId);
+      if (!device || cleanText(device.plantel) !== destination.plantel) {
+        throw new Error(`La pantalla "${deviceId}" no existe en el plantel "${destination.plantel}".`);
+      }
+    });
+  });
+  layout.displayRules.forEach((rule, index) => {
+    if (!rule.active) return;
+    rule.deviceIds.forEach((deviceId) => {
+      const device = devices.find((entry) => entry.id === deviceId || cleanText(entry.deviceToken) === deviceId);
+      if (!device || !roomLayoutTargetsDevice(layout, device)) {
+        throw new Error(`Ventana ${index + 1}: apunta a una pantalla fuera de los destinos del acomodo.`);
+      }
+    });
+  });
+}
+
 // Lee (dentro de la transacción) guards, snapshots publicados y pantallas de los planteles.
 // `knownLayouts`: acomodos ya leídos con transaction.get (id -> data|undefined).
 async function readPublicationContext(transaction, planteles, knownLayouts = new Map()) {
@@ -316,8 +372,7 @@ async function readPublicationContext(transaction, planteles, knownLayouts = new
   const layoutIds = new Set();
   const deviceIds = new Set();
   for (const plantel of planteles) {
-    (await queryIdsOrReject(ROOM_LAYOUTS_COLLECTION, "publishedPlantel", plantel, MAX_PUBLISHED_LAYOUTS, "acomodos publicados"))
-      .forEach((id) => layoutIds.add(id));
+    (await queryPublishedLayoutIds(plantel)).forEach((id) => layoutIds.add(id));
     (await queryIdsOrReject(DEVICES_COLLECTION, "plantel", plantel, MAX_FANOUT_DEVICES, "pantallas"))
       .forEach((id) => deviceIds.add(id));
   }
@@ -340,16 +395,17 @@ async function readPublicationContext(transaction, planteles, knownLayouts = new
 
   const snapshotsByPlantel = new Map(planteles.map((plantel) => [plantel, []]));
   layouts.forEach((data, id) => {
-    const plantel = cleanText(data?.publishedPlantel);
-    if (data?.publishedSnapshot && snapshotsByPlantel.has(plantel)) {
-      snapshotsByPlantel.get(plantel).push({ ...data.publishedSnapshot, id });
-    }
+    if (!data?.publishedSnapshot) return;
+    publishedTargets(data).forEach((plantel) => {
+      if (snapshotsByPlantel.has(plantel)) snapshotsByPlantel.get(plantel).push({ ...data.publishedSnapshot, id });
+    });
   });
   return { guards, devices, snapshotsByPlantel };
 }
 
 // Manifiestos completos (no incrementales) para las pantallas leídas. `replacement` sustituye
-// el snapshot de `layoutId` solo en su plantel; sin `replacement` se retira de todos.
+// el snapshot de `layoutId`; el proyector decide por destino/pantalla si llega a cada una, así
+// que nada se filtra a otro plantel. Sin `replacement` el acomodo se retira de todas.
 function composeManifestWrites(context, layoutId, replacement) {
   const writes = [];
   context.devices.forEach((device) => {
@@ -357,7 +413,7 @@ function composeManifestWrites(context, layoutId, replacement) {
     const known = context.snapshotsByPlantel.get(plantel);
     if (!known) return; // cambió de plantel durante la operación: su propio refresh lo recompone
     const base = known.filter((snapshot) => snapshot.id !== layoutId);
-    const snapshots = replacement && cleanText(replacement.plantel) === plantel ? [...base, replacement] : base;
+    const snapshots = replacement ? [...base, replacement] : base;
     const token = cleanText(device.deviceToken || device.id);
     const manifest = buildRoomDisplayManifest({ ...device, deviceToken: token }, snapshots, Date.now());
     writes.push({ token, manifest });
@@ -365,12 +421,16 @@ function composeManifestWrites(context, layoutId, replacement) {
   return writes;
 }
 
-function assertTransactionBudget(manifestWrites, extraPayloads) {
-  const operations = manifestWrites.length + extraPayloads.length;
+// El presupuesto incluye las escrituras de guard (una por plantel afectado, antiguo o nuevo).
+function assertTransactionBudget(manifestWrites, extraPayloads, guards = new Map()) {
+  const operations = manifestWrites.length + extraPayloads.length + guards.size;
   if (operations > MAX_TRANSACTION_OPERATIONS) {
     throw new Error(`La operación requiere ${operations} escrituras; el máximo es ${MAX_TRANSACTION_OPERATIONS}.`);
   }
+  const guardBytes = Array.from(guards.keys()).reduce(
+    (sum, plantel) => sum + byteLength({ plantel, timezone: ROOM_DEFAULT_TIMEZONE, rooms: [], teacherNames: [], publicationRevision: 0 }), 0);
   const bytes =
+    guardBytes +
     manifestWrites.reduce((sum, entry) => sum + byteLength(entry.manifest), 0) +
     extraPayloads.reduce((sum, payload) => sum + byteLength(payload), 0);
   if (bytes > MAX_TRANSACTION_BYTES) {
@@ -434,20 +494,29 @@ export async function publishRoomLayout(id, user) {
       throw new Error("El acomodo publicado superaría el tamaño máximo del documento; simplifica la matriz de horarios.");
     }
 
-    const planteles = uniquePlanteles([layout.plantel, storedData.publishedPlantel]);
+    const independent = hasRoomLayoutDestinations(layout);
+    const targets = independent ? uniquePlanteles(getRoomLayoutPlanteles(layout)) : uniquePlanteles([layout.plantel]);
+    // Se protegen TODOS los destinos antiguos y nuevos: quitar uno también limpia su manifiesto.
+    const planteles = uniquePlanteles([...targets, ...publishedTargets(storedData)]);
     const context = await readPublicationContext(transaction, planteles, new Map([[layoutId, storedData]]));
-    const publishedInPlantel = context.snapshotsByPlantel.get(layout.plantel) || [];
-    if (publishedInPlantel.filter((entry) => entry.id !== layoutId).length >= MAX_PUBLISHED_LAYOUTS) {
-      throw new Error(`El plantel supera el límite de ${MAX_PUBLISHED_LAYOUTS} acomodos publicados; despublica alguno antes de continuar.`);
-    }
+    assertLiveDestinations(layout, context.devices);
+    targets.forEach((plantel) => {
+      const publishedInPlantel = context.snapshotsByPlantel.get(plantel) || [];
+      if (publishedInPlantel.filter((entry) => entry.id !== layoutId).length >= MAX_PUBLISHED_LAYOUTS) {
+        throw new Error(`El plantel supera el límite de ${MAX_PUBLISHED_LAYOUTS} acomodos publicados; despublica alguno antes de continuar.`);
+      }
+    });
     const layoutUpdate = {
       publishedSnapshot: snapshot,
-      publishedPlantel: layout.plantel,
+      publishedPlantel: independent ? "" : layout.plantel,
+      ...(independent
+        ? { publishedPlanteles: targets }
+        : storedData.publishedPlanteles !== undefined ? { publishedPlanteles: deleteField() } : {}),
       publishedAt: serverTimestamp(),
       publishedById: getUserId(user),
     };
     const manifestWrites = composeManifestWrites(context, layoutId, snapshot);
-    assertTransactionBudget(manifestWrites, [layoutUpdate]);
+    assertTransactionBudget(manifestWrites, [layoutUpdate], context.guards);
 
     // Todas las lecturas terminaron: se escribe snapshot + manifiestos + guards atómicamente.
     transaction.update(layoutRef, layoutUpdate);
@@ -458,12 +527,14 @@ export async function publishRoomLayout(id, user) {
 
   await logAuditQuietly("publicar acomodo", "roomLayout", layoutId, outcome.layout.name, {
     plantel: outcome.layout.plantel,
+    ...(outcome.layout.destinations ? { planteles: getRoomLayoutPlanteles(outcome.layout) } : {}),
     devices: outcome.devicesUpdated,
   }, user);
 
   return {
     id: layoutId,
     plantel: outcome.layout.plantel,
+    ...(outcome.layout.destinations ? { planteles: getRoomLayoutPlanteles(outcome.layout) } : {}),
     publishedAtMillis: outcome.snapshot.publishedAtMillis,
     devicesUpdated: outcome.devicesUpdated,
     warnings: !outcome.layout.schedule && outcome.layout.assignments.some((row) => row.active && !row.teacher)
@@ -484,12 +555,18 @@ export async function unpublishRoomLayout(id, user) {
 
     const data = stored.data();
     if (!data.publishedSnapshot) return { name: data.name, plantel: "", devicesUpdated: 0, changed: false };
-    const plantel = cleanText(data.publishedPlantel || data.publishedSnapshot.plantel);
+    const oldTargets = publishedTargets(data);
+    const plantel = oldTargets.join(", ");
 
-    const context = await readPublicationContext(transaction, uniquePlanteles([plantel]), new Map([[layoutId, data]]));
-    const layoutUpdate = { publishedSnapshot: deleteField(), publishedPlantel: "", publishedAt: deleteField() };
+    const context = await readPublicationContext(transaction, oldTargets, new Map([[layoutId, data]]));
+    const layoutUpdate = {
+      publishedSnapshot: deleteField(),
+      publishedPlantel: "",
+      ...(data.publishedPlanteles !== undefined ? { publishedPlanteles: deleteField() } : {}),
+      publishedAt: deleteField(),
+    };
     const manifestWrites = composeManifestWrites(context, layoutId, null);
-    assertTransactionBudget(manifestWrites, [{ layoutId }]);
+    assertTransactionBudget(manifestWrites, [{ layoutId }], context.guards);
 
     transaction.update(layoutRef, layoutUpdate);
     manifestWrites.forEach(({ token, manifest }) => transaction.set(manifestRef(token), manifestPayload(manifest)));
@@ -518,12 +595,12 @@ async function readPlantelGuard(transaction, plantel) {
 }
 
 async function readPublishedSnapshots(transaction, plantel) {
-  const ids = await queryIdsOrReject(ROOM_LAYOUTS_COLLECTION, "publishedPlantel", plantel, MAX_PUBLISHED_LAYOUTS, "acomodos publicados");
+  const ids = await queryPublishedLayoutIds(plantel);
   const snapshots = [];
   for (const layoutId of ids) {
     const layoutSnapshot = await transaction.get(doc(db, ROOM_LAYOUTS_COLLECTION, layoutId));
     const data = layoutSnapshot.exists() ? layoutSnapshot.data() : null;
-    if (data?.publishedSnapshot && cleanText(data.publishedPlantel) === plantel) {
+    if (data?.publishedSnapshot && publishedTargets(data).includes(plantel)) {
       snapshots.push({ ...data.publishedSnapshot, id: layoutId });
     }
   }
@@ -557,7 +634,7 @@ export async function prepareRoomDeviceWrite(transaction, devicePatch, { mustBeN
 
   // Los centinelas serverTimestamp() no participan en el manifiesto: solo plantel/estado/token.
   const manifest = buildRoomDisplayManifest(device, snapshots, Date.now());
-  assertTransactionBudget([{ manifest }], [fields]);
+  assertTransactionBudget([{ manifest }], [fields], guards);
 
   return {
     device,
@@ -599,7 +676,7 @@ export async function refreshRoomDisplayForDevice(device) {
     }
 
     const manifest = buildRoomDisplayManifest(current, layouts, Date.now());
-    assertTransactionBudget([{ manifest }], []);
+    assertTransactionBudget([{ manifest }], [], guards);
     transaction.set(manifestRef(token), manifestPayload(manifest));
     writeGuards(transaction, guards, null);
     return manifest;

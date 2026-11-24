@@ -56,13 +56,16 @@ const firestore = {
     const prefix = `${q.col.path}/`;
     const docs = [...store.keys()]
       .filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes("/"))
-      .filter((path) => q.filters.every(([field, value]) => store.get(path)[field] === value))
+      .filter((path) => q.filters.every(([field, value, op]) =>
+        op === "array-contains"
+          ? Array.isArray(store.get(path)[field]) && store.get(path)[field].includes(value)
+          : store.get(path)[field] === value))
       .slice(0, q.max)
       .map(snapshotOf);
     return { docs };
   },
   query: (col, ...parts) => ({ col, filters: parts.filter((p) => p.filter).map((p) => p.filter), max: parts.find((p) => p.max)?.max ?? Infinity }),
-  where: (field, _op, value) => ({ filter: [field, value] }),
+  where: (field, op, value) => ({ filter: [field, value, op] }),
   limit: (max) => ({ max }),
   setDoc: async (ref, data, options = {}) => {
     store.set(ref.path, applyFields(store.get(ref.path) || {}, data, options.merge === true));
@@ -797,6 +800,265 @@ test("Matriz: datos inválidos se rechazan al guardar y al publicar sin escribir
   await assert.rejects(() => service.publishRoomLayout(saved.id, admin), /columna que no existe/);
   assert.equal(JSON.stringify([...store]), beforePublish, "sin snapshot, manifiestos ni guard");
   assert.equal(store.get("digitalSignageRoomDisplays/d1"), undefined);
+});
+
+// ---------- acomodos independientes con destinos (control optimista simulado; NO es el emulador real) ----------
+
+const dest = (plantel, deviceIds = []) => ({ plantel, deviceIds });
+const independent = (name, destinations, overrides = {}) =>
+  savedLayout(name, { plantel: "", destinations, ...overrides });
+const manifestOf = (id) => store.get(`digitalSignageRoomDisplays/${id}`);
+const namesOf = (id) => manifestOf(id)?.layouts.map((layout) => layout.name);
+
+function seedBranches() {
+  ["n1", "n2"].forEach((id) => seedDevice(id, "Norte"));
+  ["s1", "s2"].forEach((id) => seedDevice(id, "Sur"));
+  seedDevice("o1", "Otro");
+}
+
+test("Destinos: un acomodo en varios planteles y pantallas; cada manifiesto lleva solo lo suyo", async () => {
+  resetTx();
+  seedBranches();
+  const saved = await independent("Global", [dest("Norte"), dest("Sur", ["s1"])]);
+  assert.equal(saved.plantel, "");
+  assert.deepEqual(saved.destinations, [dest("Norte"), dest("Sur", ["s1"])]);
+
+  const result = await service.publishRoomLayout(saved.id, admin);
+  assert.equal(result.devicesUpdated, 4, "pantallas de Norte y Sur; Otro no se toca");
+  const stored = store.get(`digitalSignageRoomLayouts/${saved.id}`);
+  assert.equal(stored.publishedPlantel, "");
+  assert.deepEqual(stored.publishedPlanteles, ["Norte", "Sur"]);
+  assert.deepEqual(stored.publishedSnapshot.destinations, saved.destinations, "un solo snapshot global con destinos");
+
+  ["n1", "n2", "s1"].forEach((id) => assert.deepEqual(namesOf(id), ["Global"], id));
+  assert.deepEqual(namesOf("s2"), []);
+  assert.equal(manifestOf("o1"), undefined);
+  const forSouth = manifestOf("s1").layouts[0];
+  assert.equal(forSouth.plantel, "Sur", "plantel proyectado para el resolver");
+  assert.equal("destinations" in forSouth, false);
+  assert.equal(manifestOf("n1").layouts[0].plantel, "Norte");
+  assert.equal(JSON.stringify(manifestOf("s1")).includes("Norte"), false, "sin datos de otro plantel");
+  assert.equal(roomModel.getRoomLayoutPublicationState({ ...stored, id: saved.id, publishedSnapshot: stored.publishedSnapshot }, null), "published");
+
+  // Ventana con pantallas: solo viajan las IDs de la propia pantalla.
+  await service.saveRoomLayout({ ...saved, displayRules: [{ ...saved.displayRules[0], deviceIds: ["n1", "s1"] }] }, admin);
+  await service.publishRoomLayout(saved.id, admin);
+  assert.deepEqual(manifestOf("n1").layouts[0].displayRules[0].deviceIds, ["n1"]);
+  assert.deepEqual(manifestOf("s1").layouts[0].displayRules[0].deviceIds, ["s1"]);
+  assert.deepEqual(namesOf("n2"), [], "la ventana ya no la apunta");
+});
+
+test("Destinos: pantallas de arriba y de abajo del mismo plantel reciben acomodos distintos", async () => {
+  resetTx();
+  seedDevice("arriba", "Norte", { location: "Planta alta" });
+  seedDevice("abajo", "Norte", { location: "Planta baja" });
+  seedDevice("otra", "Norte");
+  const up = await independent("Arriba", [dest("Norte", ["arriba"])]);
+  const down = await independent("Abajo", [dest("Norte", ["abajo"])]);
+  await service.publishRoomLayout(up.id, admin);
+  await service.publishRoomLayout(down.id, admin);
+  assert.deepEqual(namesOf("arriba"), ["Arriba"]);
+  assert.deepEqual(namesOf("abajo"), ["Abajo"]);
+  assert.deepEqual(namesOf("otra"), []);
+  assert.equal(guardOf("Norte").publicationRevision, 2);
+});
+
+test("Destinos: reasignar retira lo viejo y conserva lo no relacionado; despublicar limpia destinos antiguos", async () => {
+  resetTx();
+  seedBranches();
+  const unrelated = await savedLayout("Antiguo Norte");
+  await service.publishRoomLayout(unrelated.id, admin);
+  const saved = await independent("Global", [dest("Norte"), dest("Sur")]);
+  await service.publishRoomLayout(saved.id, admin);
+  assert.deepEqual(namesOf("n1").sort(), ["Antiguo Norte", "Global"]);
+  assert.deepEqual(namesOf("s1"), ["Global"]);
+
+  // Quitar Norte y añadir Otro: la publicación nueva limpia Norte (destino viejo) y cubre Otro.
+  await service.saveRoomLayout({ ...saved, destinations: [dest("Sur"), dest("Otro")] }, admin);
+  assert.deepEqual(namesOf("n1").sort(), ["Antiguo Norte", "Global"], "guardar el borrador no cambia lo publicado");
+  await service.publishRoomLayout(saved.id, admin);
+  assert.deepEqual(namesOf("n1"), ["Antiguo Norte"], "retirado de Norte, el antiguo intacto");
+  assert.deepEqual(namesOf("s2"), ["Global"]);
+  assert.deepEqual(namesOf("o1"), ["Global"]);
+  assert.deepEqual(store.get(`digitalSignageRoomLayouts/${saved.id}`).publishedPlanteles, ["Otro", "Sur"]);
+  assert.equal(guardOf("Norte").publicationRevision, 3, "el plantel retirado también se protegió");
+
+  // Convertir en antiguo-ligado a Sur: publishedPlanteles se elimina y Otro se limpia.
+  const { destinations: _drop, ...legacyShape } = saved; // eslint-disable-line no-unused-vars
+  await service.saveRoomLayout({ ...legacyShape, plantel: "Sur" }, admin);
+  assert.equal("destinations" in store.get(`digitalSignageRoomLayouts/${saved.id}`), false);
+  await service.publishRoomLayout(saved.id, admin);
+  const converted = store.get(`digitalSignageRoomLayouts/${saved.id}`);
+  assert.equal(converted.publishedPlantel, "Sur");
+  assert.equal("publishedPlanteles" in converted, false);
+  assert.deepEqual(namesOf("o1"), []);
+  assert.deepEqual(namesOf("s1"), ["Global"]);
+
+  await service.unpublishRoomLayout(saved.id, admin);
+  assert.deepEqual(namesOf("s1"), []);
+  assert.deepEqual(namesOf("n1"), ["Antiguo Norte"], "lo no relacionado se conserva");
+});
+
+test("Destinos: quitar todos en el borrador guarda, no publica, y despublicar usa los destinos publicados", async () => {
+  resetTx();
+  seedBranches();
+  const saved = await independent("Global", [dest("Norte"), dest("Sur", ["s1"])]);
+  await service.publishRoomLayout(saved.id, admin);
+  await service.saveRoomLayout({ ...saved, destinations: [] }, admin);
+  assert.deepEqual(store.get(`digitalSignageRoomLayouts/${saved.id}`).destinations, []);
+  assert.deepEqual(namesOf("s1"), ["Global"], "el borrador sin destinos no toca lo publicado");
+
+  const before = JSON.stringify([...store]);
+  await assert.rejects(() => service.publishRoomLayout(saved.id, admin), /al menos un destino/);
+  assert.equal(JSON.stringify([...store]), before);
+
+  const outcome = await service.unpublishRoomLayout(saved.id, admin);
+  assert.equal(outcome.devicesUpdated, 4);
+  ["n1", "n2", "s1", "s2"].forEach((id) => assert.deepEqual(namesOf(id), [], id));
+  const stored = store.get(`digitalSignageRoomLayouts/${saved.id}`);
+  assert.equal(stored.publishedSnapshot, undefined);
+  assert.equal("publishedPlanteles" in stored, false);
+  assert.deepEqual(stored.destinations, [], "el borrador sin receptores queda");
+  assert.equal(guardOf("Sur").publicationRevision, 2);
+});
+
+test("Destinos: referencias colgantes o de otro plantel se rechazan en publicación sin escribir nada", async () => {
+  resetTx();
+  seedBranches();
+  const cases = [
+    [[dest("Sur", ["n1"])], {}, /no existe en el plantel "Sur"/],
+    [[dest("Norte", ["fantasma"])], {}, /fantasma/],
+    [[dest("Norte")], { rules: ["s1"] }, /fuera de los destinos/],
+    [[dest("Norte")], { rules: ["fantasma"] }, /fuera de los destinos/],
+  ];
+  for (const [destinations, { rules } = {}, pattern] of cases) {
+    const base = draft({ plantel: "", destinations });
+    const saved = await service.saveRoomLayout(
+      rules ? { ...base, displayRules: [{ ...base.displayRules[0], deviceIds: rules }] } : base, admin);
+    const before = JSON.stringify([...store]);
+    await assert.rejects(() => service.publishRoomLayout(saved.id, admin), pattern);
+    assert.equal(JSON.stringify([...store]), before, "ni snapshot, ni manifiestos ni guards");
+  }
+  // Se guarda borrador con duplicados? No: falla antes de escribir.
+  const before = JSON.stringify([...store]);
+  await assert.rejects(() => service.saveRoomLayout(draft({ plantel: "", destinations: [dest("Norte"), dest("Norte")] }), admin), /repetido/);
+  assert.equal(JSON.stringify([...store]), before);
+  // Pantalla inactiva sigue siendo destino válido (configuración, no ensanchado).
+  seedDevice("viejo", "Norte", { active: false });
+  const inactive = await independent("Con inactiva", [dest("Norte", ["viejo"])]);
+  await service.publishRoomLayout(inactive.id, admin);
+  assert.equal(manifestOf("viejo").layouts.length, 1);
+  assert.equal(manifestOf("viejo").layouts[0].name, "Con inactiva");
+});
+
+test("Destinos: publicadores concurrentes con planteles compartidos se serializan por guard y reintento", async () => {
+  resetTx();
+  seedBranches();
+  const a = await independent("A", [dest("Norte"), dest("Sur")]);
+  const b = await independent("B", [dest("Sur"), dest("Otro")]);
+  await Promise.all([service.publishRoomLayout(a.id, admin), service.publishRoomLayout(b.id, admin)]);
+  assert.deepEqual(namesOf("s1").sort(), ["A", "B"], "ninguno pierde su acomodo");
+  assert.deepEqual(namesOf("n1"), ["A"]);
+  assert.deepEqual(namesOf("o1"), ["B"]);
+  assert.equal(guardOf("Sur").publicationRevision, 2);
+  assert.equal(guardOf("Norte").publicationRevision, 1);
+  assert.ok(counters.attempts > counters.commits, "hubo reintento por conflicto");
+});
+
+test("Destinos: pantalla creada durante una publicación independiente fuerza reintento y recibe el acomodo", async () => {
+  resetTx();
+  seedBranches();
+  const a = await independent("A", [dest("Norte")]);
+  let injected = false;
+  txHooks.afterReads = async () => {
+    if (injected) return;
+    injected = true;
+    seedDevice("n-nuevo", "Norte");
+    store.set("digitalSignageRoomConfigs/Norte", { ...(guardOf("Norte") || { plantel: "Norte" }), publicationRevision: 99 });
+  };
+  await service.publishRoomLayout(a.id, admin);
+  assert.equal(counters.attempts, 2);
+  assert.deepEqual(namesOf("n-nuevo"), ["A"]);
+  assert.equal(guardOf("Norte").publicationRevision, 100);
+});
+
+test("Destinos: alta, reubicación y refresh obtienen el acomodo correcto y no filtran a otro plantel", async () => {
+  resetTx();
+  seedBranches();
+  const saved = await independent("Global", [dest("Norte"), dest("Sur", ["s1"])]);
+  await service.publishRoomLayout(saved.id, admin);
+
+  const inNorth = await devicesService.createSignageDevice({ name: "N", plantel: "Norte", location: "Pasillo" }, admin);
+  assert.deepEqual(namesOf(inNorth.id), ["Global"]);
+  assert.equal(manifestOf(inNorth.id).layouts[0].plantel, "Norte");
+  const inSouth = await devicesService.createSignageDevice({ name: "S", plantel: "Sur", location: "Pasillo" }, admin);
+  assert.deepEqual(namesOf(inSouth.id), [], "pantalla nueva de Sur no listada explícitamente");
+  const inOther = await devicesService.createSignageDevice({ name: "O", plantel: "Otro", location: "Pasillo" }, admin);
+  assert.deepEqual(namesOf(inOther.id), []);
+
+  // Reubicar: n1 -> Sur (ID no listada) pierde; s1 -> Norte (todas) gana y toma el plantel nuevo.
+  await devicesService.updateSignageDevice("n1", { plantel: "Sur" });
+  assert.deepEqual(namesOf("n1"), []);
+  assert.equal(manifestOf("n1").plantel, "Sur");
+  await devicesService.updateSignageDevice("s1", { plantel: "Norte" });
+  assert.deepEqual(namesOf("s1"), ["Global"]);
+  assert.equal(manifestOf("s1").layouts[0].plantel, "Norte");
+  assert.equal(JSON.stringify(manifestOf("s1")).includes("Sur"), false);
+  await devicesService.updateSignageDevice("s1", { plantel: "Otro" });
+  assert.deepEqual(namesOf("s1"), []);
+
+  const refreshed = await service.refreshRoomDisplayForDevice({ id: "s2", deviceToken: "s2", plantel: "Sur" });
+  assert.equal(refreshed.layouts.length, 0, "s2 no figura en el destino explícito de Sur");
+  await devicesService.updateSignageDevice("s1", { plantel: "Sur" });
+  const back = await service.refreshRoomDisplayForDevice({ id: "s1", deviceToken: "s1", plantel: "Sur" });
+  assert.equal(back.layouts.length, 1, "s1 vuelve a figurar en Sur");
+  assert.equal(back.layouts[0].plantel, "Sur");
+});
+
+test("Tope combinado de acomodos publicados: antiguos + independientes, sin duplicados ni truncado", async () => {
+  resetTx();
+  const snapshotFor = (id, destinations) => ({ id, plantel: destinations ? "" : "Norte", ...(destinations ? { destinations } : {}) });
+  for (let index = 0; index < 60; index += 1) {
+    store.set(`digitalSignageRoomLayouts/l${index}`, { publishedPlantel: "Norte", publishedSnapshot: snapshotFor(`l${index}`) });
+  }
+  for (let index = 0; index < 41; index += 1) {
+    store.set(`digitalSignageRoomLayouts/i${index}`, {
+      publishedPlantel: "", publishedPlanteles: ["Norte", "Sur"], publishedSnapshot: snapshotFor(`i${index}`, [dest("Norte"), dest("Sur")]),
+    });
+  }
+  await assert.rejects(() => service.refreshRoomDisplayForDevice({ id: "x", deviceToken: "x", plantel: "Norte" }), /100/);
+  assert.equal(manifestOf("x"), undefined);
+  store.delete("digitalSignageRoomLayouts/l0");
+  assert.equal((await service.refreshRoomDisplayForDevice({ id: "x", deviceToken: "x", plantel: "Norte" })).layouts.length, 0, "100 exactos pasan");
+  // Un mismo documento en ambos índices cuenta una sola vez.
+  resetTx();
+  for (let index = 0; index < 100; index += 1) {
+    store.set(`digitalSignageRoomLayouts/d${index}`, { publishedPlantel: "Norte", publishedPlanteles: ["Norte"], publishedSnapshot: snapshotFor(`d${index}`) });
+  }
+  assert.ok(await service.refreshRoomDisplayForDevice({ id: "x", deviceToken: "x", plantel: "Norte" }));
+  // Publicar uno independiente más en Norte supera el tope.
+  const saved = await independent("Extra", [dest("Norte")]);
+  await assert.rejects(() => service.publishRoomLayout(saved.id, admin), /100/);
+});
+
+test("Presupuesto de transacción incluye escrituras de guard (390 pantallas + layout + 10 guards = 401)", async () => {
+  resetTx();
+  const planteles = Array.from({ length: 10 }, (_, index) => `P${index}`);
+  planteles.forEach((plantel) => {
+    for (let index = 0; index < 39; index += 1) seedDevice(`${plantel}-${index}`, plantel);
+  });
+  const saved = await independent("Amplio", planteles.map((plantel) => dest(plantel)));
+  const before = JSON.stringify([...store]);
+  await assert.rejects(() => service.publishRoomLayout(saved.id, admin), /401 escrituras/);
+  assert.equal(JSON.stringify([...store]), before, "nada se escribió");
+
+  // Con 9 planteles (351 pantallas + 1 + 9 guards = 361) cabe en el presupuesto y publica.
+  planteles.slice(0, 1).forEach((plantel) => {
+    for (let index = 0; index < 39; index += 1) store.delete(`digitalSignageDevices/${plantel}-${index}`);
+  });
+  await service.saveRoomLayout({ ...saved, destinations: planteles.slice(1).map((plantel) => dest(plantel)) }, admin);
+  const result = await service.publishRoomLayout(saved.id, admin);
+  assert.equal(result.devicesUpdated, 351);
 });
 
 test("Matriz: 200 filas × 48 columnas dispersas se guardan y publican; el exceso de tamaño se rechaza", async () => {

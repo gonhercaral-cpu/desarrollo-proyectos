@@ -2,7 +2,9 @@
 import {
   ROOM_DEFAULT_TIMEZONE,
   ROOM_MODEL_VERSION,
+  hasRoomLayoutDestinations,
   normalizePublishedRoomLayout,
+  roomLayoutTargetsDevice,
   normalizeRoomLayout,
   normalizeRoomTemplate,
   validateRoomLayout,
@@ -30,6 +32,9 @@ export function buildPublishedRoomSnapshot(layoutData, templateData, publishedAt
   }
   const { id, ...rest } = layout;
   if (!id) throw new Error("Guarda el acomodo antes de publicarlo.");
+  if (layout.destinations && layout.destinations.length === 0) {
+    throw new Error("Elige al menos un destino (plantel) antes de publicar el acomodo.");
+  }
   return JSON.parse(JSON.stringify({ id, ...rest, template, publishedAtMillis }));
 }
 
@@ -37,6 +42,24 @@ function ruleAppliesToDevice(rule, device) {
   if (rule.active === false) return false;
   if (!rule.deviceIds || rule.deviceIds.length === 0) return true;
   return rule.deviceIds.includes(clean(device.id)) || rule.deviceIds.includes(clean(device.deviceToken));
+}
+
+// Copia del snapshot publicado para UNA pantalla, o null si no le corresponde. Los acomodos
+// independientes (con `destinations`) se proyectan: plantel = el de la pantalla, sin destinos ni
+// IDs de otras pantallas. Los antiguos salen exactamente como siempre.
+export function projectPublishedLayoutForDevice(snapshot, device) {
+  if (!snapshot || !clean(snapshot.id) || snapshot.active === false) return null;
+  if (!roomLayoutTargetsDevice(snapshot, device)) return null;
+  const independent = hasRoomLayoutDestinations(snapshot);
+  const base = independent ? { ...snapshot, plantel: clean(device.plantel), destinations: undefined } : snapshot;
+  const published = normalizePublishedRoomLayout(base);
+  const identifiers = [clean(device.id), clean(device.deviceToken)].filter(Boolean);
+  const displayRules = published.displayRules
+    .filter((rule) => ruleAppliesToDevice(rule, device))
+    .map((rule) => independent && rule.deviceIds.length > 0
+      ? { ...rule, deviceIds: rule.deviceIds.filter((id) => identifiers.includes(id)) }
+      : rule);
+  return displayRules.length > 0 ? { ...published, displayRules } : null;
 }
 
 // Manifiesto completo y determinista para UNA pantalla. Sin duplicados por ID de acomodo,
@@ -49,19 +72,15 @@ export function buildRoomDisplayManifest(device, snapshots = [], updatedAtMillis
   const byId = new Map();
   (Array.isArray(snapshots) ? snapshots : []).forEach((snapshot) => {
     if (!snapshot || !clean(snapshot.id) || snapshot.active === false) return;
-    if (clean(snapshot.plantel) !== plantel) return;
+    if (!roomLayoutTargetsDevice(snapshot, { ...device, plantel })) return;
     const previous = byId.get(snapshot.id);
     if (previous && (previous.publishedAtMillis || 0) >= (snapshot.publishedAtMillis || 0)) return;
     byId.set(snapshot.id, snapshot);
   });
 
   const layouts = Array.from(byId.values())
-    .map((snapshot) => {
-      const published = normalizePublishedRoomLayout(snapshot);
-      const displayRules = published.displayRules.filter((rule) => ruleAppliesToDevice(rule, device));
-      return { ...published, displayRules };
-    })
-    .filter((layout) => layout.displayRules.length > 0)
+    .map((snapshot) => projectPublishedLayoutForDevice(snapshot, { ...device, plantel }))
+    .filter(Boolean)
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   const timezone = layouts[0]?.timezone || ROOM_DEFAULT_TIMEZONE;

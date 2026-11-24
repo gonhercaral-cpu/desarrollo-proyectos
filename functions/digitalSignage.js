@@ -13,6 +13,33 @@ const TERMINAL = new Set(["executed", "failed", "expired"]);
 const TYPES = new Set(["refresh", "web_reload", "web_scroll", "web_navigate"]);
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const text = (value, max = 300) => String(value || "").slice(0, max);
+const MAX_PUBLISHED_ROOMS = 100;
+
+// Misma proyección que roomPublication.js (cliente): los acomodos independientes (con
+// `destinations`) se entregan con el plantel de la pantalla, sin destinos ni IDs ajenos; los
+// antiguos conservan su semántica por plantel. Pura y exportada para probar la paridad.
+function projectRoomLayout(snapshot, device) {
+  if (!snapshot || snapshot.active === false) return null;
+  const plantel = String(device.plantel || "").trim();
+  const identifiers = [device.id, device.deviceToken].map((value) => String(value || "").trim()).filter(Boolean);
+  const independent = Array.isArray(snapshot.destinations);
+  if (independent) {
+    const destination = plantel && snapshot.destinations.find((entry) => String(entry?.plantel || "").trim() === plantel);
+    if (!destination) return null;
+    if (destination.deviceIds !== undefined && !Array.isArray(destination.deviceIds)) return null;
+    const raw = Array.isArray(destination.deviceIds) ? destination.deviceIds : [];
+    const listed = raw.map((value) => String(value || "").trim()).filter(Boolean);
+    if (raw.length > 0 && !listed.some((value) => identifiers.includes(value))) return null;
+  } else if (snapshot.plantel !== plantel) return null;
+  const rules = (snapshot.displayRules || []).filter((rule) =>
+    rule.active !== false && (!rule.deviceIds?.length || rule.deviceIds.some((value) => identifiers.includes(value))));
+  if (rules.length === 0) return null;
+  if (!independent) return { ...snapshot, displayRules: rules };
+  const rest = { ...snapshot };
+  delete rest.destinations;
+  return { ...rest, plantel, displayRules: rules.map((rule) => rule.deviceIds?.length
+    ? { ...rule, deviceIds: rule.deviceIds.filter((value) => identifiers.includes(value)) } : rule) };
+}
 
 function createSignageHandlers({ db, FieldValue, HttpsError, now = Date.now }) {
   function fail(code, message) { throw new HttpsError(code, message); }
@@ -106,16 +133,19 @@ function createSignageHandlers({ db, FieldValue, HttpsError, now = Date.now }) {
   async function prepareRooms(tx, device) {
     const plantel = String(device.plantel || "").trim();
     const guardRef = db.collection("digitalSignageRoomConfigs").doc(encodeURIComponent(plantel));
-    const [guard, published] = await Promise.all([
+    const layoutsRef = db.collection("digitalSignageRoomLayouts");
+    // Unión de publicaciones antiguas (publishedPlantel) e independientes (publishedPlanteles).
+    const [guard, legacy, independent] = await Promise.all([
       tx.get(guardRef),
-      tx.get(db.collection("digitalSignageRoomLayouts").where("publishedPlantel", "==", plantel).limit(101)),
+      tx.get(layoutsRef.where("publishedPlantel", "==", plantel).limit(MAX_PUBLISHED_ROOMS + 1)),
+      tx.get(layoutsRef.where("publishedPlanteles", "array-contains", plantel).limit(MAX_PUBLISHED_ROOMS + 1)),
     ]);
-    if (published.size > 100) fail("resource-exhausted", "El plantel supera el límite de acomodos publicados.");
-    const layouts = published.docs.map((entry) => entry.data().publishedSnapshot)
-      .filter((snapshot) => snapshot && snapshot.active !== false && snapshot.plantel === plantel)
-      .map((snapshot) => ({ ...snapshot, displayRules: (snapshot.displayRules || []).filter((rule) =>
-        rule.active !== false && (!rule.deviceIds?.length || rule.deviceIds.includes(device.id))) }))
-      .filter((snapshot) => snapshot.displayRules.length > 0)
+    const published = new Map();
+    [...legacy.docs, ...independent.docs].forEach((entry) => published.set(entry.id, entry.data()));
+    if (published.size > MAX_PUBLISHED_ROOMS) fail("resource-exhausted", "El plantel supera el límite de acomodos publicados.");
+    const layouts = [...published].filter(([, data]) => data.publishedSnapshot)
+      .map(([entryId, data]) => projectRoomLayout({ ...data.publishedSnapshot, id: data.publishedSnapshot.id ?? entryId }, device))
+      .filter(Boolean)
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
     const manifest = { version: 1, deviceToken: device.id, plantel,
       timezone: layouts[0]?.timezone || "America/Tijuana", active: true, layouts, updatedAt: now() };
@@ -379,4 +409,4 @@ function createSignageHandlers({ db, FieldValue, HttpsError, now = Date.now }) {
   return { pairing, control, exchange };
 }
 
-module.exports = { createSignageHandlers };
+module.exports = { createSignageHandlers, projectRoomLayout };

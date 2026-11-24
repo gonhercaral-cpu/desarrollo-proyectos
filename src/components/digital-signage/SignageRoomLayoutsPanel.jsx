@@ -14,6 +14,9 @@ import {
   getRoomLayoutPublicationState,
   formatRoomClassTime,
   getRoomDayLabel,
+  getRoomLayoutDestinations,
+  getRoomLayoutPlanteles,
+  roomLayoutTargetsDevice,
 } from "../../utils/digitalSignage/roomLayouts";
 
 import {
@@ -31,8 +34,11 @@ import {
   getScheduleActivePageIndex,
 } from "../../utils/digitalSignage/roomSchedule";
 import RoomScheduleEditor from "./RoomScheduleEditor";
+import RoomTeacherPicker from "./RoomTeacherPicker";
+import { subscribeSignageTeachers } from "../../services/digital-signage/teachersService";
 
 import RoomLayoutDisplay from "./RoomLayoutDisplay";
+import RoomLayoutDestinationsEditor from "./RoomLayoutDestinationsEditor";
 import RoomLayoutTemplateEditor from "./RoomLayoutTemplateEditor";
 
 const WEEKDAY_NAMES = [
@@ -62,13 +68,31 @@ export default function SignageRoomLayoutsPanel({
 }) {
   const [adminData, setAdminData] = useState({ configs: [], layouts: [], templates: [] });
   const [loading, setLoading] = useState(true);
+  const [signageTeachers, setSignageTeachers] = useState([]);
+  const [teachersLoading, setTeachersLoading] = useState(true);
+  const [teachersError, setTeachersError] = useState("");
+  useEffect(() => subscribeSignageTeachers(teachers => {
+    setSignageTeachers(teachers);
+    setTeachersLoading(false);
+    setTeachersError("");
+  }, () => {
+    setTeachersLoading(false);
+    setTeachersError("No se pudo cargar el catálogo de maestros de Imprenta → Firmas.");
+  }), []);
+
   const [apiError, setApiError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
 
   const allPlanteles = useMemo(() => {
     const fromProps = Array.isArray(planteles) ? planteles : [];
     const fromDevs = (devices || []).map((d) => d.plantel).filter(Boolean);
-    const fromSaved = [...adminData.configs, ...adminData.layouts].map((item) => item.plantel).filter(Boolean);
+    const fromSaved = [...adminData.configs, ...adminData.layouts].flatMap((item) => {
+      const list = [item.plantel];
+      if (Array.isArray(item.destinations)) {
+        item.destinations.forEach((dest) => list.push(dest.plantel));
+      }
+      return list;
+    }).filter(Boolean);
     const combined = Array.from(new Set([...fromProps, ...fromDevs, ...fromSaved]));
     return combined.length > 0 ? combined : ["Tijuana"];
   }, [planteles, devices, adminData.configs, adminData.layouts]);
@@ -105,6 +129,7 @@ export default function SignageRoomLayoutsPanel({
   const [localRoomsList, setLocalRoomsList] = useState([]);
   const [localTimezone, setLocalTimezone] = useState("America/Tijuana");
 
+  const [previewPlantel, setPreviewPlantel] = useState("");
   const [previewNowMillis, setPreviewNowMillis] = useState(() => Date.now());
   const [previewViewId, setPreviewViewId] = useState("");
   const [previewPageIndex, setPreviewPageIndex] = useState(null);
@@ -120,6 +145,34 @@ export default function SignageRoomLayoutsPanel({
   useEffect(() => { roomsDirtyRef.current = roomsDirty; }, [roomsDirty]);
   const templateDirtyRef = useRef(templateDirty);
   useEffect(() => { templateDirtyRef.current = templateDirty; }, [templateDirty]);
+
+  const resolveLayoutDestinations = useCallback((layout) => {
+    if (!layout) return [];
+    if (typeof getRoomLayoutDestinations === "function") {
+      try {
+        const res = getRoomLayoutDestinations(layout);
+        if (Array.isArray(res)) return res;
+      } catch {
+        // fallback below
+      }
+    }
+    if (Array.isArray(layout.destinations)) return layout.destinations;
+    if (layout.plantel) return [{ plantel: layout.plantel, deviceIds: [] }];
+    return [];
+  }, []);
+
+  const resolveLayoutPlanteles = useCallback((layout) => {
+    if (!layout) return [];
+    if (typeof getRoomLayoutPlanteles === "function") {
+      try {
+        const res = getRoomLayoutPlanteles(layout);
+        if (Array.isArray(res)) return res;
+      } catch {
+        // fallback below
+      }
+    }
+    return Array.from(new Set(resolveLayoutDestinations(layout).map((d) => d.plantel).filter(Boolean)));
+  }, [resolveLayoutDestinations]);
 
   const editorOpenerRef = useRef(null);
   const copyOpenerRef = useRef(null);
@@ -143,17 +196,15 @@ export default function SignageRoomLayoutsPanel({
   }, [onLeaveGuardChange, busy, anyDirty]);
 
   useEffect(() => {
-    if (allPlanteles.includes(selectedPlantel) || anyDirty || busy) return;
+    if (allPlanteles.includes(selectedPlantel) || roomsDirty || busy) return;
     let cancelled = false;
     // Planteles can arrive after the authenticated profile/devices finish loading.
     Promise.resolve().then(() => {
       if (cancelled) return;
       setSelectedPlantel(allPlanteles[0]);
-      setDraft(null);
-      draftRef.current = null;
     });
     return () => { cancelled = true; };
-  }, [allPlanteles, selectedPlantel, anyDirty, busy]);
+  }, [allPlanteles, selectedPlantel, roomsDirty, busy]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -174,7 +225,7 @@ export default function SignageRoomLayoutsPanel({
   }, []);
 
   const createDefaultDraft = useCallback(
-    (plantelName, existingRooms = null) => {
+    (plantelName = selectedPlantel, existingRooms = null) => {
       const cfg = adminDataRef.current.configs.find((c) => c.plantel === plantelName);
       const roomsToUse =
         existingRooms ||
@@ -188,11 +239,19 @@ export default function SignageRoomLayoutsPanel({
       if (typeof createRoomLayoutDraft === "function") {
         try {
           const result = createRoomLayoutDraft({
-            plantel: plantelName,
+            plantel: "",
+            destinations: [],
             timezone: cfg?.timezone || "America/Tijuana",
             rooms: roomsToUse,
           });
-          if (result) return result;
+          if (result) {
+            return {
+              ...result,
+              id: createRoomId("layout"),
+              plantel: "",
+              destinations: Array.isArray(result.destinations) ? result.destinations : [],
+            };
+          }
         } catch {
           // fallback below
         }
@@ -200,7 +259,8 @@ export default function SignageRoomLayoutsPanel({
 
       return {
         name: "Acomodo de Salones",
-        plantel: plantelName,
+        plantel: "",
+        destinations: [],
         timezone: cfg?.timezone || "America/Tijuana",
         classDays: [1, 2, 3, 4, 5],
         classStart: "09:00",
@@ -229,7 +289,7 @@ export default function SignageRoomLayoutsPanel({
         active: true,
       };
     },
-    []
+    [selectedPlantel]
   );
 
   useEffect(() => {
@@ -245,11 +305,10 @@ export default function SignageRoomLayoutsPanel({
         setApiError(null);
 
         if (!draftRef.current) {
-          const currentPlantelLayouts = layouts.filter((l) => l.plantel === selectedPlantel);
-          if (currentPlantelLayouts.length > 0) {
+          if (layouts.length > 0) {
             const initialDraft = normalizeRoomLayout
-              ? normalizeRoomLayout(currentPlantelLayouts[0])
-              : currentPlantelLayouts[0];
+              ? normalizeRoomLayout(layouts[0])
+              : layouts[0];
             setDraft(initialDraft);
             draftRef.current = initialDraft;
           } else {
@@ -290,13 +349,13 @@ export default function SignageRoomLayoutsPanel({
     return adminData.configs.find((c) => c.plantel === selectedPlantel) || null;
   }, [adminData.configs, selectedPlantel]);
 
-  const plantelLayouts = useMemo(() => {
-    return adminData.layouts.filter((l) => l.plantel === selectedPlantel);
-  }, [adminData.layouts, selectedPlantel]);
+  const isIndependentDraft = Boolean(draft && Array.isArray(draft.destinations));
 
-  const devicesInPlantel = useMemo(() => {
-    return devices.filter((d) => d.plantel === selectedPlantel);
-  }, [devices, selectedPlantel]);
+  const layoutPlanteles = useMemo(() => {
+    return resolveLayoutPlanteles(draft);
+  }, [draft, resolveLayoutPlanteles]);
+
+  const eligibleDevices = useMemo(() => draft ? devices.filter(device => roomLayoutTargetsDevice(draft, device)) : [], [draft, devices]);
 
   const rawStoredLayout = useMemo(() => {
     if (!draft?.id) return null;
@@ -393,25 +452,10 @@ export default function SignageRoomLayoutsPanel({
   function handlePlantelChange(newPlantel) {
     if (busy) return;
     if (newPlantel === selectedPlantel) return;
-    if (!confirmDiscard(`cambiar a ${newPlantel}`)) return;
+    if (roomsDirty && !confirmDiscard(`cambiar el catálogo a ${newPlantel}`)) return;
 
-    setPreviewViewId("");
-    setPreviewPageIndex(null);
     setSelectedPlantel(newPlantel);
     setCopyTargetPlantel(newPlantel);
-
-    const layouts = adminData.layouts.filter((l) => l.plantel === newPlantel);
-    if (layouts.length > 0) {
-      const normalized = normalizeRoomLayout ? normalizeRoomLayout(layouts[0]) : layouts[0];
-      setDraft(normalized);
-      draftRef.current = normalized;
-    } else {
-      const fresh = createDefaultDraft(newPlantel);
-      setDraft(fresh);
-      draftRef.current = fresh;
-    }
-    setIsDirty(false);
-    isDirtyRef.current = false;
 
     const targetCfg = adminData.configs.find((c) => c.plantel === newPlantel);
     if (targetCfg?.rooms) {
@@ -428,10 +472,6 @@ export default function SignageRoomLayoutsPanel({
     }
     setRoomsDirty(false);
     roomsDirtyRef.current = false;
-
-    setIsEditorOpen(false);
-    setTemplateDirty(false);
-    templateDirtyRef.current = false;
   }
 
   function handleSelectLayout(layout) {
@@ -464,7 +504,7 @@ export default function SignageRoomLayoutsPanel({
     templateDirtyRef.current = false;
     setStatusMessage({
       type: "success",
-      text: "Nuevo borrador inicializado. Modifícalo y guárdalo cuando esté listo.",
+      text: "Nuevo borrador independiente inicializado. Asigna sus destinos cuando esté listo.",
     });
   }
 
@@ -570,9 +610,11 @@ export default function SignageRoomLayoutsPanel({
     setApiError(null);
     const revAtStart = layoutRevisionRef.current;
     try {
+      const isIndependent = Array.isArray(currentDraft.destinations);
       const payload = {
         ...currentDraft,
-        plantel: currentDraft.plantel || selectedPlantel,
+        plantel: isIndependent ? (currentDraft.plantel || "") : (currentDraft.plantel || selectedPlantel),
+        ...(isIndependent ? { destinations: currentDraft.destinations } : {}),
       };
       if (typeof validateRoomLayout === "function") {
         validateRoomLayout(payload);
@@ -596,6 +638,12 @@ export default function SignageRoomLayoutsPanel({
 
   async function handlePublish() {
     if (!draft) return;
+    const isIndependent = Array.isArray(draft.destinations);
+    if (isIndependent && draft.destinations.length === 0) {
+      setApiError("No se puede publicar: asigna al menos una sucursal destino en el acomodo independiente.");
+      return;
+    }
+
     const unassigned = (draft.schedule ? [] : draft.assignments || []).filter((a) => a.active && !a.teacher?.trim());
     if (unassigned.length > 0) {
       const proceed = window.confirm(
@@ -649,6 +697,22 @@ export default function SignageRoomLayoutsPanel({
     }
   }
 
+  function handleConvertToIndependent() {
+    if (!draft || busy) return;
+    const originalPlantel = draft.plantel || selectedPlantel || "";
+    const newDestinations = originalPlantel
+      ? [{ plantel: originalPlantel, deviceIds: [] }]
+      : [];
+    updateDraft({
+      plantel: "",
+      destinations: newDestinations,
+    });
+    setStatusMessage({
+      type: "success",
+      text: `Acomodo convertido a biblioteca global. Se preservó el destino original (${originalPlantel || "sin destinos"}). Guarda el borrador para confirmar.`,
+    });
+  }
+
   function handleOpenCopyModal(e) {
     copyOpenerRef.current = e.currentTarget;
     setCopyTargetPlantel(selectedPlantel);
@@ -663,7 +727,8 @@ export default function SignageRoomLayoutsPanel({
 
   function handleExecuteCopy() {
     if (!draft || busy) return;
-    if (roomsDirty && !window.confirm("La copia cambiará el catálogo visible. ¿Descartar los cambios pendientes del catálogo?")) return;
+    const isIndependent = Array.isArray(draft.destinations);
+    if (!isIndependent && roomsDirty && !window.confirm("La copia cambiará el catálogo visible. ¿Descartar los cambios pendientes del catálogo?")) return;
     const targetCfg = adminData.configs.find((c) => c.plantel === copyTargetPlantel);
     const targetRooms = targetCfg?.rooms || [];
     const rowIdMap = new Map();
@@ -706,7 +771,8 @@ export default function SignageRoomLayoutsPanel({
       ...draft,
       id: createRoomId("layout"),
       name: copyName || `${draft.name} (Copia)`,
-      plantel: copyTargetPlantel,
+      plantel: isIndependent ? "" : copyTargetPlantel,
+      ...(isIndependent ? { destinations: [] } : {}),
       timezone: targetCfg?.timezone || "America/Tijuana",
       classDays: copyClassDays,
       classStart: copyClassStart,
@@ -719,26 +785,31 @@ export default function SignageRoomLayoutsPanel({
       active: true,
     };
 
-    setSelectedPlantel(copyTargetPlantel);
+    if (!isIndependent) {
+      setSelectedPlantel(copyTargetPlantel);
+    }
     setDraft(newDraft);
     draftRef.current = newDraft;
     setIsDirty(true);
     isDirtyRef.current = true;
 
-    if (targetCfg?.rooms) {
-      setLocalRoomsList(targetCfg.rooms);
-      setLocalTimezone(targetCfg.timezone || "America/Tijuana");
-    } else {
-      setLocalRoomsList([
-        { id: "r1", name: "Salón 1", active: true },
-        { id: "r2", name: "Salón 2", active: true },
-        { id: "r3", name: "Salón 3", active: true },
-        { id: "r4", name: "Salón 4", active: true },
-      ]);
-      setLocalTimezone("America/Tijuana");
+    if (!isIndependent) {
+      if (targetCfg?.rooms) {
+        setLocalRoomsList(targetCfg.rooms);
+        setLocalTimezone(targetCfg.timezone || "America/Tijuana");
+      } else {
+        setLocalRoomsList([
+          { id: "r1", name: "Salón 1", active: true },
+          { id: "r2", name: "Salón 2", active: true },
+          { id: "r3", name: "Salón 3", active: true },
+          { id: "r4", name: "Salón 4", active: true },
+        ]);
+        setLocalTimezone("America/Tijuana");
+      }
+      setRoomsDirty(false);
+      roomsDirtyRef.current = false;
+
     }
-    setRoomsDirty(false);
-    roomsDirtyRef.current = false;
 
     setShowCopyModal(false);
     if (copyOpenerRef.current) {
@@ -746,7 +817,9 @@ export default function SignageRoomLayoutsPanel({
     }
     setStatusMessage({
       type: "success",
-      text: `Copia generada como nuevo borrador independiente para ${copyTargetPlantel}. Revisa y guarda cuando esté listo.`,
+      text: isIndependent
+        ? "Copia generada como nuevo borrador independiente con receptores vacíos. Revisa y guarda cuando esté listo."
+        : `Copia generada como nuevo borrador para ${copyTargetPlantel}. Revisa y guarda cuando esté listo.`,
     });
   }
 
@@ -940,6 +1013,16 @@ export default function SignageRoomLayoutsPanel({
     }
   }
 
+  const targetPlanteles = layoutPlanteles.length > 0 ? layoutPlanteles : [selectedPlantel];
+  const effectivePreviewPlantel = previewPlantel && targetPlanteles.includes(previewPlantel)
+    ? previewPlantel
+    : (targetPlanteles[0] || selectedPlantel);
+
+  const previewLayout = useMemo(() => {
+    if (!draft) return draft;
+    return { ...draft, plantel: effectivePreviewPlantel };
+  }, [draft, effectivePreviewPlantel]);
+
   return (
     <div className="signage-rooms-container">
       {loading && <p role="status">Cargando acomodos y catálogos…</p>}
@@ -957,8 +1040,46 @@ export default function SignageRoomLayoutsPanel({
         </div>
 
         <div className="signage-rooms-header-actions">
+
+
           <label className="signage-rooms-plantel-selector">
-            Sucursal / Plantel:
+            Acomodo:
+            <select
+              value={draft?.id || ""}
+              onChange={(e) => {
+                const layoutId = e.target.value;
+                if (!layoutId) return;
+                if (layoutId === "__new__") {
+                  handleNewDraft();
+                  return;
+                }
+                const target = adminData.layouts.find((l) => l.id === layoutId);
+                if (target) {
+                  handleSelectLayout(target);
+                }
+              }}
+              disabled={saving || publishing}
+            >
+              {!adminData.layouts.some((layout) => layout.id === draft?.id) && (
+                <option value={draft?.id || ""}>Nuevo borrador sin guardar</option>
+              )}
+              {adminData.layouts.map((l) => {
+                const timeStr = formatRoomClassTime
+                  ? formatRoomClassTime(l)
+                  : `${l.classStart || ""} – ${l.classEnd || ""}`;
+                const dayStr = getRoomDayLabel ? getRoomDayLabel(l.classDays) : "";
+                return (
+                  <option key={l.id} value={l.id}>
+                    {l.name || "Sin nombre"} {Array.isArray(l.destinations) ? (l.destinations.length ? `· ${l.destinations.map(destination => destination.plantel).join(", ")}` : "· Sin destinos") : `· ${l.plantel || "Anterior"}`} {timeStr ? `(${timeStr})` : ""} {dayStr ? `— ${dayStr}` : ""}
+                  </option>
+                );
+              })}
+              <option value="__new__">+ Crear nuevo acomodo…</option>
+            </select>
+          </label>
+
+          <label className="signage-rooms-plantel-selector">
+            Catálogo de salones (referencia):
             <select
               value={selectedPlantel}
               onChange={(e) => handlePlantelChange(e.target.value)}
@@ -972,48 +1093,12 @@ export default function SignageRoomLayoutsPanel({
             </select>
           </label>
 
-          <label className="signage-rooms-plantel-selector">
-            Acomodo:
-            <select
-              value={draft?.id || ""}
-              onChange={(e) => {
-                const layoutId = e.target.value;
-                if (!layoutId) return;
-                if (layoutId === "__new__") {
-                  handleNewDraft();
-                  return;
-                }
-                const target = plantelLayouts.find((l) => l.id === layoutId);
-                if (target) {
-                  handleSelectLayout(target);
-                }
-              }}
-              disabled={saving || publishing}
-            >
-              {!plantelLayouts.some((layout) => layout.id === draft?.id) && (
-                <option value={draft?.id || ""}>Nuevo borrador sin guardar</option>
-              )}
-              {plantelLayouts.map((l) => {
-                const timeStr = formatRoomClassTime
-                  ? formatRoomClassTime(l)
-                  : `${l.classStart || ""} – ${l.classEnd || ""}`;
-                const dayStr = getRoomDayLabel ? getRoomDayLabel(l.classDays) : "";
-                return (
-                  <option key={l.id} value={l.id}>
-                    {l.name || "Sin nombre"} {timeStr ? `(${timeStr})` : ""} {dayStr ? `— ${dayStr}` : ""}
-                  </option>
-                );
-              })}
-              <option value="__new__">+ Crear nuevo acomodo…</option>
-            </select>
-          </label>
-
           <button
             type="button"
             className="visual-outline-button"
             onClick={() => setShowRoomsManager(!showRoomsManager)}
           >
-            {showRoomsManager ? "Cerrar salones" : "Administrar salones"}
+            {showRoomsManager ? "Cerrar catálogo" : "Administrar catálogo de salones"}
           </button>
 
           <button
@@ -1028,6 +1113,7 @@ export default function SignageRoomLayoutsPanel({
       </header>
 
       {apiError && <div className="signage-rooms-error-banner">{apiError}</div>}
+      {teachersError && <p role="status" className="signage-rooms-warning-banner">{teachersError} Los nombres ya guardados se conservan.</p>}
       {statusMessage && (
         <div className={`signage-rooms-status-banner ${statusMessage.type}`}>
           {statusMessage.text}
@@ -1191,10 +1277,16 @@ export default function SignageRoomLayoutsPanel({
                   {(isDirty || publicationState.isPending) && (
                     <span className="signage-rooms-badge is-pending">Cambios pendientes</span>
                   )}
+                  {isIndependentDraft ? (
+                    <span className="signage-rooms-badge is-independent">Biblioteca Global</span>
+                  ) : (
+                    <span className="signage-rooms-badge is-legacy">Legado ({draft?.plantel || "Sin plantel"})</span>
+                  )}
                 </div>
                 <span className="signage-rooms-subtext">
-                  Sucursal: {selectedPlantel} | Zona horaria:{" "}
-                  {draft?.timezone || localTimezone || "America/Tijuana"}
+                  {isIndependentDraft
+                    ? `Destinos: ${layoutPlanteles.join(", ") || "Ninguno"} | Zona horaria: ${draft?.timezone || "America/Tijuana"}`
+                    : `Sucursal: ${draft?.plantel || selectedPlantel} | Zona horaria: ${draft?.timezone || localTimezone || "America/Tijuana"}`}
                 </span>
               </div>
 
@@ -1220,6 +1312,18 @@ export default function SignageRoomLayoutsPanel({
                 </ul>
               </div>
             )}
+
+            <fieldset className="signage-rooms-fieldset">
+              <legend>Destinos y Pantallas Receptoras</legend>
+              <RoomLayoutDestinationsEditor
+                layout={draft}
+                devices={devices}
+                allPlanteles={allPlanteles}
+                onChange={(nextDestinations) => updateDraft({ destinations: nextDestinations })}
+                onConvertToIndependent={handleConvertToIndependent}
+                disabled={saving || publishing}
+              />
+            </fieldset>
 
             <div className="signage-rooms-mode-switch-card">
               <div className="signage-rooms-mode-info">
@@ -1349,14 +1453,12 @@ export default function SignageRoomLayoutsPanel({
                           />
                         </td>
                         <td>
-                          <input
-                            type="text"
-                            list="signage-rooms-teachers-datalist"
+                          <RoomTeacherPicker
+                            label={`Maestro del salón ${asg.roomName || idx + 1}`}
                             value={asg.teacher || ""}
-                            onChange={(e) =>
-                              updateAssignment(idx, "teacher", e.target.value)
-                            }
-                            placeholder="Nombre del maestro"
+                            onChange={teacher => updateAssignment(idx, "teacher", teacher)}
+                            teachers={signageTeachers}
+                            loading={teachersLoading}
                           />
                         </td>
                         <td>
@@ -1418,7 +1520,10 @@ export default function SignageRoomLayoutsPanel({
                 <legend>Matriz de Horarios y Maestros (Acomodo por Horarios)</legend>
                 <RoomScheduleEditor
                   layout={draft}
-                  key={`${selectedPlantel}|${draft.id || "new"}`}
+                  teachers={signageTeachers}
+                  teachersLoading={teachersLoading}
+                  teachersError={teachersError}
+                  key={draft.id || "new"}
                   onChange={(updated) => {
                     const ids = new Set(updated.schedule.views.map(view => view.id));
                     updateDraft({ ...updated, displayRules: draft.displayRules.map(rule =>
@@ -1440,11 +1545,15 @@ export default function SignageRoomLayoutsPanel({
                 {(draft?.displayRules || []).map((rule, rIdx) => {
                   const ruleTargetDevices =
                     Array.isArray(rule.deviceIds) && rule.deviceIds.length > 0
-                      ? devicesInPlantel
+                      ? eligibleDevices
                           .filter((d) => rule.deviceIds.includes(d.id || d.deviceToken))
-                          .map((d) => d.name || d.deviceToken)
+                          .map((d) => `${d.name || d.deviceToken}${layoutPlanteles.length > 1 ? ` (${d.plantel})` : ""}`)
                           .join(", ")
-                      : `Todas las pantallas activas de ${selectedPlantel}`;
+                      : isIndependentDraft
+                      ? layoutPlanteles.length > 0
+                        ? `Todas las pantallas activas de los destinos (${layoutPlanteles.join(", ")})`
+                        : "Sin destinos asignados"
+                      : `Todas las pantallas activas de ${draft?.plantel || selectedPlantel}`;
 
                   return (
                     <div className="signage-rooms-rule-card" key={rule.id || rIdx}>
@@ -1614,7 +1723,7 @@ export default function SignageRoomLayoutsPanel({
 
                       <div className="signage-rooms-devices-target-box">
                         <span className="signage-rooms-days-label">
-                          Pantallas receptoras ({selectedPlantel}):
+                          Pantallas receptoras:
                         </span>
                         <label className="signage-rooms-checkbox-label">
                           <input
@@ -1624,20 +1733,27 @@ export default function SignageRoomLayoutsPanel({
                               if (e.target.checked) {
                                 updateDisplayRule(rIdx, { deviceIds: [] });
                               } else {
+                                const firstActive = eligibleDevices.find((device) => device.active !== false);
                                 updateDisplayRule(rIdx, {
-                                  deviceIds: devicesInPlantel.some((device) => device.active !== false)
-                                    ? [devicesInPlantel.find((device) => device.active !== false).id || devicesInPlantel.find((device) => device.active !== false).deviceToken]
+                                  deviceIds: firstActive
+                                    ? [firstActive.id || firstActive.deviceToken]
                                     : [],
                                 });
                               }
                             }}
                           />
-                          <span>Todas las pantallas activas de {selectedPlantel}</span>
+                          <span>
+                            {isIndependentDraft
+                              ? layoutPlanteles.length > 0
+                                ? `Todas las pantallas activas de los destinos (${layoutPlanteles.join(", ")})`
+                                : "Todas las pantallas de los destinos (ninguno asignado)"
+                              : `Todas las pantallas activas de ${draft?.plantel || selectedPlantel}`}
+                          </span>
                         </label>
 
                         {Array.isArray(rule.deviceIds) && rule.deviceIds.length > 0 && (
                           <div className="signage-rooms-device-checkboxes-grid">
-                            {devicesInPlantel.filter((dev) => dev.active !== false || rule.deviceIds.includes(dev.id || dev.deviceToken)).map((dev) => {
+                            {eligibleDevices.filter((dev) => dev.active !== false || rule.deviceIds.includes(dev.id || dev.deviceToken)).map((dev) => {
                               const devId = dev.id || dev.deviceToken;
                               const isChecked = rule.deviceIds.includes(devId);
                               return (
@@ -1659,7 +1775,12 @@ export default function SignageRoomLayoutsPanel({
                                       updateDisplayRule(rIdx, { deviceIds: nextIds });
                                     }}
                                   />
-                                  <span>{dev.name || dev.deviceToken || "Pantalla"}{dev.active === false ? " (inactiva)" : ""}</span>
+                                  <span>
+                                    {dev.name || dev.deviceToken || "Pantalla"}
+                                    {layoutPlanteles.length > 1 ? ` (${dev.plantel})` : ""}
+                                    {dev.location ? ` — ${dev.location}` : ""}
+                                    {dev.active === false ? " (inactiva)" : ""}
+                                  </span>
                                 </label>
                               );
                             })}
@@ -1736,8 +1857,17 @@ export default function SignageRoomLayoutsPanel({
               <button
                 type="button"
                 className="visual-primary-button success"
-                disabled={saving || publishing}
+                disabled={
+                  saving ||
+                  publishing ||
+                  (isIndependentDraft && (draft?.destinations?.length || 0) === 0)
+                }
                 onClick={handlePublish}
+                title={
+                  isIndependentDraft && (draft?.destinations?.length || 0) === 0
+                    ? "Asigna al menos una sucursal destino antes de publicar"
+                    : ""
+                }
               >
                 {publishing ? "Publicando…" : "Publicar en pantallas"}
               </button>
@@ -1765,6 +1895,24 @@ export default function SignageRoomLayoutsPanel({
             <p className="signage-rooms-subtext">
               Así lucirá la pantalla en recepción durante la ventana programada.
             </p>
+
+            {targetPlanteles.length > 1 && (
+              <div className="signage-rooms-preview-branch-row">
+                <label className="signage-rooms-field">
+                  Sucursal proyectada en vista previa:
+                  <select
+                    value={effectivePreviewPlantel}
+                    onChange={(e) => setPreviewPlantel(e.target.value)}
+                  >
+                    {targetPlanteles.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
 
             {draft?.schedule && Array.isArray(draft.schedule.views) && draft.schedule.views.length > 0 && (
               <div className="signage-rooms-preview-view-selector-bar">
@@ -1808,7 +1956,7 @@ export default function SignageRoomLayoutsPanel({
             {draft?.schedule && <p className="signage-rooms-hint-text">Revisa nombres y etiquetas. Si no caben, reduce los salones o las columnas por página en Vistas y Paginación.</p>}
             <div className="signage-rooms-preview-screen-box">
               <RoomLayoutDisplay
-                layout={draft}
+                layout={previewLayout}
                 template={currentTemplate}
                 nowMillis={previewNowMillis}
                 selectedViewId={effectivePreviewView?.id || ""}
@@ -1900,6 +2048,9 @@ export default function SignageRoomLayoutsPanel({
             <h3 id="signage-rooms-copy-modal-title">Duplicar / Copiar Acomodo de Salones</h3>
             <p>
               Se creará un nuevo borrador independiente con IDs propios sin modificar el origen.
+              {isIndependentDraft && (
+                <span> Los destinos se inicializan vacíos para que selecciones los receptores tras revisarlo.</span>
+              )}
             </p>
 
             <label className="signage-rooms-field">
@@ -1912,7 +2063,9 @@ export default function SignageRoomLayoutsPanel({
             </label>
 
             <label className="signage-rooms-field">
-              Plantel destino:
+              {isIndependentDraft
+                ? "Sucursal de referencia (catálogo y zona horaria):"
+                : "Plantel destino:"}
               <select
                 value={copyTargetPlantel}
                 onChange={(e) => setCopyTargetPlantel(e.target.value)}
@@ -2031,7 +2184,7 @@ export default function SignageRoomLayoutsPanel({
               </button>
             </div>
             <RoomLayoutDisplay
-              layout={draft}
+              layout={previewLayout}
               template={currentTemplate}
               nowMillis={previewNowMillis}
               selectedViewId={effectivePreviewView?.id || ""}

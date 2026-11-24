@@ -33,11 +33,20 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
     await getAuth(app).deleteUser("matrix-admin").catch(error => { if(error.code!=="auth/user-not-found")throw error; });
     await getAuth(app).createUser({ uid: "matrix-admin", email: "matrix@test.local", password: "MatrixLocal42!" });
     await db.doc("users/matrix-admin").set({ role: "admin", active: true });
+    for (const [id,record] of Object.entries({
+      maria:{name:"María José",type:"Teacher",active:true,campus:"Centro",signatureDataUrl:"firma-no-enviar-al-player"},
+      ailyn:{name:"Ailyn",role:"Maestra",active:true,campus:"Sur"},
+      inactive:{name:"Maestro inactivo",type:"Teacher",active:false},
+      principal:{name:"Directora",type:"Principal",active:true},
+    }))await db.doc(`certificateSigners/${id}`).set(record);
     const rooms = Array.from({ length: 8 }, (_, index) => ({ id: `room-${index + 1}`, name: String(index + 1), active: true }));
     await db.doc("digitalSignageRoomConfigs/Centro").set({ plantel: "Centro", timezone: "America/Tijuana", teacherNames: ["Ailyn", "Rocío", "Paloma"], rooms });
     await db.doc("digitalSignageRoomConfigs/Sur").set({ plantel: "Sur", timezone: "America/Tijuana", teacherNames: [], rooms });
-    const device = { id: "matrix-screen", name: "Recepción matriz", deviceToken: "matrix-screen", plantel: "Centro", active: true, assignedPlaylistId: "matrix-playlist" };
-    await db.doc("digitalSignageDevices/matrix-screen").set(device);
+    const device = { id: "matrix-screen", name: "Arriba", location: "Planta alta", deviceToken: "matrix-screen", plantel: "Centro", active: true, assignedPlaylistId: "matrix-playlist" };
+    const downDevice={...device,id:"matrix-down",deviceToken:"matrix-down",name:"Abajo",location:"Planta baja"};
+    const southDevice={...device,id:"matrix-south",deviceToken:"matrix-south",plantel:"Sur",name:"Recepción Sur"};
+    const fixtureDevices=[device,downDevice,southDevice];
+    for(const current of fixtureDevices)await db.doc(`digitalSignageDevices/${current.id}`).set(current);
     await db.doc("digitalSignagePlaylists/matrix-playlist").set({ name: "Playlist conservada", active: true, publishStatus: "published", items: [{ assetId: "matrix-photo", title: "Contenido normal", type: "image", url: "http://127.0.0.1:4183/fixture.svg", durationSeconds: 120, publishStatus: "published" }] });
     const firebaseFixture = path.join(work, "firebase.js");
     await writeFile(firebaseFixture, `
@@ -62,7 +71,7 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
       import ${JSON.stringify(path.join(root, "src/styles/app.css"))};import ${JSON.stringify(path.join(root, "src/index.css"))};
       if(location.pathname==='/admin')await signInWithEmailAndPassword(auth,'matrix@test.local','MatrixLocal42!');
       globalThis.fixture={service,model,schedule,profile:{uid:'matrix-admin',id:'matrix-admin',role:'admin',active:true}};
-      createRoot(document.getElementById('root')).render(<BrowserRouter><Routes><Route path='/admin' element={<Panel profile={globalThis.fixture.profile} devices={[${JSON.stringify(device)}]} planteles={['Centro','Sur']}/>}/><Route path='/signage/player/:deviceToken' element={<Player/>}/></Routes></BrowserRouter>);
+      createRoot(document.getElementById('root')).render(<BrowserRouter><Routes><Route path='/admin' element={<Panel profile={globalThis.fixture.profile} devices={${JSON.stringify(fixtureDevices)}} planteles={['Centro','Sur']}/>}/><Route path='/signage/player/:deviceToken' element={<Player/>}/></Routes></BrowserRouter>);
     `);
     const { createServer } = await import("vite");
     const react = (await import("@vitejs/plugin-react")).default;
@@ -103,8 +112,12 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
     assert.equal(await table.locator("thead th").count(),4);
     await table.locator("tbody tr").first().locator("td").nth(1).click();
     const teacher=admin.getByLabel("Maestro Asignado",{exact:true});
-    await teacher.pressSequentially("María José");
-    assert.equal(await teacher.inputValue(),"María José","escritura conserva los espacios entre nombres");
+    await teacher.selectOption("María José");
+    assert.equal(await teacher.inputValue(),"María José","el selector usa los nombres registrados en Firmas");
+    assert.equal(await teacher.getByRole("option",{name:/Maestro inactivo|Directora/}).count(),0);
+    await db.doc("certificateSigners/maria").update({active:false});
+    await teacher.getByRole("option",{name:"María José (nombre guardado)",exact:true}).waitFor({state:"attached"});
+    assert.equal(await teacher.inputValue(),"María José","un cambio en Firmas no borra la asignación guardada");
     await admin.getByRole("button",{name:/^Etiquetas/}).click();
     await admin.getByRole("button",{name:"+ Agregar etiqueta",exact:true}).click();
     await admin.getByLabel("Nombre de etiqueta",{exact:true}).fill("KIDS");
@@ -137,26 +150,34 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
     await admin.getByRole("button",{name:"Cuadrícula de Asignaciones",exact:true}).click();
     await admin.getByLabel("Nombre del acomodo",{exact:true}).fill("Prueba UI matriz");
     acceptDialogs=false;
-    await admin.getByLabel(/^Sucursal \/ Plantel:/).selectOption("Sur");
-    assert.equal(await admin.getByLabel(/^Sucursal \/ Plantel:/).inputValue(),"Centro","cancelar cambio conserva borrador");
+    await admin.getByLabel(/^Catálogo de salones \(referencia\):/).selectOption("Sur");
+    assert.equal(await admin.getByLabel(/^Catálogo de salones \(referencia\):/).inputValue(),"Sur");
+    assert.equal(await admin.getByLabel("Nombre del acomodo",{exact:true}).inputValue(),"Prueba UI matriz","cambiar catálogo conserva el acomodo independiente");
+    await admin.getByLabel(/^Catálogo de salones \(referencia\):/).selectOption("Centro");
     acceptDialogs=true;
+    assert.ok(await admin.getByRole("button",{name:"Publicar en pantallas",exact:true}).isDisabled(),"sin destinos solo se guarda borrador");
+    await admin.getByLabel(/^Agregar sucursal destino:/).selectOption("Centro");
+    const centerDest=admin.locator(".signage-rooms-destinations-branch-card").filter({has:admin.getByRole("heading",{name:"Centro",exact:true})});
+    await centerDest.getByLabel("Todas las pantallas activas y futuras de Centro",{exact:true}).uncheck();
+    await centerDest.getByRole("checkbox",{name:/Abajo/}).uncheck();
+    await admin.getByLabel(/^Agregar sucursal destino:/).selectOption("Sur");
     await admin.getByRole("button",{name:"Guardar borrador",exact:true}).click();
     await admin.getByText("Borrador guardado correctamente.",{exact:true}).waitFor();
     await admin.reload();await admin.locator(".signage-rooms-matrix-table").waitFor();
     assert.match(await admin.locator(".signage-rooms-matrix-table tbody tr").first().innerText(),/María José/);
     await admin.getByRole("button",{name:"Duplicar / Copiar",exact:true}).click();
-    await admin.getByLabel(/^Plantel destino:/).selectOption("Sur");
+    await admin.getByLabel(/^Sucursal de referencia \(catálogo y zona horaria\):/).selectOption("Sur");
     await admin.getByRole("group",{name:"Días copia",exact:true}).getByTitle("Domingo",{exact:true}).click();
     await admin.getByRole("button",{name:"Crear copia independiente",exact:true}).click();
     await admin.getByRole("button",{name:"Guardar borrador",exact:true}).click();
     await admin.getByText("Borrador guardado correctamente.",{exact:true}).waitFor();
     const copies=(await db.collection("digitalSignageRoomLayouts").get()).docs.map(doc=>({id:doc.id,...doc.data()}));
-    const original=copies.find(layout=>layout.plantel==="Centro"),copy=copies.find(layout=>layout.plantel==="Sur");
-    assert.ok(original && copy);assert.notEqual(copy.assignments[0].id,original.assignments[0].id);
+    const original=copies.find(layout=>layout.name==="Prueba UI matriz"),copy=copies.find(layout=>layout.name==="Prueba UI matriz (Copia)");
+    assert.ok(original && copy);assert.equal(original.plantel,"");assert.deepEqual(original.destinations,[{plantel:"Centro",deviceIds:["matrix-screen"]},{plantel:"Sur",deviceIds:[]}]);assert.deepEqual(copy.destinations,[]);assert.notEqual(copy.assignments[0].id,original.assignments[0].id);
     assert.equal(copy.schedule.cells[0].rowId,copy.assignments[0].id);assert.equal(copy.schedule.cells[0].teacher,"María José");
     assert.ok(copy.classDays.includes(0));assert.ok(!original.classDays.includes(0));
     assert.equal(copy.schedule.cells[0].tagIds.length,1);
-    await admin.getByLabel(/^Sucursal \/ Plantel:/).selectOption("Centro");
+    await admin.getByLabel(/^Acomodo:/).selectOption(original.id);
     await admin.getByRole("button",{name:"Personalizar",exact:true}).click();
     const editor=admin.locator(".signage-rooms-template-editor");
     await editor.locator(".signage-rooms-layer-row").filter({hasText:"Matriz de Horarios"}).click();
@@ -189,7 +210,7 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
       const utc=new Date();const boundary=(utc.getUTCHours()*60+utc.getUTCMinutes()+2)%1440;
       const time=value=>`${String(Math.floor((value%1440)/60)).padStart(2,"0")}:${String(value%60).padStart(2,"0")}`;
       const rule={id:"window",daysOfWeek:[0,1,2,3,4,5,6],dates:[],startTime:time(boundary+1),endTime:time(boundary),deviceIds:[],active:true,priority:2,viewId:"first"};
-      const draft={...model.createRoomLayoutDraft({plantel:"Centro",rooms:[]}),id:"matrix-layout",name:"Matriz recepción",timezone:"UTC",assignments,schedule:matrix,templateId:"__schedule_grid__",displayRules:[rule,{...rule,id:"next-window",startTime:time(boundary),endTime:time(boundary+1),viewId:"second"}]};
+      const draft={...model.createRoomLayoutDraft({plantel:"Centro",rooms:[]}),id:"matrix-layout",name:"Matriz recepción",plantel:"",destinations:[{plantel:"Centro",deviceIds:["matrix-screen"]},{plantel:"Sur",deviceIds:[]}],timezone:"UTC",assignments,schedule:matrix,templateId:"__schedule_grid__",displayRules:[rule,{...rule,id:"next-window",startTime:time(boundary),endTime:time(boundary+1),viewId:"second"}]};
       return service.saveRoomLayout(draft,profile);
     });
     assert.equal(saved.schedule.cells.length,4);
@@ -209,6 +230,16 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
     assert.equal(geometry.length,8);assert.ok(geometry.every(row=>row.inside),JSON.stringify(geometry));
     if(process.env.SIGNAGE_MATRIX_SCREENSHOT_DIR){await mkdir(process.env.SIGNAGE_MATRIX_SCREENSHOT_DIR,{recursive:true});await player.screenshot({path:path.join(process.env.SIGNAGE_MATRIX_SCREENSHOT_DIR,"matrix-three-columns.png")});}
     assert.equal(await overlay.getByText("Paloma",{exact:true}).count(),1);
+    const manifests=await Promise.all(["matrix-screen","matrix-down","matrix-south"].map(id=>db.doc(`digitalSignageRoomDisplays/${id}`).get()));
+    assert.equal(manifests[0].data().layouts[0].plantel,"Centro");assert.equal(manifests[1].data().layouts.length,0);assert.equal(manifests[2].data().layouts[0].plantel,"Sur");
+    assert.ok(manifests[0].data().layouts.every(layout=>!("destinations" in layout)),"player no recibe destinos ajenos");
+    await admin.evaluate(async source=>{
+      const draft={...source,id:"matrix-down-layout",name:"Clases abajo",destinations:[{plantel:"Centro",deviceIds:["matrix-down"]}],displayRules:[{...source.displayRules[0],startTime:"00:00",endTime:"23:59",viewId:"first"}],schedule:{...source.schedule,cells:[{...source.schedule.cells[0],teacher:"Maestra de abajo",tagIds:[]}]}};
+      await globalThis.fixture.service.saveRoomLayout(draft,globalThis.fixture.profile);await globalThis.fixture.service.publishRoomLayout(draft.id,globalThis.fixture.profile);
+    },saved);
+    const downPlayer=await playerContext.newPage();await downPlayer.goto("http://127.0.0.1:4183/signage/player/matrix-down");
+    await downPlayer.locator(".signage-room-display-wrapper").getByText("Maestra de abajo",{exact:true}).waitFor();
+    await overlay.getByText("Ailyn",{exact:true}).waitFor();
     const frame=await overlay.boundingBox();assert.ok(Math.abs(frame.width/frame.height-16/9)<0.02,"lienzo horizontal 16:9");
     await admin.evaluate(async draft => {draft.schedule.cells[0].teacher="Maestra actualizada";await globalThis.fixture.service.saveRoomLayout(draft,globalThis.fixture.profile);},saved);
     assert.equal(await overlay.getByText("Maestra actualizada",{exact:true}).count(),0,"borrador conserva snapshot");
@@ -242,6 +273,7 @@ test("Matriz: editor, publicación, vistas por ventana y regreso a playlist en C
     if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await player.screenshot({path:path.join(screenshotDir,"matrix-player.png")});await admin.screenshot({path:path.join(screenshotDir,"matrix-admin.png"),fullPage:true});}
     await admin.evaluate(() => globalThis.fixture.service.unpublishRoomLayout("matrix-layout",globalThis.fixture.profile));
     await overlay.waitFor({state:"detached"});await player.locator(".signage-player-stage img").waitFor({state:"visible"});
+    await downPlayer.locator(".signage-room-display-wrapper").getByText("Maestra de abajo",{exact:true}).waitFor();
     assert.equal((await db.doc("digitalSignageDevices/matrix-screen").get()).data().assignedPlaylistId,"matrix-playlist");
     assert.deepEqual(errors,[]);
   } finally {
