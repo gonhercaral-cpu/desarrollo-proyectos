@@ -124,3 +124,21 @@
 .pp-status--emerald{color:#176b4c;background:#e0f7ed}.pp-status--amber{color:#89510c;background:#fff2d9}.pp-status--rose{color:#9e3641;background:#fff0f2}.pp-status--violet{color:#644187;background:#f1eaff}
 @media(max-width:1100px){.pp-queue-layout{grid-template-columns:minmax(190px,.7fr) minmax(0,1.5fr)}.pp-detail-split{grid-template-columns:1fr}.pp-shell .pp-metrics{gap:6px}}
 @media(max-width:750px){.pp-queue-layout{grid-template-columns:1fr}.pp-queue-list{max-height:250px}.pp-modal-backdrop{padding:8px}.pp-modal .pp-fields{grid-template-columns:1fr}}
+
+.pp-page-gallery { margin-block: 1rem; }
+.pp-page-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 118px), 1fr)); gap: .65rem; }
+.pp-page-thumb { display: grid; gap: .45rem; padding: .45rem; align-content: stretch; border: 1px solid #cddaf0; border-radius: .65rem; color: #17325a; background: #f2f7ff; cursor: pointer; }
+.pp-page-thumb[aria-pressed="true"], .pp-page-thumb:hover { background: #dfedff; border-color: #1265ca; }
+.pp-page-thumb > span { display: grid; place-items: center; height: 118px; font-size: .8rem; }
+.pp-page-thumb canvas { display: block; width: auto; height: auto; max-width: 100%; max-height: 118px; box-shadow: 0 1px 5px #284b7740; }
+.pp-page-thumb strong { font-size: .78rem; }
+.pp-row-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .45rem; }
+.pp-routing { margin-block: 1rem; }
+.pp-routing-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.pp-routing-targets { border: 1px solid #cbd9ea; border-radius: .65rem; padding: .85rem; }
+.pp-routing-targets > label { margin-block: .4rem; }
+.pp-telemetry-levels { padding: 0; list-style: none; }
+.pp-telemetry-levels li { display: grid; grid-template-columns: 1fr auto; gap: .25rem .6rem; padding: .5rem .6rem; border-radius: .45rem; background: #f1f6ff; margin-bottom: .35rem; }
+.pp-telemetry-levels meter { width: 100%; grid-column: 1 / -1; }
+.pp-telemetry-alerts { color: #743e0b; background: #fff0d5; border-radius: .55rem; padding: .5rem 1.7rem; }
+@media (max-width: 900px) { .pp-routing-columns { grid-template-columns: 1fr; } }

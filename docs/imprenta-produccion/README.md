@@ -48,3 +48,10 @@ Las capturas muestran la aplicación con Firebase local. La navegación general 
 - `python3 -B as-print-agent/test_agent.py` y `python3 -B as-print-agent/test_virtual_ipp.py`.
 
 Despliega las funciones por nombre en el codebase `default`, después las reglas de Firestore y Storage y al final Hosting. Conserva el release de Hosting y los IDs de reglas vigentes para recuperarlos si falla la verificación. Durante una recuperación operativa, revoca los agentes afectados y verifica el resultado físico de los trabajos ya aceptados por CUPS. Usa los estados y el historial de eventos para conciliar la cola antes de devolverla a servicio.
+
+## Miniaturas, grupos y reglas
+
+- La primera etapa y el visor de PDF muestran seis miniaturas por página de navegación. Selecciona una imagen para abrir su página en el visor. El renderizado ocurre en el navegador con el PDF definitivo ya autorizado.
+- En Configuración, crea grupos con colas detectadas y ordena sus reglas. Se aplica la primera regla activa cuyas condiciones coinciden con el documento y el tiraje. Si ninguna coincide, se usa el grupo seleccionado o la configuración general. Si la regla exige velocidad o una cola con un máximo de trabajos, solo cuentan equipos con esas lecturas. Si el grupo queda sin equipos aptos, el asistente indica el motivo antes de encolar.
+- El asistente muestra la regla, el grupo, los tramos y la duración estimada cuando tiene datos suficientes. Si cambian las asignaciones entre la revisión y la confirmación, vuelve a mostrar el reparto antes de encolar.
+- En los detalles de la impresora, las lecturas de CUPS muestran cuándo se tomaron. Los consumibles y las bandejas pueden informar un valor, un porcentaje calculable o un nivel sin datos. El contador de caras procesadas se muestra por tramo cuando CUPS lo facilita. El avance de CUPS y la validación física conservan estados separados.

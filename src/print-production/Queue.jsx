@@ -959,7 +959,7 @@ export default function Queue({
                                     <div className="pp-part-name">{printerName}</div>
                                     <div className="pp-part-sub">
                                       Tramo #{idx + 1}
-                                      {printer?.location ? ` · ${printer.location}` : ''}
+                                      {printer?.settings?.location ? ` · ${printer.settings.location}` : ''}
                                       {printer?.status ? ` · Equipo: ${printer.status}` : ''}
                                     </div>
                                   </div>
@@ -967,6 +967,12 @@ export default function Queue({
                                 <Status value={part.status || selectedJob.status} />
                               </div>
 
+                              {Number.isInteger(part.spoolProgress?.completed) && (
+                                <div className="pp-notice">
+                                  CUPS informa {part.spoolProgress.completed}{part.spoolProgress.impressions != null && ` de ${part.spoolProgress.impressions}`} caras
+                                  {part.spoolProgress.at && ` · ${formatDate(part.spoolProgress.at)}`}
+                                </div>
+                              )}
                               <div className="pp-part-metrics">
                                 <div>
                                   <span className="pp-spec-label">Rango</span>

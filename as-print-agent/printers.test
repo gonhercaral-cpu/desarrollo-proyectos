@@ -4,7 +4,7 @@
  GROUP operation-attributes-tag
  ATTR charset attributes-charset utf-8
  ATTR language attributes-natural-language en
- ATTR keyword requested-attributes printer-name,printer-state,printer-is-accepting-jobs,printer-state-reasons,printer-state-message
+ ATTR keyword requested-attributes printer-name,printer-state,printer-is-accepting-jobs,printer-state-reasons,queued-job-count,printer-make-and-model,printer-location,pages-per-minute,pages-per-minute-color,marker-names,marker-levels,printer-supply,printer-supply-description,printer-input-tray
  STATUS successful-ok
  STATUS client-error-not-found
 }

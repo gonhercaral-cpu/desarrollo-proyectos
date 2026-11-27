@@ -20,6 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+VERSION = "1.1.0"
 ENDPOINT = "https://us-central1-sistema-desarrollo-proyectos.cloudfunctions.net/printAgentGateway"
 ROOT = Path.home() / ".local" / "state" / "as-print-agent"
 QUEUE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,126}\Z")
@@ -92,7 +93,7 @@ def capabilities(queue, available, settings):
     names = list(dict.fromkeys(normalize_paper(name) for name in paper))
     return {"queue": queue, "online": available, "paperSizes": names[:128],
             "capabilities": {"pageRange": any(os.access(Path(d) / "qpdf", os.X_OK) for d in BIN_DIRS),
-                "trays": settings.get("InputSlot", [])[:64], "quality": [k for k,v in quality_choices(settings).items() if v]},
+                "trays": settings.get("InputSlot", [])[:64], "mediaTypes": media_options(settings)[1][:64], "quality": [k for k,v in quality_choices(settings).items() if v]},
             "color": any(v.lower() in ("color", "rgb", "srgb", "adobergb", "cmyk", "cmy") for v in modes),
             "duplex": any(v.lower() in ("duplexnotumble", "two-sided-long-edge") for v in sides)}
 
@@ -109,6 +110,62 @@ def ipp_request(uri, test):
         raise AgentError("CUPS devolvió atributos inválidos.") from err
 
 
+def values(attributes, key):
+    found = attributes.get(key)
+    return found if isinstance(found, list) else [] if found is None else [found]
+
+
+def nonnegative(value):
+    return value if type(value) is int and value >= 0 else None
+
+
+def ipp_items(attributes, key, descriptions=()):
+    output = []
+    for index, record in enumerate(values(attributes, key)[:32]):
+        if isinstance(record, bytes):
+            record = record.decode("utf-8", errors="replace")
+        if not isinstance(record, str):
+            continue
+        tokens = dict(re.findall(r"([a-zA-Z-]+)=([^;]*);?", record.lower()))
+        supplied_name = descriptions[index] if index < len(descriptions) else None
+        title = supplied_name or tokens.get("name") or tokens.get("type") or tokens.get("class")
+        if not title:
+            title = ("Bandeja" if key == "printer-input-tray" else "Insumo") + f" {index + 1}"
+        limits = ("level", "maxcapacity")
+        level, capacity = [int(tokens[k]) if re.fullmatch(r"[0-9]{1,9}", tokens.get(k, "")) else None for k in limits]
+        output.append({"name": title, "level": level, "capacity": capacity,
+                       "unit": tokens.get("unit", "")})
+    return output
+
+
+def telemetry(attributes):
+    states = {3: "idle", 4: "processing", 5: "stopped"}
+    supply = ipp_items(attributes, "printer-supply", values(attributes, "printer-supply-description"))
+    if not supply:
+        names = values(attributes, "marker-names")
+        for index, level in enumerate(values(attributes, "marker-levels")[:32]):
+            title = names[index] if index < len(names) else f"Insumo {index + 1}"
+            supply.append({"name": title, "level": level if type(level) is int and 0 <= level <= 100 else None,
+                           "capacity": 100, "unit": "percent"})
+    accepted = attributes.get("printer-is-accepting-jobs")
+    return {
+        "state": states.get(attributes.get("printer-state")),
+        "accepting": accepted if isinstance(accepted, bool) else None,
+        "queuedJobs": nonnegative(attributes.get("queued-job-count")),
+        "makeModel": attributes.get("printer-make-and-model", ""),
+        "location": attributes.get("printer-location", ""),
+        "speed": nonnegative(attributes.get("pages-per-minute")),
+        "colorSpeed": nonnegative(attributes.get("pages-per-minute-color")),
+        "supplies": supply,
+        "trays": ipp_items(attributes, "printer-input-tray"),
+    }
+
+
+def media_options(settings):
+    key = "MediaType" if "MediaType" in settings else "media-type"
+    return key, settings.get(key, [])
+
+
 def discover(allowed=None):
     result = {}
     for item in ipp_request("ipp://localhost/", "printers.test"):
@@ -123,7 +180,8 @@ def discover(allowed=None):
         raw = run_tool("lpoptions", ["-p", queue, "-l"], timeout=15)
         settings = options(raw.stdout)
         cap = capabilities(queue, available, settings)
-        cap["statusReasons"] = reasons[:12]
+        cap["statusReasons"] = [r for r in reasons if isinstance(r, str) and re.fullmatch(r"[a-z0-9-]{1,90}", r)][:12]
+        cap["telemetry"] = telemetry(item)
         result[queue] = (cap, settings)
     return result
 
@@ -176,9 +234,9 @@ def selected_options(task, settings):
     result += ["-o", "print-scaling=none"]
     for key in ("tray", "mediaType", "quality"):
         value = cfg.get(key)
-        if value in (None, "", "auto", "default", "normal", "standard", "estándar"):
+        if value in (None, "", "auto", "default") or (key == "quality" and value == "normal"):
             continue
-        local = {"tray": "InputSlot", "mediaType": "MediaType", "quality": "cupsPrintQuality"}[key]
+        local = {"tray": "InputSlot", "mediaType": media_options(settings)[0], "quality": "cupsPrintQuality"}[key]
         if key == "quality":
             value = quality_choices(settings).get(value)
         if value not in settings.get(local, []):
@@ -265,20 +323,23 @@ def spool_id(output, queue):
     return int(match[1]) if match else None
 
 
-def spool_state(spool, job_name):
+def spool_observation(spool, job_name):
     try:
         groups = ipp_request("ipp://localhost/jobs/" + str(int(spool)), "job-status.test")
     except AgentError:
-        return "unknown"
+        return "unknown", {}
     job = next((g for g in groups if g.get("job-name") == job_name), {})
+    completed = nonnegative(job.get("job-impressions-completed"))
+    total = nonnegative(job.get("job-impressions"))
+    reading = {"completed": completed, "impressions": total if total is None or total >= completed else None} if completed is not None else {}
     state = job.get("job-state")
     if state == 9:
-        return "spoolCompleted"
+        return "spoolCompleted", reading
     if state in (6, 7, 8):
-        return "stopped"
+        return "stopped", reading
     if state not in (3, 4, 5):
-        return "unknown"
-    return "active"
+        return "unknown", {}
+    return "active", reading
 
 
 def job_title(task):
@@ -357,7 +418,9 @@ def reconcile(client, db, row, queues, cache):
             client.call("report", **ticket(task), state="submitted", spoolId=row["spool"])
             mark(db, lease, "monitor", spool=row["spool"])
         elif phase == "monitor":
-            state = spool_state(row["spool"], job_title(task))
+            state, reading = spool_observation(row["spool"], job_title(task))
+            if reading:
+                client.call("progress", **ticket(task), spoolId=row["spool"], **reading)
             if state == "spoolCompleted":
                 mark(db, lease, state)
             elif state == "stopped" or (state == "unknown" and time.time() - row["changed"] >= 300):
@@ -408,7 +471,7 @@ def pair(directory, allowed):
     service.call("pair", code=token)
     identity["queues"] = allowed
     save_identity(directory, identity)
-    service.call("heartbeat", printers=[listing[q][0] for q in allowed])
+    service.call("heartbeat", version=VERSION, printers=[listing[q][0] for q in allowed])
     print("Agente vinculado. Colas autorizadas:", ", ".join(allowed))
 
 
@@ -425,7 +488,7 @@ def work(directory):
         try:
             if time.monotonic() >= next_heartbeat:
                 queues = discover(identity["queues"])
-                client.call("heartbeat", printers=[v[0] for v in queues.values()])
+                client.call("heartbeat", version=VERSION, printers=[v[0] for v in queues.values()])
                 next_heartbeat = time.monotonic() + 60
             rows = db.execute("SELECT * FROM attempts WHERE phase NOT IN ('done','obsolete') ORDER BY changed").fetchall()
             for row in rows:

@@ -13,7 +13,7 @@ const PAGES_PER_SHEET_VALUES = Object.freeze([1, 2, 4, 6, 9, 16]);
 const LAYOUT_VALUES = Object.freeze(["standard", "booklet"]);
 const CONFIG_KEYS = Object.freeze([
   "copies", "paper", "color", "duplex", "quality", "order", "orientation",
-  "pagesPerSheet", "tray", "collate", "layout", "finishing", "priority", "dueDate", "notes",
+  "pagesPerSheet", "tray", "mediaType", "collate", "layout", "finishing", "priority", "dueDate", "notes",
 ]);
 const CONFIG_BASE = Object.freeze({
   copies: 1,
@@ -97,6 +97,10 @@ const CONFIG_VALIDATORS = Object.freeze({
   orientation: (value) => oneOf(value, ORIENTATION_VALUES, "La orientación no es válida."),
   pagesPerSheet: (value) => oneOf(value, PAGES_PER_SHEET_VALUES, "Las páginas por hoja no son válidas."),
   layout: (value) => oneOf(value, LAYOUT_VALUES, "El formato de salida no es válido."),
+  mediaType: (value) => {
+    if (typeof value !== "string" || !/^[A-Za-z0-9_.-]{0,64}$/.test(value)) throw invalid("Tipo de papel inválido.");
+    return value;
+  },
   tray: (value) => {
     if (typeof value !== "string" || value.trim().length > 40) throw invalid("La bandeja no es válida.");
     return value.trim();
@@ -160,16 +164,19 @@ function normalizePrinter(id, data = {}) {
   return {
     id: cleanText(id),
     agentId: cleanText(data.agentId),
-    name: cleanText(data.name) || cleanText(id),
+    name: cleanText(data.settings?.name || data.name) || cleanText(id),
     queue: cleanText(data.queue),
     online: data.online === true,
-    active: data.active !== false && data.deleted !== true,
+    active: data.active !== false && data.deleted !== true && data.settings?.enabled !== false,
     color: data.color === true || caps.color === true,
     duplex: data.duplex === true || caps.duplex === true,
     paperSizes: toList(Array.isArray(data.paperSizes) ? data.paperSizes : caps.paperSizes),
     lastSeenMs: toMillis(data.lastSeenAt),
+    queueVolumeKnown: Number.isFinite(caps.queuedPages) || !data.telemetry || data.telemetry.queuedJobs === 0,
+    queuedJobs: Number.isInteger(data.telemetry?.queuedJobs) ? data.telemetry.queuedJobs : null,
     capabilities: {
-      pagesPerMinute: positiveNumber(caps.pagesPerMinute),
+      mediaTypes: toList(caps.mediaTypes),
+      pagesPerMinute: positiveNumber(data.settings?.pagesPerMinute) || positiveNumber(caps.pagesPerMinute),
       queuedPages: Math.max(0, Number(caps.queuedPages) || 0),
       maxCopies: positiveNumber(caps.maxCopies),
       pageRange: caps.pageRange === true,
@@ -222,6 +229,7 @@ function printerSupportProblems(printer, config, range) {
   if (config.pagesPerSheet > 1 && !caps.pagesPerSheet.includes(config.pagesPerSheet)) {
     problems.push(`no admite ${config.pagesPerSheet} páginas por hoja`);
   }
+  if (config.mediaType && !caps.mediaTypes?.includes(config.mediaType)) problems.push(`no admite el tipo de papel ${config.mediaType}`);
   if (config.tray && !caps.trays.includes(config.tray)) problems.push(`no tiene la bandeja ${config.tray}`);
   if (config.layout === "booklet" && !caps.booklet) problems.push("no admite formato folleto");
   if (range) {
@@ -288,7 +296,8 @@ function allocate(printers, count, costAt) {
     let bestFinish = Infinity;
     for (const item of state) {
       const finish = (item.backlog + item.load + cost) / item.speed;
-      if (finish < bestFinish - 1e-9) {
+      if (finish < bestFinish - 1e-9 || (Math.abs(finish - bestFinish) <= 1e-9
+        && item.printer.queuedJobs != null && item.printer.queuedJobs < (best?.printer.queuedJobs ?? Infinity))) {
         best = item;
         bestFinish = finish;
       }
@@ -316,7 +325,7 @@ function finishPlan(resolvedMode, assignments) {
     loadByPrinter.set(item.printer.id, (loadByPrinter.get(item.printer.id) || 0) + pages);
   }
   const parts = assignments.map((item, index) => {
-    const speedKnown = item.printer.capabilities.pagesPerMinute > 0;
+    const speedKnown = item.printer.capabilities.pagesPerMinute > 0 && item.printer.queueVolumeKnown !== false;
     const etaMinutes = speedKnown
       ? Math.ceil((item.printer.capabilities.queuedPages + loadByPrinter.get(item.printer.id))
         / item.printer.capabilities.pagesPerMinute)
@@ -338,7 +347,7 @@ function finishPlan(resolvedMode, assignments) {
   return {
     resolvedMode,
     parts,
-    etaMinutes: known.length ? Math.max(...known) : null,
+    etaMinutes: known.length && known.length === parts.length ? Math.max(...known) : null,
   };
 }
 

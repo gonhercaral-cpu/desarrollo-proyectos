@@ -5,7 +5,7 @@
  ATTR charset attributes-charset utf-8
  ATTR naturalLanguage attributes-natural-language en
  ATTR uri job-uri $uri
- ATTR keyword requested-attributes job-name,job-state
+ ATTR keyword requested-attributes job-name,job-state,job-impressions,job-impressions-completed
  STATUS successful-ok
  DISPLAY job-name
  DISPLAY job-state

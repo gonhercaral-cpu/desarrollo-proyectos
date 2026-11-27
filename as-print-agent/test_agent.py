@@ -57,6 +57,23 @@ class AgentTest(unittest.TestCase):
     def row(self):
         return self.db.execute("SELECT * FROM attempts").fetchone()
 
+    def test_lecturas_ipp_preservan_sin_datos_y_cero(self):
+        result = agent.telemetry({
+            "printer-state": 4, "printer-is-accepting-jobs": True, "queued-job-count": 0,
+            "pages-per-minute": 45, "marker-names": ["Negro", "Cian"], "marker-levels": [0, -2],
+            "printer-input-tray": [b"type=sheetFeedAutoRemovableTray;name=bandeja 1;level=250;maxcapacity=500;unit=sheets;"],
+        })
+        self.assertEqual(result["queuedJobs"], 0)
+        self.assertEqual(result["state"], "processing")
+        self.assertEqual([s["level"] for s in result["supplies"]], [0, None])
+        self.assertEqual(result["trays"][0]["capacity"], 500)
+        self.assertIsNone(result["colorSpeed"])
+
+    def test_selecciona_tipo_de_papel_anunciado(self):
+        opts = agent.selected_options({"queue": "Test", "config": {"paper": "A4", "color": False, "mediaType": "plain"}},
+                                      {"PageSize": ["A4"], "media-type": ["plain", "glossy"]})
+        self.assertIn("media-type=plain", opts)
+
     def test_pdf_real_120_paginas_tres_segmentos(self):
         inp = self.path/"source.pdf"
         inp.write_bytes(self.client.pdf)
@@ -93,7 +110,7 @@ class AgentTest(unittest.TestCase):
         with patch.object(agent, "run_tool", side_effect=controlled):
             for _ in range(2):
                 agent.reconcile(self.client, self.db, self.row(), self.queues, self.path)
-            with patch.object(agent, "spool_state", return_value="spoolCompleted"):
+            with patch.object(agent, "spool_observation", return_value=("spoolCompleted", {})):
                 for _ in range(2):
                     agent.reconcile(self.client, self.db, self.row(), self.queues, self.path)
         self.assertEqual(len(sent), 1)

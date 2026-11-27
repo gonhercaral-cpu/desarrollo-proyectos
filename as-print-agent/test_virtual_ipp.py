@@ -46,6 +46,24 @@ def main():
                 if result.returncode:
                     raise RuntimeError(result.stderr.decode()[:200] or result.stdout.decode()[-650:])
                 return plistlib.loads(result.stdout)["Tests"][0]["ResponseAttributes"]
+            get_printer = work / "printer.test"
+            get_printer.write_text("""{
+ NAME "Leer telemetría IPP de la impresora virtual"
+ OPERATION Get-Printer-Attributes
+ GROUP operation-attributes-tag
+ ATTR charset attributes-charset utf-8
+ ATTR language attributes-natural-language en
+ ATTR uri printer-uri $uri
+ ATTR keyword requested-attributes printer-state,printer-is-accepting-jobs,queued-job-count,pages-per-minute
+ STATUS successful-ok
+}
+""")
+            attrs = invoke(uri + "/ipp/print", str(get_printer))
+            reading = agent.telemetry(next(item for item in attrs if "printer-state" in item))
+            assert reading["state"] == "idle", reading
+            assert reading["queuedJobs"] == 0, reading
+            assert reading["accepting"] is True, reading
+            assert reading["speed"] > 0, reading
             answer = invoke("-f", str(part), uri + "/ipp/print", str(description))
             job = next(item for item in answer if "job-uri" in item)
             path = urlsplit(job["job-uri"]).path
@@ -62,7 +80,7 @@ def main():
             received = list(spool.glob("*.pdf"))
             if len(received) != 1 or received[0].read_bytes() != part.read_bytes():
                 raise RuntimeError("El PDF recibido por IPP difiere del segmento original.")
-            print("IPP virtual: páginas 41–80 de 120, una copia, bytes y nombre comprobados, estado final completed.")
+            print("IPP virtual: páginas 41–80 de 120, una copia, bytes y nombre comprobados, estado final completed y telemetría nominal comprobados.")
         finally:
             process.terminate()
             with contextlib.suppress(subprocess.TimeoutExpired):

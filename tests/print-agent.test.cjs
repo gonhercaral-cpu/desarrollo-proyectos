@@ -31,7 +31,7 @@ function memoryStore() {
     return {
       get: ref => ref.get(),
       create: (r, v) => pending.push(() => { assert.ok(!records.has(r.path)); records.set(r.path, v); }),
-      set: (r, v, opts) => pending.push(() => records.set(r.path, opts?.merge ? { ...records.get(r.path), ...v } : v)),
+      set: (r, v, opts) => pending.push(() => records.set(r.path, (opts?.merge || opts?.mergeFields) ? { ...records.get(r.path), ...v } : v)),
       update: (r, v) => pending.push(() => records.set(r.path, { ...records.get(r.path), ...v })),
       delete: r => pending.push(() => records.delete(r.path)),
       commit: () => pending.forEach(write => write()),
@@ -142,4 +142,41 @@ test("El resumen de tres segmentos cuenta estados sin sumar ejemplares terminado
   assert.deepEqual(dispatchIds(parts), ["p1"]);
   assert.equal(eligiblePart(parts, ["p1"], Date.now()).id, "i1");
   assert.equal(rollup(parts), "submitted");
+});
+
+test("telemetría acotada conserva cero, ignora desconocidos y el latido respeta la configuración", async () => {
+  const f = setup(), a = await paired(f);
+  const id = printerId(a.agentId, "Test");
+  await assert.rejects(f.handlers.admin({ data: { action: "configurePrinter", printerId: id, enabled: false } }), { code: "permission-denied" });
+  await f.handlers.admin({ admin: true, data: { action: "configurePrinter", printerId: id, name: "Taller",
+    pagesPerMinute: 50, enabled: false } });
+  const reply = await a.call({ op: "heartbeat", version: "1.1.0", printers: [{ queue: "Test", online: true, paperSizes: ["A4"],
+    capabilities: { mediaTypes: ["plain"] }, telemetry: { queuedJobs: 0, speed: 45, state: "idle",
+      supplies: [{ name: "Negro", capacity: 100, level: 0 }, { name: "Cian", capacity: -2, level: -1 }] } }] });
+  assert.equal(reply.code, 200);
+  const device = f.db.records.get("printPrinters/" + id);
+  assert.equal(device.settings.name, "Taller");
+  assert.equal(device.telemetry.queuedJobs, 0);
+  assert.deepEqual(device.telemetry.supplies.map((item) => item.level), [0, null]);
+  assert.equal(device.capabilities.pagesPerMinute, 45);
+  assert.equal(f.db.records.get("printAgents/" + a.agentId).version, "1.1.0");
+  insertJob(f.db, a.agentId);
+  assert.equal((await a.call({ op: "claim", queues: ["Test"] })).data.task, null);
+});
+
+test("CUPS puede actualizar contadores sin completar el trabajo ni revertir su avance", async () => {
+  const f = setup(), a = await paired(f);
+  insertJob(f.db, a.agentId);
+  const { task } = (await a.call({ op: "claim", queues: ["Test"] })).data;
+  await a.call({ ...task, op: "start" });
+  await a.call({ ...task, op: "report", state: "submitted", spoolId: 14 });
+  const report = { ...task, op: "progress", spoolId: 14, impressions: 100, completed: 42 };
+  assert.equal((await a.call(report)).code, 200);
+  assert.equal((await a.call({ ...report, completed: 20 })).code, 200);
+  assert.equal((await a.call({ ...report, completed: 120 })).code, 400);
+  assert.equal((await a.call({ ...report, spoolId: 77 })).code, 409);
+  const job = f.db.records.get("printJobs/libro");
+  assert.equal(job.status, "submitted");
+  assert.equal(job.parts[0].spoolProgress.completed, 42);
+  assert.equal(job.accepted, undefined);
 });
