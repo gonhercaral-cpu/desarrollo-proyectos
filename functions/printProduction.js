@@ -336,9 +336,10 @@ function parseSaveInput(data) {
   });
   return {
     requestId: data.preview === true ? null : readRequestId(data.requestId),
-    preview: data.preview === true,
-    groupId: data.groupId ? readId(data.groupId, "El grupo") : "",
-    planToken: data.planToken ? readId(data.planToken, "La vista previa") : "",
+    // Las solicitudes previas al editor conservan su huella de idempotencia.
+    ...(data.preview === true ? { preview: true } : {}),
+    ...(data.groupId ? { groupId: readId(data.groupId, "El grupo") } : {}),
+    ...(data.planToken ? { planToken: readId(data.planToken, "La vista previa") } : {}),
     sourceId: readId(data.sourceId, "El documento"),
     title: readText(data.title, "El título", 1, 120),
     type: data.type,

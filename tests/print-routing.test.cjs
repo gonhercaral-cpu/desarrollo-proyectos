@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const { createHarness, actors, savePayload, seedPrinter, seedSource, nextRequestId, NOW } = require("./print-production-fakes.cjs");
 
 const group = { id: "libros", name: "Producción de libros", printerIds: ["p-a", "p-b"] };
@@ -54,4 +55,23 @@ test("excluye telemetría sin dato, espera nueva confirmación y protege cambios
   assert.equal(h.db.read("printSettings/production").credentialEnabled, undefined);
   const fallback = await h.save(actors.operator, { ...payload, requestId: nextRequestId("draft"), draft: true });
   assert.equal(fallback.status, "draft");
+});
+
+test("las operaciones creadas con la versión anterior conservan su huella de idempotencia", async () => {
+  const h = fixtures();
+  const payload = savePayload();
+  const digest = (text) => createHash("sha256").update(text).digest("hex");
+  const oldInput = {
+    config: { color: false, copies: 1, duplex: false, paper: "Letter" },
+    draft: false, jobId: null, mode: "single", parts: [], printerIds: ["p-a"], productId: null,
+    requestId: payload.requestId, sourceId: "doc-1", title: "Manual de práctica", type: "document",
+  };
+  const operation = digest([actors.operator.uid, "save", payload.requestId].join("\n")).slice(0, 48);
+  h.db.seed("printProductionOperations/op-" + operation, {
+    fingerprint: digest(JSON.stringify(oldInput)), result: { jobId: "original-1" },
+  });
+  const result = await h.save(actors.operator, payload);
+  assert.equal(result.jobId, "original-1");
+  assert.equal(result.alreadyApplied, true);
+  assert.equal(h.db.list("printJobs").length, 0);
 });

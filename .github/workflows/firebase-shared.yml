@@ -8,6 +8,10 @@ on:
     paths:
       - ".github/workflows/firebase-shared.yml"
       - "functions/index.js"
+      - "functions/print*.js"
+      - "src/print-production/**"
+      - "tests/print-routing.test.cjs"
+      - "tests/print-agent.test.cjs"
       - "firestore.rules"
       - "storage.rules"
       - "firebase.rules-test.json"
@@ -64,6 +68,7 @@ jobs:
         run: |
           mapfile -t classroom_tests < <(find tests -maxdepth 1 -type f -name 'active-classroom-*.test.*' ! -name '*-emulator.test.*' | sort)
           node --test "${classroom_tests[@]}"
+          node --test tests/print-routing.test.cjs tests/print-agent.test.cjs
           npx eslint drive/activeClassroomProcessing*.js drive/activeClassroomProcessorClient.js drive/activeClassroomUnit.js tests/active-classroom-office*.cjs
           npx eslint drive/activeClassroomSlides.js drive/activeClassroomDriveContent.js tests/active-classroom-slides*.cjs
           npx eslint src/active-classroom/components/UnitEditor.jsx src/active-classroom/services/unitEditorService.js src/active-classroom/utils/unitDraft.js
