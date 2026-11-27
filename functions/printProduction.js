@@ -19,6 +19,8 @@ const {
   CONFIG_KEYS,
 } = require("./printDistribution");
 
+const { validateRouting, resolveRouting } = require("./printRouting");
+
 const JOB_TYPES = Object.freeze(["document", "book", "certificate", "credential", "personalized", "flyer", "brochure", "trifold", "worksheet", "teaching", "advertising", "form", "other"]);
 const PERSONALIZED_TYPES = new Set(["certificate", "credential", "personalized"]);
 const PRIORITIES = Object.freeze(["low", "normal", "high", "urgent"]);
@@ -36,7 +38,7 @@ const ACTION_PERMISSIONS = Object.freeze({
   reprint: "reprint", reconcile: "reconcile", quality: "quality", inventory: "inventory", consume: "supplies",
 });
 
-const SAVE_KEYS = ["requestId", "sourceId", "title", "type", "config", "mode", "printerIds", "parts", "draft", "productId", "jobId"];
+const SAVE_KEYS = ["requestId", "sourceId", "title", "type", "config", "mode", "printerIds", "parts", "draft", "productId", "jobId", "groupId", "preview", "planToken"];
 const ACTION_ARGS = Object.freeze({
   pause: ["reason"],
   resume: ["reason"],
@@ -49,7 +51,7 @@ const ACTION_ARGS = Object.freeze({
   inventory: ["quantity", "delivery"],
   consume: ["supplies", "notes"],
 });
-const SETTINGS_KEYS = ["requestId", "certificateEnabled", "credentialEnabled", "defaults", "permissions", "statusAlerts", "inventoryRules"];
+const SETTINGS_KEYS = ["requestId", "certificateEnabled", "credentialEnabled", "defaults", "permissions", "statusAlerts", "inventoryRules", "routing"];
 // Por omisión todo es entrega directa; solo "inventory" con automatic=true ingresa solo.
 const INVENTORY_CLASSES = Object.freeze(["inventory", "direct", "noninventory", "administrative", "internal"]);
 const MAX_INVENTORY_RULES = 50;
@@ -206,6 +208,7 @@ function publicSettings(settings) {
     defaults: settings.defaults,
     permissions: settings.permissions,
     inventoryRules: settings.inventoryRules,
+    routing: settings.raw.routing || { revision: 0, groups: [], rules: [] },
   };
 }
 
@@ -332,7 +335,11 @@ function parseSaveInput(data) {
     return compact({ printerId: readId(part.printerId, "La impresora de la parte"), from: part.from, to: part.to, copies: part.copies });
   });
   return {
-    requestId: readRequestId(data.requestId),
+    requestId: data.preview === true ? null : readRequestId(data.requestId),
+    // Las solicitudes previas al editor conservan su huella de idempotencia.
+    ...(data.preview === true ? { preview: true } : {}),
+    ...(data.groupId ? { groupId: readId(data.groupId, "El grupo") } : {}),
+    ...(data.planToken ? { planToken: readId(data.planToken, "La vista previa") } : {}),
     sourceId: readId(data.sourceId, "El documento"),
     title: readText(data.title, "El título", 1, 120),
     type: data.type,
@@ -426,6 +433,7 @@ function parseSettingsInput(data) {
   if (!isObject(data)) throw invalid("La solicitud no es válida.");
   rejectUnknown(data, SETTINGS_KEYS);
   const changes = {};
+  if (data.routing !== undefined) changes.routing = validateRouting(data.routing, JOB_TYPES, PRIORITIES);
   for (const key of ["certificateEnabled", "credentialEnabled"]) {
     if (data[key] === undefined) continue;
     if (typeof data[key] !== "boolean") throw invalid("Los interruptores deben ser verdadero o falso.");
@@ -639,11 +647,14 @@ function createPrintProductionHandlers({ db, FieldValue, HttpsError, getActor, n
       settings,
     });
     const defaults = effectiveDefaults(settings);
-    const mode = input.mode || defaults.mode;
     const config = buildConfig(defaults.config, input.config);
 
     const printers = printersSnapshot.docs.map((doc) => normalizePrinter(doc.id, doc.data()));
-    const byId = new Map(printers.map((printer) => [printer.id, printer]));
+    const routing = resolveRouting(settings.raw.routing, {
+      type: input.type, pages: source.pages, config, groupId: input.groupId, mode: input.mode || defaults.mode,
+    }, printers);
+    const { mode, candidates, ...route } = routing;
+    const byId = new Map(candidates.map((printer) => [printer.id, printer]));
     const partPrinterIds = input.parts.map((part) => part.printerId);
     if (input.printerIds.length && partPrinterIds.some((id) => !input.printerIds.includes(id))) {
       throw invalid("Las partes usan impresoras que no están en la selección.");
@@ -654,23 +665,29 @@ function createPrintProductionHandlers({ db, FieldValue, HttpsError, getActor, n
     if (explicit) {
       pool = explicitIds.map((id) => {
         const printer = byId.get(id);
-        if (!printer || !printer.active) throw notFound(`La impresora ${id} no existe.`);
+        if (!printer || !printer.active) throw precondition("La selección contiene un equipo desactivado o fuera de la regla de distribución.");
         if (!input.draft && !isPrinterOnline(printer, ctx.nowMs)) {
           throw precondition(`La impresora «${printer.name}» no está en línea.`);
         }
         return printer;
       });
     } else {
-      pool = input.draft ? [] : printers.filter((printer) => isPrinterOnline(printer, ctx.nowMs));
+      pool = input.draft ? [] : candidates.filter((printer) => isPrinterOnline(printer, ctx.nowMs));
     }
 
     let plan = { resolvedMode: mode, parts: [], etaMinutes: null };
     if (pool.length) {
       plan = planDistribution({ mode, config, pages: source.pages, printers: pool, explicit, parts: input.parts });
     } else if (!input.draft) {
-      throw precondition("No hay impresoras en línea disponibles.");
+      throw precondition(route.groupName ? `No hay impresoras disponibles que cumplan las condiciones en «${route.groupName}».` : "No hay impresoras en línea disponibles.");
     }
 
+    const planToken = hash(stableStringify([route.groupId, route.ruleId, plan.resolvedMode,
+      plan.parts.map(({ printerId, from, to, copies }) => ({ printerId, from, to, copies }))]));
+    if (input.preview) return { ...plan, route, planToken };
+    if (!input.draft && input.planToken && input.planToken !== planToken) {
+      throw precondition("La distribución cambió. Vuelve a revisar las asignaciones antes de confirmar.");
+    }
     const status = input.draft ? "draft" : "queued";
     const parts = plan.parts.map((part) => ({ ...part, status }));
     const dispatchPrinterIds = computeDispatchPrinterIds(status, parts);
@@ -683,6 +700,7 @@ function createPrintProductionHandlers({ db, FieldValue, HttpsError, getActor, n
       config,
       mode,
       resolvedMode: plan.resolvedMode,
+      route,
       parts,
       dispatchPrinterIds,
       estimate: { etaMinutes: plan.etaMinutes },
@@ -722,6 +740,7 @@ function createPrintProductionHandlers({ db, FieldValue, HttpsError, getActor, n
       draft: input.draft,
       mode,
       resolvedMode: plan.resolvedMode,
+      route,
       parts,
       dispatchPrinterIds,
       etaMinutes: plan.etaMinutes,
@@ -931,10 +950,13 @@ function createPrintProductionHandlers({ db, FieldValue, HttpsError, getActor, n
 
       let printer = null;
       if (args.reassignPrinterId) {
-        const snapshot = await ctx.tx.get(db.collection("printPrinters"));
-        const doc = snapshot.docs.find((item) => item.id === args.reassignPrinterId);
-        printer = doc ? normalizePrinter(doc.id, doc.data()) : null;
+        const doc = await ctx.tx.get(db.collection("printPrinters").doc(args.reassignPrinterId));
+        printer = doc.exists ? normalizePrinter(doc.id, doc.data()) : null;
         if (!printer || !printer.active) throw notFound("No se encontró la impresora destino.");
+        if (job.route?.groupId) {
+          const group = ctx.settings.raw.routing?.groups?.find((item) => item.id === job.route.groupId);
+          if (!(group?.printerIds || job.route.groupPrinterIds || []).includes(printer.id)) throw precondition("La impresora destino debe pertenecer al grupo del trabajo.");
+        }
         if (!isPrinterOnline(printer, ctx.nowMs)) throw precondition(`La impresora «${printer.name}» no está en línea.`);
         assertPrinterSupports(printer, job.config, {
           from: part.from, to: part.to, pages: job.source.pages, copies: part.copies,
@@ -1226,6 +1248,15 @@ function createPrintProductionHandlers({ db, FieldValue, HttpsError, getActor, n
   async function applySettings(ctx, changes) {
     const current = ctx.settings.raw;
     const next = { ...current };
+    if (changes.routing) {
+      if ((current.routing?.revision ?? 0) !== changes.routing.revision) {
+        throw new HttpsError("aborted", "La configuración cambió. Vuelve a abrir el formulario.");
+      }
+      const ids = [...new Set(changes.routing.groups.flatMap((group) => group.printerIds))];
+      const printers = await Promise.all(ids.map((id) => ctx.tx.get(db.collection("printPrinters").doc(id))));
+      if (printers.some((printer) => !printer.exists)) throw invalid("Uno de los grupos contiene una impresora inexistente.");
+      next.routing = { ...changes.routing, revision: changes.routing.revision + 1 };
+    }
     // Los interruptores solo se escriben cuando la solicitud los trae de forma explícita.
     for (const key of ["certificateEnabled", "credentialEnabled", "statusAlerts", "inventoryRules"]) {
       if (key in changes) next[key] = changes[key];

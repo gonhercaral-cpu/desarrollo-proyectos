@@ -3,6 +3,8 @@ const { pipeline } = require("node:stream/promises");
 
 const { computeDispatchPrinterIds, deriveJobStatus } = require("./printDistribution");
 
+const { printerTelemetry, progress } = require("./printTelemetry");
+
 const digest = value => createHash("sha256").update(value).digest("hex");
 const agentPattern = /^[a-f0-9]{32}$/;
 const credentialPattern = /^[a-f0-9]{64}$/;
@@ -49,6 +51,21 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
     const actor = await assertAdmin(req);
     if (actor.deleted === true || actor.archived === true) reject("permission-denied", "La cuenta administrativa no está activa.");
     const data = req.data || {};
+    if (data.action === "configurePrinter") {
+      check(docPattern.test(data.printerId || "") && typeof data.enabled === "boolean", "Configuración de impresora inválida.");
+      const text = (value) => typeof value === "string" ? value.trim().slice(0, 100) : "";
+      const pagesPerMinute = data.pagesPerMinute ?? null;
+      check(pagesPerMinute === null || (Number.isInteger(pagesPerMinute) && pagesPerMinute > 0 && pagesPerMinute <= 2000),
+        "La velocidad debe estar entre 1 y 2000 páginas por minuto.");
+      const settings = { name: text(data.name), location: text(data.location), makeModel: text(data.makeModel),
+        pagesPerMinute, enabled: data.enabled };
+      const ref = printers.doc(data.printerId);
+      await db.runTransaction(async (tx) => {
+        if (!(await tx.get(ref)).exists) reject("not-found", "Impresora inexistente.");
+        tx.update(ref, { settings, configuredByUid: actor.uid, configuredAt: new Date(now()) });
+      });
+      return { settings };
+    }
     if (data.action === "pair") {
       const name = String(data.name || "").trim();
       check(name.length > 0 && name.length <= 100, "Indica un nombre para el agente.");
@@ -101,7 +118,7 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
     return { paired: true };
   }
 
-  async function heartbeat(id, credential, list) {
+  async function heartbeat(id, credential, list, version) {
     check(Array.isArray(list) && list.length <= 30, "Máximo 30 colas por agente.");
     const records = list.map(p => {
       check(queuePattern.test(p?.queue || ""), "Nombre de cola no compatible.");
@@ -112,21 +129,28 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
         return [...new Set(values)];
       };
       const caps = p.capabilities || {};
-      const capabilities = { pageRange: caps.pageRange === true, maxCopies: 999,
+      const telemetry = printerTelemetry(p.telemetry);
+      const capabilities = {
+        pagesPerMinute: telemetry.speed || 0,
+        mediaTypes: optionList(caps.mediaTypes || [], x => typeof x === "string" && /^[a-zA-Z0-9_.-]{1,64}$/.test(x)),
+        pageRange: caps.pageRange === true, maxCopies: 999,
         booklet: false, quality: optionList(caps.quality || [], x => ["draft", "normal", "high"].includes(x)),
         order: ["normal", "reverse"], orientation: ["auto", "portrait", "landscape"], pagesPerSheet: [1],
         trays: optionList(caps.trays || [], x => typeof x === "string" && /^[a-zA-Z0-9_.-]{1,40}$/.test(x)), color: p.color === true, duplex: p.duplex === true, paperSizes: [...new Set(p.paperSizes)] };
       const reasons = optionList(p.statusReasons || [], x => typeof x === "string" && /^[a-z0-9-]{1,90}$/.test(x));
-      return { statusReasons: reasons, id: printerId(id, p.queue), agentId: id, name: p.queue, queue: p.queue,
+      return { statusReasons: reasons, telemetry, id: printerId(id, p.queue), agentId: id, name: p.queue, queue: p.queue,
         online: p.online === true, ...capabilities, capabilities, lastSeenAt: new Date(now()) };
     });
     const ids = records.map(p => p.id);
     check(new Set(ids).size === ids.length, "Una misma cola está repetida.");
     await db.runTransaction(async tx => {
       const agent = await authenticate(ref => tx.get(ref), id, credential);
-      for (const p of records) tx.set(printers.doc(p.id), p, { merge: true });
+      for (const p of records) tx.set(printers.doc(p.id), p, {
+        mergeFields: Object.keys(p), // Sustituye las muestras para eliminar lecturas que dejaron de llegar.
+      });
       for (const old of agent.printerIds || []) if (!ids.includes(old)) tx.set(printers.doc(old), { online: false }, { merge: true });
-      tx.update(agents.doc(id), { printerIds: ids, lastSeenAt: new Date(now()) });
+      tx.update(agents.doc(id), { printerIds: ids, lastSeenAt: new Date(now()),
+        version: typeof version === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(version) ? version : null });
     });
     return { printers: ids.length };
   }
@@ -141,7 +165,9 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
     const agent = await authenticate(ref => ref.get(), id, credential);
     const wanted = data.queues;
     check(Array.isArray(wanted) && wanted.length <= 30 && wanted.every(q => queuePattern.test(q)), "Lista de colas inválida.");
-    const ids = wanted.map(q => printerId(id, q)).filter(p => agent.printerIds.includes(p));
+    const assigned = [...new Set(wanted.map(q => printerId(id, q)).filter(p => agent.printerIds.includes(p)))];
+    const devices = await Promise.all(assigned.map((item) => printers.doc(item).get()));
+    const ids = devices.filter((item) => item.exists && item.data().settings?.enabled !== false).map((item) => item.id);
     if (!ids.length) return { task: null };
     let search = jobs.where("dispatchPrinterIds", "array-contains-any", [...new Set(ids)]).orderBy("__name__").limit(12);
     if (data.cursor) {
@@ -158,6 +184,8 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
         if (!job || !runnable.has(job.status)) return null;
         const p = eligiblePart(job.parts || [], ids.filter(v => active.printerIds.includes(v)), now());
         if (!p) return null;
+        const device = await tx.get(printers.doc(p.printerId));
+        if (!device.exists || device.data().settings?.enabled === false) return null;
         const source = job.source || {};
         const invalid = !Number.isSafeInteger(source.pages) || source.pages < 1 || p.to > source.pages || !pdfPathPattern.test(source.path || "") || !credentialPattern.test(source.sha256 || "")
           || !docPattern.test(p.id || "") || !Number.isSafeInteger(p.from) || !Number.isSafeInteger(p.to)
@@ -203,10 +231,21 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
         if (data.op === "start" && p.status === "confirmation" && p.dispatchState === "submitting") return { ok: true };
         if (!runnable.has(job.status) || (p.status !== "queued" || p.dispatchState !== "claimed") || p.leaseUntil < now()) reject("failed-precondition", "Reserva vencida o trabajo detenido.");
         if (data.op === "start") {
+          const device = await tx.get(printers.doc(p.printerId));
+          if (!device.exists || device.data().settings?.enabled === false) reject("failed-precondition", "La impresora está desactivada.");
           next.status = "confirmation";
           next.dispatchState = "submitting";
           next.startedAt = new Date(now());
         } else next.leaseUntil = now() + leaseMs;
+      } else if (data.op === "progress") {
+        if (p.status !== "submitted" || p.dispatchState !== "submitted" || data.spoolId !== p.spoolId) {
+          reject("failed-precondition", "El contador solo se admite para una cola previamente aceptada.");
+        }
+        const observation = progress(data);
+        check(observation, "Los contadores de impresión son inválidos.");
+        if (observation.completed < (p.spoolProgress?.completed ?? 0)) return { ok: true };
+        if (observation.completed === p.spoolProgress?.completed && observation.impressions === p.spoolProgress?.impressions) return { ok: true };
+        next.spoolProgress = { ...observation, at: new Date(now()) };
       } else {
         const state = data.state;
         const transitions = { claimed: ["error", "confirmation"], submitting: ["submitted", "confirmation"], submitted: ["spoolCompleted", "confirmation"] };
@@ -230,7 +269,7 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
       // An in-flight receipt may arrive after an operator pauses the parent. Preserve that decision.
       if (runnable.has(job.status)) Object.assign(update, { status: rollup(parts), dispatchPrinterIds: dispatchIds(parts) });
       tx.update(ref, update);
-      if (data.op !== "renew") audit(tx, ref, next, next.dispatchState);
+      if (!["renew", "progress"].includes(data.op)) audit(tx, ref, next, next.dispatchState);
       return { ok: true };
     });
   }
@@ -265,13 +304,13 @@ function createPrintAgentHandlers({ db, bucket, assertAdmin, HttpsError, now = D
       const data = req.body || {};
       let result;
       if (data.op === "pair") result = await pair(id, credential, data.code);
-      else if (data.op === "heartbeat") result = await heartbeat(id, credential, data.printers);
+      else if (data.op === "heartbeat") result = await heartbeat(id, credential, data.printers, data.version);
       else if (data.op === "claim") result = await claim(id, credential, data);
       else {
         check(docPattern.test(data.jobId || "") && docPattern.test(data.partId || "")
           && /^[a-f0-9]{48}$/.test(data.lease || ""), "Identidad de subtrabajo inválida.");
         if (data.op === "chunk") { await bytes(id, credential, data, res); return; }
-        check(["renew", "start", "report"].includes(data.op), "Operación inválida.");
+        check(["renew", "start", "report", "progress"].includes(data.op), "Operación inválida.");
         result = await change(id, credential, data);
       }
       res.status(200).json(result);

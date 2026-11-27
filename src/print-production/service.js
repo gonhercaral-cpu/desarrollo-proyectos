@@ -17,6 +17,7 @@ export const saveSettings = callable("printProductionSettings");
 const manageAgent = callable("printAgentAdmin");
 const changeLibrary = callable("printProductionLibrary");
 export const pairAgent = (name) => manageAgent({ action: "pair", name });
+export const configurePrinter = (data) => manageAgent({ ...data, action: "configurePrinter" });
 export const revokeAgent = (agentId) => manageAgent({ action: "revoke", agentId });
 export const saveMaterial = (input) => changeLibrary({ requestId: crypto.randomUUID(), ...input, kind: "material" });
 export const saveTemplate = (input) => changeLibrary({ requestId: crypto.randomUUID(), ...input, status: input.status || input.state || "draft", kind: "template" });

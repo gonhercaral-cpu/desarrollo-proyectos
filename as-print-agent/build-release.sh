@@ -6,7 +6,7 @@ mkdir -p "$1"
 out=$(CDPATH='' cd -- "$1" && pwd)
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
-version=1.0.0
+version=1.1.0
 bundle="as-print-agent-$version"
 mkdir -p "$stage/$bundle"
 for item in agent.py printers.test job-status.test install.sh enable-service.py README.md; do
