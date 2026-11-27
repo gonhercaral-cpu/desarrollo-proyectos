@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import QRCode from "qrcode";
@@ -28,6 +28,8 @@ import { deleteObject, getBytes, getDownloadURL, ref as storageRef, uploadBytes 
 import { db, storage } from "../services/firebase";
 import { markEntityNotificationsRead } from "../services/notificationsService";
 import { useAuth } from "../context/AuthContext";
+import { IssuedDocumentAction, RequestProductionStatus } from "../components/print-production/IssuedDocumentActions";
+import { confirmLegacyCertificatePrint, useIssuedPrintOptions } from "../services/printDocuments";
 import { buildCertificateStatistics, CERTIFICATE_QUICK_RANGES } from "../services/certificateStats";
 import {
   findCertificateRequest,
@@ -4168,6 +4170,8 @@ function getPrintRequestMemberRole(request, actor = {}, isAdminUser = false) {
   return resolvePrintRequestMemberRole(actor?.uid, request, isAdminUser);
 }
 
+const ProductionWorkspace = lazy(() => import("../print-production/ProductionWorkspace"));
+
 export default function PrintShop({ operationalNotifications = [] }) {
   const { user, profile, isAdmin } = useAuth();
   const canManagePrintshopOperations = canProfileAccessPrintshop(profile, isAdmin)
@@ -4193,10 +4197,22 @@ export default function PrintShop({ operationalNotifications = [] }) {
   const assignmentRepairStartedRef = useRef(false);
   const automaticBatchRepairStartedRef = useRef(false);
 
+  const canUseProduction = canProfileCreatePrintProduct(profile, isAdmin)
+    && profile?.active === true && !profile?.archived && !profile?.deleted;
+  const [productionSource, setProductionSource] = useState(null);
+  useEffect(() => {
+    if (!canUseProduction) return;
+    function openProduction(event) {
+      setProductionSource(event.detail);
+      setActiveSection("production");
+    }
+    window.addEventListener("print-production-source", openProduction);
+    return () => window.removeEventListener("print-production-source", openProduction);
+  }, [canUseProduction]);
   const [activeSection, setActiveSection] = useState(() => {
     if (typeof window === "undefined") return "dashboard";
     const requestedTab = new URLSearchParams(window.location.search).get("printTab");
-    return ["requests", "batches"].includes(requestedTab) ? requestedTab : "dashboard";
+    return ["requests", "batches", "production"].includes(requestedTab) ? requestedTab : "dashboard";
   });
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
@@ -9231,6 +9247,10 @@ export default function PrintShop({ operationalNotifications = [] }) {
     }
 
     try {
+      if (!(await confirmLegacyCertificatePrint({ certificateId: certificate.id, requestId: certificate.requestId }))) {
+        printWindow?.close();
+        return false;
+      }
       setGeneratedCertificateAction({ id: certificate.id, type: "reprint" });
       setGeneratedCertificateActionMessage("");
       const request = await getRequestForGeneratedCertificate(certificate);
@@ -11526,12 +11546,12 @@ export default function PrintShop({ operationalNotifications = [] }) {
       </section>
 
       <section className="printshop-section-tabs">
-        {getPrintshopTabs(isAdmin).map((tab) => (
+        {getPrintshopTabs(isAdmin, canUseProduction).map((tab) => (
           <button
             key={tab.key}
             type="button"
             className={activeSection === tab.key ? "active" : ""}
-            onClick={() => setActiveSection(tab.key)}
+            onClick={() => { setProductionSource(null); setActiveSection(tab.key); }}
           >
             <span className="printshop-tab-icon">
               <PrintshopIcon name={tab.icon} />
@@ -11551,7 +11571,29 @@ export default function PrintShop({ operationalNotifications = [] }) {
         ))}
       </section>
 
-      {activeSection === "dashboard" ? (
+      {activeSection === "production" && canUseProduction ? (
+        <Suspense fallback={<p role="status">Cargando el Gestor de Impresiones…</p>}>
+          <ProductionWorkspace
+            user={user}
+            isAdmin={isAdmin}
+            products={products}
+            templates={certificateTemplates}
+            credentialTemplates={credentialTemplates}
+            generatedCertificates={canViewCertificateStatistics ? generatedCertificates : []}
+            supplyItems={supplyItems}
+            reportAllowed={canGeneratePrintshopReport}
+            initialSource={productionSource}
+            onNavigate={(section, recordId) => {
+              if (section === "requests" && recordId) {
+                const request = printRequests.find((item) => item.id === recordId);
+                if (request) selectRequest(request);
+              }
+              setProductionSource(null);
+              setActiveSection(section);
+            }}
+          />
+        </Suspense>
+      ) : activeSection === "dashboard" ? (
         <DashboardView
           products={products}
           productStats={productStats}
@@ -18992,6 +19034,7 @@ function RequestDetailCard({
   const students = normalizeRequestStudents(request?.students || []);
   const [previewStudentId, setPreviewStudentId] = useState("");
   const [detailActiveTab, setDetailActiveTab] = useState("summary");
+  const printOptions = useIssuedPrintOptions();
   const [bulkCertificateWorking, setBulkCertificateWorking] = useState(false);
   const [bulkCertificateMessage, setBulkCertificateMessage] = useState("");
   const bulkCertificateRefs = useRef({});
@@ -19546,6 +19589,10 @@ function RequestDetailCard({
 
     try {
       setBulkCertificateWorking(true);
+      if (!(await confirmLegacyCertificatePrint({ requestId: request.id }))) {
+        printWindow?.close();
+        return;
+      }
       setBulkCertificateMessage(
         `Preparando PDF consolidado con ${certificateStudentsWithFolios.length} certificados...`
       );
@@ -19965,6 +20012,7 @@ function RequestDetailCard({
               <DetailItem label="Digitales" value={digitalQuantity} />
             </div>
 
+            {printOptions.certificate && <RequestProductionStatus key={request.id} requestId={request.id} />}
             <div className="request-students-preview-layout">
             <div className="request-students-card">
                 <div className="request-students-header">
@@ -20262,6 +20310,9 @@ Mariana Torres`}
                           </td>
                           <td data-label="Acciones">
                             <div className="table-actions request-student-actions">
+                              {printOptions.certificate && printOptions.canPrepare && canGenerateFolios && getGeneratedCertificateRecordForStudent(student)?.id && (
+                                <IssuedDocumentAction certificateId={getGeneratedCertificateRecordForStudent(student).id} />
+                              )}
                               {!student.certificateFolio && canGenerateFolios && (
                                 <button
                                   type="button"
@@ -21651,6 +21702,12 @@ function CertificatePreviewCard({
     try {
       printWindow = openCertificateActionWindow("Preparando certificado para imprimir...");
       setPrintingPdf(true);
+      if (!(await confirmLegacyCertificatePrint({
+        certificateId: student.certificateRecordId || student.certificateId, requestId: request?.id,
+      }))) {
+        printWindow?.close();
+        return;
+      }
       const pdfBlob = await buildCertificatePdfBlobFromElement(certificateRef.current);
       renderCertificatePrintWindow(
         printWindow,
@@ -22757,6 +22814,9 @@ function CredentialsView({
   const [templateFocusOpen, setTemplateFocusOpen] = useState(false);
   const [generatorFocusOpen, setGeneratorFocusOpen] = useState(false);
   const [generatedCredential, setGeneratedCredential] = useState(null);
+  const credentialPdf = useRef(null);
+  const [newCredentialId, setNewCredentialId] = useState("");
+  const printOptions = useIssuedPrintOptions();
   const [pdfWorking, setPdfWorking] = useState(false);
   const frontPreviewRef = useRef(null);
   const backPreviewRef = useRef(null);
@@ -22857,6 +22917,8 @@ function CredentialsView({
     const nextCredential = await onGenerateCredential(credentialForm);
 
     if (nextCredential) {
+      credentialPdf.current = null;
+      setNewCredentialId(nextCredential.id);
       setGeneratedCredential(nextCredential);
     }
   }
@@ -22878,22 +22940,29 @@ function CredentialsView({
     setGeneratorFocusOpen(false);
   }
 
-  async function downloadGeneratedCredentialPdf() {
-    if (!frontPreviewRef.current || !backPreviewRef.current || !generatedCredential) return;
+  async function getGeneratedCredentialPdf() {
+    if (!frontPreviewRef.current || !backPreviewRef.current || !generatedCredential) {
+      throw new Error("Abre la credencial emitida antes de preparar su PDF.");
+    }
+    if (credentialPdf.current?.id === generatedCredential.id) return credentialPdf.current.blob;
+    const pdfSize = getCredentialCanvasSize(selectedPreviewOrientation);
+    const pdf = new jsPDF({
+      orientation: pdfSize.pdfOrientation,
+      unit: "px",
+      format: [pdfSize.width, pdfSize.height],
+    });
+    await appendCredentialSideToPdf(pdf, frontPreviewRef.current, false, pdfSize);
+    await appendCredentialSideToPdf(pdf, backPreviewRef.current, true, pdfSize);
+    const blob = pdf.output("blob");
+    credentialPdf.current = { id: generatedCredential.id, blob };
+    return blob;
+  }
 
+  async function downloadGeneratedCredentialPdf() {
+    if (!generatedCredential) return;
     try {
       setPdfWorking(true);
-      const pdfSize = getCredentialCanvasSize(selectedPreviewOrientation);
-      const pdf = new jsPDF({
-        orientation: pdfSize.pdfOrientation,
-        unit: "px",
-        format: [pdfSize.width, pdfSize.height],
-      });
-
-      await appendCredentialSideToPdf(pdf, frontPreviewRef.current, false, pdfSize);
-      await appendCredentialSideToPdf(pdf, backPreviewRef.current, true, pdfSize);
-
-      const blob = pdf.output("blob");
+      const blob = await getGeneratedCredentialPdf();
       downloadBlobFile(blob, `${sanitizePdfFileName(generatedCredential.folio || generatedCredential.fullName || "credencial")}.pdf`);
     } finally {
       setPdfWorking(false);
@@ -22907,6 +22976,8 @@ function CredentialsView({
   function loadCredentialForReprint(credential) {
     if (!credential) return;
 
+    credentialPdf.current = null;
+    setNewCredentialId("");
     setGeneratedCredential(credential);
     onCredentialInputChange({ target: { name: "templateId", value: credential.templateId || "" } });
     onCredentialInputChange({ target: { name: "collaboratorId", value: "" } });
@@ -23490,6 +23561,10 @@ function CredentialsView({
                 <button type="button" className="visual-outline-button" onClick={downloadGeneratedCredentialPdf} disabled={!generatedCredential || pdfWorking}>
                   {pdfWorking ? "Preparando..." : "Descargar PDF"}
                 </button>
+                {printOptions.credential && printOptions.canPrepare && generatedCredential && (
+                  <IssuedDocumentAction key={generatedCredential.id} credentialId={generatedCredential.id}
+                    newlyIssued={generatedCredential.id === newCredentialId} captureOriginal={getGeneratedCredentialPdf} />
+                )}
               </div>
               </form>
             </Panel>
@@ -24984,9 +25059,10 @@ function ProductCatalogView({
   );
 }
 
-function getPrintshopTabs(isAdmin) {
+function getPrintshopTabs(isAdmin, canUseProduction) {
   return [
     { key: "dashboard", label: "Inicio", icon: "dashboard" },
+    ...(canUseProduction ? [{ key: "production", label: "Gestor de Impresiones", icon: "printshop" }] : []),
     { key: "requests", label: "Solicitudes", icon: "requests" },
     { key: "certificates", label: "Certificados", icon: "certificates" },
     { key: "credentials", label: "Credenciales", icon: "credentials" },

@@ -2964,6 +2964,30 @@ service cloud.firestore {
     }
 
 
+    function canReadPrintProduction() {
+      return canCreatePrintProduct()
+        && userDoc().data.get("deleted", false) != true
+        && userDoc().data.get("archived", false) != true;
+    }
+
+    match /printJobs/{jobId} {
+      allow read: if canReadPrintProduction();
+      match /events/{eventId} { allow read: if canReadPrintProduction(); }
+    }
+    match /printPrinters/{id} { allow read: if canReadPrintProduction(); }
+    match /printAgents/{id} { allow read: if canReadPrintProduction() && isAdmin(); }
+    match /printSettings/production { allow get: if canReadPrintProduction(); }
+    match /printReports/{id} { allow read: if canReadPrintProduction(); }
+    match /printReportSchedules/{id} { allow read: if canReadPrintProduction() && isAdmin(); }
+    match /printMaterialLinks/{id} {
+      allow read: if canReadPrintProduction();
+      match /versions/{version} { allow read: if canReadPrintProduction(); }
+    }
+    match /printProductionTemplates/{id} {
+      allow read: if canReadPrintProduction();
+      match /versions/{version} { allow read: if canReadPrintProduction(); }
+    }
+
     match /printProducts/{productId} {
 
 

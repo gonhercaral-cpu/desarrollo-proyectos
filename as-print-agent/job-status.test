@@ -1,0 +1,12 @@
+{
+ NAME "Consultar estado del trabajo de AS Print Agent"
+ OPERATION Get-Job-Attributes
+ GROUP operation-attributes-tag
+ ATTR charset attributes-charset utf-8
+ ATTR naturalLanguage attributes-natural-language en
+ ATTR uri job-uri $uri
+ ATTR keyword requested-attributes job-name,job-state
+ STATUS successful-ok
+ DISPLAY job-name
+ DISPLAY job-state
+}

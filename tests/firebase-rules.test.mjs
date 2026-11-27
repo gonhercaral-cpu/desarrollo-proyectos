@@ -3081,3 +3081,29 @@ describe("aislamiento de supervisión inteligente", () => {
     await assertFails(getDocs(collection(unauth(), "projectSupervisionSummaries")));
   });
 });
+
+describe("gestor de producción de Imprenta", () => {
+  it("protege la cola y sus eventos contra escrituras directas y excluye perfiles ajenos", async () => {
+    for (const path of ["printJobs/job", "printJobs/job/events/a", "printSettings/production",
+      "printPrinters/printer", "printProductionTemplates/general", "printMaterialLinks/product"]) {
+      await assertSucceeds(getDoc(doc(auth("printer"), path)));
+      await assertFails(getDoc(doc(auth("tech"), path)));
+      await assertFails(getDoc(doc(auth("inactive"), path)));
+      await assertFails(getDoc(doc(unauth(), path)));
+      await assertFails(setDoc(doc(auth("admin"), path), { accepted: 100 }));
+    }
+    await assertFails(getDoc(doc(auth("printer"), "printAgents/local")));
+    await assertFails(getDoc(doc(auth("admin"), "printAgentSecrets/local")));
+  });
+
+  it("protege los PDF definitivos y limita el área de carga a una creación por archivo", async () => {
+    const path = "printStaging/printer/aabbccdd00112233.pdf";
+    const options = { contentType: "application/pdf" };
+    await assertFails(storageAuth("tech").ref(path).putString("%PDF", "raw", options));
+    await assertFails(storageAuth("printer").ref(path).putString("txt", "raw", { contentType: "text/plain" }));
+    await assertFails(storageAuth("auditor").ref(path).putString("%PDF", "raw", options));
+    await assertSucceeds(storageAuth("printer").ref(path).putString("%PDF", "raw", options));
+    await assertFails(storageAuth("printer").ref(path).putString("%PDF-new", "raw", options));
+    await assertFails(storageAuth("admin").ref("printDocuments/printer/id.pdf").putString("%PDF", "raw", options));
+  });
+});
