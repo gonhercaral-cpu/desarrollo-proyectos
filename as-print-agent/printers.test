@@ -1,0 +1,10 @@
+{
+ NAME "Consultar colas CUPS registradas"
+ OPERATION CUPS-Get-Printers
+ GROUP operation-attributes-tag
+ ATTR charset attributes-charset utf-8
+ ATTR language attributes-natural-language en
+ ATTR keyword requested-attributes printer-name,printer-state,printer-is-accepting-jobs,printer-state-reasons,printer-state-message
+ STATUS successful-ok
+ STATUS client-error-not-found
+}

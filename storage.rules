@@ -835,6 +835,23 @@ service firebase.storage {
       Fotografías optimizadas del inventario de insumos:
       printshop/supplies/{supplyId}/product-image.webp
     */
+    function canUseProductionWorkspace() {
+      return hasProfile() && userDoc().data.get("deleted", false) != true
+        && userDoc().data.get("archived", false) != true
+        && (isAdmin() || (userDoc().data.role.lower() == "collaborator"
+          && (userHasDepartmentName("Imprenta") || userHasDepartmentName("Impresión") || userHasDepartmentName("Impresion"))));
+    }
+
+    match /printStaging/{uid}/{fileName} {
+      allow create: if resource == null && canUseProductionWorkspace() && request.auth.uid == uid
+        && fileName.matches("[a-zA-Z0-9_-]{16,128}[.]pdf")
+        && request.resource.contentType == "application/pdf"
+        && request.resource.size > 0 && request.resource.size <= 32 * 1024 * 1024;
+    }
+    match /printDocuments/{uid}/{fileName} {
+      allow get: if canUseProductionWorkspace();
+    }
+
     match /printshop/supplies/{supplyId}/{fileName} {
       allow read: if canAccessPrintshop();
 

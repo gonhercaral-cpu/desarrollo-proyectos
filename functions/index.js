@@ -91,6 +91,31 @@ const storageBucket = getStorage().bucket(
     || "sistema-desarrollo-proyectos.firebasestorage.app"
 );
 
+const productionRuntime = {
+  db, FieldValue, HttpsError, assertAdmin, getActor: getPrintProductionActor,
+};
+const printProduction = require("./printProduction").createPrintProductionHandlers(productionRuntime);
+const productionCallable = { region: "us-central1", maxInstances: 10 };
+exports.printProductionSave = onCall(productionCallable, printProduction.save);
+exports.printProductionAction = onCall(productionCallable, printProduction.action);
+exports.printProductionSettings = onCall(productionCallable, printProduction.settings);
+exports.printProductionLibrary = onCall(productionCallable, require("./printLibrary").createPrintLibraryHandler(productionRuntime));
+exports.freezePrintDocument = onCall({ ...productionCallable, memory: "1GiB", concurrency: 1, timeoutSeconds: 180 },
+  require("./printDocuments").createFreezePrintDocument({ ...productionRuntime, bucket: storageBucket }));
+const printAgent = require("./printAgent").createPrintAgentHandlers({ db, bucket: storageBucket, assertAdmin, HttpsError });
+exports.printAgentAdmin = onCall(productionCallable, printAgent.admin);
+exports.printAgentGateway = require("firebase-functions/v2/https").onRequest({
+  ...productionCallable, timeoutSeconds: 120,
+}, printAgent.gateway);
+
+exports.purgePrintStaging = onSchedule({ schedule: "every 60 minutes", region: "us-central1" },
+  () => require("./printDocuments").purgePrintStaging({ db, bucket: storageBucket }));
+const productionReports = require("./printReports").createPrintReportHandlers(productionRuntime);
+exports.printProductionReport = onCall({ ...productionCallable, timeoutSeconds: 300 }, productionReports.generate);
+exports.printProductionSchedule = onCall(productionCallable, productionReports.schedule);
+exports.runScheduledPrintReports = onSchedule({ schedule: "every 60 minutes", region: "us-central1", timeoutSeconds: 540 }, productionReports.runDue);
+exports.notifyPrintProduction = onDocumentWritten({ document: "printJobs/{jobId}", region: "us-central1" }, productionReports.notify);
+
 const certificatePersonHandlers = createCertificatePersonHandlers({
   db,
   FieldValue,
@@ -321,6 +346,22 @@ async function assertAdmin(request) {
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function getPrintProductionActor(request) {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Inicia sesión para usar el Gestor.");
+  const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
+  const isAdmin = cleanString(profile?.role).toLowerCase() === "admin";
+  const departments = [profile?.area, profile?.department, profile?.departmentName, profile?.team,
+    ...(Array.isArray(profile?.departments) ? profile.departments : []),
+    ...(Array.isArray(profile?.departmentNames) ? profile.departmentNames : [])];
+  const inPrintshop = departments.some((value) => ["imprenta", "impresión", "impresion"].includes(cleanString(value).toLowerCase()));
+  if (profile?.active !== true || profile.deleted || profile.archived ||
+      (!isAdmin && (cleanString(profile.role).toLowerCase() !== "collaborator" || !inPrintshop))) {
+    throw new HttpsError("permission-denied", "Se requiere un perfil activo de producción de Imprenta.");
+  }
+  return { uid: request.auth.uid, name: cleanString(profile.name || profile.displayName),
+    email: cleanString(profile.email), role: profile.role, isAdmin, canAccessPrintshop: true };
 }
 
 async function getActiveBatchActor(request) {
