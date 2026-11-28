@@ -23,8 +23,15 @@ MAX_VISIBLE_ELEMENTS = 300
 MAX_TEXT_CHARS = 10000
 MIN_FONT_SIZE = 100  # centipoints (1 pt)
 MAX_FONT_SIZE = 10000  # centipoints (100 pt)
-EDIT_FIELDS = {"slideIndex", "id", "x", "y", "width", "height", "text", "fontSize"}
+MAX_FONT_FAMILY_CHARS = 120
+MIN_LINE_SPACING = 50  # percent
+MAX_LINE_SPACING = 300  # percent
+STYLE_FIELDS = {"color", "fontFamily", "alignment", "lineSpacing"}
+EDIT_FIELDS = {"slideIndex", "id", "x", "y", "width", "height", "text", "fontSize"} | STYLE_FIELDS
 CHANGE_FIELDS = EDIT_FIELDS - {"slideIndex", "id"}
+HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+ALIGNMENTS = {"left": "l", "center": "ctr", "right": "r", "justify": "just"}
+ALIGNMENT_NAMES = {value: name for name, value in ALIGNMENTS.items()}
 TEXT_BODY_CHILDREN = {f"{{{A}}}bodyPr", f"{{{A}}}lstStyle", f"{{{A}}}p"}
 PARAGRAPH_CHILDREN = {f"{{{A}}}pPr", f"{{{A}}}r", f"{{{A}}}br", f"{{{A}}}endParaRPr"}
 ILLEGAL_TEXT = re.compile("[\x00-\x1f\x7f-\x9f\ud800-\udfff￾￿]")
@@ -36,6 +43,11 @@ def _p(tag):
 
 def _a(tag):
     return f"{{{A}}}{tag}"
+
+
+FILL_TAGS = {_a(name) for name in ("noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")}
+AFTER_FILL = {_a(name) for name in ("effectLst", "effectDag", "highlight", "uLnTx", "uLn", "uFillTx", "uFill", "latin", "ea", "cs", "sym", "hlinkClick", "hlinkMouseOver", "rtl", "extLst")}
+AFTER_LATIN = {_a(name) for name in ("ea", "cs", "sym", "hlinkClick", "hlinkMouseOver", "rtl", "extLst")}
 
 
 def _is_int(value):
@@ -78,6 +90,15 @@ def parse_studio_edits(value):
         if "text" in item and (not isinstance(item["text"], str) or len(item["text"]) > MAX_TEXT_CHARS or ILLEGAL_TEXT.search(item["text"])):
             raise ValueError("invalid-studio-edits")
         if "fontSize" in item and (not _is_int(item["fontSize"]) or not MIN_FONT_SIZE <= item["fontSize"] <= MAX_FONT_SIZE):
+            raise ValueError("invalid-studio-edits")
+        if "color" in item and (not isinstance(item["color"], str) or not HEX_COLOR.fullmatch(item["color"])):
+            raise ValueError("invalid-studio-edits")
+        if "fontFamily" in item and (not isinstance(item["fontFamily"], str) or not item["fontFamily"].strip() or item["fontFamily"] != item["fontFamily"].strip()
+                                     or len(item["fontFamily"]) > MAX_FONT_FAMILY_CHARS or ILLEGAL_TEXT.search(item["fontFamily"])):
+            raise ValueError("invalid-studio-edits")
+        if "alignment" in item and (not isinstance(item["alignment"], str) or item["alignment"] not in ALIGNMENTS):
+            raise ValueError("invalid-studio-edits")
+        if "lineSpacing" in item and (not _is_int(item["lineSpacing"]) or not MIN_LINE_SPACING <= item["lineSpacing"] <= MAX_LINE_SPACING):
             raise ValueError("invalid-studio-edits")
         edits.append(dict(item))
     return edits
@@ -166,6 +187,62 @@ def _explicit_font(shape, run):
     return result
 
 
+def _fill_editable(run):
+    """A solid or absent fill can be replaced; gradients, patterns, pictures, noFill and hyperlinks are kept."""
+    properties = run.find("a:rPr", NS)
+    if properties is None:
+        return True
+    if properties.find("a:hlinkClick", NS) is not None or properties.find("a:hlinkMouseOver", NS) is not None:
+        return False
+    fills = [child for child in properties if child.tag in FILL_TAGS]
+    return not fills or (len(fills) == 1 and fills[0].tag == _a("solidFill"))
+
+
+def _run_color(run):
+    """Explicit plain sRGB colour as ``#RRGGBB``; None for theme, system or transformed colours."""
+    fill = run.find("a:rPr/a:solidFill", NS)
+    colors = list(fill) if fill is not None else []
+    if len(colors) == 1 and colors[0].tag == _a("srgbClr") and not len(colors[0]) and HEX_COLOR.fullmatch("#" + colors[0].get("val", "")):
+        return "#" + colors[0].get("val").upper()
+    return None
+
+
+def _alignment_state(shape):
+    """(editable, explicit name or None) of the only paragraph's ``algn``."""
+    properties = shape.find("p:txBody/a:p/a:pPr", NS)
+    value = properties.get("algn") if properties is not None else None
+    if value is None:
+        return True, None
+    return value in ALIGNMENT_NAMES, ALIGNMENT_NAMES.get(value)
+
+
+def _spacing_state(shape):
+    """(editable, exact percentage or None) of the only paragraph's proportional line spacing."""
+    spacing = shape.find("p:txBody/a:p/a:pPr/a:lnSpc", NS)
+    if spacing is None:
+        return True, None
+    percent = spacing.find("a:spcPct", NS)
+    value = _integer(percent.get("val")) if percent is not None else None
+    if len(spacing) != 1 or value is None:
+        return False, None
+    exact = value // 1000 if value % 1000 == 0 and MIN_LINE_SPACING <= value // 1000 <= MAX_LINE_SPACING else None
+    return True, exact
+
+
+def _style_props(shape, run):
+    result = {}
+    color = _run_color(run) if _fill_editable(run) else None
+    if color:
+        result["color"] = color
+    alignable, alignment = _alignment_state(shape)
+    if alignable and alignment:
+        result["alignment"] = alignment
+    spaceable, spacing = _spacing_state(shape)
+    if spaceable and spacing:
+        result["lineSpacing"] = spacing
+    return result
+
+
 def _elements(root):
     """Compatible shapes of one slide: [(public dict, xfrm parts, run or None)]."""
     tree = root.find("p:cSld/p:spTree", NS)
@@ -193,6 +270,8 @@ def _elements(root):
         item = {"id": shape_id, "x": x, "y": y, "width": width, "height": height, "text": text[0], "editable": text[1] is not None}
         if text[1] is not None and text[2] is not None:
             item["fontSize"] = text[2]
+        if text[1] is not None:
+            item.update(_style_props(shape, text[1]))
         found.append((item, (off, ext), text[1], shape))
     return found
 
@@ -216,20 +295,80 @@ def inspect_slide(source, slide_index):
         if len(item["text"]) > limit:
             item["text"] = item["text"][:limit]
             item["editable"] = False
-            item.pop("fontSize", None)
+            run = None
+            for key in ("fontSize", *STYLE_FIELDS):
+                item.pop(key, None)
         remaining_text -= len(item["text"])
         response.append({**item, **_explicit_font(shape, run)})
     return {"width": width, "height": height, "elements": response, "truncated": len(elements) > MAX_VISIBLE_ELEMENTS}
+
+
+def _run_properties(run):
+    properties = run.find("a:rPr", NS)
+    if properties is None:
+        properties = ET.Element(_a("rPr"))
+        run.insert(0, properties)
+    return properties
+
+
+def _paragraph_properties(shape):
+    paragraph = shape.find("p:txBody/a:p", NS)
+    properties = paragraph.find("a:pPr", NS)
+    if properties is None:
+        properties = ET.Element(_a("pPr"))
+        paragraph.insert(0, properties)
+    return properties
+
+
+def _insert_before(parent, child, successors):
+    """Insert following the schema order: before the first sibling that must come later."""
+    for index, existing in enumerate(parent):
+        if existing.tag in successors:
+            parent.insert(index, child)
+            return
+    parent.append(child)
+
+
+def _set_color(properties, color):
+    fill = ET.Element(_a("solidFill"))
+    value = ET.SubElement(fill, _a("srgbClr"), val=color[1:].upper())
+    old = properties.find("a:solidFill", NS)
+    if old is None:
+        _insert_before(properties, fill, AFTER_FILL)
+        return
+    for previous in old:  # keep transparency of the colour being replaced
+        value.extend(child for child in previous if child.tag == _a("alpha"))
+    properties.insert(list(properties).index(old), fill)
+    properties.remove(old)
+
+
+def _set_font_family(properties, family):
+    latin = properties.find("a:latin", NS)
+    if latin is None:
+        latin = ET.Element(_a("latin"))
+        _insert_before(properties, latin, AFTER_LATIN)
+    for stale in ("panose", "pitchFamily", "charset"):  # describe the previous typeface
+        latin.attrib.pop(stale, None)
+    latin.set("typeface", family)
 
 
 def _apply_edit(edit, found):
     current = next((entry for entry in found if entry[0]["id"] == edit["id"]), None)
     if current is None:
         raise ValueError("studio-element-not-found")
-    item, (off, ext), run, _shape = current
-    if "text" in edit or "fontSize" in edit:
+    item, (off, ext), run, shape = current
+    if "text" in edit or "fontSize" in edit or STYLE_FIELDS & set(edit):
         if run is None or ("fontSize" in edit and "fontSize" not in item):
             raise ValueError("studio-edit-unsupported")
+    # Refuse before touching anything when a change would overwrite formatting we cannot represent.
+    if "color" in edit and not _fill_editable(run):
+        raise ValueError("studio-edit-unsupported")
+    if "fontFamily" in edit and edit["fontFamily"].casefold() not in (_installed_font_families() or set()):
+        raise ValueError("studio-edit-unsupported")
+    if "alignment" in edit and not _alignment_state(shape)[0]:
+        raise ValueError("studio-edit-unsupported")
+    if "lineSpacing" in edit and not _spacing_state(shape)[0]:
+        raise ValueError("studio-edit-unsupported")
     x, y = edit.get("x", item["x"]), edit.get("y", item["y"])
     width, height = edit.get("width", item["width"]), edit.get("height", item["height"])
     off.set("x", str(x))
@@ -240,6 +379,19 @@ def _apply_edit(edit, found):
         run.find("a:t", NS).text = edit["text"]
     if "fontSize" in edit:
         run.find("a:rPr", NS).set("sz", str(edit["fontSize"]))
+    if "color" in edit:
+        _set_color(_run_properties(run), edit["color"])
+    if "fontFamily" in edit:
+        _set_font_family(_run_properties(run), edit["fontFamily"])
+    if "alignment" in edit:
+        _paragraph_properties(shape).set("algn", ALIGNMENTS[edit["alignment"]])
+    if "lineSpacing" in edit:
+        spacing = _paragraph_properties(shape).find("a:lnSpc", NS)
+        if spacing is None:
+            spacing = ET.Element(_a("lnSpc"))
+            _paragraph_properties(shape).insert(0, spacing)
+        spacing.clear()
+        ET.SubElement(spacing, _a("spcPct"), val=str(edit["lineSpacing"] * 1000))
 
 
 def apply_studio_edits(source, target, edits):

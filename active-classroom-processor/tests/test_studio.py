@@ -201,6 +201,145 @@ class ApplyTests(StudioCase):
         self.assertEqual((self.elements(target, 0)["2"]["x"], self.elements(target, 1)["2"]["x"]), (1, 2))
 
 
+A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+
+
+def styled(text, inner="", attrs=' lang="es-ES" sz="1800"', paragraph=""):
+    return f'{paragraph}<a:r><a:rPr{attrs}>{inner}</a:rPr><a:t>{text}</a:t></a:r>'
+
+
+GRADIENT = '<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs><a:gs pos="100000"><a:srgbClr val="0000FF"/></a:gs></a:gsLst></a:gradFill>'
+
+
+class FormatTests(StudioCase):
+    FONTS = {"arial", "dejavu sans"}
+
+    def apply(self, deck, edits):
+        target = self.root / "edited.pptx"
+        with patch("studio._installed_font_families", return_value=self.FONTS):
+            apply_studio_edits(deck, target, edits)
+        return target
+
+    def inspect(self, deck):
+        with patch("studio._installed_font_families", return_value=self.FONTS):
+            return self.elements(deck)
+
+    def rpr(self, path):
+        return ET.fromstring(self.read(path)).find(f".//{A_NS}rPr")
+
+    def test_inspect_expone_formato_explicito_editable(self):
+        deck = self.deck(box(2, [styled("Hola", '<a:solidFill><a:srgbClr val="1a2B3c"/></a:solidFill><a:latin typeface="Arial"/>',
+                                        paragraph='<a:pPr algn="ctr"><a:lnSpc><a:spcPct val="150000"/></a:lnSpc></a:pPr>')]))
+        item = self.inspect(deck)["2"]
+        self.assertEqual((item["color"], item["alignment"], item["lineSpacing"]), ("#1A2B3C", "center", 150))
+        self.assertEqual((item["fontFamily"], item["fontAvailable"]), ("Arial", True))
+
+    def test_inspect_no_inventa_formato_implicito_ni_en_varios_runs(self):
+        deck = self.deck(box(2, [run("x")]) + box(3, [styled("a", '<a:solidFill><a:srgbClr val="112233"/></a:solidFill>') + styled("b")]))
+        items = self.inspect(deck)
+        for key in ("color", "alignment", "lineSpacing", "fontFamily"):
+            self.assertNotIn(key, items["2"])
+            self.assertNotIn(key, items["3"])
+
+    def test_inspect_no_muestra_colores_no_confiables_ni_formatos_no_editables(self):
+        cases = {
+            "tema": ('<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>', "", {}),
+            "transformado": ('<a:solidFill><a:srgbClr val="112233"><a:lumMod val="50000"/></a:srgbClr></a:solidFill>', "", {}),
+            "degradado": (GRADIENT, "", {}),
+            "alineacion distribuida": ("", '<a:pPr algn="dist"/>', {}),
+            "interlineado en puntos": ("", '<a:pPr><a:lnSpc><a:spcPts val="2400"/></a:lnSpc></a:pPr>', {}),
+            "interlineado fuera de rango": ("", '<a:pPr><a:lnSpc><a:spcPct val="400000"/></a:lnSpc></a:pPr>', {}),
+        }
+        for name, (inner, paragraph, _expected) in cases.items():
+            with self.subTest(name):
+                item = self.inspect(self.deck(box(2, [styled("x", inner, paragraph=paragraph)])))["2"]
+                self.assertFalse({"color", "alignment", "lineSpacing"} & set(item))
+
+    def test_fuente_no_instalada_se_marca_no_disponible(self):
+        item = self.inspect(self.deck(box(2, [styled("x", '<a:latin typeface="Comic Neue"/>')])))["2"]
+        self.assertEqual((item["fontFamily"], item["fontAvailable"]), ("Comic Neue", False))
+
+    def test_aplica_formato_creando_nodos_en_orden_de_esquema(self):
+        deck = self.deck(box(2, [styled("Hola", '<a:ln w="9525"/><a:highlight><a:srgbClr val="FFFF00"/></a:highlight><a:ea typeface="MS Gothic"/>')]))
+        target = self.apply(deck, [{"slideIndex": 0, "id": "2", "color": "#aabbcc", "fontFamily": "Arial", "alignment": "justify", "lineSpacing": 120}])
+        properties = self.rpr(target)
+        self.assertEqual([child.tag.removeprefix(A_NS) for child in properties], ["ln", "solidFill", "highlight", "latin", "ea"])
+        self.assertEqual(properties.find(f"{A_NS}solidFill/{A_NS}srgbClr").get("val"), "AABBCC")
+        self.assertEqual(properties.find(f"{A_NS}latin").get("typeface"), "Arial")
+        paragraph = ET.fromstring(self.read(target)).find(f".//{A_NS}p")
+        self.assertEqual(paragraph[0].tag, f"{A_NS}pPr")
+        self.assertEqual(paragraph[0].get("algn"), "just")
+        self.assertEqual(paragraph[0].find(f"{A_NS}lnSpc/{A_NS}spcPct").get("val"), "120000")
+        item = self.inspect(target)["2"]
+        self.assertEqual((item["color"], item["alignment"], item["lineSpacing"], item["fontFamily"]), ("#AABBCC", "justify", 120, "Arial"))
+
+    def test_conserva_formatos_atributos_y_namespaces_al_cambiar(self):
+        inner = '<a:solidFill><a:srgbClr val="112233"><a:alpha val="50000"/></a:srgbClr></a:solidFill><a:latin typeface="DejaVu Sans" panose="020B0604020202020204"/>'
+        paragraph = '<a:pPr marL="10" algn="r"><a:lnSpc><a:spcPct val="90000"/></a:lnSpc><a:spcBef><a:spcPts val="600"/></a:spcBef></a:pPr>'
+        deck = self.deck(box(2, [styled("Hola", inner, attrs=' lang="es-ES" sz="1800" b="1"', paragraph=paragraph)]))
+        target = self.apply(deck, [{"slideIndex": 0, "id": "2", "color": "#FF0000", "fontFamily": "Arial", "alignment": "left", "lineSpacing": 100}])
+        raw = self.read(target).decode()
+        self.assertIn("<a:solidFill>", raw)
+        self.assertNotIn("ns0:", raw)
+        properties = self.rpr(target)
+        self.assertEqual((properties.get("lang"), properties.get("sz"), properties.get("b")), ("es-ES", "1800", "1"))
+        color = properties.find(f"{A_NS}solidFill/{A_NS}srgbClr")
+        self.assertEqual((color.get("val"), color.find(f"{A_NS}alpha").get("val")), ("FF0000", "50000"))
+        self.assertEqual(properties.find(f"{A_NS}latin").attrib, {"typeface": "Arial"})
+        pPr = ET.fromstring(self.read(target)).find(f".//{A_NS}pPr")
+        self.assertEqual((pPr.get("marL"), pPr.get("algn")), ("10", "l"))
+        self.assertEqual([child.tag.removeprefix(A_NS) for child in pPr], ["lnSpc", "spcBef"])
+        self.assertEqual(pPr.find(f"{A_NS}lnSpc/{A_NS}spcPct").get("val"), "100000")
+
+    def test_reemplaza_color_de_tema_y_crea_rpr_si_falta(self):
+        deck = self.deck(box(2, [styled("a", '<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>')]) + box(3, ['<a:r><a:t>b</a:t></a:r>']))
+        items = self.inspect(self.apply(deck, [{"slideIndex": 0, "id": "2", "color": "#010203"}, {"slideIndex": 0, "id": "3", "color": "#040506", "fontFamily": "Arial"}]))
+        self.assertEqual((items["2"]["color"], items["3"]["color"], items["3"]["fontFamily"], items["3"]["text"]), ("#010203", "#040506", "Arial", "b"))
+
+    def test_rechaza_sin_modificar_cuando_destruiria_formato(self):
+        cases = [
+            ("degradado", box(2, [styled("x", GRADIENT)]), {"color": "#000000"}),
+            ("sin relleno", box(2, [styled("x", "<a:noFill/>")]), {"color": "#000000"}),
+            ("hipervinculo", box(2, [styled("x", '<a:hlinkClick r:id="rId9"/>')]), {"color": "#000000"}),
+            ("alineacion distribuida", box(2, [styled("x", paragraph='<a:pPr algn="dist"/>')]), {"alignment": "left"}),
+            ("interlineado en puntos", box(2, [styled("x", paragraph='<a:pPr><a:lnSpc><a:spcPts val="2400"/></a:lnSpc></a:pPr>')]), {"lineSpacing": 100}),
+            ("varios runs", box(2, [styled("a") + styled("b")]), {"alignment": "center"}),
+            ("fuente no instalada", box(2, [styled("x")]), {"fontFamily": "Comic Neue"}),
+            ("foto", picture(2), {"color": "#000000"}),
+        ]
+        for name, shapes, change in cases:
+            with self.subTest(name), self.assertRaisesRegex(ValueError, "studio-edit-unsupported"):
+                self.apply(self.deck(shapes), [{"slideIndex": 0, "id": "2", **change}])
+            self.assertFalse((self.root / "edited.pptx").exists())
+
+    def test_sin_fontconfig_no_se_permite_cambiar_la_fuente(self):
+        target = self.root / "edited.pptx"
+        with patch("studio._installed_font_families", return_value=None), self.assertRaisesRegex(ValueError, "studio-edit-unsupported"):
+            apply_studio_edits(self.deck(), target, [{"slideIndex": 0, "id": "2", "fontFamily": "Arial"}])
+
+    def test_la_fuente_se_compara_sin_distinguir_mayusculas_y_no_instala_nada(self):
+        with patch("studio.subprocess.run") as runner:
+            target = self.apply(self.deck(), [{"slideIndex": 0, "id": "2", "fontFamily": "dejavu SANS"}])
+        runner.assert_not_called()
+        self.assertEqual(self.rpr(target).find(f"{A_NS}latin").get("typeface"), "dejavu SANS")
+
+    def test_valida_parches_de_formato(self):
+        base = {"slideIndex": 0, "id": "2"}
+        valid = [{"color": "#aBc123"}, {"fontFamily": "x" * 120}, {"alignment": "justify"}, {"lineSpacing": 50}, {"lineSpacing": 300}]
+        for change in valid:
+            with self.subTest(change=str(change)[:30]):
+                self.assertEqual(parse_studio_edits([{**base, **change}]), [{**base, **change}])
+        invalid = [
+            {"color": "#abc"}, {"color": "abcdef"}, {"color": "#abcdeg"}, {"color": "#abcdef\n"}, {"color": 0xabcdef}, {"color": "#abcdef00"},
+            {"fontFamily": ""}, {"fontFamily": " "}, {"fontFamily": " Arial"}, {"fontFamily": "x" * 121}, {"fontFamily": "A\x00"}, {"fontFamily": 5},
+            {"alignment": "centre"}, {"alignment": "ctr"}, {"alignment": "Left"}, {"alignment": 1},
+            {"lineSpacing": 49}, {"lineSpacing": 301}, {"lineSpacing": 100.5}, {"lineSpacing": True}, {"lineSpacing": "100"},
+        ]
+        for change in invalid:
+            with self.subTest(change=str(change)[:30]), self.assertRaisesRegex(ValueError, "invalid-studio-edits"):
+                parse_studio_edits([{**base, **change}])
+
+
 class AppIntegrationTests(StudioCase):
     def test_sin_studio_edits_usa_el_original(self):
         deck = self.deck()
@@ -236,6 +375,94 @@ class AppIntegrationTests(StudioCase):
             response = processor.app.test_client().post("/convert", json=body)
         self.assertEqual((response.status_code, response.get_json()), (400, {"error": "invalid-studio-edits"}))
         download.assert_not_called()
+
+    def test_convert_rechaza_studio_render_slides_mal_formados_antes_de_descargar(self):
+        for value in ([], [1, 1], [2, 1], [-1], [True], ["0"], 0):
+            with self.subTest(value=value), patch.object(processor, "validate_request", return_value={}), patch.object(processor, "download_source") as download:
+                response = processor.app.test_client().post("/convert", json={"studioRenderSlides": value})
+            self.assertEqual((response.status_code, response.get_json()), (400, {"error": "invalid-studio-render-slides"}))
+            download.assert_not_called()
+
+
+class RenderSlidesTests(unittest.TestCase):
+    """Selective regeneration with a fake plan and renderer; no network or credentials."""
+    PLAN = {
+        "slides": [{"index": 0, "steps": [["2"]], "warnings": []}, {"index": 1, "steps": [], "warnings": []}, {"index": 2, "steps": [["2"], ["3"]], "warnings": []}],
+        "stateCount": 6,
+        "animationPlan": [{"slideIndex": 1, "images": []}, {"slideIndex": 2, "images": []}],
+    }
+
+    def url(self, index):
+        return f"https://storage.googleapis.com/bucket/{processor.raster_path('r' * 36, index)}?X-Goog-Signature=x"
+
+    def run_upload(self, selection, urls, animations=None):
+        data = {"revision": "r" * 36, "processorVersion": "pptx-builds-png-v2", "stateUploadUrls": urls}
+        if selection is not None:
+            data["studioRenderSlides"] = selection
+        if animations is not None:
+            data["animationUploadUrls"] = animations
+        calls = {}
+
+        def fake_render(source, workspace, plan, deadline_seconds, on_state):
+            calls["plan"] = plan
+            states = []
+            for local in range(plan["stateCount"]):
+                state = {"path": Path(workspace) / f"{local}.png", "sizeBytes": 1, "sha256": str(local)}
+                on_state(local, state)
+                states.append(state)
+            return states
+
+        uploaded = []
+        with patch.dict("os.environ", {"STORAGE_BUCKET": "bucket"}), patch.object(processor, "pptx_plan", return_value=self.PLAN), \
+                patch.object(processor, "render_pptx", side_effect=fake_render), \
+                patch.object(processor, "upload_animations", return_value=[]) as animation_upload:
+            with patch.object(processor, "Request", side_effect=lambda url, **_kw: uploaded.append(url) or url), \
+                    patch.object(processor, "urlopen") as opener, patch.object(Path, "open", create=True) as opened:
+                opener.return_value.__enter__.return_value.status = 200
+                opened.return_value.__enter__.return_value.read.return_value = b"\x89PNG\r\n\x1a\n" + bytes(8) + (10).to_bytes(4, "big") + (20).to_bytes(4, "big")
+                result = processor.upload_pngs(data, Path("x.pptx"), tempfile.gettempdir())
+        return result, calls, uploaded, animation_upload
+
+    def test_sin_seleccion_conserva_todos_los_estados(self):
+        urls = [self.url(index) for index in range(6)]
+        result, calls, uploaded, _ = self.run_upload(None, urls)
+        self.assertEqual(calls["plan"]["stateCount"], 6)
+        self.assertEqual(uploaded, urls)
+        self.assertTrue(all(state is not None for state in result["states"]))
+
+    def test_seleccion_renderiza_subconjunto_con_indices_globales(self):
+        urls = [None, None, *[self.url(index) for index in range(2, 6)]]
+        result, calls, uploaded, _ = self.run_upload([1, 2], urls)
+        self.assertEqual([slide["index"] for slide in calls["plan"]["slides"]], [1, 2])
+        self.assertEqual(calls["plan"]["stateCount"], 4)
+        self.assertEqual(uploaded, [self.url(2), self.url(3), self.url(4), self.url(5)])
+        self.assertEqual([state is None for state in result["states"]], [True, True, False, False, False, False])
+        self.assertEqual(len(result["states"]), 6)
+        self.assertEqual(result["slides"], self.PLAN["slides"])
+        self.assertEqual(result["pageCount"], 3)
+
+    def test_rechaza_capacidades_incoherentes_con_la_seleccion(self):
+        good = [None, None, self.url(2), self.url(3), self.url(4), self.url(5)]
+        cases = {
+            "url en estado no seleccionado": [self.url(0), None, *good[2:]],
+            "falta url seleccionada": [None, None, None, *good[3:]],
+            "longitud no global": good[2:],
+            "url de otro indice": [None, None, self.url(3), self.url(2), self.url(4), self.url(5)],
+        }
+        for name, urls in cases.items():
+            with self.subTest(name), self.assertRaises(ValueError):
+                self.run_upload([1, 2], urls)
+
+    def test_rechaza_indice_inexistente(self):
+        with self.assertRaisesRegex(ValueError, "invalid-studio-render-slides"):
+            self.run_upload([3], [None] * 6)
+
+    def test_animaciones_solo_de_slides_seleccionadas(self):
+        urls = [None, None, self.url(2), self.url(3), self.url(4), self.url(5)]
+        _, _, _, animation_upload = self.run_upload([1, 2], urls)
+        self.assertEqual([item["slideIndex"] for item in animation_upload.call_args.args[3]["animationPlan"]], [1, 2])
+        _, _, _, animation_upload = self.run_upload([2], [None] * 3 + [self.url(3), self.url(4), self.url(5)])
+        self.assertEqual([item["slideIndex"] for item in animation_upload.call_args.args[3]["animationPlan"]], [2])
 
 
 if __name__ == "__main__":

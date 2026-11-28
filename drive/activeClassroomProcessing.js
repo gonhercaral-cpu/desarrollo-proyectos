@@ -50,6 +50,16 @@ function logFailure(error, nativeSlides, stage, attempt) {
   return safeError;
 }
 
+function editedSlideIndices(review, previous) {
+  const applied = previous.studioRevision ? review.appliedEdits : [];
+  if (!Array.isArray(applied) || (previous.studioRevision && review.appliedRevision !== previous.studioRevision)) return [];
+  const key = edit => `${edit.slideIndex}:${edit.id}`;
+  const value = edit => JSON.stringify(Object.entries(edit).sort(([left], [right]) => left.localeCompare(right)));
+  const before = new Map(applied.map(edit => [key(edit), value(edit)]));
+  const after = new Map(review.edits.map(edit => [key(edit), value(edit)]));
+  return [...new Set([...before.keys(), ...after.keys()].filter(id => before.get(id) !== after.get(id)).map(id => Number(id.split(":")[0])))].sort((left, right) => left - right);
+}
+
 function createDocumentProcessing({ db, bucket, getProfile, prepareResource, convert, googleSlides, timestamp, clock = Date.now }) {
   const units = db.collection("activeClassroomUnits");
   const resources = db.collection("activeClassroomResources");
@@ -58,14 +68,15 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
   async function verifyDerivative(result, attemptId) {
     if (result?.processorVersion === PPTX_PROCESSOR_VERSION) {
       if (result.revision !== attemptId || !Array.isArray(result.pages) || result.pageCount !== result.pages.length || !result.pages.length || result.pages.length > 200) fail("Estados PPTX incompletos.", "data-loss");
-      const states = result.pages.flatMap(page => [page, ...(page.builds || [])]);
+      const states = result.pages.flatMap(page => [page, ...(page.builds || [])].map(state => ({ state, revision: page.rasterRevision || attemptId })));
       if (states.length > 200) fail("Demasiados estados PPTX.", "resource-exhausted");
-      for (const [index, state] of states.entries()) {
+      for (const [index, { state, revision }] of states.entries()) {
         const download = state.download;
-        if (download?.path !== rasterTargetPath(attemptId, index) || !/^\d+$/.test(download.generation || "") || download.mimeType !== "image/png" || download.endpoint !== "activeClassroomPublicationFile" || !Number.isSafeInteger(download.sizeBytes) || download.sizeBytes < 24 || download.sizeBytes > MAX_BYTES || !/^[a-f0-9]{64}$/.test(download.checksums?.sha256 || "")) fail("Referencia de estado PPTX inválida.", "data-loss");
+        if (!/^[a-f0-9-]{36}$/.test(revision) || download?.path !== rasterTargetPath(revision, index) || !/^\d+$/.test(download.generation || "") || download.mimeType !== "image/png" || download.endpoint !== "activeClassroomPublicationFile" || !Number.isSafeInteger(download.sizeBytes) || download.sizeBytes < 24 || download.sizeBytes > MAX_BYTES || !/^[a-f0-9]{64}$/.test(download.checksums?.sha256 || "")) fail("Referencia de estado PPTX inválida.", "data-loss");
         const file = bucket.file(download.path, { generation: download.generation });
         const [metadata] = await file.getMetadata();
-        if (String(metadata.generation) !== download.generation || metadata.contentType !== "image/png" || Number(metadata.size) !== download.sizeBytes || metadata.metadata?.sha256 !== download.checksums.sha256 || metadata.metadata?.processingRevision !== attemptId) fail("Estado PPTX no disponible.", "data-loss");
+        if (String(metadata.generation) !== download.generation || metadata.contentType !== "image/png" || Number(metadata.size) !== download.sizeBytes || metadata.metadata?.sha256 !== download.checksums.sha256 || metadata.metadata?.processingRevision !== revision) fail("Estado PPTX no disponible.", "data-loss");
+        if (revision !== attemptId) continue;
         const hash = createHash("sha256"); let size = 0; let header = Buffer.alloc(0);
         for await (const chunk of file.createReadStream()) {
           size += chunk.length;
@@ -76,6 +87,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         if (size !== download.sizeBytes || hash.digest("hex") !== download.checksums.sha256 || header.length < 24 || header.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || header.readUInt32BE(16) !== state.width || header.readUInt32BE(20) !== state.height) fail("Estado PNG dañado.", "data-loss");
       }
       for (const [index, page] of result.pages.entries()) if (page.animation) {
+        if (page.rasterRevision) { await verifyAnimation(bucket, page.animation, page.rasterRevision, index, page); continue; }
         try { await verifyAnimation(bucket, page.animation, attemptId, index, page, true); }
         catch {
           await discardAnimation(bucket, page.animation, attemptId, index);
@@ -209,9 +221,10 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         lastStage = stage;
       };
       const edits = studio && review.edits.length ? { studioEdits: review.edits } : {};
+      const reuse = studio ? { previous: previousProcessing, editedSlides: editedSlideIndices(review, previousProcessing) } : {};
       const result = nativeSlides
-        ? await googleSlides.render({ profile, resource, revision: attemptId, onStage, ...edits })
-        : await convert({ revision: attemptId, processorVersion: processorVersion(resource), extension: officeExtension(resource), original, ...edits }, { onStage });
+        ? await googleSlides.render({ profile, resource, revision: attemptId, onStage, ...reuse, ...edits })
+        : await convert({ revision: attemptId, processorVersion: processorVersion(resource), extension: officeExtension(resource), original, ...edits }, { onStage, ...reuse });
       await onStage("verifying");
       rendered = result;
       if (result?.processorVersion !== processorVersion(resource)) fail("Versión del procesador incompatible.", "data-loss");
@@ -234,7 +247,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
           const baseline = currentReview.baseline || previousProcessing.pages.map(page => ({
             pageObjectId: page.pageObjectId, download: page.download,
           }));
-          transaction.update(reviewRef, { appliedRevision: studioRevision, reviewRevision: (currentReview.reviewRevision || 0) + 1, status: "in-review", baseline });
+          transaction.update(reviewRef, { appliedRevision: studioRevision, appliedEdits: review.edits, reviewRevision: (currentReview.reviewRevision || 0) + 1, status: "in-review", baseline });
           transaction.update(unitRef, { draft, draftRevision, updatedAt: timestamp() });
           applied = { state: "ready", processing, draft, draftRevision };
         }
@@ -257,7 +270,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       });
       // An uncertain commit may already be ready. Never delete a committed revision.
       const recordedState = (await jobRef.get()).data()?.state;
-      if (rendered?.pages?.[0]?.download?.path === rasterTargetPath(attemptId, 0) && recordedState === "failed") {
+      if (rendered?.pages?.length && recordedState === "failed") {
         await Promise.allSettled((rendered.pages || []).flatMap(page => [page, ...(page.builds || [])]).map((state, index) => state.download?.path === rasterTargetPath(attemptId, index) ? bucket.file(state.download.path).delete({ ignoreNotFound: true }) : Promise.resolve()));
         await Promise.allSettled((rendered.pages || []).map((page, index) => discardAnimation(bucket, page.animation, attemptId, index)));
       }
@@ -281,7 +294,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         const [metadata] = await bucket.file(state.download.path, { generation: state.download.generation }).getMetadata();
         if (String(metadata.generation) !== state.download.generation || Number(metadata.size) !== state.download.sizeBytes || metadata.metadata?.sha256 !== state.download.checksums.sha256 || metadata.contentType !== "image/png") fail("Un estado de revelado no está disponible.", "data-loss");
       }
-      for (const [index, page] of processing.pages.entries()) if (page.animation) await verifyAnimation(bucket, page.animation, processing.revision, index, page);
+      for (const [index, page] of processing.pages.entries()) if (page.animation) await verifyAnimation(bucket, page.animation, page.rasterRevision || processing.revision, index, page);
       return processing.download;
     }
     // Generation is immutable. Full bytes/hash were verified when the processor completed.
@@ -303,4 +316,4 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
 
   return { process, prepareDelivery, preparePreviewSource, verifyDerivative };
 }
-module.exports = { createDocumentProcessing, failureDetails };
+module.exports = { createDocumentProcessing, editedSlideIndices, failureDetails };

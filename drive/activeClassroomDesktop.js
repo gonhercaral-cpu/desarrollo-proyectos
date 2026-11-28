@@ -1,4 +1,5 @@
 const { requireClassroom } = require("./activeClassroomPermissions");
+const { canReceiveUnit } = require("./activeClassroomTestDelivery");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { pipeline } = require("node:stream/promises");
 const MAX_DOWNLOAD_CHUNK = 4 * 1024 * 1024;
@@ -41,9 +42,11 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
     return profile;
   }
   const deviceMetadata = (profile) => profile.activeClassroomDevice ? { device: { deviceId: profile.deviceId, deviceName: profile.deviceName || null, displayName: profile.displayName || "" } } : {};
-  async function readManifest(unitId, requestedVersion) {
+  async function readManifest(profile, unitId, requestedVersion, knownUnit) {
     const unit = units.doc(id(unitId));
-    const version = requestedVersion == null ? (await unit.get()).data()?.publishedVersion : versionNumber(requestedVersion);
+    const stored = knownUnit || (await unit.get()).data();
+    if (!canReceiveUnit(stored, profile.activeClassroomDevice ? profile.deviceId : null)) throw new HttpsError("not-found", "Publicación no encontrada.");
+    const version = requestedVersion == null ? stored?.publishedVersion : versionNumber(requestedVersion);
     if (!version) throw new HttpsError("not-found", "Unit sin publicaciones.");
     const manifest = (await unit.collection("publications").doc(String(version)).get()).data()?.manifest;
     if (!manifest) throw new HttpsError("not-found", "Publicación no encontrada.");
@@ -61,8 +64,9 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
     const levels = catalog.docs.map(doc => ({ id: doc.id, name: doc.data().name || doc.id, position: doc.data().position ?? 999, active: doc.data().active !== false, icon: typeof doc.data().icon === "string" && doc.data().icon.length <= 32 ? doc.data().icon.trim() : "" })).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, "es"));
     const publications = [];
     for (const document of scanned) {
-      if (!document.data().publishedVersion) continue;
-      const manifest = await readManifest(document.id, document.data().publishedVersion);
+      const unit = document.data();
+      if (!unit.publishedVersion || !canReceiveUnit(unit, profile.activeClassroomDevice ? profile.deviceId : null)) continue;
+      const manifest = await readManifest(profile, document.id, unit.publishedVersion, unit);
       publications.push({ unitId: document.id, version: manifest.version, name: manifest.unit.name, levelId: manifest.unit.levelId, schemaVersion: manifest.schemaVersion, publishedAt: manifest.publishedAt, contentHash: manifest.integrity.contentHash });
     }
     // Cursor counts scanned Units, including drafts; keep paging even on an empty page.
@@ -70,12 +74,12 @@ function createDesktopHandlers({ db, getProfile, getRequestProfile, authorizeDev
   }
   async function get(request) {
     const profile = await authorize(request);
-    return { manifest: await readManifest(request.data?.unitId, request.data?.version), ...deviceMetadata(profile) };
+    return { manifest: await readManifest(profile, request.data?.unitId, request.data?.version), ...deviceMetadata(profile) };
   }
   async function resolveDownload(profile, data) {
     requireActive(profile);
     if (!profile.activeClassroomDevice) requireClassroom(profile);
-    const manifest = await readManifest(data.unitId, versionNumber(Number(data.version)));
+    const manifest = await readManifest(profile, data.unitId, versionNumber(Number(data.version)));
     const resource = manifest.resources.find((item) => item.resourceId === id(data.resourceId));
     if (!resource) throw new HttpsError("not-found", "El recurso no pertenece a esta publicación.");
     if (manifest.schemaVersion < 2 || !resource.download) throw new HttpsError("failed-precondition", "Publicación antigua sin archivos congelados. Publica una nueva versión desde la web.");

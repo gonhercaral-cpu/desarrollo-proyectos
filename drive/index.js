@@ -1407,12 +1407,12 @@ const processorUrl = defineString("ACTIVE_CLASSROOM_PROCESSOR_URL", { default: "
 const processorAuth = new google.auth.GoogleAuth();
 const classroomConvert = createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) });
 const classroomSlides = createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }),
-    rasterize: async ({ profile, resource, revision, studioEdits, onStage = async () => {} }) => {
+    rasterize: async ({ profile, resource, revision, studioEdits, previous, editedSlides, onStage = async () => {} }) => {
       const deliveredMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
       const original = await classroomFiles.prepareResource(profile, resource, { deliveryOverride: { exported: true, deliveredMimeType, deliveredName: `${resource.name.replace(/\.pptx$/i, "")}.pptx` } });
       // Prefixed so processor stages only label diagnostics; they never rewind the persisted job stage.
       // Oversized snapshots throw processorSourceSizeLimit here, before any signing or processor call.
-      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx", ...(studioEdits?.length ? { studioEdits } : {}) }, { onStage: (stage) => onStage(`export-${stage}`), nativeSlidesFallback: true });
+      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx", ...(studioEdits?.length ? { studioEdits } : {}) }, { onStage: (stage) => onStage(`export-${stage}`), nativeSlidesFallback: true, previous, editedSlides });
     },
     verifyRaster: (result, revision) => classroomProcessing.verifyDerivative(result, revision),
 });
@@ -1474,6 +1474,9 @@ exports.listActiveClassroomDevices = onCall(classroomDevices.list);
 exports.rejectActiveClassroomDevice = onCall(classroomDevices.reject);
 exports.renameActiveClassroomDevice = onCall(classroomDevices.rename);
 exports.reportActiveClassroomDeviceSync = onCall(classroomDevices.reportSync);
+exports.restrictActiveClassroomTestUnit = onCall(require("./activeClassroomTestDelivery").createTestDelivery({
+  db: admin.firestore(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+}));
 const classroomDesktop = createDesktopHandlers({
   db: admin.firestore(), getProfile: getClassroomProfile, authorizeDevice: classroomDevices.authorizeDevice, isDevice,
   getRequestProfile: async (request) => {

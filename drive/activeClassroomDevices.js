@@ -1,6 +1,7 @@
 const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash, randomBytes, timingSafeEqual } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
+const { canReceiveUnit } = require("./activeClassroomTestDelivery");
 
 const DEVICE_PREFIX = "ac-device-";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
@@ -191,9 +192,10 @@ function createDeviceHandlers({ db, auth, assertAdmin, now = Date.now }) {
     await db.runTransaction(async (transaction) => {
       const ref = devices.doc(claims.deviceId);
       const device = (await transaction.get(ref)).data();
+      const unit = (await transaction.get(db.doc(`activeClassroomUnits/${unitId}`))).data();
       const publication = await transaction.get(db.doc(`activeClassroomUnits/${unitId}/publications/${version}`));
       if (device?.status !== "authorized" || device.generation !== claims.deviceGeneration) throw new HttpsError("permission-denied", "Equipo revocado.");
-      if (!publication.exists || !publication.data()?.manifest) throw new HttpsError("not-found", "Publicación no encontrada.");
+      if (!canReceiveUnit(unit, claims.deviceId) || !publication.exists || !publication.data()?.manifest) throw new HttpsError("not-found", "Publicación no encontrada.");
       transaction.update(ref, { lastSeenAt: now(), lastSyncAt: now(), lastSyncUnitId: unitId, lastSyncVersion: version });
     });
     return { recorded: true };

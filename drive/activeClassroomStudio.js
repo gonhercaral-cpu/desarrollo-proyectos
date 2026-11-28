@@ -6,7 +6,12 @@ const validId = value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.t
 const invalid = message => { throw new HttpsError("invalid-argument", message); };
 const conflict = message => { throw new HttpsError("aborted", message); };
 const pending = (processing, now) => ["pending", "processing"].includes(processing?.state) && processing.leaseUntil > now;
-const geometry = { x: [-60000000, 60000000], y: [-60000000, 60000000], width: [1, 60000000], height: [1, 60000000], fontSize: [100, 10000] };
+const numericFields = { x: [-60000000, 60000000], y: [-60000000, 60000000], width: [1, 60000000], height: [1, 60000000], fontSize: [100, 10000], lineSpacing: [50, 300] };
+const formatFields = {
+  color: value => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value),
+  alignment: value => ["left", "center", "right", "justify"].includes(value),
+  fontFamily: value => typeof value === "string" && /^[\p{L}\p{N}][\p{L}\p{M}\p{N} ._()'-]{0,119}$/u.test(value) && value.trim() === value,
+};
 const exportPptx = { exported: true, deliveredMimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
 
 function normalizeStudioEdits(value) {
@@ -26,8 +31,10 @@ function normalizeStudioEdits(value) {
         if (typeof entry !== "string" || entry.length > 3000 || /[\u0000-\u001f\u007f-\u009f\ud800-\udfff\ufffe\uffff]/u.test(entry)) invalid("Usa texto de un solo párrafo y hasta 3000 caracteres.");
         totalText += entry.length;
         if (totalText > 24000) invalid("El texto de las correcciones supera el límite del borrador.");
+      } else if (Object.hasOwn(formatFields, field)) {
+        if (!formatFields[field](entry)) invalid("Formato de texto inválido.");
       } else {
-        const bounds = Object.hasOwn(geometry, field) && geometry[field];
+        const bounds = Object.hasOwn(numericFields, field) && numericFields[field];
         if (!bounds || !Number.isInteger(entry) || entry < bounds[0] || entry > bounds[1]) invalid("Propiedad de Studio inválida.");
       }
     }
@@ -119,6 +126,7 @@ function createStudioHandlers({ db, getProfile, prepareResource, inspect, timest
           updatedByUid: uid, updatedAt: timestamp(), updatedAtIso: new Date(clock()).toISOString(),
         };
         if (sameSource && saved.baseline) draft.baseline = saved.baseline;
+        if (sameSource && saved.appliedEdits) draft.appliedEdits = saved.appliedEdits;
         transaction.set(draftRef, draft);
         return visibleDraft(draft, fingerprint);
       });

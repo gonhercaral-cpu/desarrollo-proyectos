@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ActiveClassroomIcon from "./ActiveClassroomIcon";
 import SlideThumbnail from "./SlideThumbnail";
+import SlideInteractionEditor from "./SlideInteractionEditor";
 import { getBuildPreview, getStudioDraft, inspectStudioSlide, loadStudioReviewers, reviewStudioDraft, saveStudioEdits } from "../services/unitEditorService";
 import { deviceService } from "../services/deviceService";
+import { planCanvasFit } from "../utils/studioBatch";
 import { documentProcessingLabel, isStudioPresentation } from "../utils/unitDraft";
 import "../styles/conversion-studio.css";
 
@@ -168,7 +170,7 @@ export default function ConversionStudio(props) {
   </section>;
 }
 
-function StudioPresentation({ unitId, resource, section, setSection, mainId, publications, busy, canProcess, canEdit, canAssignReviewers, canSeeDevices, canPublish, onConvert, onMakeMain, onValidate, onPublish, onSchedule, scheduled, onCancelSchedule, onOpenHistory, onRestore, onDirtyChange }) {
+function StudioPresentation({ unitId, resource, section, setSection, mainId, publications, busy, canProcess, canEdit, canAssignReviewers, canSeeDevices, canPublish, onConvert, onMakeMain, onValidate, onPublish, onSchedule, scheduled, onCancelSchedule, onOpenHistory, onRestore, onDirtyChange, testDeviceId, onRestrictTestUnit, unitSlides, resources, onEditInteraction, onSaveInteraction }) {
   const { id: resourceId } = resource;
   const pages = getPages(resource);
   const [pageId, setPageId] = useState("");
@@ -189,6 +191,10 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
   const [assignee, setAssignee] = useState(null);
   const [reviewers, setReviewers] = useState(null);
   const [devicePage, setDevicePage] = useState(null);
+  const [selectedTestDevice, setSelectedTestDevice] = useState("");
+  const [batchSlides, setBatchSlides] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batch, setBatch] = useState(null);
   const [showGifs, setShowGifs] = useState(true);
   const [publishAt, setPublishAt] = useState("");
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -200,6 +206,7 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
   const drag = useRef(null);
   const [position, setPosition] = useState(null);
   const page = pages.find(item => item.pageObjectId === pageId) || pages[0];
+  const unitSlide = mainId === resourceId && unitSlides?.find(item => item.metadata?.pageObjectId === page?.pageObjectId);
   const key = page ? `${page.pageObjectId}:${resource.processing?.sourceFingerprint}:${attempt}` : "";
   const inspected = loadedElements?.key === key ? loadedElements : null;
   const edits = localEdits ?? draft?.edits;
@@ -263,7 +270,7 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
   const currentElements = elements.map(element => ({ ...element, ...slideEdits.find(item => item.id === element.id) }));
   const selected = currentElements.find(element => element.id === selectedId);
   const canvas = inspected?.data;
-  const canModify = Boolean(canEdit && draft && !busy && !saving);
+  const canModify = Boolean(canEdit && draft && !busy && !saving && !batchLoading);
   const geometryAlerts = canvas ? currentElements.filter(element => element.x < 0 || element.y < 0 || element.x + element.width > canvas.width || element.y + element.height > canvas.height) : [];
   const overflowAlerts = currentElements.map(element => ({ element, width: estimateTextWidth(element) })).filter(({ element, width }) => width > element.width);
   const fontAlerts = currentElements.filter(element => element.fontAvailable === false);
@@ -369,19 +376,22 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
 
   function fitElements() {
     if (!canvas || !geometryAlerts.length) return;
-    const affected = new Map(geometryAlerts.map(element => [element.id, element]));
-    const next = edits.filter(item => item.slideIndex !== page.index || !affected.has(item.id));
-    if (next.length + affected.size > 100) { setError("El borrador supera el límite de 100 elementos."); return; }
-    const summary = [];
-    for (const item of affected.values()) {
-      const width = Math.min(item.width, canvas.width);
-      const height = Math.min(item.height, canvas.height);
-      const x = Math.min(Math.max(0, item.x), canvas.width - width);
-      const y = Math.min(Math.max(0, item.y), canvas.height - height);
-      summary.push(`${item.id}: ${Math.round(item.x / pixels)}, ${Math.round(item.y / pixels)} → ${Math.round(x / pixels)}, ${Math.round(y / pixels)} px`);
-      next.push({ ...slideEdits.find(edit => edit.id === item.id), slideIndex: page.index, id: item.id, x, y, width, height });
-    }
-    if (window.confirm(`¿Ajustar ${affected.size} elementos de la diapositiva ${page.index + 1} al área visible? Los cambios se guardarán como borrador.\n\n${summary.join("\n")}`)) changeEdits(next);
+    setBatch({ ...planCanvasFit([{ ...canvas, slideIndex: page.index }], edits), fromEdits: edits });
+  }
+
+  async function previewBatch() {
+    if (!canModify || batchSlides.length === 0 || batchSlides.length > 6) return;
+    setBatchLoading(true);
+    setError("");
+    setBatch(null);
+    try {
+      const layouts = [];
+      for (const slideIndex of batchSlides) {
+        layouts.push({ ...await inspectStudioSlide(unitId, resourceId, slideIndex), slideIndex });
+      }
+      setBatch({ ...planCanvasFit(layouts, edits), fromEdits: edits });
+    } catch (failure) { setError(failure.message); }
+    finally { setBatchLoading(false); }
   }
 
   const status = draft ? reviewLabels[draft.status] : "Cargando revisión…";
@@ -466,6 +476,13 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
             {page.animation?.images?.length > 0 && <span>{page.animation.images.length} GIF</span>}
             <label>Secuencia <input type="range" min="0" max={page.builds?.length || 0} value={step} disabled={!page.builds?.length} onChange={event => setStep(Number(event.target.value))} /></label>
           </div>}
+          {mode === "play" && canEdit && unitSlide && <details className="ac-studio-distribution">
+            <summary>Editar pasos de revelado compatibles</summary>
+            <fieldset disabled={busy}>
+              <SlideInteractionEditor key={unitSlide.slideId} unitId={unitId} slide={unitSlide} main={resource} resources={resources} onChange={interaction => onEditInteraction(unitSlide.slideId, interaction)} compact />
+              <button className="ac-outline-button" onClick={onSaveInteraction}>Guardar pasos en el borrador de unidad</button>
+            </fieldset>
+          </details>}
         </div>
         <aside className="ac-unit-card ac-studio-inspector"><h4>Propiedades del elemento</h4>
           {inspected?.data?.truncated && <p>Se muestran los primeros 300 elementos compatibles.</p>}
@@ -476,6 +493,20 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
           {selected ? <>
             {Boolean(selected.text || selected.editable) && <label>Texto<textarea maxLength={3000} value={selected.text} disabled={!canModify || !selected.editable} onChange={event => patch(selected.id, { text: event.target.value.replace(/[\r\n]/g, " ") })} /></label>}
             {selected.fontFamily && <p>Fuente original: {selected.fontFamily}{selected.fontAvailable === false ? " (sin coincidencia exacta en el conversor)" : ""}</p>}
+            {selected.editable && selected.fontFamily && <label>Sustituir fuente
+              <input key={`${selected.id}:${selected.fontFamily}`} defaultValue={selected.fontFamily} maxLength={120} disabled={!canModify} onBlur={event => {
+                const fontFamily = event.target.value.trim();
+                if (fontFamily && fontFamily !== selected.fontFamily) patch(selected.id, { fontFamily });
+              }} />
+            </label>}
+            {selected.color && <label>Color <input type="color" disabled={!canModify} value={selected.color} onChange={event => patch(selected.id, { color: event.target.value })} /></label>}
+            {selected.alignment && <label>Alineación <select disabled={!canModify} value={selected.alignment} onChange={event => patch(selected.id, { alignment: event.target.value })}>
+              <option value="left">Izquierda</option><option value="center">Centrada</option><option value="right">Derecha</option><option value="justify">Justificada</option>
+            </select></label>}
+            {selected.lineSpacing !== undefined && <label>Interlineado (%) <input type="number" min="50" max="300" disabled={!canModify} value={selected.lineSpacing} onChange={event => {
+              const value = event.target.valueAsNumber;
+              if (Number.isInteger(value) && value >= 50 && value <= 300) patch(selected.id, { lineSpacing: value });
+            }} /></label>}
             <div className="ac-studio-properties">{Object.entries(geometryLabels).filter(([field]) => selected[field] !== undefined).map(([field, label]) => {
               const scale = field === "fontSize" ? 100 : pixels;
               return <label key={field}>{label} ({field === "fontSize" ? "pt" : "px"})
@@ -529,10 +560,42 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
         {fontAlerts.map(element => <div className="ac-studio-warning" key={element.id}><strong>Fuente sin coincidencia exacta</strong><p>{element.fontFamily} · Diapositiva {page.index + 1}</p></div>)}
         {geometryAlerts.length > 0 && <button className="ac-outline-button" disabled={!canModify} onClick={fitElements}>Ajustar elementos al lienzo</button>}
         {geometryAlerts.map(element => <div className="ac-studio-warning" key={element.id}><strong>Elemento fuera del lienzo</strong><p>{element.text || `Elemento ${element.id}`}</p><button className="ac-outline-button" onClick={() => { openPage(page, element.id); setSection("editor"); }}>Corregir</button></div>)}
+        {canEdit && pages.length > 1 && <details className="ac-studio-distribution">
+          <summary>Ajustar varias diapositivas</summary>
+          <label>Diapositivas (hasta 6) <select multiple value={batchSlides.map(String)} disabled={!canModify} onChange={event => {
+            setBatch(null);
+            setBatchSlides(Array.from(event.target.selectedOptions, option => Number(option.value)));
+          }}>
+            {pages.map(item => <option value={item.index} key={item.pageObjectId}>Diapositiva {item.index + 1}</option>)}
+          </select></label>
+          <button className="ac-outline-button" disabled={!canModify || !batchSlides.length || batchSlides.length > 6} onClick={previewBatch}>Previsualizar ajustes</button>
+          {batchLoading && <p role="status">Analizando diapositivas…</p>}
+        </details>}
+        {batch && <section className="ac-studio-distribution" aria-label="Ajustes propuestos">
+          <p>{batch.changes.length} elementos de {new Set(batch.changes.map(item => item.slideIndex)).size} diapositivas.</p>
+          {batch.edits.length > 100 && <p role="alert">El borrador admite hasta 100 correcciones.</p>}
+          <ul>{batch.changes.map(item => <li key={`${item.slideIndex}:${item.id}`}>Diapositiva {item.slideIndex + 1}, elemento {item.id} · {item.before.map(value => Math.round(value / pixels)).join(", ")} → {item.after.map(value => Math.round(value / pixels)).join(", ")} px</li>)}</ul>
+          <button className="ac-primary-button" disabled={!canModify || batch.fromEdits !== edits || !batch.changes.length || batch.edits.length > 100} onClick={() => { changeEdits(batch.edits); setBatch(null); }}>Aplicar al borrador</button>
+          <button className="ac-clear-filters" onClick={() => setBatch(null)}>Descartar propuesta</button>
+        </section>}
       </aside>
     </div>}
     {section === "publication" && <div className="ac-studio-summary">
       <section className="ac-unit-card"><h3>Publicación de la unidad</h3>
+        {testDeviceId && <p role="status">Unidad de prueba. Entrega exclusiva a un equipo autorizado.</p>}
+        {!testDeviceId && !publications.length && !scheduled && canPublish && canSeeDevices && <details className="ac-studio-distribution">
+          <summary>Limitar esta unidad a un equipo de prueba</summary>
+          <p>La unidad quedará asignada permanentemente al equipo elegido.</p>
+          {!devicePage ? <button className="ac-outline-button" disabled={busy} onClick={() => fetchDevices()}>Cargar equipos autorizados</button> : <div className="ac-unit-actions">
+            <label>Equipo de prueba <select value={selectedTestDevice} disabled={busy} onChange={event => setSelectedTestDevice(event.target.value)}>
+              <option value="">Seleccionar equipo</option>
+              {devicePage.devices.filter(device => device.status === "authorized").map(device => <option value={device.deviceId} key={device.deviceId}>{device.displayName || device.deviceName}</option>)}
+            </select></label>
+            <button className="ac-outline-button" disabled={busy || !selectedTestDevice} onClick={() => {
+              if (window.confirm("¿Asignar esta unidad nueva solo al equipo seleccionado?")) onRestrictTestUnit(selectedTestDevice);
+            }}>Asignar equipo de prueba</button>
+          </div>}
+        </details>}
         <p>Presentación principal: {mainId === resourceId ? resource.name : "Otra presentación o sin seleccionar"}</p>
         {canEdit && mainId !== resourceId && <button className="ac-outline-button" disabled={busy} onClick={() => onMakeMain(resource)}>Elegir como principal</button>}
         <dl className="ac-studio-facts"><dt>Versión actual</dt><dd>{publications[0] ? `v${publications[0].version}` : "Sin publicar"}</dd><dt>Estado de revisión</dt><dd>{status}</dd><dt>Diapositivas con correcciones</dt><dd>{new Set((edits || []).map(item => item.slideIndex)).size}</dd>{candidateFiles.size > 0 && <><dt>Descarga estimada de esta presentación</dt><dd>{new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2, style: "unit", unit: "megabyte" }).format(candidateBytes / 1e6)}</dd></>}</dl>
@@ -541,7 +604,8 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
           <button className="ac-outline-button" disabled={!draft || !pages.length || dirty || changed || saving || busy} onClick={() => review("approved")}>Aprobar conversión</button>
           <button className="ac-outline-button" disabled={busy} onClick={onValidate}>Validar unidad</button>
           <button className="ac-primary-button" disabled={!canActivate} onClick={() => {
-            if (window.confirm("¿Publicar la versión actual de la unidad para los equipos con acceso?")) onPublish();
+            const destination = testDeviceId ? "solo al equipo de prueba asignado" : "a los equipos con acceso";
+            if (window.confirm(`¿Entregar la versión actual de la unidad ${destination}?`)) onPublish();
           }}>Publicar ahora</button>
           {scheduled ? <button className="ac-outline-button" disabled={busy} onClick={onCancelSchedule}>Cancelar programación</button> : <>
             <label>Fecha y hora <input type="datetime-local" value={publishAt} disabled={!canActivate} onChange={event => setPublishAt(event.target.value)} /></label>
@@ -555,7 +619,7 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
         {canSeeDevices && <div className="ac-studio-distribution">
           <button className="ac-outline-button" onClick={() => fetchDevices()}>{devicePage ? "Actualizar equipos" : "Consultar sincronización de equipos"}</button>
           {devicePage && <>
-            <ul>{devicePage.devices.filter(device => device.status === "authorized").map(device => <li key={device.deviceId}>
+            <ul>{devicePage.devices.filter(device => device.status === "authorized" && (!testDeviceId || device.deviceId === testDeviceId)).map(device => <li key={device.deviceId}>
               {device.displayName || device.deviceName} · {device.lastSyncUnitId === unitId && device.lastSyncVersion === publications[0]?.version ? "Última sincronización con esta versión" : "Sin confirmación reciente de esta versión"}
             </li>)}</ul>
             {devicePage.nextCursor && <button className="ac-outline-button" onClick={() => fetchDevices(devicePage.nextCursor)}>Página siguiente</button>}

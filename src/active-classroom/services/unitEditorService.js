@@ -95,3 +95,7 @@ export async function loadStudioReviewers() {
   const result = (await httpsCallable(functions, "listActiveClassroomCollaborators")()).data;
   return result.collaborators.filter(user => user.active && user.permissions.access && user.permissions.orderMaterial);
 }
+
+export async function restrictStudioTestUnit(unitId, deviceId) {
+  return (await httpsCallable(functions, "restrictActiveClassroomTestUnit")({ unitId, deviceId })).data;
+}

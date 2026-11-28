@@ -18,6 +18,7 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   let changed = new Set(["main", "audio"]);
   const refreshes = [], published = [];
   const mock = {
+    restrictStudioTestUnit: async () => ({ deviceId: "a".repeat(32) }),
     getCloudFileContent: async () => { throw new Error("Descarga explícita no solicitada por esta prueba"); },
     getActiveClassroomResourceUrl: async () => "",
     loadMusicCatalog: async () => ({ ambientCatalogVersion: 1, playlists: [], tracks: [{ id: "a".repeat(64), title: "Calma", active: true, size: 12 }] }),

@@ -4,12 +4,51 @@ const { randomBytes } = require("node:crypto");
 const admin = require("../drive/node_modules/firebase-admin");
 const { createDeviceHandlers } = require("../drive/activeClassroomDevices");
 const { createDesktopHandlers } = require("../drive/activeClassroomDesktop");
+const { createTestDelivery } = require("../drive/activeClassroomTestDelivery");
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Requiere emulador Firestore.");
 const app = admin.initializeApp({ projectId: "active-classroom-device-tests" }, "device-tests");
 const db = app.firestore();
 const handlers = createDeviceHandlers({ db, auth: { createCustomToken: async (uid, claims) => ({ uid, claims }), revokeRefreshTokens: async () => {} }, assertAdmin: async () => ({ uid: "admin", role: "admin", active: true }) });
 after(() => app.delete());
+test("Una unidad Studio restringida solo se lista, descarga y confirma desde el equipo de prueba", async () => {
+  const activate = async () => {
+    const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Equipo aislado" };
+    const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };
+    const pending = await handlers.session(request);
+    await handlers.approve({ data: { code: pending.code } });
+    const { customToken } = await handlers.session(request);
+    return { uid: customToken.uid, token: customToken.claims };
+  };
+  const [testDevice, roomDevice] = await Promise.all([activate(), activate()]);
+  const unitId = `isolated-${randomBytes(8).toString("hex")}`;
+  const unitRef = db.doc(`activeClassroomUnits/${unitId}`);
+  await unitRef.set({ draft: { name: "Unit aislada" } });
+  const restrict = createTestDelivery({ db, getProfile: async uid => ({ uid, role: uid === "admin" ? "admin" : "reader", active: true }), timestamp: () => new Date() });
+  const assignment = { auth: { uid: "admin" }, data: { unitId, deviceId: testDevice.token.deviceId } };
+  await assert.rejects(restrict({ ...assignment, auth: { uid: "reader" } }), { code: "permission-denied" });
+  await restrict(assignment);
+  await unitRef.update({ publishedVersion: 1 });
+  const download = { path: `active-classroom/publications/files/${"a".repeat(64)}`, generation: "1" };
+  await unitRef.collection("publications").doc("1").set({ manifest: {
+    version: 1, unit: { name: "Unit aislada", levelId: "level-test" }, schemaVersion: 2,
+    publishedAt: new Date().toISOString(), integrity: { contentHash: "a".repeat(64) },
+    resources: [{ resourceId: "slide", file: { provider: "storage" }, download }],
+  } });
+  await assert.rejects(restrict({ ...assignment, data: { unitId, deviceId: roomDevice.token.deviceId } }), { code: "failed-precondition" });
+  const desktop = createDesktopHandlers({ db, isDevice: () => true, authorizeDevice: handlers.authorizeDevice });
+  const data = { unitId, version: 1, resourceId: "slide" };
+  const allowed = { auth: testDevice, data };
+  const denied = { auth: roomDevice, data };
+  assert.equal((await desktop.list({ auth: testDevice, data: { limit: 50 } })).publications.some(item => item.unitId === unitId), true);
+  assert.equal((await desktop.list({ auth: roomDevice, data: { limit: 50 } })).publications.some(item => item.unitId === unitId), false);
+  await assert.rejects(desktop.get(denied), { code: "not-found" });
+  await assert.rejects(desktop.resolveDownload(await handlers.authorizeDevice(roomDevice), data), { code: "not-found" });
+  await assert.rejects(handlers.reportSync(denied), { code: "not-found" });
+  assert.equal((await desktop.get(allowed)).manifest.version, 1);
+  assert.deepEqual(await desktop.resolveDownload(await handlers.authorizeDevice(testDevice), data), download);
+  assert.deepEqual(await handlers.reportSync(allowed), { recorded: true });
+});
 test("Firestore: revocar, reautorizar, desvincular, código nuevo y eliminar sin reinstalar", async () => {
   const data = { deviceId: randomBytes(16).toString("hex"), credential: randomBytes(32).toString("hex"), name: "Salón recuperación" };
   const request = { data, rawRequest: { ip: randomBytes(16).toString("hex") } };

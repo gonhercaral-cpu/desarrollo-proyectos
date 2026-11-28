@@ -18,6 +18,7 @@ import { replaceDraftResource, unitOperationMessage, DRIVE_NEW_VERSION, DRIVE_UN
 import { getDriveResourceKind } from "../utils/driveResources";
 import { checkUnitDriveChanges, validateUnitPublication, loadUnitResources, loadUnitEditor, loadUnitPublications, publishUnit, refreshUnitDriveResource, saveUnitDraft, processUnitDocument, cancelStudioPublication, restoreStudioVersion, subscribeUnitProcessing, subscribeUnitPublication } from "../services/unitEditorService";
 import { PROCESSING_ELSEWHERE_NOTICE, createSingleFlightGuard, processingProgressMessage, processingStageLabel } from "../utils/processingProgress";
+import { restrictStudioTestUnit } from "../services/unitEditorService";
 import "../styles/unit-editor.css";
 import "../styles/unit-resources.css";
 
@@ -43,6 +44,7 @@ export default function UnitEditor(props) {
 export function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, onUpload, onDirtyChange, onOpenSettings, profile, initialSection = "summary", initialImport = false }) {
   const [draft, setDraft] = useState(() => initial.editor?.draft || createUnitDraft(unit, resources));
   const [revision, setRevision] = useState(initial.editor?.draftRevision || 0);
+  const [testDeviceId, setTestDeviceId] = useState(initial.editor?.studioTestDeviceId || "");
   const [publications, setPublications] = useState(initial.publications);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -507,12 +509,22 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
       canEdit={canOrder}
       canAssignReviewers={canClassroom(profile, "managePermissions")}
       canSeeDevices={canClassroom(profile, "manageDevices")}
+      testDeviceId={testDeviceId}
+      onRestrictTestUnit={deviceId => run(async () => {
+        if (dirty || !revision) await persist();
+        const result = await restrictStudioTestUnit(unit.id, deviceId);
+        setTestDeviceId(result.deviceId);
+        setNotice("La unidad de prueba se entregará únicamente al equipo seleccionado.");
+      })}
       canPublish={canClassroom(profile, "publishVersions")}
       initialResourceId={studioResourceId}
       onImport={() => setImportMode("studio")}
       onUpload={file => run(() => uploadStudioFile(file))}
       onConvert={(resource, studioRevision) => run(() => processResource(resource, studioRevision))}
       onMakeMain={resource => run(() => setStudioMain(resource))}
+      unitSlides={draft.slides}
+      onEditInteraction={(id, interaction) => edit(current => ({ ...current, slides: current.slides.map(slide => slide.slideId === id ? { ...slide, ...interaction } : slide) }))}
+      onSaveInteraction={() => run(save)}
       onValidate={() => run(validateStudioPublication)}
       onPublish={() => run(() => beginPublish())}
       onSchedule={date => run(async () => {
