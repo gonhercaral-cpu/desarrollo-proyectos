@@ -40,11 +40,21 @@ async function run() {
   await wait(() => document.querySelector(".ac-unit-editor"));
   if (!document.querySelector(".ac-unit-editor h1").textContent.includes("Unit")) throw new Error("Clic principal no abrió Unit");
   const tabs = [...document.querySelectorAll('.ac-unit-editor [role="tab"]')];
-  if (tabs.length !== 6) throw new Error("Secciones del editor faltantes");
+  const studio = tabs.find(tab => tab.textContent === "Studio");
+  if (tabs.length !== 7 || !studio) throw new Error("Secciones del editor faltantes");
+  studio.click();
+  await wait(() => document.querySelector(".ac-studio h2"));
+  const studioSections = [...document.querySelectorAll(".ac-studio-nav button")];
+  if (studioSections.map(button => button.textContent).join(",") !== "Resumen,Revisiones,Editor,Alertas,Publicación") throw new Error("Secciones de Studio faltantes");
+  for (const section of studioSections) {
+    section.click();
+    await wait(() => section.getAttribute("aria-current") === "page");
+    if (document.documentElement.scrollWidth > innerWidth + 1) throw new Error(`Overflow global en Studio: ${section.textContent}`);
+  }
   tabs.find(tab => tab.textContent === "Música").click();
   await wait(() => document.querySelector(".ac-unit-music"));
   if (!document.querySelector(".ac-unit-music").textContent.includes("Música ambiente de esta Unit")) throw new Error("Editor de música faltante");
-  observations.push({ singleClickOpens: true, menuDoesNotOpen: true, musicEditor: true });
+  observations.push({ singleClickOpens: true, menuDoesNotOpen: true, musicEditor: true, studioNavigation: true });
   return { ok: true, observations };
 }
 void run().catch(error => ({ ok: false, message: String(error), observations })).then(result => { if (window.webkit?.messageHandlers?.result) window.webkit.messageHandlers.result.postMessage(JSON.stringify(result)); else { window.consoleAcceptance = result; const report = document.createElement("pre"); report.textContent = JSON.stringify(result); document.body.append(report); } });
