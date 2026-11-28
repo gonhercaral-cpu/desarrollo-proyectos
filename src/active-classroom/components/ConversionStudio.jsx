@@ -225,7 +225,7 @@ function StudioPresentation({ unitId, resource, section, setSection, mainId, pub
     let active = true;
     getStudioDraft(unitId, resourceId).then(data => { if (active) setDraft(data); }, failure => { if (active) setError(failure.message); });
     return () => { active = false; };
-  }, [unitId, resourceId, resource.processing?.revision, attempt]);
+  }, [unitId, resourceId, resource.processing?.revision, resource.processing?.state, attempt]);
   useEffect(() => {
     if (!key || loadedElements?.key === key || !canEdit || !["editor", "alerts"].includes(section) || resource.processing?.state !== "ready") return;
     let active = true;
