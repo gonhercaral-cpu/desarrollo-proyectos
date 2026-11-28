@@ -41,7 +41,7 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     if (resource.source !== "drive" || file.mimeType !== "application/vnd.google-apps.presentation" || (!file.version && !file.modifiedTime)) throw new HttpsError("failed-precondition", "Referencia Google Slides inválida.");
     return { provider: "drive", fileId: file.id, name: file.name, mimeType: file.mimeType, version: String(file.version || ""), modifiedTime: file.modifiedTime || "" };
   }
-  async function render({ profile, resource, revision, onStage = async () => {} }) {
+  async function render({ profile, resource, revision, studioEdits, previous, editedSlides, onStage = async () => {} }) {
     await onStage("planning");
     await onStage("original-check");
     await original(profile, resource); // Existing Nube AES ACL, no new auth system.
@@ -67,18 +67,22 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
       if (rasterize) {
         let result;
         await onStage("export-download");
-        try { result = await rasterize({ profile, resource, revision, onStage }); }
+        try { result = await rasterize({ profile, resource, revision, studioEdits, previous, editedSlides, onStage }); }
         catch (error) {
           // Only an unsupported export, an export measured above the processor cap or a typed raster-state
           // preflight budget may use static thumbnails. 401/403/404, outages, transfer/conversion/integrity errors must fail, never
           // silently lose builds.
+          if (previous || studioEdits?.length) throw error;
           if (error.code === "unimplemented") await onStage("thumbnail-fallback");
           else if (isSourceTooLarge(error)) { await onStage("thumbnail-fallback"); oversize = true; }
           else if (isNativeRasterBudget(error)) { await onStage("thumbnail-fallback"); complexity = true; }
           else throw error;
         }
         if (result) {
-          uploaded.push(...result.pages.flatMap(page => [page, ...(page.builds || [])]).map(state => state.download.path));
+          uploaded.push(...result.pages.filter(page => !page.rasterRevision).flatMap(page => [
+            page.download, ...(page.builds || []).map(state => state.download),
+            ...(page.animation ? [page.animation.background.download, ...page.animation.images.map(image => image.download)] : []),
+          ]).map(file => file.path));
           if (result.pageCount !== presentation.slides.length) throw new HttpsError("data-loss", "La exportación no conserva todas las diapositivas.");
           await onStage("presentation-recheck");
           const after = await read();
@@ -121,7 +125,7 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
   }
   async function verify(processing) {
     if (![SLIDES_PROCESSOR_VERSION, LEGACY_SLIDES_PROCESSOR_VERSION].includes(processing.processorVersion) || !Array.isArray(processing.pages) || processing.pages.length !== processing.pageCount || !processing.pages.length || processing.pages.length > 200 || new Set(processing.pages.map((page) => page.pageObjectId)).size !== processing.pages.length) throw new HttpsError("data-loss", "Derivados Google Slides incompletos.");
-    if (processing.pages[0].download?.path === rasterTargetPath(processing.revision, 0)) {
+    if (processing.pages[0].download?.path === rasterTargetPath(processing.pages[0].rasterRevision || processing.revision, 0)) {
       if (!verifyRaster || processing.pages.some(page => !validPageObjectId(page.pageObjectId) || (page.builds || []).some((build, index) => build.order !== index + 1))) throw new HttpsError("data-loss", "Revelados Google Slides inválidos.");
       return verifyRaster({ ...processing, processorVersion: PPTX_PROCESSOR_VERSION }, processing.revision);
     }
@@ -134,6 +138,18 @@ function createGoogleSlidesProcessor({ bucket, resolveFile, getSlides, download 
     }
     return processing.download;
   }
-  return { original, render, verify };
+  async function previewOriginal(profile, resource, pageObjectId) {
+    await original(profile, resource);
+    const slides = await getSlides();
+    const thumbnail = (await slides.presentations.pages.getThumbnail({
+      presentationId: resource.driveFileId, pageObjectId,
+      "thumbnailProperties.mimeType": "PNG", "thumbnailProperties.thumbnailSize": "LARGE",
+    }, { timeout: 20000 })).data;
+    const url = new URL(thumbnail.contentUrl);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || !url.hostname.endsWith(".googleusercontent.com")) throw new HttpsError("data-loss", "Vista previa original de Google Slides inválida.");
+    await original(profile, resource);
+    return { url: url.href, mimeType: "image/png" };
+  }
+  return { original, render, verify, previewOriginal };
 }
 module.exports = { createGoogleSlidesProcessor, pngDimensions, downloadThumbnail };

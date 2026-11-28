@@ -11,8 +11,10 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, request
 from urllib.parse import urlparse, parse_qs, unquote
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 from converter import convert_office, file_integrity, MAX_BYTES, PROCESSOR_VERSION
-from builds import analyze_pptx, render_pptx, raster_path, analyze_pptx_gifs, read_certified_gifs, write_gif_background_pptx
+from builds import A, NS, analyze_pptx, render_pptx, raster_path, analyze_pptx_gifs, read_certified_gifs, write_gif_background_pptx, read_part
+from studio import apply_studio_edits, inspect_slide, parse_studio_edits
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024
@@ -24,7 +26,7 @@ def public_conversion_error(error):
     if isinstance(error, zipfile.BadZipFile):
         return "invalid-office-file"
     code = str(error) if isinstance(error, ValueError) else ""
-    return code if code in {"invalid-office-file", "invalid-office-archive", "external-document-reference", "file-too-large", "too-many-slides", "invalid-page-count", "source-size-mismatch", "source-integrity-mismatch"} else "conversion-failed"
+    return code if code in {"invalid-office-file", "invalid-office-archive", "external-document-reference", "file-too-large", "too-many-slides", "invalid-page-count", "source-size-mismatch", "source-integrity-mismatch", "invalid-studio-edits", "invalid-studio-render-slides", "studio-element-not-found", "studio-edit-unsupported"} else "conversion-failed"
 
 
 def animation_path(revision, slide_index, asset):
@@ -33,6 +35,8 @@ def animation_path(revision, slide_index, asset):
 
 def pptx_plan(source):
     result = analyze_pptx(source)
+    result["selectiveRaster"] = True
+    result["selectiveSafe"] = selective_raster_safe(source)
     result["animationPlan"] = []
     try:
         analysis = analyze_pptx_gifs(source)
@@ -55,6 +59,22 @@ def pptx_plan(source):
         for slide in result["slides"]:
             slide["warnings"].append("gif-analysis-static-fallback")
     return result
+
+
+def selective_raster_safe(source):
+    # Rendering a subset can change position-dependent fields such as slide numbers.
+    # Masters and layouts can contribute fields even when the slide has no shape of its own.
+    with zipfile.ZipFile(source) as archive:
+        for part in archive.namelist():
+            if not re.fullmatch(r"ppt/(slides|slideLayouts|slideMasters)/[^/]+\.xml", part):
+                continue
+            try:
+                root = ElementTree.fromstring(read_part(archive, part))
+            except (ValueError, ElementTree.ParseError):
+                return False
+            if next(root.iter(f"{{{A}}}fld"), None) is not None or root.find(".//p:ph[@type='sldNum']", NS) is not None:
+                return False
+    return True
 
 
 def validate_request(data):
@@ -99,6 +119,33 @@ def download_source(data, original, workspace):
     return source
 
 
+def studio_source(data, source, workspace):
+    """Apply optional studioEdits to a temporary copy; the downloaded original is untouched."""
+    edits = parse_studio_edits(data.get("studioEdits"))
+    if edits is None:
+        return source
+    if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
+        raise ValueError("invalid-studio-edits")
+    edited = Path(workspace) / "studio.pptx"
+    apply_studio_edits(source, edited, edits)
+    return edited
+
+
+@app.post("/studio/inspect")
+def studio_inspect():
+    try:
+        data = request.get_json()
+        original = validate_request(data)
+        if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
+            raise ValueError("invalid-plan-request")
+        with tempfile.TemporaryDirectory(prefix="classroom-studio-") as workspace:
+            return jsonify(inspect_slide(download_source(data, original, workspace), data.get("slideIndex")))
+    except Exception as error:
+        code = public_conversion_error(error)
+        app.logger.error("Studio inspection failed: error=%s code=%s", type(error).__name__, code)
+        return jsonify({"error": code}), 422
+
+
 @app.post("/plan")
 def plan():
     try:
@@ -107,7 +154,8 @@ def plan():
         if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
             raise ValueError("invalid-plan-request")
         with tempfile.TemporaryDirectory(prefix="classroom-plan-") as workspace:
-            result = pptx_plan(download_source(data, original, workspace))
+            source = download_source(data, original, workspace)
+            result = pptx_plan(studio_source(data, source, workspace))
         return jsonify(result)
     except Exception as error:
         code = public_conversion_error(error)
@@ -193,13 +241,41 @@ def upload_animations(data, source, workspace, plan, deadline):
         return []
 
 
+def parse_render_slides(value):
+    """Optional studioRenderSlides: non-empty, strictly increasing list of integer slide indexes."""
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value or any(type(item) is not int or item < 0 for item in value) or any(a >= b for a, b in zip(value, value[1:])):
+        raise ValueError("invalid-studio-render-slides")
+    return value
+
+
 def upload_pngs(data, source, workspace):
+    """Rasterize and upload states. With studioRenderSlides only those slides are
+    rendered: stateUploadUrls keeps global state indexes (null when not selected)
+    and the returned ``states`` has the global length with null for skipped states."""
     deadline = time.monotonic() + 300
     plan = pptx_plan(source)
+    selection = parse_render_slides(data.get("studioRenderSlides"))
+    if selection is not None and selection[-1] >= len(plan["slides"]):
+        raise ValueError("invalid-studio-render-slides")
+    first_states = []
+    total = 0
+    for slide in plan["slides"]:
+        first_states.append(total)
+        total += len(slide["steps"]) + 1
+    chosen = plan["slides"] if selection is None else [plan["slides"][index] for index in selection]
+    selected_states = [first_states[slide["index"]] + step for slide in chosen for step in range(len(slide["steps"]) + 1)]
     urls = data.get("stateUploadUrls")
     if not isinstance(urls, list) or len(urls) != plan["stateCount"]:
         raise ValueError("invalid-state-capabilities")
     for index, raw_url in enumerate(urls):
+        if selection is not None and index not in selected_states:
+            if raw_url is not None:
+                raise ValueError("invalid-state-capability")
+            continue
+        if not isinstance(raw_url, str):
+            raise ValueError("invalid-state-capability")
         url = urlparse(raw_url)
         if url.scheme != "https" or url.netloc != "storage.googleapis.com" or unquote(url.path) != f"/{os.environ['STORAGE_BUCKET']}/{raster_path(data['revision'], index)}" or not parse_qs(url.query).get("X-Goog-Signature"):
             raise ValueError("invalid-state-capability")
@@ -220,8 +296,17 @@ def upload_pngs(data, source, workspace):
                     raise ValueError("upload-failed")
         del state["path"]
     # Upload and remove each completed batch before rasterizing the next one.
-    states = render_pptx(source, workspace, plan, deadline_seconds=min(240, max(1, deadline - time.monotonic())), on_state=upload_state)
-    animations = upload_animations(data, source, workspace, plan, deadline)
+    use_full_pdf = selection is not None and plan.get("selectiveSafe") is False
+    render_plan = plan if use_full_pdf else {"slides": chosen, "stateCount": len(selected_states)}
+    render_options = {"raster_indices": selected_states} if use_full_pdf else {}
+    rendered = render_pptx(source, workspace, render_plan, deadline_seconds=min(240, max(1, deadline - time.monotonic())), on_state=lambda local, state: upload_state(selected_states[local], state), **render_options)
+    states = [None] * plan["stateCount"]
+    for index, state in zip(selected_states, rendered):
+        states[index] = state
+    animation_plan = plan
+    if selection is not None:
+        animation_plan = {**plan, "animationPlan": [item for item in plan["animationPlan"] if item["slideIndex"] in selection]}
+    animations = upload_animations(data, source, workspace, animation_plan, deadline)
     return {"processorVersion": data["processorVersion"], "revision": data["revision"], "pageCount": len(plan["slides"]), "slides": plan["slides"], "states": states, "animations": animations}
 
 
@@ -235,7 +320,11 @@ def convert():
     try:
         data = request.get_json()
         original = validate_request(data)
+        parse_studio_edits(data.get("studioEdits"))
+        parse_render_slides(data.get("studioRenderSlides"))
     except (ValueError, TypeError, AttributeError) as error:
+        if isinstance(error, ValueError) and str(error) in {"invalid-studio-edits", "invalid-studio-render-slides"}:
+            return jsonify({"error": str(error)}), 400
         if isinstance(error, ValueError) and str(error) == "file-too-large":
             return jsonify({"error": "file-too-large"}), 422
         return jsonify({"error": "invalid-request"}), 400
@@ -245,7 +334,9 @@ def convert():
             if data["processorVersion"] in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
                 if data["extension"] != "pptx":
                     raise ValueError("invalid-pptx-extension")
-                return jsonify(upload_pngs(data, source, workspace))
+                return jsonify(upload_pngs(data, studio_source(data, source, workspace), workspace))
+            if data.get("studioEdits") is not None:
+                raise ValueError("invalid-studio-edits")
             result = convert_office(source, data["extension"], workspace)
             # The signed upload is restricted to one new object and forbids overwrite.
             with result["path"].open("rb") as pdf:

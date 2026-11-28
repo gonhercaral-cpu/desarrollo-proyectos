@@ -11,6 +11,11 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
   const unitRef = (unitId) => db.collection("activeClassroomUnits").doc(unitId);
   const fingerprint = (resources) => contentHash(resources.map((resource) => snapshotResource(resource.id, resource)));
   async function start(request) {
+    const publishAt = request.data?.publishAt;
+    const scheduledTime = typeof publishAt === "string" ? Date.parse(publishAt) : NaN;
+    if (publishAt !== undefined && (!Number.isFinite(scheduledTime) || scheduledTime < clock() + 60000 || scheduledTime > clock() + 7 * 86400000)) {
+      throw new HttpsError("invalid-argument", "Programa la publicación entre un minuto y siete días a partir de ahora.");
+    }
     if (units.validatePublication) {
       const validation = await units.validatePublication(request);
       if (!validation.ready) {
@@ -27,15 +32,18 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
       if (stored.draftRevision !== expectedRevision) throw new HttpsError("aborted", "El borrador cambió. Recarga antes de publicar.");
       if (["pending", "publishing"].includes(stored.publicationJob?.state)) {
         const existing = (await transaction.get(jobs.doc(stored.publicationJob.jobId))).data();
-        if (existing) return existing;
+        if (existing) {
+          if (existing.scheduledAt || publishAt !== undefined) throw new HttpsError("failed-precondition", "Esta unidad ya tiene una publicación en curso o programada.");
+          return existing;
+        }
       }
-      const value = { jobId: attemptId, unitId, expectedRevision, requestedByUid: request.auth.uid, resources, downloads: {}, step: 0, state: "pending", requestedAt: new Date(clock()).toISOString() };
+      const value = { jobId: attemptId, unitId, expectedRevision, requestedByUid: request.auth.uid, resources, downloads: {}, step: 0, state: "pending", ...(publishAt === undefined ? {} : { scheduledAt: new Date(scheduledTime).toISOString() }), requestedAt: new Date(clock()).toISOString() };
       if (Buffer.byteLength(JSON.stringify(value)) > 700000) throw new HttpsError("resource-exhausted", "La solicitud de publicación supera 700 KB.");
       transaction.create(jobs.doc(attemptId), value);
-      transaction.update(ref, { publicationJob: { jobId: attemptId, state: "pending", completedResources: 0, totalResources: resources.length } });
+      transaction.update(ref, { publicationJob: { jobId: attemptId, state: "pending", completedResources: 0, totalResources: resources.length, ...(value.scheduledAt ? { scheduledAt: value.scheduledAt } : {}) } });
       return value;
     });
-    try { await enqueue({ jobId: job.jobId, step: job.step }); }
+    try { await enqueue({ jobId: job.jobId, step: job.step }, job.scheduledAt ? new Date(job.scheduledAt) : undefined); }
     catch {
       const message = "No se pudo encolar la publicación. Reintenta; el borrador permanece guardado.";
       await db.runTransaction(async (transaction) => {
@@ -52,13 +60,30 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
     return { jobId: job.jobId, state: job.state };
   }
 
+  async function cancel(request) {
+    if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Debes iniciar sesión.");
+    if (!canClassroom(await getProfile(request.auth.uid), "publishVersions")) throw new HttpsError("permission-denied", "No tienes permiso para cancelar publicaciones.");
+    const { unitId, jobId } = request.data || {};
+    if (![unitId, jobId].every(value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value))) throw new HttpsError("invalid-argument", "Publicación programada inválida.");
+    await db.runTransaction(async transaction => {
+      const ref = jobs.doc(jobId);
+      const job = (await transaction.get(ref)).data();
+      const unit = (await transaction.get(unitRef(unitId))).data();
+      if (job?.unitId !== unitId || unit?.publicationJob?.jobId !== jobId || job.state !== "pending" || !job.scheduledAt) throw new HttpsError("failed-precondition", "La publicación programada ya no está disponible.");
+      transaction.update(ref, { state: "cancelled", cancelledByUid: request.auth.uid, cancelledAt: new Date(clock()).toISOString() });
+      transaction.update(unitRef(unitId), { "publicationJob.state": "cancelled" });
+    });
+    return { state: "cancelled" };
+  }
+
   async function work({ data }) {
     if (!/^[a-zA-Z0-9_-]{1,200}$/.test(data?.jobId || "") || !Number.isSafeInteger(data.step) || data.step < 0) throw new HttpsError("invalid-argument", "Job inválido.");
     const ref = jobs.doc(data.jobId);
     const token = randomUUID();
     const job = await db.runTransaction(async (transaction) => {
       const current = (await transaction.get(ref)).data();
-      if (!current || ["ready", "failed"].includes(current.state)) return null;
+      if (!current || ["ready", "failed", "cancelled"].includes(current.state)) return null;
+      if (current.scheduledAt && Date.parse(current.scheduledAt) > clock()) throw new HttpsError("unavailable", "La publicación todavía no está programada para ejecutarse.");
       if (data.step !== current.step) return current;
       if (current.leaseUntil > clock()) throw new HttpsError("unavailable", "Transferencia ya en curso.");
       transaction.update(ref, { state: "publishing", token, leaseUntil: clock() + taskTimeoutSeconds * 1000 });
@@ -117,6 +142,6 @@ function createPublicationJobs({ db, units, getProfile, prepareResource, verifyD
     // Replayed old steps enqueue the durable next step without copying twice.
     await enqueue({ jobId: job.jobId, step: job.step + 1 });
   }
-  return { start, work };
+  return { start, work, cancel };
 }
 module.exports = { createPublicationJobs };

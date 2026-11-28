@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import time
 from io import BytesIO
+from itertools import groupby
 import zipfile
 from xml.etree import ElementTree as ET
 from converter import convert_office, file_integrity, validate_office
@@ -183,7 +184,14 @@ def state_pptx(source, target, plan):
                 copy_member(archive, item, output)
 
 
-def render_pptx(source, workspace, plan, deadline_seconds=RENDER_DEADLINE_SECONDS, on_state=None):
+def raster_page_ranges(indices):
+    for _, group in groupby(enumerate(indices), key=lambda item: item[1] - item[0]):
+        run = [page for _, page in group]
+        for index in range(0, len(run), RASTER_BATCH):
+            yield run[index] + 1, run[min(index + RASTER_BATCH - 1, len(run) - 1)] + 1
+
+
+def render_pptx(source, workspace, plan, deadline_seconds=RENDER_DEADLINE_SECONDS, on_state=None, raster_indices=None):
     """Rasterize every planned state; pdftoppm runs in batches of RASTER_BATCH
     pages under one total deadline. Temporary files stay inside ``workspace``."""
     started = time.monotonic()
@@ -204,8 +212,9 @@ def render_pptx(source, workspace, plan, deadline_seconds=RENDER_DEADLINE_SECOND
         if result["pageCount"] != total:
             raise ValueError("raster-page-mismatch")
         results = []
-        for first in range(1, total + 1, RASTER_BATCH):
-            last = min(first + RASTER_BATCH - 1, total)
+        wanted = range(total) if raster_indices is None else raster_indices
+        # Keep the full PDF page numbering when an inherited or explicit field can depend on it.
+        for first, last in raster_page_ranges(wanted):
             prefix = workspace / f"state-b{first}"
             # Keep main's two CPU workers while bounding temporary PNGs to one batch.
             midpoint = (first + last) // 2

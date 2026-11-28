@@ -18,6 +18,7 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   let changed = new Set(["main", "audio"]);
   const refreshes = [], published = [];
   const mock = {
+    restrictStudioTestUnit: async () => ({ deviceId: "a".repeat(32) }),
     getCloudFileContent: async () => { throw new Error("Descarga explícita no solicitada por esta prueba"); },
     getActiveClassroomResourceUrl: async () => "",
     loadMusicCatalog: async () => ({ ambientCatalogVersion: 1, playlists: [], tracks: [{ id: "a".repeat(64), title: "Calma", active: true, size: 12 }] }),
@@ -74,7 +75,7 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   await click("Importar (1)");
   assert.equal(draft.mainPresentationId, "replacement");
   assert.equal(published[0].mainPresentationId, "main");
-  assert.equal(dom.window.document.querySelectorAll('[role="tab"]').length, 6);
+  assert.deepEqual([...dom.window.document.querySelectorAll('[role="tab"]')].map(tab => tab.textContent).slice(-2), ["Publicaciones", "Studio"]);
   const inspectButton = button("Audio.mp3");
   inspectButton.focus();
   await act(async () => inspectButton.click());

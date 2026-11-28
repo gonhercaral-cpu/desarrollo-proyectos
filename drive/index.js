@@ -13,6 +13,7 @@ const { createPublicationJobs } = require("./activeClassroomPublicationJobs");
 const { onTaskDispatched } = require("firebase-functions/v2/tasks");
 const { getFunctions } = require("firebase-admin/functions");
 const { taskTimeoutSeconds } = require("./activeClassroomPublicationLimits.json");
+const { createStudioHandlers } = require("./activeClassroomStudio");
 const { createDocumentProcessing } = require("./activeClassroomProcessing");
 const { createProcessorClient } = require("./activeClassroomProcessorClient");
 const { createGoogleSlidesProcessor } = require("./activeClassroomSlides");
@@ -1405,42 +1406,54 @@ const classroomFiles = createPublicationFiles({
 const processorUrl = defineString("ACTIVE_CLASSROOM_PROCESSOR_URL", { default: "" });
 const processorAuth = new google.auth.GoogleAuth();
 const classroomConvert = createProcessorClient({ bucket: admin.storage().bucket(), getUrl: () => processorUrl.value(), getClient: (url) => processorAuth.getIdTokenClient(url) });
-const classroomProcessing = createDocumentProcessing({
-  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile,
-  prepareResource: classroomFiles.prepareResource,
-  googleSlides: createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }),
-    rasterize: async ({ profile, resource, revision, onStage = async () => {} }) => {
+const classroomSlides = createGoogleSlidesProcessor({ bucket: admin.storage().bucket(), resolveFile: resolveActiveClassroomDriveFile, getSlides: async () => google.slides({ version: "v1", auth: await getDriveAuthClient() }),
+    rasterize: async ({ profile, resource, revision, studioEdits, previous, editedSlides, onStage = async () => {} }) => {
       const deliveredMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
       const original = await classroomFiles.prepareResource(profile, resource, { deliveryOverride: { exported: true, deliveredMimeType, deliveredName: `${resource.name.replace(/\.pptx$/i, "")}.pptx` } });
       // Prefixed so processor stages only label diagnostics; they never rewind the persisted job stage.
       // Oversized snapshots throw processorSourceSizeLimit here, before any signing or processor call.
-      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx" }, { onStage: (stage) => onStage(`export-${stage}`), nativeSlidesFallback: true });
+      return classroomConvert({ original, revision, processorVersion: "pptx-builds-png-v2", extension: "pptx", ...(studioEdits?.length ? { studioEdits } : {}) }, { onStage: (stage) => onStage(`export-${stage}`), nativeSlidesFallback: true, previous, editedSlides });
     },
     verifyRaster: (result, revision) => classroomProcessing.verifyDerivative(result, revision),
-  }),
+});
+const classroomProcessing = createDocumentProcessing({
+  db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile,
+  prepareResource: classroomFiles.prepareResource,
+  googleSlides: classroomSlides,
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
   convert: classroomConvert,
 });
+const classroomStudio = createStudioHandlers({
+  db: admin.firestore(), getProfile: getClassroomProfile, prepareResource: classroomFiles.prepareResource,
+  inspect: classroomConvert.inspect, timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+});
+exports.getActiveClassroomStudioDraft = onCall(classroomStudio.get);
+exports.saveActiveClassroomStudioDraft = onCall(classroomStudio.save);
+exports.reviewActiveClassroomStudioDraft = onCall(classroomStudio.review);
+exports.inspectActiveClassroomStudioSlide = onCall({ timeoutSeconds: 120, memory: "1GiB" }, classroomStudio.inspect);
 exports.processActiveClassroomDocument = onCall({ timeoutSeconds: 540, memory: "1GiB" }, classroomProcessing.process);
 exports.getActiveClassroomBuildPreview = onCall({ timeoutSeconds: 120, memory: "1GiB" }, require("./activeClassroomBuildPreview").createBuildPreview({
   db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile, prepareResource: classroomProcessing.prepareDelivery,
+  preparePreviewSource: classroomProcessing.preparePreviewSource, verifyDownload: classroomFiles.verifyDownload, originalPreview: classroomSlides.previewOriginal,
 }));
 const prepareUnitResource = (profile, resource, options) => resource.source === "ambient" ? classroomFiles.verifyDownload(resource.ambientDownload) : classroomProcessing.prepareDelivery(profile, resource, options);
 const classroomUnits = createUnitHandlers({
   db: admin.firestore(), getProfile: getClassroomProfile,
   resolveFile: resolveActiveClassroomDriveFile,
-  prepareResource: prepareUnitResource,
+  prepareResource: prepareUnitResource, verifyDownload: classroomFiles.verifyDownload,
   timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
 });
 exports.saveActiveClassroomUnit = onCall(classroomUnits.save);
 exports.manageActiveClassroomLevel = onCall(require("./activeClassroomLevels").createLevelHandler({ db: admin.firestore(), bucket: admin.storage().bucket(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp() }));
+exports.restoreActiveClassroomPublication = onCall({ timeoutSeconds: 540 }, classroomUnits.restore);
 exports.validateActiveClassroomPublication = onCall({ timeoutSeconds: 540 }, classroomUnits.validatePublication);
 const classroomPublicationJobs = createPublicationJobs({
   db: admin.firestore(), units: classroomUnits, getProfile: getClassroomProfile,
   prepareResource: prepareUnitResource, verifyDownload: classroomFiles.verifyDownload,
-  enqueue: (data) => getFunctions().taskQueue("locations/us-central1/functions/publishActiveClassroomUnitResources").enqueue(data, { dispatchDeadlineSeconds: taskTimeoutSeconds }),
+  enqueue: (data, scheduleTime) => getFunctions().taskQueue("locations/us-central1/functions/publishActiveClassroomUnitResources").enqueue(data, { dispatchDeadlineSeconds: taskTimeoutSeconds, ...(scheduleTime ? { scheduleTime } : {}) }),
 });
 exports.publishActiveClassroomUnit = onCall({ timeoutSeconds: 60 }, classroomPublicationJobs.start);
+exports.cancelActiveClassroomPublication = onCall(classroomPublicationJobs.cancel);
 exports.publishActiveClassroomUnitResources = onTaskDispatched({
   timeoutSeconds: taskTimeoutSeconds, memory: "1GiB", concurrency: 1,
   retryConfig: { maxAttempts: 10, minBackoffSeconds: 60, maxBackoffSeconds: 600 },
@@ -1461,6 +1474,9 @@ exports.listActiveClassroomDevices = onCall(classroomDevices.list);
 exports.rejectActiveClassroomDevice = onCall(classroomDevices.reject);
 exports.renameActiveClassroomDevice = onCall(classroomDevices.rename);
 exports.reportActiveClassroomDeviceSync = onCall(classroomDevices.reportSync);
+exports.restrictActiveClassroomTestUnit = onCall(require("./activeClassroomTestDelivery").createTestDelivery({
+  db: admin.firestore(), getProfile: getClassroomProfile, timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+}));
 const classroomDesktop = createDesktopHandlers({
   db: admin.firestore(), getProfile: getClassroomProfile, authorizeDevice: classroomDevices.authorizeDevice, isDevice,
   getRequestProfile: async (request) => {

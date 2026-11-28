@@ -1,5 +1,6 @@
 import { canClassroom } from "../utils/permissions";
 import { useEffect, useId, useRef, useState } from "react";
+import ConversionStudio from "./ConversionStudio";
 import DriveResourceImportDialog from "./DriveResourceImportDialog";
 import SlideInteractionEditor from "./SlideInteractionEditor";
 import SlideThumbnail from "./SlideThumbnail";
@@ -10,19 +11,20 @@ import UnitResourceDetails from "./UnitResourceDetails";
 import ActiveClassroomIcon from "./ActiveClassroomIcon";
 import { addMusicTracks, isMusicFile } from "../utils/backgroundMusic";
 import { ACTIVE_CLASSROOM_ACCEPTED_FILES } from "../constants";
-import { canBeMainPresentation, createUnitDraft, reorderSlides, needsOfficeProcessing, documentProcessingLabel, documentProcessingReady } from "../utils/unitDraft";
+import { canBeMainPresentation, createUnitDraft, reorderSlides, needsOfficeProcessing, documentProcessingLabel, documentProcessingReady, isStudioPresentation } from "../utils/unitDraft";
 import { getResourceStatus } from "../utils/unitResourceView";
 import { staticAnimationResources } from "../utils/staticAnimationWarnings";
 import { replaceDraftResource, unitOperationMessage, DRIVE_NEW_VERSION, DRIVE_UNAVAILABLE } from "../utils/draftResources";
 import { getDriveResourceKind } from "../utils/driveResources";
-import { checkUnitDriveChanges, validateUnitPublication, loadUnitResources, loadUnitEditor, loadUnitPublications, publishUnit, refreshUnitDriveResource, saveUnitDraft, processUnitDocument, subscribeUnitProcessing, subscribeUnitPublication } from "../services/unitEditorService";
+import { checkUnitDriveChanges, validateUnitPublication, loadUnitResources, loadUnitEditor, loadUnitPublications, publishUnit, refreshUnitDriveResource, saveUnitDraft, processUnitDocument, cancelStudioPublication, restoreStudioVersion, subscribeUnitProcessing, subscribeUnitPublication } from "../services/unitEditorService";
 import { PROCESSING_ELSEWHERE_NOTICE, createSingleFlightGuard, processingProgressMessage, processingStageLabel } from "../utils/processingProgress";
+import { restrictStudioTestUnit } from "../services/unitEditorService";
 import "../styles/unit-editor.css";
 import "../styles/unit-resources.css";
 
 const SLIDE_PAGE_SIZE = 8;
-const TAB_KEYS = ["summary", "presentation", "slides", "resources", "music", "publications"];
-const TAB_ICONS = { summary: "library", presentation: "announcements", slides: "grid", resources: "folder", music: "list", publications: "publications" };
+const TAB_KEYS = ["summary", "presentation", "slides", "resources", "music", "publications", "studio"];
+const TAB_ICONS = { summary: "library", presentation: "announcements", slides: "grid", resources: "folder", music: "list", publications: "publications", studio: "suggestions" };
 
 export default function UnitEditor(props) {
   const [loaded, setLoaded] = useState(null);
@@ -42,12 +44,14 @@ export default function UnitEditor(props) {
 export function UnitEditorForm({ unit, folders, resources, initial, onBack, onImport, onUpload, onDirtyChange, onOpenSettings, profile, initialSection = "summary", initialImport = false }) {
   const [draft, setDraft] = useState(() => initial.editor?.draft || createUnitDraft(unit, resources));
   const [revision, setRevision] = useState(initial.editor?.draftRevision || 0);
+  const [testDeviceId, setTestDeviceId] = useState(initial.editor?.studioTestDeviceId || "");
   const [publications, setPublications] = useState(initial.publications);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [publicationJob, setPublicationJob] = useState(initial.editor?.publicationJob || null);
+  const scheduled = publicationJob?.state === "pending" && publicationJob.scheduledAt;
   const publishing = ["pending", "publishing"].includes(publicationJob?.state);
   const [requestedSlideId, setSelectedSlideId] = useState("");
   const [selectedResourceId, setSelectedResourceId] = useState("");
@@ -59,6 +63,8 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
   const [replacementId, setReplacementId] = useState("");
   const [operationProgress, setOperationProgress] = useState("");
   const [manifestVersion, setManifestVersion] = useState(0);
+  const [studioResourceId, setStudioResourceId] = useState("");
+  const [studioDirty, setStudioDirty] = useState(false);
   const [tab, setTab] = useState(TAB_KEYS.includes(initialSection) ? initialSection : "summary");
   const [slidePage, setSlidePage] = useState(0);
   const tabRefs = useRef({});
@@ -98,11 +104,11 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
   }, [unit.id]);
 
   useEffect(() => {
-    onDirtyChange(dirty);
-    const guard = (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } };
+    onDirtyChange(dirty || studioDirty);
+    const guard = (event) => { if (dirty || studioDirty) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", guard);
     return () => { onDirtyChange(false); window.removeEventListener("beforeunload", guard); };
-  }, [dirty, onDirtyChange]);
+  }, [dirty, studioDirty, onDirtyChange]);
 
   function edit(update) {
     if (!canClassroom(profile, typeof update === "object" && Object.keys(update).every(key => ["name", "levelId", "status", "description", "metadata"].includes(key)) ? "editUnits" : "orderMaterial")) return;
@@ -143,7 +149,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     setDriveChecks(Object.fromEntries(result.results.map(entry => [entry.resourceId, entry])));
     return result;
   }
-  async function processInto(resource, context, applyReady = false) {
+  async function processInto(resource, context, applyReady = false, studioRevision) {
     if (!needsOfficeProcessing(resource) || (documentProcessingReady(resource) && !applyReady)) return context;
     setOperationProgress(processingProgressMessage(resource));
     // The resource document is the source of truth for the real stage while the callable is pending.
@@ -157,7 +163,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
         setResourceOverrides(current => ({ ...current, [resource.id]: live }));
         setOperationProgress(processingProgressMessage(live));
       }, () => { /* Stage display is informative; the callable result stays authoritative. */ });
-      const result = await processUnitDocument(unit.id, resource.id, context.revision);
+      const result = await processUnitDocument(unit.id, resource.id, context.revision, studioRevision);
       if (result.state === "processing") throw new Error(`${resource.name} ${PROCESSING_ELSEWHERE_NOTICE}`);
       if (result.state !== "ready") throw new Error(`${resource.name} no quedó listo. Reintenta el procesamiento antes de publicar.`);
       const loaded = await loadUnitResources(unit.id);
@@ -217,9 +223,9 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     setRevision(result.draftRevision); setDraft(result.draft); setDirty(false);
     setNotice("Borrador guardado. Publicaciones anteriores conservadas.");
   }
-  async function processResource(resource) {
+  async function processResource(resource, studioRevision) {
     const context = dirty || !revision ? await persist() : { draft, revision };
-    await processInto(resource, context, true);
+    await processInto(resource, context, true, studioRevision);
     setNotice("Procesamiento terminado. Borrador actualizado.");
   }
   async function reload() {
@@ -252,13 +258,49 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     { key: "resources", label: `Recursos (${unitResources.length})` },
     { key: "music", label: "Música" },
     { key: "publications", label: "Publicaciones" },
+    { key: "studio", label: "Studio" },
   ];
   function onTabKeyDown(event, index) {
     const target = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
     if (target === undefined) return;
     event.preventDefault();
-    setTab(tabs[target].key);
-    tabRefs.current[tabs[target].key]?.focus();
+    if (changeTab(tabs[target].key)) tabRefs.current[tabs[target].key]?.focus();
+  }
+
+  function changeTab(next) {
+    if (next !== tab && studioDirty && !window.confirm("Salir de Studio y descartar los cambios pendientes de guardado?")) return false;
+    if (next !== tab) setStudioDirty(false);
+    setTab(next);
+    return true;
+  }
+
+  function openStudio(resource) {
+    if (changeTab("studio")) setStudioResourceId(resource.id);
+  }
+
+  async function uploadStudioFile(file) {
+    const uploaded = await onUpload([file]);
+    const resource = uploaded[0];
+    if (!resource) throw new Error("No se pudo subir la presentación.");
+    setResourceOverrides(current => ({ ...current, [resource.id]: resource }));
+    setStudioResourceId(resource.id);
+    const context = dirty || !revision ? await persist() : { draft, revision };
+    if (canClassroom(profile, "processMaterial")) await processInto(resource, context);
+    setNotice("Presentación disponible en Studio.");
+  }
+
+  async function setStudioMain(resource) {
+    if (draft.slides.length && !window.confirm("¿Cambiar la presentación principal del borrador? Se conservan las versiones publicadas.")) return;
+    const context = await persist(replaceDraftResource(draft, draft.mainPresentationId, resource.id, true));
+    if (canClassroom(profile, "processMaterial")) await processInto(resource, context, true);
+    setNotice("Presentación principal actualizada en el borrador.");
+  }
+
+  async function validateStudioPublication() {
+    const context = dirty || !revision ? await persist() : { draft, revision };
+    const validation = await validateUnitPublication(unit.id, context.revision);
+    setPublishValidation(validation);
+    if (validation.ready) setNotice("La unidad superó las validaciones de publicación.");
   }
 
   const levelName = folders.find((folder) => folder.id === draft.levelId)?.name || "";
@@ -365,6 +407,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     const updateButton = canUpdate && <button className="ac-outline-button" disabled={busy} onClick={() => run(() => updateResources([resource.id]))}>{check?.status === "changed" ? "Actualizar a la última versión" : "Actualizar"}</button>;
     return <div className="ac-rm-row-actions">
       {needsOfficeProcessing(resource) && <button className="ac-outline-button ac-res-process-action" disabled={busy || !canClassroom(profile, "processMaterial")} onClick={() => run(() => processResource(resource))}>{resource.processing?.state === "failed" ? "Reintentar procesamiento" : documentProcessingReady(resource) ? resource.mimeType === "application/vnd.google-apps.presentation" ? "Aplicar imágenes" : "Aplicar PDF" : "Procesar documento"}</button>}
+      {isStudioPresentation(resource) && <button className="ac-outline-button" disabled={busy} onClick={() => openStudio(resource)}>Abrir Studio</button>}
       {check?.status === "changed" && updateButton}
       <details className="ac-rm-menu">
         <summary aria-label={`Acciones de ${resource.name}`} title="Más acciones">···</summary>
@@ -454,12 +497,61 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
     resources: resourcesSection,
     music: musicSection,
     publications: publicationsSection,
+    studio: <ConversionStudio
+      unitId={unit.id}
+      resources={unitResources}
+      mainId={draft.mainPresentationId}
+      publications={publications}
+      busy={busy || (publishing && !scheduled)}
+      canImport={canImportMaterial}
+      canUpload={canOrder && canClassroom(profile, "uploadMaterial")}
+      canProcess={canClassroom(profile, "processMaterial")}
+      canEdit={canOrder}
+      canAssignReviewers={canClassroom(profile, "managePermissions")}
+      canSeeDevices={canClassroom(profile, "manageDevices")}
+      testDeviceId={testDeviceId}
+      onRestrictTestUnit={deviceId => run(async () => {
+        if (dirty || !revision) await persist();
+        const result = await restrictStudioTestUnit(unit.id, deviceId);
+        setTestDeviceId(result.deviceId);
+        setNotice("La unidad de prueba se entregará únicamente al equipo seleccionado.");
+      })}
+      canPublish={canClassroom(profile, "publishVersions")}
+      initialResourceId={studioResourceId}
+      onImport={() => setImportMode("studio")}
+      onUpload={file => run(() => uploadStudioFile(file))}
+      onConvert={(resource, studioRevision) => run(() => processResource(resource, studioRevision))}
+      onMakeMain={resource => run(() => setStudioMain(resource))}
+      unitSlides={draft.slides}
+      onEditInteraction={(id, interaction) => edit(current => ({ ...current, slides: current.slides.map(slide => slide.slideId === id ? { ...slide, ...interaction } : slide) }))}
+      onSaveInteraction={() => run(save)}
+      onValidate={() => run(validateStudioPublication)}
+      onPublish={() => run(() => beginPublish())}
+      onSchedule={date => run(async () => {
+        const context = dirty || !revision ? await persist() : { draft, revision };
+        await publishUnit(unit.id, context.revision, date);
+        setNotice("Publicación programada.");
+      })}
+      scheduled={scheduled}
+      onCancelSchedule={() => run(async () => {
+        await cancelStudioPublication(unit.id, publicationJob.jobId);
+        setNotice("Publicación programada cancelada.");
+      })}
+      onOpenHistory={() => changeTab("publications")}
+      onRestore={version => run(async () => {
+        const restored = await restoreStudioVersion(unit.id, version, publications[0].version, revision);
+        if (restored.draftRevision) setRevision(restored.draftRevision);
+        setPublications(await loadUnitPublications(unit.id));
+        setNotice(`Versión ${restored.version} activa. Contenido recuperado de la versión ${version}.`);
+      })}
+      onDirtyChange={setStudioDirty}
+    />,
   };
 
   return (
     <section className="ac-unit-editor">
       <header className="ac-unit-heading">
-        <div className="ac-unit-title"><button className="ac-clear-filters" onClick={() => { if (!dirty || window.confirm("Salir sin guardar cambios del borrador?")) onBack(); }}>‹ Volver al Nivel</button><div className="ac-unit-title-row"><h1>{draft.name}</h1><span className={`ac-unit-status ${draft.status === "inactive" ? "is-inactive" : "is-active"}`}>{draft.status === "inactive" ? "Inactiva" : "Activa"}</span></div><p>{levelName && `${levelName} · `}Editor de Unit · Borrador {revision}{dirty ? " · Cambios sin guardar" : ""} · Publicada: {publications[0]?.version || "Ninguna"}</p></div>
+        <div className="ac-unit-title"><button className="ac-clear-filters" onClick={() => { if (!(dirty || studioDirty) || window.confirm("Salir sin guardar cambios del borrador?")) onBack(); }}>‹ Volver al Nivel</button><div className="ac-unit-title-row"><h1>{draft.name}</h1><span className={`ac-unit-status ${draft.status === "inactive" ? "is-inactive" : "is-active"}`}>{draft.status === "inactive" ? "Inactiva" : "Activa"}</span></div><p>{levelName && `${levelName} · `}Editor de Unit · Borrador {revision}{dirty ? " · Cambios sin guardar" : ""} · Publicada: {publications[0]?.version || "Ninguna"}</p></div>
         <div className="ac-unit-actions ac-unit-header-actions">
           <button className="ac-outline-button" disabled={busy} onClick={() => run(reload)}>Recargar</button>
           <button className="ac-outline-button" disabled={busy || !(canClassroom(profile, "editUnits") || canOrder)} onClick={() => run(save)}>Guardar borrador</button>
@@ -479,12 +571,13 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
           <span>{staticNotice.length === 1 ? `"${staticNotice[0]}" contiene animaciones estáticas` : `${staticNotice.length} recursos contienen animaciones estáticas`}: se conserva la composición de las diapositivas, pero los GIF o revelados no compatibles no se animarán.</span>
         </div>
       )}
-      {publishing && <div className="ac-unit-feedback" role="status">Publicando recursos… {publicationJob.completedResources} / {publicationJob.totalResources}<progress value={publicationJob.completedResources} max={publicationJob.totalResources || 1} /></div>}
+      {scheduled && <div className="ac-unit-feedback" role="status">Publicación programada para {new Date(scheduled).toLocaleString("es-MX")}.</div>}
+      {publishing && !scheduled && <div className="ac-unit-feedback" role="status">Publicando recursos… {publicationJob.completedResources} / {publicationJob.totalResources}<progress value={publicationJob.completedResources} max={publicationJob.totalResources || 1} /></div>}
       <div className="ac-unit-tabs" role="tablist" aria-label="Secciones del editor de Unit">
-        {tabs.map((item, index) => <button key={item.key} type="button" role="tab" id={`${idBase}-tab-${item.key}`} aria-selected={tab === item.key} aria-controls={`${idBase}-panel-${item.key}`} tabIndex={tab === item.key ? 0 : -1} ref={(node) => { tabRefs.current[item.key] = node; }} className={tab === item.key ? "is-active" : ""} onClick={() => setTab(item.key)} onKeyDown={(event) => onTabKeyDown(event, index)}><ActiveClassroomIcon name={TAB_ICONS[item.key]} size={16} />{item.label}</button>)}
+        {tabs.map((item, index) => <button key={item.key} type="button" role="tab" id={`${idBase}-tab-${item.key}`} aria-selected={tab === item.key} aria-controls={`${idBase}-panel-${item.key}`} tabIndex={tab === item.key ? 0 : -1} ref={(node) => { tabRefs.current[item.key] = node; }} className={tab === item.key ? "is-active" : ""} onClick={() => changeTab(item.key)} onKeyDown={(event) => onTabKeyDown(event, index)}><ActiveClassroomIcon name={TAB_ICONS[item.key]} size={16} />{item.label}</button>)}
       </div>
       <div className="ac-unit-panel" role="tabpanel" id={`${idBase}-panel-${tab}`} aria-labelledby={`${idBase}-tab-${tab}`} tabIndex={0}>{panels[tab]}</div>
-      {importMode && <DriveResourceImportDialog unit={unit} draft={draft} onDestinationChange={replacementId || importMode === "music" ? undefined : setImportMode} resources={resources.filter(resource => !(draft.excludedResourceIds || []).includes(resource.id))} selectionLimit={["general", "music"].includes(importMode) ? undefined : 1} acceptFile={importMode === "main" ? acceptMainFile : importMode === "music" || (draft.backgroundMusic || []).some(track => track.resourceId === replacementId) ? isMusicFile : undefined} destination={importMode === "main" ? "Presentación principal" : importMode === "music" ? "Música ambiente" : "Recurso general"} onClose={() => { setImportMode(""); setReplacementId(""); }} processingMessage={operationProgress} onImport={async (files, folderId, progress) => {
+      {importMode && <DriveResourceImportDialog unit={unit} draft={draft} onDestinationChange={replacementId || importMode === "music" ? undefined : setImportMode} resources={resources.filter(resource => !(draft.excludedResourceIds || []).includes(resource.id))} selectionLimit={["general", "music"].includes(importMode) ? undefined : 1} acceptFile={importMode === "studio" ? isStudioPresentation : importMode === "main" ? acceptMainFile : importMode === "music" || (draft.backgroundMusic || []).some(track => track.resourceId === replacementId) ? isMusicFile : undefined} destination={importMode === "studio" ? "Studio" : importMode === "main" ? "Presentación principal" : importMode === "music" ? "Música ambiente" : "Recurso general"} onClose={() => { setImportMode(""); setReplacementId(""); }} processingMessage={operationProgress} onImport={async (files, folderId, progress) => {
         if (!runGuard.current.tryAcquire()) throw new Error("Hay otra operación en curso. Espera a que termine.");
         try {
           setBusy(true); setError("");
@@ -493,7 +586,8 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
             const loaded = await loadUnitResources(unit.id);
             setResourceOverrides(Object.fromEntries(loaded.map(item => [item.id, item])));
             const ids = result.imported.map(resource => resource.id);
-            const next = importMode === "music" ? addMusicTracks(draft, loaded.filter(resource => ids.includes(resource.id))) : replacementId ? replaceDraftResource(draft, replacementId, ids[0]) : importMode === "main" ? replaceDraftResource(draft, draft.mainPresentationId, ids[0], true) : { ...draft, generalResourceIds: [...new Set([...draft.generalResourceIds, ...ids])].filter(id => id !== draft.mainPresentationId), excludedResourceIds: (draft.excludedResourceIds || []).filter(id => !ids.includes(id)) };
+            if (importMode === "studio") setStudioResourceId(ids[0]);
+            const next = importMode === "music" ? addMusicTracks(draft, loaded.filter(resource => ids.includes(resource.id))) : replacementId ? replaceDraftResource(draft, replacementId, ids[0]) : importMode === "main" ? replaceDraftResource(draft, draft.mainPresentationId, ids[0], true) : importMode === "studio" ? draft : { ...draft, generalResourceIds: [...new Set([...draft.generalResourceIds, ...ids])].filter(id => id !== draft.mainPresentationId), excludedResourceIds: (draft.excludedResourceIds || []).filter(id => !ids.includes(id)) };
             let context = await persist(next);
             for (const id of ids) {
               const imported = result.imported.find(resource => resource.id === id);
@@ -504,7 +598,7 @@ export function UnitEditorForm({ unit, folders, resources, initial, onBack, onIm
                 resource = refreshed.resource;
                 setResourceOverrides(current => ({ ...current, [id]: resource }));
               }
-              context = await processInto(resource, context);
+              if (importMode !== "studio" || canClassroom(profile, "processMaterial")) context = await processInto(resource, context);
             }
             setNotice("Importación terminada. Archivos listos en el borrador.");
           }

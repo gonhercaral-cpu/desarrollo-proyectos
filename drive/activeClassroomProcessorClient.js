@@ -3,8 +3,26 @@ const { descriptor } = require("./activeClassroomFiles");
 const { processingTargetPath, rasterTargetPath, PPTX_PROCESSOR_VERSION, sourceTooLargeError, nativeRasterBudgetError } = require("./activeClassroomProcessingModel");
 const { validateAnimationPlan, prepareAnimationUploads, attachConvertedAnimations } = require("./activeClassroomAnimations");
 
+function reusableSlides(plan, previous, edited, animationPlan) {
+  if (!previous?.pages || previous.pages.length !== plan.slides.length || !edited?.length || edited.length === plan.slides.length || plan.selectiveRaster !== true) return null;
+  const selected = new Set(edited);
+  let offset = 0;
+  for (const slide of plan.slides) {
+    const page = previous.pages[slide.index];
+    const states = [page, ...(page?.builds || [])];
+    const revision = page?.rasterRevision || previous.revision;
+    if (states.length !== slide.steps.length + 1 || states.some((state, index) => state?.download?.path !== rasterTargetPath(revision, offset + index))) return null;
+    offset += states.length;
+    if (selected.has(slide.index)) continue;
+    const images = animationPlan.find(item => item.slideIndex === slide.index)?.images || [];
+    const saved = page.animation?.images || [];
+    if (images.length !== saved.length || images.some((image, index) => image.sha256 !== saved[index].download.checksums.sha256)) return null;
+  }
+  return selected;
+}
+
 function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) {
-  return async (data, { onStage = async () => {}, nativeSlidesFallback = false } = {}) => {
+  async function send(data, { onStage = async () => {}, nativeSlidesFallback = false, slideIndex, previous, editedSlides } = {}) {
     // The processor's request validation rejects originals above its cap (HTTP 422) before it downloads anything;
     // the snapshot itself was already downloaded upstream by Functions. Check the measured size first so
     // no capability is signed and no processor call is made.
@@ -20,6 +38,10 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
     // Capabilities stay inside the private backend. Converter has no cloud data roles.
     const [sourceUrl] = await bucket.file(data.original.path).getSignedUrl({ version: "v4", action: "read", expires, queryParams: { generation: data.original.generation } });
     const [uploadUrl] = await target.getSignedUrl({ version: "v4", action: "write", expires, contentType: "application/pdf", extensionHeaders: { "x-goog-if-generation-match": "0" } });
+    if (slideIndex !== undefined) {
+      const response = await client.request({ url: `${url}/studio/inspect`, method: "POST", data: { ...data, sourceUrl, uploadUrl, slideIndex }, timeout: 90000 });
+      return response.data;
+    }
     if (data.processorVersion === PPTX_PROCESSOR_VERSION) {
       const request = { ...data, sourceUrl, uploadUrl };
       await onStage("planning");
@@ -28,25 +50,32 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
       // Opt-in (native Google Slides only): reject a validated plan above the measured budget before any PNG capability or /convert.
       const overBudget = nativeSlidesFallback === true ? nativeRasterBudgetError(plan.stateCount) : null;
       if (overBudget) throw overBudget;
-      const targets = Array.from({ length: plan.stateCount }, (_value, index) => bucket.file(rasterTargetPath(data.revision, index)));
       let animationPlan = [];
       try {
         animationPlan = validateAnimationPlan(plan.animationPlan, plan.slides);
         if (plan.stateCount + animationPlan.reduce((count, item) => count + 1 + item.images.length, 0) > 200) animationPlan = [];
       } catch { /* An optional enhancement cannot prevent a complete static import. */ }
+      const selective = reusableSlides(plan, previous, editedSlides, animationPlan);
+      if (selective) animationPlan = animationPlan.filter(item => selective.has(item.slideIndex));
+      let globalIndex = 0;
+      const targets = plan.slides.flatMap(slide => Array.from({ length: slide.steps.length + 1 }, () => {
+        const index = globalIndex++;
+        return !selective || selective.has(slide.index) ? bucket.file(rasterTargetPath(data.revision, index)) : null;
+      }));
       let animationUploads = { targets: [], uploads: [] };
       let complete = false;
       try {
-        const stateUploadUrls = await Promise.all(targets.map(async file => (await file.getSignedUrl({ version: "v4", action: "write", expires, contentType: "image/png", extensionHeaders: { "x-goog-if-generation-match": "0" } }))[0]));
+        const stateUploadUrls = await Promise.all(targets.map(async file => file ? (await file.getSignedUrl({ version: "v4", action: "write", expires, contentType: "image/png", extensionHeaders: { "x-goog-if-generation-match": "0" } }))[0] : null));
         try { animationUploads = await prepareAnimationUploads(bucket, data.revision, animationPlan); }
         catch { animationPlan = []; }
         await onStage("converting");
-        const result = (await client.request({ url: `${url}/convert`, method: "POST", data: { ...request, stateUploadUrls, ...(animationUploads.uploads.length ? { animationUploadUrls: animationUploads.uploads } : {}) }, timeout: 420000 })).data;
+        const result = (await client.request({ url: `${url}/convert`, method: "POST", data: { ...request, stateUploadUrls, ...(selective ? { studioRenderSlides: [...selective] } : {}), ...(animationUploads.uploads.length ? { animationUploadUrls: animationUploads.uploads } : {}) }, timeout: 420000 })).data;
         await onStage("verifying");
         if (result.revision !== data.revision || result.processorVersion !== PPTX_PROCESSOR_VERSION || result.pageCount !== plan.slides.length || JSON.stringify(result.slides) !== JSON.stringify(plan.slides) || !Array.isArray(result.states) || result.states.length !== targets.length) throw new HttpsError("data-loss", "Estados PPTX inválidos.");
         const states = [];
         for (const [index, state] of result.states.entries()) {
-          if (!/^[a-f0-9]{64}$/.test(state.sha256 || "") || !Number.isSafeInteger(state.sizeBytes) || state.sizeBytes < 24 || state.sizeBytes > 250 * 1024 * 1024 || !Number.isInteger(state.width) || state.width < 1 || state.width > 1600 || !Number.isInteger(state.height) || state.height < 1 || state.height > 1600) throw new HttpsError("data-loss", "Integridad PNG inválida.");
+          if (!targets[index] && state === null) { states.push(null); continue; }
+          if (!targets[index] || !state || !/^[a-f0-9]{64}$/.test(state.sha256 || "") || !Number.isSafeInteger(state.sizeBytes) || state.sizeBytes < 24 || state.sizeBytes > 250 * 1024 * 1024 || !Number.isInteger(state.width) || state.width < 1 || state.width > 1600 || !Number.isInteger(state.height) || state.height < 1 || state.height > 1600) throw new HttpsError("data-loss", "Integridad PNG inválida.");
           await targets[index].setMetadata({ cacheControl: "private, no-store", metadata: { sha256: state.sha256, deliveredName: `estado-${index}.png`, capturedAt: new Date(clock()).toISOString(), processingRevision: data.revision } });
           const [metadata] = await targets[index].getMetadata();
           if (metadata.contentType !== "image/png" || Number(metadata.size) !== state.sizeBytes) throw new HttpsError("data-loss", "PNG incompleto.");
@@ -54,22 +83,27 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
         }
         let offset = 0;
         const pages = plan.slides.map((slide, index) => {
+          if (selective && !selective.has(index)) {
+            offset += slide.steps.length + 1;
+            const saved = previous.pages[index];
+            return { ...saved, rasterRevision: saved.rasterRevision || previous.revision };
+          }
           const base = states[offset++];
           const builds = slide.steps.map((_step, buildIndex) => ({ order: buildIndex + 1, ...states[offset++] }));
           return { pageObjectId: `pptx-${index}`, index, ...base, builds, warnings: slide.warnings, storagePath: base.download.path, size: base.download.sizeBytes, sha256: base.download.checksums.sha256 };
         });
         try { await attachConvertedAnimations(bucket, data.revision, pages, animationPlan, result.animations || []); }
         catch {
-          for (const page of pages) { delete page.animation; page.warnings = [...(page.warnings || []), "gif-static-fallback"]; }
+          for (const page of pages) if (!page.rasterRevision) { delete page.animation; page.warnings = [...(page.warnings || []), "gif-static-fallback"]; }
         }
         const candidates = new Set((Array.isArray(plan.animationPlan) ? plan.animationPlan : []).map(item => item?.slideIndex));
-        for (const [index, page] of pages.entries()) if (candidates.has(index) && !page.animation) page.warnings = [...new Set([...(page.warnings || []), "gif-static-fallback"])];
+        for (const [index, page] of pages.entries()) if (!page.rasterRevision && candidates.has(index) && !page.animation) page.warnings = [...new Set([...(page.warnings || []), "gif-static-fallback"])];
         const retained = new Set(pages.flatMap(page => page.animation ? [page.animation.background.download.path, ...page.animation.images.map(image => image.download.path)] : []));
         await Promise.allSettled(animationUploads.targets.filter(file => !retained.has(file.name)).map(file => file.delete({ ignoreNotFound: true })));
         complete = true;
         return { processorVersion: PPTX_PROCESSOR_VERSION, revision: data.revision, pageCount: pages.length, pages, download: pages[0].download };
       } finally {
-        if (!complete) await Promise.allSettled([...targets, ...animationUploads.targets].map(file => file.delete({ ignoreNotFound: true })));
+        if (!complete) await Promise.allSettled([...targets.filter(Boolean), ...animationUploads.targets].map(file => file.delete({ ignoreNotFound: true })));
       }
     }
     await onStage("converting");
@@ -81,6 +115,11 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
     const [metadata] = await target.getMetadata();
     if (Number(metadata.size) !== result.sizeBytes) throw new HttpsError("data-loss", "Tamaño del PDF procesado inválido.");
     return { ...result, download: descriptor(path, metadata) };
-  };
+  }
+  send.inspect = async (original, slideIndex) => send(
+    { original, revision: require("node:crypto").randomUUID(), processorVersion: PPTX_PROCESSOR_VERSION, extension: "pptx" },
+    { slideIndex },
+  );
+  return send;
 }
-module.exports = { createProcessorClient };
+module.exports = { createProcessorClient, reusableSlides };

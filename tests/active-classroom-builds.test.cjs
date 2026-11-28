@@ -71,6 +71,32 @@ for (const failed of [false, true]) test(`cliente privado firma estados exactos 
   for (const grant of signed.filter(item => item.options.contentType === "image/png")) { assert.equal(grant.options.extensionHeaders["x-goog-if-generation-match"], "0"); assert.ok([0, 1].some(index => grant.path === rasterTargetPath(revision, index))); }
 });
 
+test("Studio firma solo los estados editados y conserva las generaciones de los demás", async () => {
+  const revision = "a".repeat(36), prior = "b".repeat(36), unsigned = [], signed = [];
+  const metadata = new Map();
+  const bucket = { file(path) { return {
+    async getSignedUrl(options) { if (options.contentType === "image/png") signed.push(path); return [`https://storage.googleapis.com/private/${path}?X-Goog-Signature=test`]; },
+    async setMetadata(value) { metadata.set(path, { contentType: "image/png", size: "30", generation: "7", ...value }); },
+    async getMetadata() { return [metadata.get(path)]; }, async delete() { unsigned.push(path); },
+  }; } };
+  const plan = { selectiveRaster: true, stateCount: 3, slides: [{ index: 0, steps: [["2"]], warnings: [] }, { index: 1, steps: [], warnings: [] }] };
+  const converted = { sizeBytes: 30, sha256: "b".repeat(64), width: 1, height: 1 };
+  const convert = createProcessorClient({ bucket, getUrl: () => "https://processor-abc-uc.a.run.app", getClient: async () => ({ async request(request) {
+    if (request.url.endsWith("/plan")) return { data: plan };
+    assert.deepEqual(request.data.studioRenderSlides, [1]);
+    assert.deepEqual(request.data.stateUploadUrls.slice(0, 2), [null, null]);
+    return { data: { revision, processorVersion: PPTX_PROCESSOR_VERSION, pageCount: 2, slides: plan.slides, states: [null, null, converted] } };
+  } }) });
+  const state = index => ({ download: { path: rasterTargetPath(prior, index), generation: "30", checksums: { sha256: "e".repeat(64) } } });
+  const previous = { revision: prior, pages: [{ ...state(0), builds: [state(1)] }, state(2)] };
+  const result = await convert({ revision, processorVersion: PPTX_PROCESSOR_VERSION, extension: "pptx", original: { path: "source", generation: "1", name: "Prueba.pptx" } }, { previous, editedSlides: [1] });
+  assert.deepEqual(signed, [rasterTargetPath(revision, 2)]);
+  assert.deepEqual(result.pages[0], { ...previous.pages[0], rasterRevision: prior });
+  assert.equal(result.pages[1].download.path, rasterTargetPath(revision, 2));
+  assert.equal(result.download.generation, "30");
+  assert.deepEqual(unsigned, []);
+});
+
 test("estado inicial manual forma parte de assets del draft y no acepta rutas ni fuente automática", () => {
   const interaction = normalizeInteraction({ interactionMode: "builds", interaction: { source: "manual", initialResourceId: "initial-image" }, builds: steps });
   assert.deepEqual(interactionResourceIds(interaction), ["initial-image", "answer-image"]);
