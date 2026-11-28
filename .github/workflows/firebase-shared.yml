@@ -20,6 +20,9 @@ on:
       - "package-lock.json"
       - "functions/package.json"
       - "functions/package-lock.json"
+      - "drive/activeClassroom*.js"
+      - "src/active-classroom/**"
+      - "tests/active-classroom-studio-emulator.test.cjs"
       - "drive/package.json"
       - "drive/package-lock.json"
       - "tests/firebase-rules.test.mjs"
@@ -88,4 +91,4 @@ jobs:
           fi
           "$RUNNER_TEMP/firebase-cli/node_modules/.bin/firebase" emulators:exec \
             --config firebase.rules-test.json --project security-rules-audit --only auth,firestore,storage \
-            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-redesign-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs${publication_tests}"
+            "node --test --test-concurrency=1 tests/firebase-rules.test.mjs tests/active-classroom-admin-emulator.test.cjs tests/active-classroom-ambient-emulator.test.cjs tests/active-classroom-drive-emulator.test.cjs tests/active-classroom-unit-emulator.test.cjs tests/active-classroom-redesign-emulator.test.cjs tests/active-classroom-device-emulator.test.cjs tests/active-classroom-video-emulator.test.cjs active-classroom-desktop/tests/device-auth-emulator.test.mjs tests/active-classroom-office-emulator.test.cjs tests/active-classroom-slides-emulator.test.cjs tests/active-classroom-builds-emulator.test.cjs tests/active-classroom-studio-emulator.test.cjs${publication_tests}"

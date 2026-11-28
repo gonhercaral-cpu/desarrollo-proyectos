@@ -1,3 +1,4 @@
+const { studioRef } = require("./activeClassroomStudio");
 const { canClassroom, requireClassroom } = require("./activeClassroomPermissions");
 const { createHash } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
@@ -61,6 +62,7 @@ function resourceIds(draft) {
   return [...new Set([draft.mainPresentationId, ...(draft.backgroundMusic || []).map(track => track.resourceId), ...draft.generalResourceIds, ...draft.slides.flatMap((slide) => [...slide.resourceIds, ...interactionResourceIds(slide)])].filter(Boolean))];
 }
 function isMainPresentation(resource) {
+  if (resource?.storagePath && /\.pptx$/i.test(resource.name || "")) return true;
   return resource?.source === "drive" && (resource.kind === "presentation" || resource.mimeType === "application/pdf" || /\.pdf$/i.test(resource.name));
 }
 function fileReference(resource) {
@@ -94,7 +96,7 @@ function driveChanged(resource, file) {
     || (resource.sourceName || resource.name) !== file.name || resource.mimeType !== file.mimeType;
 }
 
-function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, timestamp, now = () => new Date().toISOString() }) {
+function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, verifyDownload, timestamp, now = () => new Date().toISOString() }) {
   async function authorize(request, action = "access") {
     if (!request.auth?.uid) fail("Debes iniciar sesión.", "unauthenticated");
     const profile = await getProfile(request.auth.uid);
@@ -108,12 +110,21 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
     integer(expected, 0, Number.MAX_SAFE_INTEGER);
     if ((data?.draftRevision || 0) !== expected) fail("Otro administrador modificó el borrador. Recarga antes de guardar.", "aborted");
   }
+  async function studioPublicationIssue(get, resource) {
+    if (!resource.processing?.studioRevision) return "";
+    const review = (await get(studioRef(db, resource.id))).data();
+    if (review?.revision !== resource.processing.studioRevision || review?.appliedRevision !== review.revision || review.status !== "approved") return `Aprueba la conversión vigente de ${resource.name} en Studio.`;
+    return "";
+  }
   async function readResources(transaction, draft, unitId, publishing = false) {
     const result = [];
     for (const resourceId of resourceIds(draft)) {
       const snapshot = await transaction.get(resourceRef(resourceId));
       if (!snapshot.exists || snapshot.data().folderId !== unitId || snapshot.data().archived) fail("Un recurso ya no pertenece a esta Unit o fue eliminado.", "failed-precondition");
-      result.push({ id: resourceId, ...snapshot.data() });
+      const resource = { id: resourceId, ...snapshot.data() };
+      const issue = publishing && await studioPublicationIssue(ref => transaction.get(ref), resource);
+      if (issue) fail(issue, "failed-precondition");
+      result.push(resource);
     }
     for (const assetId of draft.slides.flatMap(interactionResourceIds)) {
       if (!["image/png", "image/jpeg", "image/webp"].includes(result.find(resource => resource.id === assetId)?.mimeType)) fail("Los assets de revelado deben ser imágenes PNG, JPEG o WebP.");
@@ -265,6 +276,8 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       if (content.resources.length > MAX_RESOURCES) fail(`Máximo ${MAX_RESOURCES} archivos por publicación, incluyendo diapositivas PNG.`, "resource-exhausted");
       if (new Set(content.resources.map((resource) => resource.resourceId)).size !== content.resources.length) fail("Identificadores de archivos publicados duplicados.", "data-loss");
       const hash = contentHash(content);
+      const primary = resources.find(resource => resource.id === draft.mainPresentationId);
+      const studioNotes = primary?.processing?.studioRevision ? (await transaction.get(studioRef(db, primary.id))).data()?.notes || "" : "";
       const previous = stored.publishedVersion
         ? await transaction.get(unitRef(unitId).collection("publications").doc(String(stored.publishedVersion))) : null;
       if (previous?.data()?.contentHash === hash) {
@@ -278,6 +291,7 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       transaction.create(unitRef(unitId).collection("publications").doc(String(version)), {
         version, manifest, contentHash: hash, draftRevision: stored.draftRevision,
         publishedAt: timestamp(), publishedByUid: request.auth.uid,
+        ...(studioNotes ? { notes: studioNotes } : {}),
       });
       transaction.update(unitRef(unitId), { publishedVersion: version, publishedDraftRevision: stored.draftRevision, lastPublishedAt: manifest.publishedAt, lastPublishedByUid: request.auth.uid, lastPublishedByName: profile.name || profile.email || "", ...(jobId ? { publicationJob: { ...stored.publicationJob, state: "ready", version, unchanged: false } } : {}) });
       if (jobId) transaction.update(db.collection("activeClassroomPublicationJobs").doc(jobId), { state: "ready", version, unchanged: false });
@@ -346,6 +360,50 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       return { draftRevision, resource: { id: ref.id, ...current, ...updated, sourceCheckedAt: now(), updatedAt: now() } };
     });
   }
+  async function restore(request) {
+    const profile = await authorize(request, "publishVersions");
+    const unitId = id(request.data?.unitId);
+    const { sourceVersion, expectedVersion, expectedRevision } = request.data;
+    integer(sourceVersion, 1, Number.MAX_SAFE_INTEGER);
+    integer(expectedVersion, 1, Number.MAX_SAFE_INTEGER);
+    integer(expectedRevision, 1, Number.MAX_SAFE_INTEGER);
+    const ref = unitRef(unitId);
+    const versionRef = ref.collection("publications").doc(String(sourceVersion));
+    const source = (await versionRef.get()).data();
+    if (!source?.manifest || source.manifest.unit?.unitId !== unitId || source.manifest.version !== sourceVersion) fail("Versión de origen no disponible.", "not-found");
+    if (!verifyDownload) fail("Verificación de versiones no disponible.", "failed-precondition");
+    const { integrity, ...content } = source.manifest;
+    delete content.version;
+    delete content.publishedAt;
+    const hash = contentHash(content);
+    if (hash !== source.contentHash || hash !== integrity?.contentHash || !content.resources?.length) fail("El manifiesto histórico no conserva su integridad.", "data-loss");
+    for (const resource of content.resources) await verifyDownload(resource.download);
+    return db.runTransaction(async transaction => {
+      const stored = (await transaction.get(ref)).data();
+      const historical = (await transaction.get(versionRef)).data();
+      const level = (await transaction.get(folderRef(content.unit.levelId))).data();
+      const folder = (await transaction.get(folderRef(unitId))).data();
+      revision(stored, expectedRevision);
+      if (stored.publishedVersion !== expectedVersion || historical?.contentHash !== hash) fail("La publicación cambió. Recarga antes de restaurar.", "aborted");
+      if (sourceVersion === expectedVersion) return { version: expectedVersion, unchanged: true };
+      if (stored.draft?.status !== "active" || level?.active !== true || folder?.kind !== "unit" || content.unit.status !== "active") fail("Activa el nivel y la Unit antes de restaurar.", "failed-precondition");
+      if (["pending", "publishing"].includes(stored.publicationJob?.state)) fail("Espera a que termine la publicación en curso.", "failed-precondition");
+      const version = expectedVersion + 1;
+      const manifest = { ...content, version, publishedAt: now(), integrity };
+      transaction.create(ref.collection("publications").doc(String(version)), {
+        version, manifest, contentHash: hash, restoredFromVersion: sourceVersion,
+        publishedAt: timestamp(), publishedByUid: request.auth.uid,
+      });
+      // A fresh version number lets Desktop accept the rollback and reuse SHA-256 cache entries.
+      transaction.update(ref, {
+        publishedVersion: version, draftRevision: expectedRevision + 1,
+        publishedDraftRevision: null, lastPublishedAt: manifest.publishedAt,
+        lastPublishedByUid: request.auth.uid, lastPublishedByName: profile.name || profile.email || "",
+      });
+      return { version, restoredFromVersion: sourceVersion, draftRevision: expectedRevision + 1 };
+    });
+  }
+
   async function validatePublication(request) {
     await authorize(request, "publishVersions");
     const stored = (await unitRef(request.data?.unitId).get()).data();
@@ -364,12 +422,14 @@ function createUnitHandlers({ db, getProfile, resolveFile, prepareResource, time
       if (!resource || resource.archived || resource.folderId !== request.data.unitId) { issues.push("Un archivo del borrador ya no está disponible. Selecciona un reemplazo o quítalo."); continue; }
       if (needsDocumentProcessing(resource) && !readyProcessing(resource)) issues.push(`Completa el procesamiento de ${resource.name}.`);
       if (resourceId === draft.mainPresentationId && needsDocumentProcessing(resource) && readyProcessing(resource) && contentHash(draft.slides) !== contentHash(pdfSlides({ ...resource, id: resourceId }, draft.slides))) issues.push("Aplica las diapositivas procesadas de la presentación antes de publicar.");
+      const issue = await studioPublicationIssue(ref => ref.get(), { ...resource, id: resourceId });
+      if (issue) issues.push(issue);
       if (resource.source === "drive") driveIds.push(resourceId);
     }
     const checked = await checkDrive({ ...request, data: { ...request.data, resourceIds: driveIds } });
     return { ...checked, issues, ready: issues.length === 0 && checked.results.every(result => result.status === "current"), canPublishCurrent: false };
   }
-  return { save, publish, preparePublish, checkDrive, refreshDrive, validatePublication };
+  return { save, publish, preparePublish, checkDrive, refreshDrive, validatePublication, restore };
 }
 
 module.exports = { createUnitHandlers, normalizeDraft, resourceIds, isMainPresentation, snapshotResource, stableStringify, contentHash, driveChanged };

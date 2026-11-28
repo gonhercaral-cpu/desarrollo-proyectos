@@ -1,3 +1,4 @@
+const { studioRef } = require("./activeClassroomStudio");
 const { canClassroom } = require("./activeClassroomPermissions");
 const { createHash, randomUUID } = require("node:crypto");
 const { HttpsError } = require("firebase-functions/v2/https");
@@ -100,6 +101,14 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
     return download;
   }
 
+  function applyPresentation(draft, resource) {
+    if (draft.mainPresentationId !== resource.id) return draft;
+    const slides = pdfSlides(resource, draft.slides);
+    const retained = new Set(slides.flatMap(slide => slide.resourceIds));
+    const orphaned = draft.slides.flatMap(slide => slide.resourceIds).filter(id => id !== resource.id && !retained.has(id));
+    return { ...draft, slides, generalResourceIds: [...new Set([...draft.generalResourceIds, ...orphaned])] };
+  }
+
   async function applyReady(unitId, resourceId, expectedRevision) {
     return db.runTransaction(async (transaction) => {
       const unitRef = units.doc(unitId); const resourceRef = resources.doc(resourceId);
@@ -107,14 +116,7 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       const resource = { id: resourceId, ...(await transaction.get(resourceRef)).data() };
       if (!unit?.draft || unit.draftRevision !== expectedRevision) fail("El borrador cambió. Recarga y aplica el documento procesado.", "aborted");
       requireReady(resource);
-      const draft = { ...unit.draft };
-      if (draft.mainPresentationId === resourceId) {
-        const slides = pdfSlides(resource, draft.slides);
-        const retained = new Set(slides.flatMap((slide) => slide.resourceIds));
-        const orphaned = draft.slides.flatMap((slide) => slide.resourceIds).filter((id) => id !== resourceId && !retained.has(id));
-        draft.slides = slides;
-        draft.generalResourceIds = [...new Set([...draft.generalResourceIds, ...orphaned])];
-      }
+      const draft = applyPresentation(unit.draft, resource);
       const draftRevision = unit.draftRevision + 1;
       transaction.update(unitRef, { draft, draftRevision, updatedAt: timestamp() });
       return { state: "ready", processing: resource.processing, draft, draftRevision };
@@ -125,19 +127,40 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
     if (!request.auth?.uid) fail("Debes iniciar sesión.", "unauthenticated");
     const profile = await getProfile(request.auth.uid);
     if (!canClassroom(profile, "processMaterial")) fail("No tienes permiso para procesar material.", "permission-denied");
-    const { unitId, resourceId, expectedRevision } = request.data || {};
+    const { unitId, resourceId, expectedRevision, studioRevision } = request.data || {};
+    const studio = studioRevision !== undefined;
+    if (studio && (!canClassroom(profile, "orderMaterial") || !Number.isSafeInteger(studioRevision) || studioRevision < 1)) fail("Solicitud de Studio inválida o sin permiso.", "permission-denied");
     if (!validId(unitId) || !validId(resourceId) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 1) fail("Solicitud de procesamiento inválida.", "invalid-argument");
     const resourceRef = resources.doc(resourceId);
-    const resource = { id: resourceId, ...(await resourceRef.get()).data() };
+    let resource = { id: resourceId, ...(await resourceRef.get()).data() };
     if (resource.folderId !== unitId || resource.archived || !needsDocumentProcessing(resource)) fail("El documento no pertenece a esta Unit.");
     if (["pending", "processing"].includes(resource.processing?.state) && resource.processing.leaseUntil > clock()) return { state: "processing" };
+    if (resource.processing?.studioAttempt && resource.processing.leaseUntil <= clock()) {
+      resource = await db.runTransaction(async transaction => {
+        const current = (await transaction.get(resourceRef)).data();
+        if (current?.processing?.jobId !== resource.processing.jobId) fail("La conversión cambió. Recarga la presentación.", "aborted");
+        const ref = jobs.doc(current.processing.jobId);
+        const previous = (await transaction.get(ref)).data()?.previousProcessing;
+        if (!previous) fail("No se pudo recuperar la conversión anterior.", "data-loss");
+        transaction.update(resourceRef, { processing: previous });
+        transaction.update(ref, { state: "failed", errorCode: "deadline-exceeded", failedAt: timestamp() });
+        return { ...current, id: resourceId, processing: previous };
+      });
+    }
+    const reviewRef = studio ? studioRef(db, resourceId) : null;
+    const review = studio ? (await reviewRef.get()).data() : null;
+    const fingerprint = processingFingerprint(resource);
+    if (studio && (!review || review.sourceFingerprint !== fingerprint || review.unitId !== unitId || review.revision !== studioRevision)) fail("El borrador de Studio cambió. Recarga antes de regenerar.", "aborted");
+    const previousProcessing = studio && readyProcessing(resource) ? resource.processing : null;
+    if (studio && !previousProcessing) fail("Convierte la presentación antes de regenerar cambios.");
+    if (studio && review.appliedRevision === studioRevision && resource.processing.studioRevision === studioRevision) return applyReady(unitId, resourceId, expectedRevision);
     // Existing snapshot infrastructure checks Drive ACL/version before and after reading.
     const nativeSlides = isGoogleSlides(resource);
     let original;
     try { original = nativeSlides ? await googleSlides.original(profile, resource) : await prepareResource(profile, resource); }
     catch (error) { throw logFailure(error, nativeSlides, "original", { resourceId, unitId, fileId: resource.driveFileId, processorVersion: processorVersion(resource) }); }
-    const fingerprint = processingFingerprint(resource);
-    if (readyProcessing(resource) && resource.processing.processorVersion === processorVersion(resource)) {
+    if (studio && !nativeSlides && (previousProcessing.original?.path !== original.path || previousProcessing.original.generation !== original.generation)) fail("El archivo original cambió. Actualiza la conversión.", "aborted");
+    if (!studio && readyProcessing(resource) && resource.processing.processorVersion === processorVersion(resource)) {
       const saved = resource.processing.original;
       const matches = nativeSlides
         ? ["fileId", "name", "mimeType", "version", "modifiedTime"].every((key) => saved?.[key] === original[key])
@@ -152,14 +175,18 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       const unit = (await transaction.get(units.doc(unitId))).data();
       if (!unit?.draft || unit.draftRevision !== expectedRevision) fail("El borrador cambió. Recarga antes de procesar.", "aborted");
       if (!current || current.folderId !== unitId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante la solicitud.", "aborted");
+      if (studio) {
+        const currentReview = (await transaction.get(reviewRef)).data();
+        if (currentReview?.revision !== studioRevision || current.processing?.revision !== previousProcessing.revision) fail("La conversión o el borrador cambió. Recarga antes de regenerar.", "aborted");
+      }
       if (["pending", "processing"].includes(current.processing?.state) && current.processing.leaseUntil > clock()) return false;
-      const processing = { state: "pending", stage: "planning", jobId: attemptId, revision: attemptId, processorVersion: processorVersion(resource), sourceFingerprint: fingerprint, original, requestedAt: new Date(clock()).toISOString(), leaseUntil: clock() + 540000, requestedByUid: request.auth.uid };
-      transaction.create(jobRef, { ...processing, unitId, resourceId });
+      const processing = { state: "pending", stage: "planning", jobId: attemptId, revision: attemptId, processorVersion: processorVersion(resource), sourceFingerprint: fingerprint, original, requestedAt: new Date(clock()).toISOString(), leaseUntil: clock() + 540000, requestedByUid: request.auth.uid, ...(studio ? { studioAttempt: true } : {}) };
+      transaction.create(jobRef, { ...processing, unitId, resourceId, ...(studio ? { previousProcessing } : {}) });
       transaction.update(resourceRef, { processing });
       return true;
     });
     if (!accepted) return { state: "processing" };
-    let rendered; let phase = "planning"; let fine = null;
+    let rendered; let applied; let phase = "planning"; let fine = null;
     const attempt = { jobId: attemptId, resourceId, unitId, fileId: resource.driveFileId, processorVersion: processorVersion(resource) };
     try {
       await db.runTransaction(async (transaction) => {
@@ -181,7 +208,10 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
         });
         lastStage = stage;
       };
-      const result = nativeSlides ? await googleSlides.render({ profile, resource, revision: attemptId, onStage }) : await convert({ revision: attemptId, processorVersion: processorVersion(resource), extension: officeExtension(resource), original }, { onStage });
+      const edits = studio && review.edits.length ? { studioEdits: review.edits } : {};
+      const result = nativeSlides
+        ? await googleSlides.render({ profile, resource, revision: attemptId, onStage, ...edits })
+        : await convert({ revision: attemptId, processorVersion: processorVersion(resource), extension: officeExtension(resource), original, ...edits }, { onStage });
       await onStage("verifying");
       rendered = result;
       if (result?.processorVersion !== processorVersion(resource)) fail("Versión del procesador incompatible.", "data-loss");
@@ -191,7 +221,23 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
         if (current?.processing?.jobId !== attemptId || current.archived || processingFingerprint(current) !== fingerprint) fail("El original cambió durante el procesamiento. Reintenta desde el borrador actual.", "aborted");
-        const processing = { ...current.processing, state: "ready", stage: "ready", download, pageCount: result.pageCount, completedAt: new Date(clock()).toISOString(), textExtraction: null, ...(result.pages ? { sourceType: nativeSlides ? "google-slides" : "pptx", pages: result.pages } : {}) };
+        const processing = { ...current.processing, state: "ready", stage: "ready", download, pageCount: result.pageCount, completedAt: new Date(clock()).toISOString(), textExtraction: null, ...(result.pages ? { sourceType: nativeSlides ? "google-slides" : "pptx", pages: result.pages } : {}), ...(studio ? { studioRevision } : {}) };
+        if (studio) {
+          delete processing.studioAttempt;
+          const unitRef = units.doc(unitId);
+          const unit = (await transaction.get(unitRef)).data();
+          const currentReview = (await transaction.get(reviewRef)).data();
+          if (!unit?.draft || unit.draftRevision !== expectedRevision || currentReview?.revision !== studioRevision) fail("Cambió el borrador durante la conversión. Recarga y reintenta.", "aborted");
+          if (result.pages?.length !== previousProcessing.pages?.length || result.pages.some((page, index) => page.pageObjectId !== previousProcessing.pages[index].pageObjectId)) fail("La regeneración cambió los identificadores de las diapositivas.", "data-loss");
+          const draft = applyPresentation(unit.draft, { ...current, id: resourceId, processing });
+          const draftRevision = expectedRevision + 1;
+          const baseline = currentReview.baseline || previousProcessing.pages.map(page => ({
+            pageObjectId: page.pageObjectId, download: page.download,
+          }));
+          transaction.update(reviewRef, { appliedRevision: studioRevision, reviewRevision: (currentReview.reviewRevision || 0) + 1, status: "in-review", baseline });
+          transaction.update(unitRef, { draft, draftRevision, updatedAt: timestamp() });
+          applied = { state: "ready", processing, draft, draftRevision };
+        }
         transaction.update(resourceRef, { processing });
         transaction.update(jobRef, { state: "ready", download, pageCount: result.pageCount, completedAt: timestamp() });
       });
@@ -203,19 +249,21 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
       const diagnostics = { errorCode: safeError.code, errorStage: details.stage, errorReason: details.reason || details.processorError, upstreamStatus: details.upstreamStatus, errorSlideIndex: details.slideIndex, errorPageObjectId: details.pageObjectId };
       await db.runTransaction(async (transaction) => {
         const current = (await transaction.get(resourceRef)).data();
-        if (current?.processing?.jobId === attemptId && current.processing.state === "ready") return;
+        const job = (await transaction.get(jobRef)).data();
+        if (job?.state === "ready") return;
         transaction.update(jobRef, { state: "failed", ...diagnostics, failedAt: timestamp() });
-        if (current?.processing?.jobId === attemptId) transaction.update(resourceRef, { "processing.state": "failed", "processing.error": safeError.message, "processing.errorCode": diagnostics.errorCode, "processing.errorStage": diagnostics.errorStage, "processing.errorReason": diagnostics.errorReason, "processing.errorSlideIndex": diagnostics.errorSlideIndex, "processing.errorPageObjectId": diagnostics.errorPageObjectId });
+        if (current?.processing?.jobId === attemptId && studio) transaction.update(resourceRef, { processing: previousProcessing });
+        else if (current?.processing?.jobId === attemptId) transaction.update(resourceRef, { "processing.state": "failed", "processing.error": safeError.message, "processing.errorCode": diagnostics.errorCode, "processing.errorStage": diagnostics.errorStage, "processing.errorReason": diagnostics.errorReason, "processing.errorSlideIndex": diagnostics.errorSlideIndex, "processing.errorPageObjectId": diagnostics.errorPageObjectId });
       });
       // An uncertain commit may already be ready. Never delete a committed revision.
-      const current = (await resourceRef.get()).data();
-      if (rendered?.pages?.[0]?.download?.path === rasterTargetPath(attemptId, 0) && current?.processing?.jobId === attemptId && current.processing.state === "failed") {
+      const recordedState = (await jobRef.get()).data()?.state;
+      if (rendered?.pages?.[0]?.download?.path === rasterTargetPath(attemptId, 0) && recordedState === "failed") {
         await Promise.allSettled((rendered.pages || []).flatMap(page => [page, ...(page.builds || [])]).map((state, index) => state.download?.path === rasterTargetPath(attemptId, index) ? bucket.file(state.download.path).delete({ ignoreNotFound: true }) : Promise.resolve()));
         await Promise.allSettled((rendered.pages || []).map((page, index) => discardAnimation(bucket, page.animation, attemptId, index)));
       }
       throw safeError;
     }
-    return applyReady(unitId, resourceId, expectedRevision);
+    return applied || applyReady(unitId, resourceId, expectedRevision);
   }
 
   async function prepareDelivery(profile, resource, options) {
@@ -241,6 +289,18 @@ function createDocumentProcessing({ db, bucket, getProfile, prepareResource, con
     if (String(metadata.generation) !== processing.download.generation || Number(metadata.size) !== processing.download.sizeBytes || metadata.metadata?.sha256 !== processing.download.checksums.sha256 || metadata.contentType !== "application/pdf") fail("El PDF procesado no está disponible.", "data-loss");
     return processing.download;
   }
-  return { process, prepareDelivery, verifyDerivative };
+  async function preparePreviewSource(profile, resource) {
+    requireReady(resource);
+    if (isGoogleSlides(resource)) {
+      await googleSlides.original(profile, resource);
+      return;
+    }
+    const original = await prepareResource(profile, resource);
+    if (resource.processing.original.path !== original.path || resource.processing.original.generation !== original.generation || resource.processing.original.checksums.sha256 !== original.checksums.sha256) {
+      fail("El original cambió. Procesa nuevamente el borrador.");
+    }
+  }
+
+  return { process, prepareDelivery, preparePreviewSource, verifyDerivative };
 }
 module.exports = { createDocumentProcessing, failureDetails };

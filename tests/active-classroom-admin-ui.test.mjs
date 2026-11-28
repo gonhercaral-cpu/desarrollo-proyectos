@@ -74,7 +74,7 @@ test("editor real: campos simples, actualizar todos antes de publicar y quitar/r
   await click("Importar (1)");
   assert.equal(draft.mainPresentationId, "replacement");
   assert.equal(published[0].mainPresentationId, "main");
-  assert.equal(dom.window.document.querySelectorAll('[role="tab"]').length, 6);
+  assert.deepEqual([...dom.window.document.querySelectorAll('[role="tab"]')].map(tab => tab.textContent).slice(-2), ["Publicaciones", "Studio"]);
   const inspectButton = button("Audio.mp3");
   inspectButton.focus();
   await act(async () => inspectButton.click());

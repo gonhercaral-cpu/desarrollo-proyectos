@@ -25,8 +25,8 @@ export async function loadUnitPublications(unitId) {
 export async function saveUnitDraft(unitId, draft, expectedRevision) {
   return (await save({ unitId, draft, expectedRevision })).data;
 }
-export async function publishUnit(unitId, expectedRevision) {
-  return (await publish({ unitId, expectedRevision })).data;
+export async function publishUnit(unitId, expectedRevision, publishAt) {
+  return (await publish({ unitId, expectedRevision, ...(publishAt ? { publishAt } : {}) })).data;
 }
 export async function validateUnitPublication(unitId, expectedRevision) {
   return (await validatePublication({ unitId, expectedRevision })).data;
@@ -54,10 +54,44 @@ export async function checkUnitDriveChanges(unitId, resourceIds) {
 export async function refreshUnitDriveResource(unitId, resourceId, expectedRevision) {
   return (await refresh({ unitId, resourceId, expectedRevision })).data;
 }
-export async function processUnitDocument(unitId, resourceId, expectedRevision) {
-  return (await processDocument({ unitId, resourceId, expectedRevision })).data;
+export async function processUnitDocument(unitId, resourceId, expectedRevision, studioRevision) {
+  return (await processDocument({ unitId, resourceId, expectedRevision, ...(studioRevision === undefined ? {} : { studioRevision }) })).data;
 }
-export async function getBuildPreview(unitId, resourceId, pageObjectId, buildIndex = 0) {
-  const result = await httpsCallable(functions, "getActiveClassroomBuildPreview", { timeout: 120000 })({ unitId, resourceId, ...(pageObjectId ? { pageObjectId } : {}), buildIndex });
+export async function getBuildPreview(unitId, resourceId, pageObjectId, buildIndex = 0, baseline = false, original = false) {
+  const result = await httpsCallable(functions, "getActiveClassroomBuildPreview", { timeout: 120000 })({ unitId, resourceId, ...(pageObjectId ? { pageObjectId } : {}), buildIndex, baseline, original });
   return result.data;
+}
+
+const loadStudio = httpsCallable(functions, "getActiveClassroomStudioDraft");
+const saveStudio = httpsCallable(functions, "saveActiveClassroomStudioDraft");
+const reviewStudio = httpsCallable(functions, "reviewActiveClassroomStudioDraft");
+const inspectStudio = httpsCallable(functions, "inspectActiveClassroomStudioSlide", { timeout: 120000 });
+
+export async function getStudioDraft(unitId, resourceId) {
+  return (await loadStudio({ unitId, resourceId })).data;
+}
+
+export async function saveStudioEdits(unitId, resourceId, expectedRevision, edits) {
+  return (await saveStudio({ unitId, resourceId, expectedRevision, edits })).data;
+}
+
+export async function reviewStudioDraft(unitId, resourceId, expectedRevision, expectedReviewRevision, status, notes, settings = {}) {
+  return (await reviewStudio({ unitId, resourceId, expectedRevision, expectedReviewRevision, status, notes, ...settings })).data;
+}
+
+export async function inspectStudioSlide(unitId, resourceId, slideIndex) {
+  return (await inspectStudio({ unitId, resourceId, slideIndex })).data;
+}
+
+export async function restoreStudioVersion(unitId, sourceVersion, expectedVersion, expectedRevision) {
+  return (await httpsCallable(functions, "restoreActiveClassroomPublication", { timeout: 540000 })({ unitId, sourceVersion, expectedVersion, expectedRevision })).data;
+}
+
+export async function cancelStudioPublication(unitId, jobId) {
+  return (await httpsCallable(functions, "cancelActiveClassroomPublication")({ unitId, jobId })).data;
+}
+
+export async function loadStudioReviewers() {
+  const result = (await httpsCallable(functions, "listActiveClassroomCollaborators")()).data;
+  return result.collaborators.filter(user => user.active && user.permissions.access && user.permissions.orderMaterial);
 }

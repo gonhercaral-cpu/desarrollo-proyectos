@@ -9,6 +9,7 @@ export function createUnitDraft(unit, resources) {
   };
 }
 export function canBeMainPresentation(resource) {
+  if (resource?.storagePath && /\.pptx$/i.test(resource.name || "")) return true;
   return resource?.source === "drive" && (resource.kind === "presentation" || resource.mimeType === "application/pdf" || /\.pdf$/i.test(resource.name));
 }
 export function reorderSlides(slides, slideId, direction) {
@@ -38,4 +39,10 @@ export function documentProcessingReady(resource) {
   if (resource.mimeType === "application/vnd.google-apps.presentation") return ["google-slides-png-v1", "google-slides-builds-png-v2"].includes(version);
   if (/presentationml\.presentation/.test(resource.mimeType || "") || /\.pptx$/i.test(resource.sourceName || resource.name || "")) return ["pptx-builds-png-v1", "pptx-builds-png-v2", "office-pdf-v1"].includes(version);
   return true;
+}
+
+export function isStudioPresentation(resource) {
+  return resource?.mimeType === "application/vnd.google-apps.presentation"
+    || resource?.mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    || /\.pptx$/i.test(resource?.name || "");
 }

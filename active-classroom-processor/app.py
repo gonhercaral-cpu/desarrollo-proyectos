@@ -13,6 +13,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 from urllib.request import Request, urlopen
 from converter import convert_office, file_integrity, MAX_BYTES, PROCESSOR_VERSION
 from builds import analyze_pptx, render_pptx, raster_path, analyze_pptx_gifs, read_certified_gifs, write_gif_background_pptx
+from studio import apply_studio_edits, inspect_slide, parse_studio_edits
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024
@@ -24,7 +25,7 @@ def public_conversion_error(error):
     if isinstance(error, zipfile.BadZipFile):
         return "invalid-office-file"
     code = str(error) if isinstance(error, ValueError) else ""
-    return code if code in {"invalid-office-file", "invalid-office-archive", "external-document-reference", "file-too-large", "too-many-slides", "invalid-page-count", "source-size-mismatch", "source-integrity-mismatch"} else "conversion-failed"
+    return code if code in {"invalid-office-file", "invalid-office-archive", "external-document-reference", "file-too-large", "too-many-slides", "invalid-page-count", "source-size-mismatch", "source-integrity-mismatch", "invalid-studio-edits", "studio-element-not-found", "studio-edit-unsupported"} else "conversion-failed"
 
 
 def animation_path(revision, slide_index, asset):
@@ -99,6 +100,33 @@ def download_source(data, original, workspace):
     return source
 
 
+def studio_source(data, source, workspace):
+    """Apply optional studioEdits to a temporary copy; the downloaded original is untouched."""
+    edits = parse_studio_edits(data.get("studioEdits"))
+    if edits is None:
+        return source
+    if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
+        raise ValueError("invalid-studio-edits")
+    edited = Path(workspace) / "studio.pptx"
+    apply_studio_edits(source, edited, edits)
+    return edited
+
+
+@app.post("/studio/inspect")
+def studio_inspect():
+    try:
+        data = request.get_json()
+        original = validate_request(data)
+        if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
+            raise ValueError("invalid-plan-request")
+        with tempfile.TemporaryDirectory(prefix="classroom-studio-") as workspace:
+            return jsonify(inspect_slide(download_source(data, original, workspace), data.get("slideIndex")))
+    except Exception as error:
+        code = public_conversion_error(error)
+        app.logger.error("Studio inspection failed: error=%s code=%s", type(error).__name__, code)
+        return jsonify({"error": code}), 422
+
+
 @app.post("/plan")
 def plan():
     try:
@@ -107,7 +135,8 @@ def plan():
         if data["extension"] != "pptx" or data["processorVersion"] not in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
             raise ValueError("invalid-plan-request")
         with tempfile.TemporaryDirectory(prefix="classroom-plan-") as workspace:
-            result = pptx_plan(download_source(data, original, workspace))
+            source = download_source(data, original, workspace)
+            result = pptx_plan(studio_source(data, source, workspace))
         return jsonify(result)
     except Exception as error:
         code = public_conversion_error(error)
@@ -235,7 +264,10 @@ def convert():
     try:
         data = request.get_json()
         original = validate_request(data)
+        parse_studio_edits(data.get("studioEdits"))
     except (ValueError, TypeError, AttributeError) as error:
+        if isinstance(error, ValueError) and str(error) == "invalid-studio-edits":
+            return jsonify({"error": "invalid-studio-edits"}), 400
         if isinstance(error, ValueError) and str(error) == "file-too-large":
             return jsonify({"error": "file-too-large"}), 422
         return jsonify({"error": "invalid-request"}), 400
@@ -245,7 +277,9 @@ def convert():
             if data["processorVersion"] in {"pptx-builds-png-v1", "pptx-builds-png-v2"}:
                 if data["extension"] != "pptx":
                     raise ValueError("invalid-pptx-extension")
-                return jsonify(upload_pngs(data, source, workspace))
+                return jsonify(upload_pngs(data, studio_source(data, source, workspace), workspace))
+            if data.get("studioEdits") is not None:
+                raise ValueError("invalid-studio-edits")
             result = convert_office(source, data["extension"], workspace)
             # The signed upload is restricted to one new object and forbids overwrite.
             with result["path"].open("rb") as pdf:

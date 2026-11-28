@@ -4,7 +4,7 @@ const { processingTargetPath, rasterTargetPath, PPTX_PROCESSOR_VERSION, sourceTo
 const { validateAnimationPlan, prepareAnimationUploads, attachConvertedAnimations } = require("./activeClassroomAnimations");
 
 function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) {
-  return async (data, { onStage = async () => {}, nativeSlidesFallback = false } = {}) => {
+  async function send(data, { onStage = async () => {}, nativeSlidesFallback = false, slideIndex } = {}) {
     // The processor's request validation rejects originals above its cap (HTTP 422) before it downloads anything;
     // the snapshot itself was already downloaded upstream by Functions. Check the measured size first so
     // no capability is signed and no processor call is made.
@@ -20,6 +20,10 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
     // Capabilities stay inside the private backend. Converter has no cloud data roles.
     const [sourceUrl] = await bucket.file(data.original.path).getSignedUrl({ version: "v4", action: "read", expires, queryParams: { generation: data.original.generation } });
     const [uploadUrl] = await target.getSignedUrl({ version: "v4", action: "write", expires, contentType: "application/pdf", extensionHeaders: { "x-goog-if-generation-match": "0" } });
+    if (slideIndex !== undefined) {
+      const response = await client.request({ url: `${url}/studio/inspect`, method: "POST", data: { ...data, sourceUrl, uploadUrl, slideIndex }, timeout: 90000 });
+      return response.data;
+    }
     if (data.processorVersion === PPTX_PROCESSOR_VERSION) {
       const request = { ...data, sourceUrl, uploadUrl };
       await onStage("planning");
@@ -81,6 +85,11 @@ function createProcessorClient({ bucket, getUrl, getClient, clock = Date.now }) 
     const [metadata] = await target.getMetadata();
     if (Number(metadata.size) !== result.sizeBytes) throw new HttpsError("data-loss", "Tamaño del PDF procesado inválido.");
     return { ...result, download: descriptor(path, metadata) };
-  };
+  }
+  send.inspect = async (original, slideIndex) => send(
+    { original, revision: require("node:crypto").randomUUID(), processorVersion: PPTX_PROCESSOR_VERSION, extension: "pptx" },
+    { slideIndex },
+  );
+  return send;
 }
 module.exports = { createProcessorClient };
